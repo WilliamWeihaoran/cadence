@@ -5,7 +5,6 @@ import SwiftData
 struct SidebarView: View {
     @Binding var selection: SidebarItem?
     @Query(sort: \Context.order) private var contexts: [Context]
-    @Environment(\.modelContext) private var modelContext
 
     @State private var showCreateContext = false
     @State private var contextForNewList: Context? = nil
@@ -16,6 +15,8 @@ struct SidebarView: View {
             Section {
                 SidebarRow(icon: "sun.max.fill",   label: "Today",    color: Theme.amber)
                     .tag(SidebarItem.today)
+                SidebarRow(icon: "checklist",      label: "All Tasks", color: Theme.blue)
+                    .tag(SidebarItem.allTasks)
                 SidebarRow(icon: "timer",          label: "Focus",    color: Theme.red)
                     .tag(SidebarItem.focus)
                 SidebarRow(icon: "tray.fill",      label: "Inbox",    color: Theme.blue)
@@ -82,7 +83,8 @@ private struct ContextSection: View {
     @Bindable var context: Context
     @Binding var selection: SidebarItem?
     let onAddList: () -> Void
-    @Environment(\.modelContext) private var modelContext
+    @State private var areaForEdit: Area? = nil
+    @State private var projectForEdit: Project? = nil
 
     private var areas: [Area]    { (context.areas    ?? []).sorted { $0.order < $1.order } }
     private var projects: [Project] { (context.projects ?? []).sorted { $0.order < $1.order } }
@@ -90,13 +92,25 @@ private struct ContextSection: View {
     var body: some View {
         Section {
             ForEach(areas) { area in
-                SidebarRow(icon: area.icon, label: area.name, color: Color(hex: area.colorHex))
+                SidebarListRow(
+                    icon: area.icon,
+                    label: area.name,
+                    color: Color(hex: area.colorHex),
+                    kind: .area,
+                    onEdit: { areaForEdit = area }
+                )
                     .tag(SidebarItem.area(area.id))
             }
             .onMove { indices, newOffset in moveAreas(from: indices, to: newOffset) }
 
             ForEach(projects) { project in
-                SidebarRow(icon: project.icon, label: project.name, color: Color(hex: project.colorHex))
+                SidebarListRow(
+                    icon: project.icon,
+                    label: project.name,
+                    color: Color(hex: project.colorHex),
+                    kind: .project,
+                    onEdit: { projectForEdit = project }
+                )
                     .tag(SidebarItem.project(project.id))
             }
             .onMove { indices, newOffset in moveProjects(from: indices, to: newOffset) }
@@ -118,6 +132,12 @@ private struct ContextSection: View {
                 }
                 .buttonStyle(.plain)
             }
+        }
+        .sheet(item: $areaForEdit) { area in
+            EditAreaSheet(area: area)
+        }
+        .sheet(item: $projectForEdit) { project in
+            EditProjectSheet(project: project)
         }
     }
 
@@ -150,6 +170,74 @@ struct SidebarRow: View {
             Image(systemName: icon)
                 .foregroundStyle(color)
                 .font(.system(size: 13))
+        }
+    }
+}
+
+private struct SidebarListRow: View {
+    enum Kind {
+        case area
+        case project
+
+        var label: String {
+            switch self {
+            case .area: return "Area"
+            case .project: return "Project"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .area: return Theme.blue
+            case .project: return Theme.amber
+            }
+        }
+    }
+
+    let icon: String
+    let label: String
+    let color: Color
+    let kind: Kind
+    let onEdit: () -> Void
+
+    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
+    @State private var isHovered = false
+
+    private var hoverID: String {
+        "sidebar-\(kind.label)-\(label)"
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Label {
+                Text(label)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.text)
+            } icon: {
+                Image(systemName: icon)
+                    .foregroundStyle(color)
+                    .font(.system(size: 13))
+            }
+
+            Spacer(minLength: 8)
+
+            Text(kind.label)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(kind.tint.opacity(isHovered ? 1 : 0.88))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(kind.tint.opacity(isHovered ? 0.18 : 0.1))
+                .clipShape(Capsule())
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering {
+                hoveredEditableManager.beginHovering(id: hoverID, onEdit: onEdit)
+            } else {
+                hoveredEditableManager.endHovering(id: hoverID)
+            }
         }
     }
 }

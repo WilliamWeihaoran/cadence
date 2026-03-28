@@ -115,7 +115,7 @@ struct CalendarPageView: View {
                                 .overlay(alignment: .trailing) {
                                     Rectangle().fill(Theme.borderSubtle.opacity(0.7)).frame(width: 1)
                                 }
-                            HStack(spacing: 0) {
+                            LazyHStack(spacing: 0) {
                                 ForEach(0..<calRenderDays, id: \.self) { dayIdx in
                                     let date = cal.date(byAdding: .day, value: dayIdx, to: bufferStart)!
                                     CalDayHeaderView(date: date)
@@ -150,10 +150,10 @@ struct CalendarPageView: View {
 
                                     ScrollViewReader { hProxy in
                                         ScrollView(.horizontal, showsIndicators: true) {
-                                            HStack(alignment: .top, spacing: 0) {
+                                            LazyHStack(alignment: .top, spacing: 0) {
                                                 ForEach(0..<calRenderDays, id: \.self) { dayIdx in
                                                     let date = cal.date(byAdding: .day, value: dayIdx, to: bufferStart)!
-                                                    let key = dateKey(for: date)
+                                                    let key = DateFormatters.dateKey(from: date)
                                                     CalDayColumn(
                                                         date: date,
                                                         tasks: tasksByDate[key] ?? [],
@@ -168,11 +168,12 @@ struct CalendarPageView: View {
                                             .frame(width: totalDaysWidth, alignment: .leading)
                                         }
                                         .frame(width: timelineViewportWidth, alignment: .leading)
+                                        .scrollBounceBehavior(.basedOnSize, axes: [.horizontal])
                                         .onScrollGeometryChange(for: CGFloat.self) { scrollGeo in
-                                            scrollGeo.contentOffset.x
+                                            round(scrollGeo.contentOffset.x)
                                         } action: { _, x in
                                             let nextOffset = -x
-                                            if abs(hContentOffset - nextOffset) > 0.1 {
+                                            if abs(hContentOffset - nextOffset) >= 1 {
                                                 hContentOffset = nextOffset
                                             }
                                         }
@@ -196,6 +197,7 @@ struct CalendarPageView: View {
                                     vProxy.scrollTo("tl_\(scrollHour)", anchor: .top)
                                 }
                             }
+                            .scrollBounceBehavior(.basedOnSize, axes: [.vertical])
                             .onChange(of: scrollToTodayTrigger) {
                                 let currentHour = Calendar.current.component(.hour, from: Date())
                                 let scrollHour = max(calStartHour, currentHour - 1)

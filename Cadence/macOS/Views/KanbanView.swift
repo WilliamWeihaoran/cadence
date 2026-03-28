@@ -35,6 +35,75 @@ struct KanbanView: View {
     }
 }
 
+struct TaskListsKanbanView: View {
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 12) {
+                TaskListKanbanColumn(
+                    title: "Inbox",
+                    icon: "tray.fill",
+                    color: Theme.dim,
+                    tasks: inboxTasks,
+                    onDropTask: { task in
+                        task.area = nil
+                        task.project = nil
+                    }
+                )
+
+                ForEach(areas) { area in
+                    TaskListKanbanColumn(
+                        title: area.name,
+                        icon: area.icon,
+                        color: Color(hex: area.colorHex),
+                        tasks: tasks(for: area),
+                        onDropTask: { task in
+                            task.area = area
+                            task.project = nil
+                            task.context = area.context
+                        }
+                    )
+                }
+
+                ForEach(projects) { project in
+                    TaskListKanbanColumn(
+                        title: project.name,
+                        icon: project.icon,
+                        color: Color(hex: project.colorHex),
+                        tasks: tasks(for: project),
+                        onDropTask: { task in
+                            task.project = project
+                            task.area = nil
+                            task.context = project.context
+                        }
+                    )
+                }
+            }
+            .padding(20)
+        }
+        .background(Theme.bg)
+    }
+
+    private var activeTasks: [AppTask] {
+        allTasks.filter { !$0.isCancelled }
+    }
+
+    private var inboxTasks: [AppTask] {
+        activeTasks.filter { $0.area == nil && $0.project == nil }
+    }
+
+    private func tasks(for area: Area) -> [AppTask] {
+        activeTasks.filter { $0.area?.id == area.id }
+    }
+
+    private func tasks(for project: Project) -> [AppTask] {
+        activeTasks.filter { $0.project?.id == project.id }
+    }
+}
+
 // MARK: - Column
 
 private struct KanbanColumn: View {
@@ -149,12 +218,76 @@ private struct KanbanColumn: View {
     }
 }
 
+private struct TaskListKanbanColumn: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let tasks: [AppTask]
+    let onDropTask: (AppTask) -> Void
+
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @State private var isTargeted = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.muted)
+                Spacer()
+                Text("\(tasks.count)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            Divider().background(Theme.borderSubtle)
+
+            ScrollView {
+                VStack(spacing: 6) {
+                    ForEach(tasks.sorted { $0.order < $1.order }) { task in
+                        KanbanCard(task: task)
+                            .draggable(task.id.uuidString)
+                    }
+                }
+                .padding(8)
+            }
+            .frame(minHeight: 200)
+        }
+        .frame(width: 240)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isTargeted ? color.opacity(0.06) : Theme.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(isTargeted ? color.opacity(0.4) : Theme.borderSubtle)
+        )
+        .dropDestination(for: String.self) { items, _ in
+            guard let uuidString = items.first,
+                  let uuid = UUID(uuidString: uuidString),
+                  let task = allTasks.first(where: { $0.id == uuid }) else { return false }
+            onDropTask(task)
+            return true
+        } isTargeted: { isTargeted = $0 }
+    }
+}
+
 // MARK: - Card
 
 private struct KanbanCard: View {
     @Bindable var task: AppTask
+    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
+    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @State private var isEditing = false
     @FocusState private var focused: Bool
+    @State private var isHovered = false
+    @State private var showTaskInspector = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -195,10 +328,29 @@ private struct KanbanCard: View {
         }
         .padding(10)
         .background(Theme.surfaceElevated)
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isHovered ? Theme.blue.opacity(0.28) : .white.opacity(0.05), lineWidth: 1)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .onTapGesture(count: 2) {
             isEditing = true
             focused = true
+        }
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering {
+                hoveredTaskManager.beginHovering(task)
+                hoveredEditableManager.beginHovering(id: "kanban-task-\(task.id.uuidString)") {
+                    showTaskInspector = true
+                }
+            } else {
+                hoveredTaskManager.endHovering(task)
+                hoveredEditableManager.endHovering(id: "kanban-task-\(task.id.uuidString)")
+            }
+        }
+        .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
+            TaskDetailPopover(task: task)
         }
     }
 }

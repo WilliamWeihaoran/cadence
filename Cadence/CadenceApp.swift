@@ -11,6 +11,9 @@ struct CadenceApp: App {
             macOSRootView()
                 .environment(CalendarManager.shared)
                 .environment(FocusManager.shared)
+                .environment(HoveredTaskManager.shared)
+                .environment(HoveredEditableManager.shared)
+                .environment(TaskCreationManager.shared)
 #else
             iOSRootView()
 #endif

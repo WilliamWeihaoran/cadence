@@ -2,11 +2,21 @@
 import SwiftUI
 import SwiftData
 
+enum TasksPanelMode {
+    case todayOverview
+    case byDoDate
+}
+
 struct TasksPanel: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(TaskCreationManager.self) private var taskCreationManager
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @State private var newTaskTitle = ""
-    @FocusState private var quickAddFocused: Bool
+    let mode: TasksPanelMode
+    let showsHeader: Bool
+
+    init(mode: TasksPanelMode = .todayOverview, showsHeader: Bool = true) {
+        self.mode = mode
+        self.showsHeader = showsHeader
+    }
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -14,58 +24,80 @@ struct TasksPanel: View {
         allTasks.filter { !$0.isDone && !$0.isCancelled && !$0.dueDate.isEmpty && $0.dueDate < todayKey }
     }
 
-    private var todayTasks: [AppTask] {
-        allTasks.filter { !$0.isDone && !$0.isCancelled && ($0.dueDate == todayKey || $0.scheduledDate == todayKey) }
+    private var dueTodayTasks: [AppTask] {
+        allTasks.filter { !$0.isDone && !$0.isCancelled && $0.dueDate == todayKey }
     }
 
-    private var otherTasks: [AppTask] {
-        let overdueIDs = Set(overdue.map { $0.id })
-        let todayIDs   = Set(todayTasks.map { $0.id })
+    private var doTodayTasks: [AppTask] {
+        let excludedIDs = Set(overdue.map(\.id)).union(dueTodayTasks.map(\.id))
         return allTasks.filter {
-            !$0.isDone && !$0.isCancelled && !overdueIDs.contains($0.id) && !todayIDs.contains($0.id)
+            !$0.isDone &&
+            !$0.isCancelled &&
+            $0.scheduledDate == todayKey &&
+            !excludedIDs.contains($0.id)
         }
+    }
+
+    private var byDoDateTodayTasks: [AppTask] {
+        allTasks.filter { !$0.isDone && !$0.isCancelled && $0.scheduledDate == todayKey }
+    }
+
+    private var byDoDateUpcomingTasks: [AppTask] {
+        let todayIDs = Set(byDoDateTodayTasks.map(\.id))
+        return allTasks.filter {
+            !$0.isDone &&
+            !$0.isCancelled &&
+            !taskIsUnscheduled($0) &&
+            $0.scheduledDate != todayKey &&
+            !todayIDs.contains($0.id)
+        }
+    }
+
+    private var byDoDateUnscheduledTasks: [AppTask] {
+        allTasks.filter { !$0.isDone && !$0.isCancelled && taskIsUnscheduled($0) }
     }
 
     private var doneTasks: [AppTask] { allTasks.filter { $0.isDone } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PanelHeader(eyebrow: "Tasks", title: "All Tasks")
-
-            Divider().background(Theme.borderSubtle)
-
-            // Quick-add bar
-            HStack(spacing: 8) {
-                Image(systemName: "plus.circle.fill")
-                    .foregroundStyle(Theme.blue)
-                    .font(.system(size: 14))
-                TextField("Add a task…", text: $newTaskTitle)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.text)
-                    .focused($quickAddFocused)
-                    .onSubmit { addTask() }
+            if showsHeader {
+                TasksPanelHeader(mode: mode)
+                Divider().background(Theme.borderSubtle)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(Theme.surfaceElevated)
-
-            Divider().background(Theme.borderSubtle)
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
-                    if !overdue.isEmpty    { taskSection(label: "Overdue",  tasks: overdue,    labelColor: Theme.red)   }
-                    if !todayTasks.isEmpty { taskSection(label: "Today",    tasks: todayTasks, labelColor: Theme.blue)  }
-                    if !otherTasks.isEmpty { taskSection(label: "Upcoming", tasks: otherTasks, labelColor: Theme.dim)   }
-                    if !doneTasks.isEmpty  { taskSection(label: "Done",     tasks: doneTasks,  labelColor: Theme.green) }
-                    if allTasks.isEmpty {
-                        EmptyStateView(message: "No tasks yet", subtitle: "Add a task above to get started", icon: "checkmark.circle")
+                    if mode == .todayOverview {
+                        if !overdue.isEmpty { taskSection(label: "Overdue", tasks: overdue, labelColor: Theme.red) }
+                        if !dueTodayTasks.isEmpty { taskSection(label: "Due Today", tasks: dueTodayTasks, labelColor: Theme.blue) }
+                        if !doTodayTasks.isEmpty { taskSection(label: "Do Today", tasks: doTodayTasks, labelColor: Theme.amber) }
+                    } else {
+                        if !byDoDateTodayTasks.isEmpty { taskSection(label: "Do Today", tasks: byDoDateTodayTasks, labelColor: Theme.blue) }
+                        if !byDoDateUpcomingTasks.isEmpty { taskSection(label: "Scheduled", tasks: byDoDateUpcomingTasks, labelColor: Theme.dim) }
+                        if !byDoDateUnscheduledTasks.isEmpty { taskSection(label: "Unscheduled", tasks: byDoDateUnscheduledTasks, labelColor: Theme.amber) }
+                    }
+                    if !doneTasks.isEmpty { taskSection(label: "Done", tasks: doneTasks, labelColor: Theme.green) }
+                    if isEmptyState {
+                        EmptyStateView(
+                            message: mode == .byDoDate ? "No tasks yet" : "Nothing for today",
+                            subtitle: mode == .byDoDate ? "Add a task above to get started" : "Due-today and do-today tasks will appear here",
+                            icon: "checkmark.circle"
+                        )
                             .padding(.top, 40)
                     }
                 }
+                .padding(.top, showsHeader && mode == .todayOverview ? 12 : 0)
                 .padding(.bottom, 16)
             }
         }
+        .background(
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    clearAppEditingFocus()
+                }
+        )
         .background(Theme.surface)
     }
 
@@ -89,13 +121,127 @@ struct TasksPanel: View {
         }
     }
 
-    private func addTask() {
-        let title = newTaskTitle.trimmingCharacters(in: .whitespaces)
-        guard !title.isEmpty else { return }
-        let task = AppTask(title: title)
-        task.scheduledDate = todayKey
-        modelContext.insert(task)
-        newTaskTitle = ""
+    private var isEmptyState: Bool {
+        switch mode {
+        case .todayOverview:
+            return overdue.isEmpty && dueTodayTasks.isEmpty && doTodayTasks.isEmpty && doneTasks.isEmpty
+        case .byDoDate:
+            return byDoDateTodayTasks.isEmpty && byDoDateUpcomingTasks.isEmpty && byDoDateUnscheduledTasks.isEmpty && doneTasks.isEmpty
+        }
+    }
+
+    private var panelTitle: String {
+        switch mode {
+        case .todayOverview: return "Today"
+        case .byDoDate: return "By Do Date"
+        }
+    }
+
+    private func taskIsUnscheduled(_ task: AppTask) -> Bool {
+        task.scheduledDate.isEmpty || task.scheduledStartMin < 0
+    }
+}
+
+private struct TasksPanelHeader: View {
+    let mode: TasksPanelMode
+
+    @Environment(TaskCreationManager.self) private var taskCreationManager
+
+    private var title: String {
+        switch mode {
+        case .todayOverview:
+            return "Today"
+        case .byDoDate:
+            return "By Do Date"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("TASKS")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .kerning(0.8)
+                    Text(title)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                }
+
+                Spacer()
+
+                Button {
+                    switch mode {
+                    case .todayOverview:
+                        taskCreationManager.present(doDateKey: DateFormatters.todayKey())
+                    case .byDoDate:
+                        taskCreationManager.present()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("New Task")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 8)
+                    .background(Theme.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if mode == .todayOverview {
+                Button {
+                    taskCreationManager.present(doDateKey: DateFormatters.todayKey())
+                } label: {
+                    HStack(alignment: .center, spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Theme.blue.opacity(0.14))
+                                .frame(width: 38, height: 38)
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Theme.blue)
+                        }
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Capture something for today")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Theme.text)
+                            Text("Opens the full task creator with Do Date already set to today.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.dim)
+                        }
+
+                        Spacer()
+
+                        Text("Ctrl-Space")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.blue)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(Theme.blue.opacity(0.1))
+                            .clipShape(Capsule())
+                    }
+                    .padding(12)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Theme.borderSubtle)
+                    )
+                    .padding(.horizontal, 16)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 20)
+        .padding(.bottom, mode == .todayOverview ? 10 : 12)
     }
 }
 
@@ -105,11 +251,16 @@ struct MacTaskRow: View {
     @Bindable var task: AppTask
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
+    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
+    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
 
     @State private var showDatePicker = false
     @State private var dueDatePickerDate: Date = Date()
     @State private var dueDateViewMonth: Date = Date()
     @State private var showPriorityPicker = false
+    @State private var isHovered = false
+    @State private var showTaskInspector = false
+    @FocusState private var titleFocused: Bool
 
     var body: some View {
         HStack(spacing: 0) {
@@ -138,6 +289,7 @@ struct MacTaskRow: View {
                 .strikethrough(task.isDone, color: Theme.dim)
                 .lineLimit(1)
                 .layoutPriority(-1)
+                .focused($titleFocused)
 
             // Metadata: priority | due | list (fixed size — never squishes)
             HStack(spacing: 6) {
@@ -231,9 +383,31 @@ struct MacTaskRow: View {
             .padding(.trailing, 12)
         }
         .padding(.vertical, 6)
-        .background(Theme.surface)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isHovered ? Theme.surfaceElevated.opacity(0.9) : Theme.surface)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isHovered ? Theme.blue.opacity(0.28) : .white.opacity(0.04), lineWidth: 1)
+        }
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.borderSubtle.opacity(0.5)).frame(height: 0.5)
+        }
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering {
+                hoveredTaskManager.beginHovering(task)
+                hoveredEditableManager.beginHovering(id: "task-row-\(task.id.uuidString)") {
+                    showTaskInspector = true
+                }
+            } else {
+                hoveredTaskManager.endHovering(task)
+                hoveredEditableManager.endHovering(id: "task-row-\(task.id.uuidString)")
+            }
+        }
+        .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
+            TaskDetailPopover(task: task)
         }
     }
 
@@ -249,7 +423,7 @@ struct MacTaskRow: View {
 }
 // MARK: - Container Picker Badge
 
-private struct ContainerPickerBadge: View {
+struct ContainerPickerBadge: View {
     @Bindable var task: AppTask
     let areas: [Area]
     let projects: [Project]

@@ -2,15 +2,29 @@
 import SwiftUI
 
 struct TimelineTaskBlock: View {
+    private enum ResizeEdge {
+        case start
+        case end
+    }
+
     let task: AppTask
     let column: Int
     let totalColumns: Int
     let totalWidth: CGFloat
     let metrics: TimelineMetrics
     let style: TimelineBlockStyle
+    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
+    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @Binding var selectedTaskID: UUID?
     @Binding var activeDragTaskID: UUID?
     let onSelect: () -> Void
+
+    @State private var activeResizeEdge: ResizeEdge? = nil
+    @State private var resizeOriginStartMin: Int? = nil
+    @State private var resizeOriginEndMin: Int? = nil
+    @State private var isHovered = false
+
+    private let resizeHandleHeight: CGFloat = 8
 
     private var timeRangeLabel: String {
         let duration = max(task.estimatedMinutes, 5)
@@ -36,20 +50,45 @@ struct TimelineTaskBlock: View {
             timeRangeLabel: timeRangeLabel,
             frame: frame,
             style: style,
-            showSelection: selectedTaskID == task.id
+            showSelection: selectedTaskID == task.id,
+            showHover: isHovered
         )
         .frame(width: frame.width, height: frame.height)
         .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering {
+                hoveredTaskManager.beginHovering(task)
+                hoveredEditableManager.beginHovering(id: "timeline-task-\(task.id.uuidString)") {
+                    onSelect()
+                    activeDragTaskID = nil
+                    selectedTaskID = task.id
+                }
+            } else {
+                hoveredTaskManager.endHovering(task)
+                hoveredEditableManager.endHovering(id: "timeline-task-\(task.id.uuidString)")
+            }
+        }
         .onTapGesture {
             onSelect()
             activeDragTaskID = nil
             selectedTaskID = task.id
         }
         .onDrag {
+            guard activeResizeEdge == nil else {
+                return NSItemProvider()
+            }
+            selectedTaskID = nil
             activeDragTaskID = task.id
             return NSItemProvider(object: task.id.uuidString as NSString)
         } preview: {
             timelineDragPreview(task: task, style: style)
+        }
+        .overlay(alignment: .top) {
+            resizeHandle(edge: .start)
+        }
+        .overlay(alignment: .bottom) {
+            resizeHandle(edge: .end)
         }
         .popover(
 
@@ -69,6 +108,72 @@ struct TimelineTaskBlock: View {
         .position(x: frame.centerX, y: frame.centerY)
     }
 
+    @ViewBuilder
+    private func resizeHandle(edge: ResizeEdge) -> some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(height: resizeHandleHeight)
+            .contentShape(Rectangle())
+            .overlay {
+                let isEmphasized = activeResizeEdge == edge || isHovered || selectedTaskID == task.id
+                Capsule()
+                    .fill(.white.opacity(isEmphasized ? 0.4 : 0.16))
+                    .frame(width: min(18, max(10, frame.width - 18)), height: 2)
+            }
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .onChanged { value in
+                        beginResizeIfNeeded(edge: edge)
+                        updateResize(edge: edge, localY: value.location.y)
+                    }
+                    .onEnded { value in
+                        updateResize(edge: edge, localY: value.location.y)
+                        endResize()
+                    }
+            )
+    }
+
+    private func beginResizeIfNeeded(edge: ResizeEdge) {
+        guard activeResizeEdge == nil else { return }
+        onSelect()
+        selectedTaskID = nil
+        activeDragTaskID = nil
+        activeResizeEdge = edge
+        resizeOriginStartMin = task.scheduledStartMin
+        resizeOriginEndMin = task.scheduledStartMin + max(task.estimatedMinutes, 5)
+    }
+
+    private func updateResize(edge: ResizeEdge, localY: CGFloat) {
+        guard let originStart = resizeOriginStartMin,
+              let originEnd = resizeOriginEndMin else { return }
+
+        let localYOffset: CGFloat
+        switch edge {
+        case .start:
+            localYOffset = localY
+        case .end:
+            localYOffset = max(0, frame.height - resizeHandleHeight) + localY
+        }
+
+        let snappedMinute = metrics.snappedMinute(fromY: frame.y + localYOffset)
+
+        switch edge {
+        case .start:
+            let nextStart = min(snappedMinute, originEnd - 5)
+            task.scheduledStartMin = nextStart
+            task.estimatedMinutes = max(5, originEnd - nextStart)
+        case .end:
+            let nextEnd = max(snappedMinute, originStart + 5)
+            task.scheduledStartMin = originStart
+            task.estimatedMinutes = max(5, nextEnd - originStart)
+        }
+    }
+
+    private func endResize() {
+        activeResizeEdge = nil
+        resizeOriginStartMin = nil
+        resizeOriginEndMin = nil
+    }
 }
 
 struct TimelineDraggedTaskPreview: View {
@@ -177,7 +282,8 @@ func timelineBlockBody(
     timeRangeLabel: String,
     frame: TimelineBlockFrame,
     style: TimelineBlockStyle,
-    showSelection: Bool
+    showSelection: Bool,
+    showHover: Bool = false
 ) -> some View {
     VStack(alignment: .leading, spacing: 2) {
         if frame.height >= 40 {
@@ -205,11 +311,20 @@ func timelineBlockBody(
     )
     .overlay(
         RoundedRectangle(cornerRadius: style.cornerRadius)
-            .stroke(.white.opacity(showSelection ? 0.22 : 0.08), lineWidth: 1)
+            .stroke(
+                showSelection
+                ? .white.opacity(0.22)
+                : (showHover ? Theme.blue.opacity(0.32) : .white.opacity(0.08)),
+                lineWidth: 1
+            )
     )
     .overlay(alignment: .top) {
         Rectangle()
-            .fill(.white.opacity(showSelection ? 0.95 : 0.35))
+            .fill(
+                showSelection
+                ? .white.opacity(0.95)
+                : (showHover ? Theme.blue.opacity(0.7) : .white.opacity(0.35))
+            )
             .frame(height: showSelection ? 2 : 1)
             .padding(.horizontal, 1)
     }

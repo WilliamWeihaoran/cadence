@@ -32,6 +32,7 @@ private struct ListDetailView: View {
     var area: Area?
     var project: Project?
 
+    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @State private var tab: Tab = .tasks
     @State private var showEdit = false
 
@@ -39,6 +40,9 @@ private struct ListDetailView: View {
     private var colorHex: String { area?.colorHex ?? project?.colorHex ?? "#4a9eff" }
     private var icon: String     { area?.icon     ?? project?.icon     ?? "folder.fill" }
     private var tasks: [AppTask] { area?.tasks    ?? project?.tasks    ?? [] }
+    private var editableHoverID: String {
+        "list-detail-\(area?.id.uuidString ?? project?.id.uuidString ?? "unknown")"
+    }
 
     enum Tab: String, CaseIterable {
         case tasks     = "Tasks"
@@ -97,6 +101,16 @@ private struct ListDetailView: View {
             .padding(.horizontal, 20)
             .padding(.top, 20)
             .padding(.bottom, 14)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    hoveredEditableManager.beginHovering(id: editableHoverID) {
+                        showEdit = true
+                    }
+                } else {
+                    hoveredEditableManager.endHovering(id: editableHoverID)
+                }
+            }
 
             // Tab bar
             HStack(spacing: 0) {
@@ -109,17 +123,28 @@ private struct ListDetailView: View {
 
             Divider().background(Theme.borderSubtle)
 
-            switch tab {
-            case .tasks:
-                ListTasksView(tasks: tasks, area: area, project: project)
-            case .log:
-                ListLogView(tasks: tasks)
-            case .documents:
-                DocumentsView(area: area, project: project)
-            case .links:
-                LinksView(area: area, project: project)
+            Group {
+                switch tab {
+                case .tasks:
+                    ListTasksView(tasks: tasks, area: area, project: project)
+                case .log:
+                    ListLogView(tasks: tasks)
+                case .documents:
+                    DocumentsView(area: area, project: project)
+                case .links:
+                    LinksView(area: area, project: project)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    clearAppEditingFocus()
+                }
+        )
         .background(Theme.bg)
         .navigationTitle(name)
         .sheet(isPresented: $showEdit) {
@@ -181,6 +206,13 @@ private struct ListTasksView: View {
                 .padding(.bottom, 16)
             }
         }
+        .background(
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    clearAppEditingFocus()
+                }
+        )
         .background(Theme.bg)
     }
 
@@ -204,49 +236,61 @@ private struct ListLogView: View {
     }
 
     var body: some View {
-        if doneTasks.isEmpty {
-            EmptyStateView(message: "No completed tasks", subtitle: "Completed tasks will appear here", icon: "checkmark.circle")
-                .padding(.top, 40)
-        } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("\(doneTasks.count) COMPLETED")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .kerning(0.8)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
-                        .padding(.bottom, 8)
+        ZStack {
+            Theme.bg
 
-                    ForEach(doneTasks) { task in
-                        HStack(spacing: 10) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 14))
-                                .foregroundStyle(Theme.green)
+            if doneTasks.isEmpty {
+                EmptyStateView(message: "No completed tasks", subtitle: "Completed tasks will appear here", icon: "checkmark.circle")
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("\(doneTasks.count) COMPLETED")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                            .kerning(0.8)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 16)
+                            .padding(.bottom, 8)
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(task.title)
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Theme.dim)
-                                    .strikethrough(true, color: Theme.dim)
-                                if !task.dueDate.isEmpty {
-                                    Text(task.dueDate)
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(Theme.dim.opacity(0.6))
+                        ForEach(doneTasks) { task in
+                            HStack(spacing: 10) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(Theme.green)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(task.title)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(Theme.dim)
+                                        .strikethrough(true, color: Theme.dim)
+                                    if !task.dueDate.isEmpty {
+                                        Text(task.dueDate)
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Theme.dim.opacity(0.6))
+                                    }
                                 }
+                                Spacer()
                             }
-                            Spacer()
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 8)
-                        .overlay(alignment: .bottom) {
-                            Rectangle().fill(Theme.borderSubtle.opacity(0.4)).frame(height: 0.5)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 8)
+                            .overlay(alignment: .bottom) {
+                                Rectangle().fill(Theme.borderSubtle.opacity(0.4)).frame(height: 0.5)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .background(Theme.bg)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    clearAppEditingFocus()
+                }
+        )
     }
 }
 
