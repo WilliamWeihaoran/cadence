@@ -6,8 +6,8 @@ import Foundation
     var id: UUID = UUID()
     var title: String = ""
     var notes: String = ""
-    var priority: String = "none"       // "high" | "medium" | "low" | "none"
-    var status: String = "todo"         // "todo" | "inprogress" | "done" | "cancelled"
+    var priority: TaskPriority = .none
+    var status: TaskStatus = .todo
     var dueDate: String = ""            // YYYY-MM-DD or ""
     var scheduledDate: String = ""      // YYYY-MM-DD — the day this is time-blocked
     var scheduledStartMin: Int = -1     // minutes from midnight (-1 = not scheduled)
@@ -23,8 +23,8 @@ import Foundation
 
     // MARK: - Computed
 
-    var isDone: Bool { status == "done" }
-    var isCancelled: Bool { status == "cancelled" }
+    var isDone: Bool { status == .done }
+    var isCancelled: Bool { status == .cancelled }
 
     /// End time in minutes from midnight (start + duration, default 60min if no estimate)
     var scheduledEndMin: Int {

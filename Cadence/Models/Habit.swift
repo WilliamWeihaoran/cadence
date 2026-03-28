@@ -6,8 +6,7 @@ import Foundation
     var title: String = ""
     var icon: String = "star.fill"
     var colorHex: String = "#4a9eff"
-    /// "daily" | "daysOfWeek" | "timesPerWeek" | "monthly"
-    var frequencyType: String = "daily"
+    var frequencyType: HabitFrequency = .daily
     /// JSON [Int]: daysOfWeek=[0-6], timesPerWeek=[n], monthly=[dayOfMonth], daily=[]
     var frequencyDaysRaw: String = "[]"
     var targetCount: Int = 1

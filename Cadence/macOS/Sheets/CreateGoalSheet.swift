@@ -13,7 +13,7 @@ struct CreateGoalSheet: View {
     @State private var selectedContextID: UUID? = nil
     @State private var startDate: Date = Date()
     @State private var endDate: Date = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()
-    @State private var progressType = "subtasks"
+    @State private var progressType: GoalProgressType = .subtasks
     @State private var targetHours: Double = 10
     @State private var selectedColor = "#4a9eff"
 
@@ -88,13 +88,13 @@ struct CreateGoalSheet: View {
                     // Progress type
                     fieldLabel("Track Progress By")
                     Picker("", selection: $progressType) {
-                        Text("Subtasks").tag("subtasks")
-                        Text("Hours").tag("hours")
+                        Text("Subtasks").tag(GoalProgressType.subtasks)
+                        Text("Hours").tag(GoalProgressType.hours)
                     }
                     .pickerStyle(.segmented)
 
                     // Target hours (only when "hours")
-                    if progressType == "hours" {
+                    if progressType == .hours {
                         HStack(spacing: 12) {
                             fieldLabel("Target Hours")
                             Spacer()
@@ -160,7 +160,7 @@ struct CreateGoalSheet: View {
         goal.startDate = DateFormatters.dateKey(from: startDate)
         goal.endDate = DateFormatters.dateKey(from: endDate)
         goal.progressType = progressType
-        goal.targetHours = progressType == "hours" ? targetHours : 0
+        goal.targetHours = progressType == .hours ? targetHours : 0
         goal.colorHex = selectedColor
         goal.order = allGoals.count
 

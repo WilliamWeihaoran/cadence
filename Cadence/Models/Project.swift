@@ -6,7 +6,7 @@ import Foundation
     var id: UUID = UUID()
     var name: String = ""
     var desc: String = ""
-    var status: String = "active"   // "active" | "done" | "paused" | "cancelled"
+    var status: ProjectStatus = .active
     var colorHex: String = "#4ecb71"
     var icon: String = "checklist"
     var dueDate: String = ""        // YYYY-MM-DD or ""
@@ -19,11 +19,11 @@ import Foundation
     @Relationship(inverse: \Document.project) var documents: [Document]? = nil
     @Relationship(inverse: \SavedLink.project) var links: [SavedLink]? = nil
 
-    var isDone: Bool { status == "done" }
+    var isDone: Bool { status == .done }
 
     var completionRate: Double {
         let all = tasks ?? []
-        let total = all.filter { $0.status != "cancelled" }.count
+        let total = all.filter { $0.status != .cancelled }.count
         guard total > 0 else { return 0 }
         return Double(all.filter { $0.isDone }.count) / Double(total)
     }

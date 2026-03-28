@@ -221,17 +221,16 @@ private struct HabitDetailView: View {
 
     private var frequencyDescription: String {
         switch habit.frequencyType {
-        case "daily": return "Every day"
-        case "daysOfWeek":
+        case .daily: return "Every day"
+        case .daysOfWeek:
             let days = habit.frequencyDays
             let names = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
             let selected = days.sorted().compactMap { i in names.indices.contains(i) ? names[i] : nil }
             return selected.isEmpty ? "Custom days" : selected.joined(separator: ", ")
-        case "timesPerWeek":
+        case .timesPerWeek:
             return "\(habit.targetCount)x per week"
-        case "monthly":
+        case .monthly:
             return "Monthly"
-        default: return habit.frequencyType
         }
     }
 
@@ -370,14 +369,11 @@ struct CreateHabitSheet: View {
     @State private var title = ""
     @State private var selectedIcon = "star.fill"
     @State private var selectedColor = "#4a9eff"
-    @State private var frequencyType = "daily"
+    @State private var frequencyType: HabitFrequency = .daily
     @State private var selectedDays: Set<Int> = []
     @State private var timesPerWeek = 3
     @State private var monthlyDay = 1
     @State private var selectedContextID: UUID? = nil
-
-    private let freqTypes = ["daily", "daysOfWeek", "timesPerWeek", "monthly"]
-    private let freqLabels = ["Daily", "Days of Week", "Times per Week", "Monthly"]
     private let dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
     var body: some View {
@@ -428,15 +424,15 @@ struct CreateHabitSheet: View {
                     // Frequency type
                     fieldLabel("Frequency")
                     Picker("", selection: $frequencyType) {
-                        ForEach(0..<freqTypes.count, id: \.self) { i in
-                            Text(freqLabels[i]).tag(freqTypes[i])
+                        ForEach(HabitFrequency.allCases, id: \.self) { f in
+                            Text(f.label).tag(f)
                         }
                     }
                     .pickerStyle(.segmented)
 
                     // Frequency details
                     switch frequencyType {
-                    case "daysOfWeek":
+                    case .daysOfWeek:
                         HStack(spacing: 6) {
                             ForEach(0..<7, id: \.self) { i in
                                 let dayVal = i + 1 // Mon=1..Sun=7
@@ -456,7 +452,7 @@ struct CreateHabitSheet: View {
                             }
                         }
 
-                    case "timesPerWeek":
+                    case .timesPerWeek:
                         HStack {
                             Text("Times per week:")
                                 .font(.system(size: 13))
@@ -465,7 +461,7 @@ struct CreateHabitSheet: View {
                                 .foregroundStyle(Theme.text)
                         }
 
-                    case "monthly":
+                    case .monthly:
                         HStack {
                             Text("Day of month:")
                                 .font(.system(size: 13))
@@ -474,7 +470,7 @@ struct CreateHabitSheet: View {
                                 .foregroundStyle(Theme.text)
                         }
 
-                    default:
+                    case .daily:
                         EmptyView()
                     }
                 }
@@ -524,13 +520,13 @@ struct CreateHabitSheet: View {
         habit.order = habits.count
 
         switch frequencyType {
-        case "daysOfWeek":
+        case .daysOfWeek:
             habit.frequencyDays = Array(selectedDays).sorted()
-        case "timesPerWeek":
+        case .timesPerWeek:
             habit.frequencyDays = [timesPerWeek]
-        case "monthly":
+        case .monthly:
             habit.frequencyDays = [monthlyDay]
-        default:
+        case .daily:
             habit.frequencyDays = []
         }
 

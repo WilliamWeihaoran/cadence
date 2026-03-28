@@ -8,11 +8,11 @@ struct KanbanView: View {
     var project: Project? = nil
     @Environment(\.modelContext) private var modelContext
 
-    private let columns: [(status: String, label: String, color: Color)] = [
-        ("todo",        "To Do",       Theme.dim),
-        ("inprogress",  "In Progress", Theme.blue),
-        ("done",        "Done",        Theme.green),
-        ("cancelled",   "Cancelled",   Theme.red),
+    private let columns: [(status: TaskStatus, label: String, color: Color)] = [
+        (.todo,       "To Do",       Theme.dim),
+        (.inProgress, "In Progress", Theme.blue),
+        (.done,       "Done",        Theme.green),
+        (.cancelled,  "Cancelled",   Theme.red),
     ]
 
     var body: some View {
@@ -38,7 +38,7 @@ struct KanbanView: View {
 // MARK: - Column
 
 private struct KanbanColumn: View {
-    let status: String
+    let status: TaskStatus
     let label: String
     let color: Color
     let tasks: [AppTask]
@@ -176,8 +176,8 @@ private struct KanbanCard: View {
             }
 
             HStack(spacing: 6) {
-                if task.priority != "none" {
-                    Text(task.priority.capitalized)
+                if task.priority != .none {
+                    Text(task.priority.label)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Theme.priorityColor(task.priority))
                         .padding(.horizontal, 6)

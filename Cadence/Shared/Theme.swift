@@ -28,21 +28,21 @@ struct Theme {
 
     static let purple = Color(hex: "#a78bfa")
 
-    static func priorityColor(_ priority: String) -> Color {
-        switch priority.lowercased() {
-        case "high": return red
-        case "medium": return amber
-        case "low": return blue
-        default: return dim
+    static func priorityColor(_ priority: TaskPriority) -> Color {
+        switch priority {
+        case .high:   return red
+        case .medium: return amber
+        case .low:    return blue
+        case .none:   return dim
         }
     }
 
-    static func statusColor(_ status: String) -> Color {
-        switch status.lowercased() {
-        case "done": return green
-        case "cancelled": return dim
-        case "inprogress": return blue
-        default: return muted
+    static func statusColor(_ status: TaskStatus) -> Color {
+        switch status {
+        case .done:       return green
+        case .cancelled:  return dim
+        case .inProgress: return blue
+        case .todo:       return muted
         }
     }
 }

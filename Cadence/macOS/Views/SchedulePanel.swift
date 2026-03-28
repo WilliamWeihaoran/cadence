@@ -224,9 +224,9 @@ struct TaskDetailPopover: View {
                 HStack(spacing: 8) {
                     Label("Priority", systemImage: "flag").font(.system(size: 11)).foregroundStyle(Theme.dim).frame(width: 70, alignment: .leading)
                     HStack(spacing: 4) {
-                        ForEach([("none","—"),("low","Low"),("medium","Med"),("high","High")], id: \.0) { p, l in
+                        ForEach(TaskPriority.allCases, id: \.self) { p in
                             Button { task.priority = p } label: {
-                                Text(l).font(.system(size: 10, weight: task.priority == p ? .semibold : .regular))
+                                Text(p == .none ? "—" : p.label).font(.system(size: 10, weight: task.priority == p ? .semibold : .regular))
                                     .foregroundStyle(task.priority == p ? Theme.text : Theme.dim)
                                     .padding(.horizontal, 7).padding(.vertical, 4)
                                     .background(task.priority == p ? Theme.borderSubtle : Color.clear)
@@ -269,7 +269,7 @@ struct TaskDetailPopover: View {
             // Actions
             HStack(spacing: 8) {
                 Button {
-                    task.status = task.isDone ? "todo" : "done"
+                    task.status = task.isDone ? .todo : .done
                 } label: {
                     Label(task.isDone ? "Unmark done" : "Mark done",
                           systemImage: task.isDone ? "circle" : "checkmark.circle.fill")

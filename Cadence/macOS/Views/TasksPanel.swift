@@ -121,7 +121,7 @@ struct MacTaskRow: View {
 
             // Checkbox
             Button {
-                task.status = task.isDone ? "todo" : "done"
+                task.status = task.isDone ? .todo : .done
             } label: {
                 Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(task.isDone ? Theme.green : Theme.dim)
@@ -144,30 +144,30 @@ struct MacTaskRow: View {
                 // Priority Badge
                 Button { showPriorityPicker.toggle() } label: {
                     HStack(spacing: 4) {
-                        if task.priority == "none" {
+                        if task.priority == .none {
                             Text("—").font(.system(size: 10)).foregroundStyle(Theme.dim)
                         } else {
                             Circle().fill(Theme.priorityColor(task.priority)).frame(width: 6, height: 6)
                         }
-                        Text(priorityLabel(task.priority)).font(.system(size: 10)).foregroundStyle(Theme.muted).lineLimit(1)
+                        Text(task.priority.label).font(.system(size: 10)).foregroundStyle(Theme.muted).lineLimit(1)
                         Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold)).foregroundStyle(Theme.dim)
                     }
                 }
                 .buttonStyle(.plain)
                 .popover(isPresented: $showPriorityPicker) {
                     VStack(alignment: .leading, spacing: 2) {
-                        ForEach([("none", "None"), ("low", "Low"), ("medium", "Medium"), ("high", "High")], id: \.0) { p, label in
+                        ForEach(TaskPriority.allCases, id: \.self) { p in
                             Button {
                                 task.priority = p
                                 showPriorityPicker = false
                             } label: {
                                 HStack(spacing: 8) {
-                                    if p == "none" {
+                                    if p == .none {
                                         Text("—").font(.system(size: 12)).foregroundStyle(Theme.dim).frame(width: 7)
                                     } else {
                                         Circle().fill(Theme.priorityColor(p)).frame(width: 7, height: 7)
                                     }
-                                    Text(label).font(.system(size: 12)).foregroundStyle(Theme.text)
+                                    Text(p.label).font(.system(size: 12)).foregroundStyle(Theme.text)
                                     Spacer()
                                     if task.priority == p {
                                         Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.blue)
@@ -246,15 +246,6 @@ struct MacTaskRow: View {
         DateFormatters.shortDateString(from: s)
     }
 
-    private func priorityLabel(_ p: String) -> String {
-        switch p {
-        case "none":   return "None"
-        case "low":    return "Low"
-        case "medium": return "Med"
-        case "high":   return "High"
-        default:       return "None"
-        }
-    }
 }
 // MARK: - Container Picker Badge
 
