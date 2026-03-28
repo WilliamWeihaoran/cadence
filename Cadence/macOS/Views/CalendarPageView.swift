@@ -77,30 +77,7 @@ struct CalendarPageView: View {
                 .background(Theme.blue.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 5))
 
-                HStack(spacing: 4) {
-                    Button { if zoomLevel > 1 { zoomLevel -= 1 } } label: {
-                        Image(systemName: "minus")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(zoomLevel > 1 ? Theme.dim : Theme.dim.opacity(0.3))
-                            .frame(width: 24, height: 24)
-                            .background(Theme.surfaceElevated)
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
-                    }
-                    .buttonStyle(.plain)
-                    Text("\(zoomLevel)×")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(width: 22)
-                    Button { if zoomLevel < 3 { zoomLevel += 1 } } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(zoomLevel < 3 ? Theme.dim : Theme.dim.opacity(0.3))
-                            .frame(width: 24, height: 24)
-                            .background(Theme.surfaceElevated)
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
-                    }
-                    .buttonStyle(.plain)
-                }
+                TimelineZoomControl(zoomLevel: $zoomLevel, range: 1...3)
 
                 HStack(spacing: 2) {
                     ForEach(CalViewMode.allCases, id: \.self) { mode in
@@ -249,13 +226,6 @@ struct CalendarPageView: View {
         return dict
     }
 
-    private func hourLabel(_ hour: Int) -> String {
-        return "\(hour)"
-    }
-
-    private func dateKey(for date: Date) -> String {
-        DateFormatters.dateKey(from: date)
-    }
 }
 
 private struct CalTimeRailLabel: View {
@@ -524,16 +494,10 @@ private struct CalDayColumn: View {
             showCurrentTimeDot: true,
             dropBehavior: .perHour,
             onCreateTask: { title, startMin, endMin in
-                let task = AppTask(title: title)
-                task.scheduledDate = dateKey
-                task.scheduledStartMin = startMin
-                task.estimatedMinutes = max(5, endMin - startMin)
-                modelContext.insert(task)
+                SchedulingActions.createTask(title: title, dateKey: dateKey, startMin: startMin, endMin: endMin, in: modelContext)
             },
             onDropTaskAtMinute: { task, startMin in
-                task.scheduledDate = dateKey
-                task.scheduledStartMin = startMin
-                task.estimatedMinutes = max(task.estimatedMinutes, 60)
+                SchedulingActions.dropTask(task, to: dateKey, startMin: startMin)
             }
         )
         .overlay(alignment: .trailing) {
