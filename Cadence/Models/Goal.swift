@@ -7,11 +7,20 @@ import Foundation
     var desc: String = ""           // definitive outcome
     var startDate: String = ""      // YYYY-MM-DD
     var endDate: String = ""        // YYYY-MM-DD
-    var progressType: GoalProgressType = .subtasks
+    var progressTypeRaw: String = "subtasks"
     var targetHours: Double = 0
     var loggedHours: Double = 0     // manual + future timer data
     var colorHex: String = "#4a9eff"
-    var status: GoalStatus = .active
+    var statusRaw: String = "active"
+
+    var progressType: GoalProgressType {
+        get { GoalProgressType(rawValue: progressTypeRaw) ?? .subtasks }
+        set { progressTypeRaw = newValue.rawValue }
+    }
+    var status: GoalStatus {
+        get { GoalStatus(rawValue: statusRaw) ?? .active }
+        set { statusRaw = newValue.rawValue }
+    }
     var order: Int = 0
     var createdAt: Date = Date()
 

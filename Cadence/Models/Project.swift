@@ -6,7 +6,12 @@ import Foundation
     var id: UUID = UUID()
     var name: String = ""
     var desc: String = ""
-    var status: ProjectStatus = .active
+    var statusRaw: String = "active"
+
+    var status: ProjectStatus {
+        get { ProjectStatus(rawValue: statusRaw) ?? .active }
+        set { statusRaw = newValue.rawValue }
+    }
     var colorHex: String = "#4ecb71"
     var icon: String = "checklist"
     var dueDate: String = ""        // YYYY-MM-DD or ""

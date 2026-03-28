@@ -6,8 +6,17 @@ import Foundation
     var id: UUID = UUID()
     var title: String = ""
     var notes: String = ""
-    var priority: TaskPriority = .none
-    var status: TaskStatus = .todo
+    var priorityRaw: String = "none"
+    var statusRaw: String = "todo"
+
+    var priority: TaskPriority {
+        get { TaskPriority(rawValue: priorityRaw) ?? .none }
+        set { priorityRaw = newValue.rawValue }
+    }
+    var status: TaskStatus {
+        get { TaskStatus(rawValue: statusRaw) ?? .todo }
+        set { statusRaw = newValue.rawValue }
+    }
     var dueDate: String = ""            // YYYY-MM-DD or ""
     var scheduledDate: String = ""      // YYYY-MM-DD — the day this is time-blocked
     var scheduledStartMin: Int = -1     // minutes from midnight (-1 = not scheduled)

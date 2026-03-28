@@ -6,7 +6,12 @@ import Foundation
     var title: String = ""
     var icon: String = "star.fill"
     var colorHex: String = "#4a9eff"
-    var frequencyType: HabitFrequency = .daily
+    var frequencyTypeRaw: String = "daily"
+
+    var frequencyType: HabitFrequency {
+        get { HabitFrequency(rawValue: frequencyTypeRaw) ?? .daily }
+        set { frequencyTypeRaw = newValue.rawValue }
+    }
     /// JSON [Int]: daysOfWeek=[0-6], timesPerWeek=[n], monthly=[dayOfMonth], daily=[]
     var frequencyDaysRaw: String = "[]"
     var targetCount: Int = 1
