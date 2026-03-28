@@ -11,6 +11,7 @@ final class QuickTaskPanelController: NSObject {
     private var panel: QuickTaskPanel?
     private var hostingController: NSHostingController<AnyView>?
     private var clickOutsideMonitor: Any?
+    private var previousApp: NSRunningApplication?
 
     private override init() {}
 
@@ -40,12 +41,17 @@ final class QuickTaskPanelController: NSObject {
 
         positionPanel(panel)
 
-        // Order front BEFORE activating the app.
-        // If Cadence is in a different Space, this places the panel on the
-        // current Space (via .canJoinAllSpaces) so macOS won't switch spaces
-        // when we call NSApp.activate below.
+        // Remember who had focus so we can restore them when the panel closes
+        previousApp = NSWorkspace.shared.frontmostApplication
+
+        // Place the panel on the current Space FIRST (via .canJoinAllSpaces)
         panel.orderFrontRegardless()
-        NSApp.activate(ignoringOtherApps: true)
+
+        // Activate WITHOUT .activateAllWindows — that flag is what causes macOS
+        // to switch to Cadence's Space. Using only .activateIgnoringOtherApps
+        // makes the app active (so it can receive keyboard events) without
+        // forcing all Cadence windows to the front.
+        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
         panel.makeKeyAndOrderFront(nil)
         logger.notice("Ordering quick task panel front")
 
@@ -56,6 +62,9 @@ final class QuickTaskPanelController: NSObject {
         logger.notice("Closing quick task panel")
         stopMonitoringClickOutside()
         panel?.orderOut(nil)
+        // Restore focus to whatever app the user was in before the panel appeared
+        previousApp?.activate(options: [.activateIgnoringOtherApps])
+        previousApp = nil
     }
 
     // MARK: - Click-outside dismissal
