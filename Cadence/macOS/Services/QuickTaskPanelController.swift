@@ -12,6 +12,9 @@ final class QuickTaskPanelController: NSObject {
     private var hostingController: NSHostingController<AnyView>?
     private var clickOutsideMonitor: Any?
     private var previousApp: NSRunningApplication?
+    // Ignore clicks that arrived before the panel was shown (e.g. the click
+    // that focused the previous app is still in-flight when the hotkey fires).
+    private var acceptingDismissal = false
 
     private override init() {}
 
@@ -40,29 +43,33 @@ final class QuickTaskPanelController: NSObject {
         }
 
         positionPanel(panel)
-
-        // Remember who had focus so we can restore them when the panel closes
         previousApp = NSWorkspace.shared.frontmostApplication
 
-        // Place the panel on the current Space FIRST (via .canJoinAllSpaces)
-        panel.orderFrontRegardless()
+        // Reset dismissal gate — clicks that predate the panel must be ignored.
+        acceptingDismissal = false
 
-        // Activate WITHOUT .activateAllWindows — that flag is what causes macOS
-        // to switch to Cadence's Space. Using only .activateIgnoringOtherApps
-        // makes the app active (so it can receive keyboard events) without
-        // forcing all Cadence windows to the front.
-        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
+        // orderFrontRegardless places the panel on the current Space first
+        // (via .canJoinAllSpaces), before we activate the app.
+        panel.orderFrontRegardless()
+        NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         logger.notice("Ordering quick task panel front")
 
         startMonitoringClickOutside()
+
+        // Open the gate after one runloop pass so any pre-existing mouse events
+        // in the queue are consumed without triggering a dismiss.
+        DispatchQueue.main.async { [weak self] in
+            self?.acceptingDismissal = true
+        }
     }
 
     func close() {
+        guard panel?.isVisible == true else { return }
         logger.notice("Closing quick task panel")
+        acceptingDismissal = false
         stopMonitoringClickOutside()
         panel?.orderOut(nil)
-        // Restore focus to whatever app the user was in before the panel appeared
         previousApp?.activate(options: [.activateIgnoringOtherApps])
         previousApp = nil
     }
@@ -74,6 +81,7 @@ final class QuickTaskPanelController: NSObject {
         clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
+            guard self?.acceptingDismissal == true else { return }
             self?.close()
         }
     }
@@ -101,12 +109,9 @@ final class QuickTaskPanelController: NSObject {
         panel.isMovableByWindowBackground = true
         panel.isFloatingPanel = true
         panel.level = .floating
-        // .canJoinAllSpaces: panel is visible on every Space simultaneously
-        // .fullScreenAuxiliary: remains visible when target app goes full-screen
-        // .ignoresCycle: excluded from Cmd+` window cycling
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        // Must be false — true causes the panel to hide during space-switch
-        // deactivation events, which makes the panel vanish before the user sees it
+        // Must be false — hidesOnDeactivate causes the panel to vanish during
+        // space-switch deactivation events before the user sees it.
         panel.hidesOnDeactivate = false
         panel.backgroundColor = .clear
         panel.isOpaque = false
