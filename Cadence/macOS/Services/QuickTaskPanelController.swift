@@ -12,9 +12,8 @@ final class QuickTaskPanelController: NSObject {
     private var hostingController: NSHostingController<AnyView>?
     private var clickOutsideMonitor: Any?
     private var previousApp: NSRunningApplication?
-    // Ignore clicks that arrived before the panel was shown (e.g. the click
-    // that focused the previous app is still in-flight when the hotkey fires).
     private var acceptingDismissal = false
+    private var activationObserver: NSObjectProtocol?
 
     private override init() {}
 
@@ -44,27 +43,46 @@ final class QuickTaskPanelController: NSObject {
 
         positionPanel(panel)
         previousApp = NSWorkspace.shared.frontmostApplication
-
-        // Reset dismissal gate — clicks that predate the panel must be ignored.
         acceptingDismissal = false
 
-        // orderFrontRegardless places the panel on the current Space first
-        // (via .canJoinAllSpaces), before we activate the app.
-        panel.orderFrontRegardless()
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
+        if NSApp.isActive {
+            // Cadence is already frontmost — bring panel up immediately.
+            bringPanelFront(panel)
+        } else {
+            // Cadence is in the background (possibly a different Space).
+            // Activate first; show the panel only after activation settles
+            // so makeKeyAndOrderFront lands in the correct Space context.
+            activationObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self, weak panel] _ in
+                guard let self, let panel else { return }
+                NotificationCenter.default.removeObserver(self.activationObserver as Any)
+                self.activationObserver = nil
+                self.bringPanelFront(panel)
+            }
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    private func bringPanelFront(_ panel: QuickTaskPanel) {
         logger.notice("Ordering quick task panel front")
-
+        panel.makeKeyAndOrderFront(nil)
         startMonitoringClickOutside()
-
-        // Open the gate after one runloop pass so any pre-existing mouse events
-        // in the queue are consumed without triggering a dismiss.
+        // Defer dismissal gate by one runloop pass so any click events
+        // already in the queue (e.g. the click that focused the previous app)
+        // are consumed before we start listening for click-outside dismissals.
         DispatchQueue.main.async { [weak self] in
             self?.acceptingDismissal = true
         }
     }
 
     func close() {
+        if let obs = activationObserver {
+            NotificationCenter.default.removeObserver(obs)
+            activationObserver = nil
+        }
         guard panel?.isVisible == true else { return }
         logger.notice("Closing quick task panel")
         acceptingDismissal = false
