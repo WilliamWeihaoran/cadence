@@ -16,6 +16,15 @@ enum TaskPriority: String, Codable, CaseIterable, Hashable {
         case .high:   return "High"
         }
     }
+
+    var nextCycled: TaskPriority {
+        switch self {
+        case .none: return .low
+        case .low: return .medium
+        case .medium: return .high
+        case .high: return .none
+        }
+    }
 }
 
 enum TaskStatus: String, Codable, CaseIterable, Hashable {

@@ -14,17 +14,20 @@ struct TimelineDayCanvas: View {
     let dropBehavior: TimelineDropBehavior
     let onCreateTask: (String, Int, Int) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
+    var externalEvents: [CalendarEventItem] = []
+    /// Optional: if provided, the drag-to-create popover will offer a "Calendar Event" tab.
+    var onCreateEvent: ((String, Int, Int, String) -> Void)? = nil
 
     @State private var dragStartMin: Int? = nil
     @State private var dragEndMin: Int? = nil
     @State private var pendingStartMin: Int? = nil
     @State private var pendingEndMin: Int? = nil
     @State private var showNewTaskPopover = false
-    @State private var newTaskTitle = ""
     @State private var isDropTargeted = false
     @State private var dropPreviewTaskID: UUID? = nil
     @State private var dropPreviewStartMin: Int? = nil
     @State private var selectedTaskID: UUID? = nil
+    @State private var selectedEventID: String? = nil
     @State private var activeDragTaskID: UUID? = nil
     @State private var dragYOffset: CGFloat = 0
 
@@ -34,16 +37,17 @@ struct TimelineDayCanvas: View {
         pendingStartMin = nil
         pendingEndMin = nil
         showNewTaskPopover = false
-        newTaskTitle = ""
+        selectedEventID = nil
     }
 
     var body: some View {
-        let layouts = computeTimelineLayouts(tasks)
+        let unified = computeUnifiedLayouts(tasks: tasks, events: externalEvents)
+        let layouts = unified.tasks
+        let eventLayouts = unified.events
         // Show preview for both incoming drops and within-canvas moves.
         // We no longer hide the original block — it stays interactive throughout.
         let previewTaskID: UUID? = activeDragTaskID ?? dropPreviewTaskID
         let previewTask = allTasks.first(where: { $0.id == previewTaskID })
-        let previewLayout = layouts.first(where: { $0.task.id == previewTaskID })
 
         ZStack(alignment: .topLeading) {
             Color.clear
@@ -53,6 +57,7 @@ struct TimelineDayCanvas: View {
                 .onTapGesture {
                     clearDraftCreation()
                     selectedTaskID = nil
+                    selectedEventID = nil
                     activeDragTaskID = nil
                 }
                 .onDrop(
@@ -98,7 +103,6 @@ struct TimelineDayCanvas: View {
                             showNewTaskPopover = false
                             pendingStartMin = nil
                             pendingEndMin = nil
-                            newTaskTitle = ""
                             selectedTaskID = nil
                             if dragStartMin == nil { dragStartMin = startMin }
                             dragEndMin = max(endMin, (dragStartMin ?? 0) + 5)
@@ -108,7 +112,6 @@ struct TimelineDayCanvas: View {
                             let actualEnd = max(endMin, actualStart + 5)
                             pendingStartMin = actualStart
                             pendingEndMin = actualEnd
-                            newTaskTitle = ""
                             showNewTaskPopover = true
                             dragStartMin = nil
                             dragEndMin = nil
@@ -145,25 +148,29 @@ struct TimelineDayCanvas: View {
                         attachmentAnchor: .rect(.bounds),
                         arrowEdge: .trailing
                     ) {
-                        QuickCreatePopover(
-                            title: $newTaskTitle,
+                        QuickCreateChoicePopover(
                             startMin: s,
                             endMin: e,
-                            todayKey: dateKey,
-                            onCreate: { title in
+                            onCreateTask: { title in
                                 if let start = pendingStartMin, let end = pendingEndMin {
                                     onCreateTask(title.isEmpty ? "New Task" : title, start, end)
                                 }
                                 showNewTaskPopover = false
                                 pendingStartMin = nil
                                 pendingEndMin = nil
-                                newTaskTitle = ""
+                            },
+                            onCreateEvent: onCreateEvent == nil ? nil : { title, calendarID in
+                                if let start = pendingStartMin, let end = pendingEndMin {
+                                    onCreateEvent?(title.isEmpty ? "New Event" : title, start, end, calendarID)
+                                }
+                                showNewTaskPopover = false
+                                pendingStartMin = nil
+                                pendingEndMin = nil
                             },
                             onCancel: {
                                 showNewTaskPopover = false
                                 pendingStartMin = nil
                                 pendingEndMin = nil
-                                newTaskTitle = ""
                             }
                         )
                     }
@@ -176,18 +183,32 @@ struct TimelineDayCanvas: View {
                     .padding(.leading, style.leadingInset)
             }
 
-            if isDropTargeted, let previewTask, let previewLayout, let previewStartMin = dropPreviewStartMin {
+            if isDropTargeted, let previewTask, let previewStartMin = dropPreviewStartMin {
+                let previewLayout = layouts.first(where: { $0.task.id == previewTask.id })
                 TimelineDraggedTaskPreview(
                     task: previewTask,
                     startMinute: previewStartMin,
                     durationMinutes: previewTask.estimatedMinutes > 0 ? previewTask.estimatedMinutes : 60,
-                    column: previewLayout.column,
-                    totalColumns: previewLayout.totalColumns,
+                    column: previewLayout?.column ?? 0,
+                    totalColumns: previewLayout?.totalColumns ?? 1,
                     totalWidth: width,
                     metrics: metrics,
                     style: style
                 )
                 .zIndex(3)
+            }
+
+            ForEach(eventLayouts, id: \.item.id) { layout in
+                TimelineEventBlock(
+                    item: layout.item,
+                    layout: layout,
+                    totalWidth: width,
+                    metrics: metrics,
+                    style: style,
+                    selectedEventID: $selectedEventID,
+                    selectedTaskID: $selectedTaskID
+                )
+                .zIndex(2)
             }
 
             ForEach(layouts, id: \.task.id) { layout in
@@ -200,7 +221,7 @@ struct TimelineDayCanvas: View {
                     style: style,
                     selectedTaskID: $selectedTaskID,
                     activeDragTaskID: $activeDragTaskID,
-                    onSelect: clearDraftCreation
+                    onSelect: { clearDraftCreation(); selectedEventID = nil }
                 )
                 .zIndex(2)
             }
@@ -212,9 +233,10 @@ struct TimelineDayCanvas: View {
                 style: style,
                 showDot: showCurrentTimeDot
             )
-            .zIndex(1)
+            .zIndex(10)
         }
         .frame(width: width, height: metrics.totalHeight)
+        .coordinateSpace(name: "timelineCanvas")
     }
 }
 

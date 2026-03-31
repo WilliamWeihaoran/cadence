@@ -6,5 +6,7 @@
 	<array>
 		<string>nearby-interaction</string>
 	</array>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Cadence uses Calendar to sync your scheduled tasks as events.</string>
 </dict>
 </plist>

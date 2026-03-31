@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import SwiftData
 
 struct TimelineTaskBlock: View {
     private enum ResizeEdge {
@@ -13,6 +14,8 @@ struct TimelineTaskBlock: View {
     let totalWidth: CGFloat
     let metrics: TimelineMetrics
     let style: TimelineBlockStyle
+    @Environment(\.modelContext) private var modelContext
+    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @Binding var selectedTaskID: UUID?
@@ -51,18 +54,35 @@ struct TimelineTaskBlock: View {
             frame: frame,
             style: style,
             showSelection: selectedTaskID == task.id,
-            showHover: isHovered
+            showHover: isHovered,
+            onToggleDone: { task.status = task.isDone ? .todo : .done }
         )
         .frame(width: frame.width, height: frame.height)
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovered = hovering
             if hovering {
-                hoveredTaskManager.beginHovering(task)
+                hoveredTaskManager.beginHovering(task, source: .timeline)
                 hoveredEditableManager.beginHovering(id: "timeline-task-\(task.id.uuidString)") {
                     onSelect()
                     activeDragTaskID = nil
                     selectedTaskID = task.id
+                } onDelete: {
+                    deleteConfirmationManager.present(
+                        title: "Delete Task?",
+                        message: "This will permanently delete \"\(task.title.isEmpty ? "Untitled" : task.title)\"."
+                    ) {
+                        if hoveredTaskManager.hoveredTask?.id == task.id {
+                            hoveredTaskManager.hoveredTask = nil
+                        }
+                        if selectedTaskID == task.id {
+                            selectedTaskID = nil
+                        }
+                        if activeDragTaskID == task.id {
+                            activeDragTaskID = nil
+                        }
+                        modelContext.delete(task)
+                    }
                 }
             } else {
                 hoveredTaskManager.endHovering(task)
@@ -273,6 +293,26 @@ struct TimelineCurrentTimeOverlay: View {
     }
 }
 
+// MARK: - Diagonal stripe pattern for completed tasks
+
+private struct DiagonalStripeOverlay: View {
+    var body: some View {
+        Canvas { context, size in
+            let spacing: CGFloat = 10
+            let lineWidth: CGFloat = 3
+            let totalLines = Int((size.width + size.height) / spacing) + 2
+            for i in 0..<totalLines {
+                let offset = CGFloat(i) * spacing
+                var path = Path()
+                path.move(to: CGPoint(x: offset - size.height, y: 0))
+                path.addLine(to: CGPoint(x: offset, y: size.height))
+                context.stroke(path, with: .color(.white.opacity(0.10)), lineWidth: lineWidth)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 // MARK: - Rendering helpers
 
 @ViewBuilder
@@ -283,52 +323,102 @@ func timelineBlockBody(
     frame: TimelineBlockFrame,
     style: TimelineBlockStyle,
     showSelection: Bool,
-    showHover: Bool = false
+    showHover: Bool = false,
+    onToggleDone: (() -> Void)? = nil
 ) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-        if frame.height >= 40 {
-            Text(timeRangeLabel)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.78))
-                .lineLimit(1)
+    let taskColor = Color(hex: task.containerColor)
+    HStack(alignment: .top, spacing: 0) {
+        // Left color bar
+        taskColor
+            .opacity(task.isDone ? 0.4 : 1)
+            .frame(width: 3)
+            .clipShape(UnevenRoundedRectangle(
+                topLeadingRadius: style.cornerRadius,
+                bottomLeadingRadius: style.cornerRadius
+            ))
+
+        // Completion button + text
+        HStack(alignment: .top, spacing: 4) {
+            if let onToggleDone {
+                Button(action: onToggleDone) {
+                    Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(task.isDone ? Theme.green : Theme.dim)
+                }
+                .buttonStyle(.cadencePlain)
+                .padding(.top, 1)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                if frame.height >= 58 {
+                    Text(timeRangeLabel)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(taskColor.opacity(0.9))
+                        .lineLimit(1)
+                }
+                if frame.height >= 38 {
+                    Text(task.title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                        .lineLimit(2)
+                    let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes)
+                    if label != "-/-" {
+                        Text(label)
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.dim)
+                    }
+                } else {
+                    let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes)
+                    HStack(spacing: 4) {
+                        Text(task.title)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        if label != "-/-" {
+                            Text(label)
+                                .font(.system(size: 9))
+                                .foregroundStyle(Theme.dim)
+                        }
+                    }
+                }
+            }
         }
-        Text(task.title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.white)
-            .lineLimit(2)
-        if durationMinutes > 0 {
-            Text("\(durationMinutes)m")
-                .font(.system(size: 10))
-                .foregroundStyle(.white.opacity(0.75))
+        .padding(.horizontal, style.horizontalPadding)
+        .padding(.vertical, style.verticalPadding)
+
+        Spacer(minLength: 0)
+    }
+    .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+    .clipped()
+    .background(
+        ZStack {
+            // Opaque base — grid lines never bleed through
+            RoundedRectangle(cornerRadius: style.cornerRadius).fill(Theme.bg)
+            RoundedRectangle(cornerRadius: style.cornerRadius)
+                .fill(taskColor.opacity(task.isDone ? 0.08 : 0.18))
+            if showHover {
+                RoundedRectangle(cornerRadius: style.cornerRadius)
+                    .fill(Theme.blue.opacity(0.06))
+            }
+        }
+    )
+    .overlay {
+        if task.isDone {
+            DiagonalStripeOverlay()
+                .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius))
         }
     }
-    .padding(.horizontal, style.horizontalPadding)
-    .padding(.vertical, style.verticalPadding)
-    .frame(width: frame.width, height: frame.height, alignment: .topLeading)
-    .background(
-        RoundedRectangle(cornerRadius: style.cornerRadius)
-            .fill(Color(hex: task.containerColor).opacity(task.isDone ? 0.45 : 0.85))
-    )
     .overlay(
         RoundedRectangle(cornerRadius: style.cornerRadius)
             .stroke(
                 showSelection
-                ? .white.opacity(0.22)
-                : (showHover ? Theme.blue.opacity(0.32) : .white.opacity(0.08)),
-                lineWidth: 1
+                    ? taskColor.opacity(0.6)
+                    : (showHover ? taskColor.opacity(0.54) : taskColor.opacity(0.22)),
+                lineWidth: showHover ? 1.2 : 1
             )
     )
-    .overlay(alignment: .top) {
-        Rectangle()
-            .fill(
-                showSelection
-                ? .white.opacity(0.95)
-                : (showHover ? Theme.blue.opacity(0.7) : .white.opacity(0.35))
-            )
-            .frame(height: showSelection ? 2 : 1)
-            .padding(.horizontal, 1)
-    }
-    .opacity(task.isDone ? 0.65 : 1.0)
+    .shadow(color: showHover ? taskColor.opacity(0.12) : .clear, radius: 10, y: 2)
 }
 
 func timelineDragPreview(task: AppTask, style: TimelineBlockStyle) -> some View {

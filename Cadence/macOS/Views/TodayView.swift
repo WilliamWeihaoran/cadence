@@ -2,10 +2,6 @@
 import SwiftUI
 
 struct TodayView: View {
-    private var dateString: String {
-        DateFormatters.longDate.string(from: Date())
-    }
-
     var body: some View {
         HSplitView {
             NotePanel()
@@ -18,8 +14,6 @@ struct TodayView: View {
                 .frame(minWidth: 280, idealWidth: 360)
         }
         .background(Theme.bg)
-        .navigationTitle("Today")
-        .navigationSubtitle(dateString)
     }
 }
 
@@ -32,11 +26,11 @@ struct PanelHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(eyebrow.uppercased())
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.dim)
                 .kerning(0.8)
             Text(title)
-                .font(.system(size: 18, weight: .bold))
+                .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(Theme.text)
         }
         .padding(.horizontal, 16)

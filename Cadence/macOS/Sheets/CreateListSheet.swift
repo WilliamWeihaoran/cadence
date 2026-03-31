@@ -115,12 +115,12 @@ struct CreateListSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                     .foregroundStyle(Theme.muted)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                 Button("Create") { create() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
@@ -189,7 +189,7 @@ private struct TypeButton: View {
                     .strokeBorder(isSelected ? Theme.blue.opacity(0.5) : Theme.borderSubtle)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.cadencePlain)
     }
 }
 #endif

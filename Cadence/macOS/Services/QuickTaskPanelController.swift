@@ -12,6 +12,7 @@ final class QuickTaskPanelController: NSObject {
     private var hostingController: NSHostingController<AnyView>?
     private var clickOutsideMonitor: Any?
     private var acceptingDismissal = false
+    private var sizeObserver: NSKeyValueObservation?
 
     private override init() {}
 
@@ -29,12 +30,25 @@ final class QuickTaskPanelController: NSObject {
         .environment(TaskCreationManager.shared)
         .preferredColorScheme(.dark)
 
-        if let hostingController {
-            hostingController.rootView = AnyView(content)
-        } else {
-            let hc = NSHostingController(rootView: AnyView(content))
-            panel.contentViewController = hc
-            self.hostingController = hc
+        // Always create a fresh hosting controller so @State resets on each open
+        sizeObserver?.invalidate()
+        sizeObserver = nil
+        let hc = NSHostingController(rootView: AnyView(content))
+        panel.contentViewController = hc
+        self.hostingController = hc
+        panel.setContentSize(NSSize(width: 680, height: 320))
+
+        // Auto-resize panel to fit SwiftUI content (e.g. when subtasks are added)
+        sizeObserver = hc.observe(\.preferredContentSize, options: [.new]) { [weak self] _, change in
+            guard let self, let panel = self.panel,
+                  let size = change.newValue, size.height > 50, size.width > 0 else { return }
+            DispatchQueue.main.async {
+                var frame = panel.frame
+                let delta = size.height - frame.size.height
+                frame.size.height = size.height
+                frame.origin.y -= delta
+                panel.setFrame(frame, display: true, animate: false)
+            }
         }
 
         positionPanel(panel)
@@ -56,6 +70,8 @@ final class QuickTaskPanelController: NSObject {
     func close() {
         guard panel?.isVisible == true else { return }
         logger.notice("Closing quick task panel")
+        sizeObserver?.invalidate()
+        sizeObserver = nil
         acceptingDismissal = false
         stopMonitoringClickOutside()
         panel?.orderOut(nil)
@@ -86,7 +102,7 @@ final class QuickTaskPanelController: NSObject {
         if let panel { return panel }
 
         let panel = QuickTaskPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 460),
             // .nonactivatingPanel: the panel can become key (receive keyboard
             // input) without activating the application or switching spaces.
             styleMask: [.titled, .fullSizeContentView, .utilityWindow, .nonactivatingPanel],
@@ -111,7 +127,10 @@ final class QuickTaskPanelController: NSObject {
     }
 
     private func positionPanel(_ panel: NSPanel) {
-        let panelSize = panel.frame.size
+        // Use design dimensions directly — panel.frame.size can be zero on the
+        // first show before SwiftUI has completed its initial layout pass.
+        let w: CGFloat = 680
+        let h: CGFloat = max(panel.frame.height > 10 ? panel.frame.height : 320, 280)
         let mouseLocation = NSEvent.mouseLocation
         let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main
 
@@ -119,8 +138,8 @@ final class QuickTaskPanelController: NSObject {
 
         let visibleFrame = screen.visibleFrame
         panel.setFrameOrigin(NSPoint(
-            x: visibleFrame.midX - panelSize.width / 2,
-            y: visibleFrame.midY - panelSize.height / 2
+            x: visibleFrame.midX - w / 2,
+            y: visibleFrame.midY - h / 2
         ))
     }
 }

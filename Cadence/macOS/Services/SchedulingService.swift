@@ -12,6 +12,7 @@ enum SchedulingActions {
         task.scheduledStartMin = startMin
         task.estimatedMinutes = max(5, endMin - startMin)
         context.insert(task)
+        // No calendar sync here — task has no area/project container yet when created from timeline drag
     }
 
     /// Move an existing task to a new date/time. Assigns a 60-min default if the task has no estimate.
@@ -19,6 +20,22 @@ enum SchedulingActions {
         task.scheduledDate = dateKey
         task.scheduledStartMin = startMin
         if task.estimatedMinutes <= 0 { task.estimatedMinutes = 60 }
+        syncToCalendarIfLinked(task)
+    }
+
+    /// Sync a scheduled task to Apple Calendar if its area/project has a linked calendar.
+    static func syncToCalendarIfLinked(_ task: AppTask) {
+        guard CalendarManager.shared.isAuthorized, task.scheduledStartMin >= 0 else { return }
+        let calendarID = task.project?.linkedCalendarID ?? task.area?.linkedCalendarID ?? ""
+        guard !calendarID.isEmpty else { return }
+        CalendarManager.shared.createOrUpdateEvent(for: task, calendarID: calendarID)
+    }
+
+    /// Remove the Apple Calendar event associated with a task, then clear its stored event ID.
+    static func removeFromCalendar(_ task: AppTask) {
+        guard !task.calendarEventID.isEmpty else { return }
+        CalendarManager.shared.deleteEvent(calendarEventID: task.calendarEventID)
+        task.calendarEventID = ""
     }
 }
 
@@ -38,7 +55,7 @@ struct TimelineZoomControl: View {
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 5))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.cadencePlain)
             Text("\(zoomLevel)×")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Theme.dim)
@@ -51,7 +68,7 @@ struct TimelineZoomControl: View {
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 5))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.cadencePlain)
         }
     }
 }

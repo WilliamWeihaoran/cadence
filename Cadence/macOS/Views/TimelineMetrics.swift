@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import EventKit
 
 struct TimelineMetrics {
     let startHour: Int
@@ -38,6 +39,9 @@ struct TimelineBlockStyle {
     let cornerRadius: CGFloat
     let horizontalPadding: CGFloat
     let verticalPadding: CGFloat
+    /// Fraction of the available canvas width that blocks may occupy (0–1).
+    /// The remainder is kept clear as a drag-to-create strip on the right.
+    let blockWidthFraction: CGFloat
 
     static let schedule = TimelineBlockStyle(
         leadingInset: 8,
@@ -47,7 +51,8 @@ struct TimelineBlockStyle {
         minHeight: 24,
         cornerRadius: 6,
         horizontalPadding: 8,
-        verticalPadding: 4
+        verticalPadding: 4,
+        blockWidthFraction: 0.9
     )
 
     static let calendar = TimelineBlockStyle(
@@ -58,7 +63,8 @@ struct TimelineBlockStyle {
         minHeight: 22,
         cornerRadius: 5,
         horizontalPadding: 6,
-        verticalPadding: 3
+        verticalPadding: 3,
+        blockWidthFraction: 0.9
     )
 }
 
@@ -97,13 +103,111 @@ func computeTimelineBlockFrame(
         for: durationMinutes > 0 ? durationMinutes : 60,
         minHeight: style.minHeight
     )
-    let availableWidth = max(0, totalWidth - style.leadingInset - style.trailingInset)
+    let availableWidth = max(0, totalWidth - style.leadingInset - style.trailingInset) * style.blockWidthFraction
     let innerAvailableWidth = availableWidth * max(0, 1 - (style.sideMarginFraction * 2))
     let leftMargin = style.leadingInset + availableWidth * style.sideMarginFraction
     let columnWidth = innerAvailableWidth / CGFloat(max(totalColumns, 1))
     let width = max(0, columnWidth - style.columnSpacing)
     let x = leftMargin + CGFloat(column) * columnWidth
     return TimelineBlockFrame(x: x, y: y, width: width, height: height)
+}
+
+// MARK: - Calendar Event Item
+
+/// Lightweight value type carrying what the timeline needs from an EKEvent.
+struct CalendarEventItem: Identifiable {
+    let id: String
+    let title: String
+    let startMin: Int
+    let durationMinutes: Int
+    let calendarColor: Color
+    let calendarTitle: String
+    let ekEvent: EKEvent
+
+    init(event: EKEvent) {
+        self.id = event.eventIdentifier ?? UUID().uuidString
+        self.title = event.title ?? "Untitled"
+        let cal = Calendar.current
+        let start = event.startDate ?? Date()
+        let comps = cal.dateComponents([.hour, .minute], from: start)
+        self.startMin = max(0, (comps.hour ?? 0) * 60 + (comps.minute ?? 0))
+        let end = event.endDate ?? start
+        let raw = max(5, Int(end.timeIntervalSince(start) / 60))
+        // Cap duration so the block doesn't overflow past midnight
+        self.durationMinutes = min(raw, 24 * 60 - self.startMin)
+        self.calendarColor = Color(cgColor: event.calendar?.cgColor ?? CGColor(gray: 0.5, alpha: 1))
+        self.calendarTitle = event.calendar?.title ?? ""
+        self.ekEvent = event
+    }
+}
+
+// MARK: - Event Layout
+
+struct TimelineEventLayout {
+    let item: CalendarEventItem
+    let column: Int
+    let totalColumns: Int
+}
+
+// MARK: - Unified Layout (tasks + events, overlap-aware)
+
+/// Computes column assignments for tasks and events together so they never visually overlap.
+func computeUnifiedLayouts(
+    tasks: [AppTask],
+    events: [CalendarEventItem]
+) -> (tasks: [TimelineBlockLayout], events: [TimelineEventLayout]) {
+
+    struct RawSlot {
+        enum Kind { case task(AppTask); case event(CalendarEventItem) }
+        let kind: Kind
+        let startMin: Int
+        let endMin: Int
+        var column: Int = 0
+        var totalColumns: Int = 1
+    }
+
+    var slots: [RawSlot] = []
+    for task in tasks {
+        let start = task.scheduledStartMin
+        let end = start + max(task.estimatedMinutes > 0 ? task.estimatedMinutes : 60, 5)
+        slots.append(RawSlot(kind: .task(task), startMin: start, endMin: end))
+    }
+    for event in events {
+        let end = event.startMin + max(event.durationMinutes, 5)
+        slots.append(RawSlot(kind: .event(event), startMin: event.startMin, endMin: end))
+    }
+
+    slots.sort { $0.startMin < $1.startMin }
+
+    // Assign columns
+    for i in slots.indices {
+        let usedCols = Set(slots[0..<i].filter { other in
+            slots[i].startMin < other.endMin && slots[i].endMin > other.startMin
+        }.map(\.column))
+        var col = 0
+        while usedCols.contains(col) { col += 1 }
+        slots[i].column = col
+    }
+
+    // Compute totalColumns per slot
+    for i in slots.indices {
+        let overlapping = slots.filter { other in
+            slots[i].startMin < other.endMin && slots[i].endMin > other.startMin
+        }
+        slots[i].totalColumns = (overlapping.map(\.column).max() ?? 0) + 1
+    }
+
+    var taskLayouts: [TimelineBlockLayout] = []
+    var eventLayouts: [TimelineEventLayout] = []
+    for slot in slots {
+        switch slot.kind {
+        case .task(let task):
+            taskLayouts.append(TimelineBlockLayout(task: task, column: slot.column, totalColumns: slot.totalColumns))
+        case .event(let event):
+            eventLayouts.append(TimelineEventLayout(item: event, column: slot.column, totalColumns: slot.totalColumns))
+        }
+    }
+    return (taskLayouts, eventLayouts)
 }
 
 func computeTimelineLayouts(_ tasks: [AppTask]) -> [TimelineBlockLayout] {

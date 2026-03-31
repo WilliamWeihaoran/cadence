@@ -9,15 +9,26 @@ struct CadenceApp: App {
         WindowGroup {
 #if os(macOS)
             macOSRootView()
+                .environment(ThemeManager.shared)
                 .environment(CalendarManager.shared)
                 .environment(FocusManager.shared)
+                .environment(DeleteConfirmationManager.shared)
                 .environment(HoveredTaskManager.shared)
                 .environment(HoveredEditableManager.shared)
+                .environment(HoveredKanbanColumnManager.shared)
+                .environment(HoveredSectionManager.shared)
+                .environment(HoveredTaskDatePickerManager.shared)
+                .environment(TaskCompletionAnimationManager.shared)
+                .environment(SectionCompletionAnimationManager.shared)
                 .environment(TaskCreationManager.shared)
 #else
             iOSRootView()
+                .environment(ThemeManager.shared)
 #endif
         }
         .modelContainer(sharedModelContainer)
+#if os(macOS)
+        .windowStyle(.hiddenTitleBar)
+#endif
     }
 }

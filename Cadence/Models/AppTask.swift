@@ -1,6 +1,61 @@
 import SwiftData
 import Foundation
 
+enum TaskSectionDefaults {
+    static let defaultName = "Default"
+    static let defaultColorHex = "#6b7a99"
+}
+
+struct TaskSectionConfig: Codable, Hashable, Identifiable {
+    var uuid: UUID = UUID()
+    var name: String
+    var colorHex: String = TaskSectionDefaults.defaultColorHex
+    var dueDate: String = ""
+    var isCompleted: Bool = false
+    var isArchived: Bool = false
+
+    var id: UUID { uuid }
+
+    var isDefault: Bool {
+        name.caseInsensitiveCompare(TaskSectionDefaults.defaultName) == .orderedSame
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case uuid
+        case name
+        case colorHex
+        case dueDate
+        case isCompleted
+        case isArchived
+    }
+
+    init(
+        uuid: UUID = UUID(),
+        name: String,
+        colorHex: String = TaskSectionDefaults.defaultColorHex,
+        dueDate: String = "",
+        isCompleted: Bool = false,
+        isArchived: Bool = false
+    ) {
+        self.uuid = uuid
+        self.name = name
+        self.colorHex = colorHex
+        self.dueDate = dueDate
+        self.isCompleted = isCompleted
+        self.isArchived = isArchived
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        uuid = try container.decodeIfPresent(UUID.self, forKey: .uuid) ?? UUID()
+        name = try container.decode(String.self, forKey: .name)
+        colorHex = try container.decodeIfPresent(String.self, forKey: .colorHex) ?? TaskSectionDefaults.defaultColorHex
+        dueDate = try container.decodeIfPresent(String.self, forKey: .dueDate) ?? ""
+        isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
+        isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+    }
+}
+
 /// A concrete action item. Lives inside an Area, Project, Goal, or as an inbox item.
 @Model final class AppTask {
     var id: UUID = UUID()
@@ -21,7 +76,9 @@ import Foundation
     var scheduledDate: String = ""      // YYYY-MM-DD — the day this is time-blocked
     var scheduledStartMin: Int = -1     // minutes from midnight (-1 = not scheduled)
     var estimatedMinutes: Int = 0       // 0 = no estimate
+    var actualMinutes: Int = 0          // cumulative actual time logged
     var calendarEventID: String = ""    // EKEvent identifier
+    var sectionName: String = TaskSectionDefaults.defaultName
     var order: Int = 0
     var createdAt: Date = Date()
 
@@ -29,6 +86,7 @@ import Foundation
     var project: Project? = nil
     var goal: Goal? = nil
     var context: Context? = nil         // denormalized for efficient queries
+    var subtasks: [Subtask]? = nil
 
     // MARK: - Computed
 
@@ -47,6 +105,11 @@ import Foundation
 
     var containerColor: String {
         goal?.colorHex ?? area?.colorHex ?? project?.colorHex ?? "#6b7a99"
+    }
+
+    var resolvedSectionName: String {
+        let trimmed = sectionName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? TaskSectionDefaults.defaultName : trimmed
     }
 
     init(title: String) {

@@ -7,16 +7,19 @@ import SwiftData
 struct EditAreaSheet: View {
     @Bindable var area: Area
     @Environment(\.dismiss) private var dismiss
+    @Environment(CalendarManager.self) private var calendarManager
 
     @State private var name: String
     @State private var selectedColor: String
     @State private var selectedIcon: String
+    @State private var selectedCalendarID: String
 
     init(area: Area) {
         self.area = area
         _name = State(initialValue: area.name)
         _selectedColor = State(initialValue: area.colorHex)
         _selectedIcon = State(initialValue: area.icon)
+        _selectedCalendarID = State(initialValue: area.linkedCalendarID)
     }
 
     var body: some View {
@@ -24,6 +27,7 @@ struct EditAreaSheet: View {
             area.name = name
             area.colorHex = selectedColor
             area.icon = selectedIcon
+            area.linkedCalendarID = selectedCalendarID
             dismiss()
         }
     }
@@ -57,6 +61,14 @@ struct EditAreaSheet: View {
 
                     fieldLabel("Icon")
                     IconGrid(selected: $selectedIcon)
+
+                    if calendarManager.isAuthorized {
+                        fieldLabel("Apple Calendar")
+                        CadenceCalendarPickerButton(
+                            calendars: calendarManager.availableCalendars,
+                            selectedID: $selectedCalendarID
+                        )
+                    }
                 }
                 .padding(24)
             }
@@ -66,12 +78,12 @@ struct EditAreaSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                     .foregroundStyle(Theme.muted)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                 Button("Save") { onSave() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
@@ -99,18 +111,21 @@ struct EditAreaSheet: View {
 struct EditProjectSheet: View {
     @Bindable var project: Project
     @Environment(\.dismiss) private var dismiss
+    @Environment(CalendarManager.self) private var calendarManager
 
     @State private var name: String
     @State private var selectedColor: String
     @State private var selectedIcon: String
     @State private var dueDate: Date
     @State private var hasDueDate: Bool
+    @State private var selectedCalendarID: String
 
     init(project: Project) {
         self.project = project
         _name = State(initialValue: project.name)
         _selectedColor = State(initialValue: project.colorHex)
         _selectedIcon = State(initialValue: project.icon)
+        _selectedCalendarID = State(initialValue: project.linkedCalendarID)
         if !project.dueDate.isEmpty, let d = DateFormatters.date(from: project.dueDate) {
             _hasDueDate = State(initialValue: true)
             _dueDate = State(initialValue: d)
@@ -163,6 +178,14 @@ struct EditProjectSheet: View {
 
                     fieldLabel("Icon")
                     IconGrid(selected: $selectedIcon)
+
+                    if calendarManager.isAuthorized {
+                        fieldLabel("Apple Calendar")
+                        CadenceCalendarPickerButton(
+                            calendars: calendarManager.availableCalendars,
+                            selectedID: $selectedCalendarID
+                        )
+                    }
                 }
                 .padding(24)
             }
@@ -172,12 +195,12 @@ struct EditProjectSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                     .foregroundStyle(Theme.muted)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                 Button("Save") { save() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
@@ -197,6 +220,7 @@ struct EditProjectSheet: View {
         project.colorHex = selectedColor
         project.icon = selectedIcon
         project.dueDate = hasDueDate ? DateFormatters.dateKey(from: dueDate) : ""
+        project.linkedCalendarID = selectedCalendarID
         dismiss()
     }
 
@@ -207,4 +231,5 @@ struct EditProjectSheet: View {
             .kerning(0.8)
     }
 }
+
 #endif

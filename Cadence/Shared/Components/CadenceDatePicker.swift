@@ -27,12 +27,14 @@ struct CadenceDatePicker: View {
                     .foregroundStyle(Theme.text)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.vertical, 7)
+            .frame(minHeight: 30)
+            .contentShape(Rectangle())
             .background(Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: 7))
             .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.borderSubtle))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.cadencePlain)
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
             MonthCalendarPanel(selection: $selection, viewMonth: $viewMonth, isOpen: $isOpen)
         }
@@ -57,38 +59,28 @@ struct MonthCalendarPanel: View {
 
     private let cal = Calendar.current
     private let dayNames = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
+    private let visibleMonthOffsets = Array(-24...24)
 
     var body: some View {
         VStack(spacing: 0) {
-            // Month navigation header
-            HStack(spacing: 8) {
-                Button { shiftMonth(-1) } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.muted)
-                        .frame(width: 26, height: 26)
-                        .background(Theme.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Text(monthTitle)
-                    .font(.system(size: 13, weight: .semibold))
+            HStack {
+                Text("Scroll to Browse Months")
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.text)
-
                 Spacer()
-
-                Button { shiftMonth(1) } label: {
-                    Image(systemName: "chevron.right")
+                Button {
+                    selection = cal.startOfDay(for: Date())
+                    syncViewMonthToSelection()
+                } label: {
+                    Text("Today")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.muted)
-                        .frame(width: 26, height: 26)
-                        .background(Theme.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .foregroundStyle(Theme.blue)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Theme.blue.opacity(0.10))
+                        .clipShape(Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.cadencePlain)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -105,62 +97,83 @@ struct MonthCalendarPanel: View {
             .padding(.horizontal, 8)
             .padding(.bottom, 4)
 
-            // Calendar grid
-            let days = calendarDays()
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
-                ForEach(days.indices, id: \.self) { i in
-                    if let d = days[i] {
-                        let isSelected = cal.isDate(d, inSameDayAs: selection)
-                        let isToday = cal.isDateInToday(d)
-                        Button {
-                            selection = d
-                            isOpen = false
-                        } label: {
-                            Text("\(cal.component(.day, from: d))")
-                                .font(.system(size: 12, weight: isSelected || isToday ? .semibold : .regular))
-                                .foregroundStyle(isSelected ? .white : (isToday ? Theme.blue : Theme.text))
-                                .frame(width: 30, height: 30)
-                                .background(
-                                    Circle().fill(isSelected ? Theme.blue : (isToday ? Theme.blue.opacity(0.15) : Color.clear))
-                                )
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(visibleMonthOffsets, id: \.self) { offset in
+                            let month = cal.date(byAdding: .month, value: offset, to: anchorMonth) ?? anchorMonth
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(DateFormatters.monthYear.string(from: month))
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Theme.text)
+                                    .padding(.horizontal, 8)
+                                    .padding(.top, 2)
+
+                                let days = calendarDays(for: month)
+                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
+                                    ForEach(days.indices, id: \.self) { i in
+                                        if let d = days[i] {
+                                            let isSelected = cal.isDate(d, inSameDayAs: selection)
+                                            let isToday = cal.isDateInToday(d)
+                                            Button {
+                                                selection = d
+                                                syncViewMonthToSelection()
+                                                isOpen = false
+                                            } label: {
+                                                ZStack {
+                                                    Circle()
+                                                        .fill(isSelected ? Theme.blue : (isToday ? Theme.blue.opacity(0.15) : Color.clear))
+
+                                                    Text("\(cal.component(.day, from: d))")
+                                                        .font(.system(size: 12, weight: isSelected || isToday ? .semibold : .regular))
+                                                        .foregroundStyle(isSelected ? .white : (isToday ? Theme.blue : Theme.text))
+                                                }
+                                                .frame(width: 34, height: 34)
+                                                .contentShape(Circle())
+                                            }
+                                            .buttonStyle(.cadencePlain)
+                                            .modifier(PickerHoverHighlight(cornerRadius: 17))
+                                        } else {
+                                            Color.clear.frame(width: 34, height: 34)
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 8)
+                            }
+                            .id(monthID(for: offset))
                         }
-                        .buttonStyle(.plain)
-                    } else {
-                        Color.clear.frame(width: 30, height: 30)
+                    }
+                }
+                .frame(height: 294)
+                .onAppear {
+                    DispatchQueue.main.async {
+                        proxy.scrollTo(monthID(for: 0), anchor: .top)
                     }
                 }
             }
-            .padding(.horizontal, 8)
-
-            // Today shortcut
-            Button {
-                selection = cal.startOfDay(for: Date())
-                isOpen = false
-            } label: {
-                Text("Today")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.blue)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 7)
-                    .background(Theme.blue.opacity(0.1))
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 8)
         }
         .frame(width: 256)
         .background(Theme.surfaceElevated)
     }
 
-    private var monthTitle: String {
-        DateFormatters.monthYear.string(from: viewMonth)
-    }
-
-    private func shiftMonth(_ delta: Int) {
-        viewMonth = cal.date(byAdding: .month, value: delta, to: viewMonth) ?? viewMonth
-    }
-
-    private func calendarDays() -> [Date?] {
+    private var anchorMonth: Date {
         var comps = cal.dateComponents([.year, .month], from: viewMonth)
+        comps.day = 1
+        return cal.date(from: comps) ?? viewMonth
+    }
+
+    private func syncViewMonthToSelection() {
+        var comps = cal.dateComponents([.year, .month], from: selection)
+        comps.day = 1
+        viewMonth = cal.date(from: comps) ?? selection
+    }
+
+    private func monthID(for offset: Int) -> String {
+        "picker_month_\(offset)"
+    }
+
+    private func calendarDays(for month: Date) -> [Date?] {
+        var comps = cal.dateComponents([.year, .month], from: month)
         comps.day = 1
         guard let firstOfMonth = cal.date(from: comps) else { return [] }
         let firstWeekday = cal.component(.weekday, from: firstOfMonth) - 1
@@ -171,5 +184,21 @@ struct MonthCalendarPanel: View {
         }
         while days.count % 7 != 0 { days.append(nil) }
         return days
+    }
+}
+
+private struct PickerHoverHighlight: ViewModifier {
+    let cornerRadius: CGFloat
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .padding(2)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(isHovered ? Theme.blue.opacity(0.08) : Color.clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .onHover { isHovered = $0 }
     }
 }

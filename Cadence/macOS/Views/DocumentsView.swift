@@ -7,6 +7,7 @@ struct DocumentsView: View {
     var project: Project? = nil
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @State private var selectedDocID: UUID? = nil
     @Query(sort: \Document.order) private var allDocs: [Document]
 
@@ -39,7 +40,7 @@ struct DocumentsView: View {
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.blue)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
@@ -73,7 +74,7 @@ struct DocumentsView: View {
                     Spacer()
                 }
             }
-            .frame(minWidth: 180, idealWidth: 220)
+            .frame(minWidth: 160, idealWidth: 200, maxWidth: 260)
             .background(Theme.surface)
 
             // Editor
@@ -108,8 +109,15 @@ struct DocumentsView: View {
     }
 
     private func deleteDoc(_ doc: Document) {
-        if selectedDocID == doc.id { selectedDocID = docs.first { $0.id != doc.id }?.id }
-        modelContext.delete(doc)
+        deleteConfirmationManager.present(
+            title: "Delete Document?",
+            message: "This will permanently delete \"\(doc.title.isEmpty ? "Untitled" : doc.title)\"."
+        ) {
+            if selectedDocID == doc.id {
+                selectedDocID = docs.first { $0.id != doc.id }?.id
+            }
+            modelContext.delete(doc)
+        }
     }
 }
 
@@ -146,6 +154,11 @@ private struct DocRow: View {
         .padding(.vertical, 7)
         .background(isSelected ? Theme.blue.opacity(0.15) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .cadenceHoverHighlight(
+            cornerRadius: 6,
+            fillColor: Theme.blue.opacity(isSelected ? 0.16 : 0.06),
+            strokeColor: Theme.blue.opacity(isSelected ? 0.24 : 0.12)
+        )
         .onTapGesture(count: 2) {
             isEditingTitle = true
             focused = true

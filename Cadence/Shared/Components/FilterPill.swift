@@ -37,6 +37,6 @@ struct FilterPill: View {
                     )
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.cadencePlain)
     }
 }

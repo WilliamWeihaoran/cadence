@@ -32,7 +32,7 @@ struct HabitsView: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Theme.blue)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 20)
@@ -153,7 +153,7 @@ private struct HabitListRow: View {
                     .font(.system(size: 20))
                     .foregroundStyle(isDoneToday ? Color(hex: habit.colorHex) : Theme.borderSubtle)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.cadencePlain)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -443,7 +443,7 @@ struct CreateHabitSheet: View {
                                         selectedDays.insert(dayVal)
                                     }
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.cadencePlain)
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(selectedDays.contains(dayVal) ? .white : Theme.dim)
                                 .frame(width: 36, height: 28)
@@ -482,12 +482,12 @@ struct CreateHabitSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                     .foregroundStyle(Theme.muted)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                 Button("Create") { create() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)

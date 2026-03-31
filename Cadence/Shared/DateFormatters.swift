@@ -83,6 +83,59 @@ enum DateFormatters {
         guard let date = ymd.date(from: key) else { return key }
         return shortDate.string(from: date)
     }
+
+    static func dayOffset(from key: String, relativeTo referenceDate: Date = Date()) -> Int? {
+        guard let date = ymd.date(from: key) else { return nil }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: referenceDate)
+        let target = cal.startOfDay(for: date)
+        return cal.dateComponents([.day], from: today, to: target).day
+    }
+
+    /// Converts a `yyyy-MM-dd` storage key to a relative string using task-friendly rules:
+    /// "Today", "Tomorrow", "Yesterday", "in 5 days", "30 days ago", or "Mar 28"
+    static func relativeDate(from key: String) -> String {
+        guard let date = ymd.date(from: key) else { return key }
+        let diff = dayOffset(from: key) ?? Int.max
+        switch diff {
+        case 0:          return "Today"
+        case 1:          return "Tomorrow"
+        case -1:         return "Yesterday"
+        case 2...13:     return "in \(diff) days"
+        case Int.min ..< -1: return "\(-diff) days ago"
+        default:         return shortDate.string(from: date)
+        }
+    }
+
+    // MARK: - Week keys
+
+    /// Returns the current ISO week key: "2026-W13"
+    static func currentWeekKey() -> String { weekKey(from: Date()) }
+
+    /// Converts a Date to an ISO week key: "2026-W13"
+    static func weekKey(from date: Date) -> String {
+        var cal = Calendar(identifier: .iso8601)
+        cal.locale = Locale(identifier: "en_US_POSIX")
+        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        let year = comps.yearForWeekOfYear ?? cal.component(.year, from: date)
+        let week = comps.weekOfYear ?? 1
+        return String(format: "%d-W%02d", year, week)
+    }
+
+    /// Converts an ISO week key to a human-readable label: "Week of Mar 23"
+    static func weekLabel(from weekKey: String) -> String {
+        let parts = weekKey.components(separatedBy: "-W")
+        guard parts.count == 2,
+              let year = Int(parts[0]), let week = Int(parts[1]) else { return weekKey }
+        var cal = Calendar(identifier: .iso8601)
+        cal.locale = Locale(identifier: "en_US_POSIX")
+        var comps = DateComponents()
+        comps.yearForWeekOfYear = year
+        comps.weekOfYear = week
+        comps.weekday = 2 // Monday
+        guard let monday = cal.date(from: comps) else { return weekKey }
+        return "Week of \(shortDate.string(from: monday))"
+    }
 }
 
 // MARK: - Time Formatters
@@ -100,5 +153,18 @@ enum TimeFormatters {
     /// Formats a start/end minute pair as a range: "1:15 AM – 2:15 AM"
     static func timeRange(startMin: Int, endMin: Int) -> String {
         "\(timeString(from: startMin)) – \(timeString(from: endMin))"
+    }
+
+    /// Compact actual/estimated label: "3m/15m", "1h/2h", "-/30m", "45m/-", etc.
+    /// Shows minutes for <60 min, hours (with one decimal if fractional) for ≥60 min.
+    /// Returns "-" for any zero/negative value.
+    static func durationLabel(actual: Int, estimated: Int) -> String {
+        func fmt(_ m: Int) -> String {
+            guard m > 0 else { return "-" }
+            if m < 60 { return "\(m)m" }
+            if m % 60 == 0 { return "\(m / 60)h" }
+            return String(format: "%.1fh", Double(m) / 60.0)
+        }
+        return "\(fmt(actual))/\(fmt(estimated))"
     }
 }

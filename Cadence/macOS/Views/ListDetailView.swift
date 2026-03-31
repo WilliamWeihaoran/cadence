@@ -28,13 +28,36 @@ struct ProjectDetailLoader: View {
 
 // MARK: - Detail View
 
+enum ListDetailPage: String, CaseIterable, Identifiable {
+    case tasks     = "Tasks"
+    case kanban    = "Kanban"
+    case documents = "Documents"
+    case links     = "Links"
+    case completed = "Completed"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .tasks:     return "checkmark.square"
+        case .kanban:    return "square.grid.3x2"
+        case .documents: return "doc.text"
+        case .links:     return "link"
+        case .completed: return "list.bullet.clipboard"
+        }
+    }
+}
+
 private struct ListDetailView: View {
     var area: Area?
     var project: Project?
 
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
-    @State private var tab: Tab = .tasks
+    @AppStorage("listDetailDefaultPage") private var defaultPageRawValue = ListDetailPage.tasks.rawValue
+    @State private var tab: ListDetailPage = .tasks
     @State private var showEdit = false
+    @State private var keyMonitor: Any? = nil
+    @State private var showArchivedKanbanColumns = false
 
     private var name: String     { area?.name     ?? project?.name     ?? "" }
     private var colorHex: String { area?.colorHex ?? project?.colorHex ?? "#4a9eff" }
@@ -43,21 +66,14 @@ private struct ListDetailView: View {
     private var editableHoverID: String {
         "list-detail-\(area?.id.uuidString ?? project?.id.uuidString ?? "unknown")"
     }
-
-    enum Tab: String, CaseIterable {
-        case tasks     = "Tasks"
-        case log       = "Log"
-        case documents = "Documents"
-        case links     = "Links"
-
-        var icon: String {
-            switch self {
-            case .tasks:     return "checkmark.square"
-            case .log:       return "list.bullet.clipboard"
-            case .documents: return "doc.text"
-            case .links:     return "link"
-            }
+    private var tabDefaultsKey: String {
+        if let area {
+            return "listDetailTab.area.\(area.id.uuidString)"
         }
+        if let project {
+            return "listDetailTab.project.\(project.id.uuidString)"
+        }
+        return "listDetailTab.unknown"
     }
 
     var body: some View {
@@ -68,7 +84,7 @@ private struct ListDetailView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color(hex: colorHex))
                 Text(name)
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(Theme.text)
                 Spacer()
 
@@ -96,7 +112,7 @@ private struct ListDetailView: View {
                         .background(Theme.surfaceElevated)
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.cadencePlain)
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
@@ -114,12 +130,44 @@ private struct ListDetailView: View {
 
             // Tab bar
             HStack(spacing: 0) {
-                ForEach(Tab.allCases, id: \.self) { t in
+                ForEach(ListDetailPage.allCases, id: \.self) { t in
                     TabButton(tab: t, isSelected: tab == t) { tab = t }
                 }
                 Spacer()
+                if tab == .kanban, allowsSectionEditing {
+                    Button {
+                        showArchivedKanbanColumns.toggle()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: showArchivedKanbanColumns ? "archivebox.fill" : "archivebox")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(showArchivedKanbanColumns ? "Archived" : "Show Archived")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundStyle(showArchivedKanbanColumns ? Theme.blue : Theme.dim)
+                        .frame(minHeight: 32)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                        .background(showArchivedKanbanColumns ? Theme.blue.opacity(0.16) : Theme.surfaceElevated.opacity(0.92))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.cadencePlain)
+                    .padding(.trailing, 4)
+                }
             }
             .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Theme.surface.opacity(0.82))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Theme.borderSubtle.opacity(0.85))
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 2)
 
             Divider().background(Theme.borderSubtle)
 
@@ -127,12 +175,19 @@ private struct ListDetailView: View {
                 switch tab {
                 case .tasks:
                     ListTasksView(tasks: tasks, area: area, project: project)
-                case .log:
-                    ListLogView(tasks: tasks)
+                case .kanban:
+                    ListSectionsKanbanView(
+                        tasks: tasks,
+                        area: area,
+                        project: project,
+                        showArchived: $showArchivedKanbanColumns
+                    )
                 case .documents:
                     DocumentsView(area: area, project: project)
                 case .links:
                     LinksView(area: area, project: project)
+                case .completed:
+                    ListLogView(tasks: tasks)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -146,7 +201,6 @@ private struct ListDetailView: View {
                 }
         )
         .background(Theme.bg)
-        .navigationTitle(name)
         .sheet(isPresented: $showEdit) {
             if let area = area {
                 EditAreaSheet(area: area)
@@ -154,10 +208,66 @@ private struct ListDetailView: View {
                 EditProjectSheet(project: project)
             }
         }
+        .onAppear {
+            restoreRememberedTab()
+            installKeyMonitorIfNeeded()
+        }
+        .onDisappear {
+            removeKeyMonitor()
+        }
+        .onChange(of: tab) { _, newValue in
+            UserDefaults.standard.set(newValue.rawValue, forKey: tabDefaultsKey)
+        }
     }
 
     private func shortDate(_ yyyy_mm_dd: String) -> String {
         DateFormatters.shortDateString(from: yyyy_mm_dd)
+    }
+
+    private var allowsSectionEditing: Bool {
+        area != nil || project != nil
+    }
+
+    private func restoreRememberedTab() {
+        guard let rawValue = UserDefaults.standard.string(forKey: tabDefaultsKey),
+              let rememberedTab = ListDetailPage(rawValue: rawValue) else {
+            if let defaultPage = ListDetailPage(rawValue: defaultPageRawValue) {
+                tab = defaultPage
+            }
+            return
+        }
+        tab = rememberedTab
+    }
+
+    private func installKeyMonitorIfNeeded() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags.contains(.command), flags.contains(.shift) else { return event }
+            switch event.keyCode {
+            case 33: // [
+                moveTab(by: -1)
+                return nil
+            case 30: // ]
+                moveTab(by: 1)
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+
+    private func removeKeyMonitor() {
+        guard let keyMonitor else { return }
+        NSEvent.removeMonitor(keyMonitor)
+        self.keyMonitor = nil
+    }
+
+    private func moveTab(by delta: Int) {
+        let tabs = ListDetailPage.allCases
+        guard let currentIndex = tabs.firstIndex(of: tab), !tabs.isEmpty else { return }
+        let nextIndex = (currentIndex + delta + tabs.count) % tabs.count
+        tab = tabs[nextIndex]
     }
 }
 
@@ -169,10 +279,12 @@ private struct ListTasksView: View {
     var project: Project?
     @Environment(\.modelContext) private var modelContext
     @State private var newTitle = ""
+    @State private var selectedSectionName = TaskSectionDefaults.defaultName
     @FocusState private var addFocused: Bool
 
     private var activeTasks: [AppTask] { tasks.filter { !$0.isDone && !$0.isCancelled }.sorted { $0.order < $1.order } }
     private var doneTasks:   [AppTask] { tasks.filter {  $0.isDone }.sorted { $0.order < $1.order } }
+    private var sectionNames: [String] { area?.sectionNames ?? project?.sectionNames ?? [TaskSectionDefaults.defaultName] }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -180,31 +292,54 @@ private struct ListTasksView: View {
             HStack(spacing: 8) {
                 Image(systemName: "plus.circle.fill").foregroundStyle(Theme.blue).font(.system(size: 13))
                 TextField("Add a task…", text: $newTitle)
-                    .textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(Theme.text)
+                    .textFieldStyle(.plain).font(.system(size: 14)).foregroundStyle(Theme.text)
                     .focused($addFocused).onSubmit { addTask() }
+                TaskSectionPickerBadge(selection: $selectedSectionName, sections: sectionNames)
             }
             .padding(.horizontal, 20).padding(.vertical, 10)
             .background(Theme.surfaceElevated)
             Divider().background(Theme.borderSubtle)
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    if activeTasks.isEmpty && doneTasks.isEmpty {
-                        EmptyStateView(message: "No tasks", subtitle: "Add a task above", icon: "checkmark.circle")
-                            .padding(.top, 40)
-                    }
-                    if !activeTasks.isEmpty {
-                        ForEach(activeTasks) { task in MacTaskRow(task: task) }
-                    }
-                    if !doneTasks.isEmpty {
-                        Text("DONE")
-                            .font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.green).kerning(0.8)
-                            .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 4)
-                        ForEach(doneTasks) { task in MacTaskRow(task: task) }
+            List {
+                if activeTasks.isEmpty && doneTasks.isEmpty {
+                    EmptyStateView(message: "No tasks", subtitle: "Add a task above", icon: "checkmark.circle")
+                        .padding(.top, 40)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
+                ForEach(activeTasks) { task in
+                    MacTaskRow(task: task, style: .list)
+                        .listRowInsets(.init())
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .draggable("listTask:\(task.id.uuidString)")
+                        .dropDestination(for: String.self) { items, _ in
+                            guard let payload = items.first,
+                                  payload.hasPrefix("listTask:"),
+                                  let droppedID = UUID(uuidString: String(payload.dropFirst(9))),
+                                  droppedID != task.id else { return false }
+                            reorderTask(droppedID: droppedID, targetID: task.id)
+                            return true
+                        }
+                }
+
+                if !doneTasks.isEmpty {
+                    Text("DONE")
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.green).kerning(0.8)
+                        .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 4)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(.init())
+                    ForEach(doneTasks) { task in
+                        MacTaskRow(task: task, style: .list)
+                            .listRowInsets(.init())
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                     }
                 }
-                .padding(.bottom, 16)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
         .background(
             Color.clear
@@ -214,15 +349,33 @@ private struct ListTasksView: View {
                 }
         )
         .background(Theme.bg)
+        .onAppear {
+            if !sectionNames.contains(where: { $0.caseInsensitiveCompare(selectedSectionName) == .orderedSame }) {
+                selectedSectionName = sectionNames.first ?? TaskSectionDefaults.defaultName
+            }
+        }
     }
 
     private func addTask() {
         let t = newTitle.trimmingCharacters(in: .whitespaces)
         guard !t.isEmpty else { return }
         let task = AppTask(title: t)
-        task.area = area; task.project = project; task.order = tasks.count
+        task.area = area
+        task.project = project
+        task.context = area?.context ?? project?.context
+        task.sectionName = selectedSectionName
+        task.order = tasks.count
         modelContext.insert(task)
         newTitle = ""
+    }
+
+    private func reorderTask(droppedID: UUID, targetID: UUID) {
+        var sorted = activeTasks
+        guard let fromIndex = sorted.firstIndex(where: { $0.id == droppedID }),
+              let toIndex = sorted.firstIndex(where: { $0.id == targetID }) else { return }
+        let element = sorted.remove(at: fromIndex)
+        sorted.insert(element, at: toIndex > fromIndex ? toIndex - 1 : toIndex)
+        for (i, t) in sorted.enumerated() { t.order = i }
     }
 }
 
@@ -297,7 +450,7 @@ private struct ListLogView: View {
 // MARK: - Tab Button
 
 private struct TabButton: View {
-    let tab: ListDetailView.Tab
+    let tab: ListDetailPage
     let isSelected: Bool
     let action: () -> Void
 
@@ -306,18 +459,24 @@ private struct TabButton: View {
             HStack(spacing: 6) {
                 Image(systemName: tab.icon).font(.system(size: 12))
                 Text(tab.rawValue)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
             }
             .foregroundStyle(isSelected ? Theme.blue : Theme.dim)
+            .frame(minWidth: 78, minHeight: 34)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(isSelected ? Theme.blue.opacity(0.12) : Color.clear)
+            )
             .overlay(alignment: .bottom) {
                 if isSelected {
                     Rectangle().fill(Theme.blue).frame(height: 2)
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.cadencePlain)
     }
 }
 #endif

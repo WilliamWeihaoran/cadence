@@ -100,7 +100,7 @@ struct GoalsView: View {
                 Button("Today") {
                     scrollToToday()
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.cadencePlain)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Theme.blue)
                 .padding(.horizontal, 8)
@@ -117,7 +117,7 @@ struct GoalsView: View {
                                 scrollToToday()
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.cadencePlain)
                         .font(.system(size: 11, weight: scale == s ? .semibold : .regular))
                         .foregroundStyle(scale == s ? Theme.blue : Theme.dim)
                         .padding(.horizontal, 8)
@@ -142,7 +142,7 @@ struct GoalsView: View {
                     .background(Theme.blue)
                     .clipShape(RoundedRectangle(cornerRadius: 7))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.cadencePlain)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)

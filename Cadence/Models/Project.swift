@@ -17,6 +17,9 @@ import Foundation
     var dueDate: String = ""        // YYYY-MM-DD or ""
     var order: Int = 0
     var linkedCalendarID: String = ""   // EKCalendar identifier
+    var loggedMinutes: Int = 0          // cumulative focus time logged to tasks in this project
+    var sectionNamesRaw: String = TaskSectionDefaults.defaultName
+    var sectionConfigsRaw: String = ""
 
     var context: Context? = nil
     var area: Area? = nil
@@ -38,5 +41,88 @@ import Foundation
         self.context = context
         self.area = area
         self.colorHex = colorHex
+    }
+
+    var sectionNames: [String] {
+        get {
+            sectionConfigs.filter { !$0.isArchived }.map(\.name)
+        }
+        set {
+            let existingByName = Dictionary(uniqueKeysWithValues: sectionConfigs.map { ($0.name.lowercased(), $0) })
+            sectionConfigs = newValue.map { name in
+                if let existing = existingByName[name.lowercased()] {
+                    return TaskSectionConfig(
+                        uuid: existing.uuid,
+                        name: name,
+                        colorHex: existing.colorHex,
+                        dueDate: existing.dueDate,
+                        isCompleted: existing.isCompleted,
+                        isArchived: false
+                    )
+                }
+                return TaskSectionConfig(name: name)
+            }
+        }
+    }
+
+    var sectionConfigs: [TaskSectionConfig] {
+        get {
+            if let data = sectionConfigsRaw.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode([TaskSectionConfig].self, from: data) {
+                return normalizedSectionConfigs(decoded)
+            }
+
+            let parsed = sectionNamesRaw
+                .split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .map { TaskSectionConfig(name: $0) }
+            return normalizedSectionConfigs(parsed)
+        }
+        set {
+            let normalized = normalizedSectionConfigs(newValue)
+            sectionNamesRaw = normalized.map(\.name).joined(separator: "\n")
+            if let data = try? JSONEncoder().encode(normalized),
+               let json = String(data: data, encoding: .utf8) {
+                sectionConfigsRaw = json
+            }
+        }
+    }
+
+    private func normalizedSectionConfigs(_ configs: [TaskSectionConfig]) -> [TaskSectionConfig] {
+        var seen = Set<String>()
+        var cleaned: [TaskSectionConfig] = []
+        for config in configs {
+            let trimmed = config.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let key = trimmed.lowercased()
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            cleaned.append(
+                TaskSectionConfig(
+                    uuid: config.uuid,
+                    name: trimmed,
+                    colorHex: config.colorHex,
+                    dueDate: config.dueDate,
+                    isCompleted: config.isCompleted,
+                    isArchived: config.isArchived
+                )
+            )
+        }
+        if let defaultIndex = cleaned.firstIndex(where: { $0.name.caseInsensitiveCompare(TaskSectionDefaults.defaultName) == .orderedSame }) {
+            cleaned[defaultIndex].name = TaskSectionDefaults.defaultName
+            cleaned[defaultIndex].isCompleted = false
+            cleaned[defaultIndex].isArchived = false
+            if cleaned[defaultIndex].colorHex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                cleaned[defaultIndex].colorHex = TaskSectionDefaults.defaultColorHex
+            }
+            if defaultIndex != 0 {
+                let value = cleaned.remove(at: defaultIndex)
+                cleaned.insert(value, at: 0)
+            }
+        } else {
+            cleaned.insert(TaskSectionConfig(name: TaskSectionDefaults.defaultName), at: 0)
+        }
+        return cleaned
     }
 }

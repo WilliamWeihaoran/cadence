@@ -7,6 +7,7 @@ struct LinksView: View {
     var project: Project? = nil
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Query(sort: \SavedLink.order) private var allLinks: [SavedLink]
     @State private var showingAdd = false
     @State private var newTitle = ""
@@ -35,7 +36,7 @@ struct LinksView: View {
                     Image(systemName: "plus")
                         .foregroundStyle(Theme.blue)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.cadencePlain)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
@@ -64,7 +65,12 @@ struct LinksView: View {
                     VStack(spacing: 6) {
                         ForEach(links) { link in
                             LinkRow(link: link) {
-                                modelContext.delete(link)
+                                deleteConfirmationManager.present(
+                                    title: "Delete Link?",
+                                    message: "This will permanently delete \"\(link.title)\"."
+                                ) {
+                                    modelContext.delete(link)
+                                }
                             }
                         }
                     }
@@ -123,11 +129,11 @@ private struct AddLinkBar: View {
             HStack {
                 Spacer()
                 Button("Cancel") { onCancel() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.dim)
                 Button("Save") { onSave() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.blue)
                     .disabled(url.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -181,20 +187,21 @@ private struct LinkRow: View {
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.blue)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.cadencePlain)
 
                 Button(role: .destructive) { onDelete() } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.red)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.cadencePlain)
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(Theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .cadenceHoverHighlight(cornerRadius: 8)
         .onHover { isHovering = $0 }
         .onTapGesture {
             if let url = URL(string: link.url) {

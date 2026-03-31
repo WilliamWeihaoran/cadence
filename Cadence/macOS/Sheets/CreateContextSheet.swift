@@ -48,12 +48,12 @@ struct CreateContextSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                     .foregroundStyle(Theme.muted)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                 Button("Create") { create() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.cadencePlain)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)

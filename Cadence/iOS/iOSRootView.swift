@@ -2,7 +2,11 @@
 import SwiftUI
 
 struct iOSRootView: View {
+    @Environment(ThemeManager.self) private var themeManager
+
     var body: some View {
+        let _ = themeManager.selectedTheme
+
         ZStack {
             Theme.bg.ignoresSafeArea()
             VStack(spacing: 16) {

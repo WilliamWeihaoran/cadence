@@ -15,6 +15,7 @@ struct TaskCreationSeed {
     var doDateKey: String = ""
     var priority: TaskPriority = .none
     var container: TaskContainerSelection = .inbox
+    var sectionName: String = TaskSectionDefaults.defaultName
 }
 
 @Observable
@@ -32,7 +33,8 @@ final class TaskCreationManager {
         dueDateKey: String = "",
         doDateKey: String = "",
         priority: TaskPriority = .none,
-        container: TaskContainerSelection = .inbox
+        container: TaskContainerSelection = .inbox,
+        sectionName: String = TaskSectionDefaults.defaultName
     ) {
         seed = TaskCreationSeed(
             title: title,
@@ -40,7 +42,8 @@ final class TaskCreationManager {
             dueDateKey: dueDateKey,
             doDateKey: doDateKey,
             priority: priority,
-            container: container
+            container: container,
+            sectionName: sectionName
         )
 
         NSApp.activate(ignoringOtherApps: true)
