@@ -17,6 +17,7 @@ final class HoveredSectionManager {
     private init() {}
 
     func beginHovering(id: UUID, onToggleComplete: @escaping () -> Void) {
+        if target?.id == id { return }
         target = Target(id: id, onToggleComplete: onToggleComplete)
     }
 

@@ -1,6 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import SwiftData
+import AppKit
 
 struct TasksPanelHeader: View {
     let mode: TasksPanelMode
@@ -54,9 +55,10 @@ struct TasksPanelHeader: View {
 
 struct MacTaskRow: View {
     @Bindable var task: AppTask
-    @Query(sort: \Context.order) private var contexts: [Context]
-    @Query(sort: \Area.order)    private var areas:    [Area]
-    @Query(sort: \Project.order) private var projects: [Project]
+    var style: MacTaskRowStyle = .standard
+    var contexts: [Context] = []
+    var areas: [Area] = []
+    var projects: [Project] = []
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(HoveredTaskManager.self)    private var hoveredTaskManager
@@ -64,151 +66,84 @@ struct MacTaskRow: View {
     @Environment(FocusManager.self)          private var focusManager
     @Environment(TaskCompletionAnimationManager.self) private var taskCompletionAnimationManager
 
-    var style: MacTaskRowStyle = .standard
-
     @State private var showDueDatePicker  = false
     @State private var dueDatePickerDate: Date = Date()
     @State private var dueDateViewMonth:  Date = Date()
     @State private var showDoDatePicker   = false
     @State private var doDatePickerDate: Date = Date()
     @State private var doDateViewMonth:   Date = Date()
-    @State private var showPriorityPicker = false
     @State private var isHovered          = false
     @State private var showTaskInspector  = false
+    @State private var isDoDateHovered    = false
+    @State private var isDueDateHovered   = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
+        HStack(alignment: .center, spacing: 0) {
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(task.isDone ? Theme.dim.opacity(0.4) : Theme.priorityColor(task.priority))
                 .frame(width: 3)
                 .padding(.leading, 8)
-                .padding(.vertical, 12)
+                .padding(.vertical, 3)
 
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 0) {
-                    Button {
-                        taskCompletionAnimationManager.toggleCompletion(for: task)
-                    } label: {
-                        Image(systemName: task.isDone ? "checkmark.circle.fill" : (isPendingCompletion ? "circle.inset.filled" : "circle"))
-                            .foregroundStyle(task.isDone || isPendingCompletion ? Theme.green : Theme.dim)
-                            .font(.system(size: 18))
+            Button {
+                taskCompletionAnimationManager.toggleCompletion(for: task)
+            } label: {
+                Image(systemName: task.isDone ? "checkmark.circle.fill" : (isPendingCompletion ? "circle.inset.filled" : "circle"))
+                    .foregroundStyle(task.isDone || isPendingCompletion ? Theme.green : Theme.dim)
+                    .font(.system(size: 18))
+            }
+            .buttonStyle(.cadencePlain)
+            .padding(.horizontal, 8)
+
+            if style != .todayGrouped && !task.scheduledDate.isEmpty {
+                doDatePill
+                    .padding(.trailing, 8)
+            }
+
+            Text(task.title.isEmpty ? "Untitled" : task.title)
+                .font(.system(size: 15))
+                .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                .strikethrough(task.isDone, color: Theme.dim)
+                .lineLimit(1)
+
+            if isHovered {
+                EstimatePickerControl(value: $task.estimatedMinutes, compact: true)
+                    .padding(.leading, 8)
+
+                if !task.isDone && !task.isCancelled {
+                    Button { focusManager.startFocus(task: task) } label: {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 20, height: 20)
+                            .background(Theme.blue)
+                            .clipShape(Circle())
                     }
                     .buttonStyle(.cadencePlain)
-                    .padding(.horizontal, 8)
-
-                    if style == .list && !task.scheduledDate.isEmpty {
-                        doDatePill
-                            .padding(.trailing, 6)
-                    }
-
-                    Text(task.title.isEmpty ? "Untitled" : task.title)
-                        .font(.system(size: 15))
-                        .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
-                        .strikethrough(task.isDone, color: Theme.dim)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 4)
-
-                    switch style {
-                    case .todayGrouped:
-                        if !task.dueDate.isEmpty {
-                            dueDateBadgeGrouped
-                        }
-                    case .list:
-                        if !task.dueDate.isEmpty {
-                            dueDateBadgeList
-                        }
-                    case .standard:
-                        EmptyView()
-                    }
-
-                    if isHovered && !task.isDone && !task.isCancelled {
-                        Button { focusManager.startFocus(task: task) } label: {
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 8, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 20, height: 20)
-                                .background(Theme.blue)
-                                .clipShape(Circle())
-                        }
-                        .buttonStyle(.cadencePlain)
-                        .help("Start focus session")
-                        .padding(.trailing, 4)
-                    }
-                }
-
-                HStack(spacing: 6) {
-                    EstimatePickerControl(value: $task.estimatedMinutes)
-                        .scaleEffect(0.86, anchor: .leading)
-                        .frame(maxWidth: 78, alignment: .leading)
-                    metaDivider
-
-                    Button { showPriorityPicker.toggle() } label: {
-                        HStack(spacing: 4) {
-                            if task.priority == .none {
-                                Text("—").font(.system(size: 11)).foregroundStyle(Theme.dim)
-                            } else {
-                                Circle().fill(Theme.priorityColor(task.priority)).frame(width: 6, height: 6)
-                            }
-                            Text(task.priority.label)
-                                .font(.system(size: 11)).foregroundStyle(Theme.muted).lineLimit(1)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.dim)
-                        }
-                    }
-                    .buttonStyle(.cadencePlain)
-                    .popover(isPresented: $showPriorityPicker) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(TaskPriority.allCases, id: \.self) { p in
-                                Button {
-                                    task.priority = p
-                                    showPriorityPicker = false
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        if p == .none {
-                                            Text("—").font(.system(size: 13)).foregroundStyle(Theme.dim).frame(width: 7)
-                                        } else {
-                                            Circle().fill(Theme.priorityColor(p)).frame(width: 7, height: 7)
-                                        }
-                                        Text(p.label).font(.system(size: 13)).foregroundStyle(Theme.text)
-                                        Spacer()
-                                        if task.priority == p {
-                                            Image(systemName: "checkmark")
-                                                .font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)
-                                        }
-                                    }
-                                    .padding(.horizontal, 12).padding(.vertical, 7).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                                }
-                                .buttonStyle(.cadencePlain)
-                            }
-                        }
-                        .padding(.vertical, 6).frame(minWidth: 150).background(Theme.surfaceElevated)
-                    }
-
-                    if style == .standard {
-                        metaDivider
-                        dueDateBadgeStandard
-                        metaDivider
-                        ContainerPickerBadge(selection: taskContainerBinding, contexts: contexts, areas: areas, projects: projects)
-                    }
-                }
-                .padding(.leading, 34)
-                .padding(.trailing, 12)
-
-                let sortedSubtasks = (task.subtasks ?? []).sorted { $0.order < $1.order }
-                if !sortedSubtasks.isEmpty {
-                    VStack(spacing: 0) {
-                        ForEach(sortedSubtasks) { subtask in
-                            SubtaskRow(subtask: subtask)
-                        }
-                    }
-                    .padding(.leading, 30)
-                    .padding(.trailing, 12)
-                    .padding(.bottom, 4)
+                    .help("Start focus session")
+                    .padding(.leading, 6)
                 }
             }
-            .padding(.vertical, 10)
+
+            Spacer(minLength: 4)
+
+            if !task.dueDate.isEmpty {
+                dueDateBadgeList
+            }
+
+            if showsListContextChip {
+                ContainerPickerBadge(
+                    selection: taskContainerBinding,
+                    contexts: contexts,
+                    areas: areas,
+                    projects: projects,
+                    compact: true
+                )
+                .padding(.leading, 6)
+                .padding(.trailing, 6)
+            }
         }
+        .padding(.vertical, 8)
         .contentShape(Rectangle())
         .onTapGesture { showTaskInspector = true }
         .background(completionAnimatedBackground)
@@ -216,10 +151,12 @@ struct MacTaskRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isHovered ? Theme.blue.opacity(0.44) : .white.opacity(0.04), lineWidth: isHovered ? 1.2 : 1)
         }
-        .shadow(color: isHovered ? Theme.blue.opacity(0.12) : .clear, radius: 10, y: 2)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.borderSubtle.opacity(0.5)).frame(height: 0.5)
         }
+        .animation(nil, value: isHovered)
+        .animation(nil, value: isDoDateHovered)
+        .animation(nil, value: isDueDateHovered)
         .onHover { hovering in
             isHovered = hovering
             if hovering {
@@ -252,61 +189,55 @@ struct MacTaskRow: View {
         Button {
             openDoDatePicker()
         } label: {
-            Text(DateFormatters.relativeDate(from: task.scheduledDate))
-                .font(.system(size: 11))
-                .foregroundStyle(
-                    isOverdo
-                        ? Theme.red
-                        : (isDoToday ? Theme.amber : Theme.dim)
-                )
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+            HStack(spacing: 4) {
+                Image(systemName: "sun.max.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.amber)
+                Text(DateFormatters.relativeDate(from: task.scheduledDate))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(
+                        isOverdo
+                            ? Theme.red
+                            : (isDoToday ? Theme.amber.opacity(0.75) : Theme.dim.opacity(0.68))
+                    )
+            }
+            .underline(isDoDateHovered)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(isDoDateHovered ? Theme.surfaceElevated.opacity(0.55) : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.cadencePlain)
+        .onHover { hovering in
+            isDoDateHovered = hovering
+            if hovering {
+                hoveredTaskManager.beginHoveringDate(.doDate, for: task)
+            } else {
+                hoveredTaskManager.endHoveringDate(for: task)
+            }
+        }
         .popover(isPresented: $showDoDatePicker) { doDatePickerPopover }
     }
 
-    private var dueDateBadgeStandard: some View {
+    private var doDateBadge: some View {
         Button {
-            openDueDatePicker()
+            openDoDatePicker()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "flag.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(task.dueDate.isEmpty ? Theme.dim : Theme.red)
-                if !task.dueDate.isEmpty {
-                    Text(DateFormatters.relativeDate(from: task.dueDate))
-                        .font(.system(size: 11))
-                        .foregroundStyle(isOverdue ? Theme.red : Theme.muted)
-                } else {
-                    Text("Due")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
-                }
-            }
-        }
-        .buttonStyle(.cadencePlain)
-        .popover(isPresented: $showDueDatePicker) { dueDatePickerPopover }
-    }
-
-    private var dueDateBadgeGrouped: some View {
-        Button {
-            openDueDatePicker()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "flag.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.red)
-                Text(DateFormatters.relativeDate(from: task.dueDate))
+                Image(systemName: "sun.max.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(task.scheduledDate.isEmpty ? Theme.dim : .yellow)
+                Text(task.scheduledDate.isEmpty ? "Do" : DateFormatters.relativeDate(from: task.scheduledDate))
                     .font(.system(size: 13))
-                    .foregroundStyle(isOverdue ? Theme.red : Theme.muted)
+                    .foregroundStyle(
+                        isOverdo
+                            ? Theme.red
+                            : (isDoToday ? .yellow : (task.scheduledDate.isEmpty ? Theme.dim : Theme.muted))
+                    )
             }
         }
         .buttonStyle(.cadencePlain)
-        .padding(.trailing, 8)
-        .popover(isPresented: $showDueDatePicker) { dueDatePickerPopover }
+        .popover(isPresented: $showDoDatePicker) { doDatePickerPopover }
     }
 
     private var dueDateBadgeList: some View {
@@ -315,15 +246,28 @@ struct MacTaskRow: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "flag.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.red)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(isOverdue ? Theme.red : Theme.dim.opacity(0.68))
                 Text(DateFormatters.relativeDate(from: task.dueDate))
-                    .font(.system(size: 13))
-                    .foregroundStyle(isOverdue ? Theme.red : Theme.muted)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isOverdue ? Theme.red : Theme.dim.opacity(0.68))
             }
+            .underline(isDueDateHovered)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(isDueDateHovered ? Theme.surfaceElevated.opacity(0.55) : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.cadencePlain)
         .padding(.trailing, 8)
+        .onHover { hovering in
+            isDueDateHovered = hovering
+            if hovering {
+                hoveredTaskManager.beginHoveringDate(.dueDate, for: task)
+            } else {
+                hoveredTaskManager.endHoveringDate(for: task)
+            }
+        }
         .popover(isPresented: $showDueDatePicker) { dueDatePickerPopover }
     }
 
@@ -432,8 +376,24 @@ struct MacTaskRow: View {
         return task.scheduledDate == DateFormatters.todayKey()
     }
 
+    private var showsDoDateOnFirstRow: Bool {
+        style != .todayGrouped
+    }
+
+    private var showsListContextChip: Bool {
+        style == .standard && !task.containerName.isEmpty
+    }
+
     private var isPendingCompletion: Bool {
         taskCompletionAnimationManager.isPending(task)
+    }
+
+    private var urgencyBackgroundTint: Color {
+        guard !task.isDone else { return isHovered ? Theme.blue.opacity(0.05) : .clear }
+        if isOverdue {
+            return Theme.red.opacity(isHovered ? 0.2 : 0.15)
+        }
+        return isHovered ? Theme.blue.opacity(0.05) : .clear
     }
 
     @ViewBuilder
@@ -441,9 +401,9 @@ struct MacTaskRow: View {
         RoundedRectangle(cornerRadius: 8)
             .fill(isHovered ? Theme.surfaceElevated.opacity(1.0) : Theme.surface)
             .overlay {
-                if isHovered {
+                if urgencyBackgroundTint != .clear {
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Theme.blue.opacity(0.05))
+                        .fill(urgencyBackgroundTint)
                 }
             }
             .overlay {
@@ -504,6 +464,7 @@ struct ContainerPickerBadge: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
+    var compact: Bool = false
 
     @State private var showPicker = false
 
@@ -547,16 +508,16 @@ struct ContainerPickerBadge: View {
     var body: some View {
         Button { showPicker.toggle() } label: {
             HStack(spacing: 4) {
-                Image(systemName: labelIcon).font(.system(size: 10)).foregroundStyle(labelColor)
-                Text(label).font(.system(size: 11)).foregroundStyle(Theme.muted)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.dim)
+                Image(systemName: labelIcon).font(.system(size: compact ? 9 : 10)).foregroundStyle(labelColor)
+                Text(label).font(.system(size: compact ? 10 : 11)).foregroundStyle(Theme.muted)
+                Image(systemName: "chevron.down").font(.system(size: compact ? 7 : 8, weight: .semibold)).foregroundStyle(Theme.dim)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .frame(minHeight: 28)
+            .padding(.horizontal, compact ? 6 : 8)
+            .padding(.vertical, compact ? 3 : 6)
+            .frame(minHeight: compact ? 21 : 28)
             .contentShape(Rectangle())
             .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .clipShape(RoundedRectangle(cornerRadius: compact ? 6 : 7))
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker) {
@@ -714,92 +675,101 @@ struct TaskPickerRowHover: ViewModifier {
     }
 }
 
-struct TodayDueSectionCard: View {
-    let item: TodayDueSectionItem
-    @State private var isHovered = false
+struct CollapsibleTaskGroupHeader: View {
+    let title: String
+    let isCollapsed: Bool
+    let overdueCount: Int?
+    let regularCount: Int
+    var accent: Color = Theme.dim
+    let onToggle: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(Theme.amber)
-                .frame(width: 3)
-                .padding(.leading, 8)
-                .padding(.vertical, 12)
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "square.grid.2x2")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.amber)
-                        .frame(width: 18)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(item.sectionName)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(1)
-
-                        HStack(spacing: 6) {
-                            Image(systemName: item.listIcon)
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(item.listColor)
-                            Text(item.listName)
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.muted)
-                        }
-                    }
-
-                    Spacer(minLength: 6)
-
-                    Text("Due Today")
+        Button(action: onToggle) {
+            HStack(spacing: 8) {
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                Spacer()
+                if let overdueCount, overdueCount > 0 {
+                    Text("\(overdueCount)")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.amber)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Theme.amber.opacity(0.12))
-                        .clipShape(Capsule())
+                        .foregroundStyle(Theme.red)
+                    Text("/")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.dim.opacity(0.8))
                 }
-
-                HStack(spacing: 6) {
-                    infoChip(icon: "checklist", text: item.taskCount == 1 ? "1 open task" : "\(item.taskCount) open tasks", tint: Theme.blue)
-                    if item.completedTaskCount > 0 {
-                        infoChip(icon: "checkmark.circle.fill", text: item.completedTaskCount == 1 ? "1 done" : "\(item.completedTaskCount) done", tint: Theme.green)
-                    }
-                }
+                Text("\(regularCount)")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(accent)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(accent.opacity(0.12))
+                    .clipShape(Capsule())
             }
-            .padding(.leading, 10)
-            .padding(.trailing, 12)
-            .padding(.vertical, 10)
+            .foregroundStyle(Theme.dim)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Theme.surface.opacity(0.5))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Theme.borderSubtle.opacity(0.75))
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8))
         }
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isHovered ? Theme.surfaceElevated.opacity(0.9) : Theme.surface)
+        .buttonStyle(.cadencePlain)
+        .onTapGesture(count: 2, perform: onToggle)
+    }
+}
+
+struct CompletedSectionHeader: View {
+    let count: Int
+    var isCollapsed: Bool = false
+    var onToggle: (() -> Void)? = nil
+
+    var body: some View {
+        CollapsibleTaskGroupHeader(
+            title: "Completed",
+            isCollapsed: isCollapsed,
+            overdueCount: nil,
+            regularCount: count,
+            accent: Theme.green,
+            onToggle: { onToggle?() }
         )
+        .allowsHitTesting(onToggle != nil)
+        .overlay {
+            if onToggle == nil {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.clear)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+struct StaticTaskGroupHeader: View {
+    let title: String
+    let overdueCount: Int?
+    let regularCount: Int
+
+    var body: some View {
+        CollapsibleTaskGroupHeader(
+            title: title,
+            isCollapsed: false,
+            overdueCount: overdueCount,
+            regularCount: regularCount,
+            onToggle: {}
+        )
+        .allowsHitTesting(false)
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isHovered ? Theme.amber.opacity(0.28) : .white.opacity(0.04), lineWidth: 1)
+                .fill(Color.clear)
+                .allowsHitTesting(false)
         }
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.borderSubtle.opacity(0.5)).frame(height: 0.5)
-        }
-        .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
-    }
-
-    private func infoChip(icon: String, text: String, tint: Color) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(tint)
-            Text(text)
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.dim)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(Theme.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }
 #endif

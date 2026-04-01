@@ -81,6 +81,7 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
     var sectionName: String = TaskSectionDefaults.defaultName
     var order: Int = 0
     var createdAt: Date = Date()
+    var completedAt: Date? = nil
 
     var area: Area? = nil
     var project: Project? = nil
@@ -110,6 +111,20 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
     var resolvedSectionName: String {
         let trimmed = sectionName.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? TaskSectionDefaults.defaultName : trimmed
+    }
+
+    var hidesEmptyDueDateInList: Bool {
+        if let project {
+            return project.hideDueDateIfEmpty
+        }
+        if let area {
+            return area.hideDueDateIfEmpty
+        }
+        return false
+    }
+
+    var shouldShowDueDateField: Bool {
+        !dueDate.isEmpty || !hidesEmptyDueDateInList
     }
 
     init(title: String) {

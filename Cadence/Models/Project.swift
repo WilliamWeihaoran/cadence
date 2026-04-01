@@ -18,6 +18,8 @@ import Foundation
     var order: Int = 0
     var linkedCalendarID: String = ""   // EKCalendar identifier
     var loggedMinutes: Int = 0          // cumulative focus time logged to tasks in this project
+    var hideDueDateIfEmpty: Bool = true
+    var hideSectionDueDateIfEmpty: Bool = true
     var sectionNamesRaw: String = TaskSectionDefaults.defaultName
     var sectionConfigsRaw: String = ""
 

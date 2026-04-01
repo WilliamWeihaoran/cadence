@@ -29,6 +29,7 @@ final class TaskCompletionAnimationManager {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
+                task.completedAt = nil
                 task.status = .todo
             }
             return
@@ -61,6 +62,7 @@ final class TaskCompletionAnimationManager {
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
+                    task.completedAt = Date()
                     task.status = .done
                 }
             }

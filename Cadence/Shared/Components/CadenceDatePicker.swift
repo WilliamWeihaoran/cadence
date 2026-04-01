@@ -56,6 +56,7 @@ struct MonthCalendarPanel: View {
     @Binding var selection: Date
     @Binding var viewMonth: Date
     @Binding var isOpen: Bool
+    var inlineStyle: Bool = false
 
     private let cal = Calendar.current
     private let dayNames = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
@@ -144,7 +145,7 @@ struct MonthCalendarPanel: View {
                         }
                     }
                 }
-                .frame(height: 294)
+                .frame(height: inlineStyle ? 314 : 294)
                 .onAppear {
                     DispatchQueue.main.async {
                         proxy.scrollTo(monthID(for: 0), anchor: .top)
@@ -152,8 +153,9 @@ struct MonthCalendarPanel: View {
                 }
             }
         }
-        .frame(width: 256)
-        .background(Theme.surfaceElevated)
+        .frame(width: inlineStyle ? nil : 256)
+        .frame(maxWidth: inlineStyle ? .infinity : nil, alignment: .leading)
+        .background(inlineStyle ? Color.clear : Theme.surfaceElevated)
     }
 
     private var anchorMonth: Date {

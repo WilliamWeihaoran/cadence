@@ -14,41 +14,114 @@ struct TaskListsKanbanView: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
+    var sortField: TaskSortField = .date
+    var sortDirection: TaskSortDirection = .ascending
+    var groupingMode: TaskGroupingMode = .byList
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                TaskListBoardSection(
-                    title: "Inbox",
-                    icon: "tray.fill",
-                    color: Theme.dim,
-                    taskCount: inboxTasks.count
-                ) {
-                    ListSectionsKanbanView(
-                        tasks: inboxTasks,
-                        explicitSectionConfigs: [TaskSectionConfig(name: TaskSectionDefaults.defaultName)]
-                    )
-                }
-
-                ForEach(areas) { area in
+            LazyVStack(alignment: .leading, spacing: 24) {
+                switch groupingMode {
+                case .none:
                     TaskListBoardSection(
-                        title: area.name,
-                        icon: area.icon,
-                        color: Color(hex: area.colorHex),
-                        taskCount: tasks(for: area).count
+                        title: "Tasks",
+                        icon: "square.stack.3d.up",
+                        color: Theme.dim,
+                        taskCount: sortedTasks(activeTasks).count
                     ) {
-                        ListSectionsKanbanView(tasks: tasks(for: area), area: area)
+                        ListSectionsKanbanView(
+                            tasks: sortedTasks(activeTasks),
+                            universeTasks: activeTasks,
+                            explicitSectionConfigs: [TaskSectionConfig(name: TaskSectionDefaults.defaultName)],
+                            sortField: sortField,
+                            sortDirection: sortDirection,
+                            sectionTaskProvider: { _ in sortedTasks(activeTasks) }
+                        )
                     }
-                }
-
-                ForEach(projects) { project in
+                case .byList:
+                    let byAreaID = groupedTasksByAreaID
+                    let byProjectID = groupedTasksByProjectID
                     TaskListBoardSection(
-                        title: project.name,
-                        icon: project.icon,
-                        color: Color(hex: project.colorHex),
-                        taskCount: tasks(for: project).count
+                        title: "Inbox",
+                        icon: "tray.fill",
+                        color: Theme.dim,
+                        taskCount: inboxTasks.count
                     ) {
-                        ListSectionsKanbanView(tasks: tasks(for: project), project: project)
+                        ListSectionsKanbanView(
+                            tasks: inboxTasks,
+                            universeTasks: activeTasks,
+                            explicitSectionConfigs: [TaskSectionConfig(name: TaskSectionDefaults.defaultName)],
+                            onTaskDroppedIntoColumn: { task, _ in
+                                task.area = nil
+                                task.project = nil
+                                task.context = nil
+                            }
+                        )
+                    }
+
+                    ForEach(areas) { area in
+                        let areaTasks = byAreaID[area.id] ?? []
+                        TaskListBoardSection(
+                            title: area.name,
+                            icon: area.icon,
+                            color: Color(hex: area.colorHex),
+                            taskCount: areaTasks.count
+                        ) {
+                            ListSectionsKanbanView(tasks: areaTasks, universeTasks: activeTasks, area: area)
+                        }
+                    }
+
+                    ForEach(projects) { project in
+                        let projectTasks = byProjectID[project.id] ?? []
+                        TaskListBoardSection(
+                            title: project.name,
+                            icon: project.icon,
+                            color: Color(hex: project.colorHex),
+                            taskCount: projectTasks.count
+                        ) {
+                            ListSectionsKanbanView(tasks: projectTasks, universeTasks: activeTasks, project: project)
+                        }
+                    }
+                case .byPriority:
+                    ForEach(Array(TaskPriority.allCases.reversed()), id: \.self) { priority in
+                        let bucket = sortedTasks(activeTasks.filter { $0.priority == priority })
+                        if !bucket.isEmpty {
+                            TaskListBoardSection(
+                                title: priority.label,
+                                icon: "flag.fill",
+                                color: Theme.priorityColor(priority),
+                                taskCount: bucket.count
+                            ) {
+                                ListSectionsKanbanView(
+                                    tasks: bucket,
+                                    universeTasks: activeTasks,
+                                    explicitSectionConfigs: [TaskSectionConfig(name: TaskSectionDefaults.defaultName)],
+                                    onTaskDroppedIntoColumn: { task, _ in
+                                        task.priority = priority
+                                    }
+                                )
+                            }
+                        }
+                    }
+                case .byDate:
+                    ForEach(dateBuckets, id: \.title) { bucket in
+                        if !bucket.tasks.isEmpty {
+                            TaskListBoardSection(
+                                title: bucket.title,
+                                icon: bucket.icon,
+                                color: bucket.color,
+                                taskCount: bucket.tasks.count
+                            ) {
+                                ListSectionsKanbanView(
+                                    tasks: bucket.tasks,
+                                    universeTasks: activeTasks,
+                                    explicitSectionConfigs: [TaskSectionConfig(name: TaskSectionDefaults.defaultName)],
+                                    onTaskDroppedIntoColumn: { task, _ in
+                                        applyDateBucketDrop(task: task, bucketTitle: bucket.title)
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -65,25 +138,106 @@ struct TaskListsKanbanView: View {
         allTasks.filter { !$0.isCancelled }
     }
 
+    private var groupedTasksByAreaID: [UUID: [AppTask]] {
+        Dictionary(grouping: activeTasks.compactMap { task -> (UUID, AppTask)? in
+            guard let areaID = task.area?.id else { return nil }
+            return (areaID, task)
+        }, by: \.0).mapValues { entries in
+            sortedTasks(entries.map(\.1))
+        }
+    }
+
+    private var groupedTasksByProjectID: [UUID: [AppTask]] {
+        Dictionary(grouping: activeTasks.compactMap { task -> (UUID, AppTask)? in
+            guard let projectID = task.project?.id else { return nil }
+            return (projectID, task)
+        }, by: \.0).mapValues { entries in
+            sortedTasks(entries.map(\.1))
+        }
+    }
+
     private var inboxTasks: [AppTask] {
-        activeTasks.filter { $0.area == nil && $0.project == nil }
+        sortedTasks(activeTasks.filter { $0.area == nil && $0.project == nil })
     }
 
-    private func tasks(for area: Area) -> [AppTask] {
-        activeTasks.filter { $0.area?.id == area.id }
+    private func sortedTasks(_ tasks: [AppTask]) -> [AppTask] {
+        tasks.sorted { lhs, rhs in
+            let ordered: Bool
+            switch sortField {
+            case .custom:
+                ordered = lhs.order < rhs.order
+            case .date:
+                let ld = lhs.scheduledDate.isEmpty ? "9999-99-99" : lhs.scheduledDate
+                let rd = rhs.scheduledDate.isEmpty ? "9999-99-99" : rhs.scheduledDate
+                ordered = ld == rd ? lhs.order < rhs.order : ld < rd
+            case .priority:
+                let lp = priorityRank(lhs.priority)
+                let rp = priorityRank(rhs.priority)
+                ordered = lp == rp ? lhs.order < rhs.order : lp < rp
+            }
+            return sortDirection == .ascending ? ordered : !ordered
+        }
     }
 
-    private func tasks(for project: Project) -> [AppTask] {
-        activeTasks.filter { $0.project?.id == project.id }
+    private func priorityRank(_ priority: TaskPriority) -> Int {
+        switch priority {
+        case .none: return 0
+        case .low: return 1
+        case .medium: return 2
+        case .high: return 3
+        }
+    }
+
+    private var dateBuckets: [(title: String, icon: String, color: Color, tasks: [AppTask])] {
+        let todayKey = DateFormatters.todayKey()
+        let overdue = sortedTasks(activeTasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey })
+        let doToday = sortedTasks(activeTasks.filter { $0.scheduledDate == todayKey })
+        let scheduled = sortedTasks(activeTasks.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate != todayKey })
+        let unscheduled = sortedTasks(activeTasks.filter { $0.scheduledDate.isEmpty || $0.scheduledStartMin < 0 })
+        return [
+            ("Overdue", "exclamationmark.triangle.fill", Theme.red, overdue),
+            ("Do Today", "sun.max.fill", Theme.blue, doToday),
+            ("Scheduled", "calendar", Theme.dim, scheduled),
+            ("Unscheduled", "questionmark.circle", Theme.amber, unscheduled)
+        ]
+    }
+
+    private func applyDateBucketDrop(task: AppTask, bucketTitle: String) {
+        let todayKey = DateFormatters.todayKey()
+        switch bucketTitle {
+        case "Do Today":
+            task.scheduledDate = todayKey
+        case "Scheduled":
+            if task.scheduledDate.isEmpty || task.scheduledDate == todayKey {
+                let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+                task.scheduledDate = DateFormatters.dateKey(from: tomorrow)
+            }
+        case "Unscheduled":
+            task.scheduledDate = ""
+            task.scheduledStartMin = -1
+        case "Overdue":
+            if task.dueDate.isEmpty || task.dueDate >= todayKey {
+                let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+                task.dueDate = DateFormatters.dateKey(from: yesterday)
+            }
+        default:
+            break
+        }
     }
 }
 
 struct ListSectionsKanbanView: View {
     let tasks: [AppTask]
+    var universeTasks: [AppTask]? = nil
     var area: Area? = nil
     var project: Project? = nil
     var explicitSectionConfigs: [TaskSectionConfig]? = nil
     var showArchived: Binding<Bool>? = nil
+    var onTaskDroppedIntoColumn: ((AppTask, String) -> Void)? = nil
+    var assignSectionOnDrop: Bool = true
+    var sortField: TaskSortField = .date
+    var sortDirection: TaskSortDirection = .ascending
+    var sectionTaskProvider: ((TaskSectionConfig) -> [AppTask])? = nil
 
     @State private var localShowArchived = false
     @State private var draggingSectionName: String?
@@ -112,11 +266,15 @@ struct ListSectionsKanbanView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(sectionConfigs, id: \.id) { section in
+                        let sectionTasks = sortedTasksForSection(section)
                         ListSectionKanbanColumn(
                             section: section,
-                            tasks: tasks.filter { !$0.isCancelled && $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame },
+                            tasks: sectionTasks,
+                            universeTasks: universeTasks ?? tasks,
                             area: area,
                             project: project,
+                            onTaskDroppedIntoColumn: onTaskDroppedIntoColumn,
+                            assignSectionOnDrop: assignSectionOnDrop,
                             isBeingDragged: draggingSectionName?.caseInsensitiveCompare(section.name) == .orderedSame,
                             isAnotherSectionBeingDragged: draggingSectionName != nil && draggingSectionName?.caseInsensitiveCompare(section.name) != .orderedSame,
                             onReorderBefore: { movingName in
@@ -145,6 +303,37 @@ struct ListSectionsKanbanView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .clipped()
+    }
+
+    private func sortedTasksForSection(_ section: TaskSectionConfig) -> [AppTask] {
+        let source = sectionTaskProvider?(section) ?? tasks.filter {
+            !$0.isCancelled && $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame
+        }
+        return source.sorted { lhs, rhs in
+            let ordered: Bool
+            switch sortField {
+            case .custom:
+                ordered = lhs.order < rhs.order
+            case .date:
+                let ld = lhs.scheduledDate.isEmpty ? "9999-99-99" : lhs.scheduledDate
+                let rd = rhs.scheduledDate.isEmpty ? "9999-99-99" : rhs.scheduledDate
+                ordered = ld == rd ? lhs.order < rhs.order : ld < rd
+            case .priority:
+                let lp = priorityRank(lhs.priority)
+                let rp = priorityRank(rhs.priority)
+                ordered = lp == rp ? lhs.order < rhs.order : lp < rp
+            }
+            return sortDirection == .ascending ? ordered : !ordered
+        }
+    }
+
+    private func priorityRank(_ priority: TaskPriority) -> Int {
+        switch priority {
+        case .none: return 0
+        case .low: return 1
+        case .medium: return 2
+        case .high: return 3
+        }
     }
 
     @ViewBuilder
@@ -266,13 +455,35 @@ struct ListSectionsKanbanView: View {
     }
 }
 
+private struct KanbanFreezeObserver: View {
+    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
+    @Binding var frozenTaskIDs: [UUID]?
+    let columnTaskIDs: Set<UUID>
+    let capturedIDs: [UUID]
+
+    var body: some View {
+        Color.clear
+            .allowsHitTesting(false)
+            .onChange(of: hoveredTaskManager.hoveredTask?.id) { _, newID in
+                if let newID, columnTaskIDs.contains(newID) {
+                    if frozenTaskIDs == nil { frozenTaskIDs = capturedIDs }
+                } else if frozenTaskIDs != nil {
+                    frozenTaskIDs = nil
+                }
+            }
+    }
+}
+
 // MARK: - Column
 
 private struct ListSectionKanbanColumn: View {
     let section: TaskSectionConfig
     let tasks: [AppTask]
+    let universeTasks: [AppTask]
     var area: Area?
     var project: Project?
+    var onTaskDroppedIntoColumn: ((AppTask, String) -> Void)? = nil
+    var assignSectionOnDrop: Bool = true
     let isBeingDragged: Bool
     let isAnotherSectionBeingDragged: Bool
     let onReorderBefore: (String) -> Void
@@ -284,16 +495,22 @@ private struct ListSectionKanbanColumn: View {
     @Environment(SectionCompletionAnimationManager.self) private var sectionCompletionAnimationManager
     @Environment(TaskCreationManager.self) private var taskCreationManager
     @State private var isTargeted = false
+    @State private var dragOverTaskID: UUID? = nil
+    @State private var frozenTaskIDs: [UUID]? = nil
     @State private var showDoneTasks = false
     @State private var showEditor = false
     @State private var editorName = ""
     @State private var editorColorHex = TaskSectionDefaults.defaultColorHex
     @State private var editorDueDate = Date()
     @State private var isHovered = false
-    @Query private var allTasks: [AppTask]
+    private var unfrozenActiveTasks: [AppTask] {
+        tasks.filter { !$0.isDone }
+    }
 
     private var activeTasks: [AppTask] {
-        tasks.filter { !$0.isDone }
+        guard let frozen = frozenTaskIDs else { return unfrozenActiveTasks }
+        let byID = Dictionary(uniqueKeysWithValues: unfrozenActiveTasks.map { ($0.id, $0) })
+        return frozen.compactMap { byID[$0] } + unfrozenActiveTasks.filter { !frozen.contains($0.id) }
     }
 
     private var completedTasks: [AppTask] {
@@ -308,7 +525,28 @@ private struct ListSectionKanbanColumn: View {
         "kanban-column-\(section.id.uuidString)"
     }
 
+    private var sectionEditHoverID: String {
+        "kanban-section-edit-\(section.id.uuidString)"
+    }
+
+    private var hideColumnDueDateIfEmpty: Bool {
+        if let area { return area.hideSectionDueDateIfEmpty }
+        if let project { return project.hideSectionDueDateIfEmpty }
+        return false
+    }
+
     var body: some View {
+        columnBody
+            .background {
+                KanbanFreezeObserver(
+                    frozenTaskIDs: $frozenTaskIDs,
+                    columnTaskIDs: Set(unfrozenActiveTasks.map(\.id)),
+                    capturedIDs: unfrozenActiveTasks.map(\.id)
+                )
+            }
+    }
+
+    private var columnBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Button {
@@ -326,17 +564,19 @@ private struct ListSectionKanbanColumn: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Theme.muted)
                     HStack(spacing: 5) {
-                        Image(systemName: "flag.fill")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(Theme.red)
-                        Text(section.dueDate.isEmpty ? "No due date" : DateFormatters.relativeDate(from: section.dueDate))
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(
-                                section.dueDate.isEmpty
-                                    ? Theme.dim
-                                    : (sectionDueDateIsOverdue ? Theme.red : Theme.dim)
-                            )
-                            .lineLimit(1)
+                        if !section.dueDate.isEmpty || !hideColumnDueDateIfEmpty {
+                            Image(systemName: "flag.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Theme.red)
+                            Text(section.dueDate.isEmpty ? "No due date" : DateFormatters.relativeDate(from: section.dueDate))
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(
+                                    section.dueDate.isEmpty
+                                        ? Theme.dim
+                                        : (sectionDueDateIsOverdue ? Theme.red : Theme.dim)
+                                )
+                                .lineLimit(1)
+                        }
                     }
                     if section.isCompleted {
                         Text("Completed")
@@ -354,10 +594,7 @@ private struct ListSectionKanbanColumn: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
                 Button {
-                    editorName = section.name
-                    editorColorHex = section.colorHex
-                    editorDueDate = DateFormatters.date(from: section.dueDate) ?? Date()
-                    showEditor = true
+                    openSectionEditor()
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 10, weight: .semibold))
@@ -384,14 +621,40 @@ private struct ListSectionKanbanColumn: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
+            .onHover { hovering in
+                if hovering {
+                    hoveredEditableManager.beginHovering(id: sectionEditHoverID) {
+                        openSectionEditor()
+                    }
+                } else {
+                    hoveredEditableManager.endHovering(id: sectionEditHoverID)
+                }
+            }
 
             Divider().background(Theme.borderSubtle)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(activeTasks.sorted { $0.order < $1.order }) { task in
+                    ForEach(activeTasks) { task in
                         KanbanCard(task: task)
+                            .overlay(alignment: .top) {
+                                if dragOverTaskID == task.id {
+                                    Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
+                                }
+                            }
+                            .animation(.easeInOut(duration: 0.15), value: dragOverTaskID)
                             .draggable(task.id.uuidString)
+                            .dropDestination(for: String.self) { items, _ in
+                                guard let payload = items.first,
+                                      let droppedID = taskID(from: payload),
+                                      droppedID != task.id,
+                                      let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
+                                moveTask(droppedTask, before: task)
+                                return true
+                            } isTargeted: { isOver in
+                                if isOver { dragOverTaskID = task.id }
+                                else if dragOverTaskID == task.id { dragOverTaskID = nil }
+                            }
                     }
 
                     if !completedTasks.isEmpty {
@@ -435,9 +698,17 @@ private struct ListSectionKanbanColumn: View {
 
                             if showDoneTasks {
                                 VStack(spacing: 6) {
-                                    ForEach(completedTasks.sorted { $0.order < $1.order }) { task in
+                                    ForEach(completedTasks) { task in
                                         KanbanCard(task: task)
                                             .draggable(task.id.uuidString)
+                                            .dropDestination(for: String.self) { items, _ in
+                                                guard let payload = items.first,
+                                                      let droppedID = taskID(from: payload),
+                                                      droppedID != task.id,
+                                                      let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
+                                                moveTask(droppedTask, before: task)
+                                                return true
+                                            }
                                     }
                                 }
                                 .transition(
@@ -452,14 +723,11 @@ private struct ListSectionKanbanColumn: View {
                     }
                 }
                 .padding(8)
-                .transaction { transaction in
-                    transaction.animation = nil
-                }
             }
             .frame(minHeight: 200)
             .background(
                 RoundedRectangle(cornerRadius: 0)
-                    .fill(Theme.surface)
+                    .fill(.clear)
             )
         }
         .frame(width: kanbanColumnWidth)
@@ -496,8 +764,8 @@ private struct ListSectionKanbanColumn: View {
                 return true
             }
             guard let uuid = UUID(uuidString: payload),
-                  let task = allTasks.first(where: { $0.id == uuid }) else { return false }
-            task.sectionName = section.name
+                  let task = universeTasks.first(where: { $0.id == uuid }) else { return false }
+            moveTask(task, before: nil)
             return true
         } isTargeted: { isTargeted = $0 }
         .onHover { hovering in
@@ -509,16 +777,9 @@ private struct ListSectionKanbanColumn: View {
                 hoveredSectionManager.beginHovering(id: section.id) {
                     toggleSectionCompletion()
                 }
-                hoveredEditableManager.beginHovering(id: sectionHoverID) {
-                    editorName = section.name
-                    editorColorHex = section.colorHex
-                    editorDueDate = DateFormatters.date(from: section.dueDate) ?? Date()
-                    showEditor = true
-                }
             } else {
                 hoveredKanbanColumnManager.endHovering(id: sectionHoverID)
                 hoveredSectionManager.endHovering(id: section.id)
-                hoveredEditableManager.endHovering(id: sectionHoverID)
             }
         }
     }
@@ -537,6 +798,52 @@ private struct ListSectionKanbanColumn: View {
             container: container,
             sectionName: section.name
         )
+    }
+
+    private func taskID(from payload: String) -> UUID? {
+        if payload.hasPrefix("listTask:") {
+            return UUID(uuidString: String(payload.dropFirst(9)))
+        }
+        return UUID(uuidString: payload)
+    }
+
+    private func moveTask(_ task: AppTask, before target: AppTask?) {
+        if let area {
+            task.area = area
+            task.project = nil
+            task.context = area.context
+        } else if let project {
+            task.project = project
+            task.area = nil
+            task.context = project.context
+        } else {
+            task.area = nil
+            task.project = nil
+        }
+        onTaskDroppedIntoColumn?(task, section.name)
+        if assignSectionOnDrop {
+            task.sectionName = section.name
+        }
+
+        var columnTasks = tasks.sorted { $0.order < $1.order }
+        columnTasks.removeAll { $0.id == task.id }
+        if let target, let targetIndex = columnTasks.firstIndex(where: { $0.id == target.id }) {
+            columnTasks.insert(task, at: targetIndex)
+        } else {
+            columnTasks.append(task)
+        }
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
+            for (index, item) in columnTasks.enumerated() {
+                item.order = index
+            }
+        }
+    }
+
+    private func openSectionEditor() {
+        editorName = section.name
+        editorColorHex = section.colorHex
+        editorDueDate = DateFormatters.date(from: section.dueDate) ?? Date()
+        showEditor = true
     }
 
     @ViewBuilder
@@ -559,6 +866,9 @@ private struct ListSectionKanbanColumn: View {
                     .padding(10)
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .onChange(of: editorName) { _, _ in
+                        saveSectionChanges()
+                    }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -569,6 +879,7 @@ private struct ListSectionKanbanColumn: View {
                     ForEach(kanbanSectionColorOptions, id: \.self) { hex in
                         Button {
                             editorColorHex = hex
+                            saveSectionChanges()
                         } label: {
                             Circle()
                                 .fill(Color(hex: hex))
@@ -589,42 +900,34 @@ private struct ListSectionKanbanColumn: View {
                     .foregroundStyle(Theme.dim)
 
                 CadenceDatePicker(selection: $editorDueDate)
-
-                HStack(spacing: 10) {
-                    Button(section.dueDate.isEmpty ? "Set Due Date" : "Update Due Date") {
-                        updateSection { config in
-                            config.dueDate = DateFormatters.dateKey(from: editorDueDate)
-                        }
+                    .onChange(of: editorDueDate) { _, _ in
+                        saveSectionChanges()
                     }
-                    .buttonStyle(.cadencePlain)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.blue)
-
-                    if !section.dueDate.isEmpty {
-                        Button("Clear Due Date") {
-                            updateSection { config in
-                                config.dueDate = ""
-                            }
-                        }
-                        .buttonStyle(.cadencePlain)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.red)
-                    }
-                }
             }
 
             Divider().background(Theme.borderSubtle)
 
-            Button(section.isCompleted ? "Mark Section Active" : "Mark Section Completed") {
+            Button {
                 toggleSectionCompletion()
                 showEditor = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: section.isCompleted ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(section.isCompleted ? "Mark Section Active" : "Mark Section Completed")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                }
+                .foregroundStyle(section.isCompleted ? Theme.blue : Theme.green)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .background(Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.cadencePlain)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(section.isCompleted ? Theme.blue : Theme.green)
 
             if !section.isDefault {
-                Button(section.isArchived ? "Unarchive Column" : "Archive Column") {
+                Button {
                     updateSection { config in
                         config.isArchived.toggle()
                         if !config.isArchived {
@@ -632,12 +935,23 @@ private struct ListSectionKanbanColumn: View {
                         }
                     }
                     showEditor = false
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: section.isArchived ? "tray.and.arrow.up.fill" : "archivebox.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(section.isArchived ? "Unarchive Column" : "Archive Column")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                    }
+                    .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.cadencePlain)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.dim)
 
-                Button("Delete Column") {
+                Button {
                     deleteConfirmationManager.present(
                         title: "Delete Column?",
                         message: "This will delete the column \"\(section.name)\" and move its tasks into Default."
@@ -646,22 +960,23 @@ private struct ListSectionKanbanColumn: View {
                         removeSection()
                         showEditor = false
                     }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "trash.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Delete Column")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                    }
+                    .foregroundStyle(Theme.red)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+                    .background(Theme.red.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.cadencePlain)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.red)
             }
 
-            HStack {
-                Spacer()
-                Button("Done") {
-                    saveSectionChanges()
-                    showEditor = false
-                }
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.blue)
-            }
         }
         .padding(14)
         .frame(width: 260)
@@ -695,6 +1010,7 @@ private struct ListSectionKanbanColumn: View {
             }
             configs[idx].name = trimmed
             configs[idx].colorHex = editorColorHex
+            configs[idx].dueDate = DateFormatters.dateKey(from: editorDueDate)
             area.sectionConfigs = configs
         } else if let project {
             var configs = project.sectionConfigs
@@ -705,6 +1021,7 @@ private struct ListSectionKanbanColumn: View {
             }
             configs[idx].name = trimmed
             configs[idx].colorHex = editorColorHex
+            configs[idx].dueDate = DateFormatters.dateKey(from: editorDueDate)
             project.sectionConfigs = configs
         }
         if trimmed.caseInsensitiveCompare(section.name) != .orderedSame {
@@ -713,7 +1030,7 @@ private struct ListSectionKanbanColumn: View {
     }
 
     private func moveTasks(from oldName: String, to newName: String) {
-        for task in allTasks where task.resolvedSectionName.caseInsensitiveCompare(oldName) == .orderedSame {
+        for task in universeTasks where task.resolvedSectionName.caseInsensitiveCompare(oldName) == .orderedSame {
             if area != nil, task.area?.id != area?.id { continue }
             if project != nil, task.project?.id != project?.id { continue }
             task.sectionName = newName
@@ -771,10 +1088,10 @@ private struct ListSectionKanbanColumn: View {
     @ViewBuilder
     private var columnBackground: some View {
         RoundedRectangle(cornerRadius: 10)
-            .fill(Theme.surface)
+            .fill(columnColor.opacity(isHovered ? (section.isDefault ? 0.2 : 0.3) : (section.isDefault ? 0.14 : 0.24)))
             .overlay {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(columnColor.opacity(isHovered ? (section.isDefault ? 0.18 : 0.24) : (section.isDefault ? 0.12 : 0.18)))
+                    .fill(Theme.surface.opacity(section.isDefault ? 0.78 : 0.7))
             }
             .overlay {
                 if isPendingCompletion {

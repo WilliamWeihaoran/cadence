@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
     @Environment(CalendarManager.self) private var calendarManager
     @AppStorage("listDetailDefaultPage") private var listDetailDefaultPage = ListDetailPage.tasks.rawValue
+    @AppStorage("sidebarHiddenTabs") private var sidebarHiddenTabsRaw = ""
     @Query(sort: \Area.order)    private var areas:    [Area]
     @Query(sort: \Project.order) private var projects: [Project]
 
@@ -21,6 +22,9 @@ struct SettingsView: View {
                     .padding(.horizontal, 24)
 
                 navigationSection
+                    .padding(.horizontal, 24)
+
+                sidebarTabsSection
                     .padding(.horizontal, 24)
 
                 calendarSection
@@ -258,6 +262,78 @@ struct SettingsView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 9))
                             }
                             .buttonStyle(.cadencePlain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var hiddenTabs: Set<SidebarStaticDestination> {
+        Set(sidebarHiddenTabsRaw.split(separator: ",").compactMap { SidebarStaticDestination(rawValue: String($0)) })
+    }
+
+    private func toggleTab(_ destination: SidebarStaticDestination) {
+        var set = hiddenTabs
+        if set.contains(destination) { set.remove(destination) } else { set.insert(destination) }
+        sidebarHiddenTabsRaw = set.map(\.rawValue).joined(separator: ",")
+    }
+
+    private var sidebarTabsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            settingsCard {
+                HStack(alignment: .top, spacing: 14) {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Theme.amber.opacity(0.16))
+                        .frame(width: 40, height: 40)
+                        .overlay {
+                            Image(systemName: "sidebar.left")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(Theme.amber)
+                        }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Sidebar Tabs")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                        Text("Choose which tabs appear in the sidebar. Hidden tabs are still accessible by re-enabling them here.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+                }
+            }
+
+            settingsCard {
+                VStack(spacing: 0) {
+                    let allToggleable = SidebarStaticDestination.allCases
+                    ForEach(Array(allToggleable.enumerated()), id: \.element.id) { index, destination in
+                        HStack(spacing: 12) {
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(destination.color.opacity(0.15))
+                                .frame(width: 30, height: 30)
+                                .overlay {
+                                    Image(systemName: destination.icon)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(destination.color)
+                                }
+                            Text(destination.label)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.text)
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { !hiddenTabs.contains(destination) },
+                                set: { _ in toggleTab(destination) }
+                            ))
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .tint(Theme.blue)
+                        }
+                        .padding(.vertical, 10)
+                        if index < allToggleable.count - 1 {
+                            Divider().background(Theme.borderSubtle).padding(.leading, 42)
                         }
                     }
                 }

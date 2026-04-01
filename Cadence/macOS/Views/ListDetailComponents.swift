@@ -3,17 +3,102 @@ import SwiftUI
 import SwiftData
 
 struct ListTasksView: View {
+    private struct TaskGroup: Identifiable {
+        let id: String
+        let title: String
+        let accent: Color
+        let tasks: [AppTask]
+    }
+
     let tasks: [AppTask]
     var area: Area?
     var project: Project?
     @Environment(\.modelContext) private var modelContext
     @State private var newTitle = ""
     @State private var selectedSectionName = TaskSectionDefaults.defaultName
+    @State private var groupingMode: TaskGroupingMode = .byDate
+    @State private var sortField: TaskSortField = .custom
+    @State private var sortDirection: TaskSortDirection = .ascending
+    @State private var collapsedGroupIDs: Set<String> = []
+    @State private var isCompletedCollapsed = true
+    @State private var frozenTaskOrder: [UUID]? = nil
+    @State private var dragOverTaskID: UUID? = nil
+
+    private var udKeyPrefix: String {
+        if let a = area { return "list_\(a.id.uuidString)" }
+        if let p = project { return "list_\(p.id.uuidString)" }
+        return "list_generic"
+    }
     @FocusState private var addFocused: Bool
 
-    private var activeTasks: [AppTask] { tasks.filter { !$0.isDone && !$0.isCancelled }.sorted { $0.order < $1.order } }
-    private var doneTasks: [AppTask] { tasks.filter { $0.isDone }.sorted { $0.order < $1.order } }
+    private var activeTasks: [AppTask] {
+        let sorted = sortedTasks(tasks.filter { !$0.isDone && !$0.isCancelled })
+        guard let frozen = frozenTaskOrder else { return sorted }
+        let byID = Dictionary(uniqueKeysWithValues: sorted.map { ($0.id, $0) })
+        return frozen.compactMap { byID[$0] } + sorted.filter { !frozen.contains($0.id) }
+    }
+    private var doneTasks: [AppTask] { tasks.filter { $0.isDone }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) } }
     private var sectionNames: [String] { area?.sectionNames ?? project?.sectionNames ?? [TaskSectionDefaults.defaultName] }
+    private var todayKey: String { DateFormatters.todayKey() }
+
+    private var groupedActiveTasks: [TaskGroup] {
+        switch groupingMode {
+        case .none:
+            return [
+                TaskGroup(id: "all", title: "Tasks", accent: Theme.dim, tasks: activeTasks)
+            ]
+        case .byDate:
+            var overdueIDs = Set<UUID>()
+            var dueTodayIDs = Set<UUID>()
+            var doTodayIDs = Set<UUID>()
+
+            for task in activeTasks {
+                if !task.dueDate.isEmpty && task.dueDate < todayKey {
+                    overdueIDs.insert(task.id)
+                } else if task.dueDate == todayKey {
+                    dueTodayIDs.insert(task.id)
+                }
+            }
+            for task in activeTasks where !overdueIDs.contains(task.id) && !dueTodayIDs.contains(task.id) {
+                if task.scheduledDate == todayKey { doTodayIDs.insert(task.id) }
+            }
+
+            let overdue     = activeTasks.filter { overdueIDs.contains($0.id) }
+            let dueToday    = activeTasks.filter { dueTodayIDs.contains($0.id) }
+            let doToday     = activeTasks.filter { doTodayIDs.contains($0.id) }
+            let scheduled   = activeTasks.filter {
+                !$0.scheduledDate.isEmpty && $0.scheduledDate != todayKey &&
+                !overdueIDs.contains($0.id) && !dueTodayIDs.contains($0.id) && !doTodayIDs.contains($0.id)
+            }
+            let unscheduled = activeTasks.filter {
+                $0.scheduledDate.isEmpty &&
+                !overdueIDs.contains($0.id) && !dueTodayIDs.contains($0.id) && !doTodayIDs.contains($0.id)
+            }
+
+            return [
+                TaskGroup(id: "overdue",    title: "Overdue",    accent: Theme.red,              tasks: overdue),
+                TaskGroup(id: "due-today",  title: "Due Today",  accent: Theme.red.opacity(0.8), tasks: dueToday),
+                TaskGroup(id: "do-today",   title: "Do Today",   accent: Theme.blue,             tasks: doToday),
+                TaskGroup(id: "scheduled",  title: "Scheduled",  accent: Theme.dim,              tasks: scheduled),
+                TaskGroup(id: "unscheduled",title: "Unscheduled",accent: Theme.amber,            tasks: unscheduled)
+            ]
+            .filter { !$0.tasks.isEmpty }
+        case .byList:
+            return sectionNames.compactMap { sectionName in
+                let sectionTasks = activeTasks.filter {
+                    $0.resolvedSectionName.caseInsensitiveCompare(sectionName) == .orderedSame
+                }
+                guard !sectionTasks.isEmpty else { return nil }
+                return TaskGroup(id: "section-\(sectionName.lowercased())", title: sectionName, accent: Theme.blue, tasks: sectionTasks)
+            }
+        case .byPriority:
+            return TaskPriority.allCases.reversed().compactMap { priority in
+                let sectionTasks = activeTasks.filter { $0.priority == priority }
+                guard !sectionTasks.isEmpty else { return nil }
+                return TaskGroup(id: "priority-\(priority.rawValue)", title: priority.label, accent: Theme.priorityColor(priority), tasks: sectionTasks)
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,6 +116,16 @@ struct ListTasksView: View {
             .padding(.vertical, 10)
             .background(Theme.surfaceElevated)
 
+            HStack(spacing: 8) {
+                ListTasksEnumPickerBadge(title: "Sort", selection: $sortField)
+                ListTasksEnumPickerBadge(title: "Order", selection: $sortDirection)
+                ListTasksEnumPickerBadge(title: "Group", selection: $groupingMode)
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .background(Theme.surface)
+
             Divider().background(Theme.borderSubtle)
 
             List {
@@ -40,43 +135,85 @@ struct ListTasksView: View {
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                 }
-                ForEach(activeTasks) { task in
-                    MacTaskRow(task: task, style: .list)
-                        .listRowInsets(.init())
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .draggable("listTask:\(task.id.uuidString)")
-                        .dropDestination(for: String.self) { items, _ in
-                            guard let payload = items.first,
-                                  payload.hasPrefix("listTask:"),
-                                  let droppedID = UUID(uuidString: String(payload.dropFirst(9))),
-                                  droppedID != task.id else { return false }
-                            reorderTask(droppedID: droppedID, targetID: task.id)
-                            return true
+                ForEach(groupedActiveTasks) { group in
+                    CollapsibleTaskGroupHeader(
+                        title: group.title,
+                        isCollapsed: collapsedGroupIDs.contains(group.id),
+                        overdueCount: overdueCount(in: group.tasks),
+                        regularCount: regularCount(in: group.tasks),
+                        accent: group.accent,
+                        onToggle: { toggleGroup(group.id) }
+                    )
+                    .padding(.horizontal, 20)
+                    .padding(.top, 14)
+                    .padding(.bottom, 6)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(.init())
+
+                    if !collapsedGroupIDs.contains(group.id) {
+                        ForEach(group.tasks) { task in
+                            MacTaskRow(task: task, style: .list)
+                                .padding(.leading, 16)
+                                .listRowInsets(.init())
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .transition(.asymmetric(
+                                    insertion: .opacity,
+                                    removal: .opacity.combined(with: .move(edge: .top))
+                                ))
+                                .overlay(alignment: .top) {
+                                    if dragOverTaskID == task.id {
+                                        Rectangle().fill(Theme.blue).frame(height: 2).padding(.leading, 16).transition(.opacity)
+                                    }
+                                }
+                                .animation(.easeInOut(duration: 0.15), value: dragOverTaskID)
+                                .draggable("listTask:\(task.id.uuidString)")
+                                .dropDestination(for: String.self) { items, _ in
+                                    guard let payload = items.first,
+                                          payload.hasPrefix("listTask:"),
+                                          let droppedID = UUID(uuidString: String(payload.dropFirst(9))),
+                                          droppedID != task.id else { return false }
+                                    reorderTask(droppedID: droppedID, targetID: task.id)
+                                    return true
+                                } isTargeted: { isOver in
+                                    if isOver { dragOverTaskID = task.id }
+                                    else if dragOverTaskID == task.id { dragOverTaskID = nil }
+                                }
                         }
+                    }
                 }
 
                 if !doneTasks.isEmpty {
-                    Text("DONE")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.green)
-                        .kerning(0.8)
+                    CompletedSectionHeader(
+                        count: doneTasks.count,
+                        isCollapsed: isCompletedCollapsed,
+                        onToggle: { isCompletedCollapsed.toggle() }
+                    )
                         .padding(.horizontal, 20)
                         .padding(.top, 14)
-                        .padding(.bottom, 4)
+                        .padding(.bottom, 6)
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                         .listRowInsets(.init())
-                    ForEach(doneTasks) { task in
-                        MacTaskRow(task: task, style: .list)
-                            .listRowInsets(.init())
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
+                    if !isCompletedCollapsed {
+                        ForEach(doneTasks) { task in
+                            MacTaskRow(task: task, style: .list)
+                                .padding(.leading, 16)
+                                .listRowInsets(.init())
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .transition(.asymmetric(
+                                    insertion: .opacity,
+                                    removal: .opacity.combined(with: .move(edge: .top))
+                                ))
+                        }
                     }
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .animation(.easeOut(duration: 0.26), value: activeTasks.map(\.id))
         }
         .background(
             Color.clear
@@ -87,9 +224,23 @@ struct ListTasksView: View {
         )
         .background(Theme.bg)
         .onAppear {
+            isCompletedCollapsed = true
             if !sectionNames.contains(where: { $0.caseInsensitiveCompare(selectedSectionName) == .orderedSame }) {
                 selectedSectionName = sectionNames.first ?? TaskSectionDefaults.defaultName
             }
+            let ud = UserDefaults.standard
+            if let raw = ud.string(forKey: "\(udKeyPrefix)_sortField"), let v = TaskSortField(rawValue: raw) { sortField = v }
+            if let raw = ud.string(forKey: "\(udKeyPrefix)_sortDir"), let v = TaskSortDirection(rawValue: raw) { sortDirection = v }
+            if let raw = ud.string(forKey: "\(udKeyPrefix)_grouping"), let v = TaskGroupingMode(rawValue: raw) { groupingMode = v }
+        }
+        .onChange(of: sortField) { _, v in UserDefaults.standard.set(v.rawValue, forKey: "\(udKeyPrefix)_sortField") }
+        .onChange(of: sortDirection) { _, v in UserDefaults.standard.set(v.rawValue, forKey: "\(udKeyPrefix)_sortDir") }
+        .onChange(of: groupingMode) { _, v in UserDefaults.standard.set(v.rawValue, forKey: "\(udKeyPrefix)_grouping") }
+        .background {
+            ListTasksHoverFreezeObserver(
+                frozenOrder: $frozenTaskOrder,
+                naturalIDs: sortedTasks(tasks.filter { !$0.isDone && !$0.isCancelled }).map(\.id)
+            )
         }
     }
 
@@ -112,7 +263,111 @@ struct ListTasksView: View {
               let toIndex = sorted.firstIndex(where: { $0.id == targetID }) else { return }
         let element = sorted.remove(at: fromIndex)
         sorted.insert(element, at: toIndex > fromIndex ? toIndex - 1 : toIndex)
-        for (i, t) in sorted.enumerated() { t.order = i }
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
+            for (i, t) in sorted.enumerated() { t.order = i }
+        }
+    }
+
+    private func sortedTasks(_ input: [AppTask]) -> [AppTask] {
+        input.sorted { lhs, rhs in
+            let ordered: Bool
+            switch sortField {
+            case .custom:
+                ordered = lhs.order < rhs.order
+            case .date:
+                let ld = lhs.scheduledDate.isEmpty ? "9999-99-99" : lhs.scheduledDate
+                let rd = rhs.scheduledDate.isEmpty ? "9999-99-99" : rhs.scheduledDate
+                ordered = ld == rd ? lhs.order < rhs.order : ld < rd
+            case .priority:
+                let lp = priorityRank(lhs.priority)
+                let rp = priorityRank(rhs.priority)
+                ordered = lp == rp ? lhs.order < rhs.order : lp < rp
+            }
+            return sortDirection == .ascending ? ordered : !ordered
+        }
+    }
+
+    private func priorityRank(_ priority: TaskPriority) -> Int {
+        switch priority {
+        case .none: return 0
+        case .low: return 1
+        case .medium: return 2
+        case .high: return 3
+        }
+    }
+
+    private func toggleGroup(_ id: String) {
+        if collapsedGroupIDs.contains(id) {
+            collapsedGroupIDs.remove(id)
+        } else {
+            collapsedGroupIDs.insert(id)
+        }
+    }
+
+    private func overdueCount(in tasks: [AppTask]) -> Int? {
+        let count = tasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey }.count
+        return count > 0 ? count : nil
+    }
+
+    private func regularCount(in tasks: [AppTask]) -> Int {
+        tasks.count - (overdueCount(in: tasks) ?? 0)
+    }
+}
+
+private struct ListTasksEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>: View where T.RawValue == String {
+    let title: String
+    @Binding var selection: T
+    @State private var showPicker = false
+
+    var body: some View {
+        Button { showPicker.toggle() } label: {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                Text(selection.rawValue)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.text)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Theme.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.cadencePlain)
+        .popover(isPresented: $showPicker) {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(T.allCases), id: \.id) { value in
+                    Button {
+                        selection = value
+                        showPicker = false
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(value.rawValue).font(.system(size: 13)).foregroundStyle(Theme.text)
+                            Spacer()
+                            if selection.id == value.id {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Theme.blue)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .background(selection.id == value.id ? Theme.blue.opacity(0.08) : .clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.cadencePlain)
+                }
+            }
+            .padding(.vertical, 6)
+            .frame(minWidth: 170)
+            .background(Theme.surfaceElevated)
+        }
     }
 }
 
@@ -120,7 +375,7 @@ struct ListLogView: View {
     let tasks: [AppTask]
 
     private var doneTasks: [AppTask] {
-        tasks.filter { $0.isDone }.sorted { $0.title < $1.title }
+        tasks.filter { $0.isDone }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
     }
 
     var body: some View {
@@ -210,6 +465,24 @@ struct TabButton: View {
             }
         }
         .buttonStyle(.cadencePlain)
+    }
+}
+
+private struct ListTasksHoverFreezeObserver: View {
+    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
+    @Binding var frozenOrder: [UUID]?
+    let naturalIDs: [UUID]
+
+    var body: some View {
+        Color.clear
+            .allowsHitTesting(false)
+            .onChange(of: hoveredTaskManager.hoveredTask?.id) { _, newID in
+                if newID != nil {
+                    if frozenOrder == nil { frozenOrder = naturalIDs }
+                } else if frozenOrder != nil {
+                    frozenOrder = nil
+                }
+            }
     }
 }
 #endif

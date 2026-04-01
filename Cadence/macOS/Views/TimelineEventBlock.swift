@@ -113,12 +113,13 @@ struct TimelineEventBlock: View {
             ) {
                 CalendarEventEditPopover(
                     item: item,
-                    onSave: { title, startMin, duration in
+                    onSave: { title, startMin, duration, calendarID in
                         let dateKey = DateFormatters.dateKey(from: item.ekEvent.startDate)
                         calendarManager.updateEvent(item.ekEvent, title: title,
                                                     startMin: startMin,
                                                     durationMinutes: duration,
-                                                    dateKey: dateKey)
+                                                    dateKey: dateKey,
+                                                    calendarID: calendarID)
                         selectedEventID = nil
                     },
                     onDelete: {
@@ -265,16 +266,18 @@ struct TimelineEventBlock: View {
 
 struct CalendarEventEditPopover: View {
     let item: CalendarEventItem
-    let onSave: (String, Int, Int) -> Void
+    let onSave: (String, Int, Int, String) -> Void
     let onDelete: () -> Void
+    @Environment(CalendarManager.self) private var calendarManager
 
     @State private var title: String
     @State private var startMin: Int
     @State private var endMin: Int
     @State private var startText: String
     @State private var endText: String
+    @State private var selectedCalendarID: String
 
-    init(item: CalendarEventItem, onSave: @escaping (String, Int, Int) -> Void, onDelete: @escaping () -> Void) {
+    init(item: CalendarEventItem, onSave: @escaping (String, Int, Int, String) -> Void, onDelete: @escaping () -> Void) {
         self.item = item
         self.onSave = onSave
         self.onDelete = onDelete
@@ -285,6 +288,7 @@ struct CalendarEventEditPopover: View {
         _endMin   = State(initialValue: e)
         _startText = State(initialValue: TimeFormatters.timeString(from: s))
         _endText   = State(initialValue: TimeFormatters.timeString(from: e))
+        _selectedCalendarID = State(initialValue: item.ekEvent.calendar.calendarIdentifier)
     }
 
     private var durationMinutes: Int { max(0, endMin - startMin) }
@@ -351,9 +355,23 @@ struct CalendarEventEditPopover: View {
                     }
                 }
 
+                infoCard {
+                    HStack(spacing: 10) {
+                        Label("Calendar", systemImage: "calendar")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                            .frame(width: 88, alignment: .leading)
+                        CadenceCalendarPickerButton(
+                            calendars: calendarManager.writableCalendars,
+                            selectedID: $selectedCalendarID
+                        )
+                        Spacer(minLength: 0)
+                    }
+                }
+
                 // Actions
                 HStack(spacing: 10) {
-                    Button { onSave(title, startMin, durationMinutes) } label: {
+                    Button { onSave(title, startMin, durationMinutes, selectedCalendarID) } label: {
                         Label("Save", systemImage: "checkmark.circle.fill")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Theme.blue)

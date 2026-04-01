@@ -18,6 +18,7 @@ struct TimelineTaskBlock: View {
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
+    @Environment(TaskCompletionAnimationManager.self) private var taskCompletionAnimationManager
     @Binding var selectedTaskID: UUID?
     @Binding var activeDragTaskID: UUID?
     let onSelect: () -> Void
@@ -46,19 +47,27 @@ struct TimelineTaskBlock: View {
         )
     }
 
+    private var isPendingCompletion: Bool {
+        taskCompletionAnimationManager.isPending(task)
+    }
+
     var body: some View {
-        timelineBlockBody(
-            task: task,
-            durationMinutes: task.estimatedMinutes,
-            timeRangeLabel: timeRangeLabel,
-            frame: frame,
-            style: style,
-            showSelection: selectedTaskID == task.id,
-            showHover: isHovered,
-            onToggleDone: { task.status = task.isDone ? .todo : .done }
-        )
-        .frame(width: frame.width, height: frame.height)
-        .contentShape(Rectangle())
+        TimelineView(.animation) { context in
+            timelineBlockBody(
+                task: task,
+                durationMinutes: task.estimatedMinutes,
+                timeRangeLabel: timeRangeLabel,
+                frame: frame,
+                style: style,
+                showSelection: selectedTaskID == task.id,
+                showHover: isHovered,
+                isPendingCompletion: isPendingCompletion,
+                completionProgress: taskCompletionAnimationManager.progress(for: task, now: context.date),
+                onToggleDone: { taskCompletionAnimationManager.toggleCompletion(for: task) }
+            )
+            .frame(width: frame.width, height: frame.height)
+            .contentShape(Rectangle())
+        }
         .onHover { hovering in
             isHovered = hovering
             if hovering {
@@ -324,9 +333,14 @@ func timelineBlockBody(
     style: TimelineBlockStyle,
     showSelection: Bool,
     showHover: Bool = false,
+    isPendingCompletion: Bool = false,
+    completionProgress: Double = 0,
     onToggleDone: (() -> Void)? = nil
 ) -> some View {
     let taskColor = Color(hex: task.containerColor)
+    let clampedProgress = min(max(completionProgress, 0), 1)
+    let completedTransitionOpacity = max(0, (clampedProgress - 0.58) / 0.42)
+    let greenOverlayOpacity = 0.28 * (1 - max(0, (clampedProgress - 0.8) / 0.2))
     HStack(alignment: .top, spacing: 0) {
         // Left color bar
         taskColor
@@ -341,9 +355,9 @@ func timelineBlockBody(
         HStack(alignment: .top, spacing: 4) {
             if let onToggleDone {
                 Button(action: onToggleDone) {
-                    Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
+                    Image(systemName: task.isDone ? "checkmark.circle.fill" : (isPendingCompletion ? "circle.inset.filled" : "circle"))
                         .font(.system(size: 12))
-                        .foregroundStyle(task.isDone ? Theme.green : Theme.dim)
+                        .foregroundStyle(task.isDone || isPendingCompletion ? Theme.green : Theme.dim)
                 }
                 .buttonStyle(.cadencePlain)
                 .padding(.top, 1)
@@ -397,9 +411,24 @@ func timelineBlockBody(
             RoundedRectangle(cornerRadius: style.cornerRadius).fill(Theme.bg)
             RoundedRectangle(cornerRadius: style.cornerRadius)
                 .fill(taskColor.opacity(task.isDone ? 0.08 : 0.18))
+            if isPendingCompletion {
+                RoundedRectangle(cornerRadius: style.cornerRadius)
+                    .fill(taskColor.opacity(0.08 + (0.08 * completedTransitionOpacity)))
+            }
             if showHover {
                 RoundedRectangle(cornerRadius: style.cornerRadius)
                     .fill(Theme.blue.opacity(0.06))
+            }
+            if isPendingCompletion {
+                GeometryReader { proxy in
+                    RoundedRectangle(cornerRadius: style.cornerRadius)
+                        .fill(Theme.green.opacity(greenOverlayOpacity))
+                        .frame(
+                            width: proxy.size.width * clampedProgress,
+                            alignment: .leading
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
     )

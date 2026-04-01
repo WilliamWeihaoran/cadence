@@ -23,17 +23,17 @@ struct macOSRootView: View {
     @Environment(ThemeManager.self) private var themeManager
     @Environment(FocusManager.self) private var focusManager
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
-    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
-    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
-    @Environment(HoveredKanbanColumnManager.self) private var hoveredKanbanColumnManager
-    @Environment(HoveredSectionManager.self) private var hoveredSectionManager
     @Environment(HoveredTaskDatePickerManager.self) private var hoveredTaskDatePickerManager
-    @Environment(TaskCompletionAnimationManager.self) private var taskCompletionAnimationManager
     @Environment(TaskCreationManager.self) private var taskCreationManager
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(\.modelContext) private var modelContext
-    @Query private var allTasks: [AppTask]
     @State private var keyMonitor: Any? = nil
+    @State private var showTimelineSidebar = false
+    private let hoveredTaskManager = HoveredTaskManager.shared
+    private let hoveredEditableManager = HoveredEditableManager.shared
+    private let hoveredKanbanColumnManager = HoveredKanbanColumnManager.shared
+    private let hoveredSectionManager = HoveredSectionManager.shared
+    private let taskCompletionAnimationManager = TaskCompletionAnimationManager.shared
 
     var body: some View {
         let _ = themeManager.selectedTheme
@@ -61,52 +61,80 @@ struct macOSRootView: View {
                 detailView
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Theme.bg)
+
+                if showTimelineSidebar {
+                    VStack(spacing: 0) {
+                        HStack {
+                            Text("Today Timeline")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Theme.dim)
+                            Spacer()
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showTimelineSidebar = false
+                                }
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Theme.dim)
+                                    .frame(width: 20, height: 20)
+                                    .background(Theme.surfaceElevated)
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.cadencePlain)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.top, 10)
+                        .padding(.bottom, 8)
+                        .background(Theme.surface)
+
+                        Divider().background(Theme.borderSubtle)
+
+                        SchedulePanel()
+                            .frame(minWidth: 320, idealWidth: 360, maxWidth: 420)
+                    }
+                    .frame(width: 360)
+                    .background(Theme.surface)
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(Theme.borderSubtle.opacity(0.85))
+                            .frame(width: 1)
+                    }
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
             .preferredColorScheme(.dark)
 
-            if taskCreationManager.isPresented {
-                ZStack {
-                    Color.black.opacity(0.28)
-                        .ignoresSafeArea()
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            clearAppEditingFocus()
-                            taskCreationManager.dismiss()
-                        }
+            VStack {
+                HStack {
+                    Button(action: toggleSidebarVisibility) {
+                        Image(systemName: columnVisibility == .detailOnly ? "sidebar.left" : "sidebar.leading")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                            .frame(width: 30, height: 30)
+                            .background(Theme.surfaceElevated.opacity(0.9))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Theme.borderSubtle, lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.cadencePlain)
+                    .help(columnVisibility == .detailOnly ? "Show Sidebar (Cmd+S)" : "Hide Sidebar (Cmd+S)")
 
-                    CreateTaskSheet(seed: taskCreationManager.seed)
-                        .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 12)
-                        .onTapGesture {
-                            // Prevent outside tap handler from firing when clicking inside the panel.
-                        }
+                    Spacer()
                 }
-                .transition(.opacity)
-                .zIndex(10)
-            }
+                .padding(.leading, 10)
+                .padding(.top, 10)
 
-            if let deleteRequest = deleteConfirmationManager.request {
-                DeleteConfirmationOverlay(
-                    title: deleteRequest.title,
-                    message: deleteRequest.message,
-                    confirmLabel: deleteRequest.confirmLabel,
-                    onConfirm: { deleteConfirmationManager.confirm() },
-                    onCancel: { deleteConfirmationManager.cancel() }
-                )
-                .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                .zIndex(20)
+                Spacer()
             }
+            .zIndex(5)
 
-            if let request = hoveredTaskDatePickerManager.request {
-                HoveredTaskDatePickerOverlay(
-                    request: request,
-                    onUpdateDate: { hoveredTaskDatePickerManager.request?.selectedDate = $0 },
-                    onConfirm: { hoveredTaskDatePickerManager.confirm() },
-                    onClear: { hoveredTaskDatePickerManager.clearDate() },
-                    onCancel: { hoveredTaskDatePickerManager.cancel() }
-                )
-                .transition(.opacity.combined(with: .scale(scale: 0.985)))
-                .zIndex(21)
-            }
+            TaskCreationLayerView()
+            SuccessToastLayerView()
+            DeleteConfirmationLayerView()
+            DatePickerLayerView()
         }
         .ignoresSafeArea(.container, edges: .top)
         .onAppear {
@@ -128,7 +156,9 @@ struct macOSRootView: View {
         }
         .onChange(of: calendarManager.storeVersion) {
             // Sync all tasks that have linked calendar events (handles moves + deletes from iCal)
-            for task in allTasks where !task.calendarEventID.isEmpty {
+            let descriptor = FetchDescriptor<AppTask>()
+            let tasks = (try? modelContext.fetch(descriptor)) ?? []
+            for task in tasks where !task.calendarEventID.isEmpty {
                 calendarManager.syncTaskFromLinkedEvent(task)
             }
             try? modelContext.save()
@@ -258,12 +288,7 @@ struct macOSRootView: View {
                 return nil
             case 36, 76: // Cmd+Return / Cmd+Enter — toggle completion for hovered task
                 if let task = hoveredTaskManager.hoveredTask {
-                    switch hoveredTaskManager.hoveredSource {
-                    case .timeline:
-                        task.status = task.isDone ? .todo : .done
-                    case .list, .kanban, .none:
-                        taskCompletionAnimationManager.toggleCompletion(for: task)
-                    }
+                    taskCompletionAnimationManager.toggleCompletion(for: task)
                     return nil
                 }
                 if hoveredSectionManager.triggerToggleComplete() { return nil }
@@ -276,6 +301,36 @@ struct macOSRootView: View {
                     modelContext.undoManager?.redo()
                 } else {
                     modelContext.undoManager?.undo()
+                }
+                return nil
+            case 42: // Cmd+\ — toggle timeline sidebar
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showTimelineSidebar.toggle()
+                }
+                return nil
+            case 1: // Cmd+S — toggle sidebar
+                toggleSidebarVisibility()
+                return nil
+            case 24, 27: // Cmd+Shift+Plus / Cmd+Shift+Minus — nudge hovered do/due date by one day
+                guard event.modifierFlags.contains(.shift),
+                      let task = hoveredTaskManager.hoveredTask,
+                      let dateKind = hoveredTaskManager.hoveredDateKind else { return event }
+                let delta = event.keyCode == 27 ? -1 : 1
+                let currentKey: String
+                switch dateKind {
+                case .doDate:
+                    currentKey = task.scheduledDate
+                case .dueDate:
+                    currentKey = task.dueDate
+                }
+                let baseDate = DateFormatters.date(from: currentKey) ?? Date()
+                let nudged = Calendar.current.date(byAdding: .day, value: delta, to: baseDate) ?? baseDate
+                let nudgedKey = DateFormatters.dateKey(from: nudged)
+                switch dateKind {
+                case .doDate:
+                    task.scheduledDate = nudgedKey
+                case .dueDate:
+                    task.dueDate = nudgedKey
                 }
                 return nil
             default:
@@ -300,6 +355,106 @@ struct macOSRootView: View {
             window.styleMask.insert(.fullSizeContentView)
         }
     }
+
+    private func toggleSidebarVisibility() {
+        withAnimation(.easeInOut(duration: 0.22)) {
+            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+        }
+    }
+}
+
+private struct TaskCreationLayerView: View {
+    @Environment(TaskCreationManager.self) private var taskCreationManager
+
+    var body: some View {
+        if taskCreationManager.isPresented {
+            ZStack {
+                Color.black.opacity(0.28)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        clearAppEditingFocus()
+                        taskCreationManager.dismiss()
+                    }
+
+                CreateTaskSheet(seed: taskCreationManager.seed)
+                    .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 12)
+                    .onTapGesture {
+                        // Prevent outside tap handler from firing when clicking inside the panel.
+                    }
+            }
+            .transition(.opacity)
+            .zIndex(10)
+        }
+    }
+}
+
+private struct SuccessToastLayerView: View {
+    @Environment(TaskCreationManager.self) private var taskCreationManager
+
+    var body: some View {
+        if taskCreationManager.showSuccessToast {
+            VStack {
+                Spacer()
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Theme.green)
+                    Text("Task Created")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .background(Theme.surfaceElevated.opacity(0.98))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .shadow(color: .black.opacity(0.18), radius: 20, y: 8)
+                .padding(.bottom, 24)
+            }
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+            .zIndex(30)
+        }
+    }
+}
+
+private struct DeleteConfirmationLayerView: View {
+    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
+
+    var body: some View {
+        if let deleteRequest = deleteConfirmationManager.request {
+            DeleteConfirmationOverlay(
+                title: deleteRequest.title,
+                message: deleteRequest.message,
+                confirmLabel: deleteRequest.confirmLabel,
+                onConfirm: { deleteConfirmationManager.confirm() },
+                onCancel: { deleteConfirmationManager.cancel() }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            .zIndex(20)
+        }
+    }
+}
+
+private struct DatePickerLayerView: View {
+    @Environment(HoveredTaskDatePickerManager.self) private var hoveredTaskDatePickerManager
+
+    var body: some View {
+        if let request = hoveredTaskDatePickerManager.request {
+            HoveredTaskDatePickerOverlay(
+                request: request,
+                onUpdateDate: { hoveredTaskDatePickerManager.request?.selectedDate = $0 },
+                onConfirm: { hoveredTaskDatePickerManager.confirm() },
+                onClear: { hoveredTaskDatePickerManager.clearDate() },
+                onCancel: { hoveredTaskDatePickerManager.cancel() }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.985)))
+            .zIndex(21)
+        }
+    }
 }
 
 private struct HoveredTaskDatePickerOverlay: View {
@@ -308,6 +463,24 @@ private struct HoveredTaskDatePickerOverlay: View {
     let onConfirm: () -> Void
     let onClear: () -> Void
     let onCancel: () -> Void
+    @State private var pickerViewMonth: Date
+
+    init(
+        request: HoveredTaskDatePickerManager.Request,
+        onUpdateDate: @escaping (Date) -> Void,
+        onConfirm: @escaping () -> Void,
+        onClear: @escaping () -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.request = request
+        self.onUpdateDate = onUpdateDate
+        self.onConfirm = onConfirm
+        self.onClear = onClear
+        self.onCancel = onCancel
+        var comps = Calendar.current.dateComponents([.year, .month], from: request.selectedDate)
+        comps.day = 1
+        _pickerViewMonth = State(initialValue: Calendar.current.date(from: comps) ?? request.selectedDate)
+    }
 
     var body: some View {
         ZStack {
@@ -344,10 +517,23 @@ private struct HoveredTaskDatePickerOverlay: View {
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.dim)
 
-                        CadenceDatePicker(selection: Binding(
-                            get: { request.selectedDate },
-                            set: onUpdateDate
-                        ))
+                        MonthCalendarPanel(
+                            selection: Binding(
+                                get: { request.selectedDate },
+                                set: { newDate in
+                                    onUpdateDate(newDate)
+                                    var comps = Calendar.current.dateComponents([.year, .month], from: newDate)
+                                    comps.day = 1
+                                    pickerViewMonth = Calendar.current.date(from: comps) ?? newDate
+                                }
+                            ),
+                            viewMonth: $pickerViewMonth,
+                            isOpen: Binding(
+                                get: { true },
+                                set: { _ in }
+                            ),
+                            inlineStyle: true
+                        )
                     }
                 }
                 .padding(20)
@@ -355,36 +541,42 @@ private struct HoveredTaskDatePickerOverlay: View {
                 Divider().background(Theme.borderSubtle)
 
                 HStack(spacing: 10) {
-                    Button("Clear", action: onClear)
-                        .buttonStyle(.cadencePlain)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.red)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    Button(action: onClear) {
+                        Text("Clear")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.red)
+                            .frame(minWidth: 74, minHeight: 36)
+                            .contentShape(Rectangle())
+                            .background(Theme.surfaceElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.cadencePlain)
 
                     Spacer()
 
-                    Button("Cancel", action: onCancel)
-                        .buttonStyle(.cadencePlain)
+                    Button(action: onCancel) {
+                        Text("Cancel")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.dim)
+                            .frame(minWidth: 96, minHeight: 36)
+                            .contentShape(Rectangle())
+                            .background(Theme.surfaceElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.cadencePlain)
                         .keyboardShortcut(.cancelAction)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
 
-                    Button("Apply", action: onConfirm)
-                        .buttonStyle(.cadencePlain)
+                    Button(action: onConfirm) {
+                        Text("Apply")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(minWidth: 96, minHeight: 36)
+                            .contentShape(Rectangle())
+                            .background(request.kind == .doDate ? Theme.blue : Theme.amber)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.cadencePlain)
                         .keyboardShortcut(.defaultAction)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 9)
-                        .background(request.kind == .doDate ? Theme.blue : Theme.amber)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 .padding(20)
             }
@@ -480,11 +672,16 @@ private struct DeleteConfirmationOverlay: View {
 
 private struct AllTasksPageView: View {
     private enum AllTasksViewMode: String, CaseIterable {
-        case byDoDate = "By Do Date"
+        case list = "List"
         case kanban = "Kanban"
     }
 
-    @State private var mode: AllTasksViewMode = .byDoDate
+    @AppStorage("allTasksViewMode") private var modeRaw: String = AllTasksViewMode.list.rawValue
+    @AppStorage("allTasksSortField") private var sortField: TaskSortField = .date
+    @AppStorage("allTasksSortDirection") private var sortDirection: TaskSortDirection = .ascending
+    @AppStorage("allTasksGroupingMode") private var groupingMode: TaskGroupingMode = .byDate
+
+    private var mode: AllTasksViewMode { AllTasksViewMode(rawValue: modeRaw) ?? .list }
     @Environment(TaskCreationManager.self) private var taskCreationManager
 
     var body: some View {
@@ -517,26 +714,11 @@ private struct AllTasksPageView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.cadencePlain)
-                HStack(spacing: 2) {
+                HStack(spacing: 4) {
                     ForEach(AllTasksViewMode.allCases, id: \.self) { viewMode in
-                        Button {
-                            mode = viewMode
-                        } label: {
-                            Text(viewMode.rawValue)
-                                .font(.system(size: 11, weight: mode == viewMode ? .semibold : .regular))
-                                .foregroundStyle(mode == viewMode ? Theme.blue : Theme.dim)
-                                .frame(minWidth: 86, minHeight: 30)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .contentShape(RoundedRectangle(cornerRadius: 5))
-                                .background(mode == viewMode ? Theme.blue.opacity(0.12) : Color.clear)
-                                .clipShape(RoundedRectangle(cornerRadius: 5))
-                        }
-                        .buttonStyle(.cadencePlain)
+                        allTasksTabButton(viewMode)
                     }
                 }
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
@@ -544,16 +726,125 @@ private struct AllTasksPageView: View {
 
             Divider().background(Theme.borderSubtle)
 
+            HStack(spacing: 10) {
+                EnumFilterPickerBadge(title: "Sort", selection: $sortField)
+                EnumFilterPickerBadge(title: "Order", selection: $sortDirection)
+                if mode == .list {
+                    EnumFilterPickerBadge(title: "Group", selection: $groupingMode)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .background(Theme.surface)
+
+            Divider().background(Theme.borderSubtle)
+
             Group {
                 switch mode {
-                case .byDoDate:
-                    TasksPanel(mode: .byDoDate, showsHeader: false)
+                case .list:
+                    TasksPanel(
+                        mode: .byDoDate,
+                        showsHeader: false,
+                        sortField: sortField,
+                        sortDirection: sortDirection,
+                        groupingMode: groupingMode
+                    )
                 case .kanban:
-                    TaskListsKanbanView()
+                    TaskListsKanbanView(
+                        sortField: sortField,
+                        sortDirection: sortDirection,
+                        groupingMode: .byList
+                    )
                 }
             }
         }
         .background(Theme.bg)
+    }
+
+    private func allTasksTabButton(_ tab: AllTasksViewMode) -> some View {
+        Button {
+            modeRaw = tab.rawValue
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: tab == .list ? "list.bullet" : "square.grid.3x2")
+                    .font(.system(size: 12))
+                Text(tab.rawValue)
+                    .font(.system(size: 14, weight: mode == tab ? .semibold : .regular))
+            }
+            .foregroundStyle(mode == tab ? Theme.blue : Theme.dim)
+            .frame(minWidth: 82, minHeight: 34)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(mode == tab ? Theme.blue.opacity(0.12) : Color.clear)
+            )
+            .overlay(alignment: .bottom) {
+                if mode == tab {
+                    Rectangle().fill(Theme.blue).frame(height: 2)
+                }
+            }
+        }
+        .buttonStyle(.cadencePlain)
+    }
+}
+
+private struct EnumFilterPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>: View where T.RawValue == String {
+    let title: String
+    @Binding var selection: T
+    @State private var showPicker = false
+
+    var body: some View {
+        Button { showPicker.toggle() } label: {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                Text(selection.rawValue)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.text)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Theme.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.cadencePlain)
+        .popover(isPresented: $showPicker) {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(T.allCases), id: \.id) { value in
+                    Button {
+                        selection = value
+                        showPicker = false
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(value.rawValue).font(.system(size: 13)).foregroundStyle(Theme.text)
+                            Spacer()
+                            if selection.id == value.id {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Theme.blue)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .background(selection.id == value.id ? Theme.blue.opacity(0.08) : .clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.cadencePlain)
+                }
+            }
+            .padding(.vertical, 6)
+            .frame(minWidth: 170)
+            .background(Theme.surfaceElevated)
+        }
     }
 }
 

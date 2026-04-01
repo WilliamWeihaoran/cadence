@@ -243,6 +243,7 @@ struct FocusView: View {
             }
         }
         if complete {
+            task.completedAt = Date()
             task.status = .done
         }
         focusManager.reset()

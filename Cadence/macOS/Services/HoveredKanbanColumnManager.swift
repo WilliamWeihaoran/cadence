@@ -11,6 +11,7 @@ final class HoveredKanbanColumnManager {
     private init() {}
 
     func beginHovering(id: AnyHashable, onCreateTask: @escaping () -> Void) {
+        if hoveredID == id { return }
         hoveredID = id
         createTaskAction = onCreateTask
     }

@@ -70,10 +70,13 @@ struct SidebarView: View {
     @Query(sort: \Context.order) private var contexts: [Context]
     @AppStorage("sidebarCoreOrder") private var sidebarCoreOrderRaw = ""
     @AppStorage("sidebarTrackOrder") private var sidebarTrackOrderRaw = ""
+    @AppStorage("sidebarHiddenTabs") private var sidebarHiddenTabsRaw = ""
 
     @State private var showCreateContext = false
     @State private var contextForNewList: Context? = nil
     @State private var draggingStaticDestination: SidebarStaticDestination? = nil
+    @State private var dragOverCoreDestination: SidebarStaticDestination? = nil
+    @State private var dragOverTrackDestination: SidebarStaticDestination? = nil
 
     var body: some View {
         ScrollView {
@@ -102,6 +105,12 @@ struct SidebarView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(coreDestinations) { destination in
                         SidebarRow(item: destination.item, icon: destination.icon, label: destination.label, color: destination.color, selection: $selection)
+                            .overlay(alignment: .top) {
+                                if dragOverCoreDestination == destination {
+                                    Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
+                                }
+                            }
+                            .animation(.easeInOut(duration: 0.15), value: dragOverCoreDestination)
                             .onDrag {
                                 draggingStaticDestination = destination
                                 return NSItemProvider(object: NSString(string: "\(sidebarStaticDragPrefix)\(destination.rawValue)"))
@@ -111,12 +120,17 @@ struct SidebarView: View {
                                 delegate: SidebarStaticDropDelegate(
                                     target: destination,
                                     dragging: $draggingStaticDestination,
+                                    hovered: Binding(
+                                        get: { dragOverCoreDestination },
+                                        set: { dragOverCoreDestination = $0 }
+                                    ),
                                     current: coreDestinations,
                                     save: saveCoreDestinations
                                 )
                             )
                     }
                 }
+                .animation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08), value: coreDestinations.map(\.rawValue))
 
                 SidebarSection(title: "ORGANIZE") {
                     ForEach(contexts) { context in
@@ -131,6 +145,12 @@ struct SidebarView: View {
                 SidebarSection(title: "TRACK") {
                     ForEach(trackDestinations) { destination in
                         SidebarRow(item: destination.item, icon: destination.icon, label: destination.label, color: destination.color, selection: $selection)
+                            .overlay(alignment: .top) {
+                                if dragOverTrackDestination == destination {
+                                    Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
+                                }
+                            }
+                            .animation(.easeInOut(duration: 0.15), value: dragOverTrackDestination)
                             .onDrag {
                                 draggingStaticDestination = destination
                                 return NSItemProvider(object: NSString(string: "\(sidebarStaticDragPrefix)\(destination.rawValue)"))
@@ -140,12 +160,17 @@ struct SidebarView: View {
                                 delegate: SidebarStaticDropDelegate(
                                     target: destination,
                                     dragging: $draggingStaticDestination,
+                                    hovered: Binding(
+                                        get: { dragOverTrackDestination },
+                                        set: { dragOverTrackDestination = $0 }
+                                    ),
                                     current: trackDestinations,
                                     save: saveTrackDestinations
                                 )
                             )
                     }
                 }
+                .animation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08), value: trackDestinations.map(\.rawValue))
 
                 SidebarSection(title: "NOTES") {
                     SidebarRow(item: .notes, icon: "doc.text", label: "Notes", color: Theme.purple, selection: $selection)
@@ -189,18 +214,28 @@ struct SidebarView: View {
         }
     }
 
+    var hiddenTabs: Set<SidebarStaticDestination> {
+        Set(sidebarHiddenTabsRaw.split(separator: ",").compactMap { SidebarStaticDestination(rawValue: String($0)) })
+    }
+
+    func setTabHidden(_ destination: SidebarStaticDestination, hidden: Bool) {
+        var set = hiddenTabs
+        if hidden { set.insert(destination) } else { set.remove(destination) }
+        sidebarHiddenTabsRaw = set.map(\.rawValue).joined(separator: ",")
+    }
+
     private var coreDestinations: [SidebarStaticDestination] {
         resolveDestinations(
             rawValue: sidebarCoreOrderRaw,
             defaults: [.today, .allTasks, .focus, .inbox, .calendar]
-        )
+        ).filter { !hiddenTabs.contains($0) }
     }
 
     private var trackDestinations: [SidebarStaticDestination] {
         resolveDestinations(
             rawValue: sidebarTrackOrderRaw,
             defaults: [.goals, .habits]
-        )
+        ).filter { !hiddenTabs.contains($0) }
     }
 
     private func resolveDestinations(rawValue: String, defaults: [SidebarStaticDestination]) -> [SidebarStaticDestination] {

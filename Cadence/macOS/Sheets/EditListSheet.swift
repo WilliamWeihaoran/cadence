@@ -13,6 +13,8 @@ struct EditAreaSheet: View {
     @State private var selectedColor: String
     @State private var selectedIcon: String
     @State private var selectedCalendarID: String
+    @State private var hideDueDateIfEmpty: Bool
+    @State private var hideSectionDueDateIfEmpty: Bool
 
     init(area: Area) {
         self.area = area
@@ -20,6 +22,8 @@ struct EditAreaSheet: View {
         _selectedColor = State(initialValue: area.colorHex)
         _selectedIcon = State(initialValue: area.icon)
         _selectedCalendarID = State(initialValue: area.linkedCalendarID)
+        _hideDueDateIfEmpty = State(initialValue: area.hideDueDateIfEmpty)
+        _hideSectionDueDateIfEmpty = State(initialValue: area.hideSectionDueDateIfEmpty)
     }
 
     var body: some View {
@@ -28,6 +32,8 @@ struct EditAreaSheet: View {
             area.colorHex = selectedColor
             area.icon = selectedIcon
             area.linkedCalendarID = selectedCalendarID
+            area.hideDueDateIfEmpty = hideDueDateIfEmpty
+            area.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
             dismiss()
         }
     }
@@ -61,6 +67,18 @@ struct EditAreaSheet: View {
 
                     fieldLabel("Icon")
                     IconGrid(selected: $selectedIcon)
+
+                    fieldLabel("Task Due Date Display")
+                    Toggle("Hide due date if empty", isOn: $hideDueDateIfEmpty)
+                        .toggleStyle(.switch)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.text)
+
+                    fieldLabel("Column Due Date Display")
+                    Toggle("Hide column due date if empty", isOn: $hideSectionDueDateIfEmpty)
+                        .toggleStyle(.switch)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.text)
 
                     if calendarManager.isAuthorized {
                         fieldLabel("Apple Calendar")
@@ -119,6 +137,8 @@ struct EditProjectSheet: View {
     @State private var dueDate: Date
     @State private var hasDueDate: Bool
     @State private var selectedCalendarID: String
+    @State private var hideDueDateIfEmpty: Bool
+    @State private var hideSectionDueDateIfEmpty: Bool
 
     init(project: Project) {
         self.project = project
@@ -126,6 +146,8 @@ struct EditProjectSheet: View {
         _selectedColor = State(initialValue: project.colorHex)
         _selectedIcon = State(initialValue: project.icon)
         _selectedCalendarID = State(initialValue: project.linkedCalendarID)
+        _hideDueDateIfEmpty = State(initialValue: project.hideDueDateIfEmpty)
+        _hideSectionDueDateIfEmpty = State(initialValue: project.hideSectionDueDateIfEmpty)
         if !project.dueDate.isEmpty, let d = DateFormatters.date(from: project.dueDate) {
             _hasDueDate = State(initialValue: true)
             _dueDate = State(initialValue: d)
@@ -179,6 +201,18 @@ struct EditProjectSheet: View {
                     fieldLabel("Icon")
                     IconGrid(selected: $selectedIcon)
 
+                    fieldLabel("Task Due Date Display")
+                    Toggle("Hide due date if empty", isOn: $hideDueDateIfEmpty)
+                        .toggleStyle(.switch)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.text)
+
+                    fieldLabel("Column Due Date Display")
+                    Toggle("Hide column due date if empty", isOn: $hideSectionDueDateIfEmpty)
+                        .toggleStyle(.switch)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.text)
+
                     if calendarManager.isAuthorized {
                         fieldLabel("Apple Calendar")
                         CadenceCalendarPickerButton(
@@ -221,6 +255,8 @@ struct EditProjectSheet: View {
         project.icon = selectedIcon
         project.dueDate = hasDueDate ? DateFormatters.dateKey(from: dueDate) : ""
         project.linkedCalendarID = selectedCalendarID
+        project.hideDueDateIfEmpty = hideDueDateIfEmpty
+        project.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
         dismiss()
     }
 

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct EstimatePickerControl: View {
     @Binding var value: Int
+    var compact: Bool = false
     @State private var showPicker = false
 
     private let options: [(Int, String)] = [
@@ -20,21 +21,21 @@ struct EstimatePickerControl: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "timer")
-                    .font(.system(size: 12))
+                    .font(.system(size: compact ? 9 : 12))
                     .foregroundStyle(value > 0 ? Theme.blue : Theme.dim)
                 Text(label)
-                    .font(.system(size: 13))
+                    .font(.system(size: compact ? 10 : 13))
                     .foregroundStyle(value > 0 ? Theme.text : Theme.dim)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.system(size: compact ? 7 : 8, weight: .semibold))
                     .foregroundStyle(Theme.dim)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .frame(minHeight: 30)
+            .padding(.horizontal, compact ? 6 : 10)
+            .padding(.vertical, compact ? 3 : 6)
+            .frame(minHeight: compact ? 21 : 30)
             .contentShape(Rectangle())
             .background(Theme.surface.opacity(0.55))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: compact ? 6 : 8))
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker, arrowEdge: .top) {

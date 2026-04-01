@@ -96,6 +96,7 @@ struct KanbanCard: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .contentShape(RoundedRectangle(cornerRadius: 8))
+        .animation(nil, value: isHovered)
         .onTapGesture {
             showTaskInspector = true
         }
@@ -136,47 +137,42 @@ struct KanbanCard: View {
     }
 
     private var metadataRows: [[MetaItem]] {
-        stride(from: 0, to: metadataItems.count, by: 2).map { index in
-            Array(metadataItems[index..<min(index + 2, metadataItems.count)])
+        var rows: [[MetaItem]] = [[doDateMetaItem, estimateMetaItem]]
+        if let dueDateMetaItem {
+            rows.append([dueDateMetaItem])
         }
+        return rows
     }
 
-    private var metadataItems: [MetaItem] {
-        var items: [MetaItem] = [
-            MetaItem(
-                icon: "clock",
-                text: TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes),
-                tint: Theme.dim,
-                textColor: Theme.dim,
-                action: .none
-            ),
-            MetaItem(
-                icon: task.priority == .none ? "minus" : "circle.fill",
-                text: task.priority.label,
-                tint: task.priority == .none ? Theme.dim : Theme.priorityColor(task.priority),
-                textColor: Theme.muted,
-                action: .priority
-            )
-        ]
-        items.append(
-            MetaItem(
-                icon: "sun.max.fill",
-                text: task.scheduledDate.isEmpty ? "Do" : DateFormatters.relativeDate(from: task.scheduledDate),
-                tint: task.scheduledDate.isEmpty ? Theme.dim : Theme.amber,
-                textColor: task.scheduledDate.isEmpty ? Theme.dim : (isOverdo ? Theme.red : (isDoToday ? Theme.amber : Theme.dim)),
-                action: .doDate
-            )
+    private var estimateMetaItem: MetaItem {
+        MetaItem(
+            icon: "clock",
+            text: TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes),
+            tint: Theme.dim,
+            textColor: Theme.dim,
+            action: .none
         )
-        items.append(
-            MetaItem(
-                icon: "flag.fill",
-                text: task.dueDate.isEmpty ? "Due" : DateFormatters.relativeDate(from: task.dueDate),
-                tint: task.dueDate.isEmpty ? Theme.dim : Theme.red,
-                textColor: task.dueDate.isEmpty ? Theme.dim : (isOverdue ? Theme.red : Theme.dim),
-                action: .dueDate
-            )
+    }
+
+    private var doDateMetaItem: MetaItem {
+        MetaItem(
+            icon: "sun.max.fill",
+            text: task.scheduledDate.isEmpty ? "Do" : DateFormatters.relativeDate(from: task.scheduledDate),
+            tint: task.scheduledDate.isEmpty ? Theme.dim : Theme.amber,
+            textColor: task.scheduledDate.isEmpty ? Theme.dim : (isOverdo ? Theme.red : (isDoToday ? Theme.amber : Theme.dim)),
+            action: .doDate
         )
-        return items
+    }
+
+    private var dueDateMetaItem: MetaItem? {
+        guard task.shouldShowDueDateField else { return nil }
+        return MetaItem(
+            icon: "flag.fill",
+            text: task.dueDate.isEmpty ? "Due" : DateFormatters.relativeDate(from: task.dueDate),
+            tint: task.dueDate.isEmpty ? Theme.dim : Theme.red,
+            textColor: task.dueDate.isEmpty ? Theme.dim : (isOverdue ? Theme.red : Theme.dim),
+            action: .dueDate
+        )
     }
 
     @ViewBuilder
@@ -225,6 +221,13 @@ struct KanbanCard: View {
                 label
             }
             .buttonStyle(.cadencePlain)
+            .onHover { hovering in
+                if hovering {
+                    hoveredTaskManager.beginHoveringDate(.doDate, for: task)
+                } else {
+                    hoveredTaskManager.endHoveringDate(for: task)
+                }
+            }
             .popover(isPresented: $showDoDatePicker) { doDatePickerPopover }
         case .dueDate:
             Button {
@@ -233,6 +236,13 @@ struct KanbanCard: View {
                 label
             }
             .buttonStyle(.cadencePlain)
+            .onHover { hovering in
+                if hovering {
+                    hoveredTaskManager.beginHoveringDate(.dueDate, for: task)
+                } else {
+                    hoveredTaskManager.endHoveringDate(for: task)
+                }
+            }
             .popover(isPresented: $showDueDatePicker) { dueDatePickerPopover }
         }
     }
@@ -398,14 +408,25 @@ struct KanbanCard: View {
         showPriorityPicker || showDueDatePicker || showDoDatePicker || showEstimatePicker
     }
 
+    private var urgencyBackgroundTint: Color {
+        guard !task.isDone else { return isHovered ? Theme.blue.opacity(0.075) : .clear }
+        if isOverdue {
+            return Theme.red.opacity(isHovered ? 0.22 : 0.16)
+        }
+        if isOverdo {
+            return Theme.amber.opacity(isHovered ? 0.26 : 0.2)
+        }
+        return isHovered ? Theme.blue.opacity(0.075) : .clear
+    }
+
     @ViewBuilder
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 8)
             .fill(isHovered ? Theme.surfaceElevated.opacity(1.0) : Theme.surfaceElevated)
             .overlay {
-                if isHovered {
+                if urgencyBackgroundTint != .clear {
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Theme.blue.opacity(0.075))
+                        .fill(urgencyBackgroundTint)
                 }
             }
             .overlay {

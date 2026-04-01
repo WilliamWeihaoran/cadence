@@ -12,6 +12,7 @@ final class HoveredEditableManager {
     private init() {}
 
     func beginHovering(id: AnyHashable, onEdit: @escaping () -> Void, onDelete: (() -> Void)? = nil) {
+        if hoveredID == id { return }
         hoveredID = id
         editAction = onEdit
         deleteAction = onDelete

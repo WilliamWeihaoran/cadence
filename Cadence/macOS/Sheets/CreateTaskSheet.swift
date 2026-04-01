@@ -26,7 +26,7 @@ struct CreateTaskSheet: View {
 
     @State private var showPriorityPicker  = false
     @State private var showEstimatePicker  = false
-    @State private var showSuccess         = false
+    @FocusState private var isTitleFocused: Bool
     @FocusState private var focusedSubtask: Int?
 
     init(seed: TaskCreationSeed, dismissAction: (() -> Void)? = nil) {
@@ -62,6 +62,7 @@ struct CreateTaskSheet: View {
                             .textFieldStyle(.plain)
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(Theme.text)
+                            .focused($isTitleFocused)
                             .onSubmit { if !trimmedTitle.isEmpty { createTask() } }
                     }
                     .padding(.top, 4)
@@ -196,6 +197,7 @@ struct CreateTaskSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .disabled(trimmedTitle.isEmpty)
                     .opacity(trimmedTitle.isEmpty ? 0.5 : 1)
+                    .keyboardShortcut(.return, modifiers: [.command])
                     .padding(.trailing, 12)
             }
             .padding(.vertical, 8)
@@ -203,27 +205,16 @@ struct CreateTaskSheet: View {
         }
         .frame(width: 680)
         .background(Theme.surface)
-        .onAppear { normalizeSelectedSection() }
+        .onAppear {
+            normalizeSelectedSection()
+            DispatchQueue.main.async {
+                isTitleFocused = true
+            }
+        }
         .onChange(of: selectedContainer) { _, _ in
             normalizeSelectedSection()
         }
 
-        // Success overlay
-        if showSuccess {
-            ZStack {
-                Theme.surface.opacity(0.96)
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(Theme.green)
-                    Text("Task Created")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                }
-            }
-            .frame(width: 680)
-            .transition(.opacity.animation(.easeInOut(duration: 0.15)))
-        }
         } // ZStack
     }
 
@@ -419,8 +410,8 @@ struct CreateTaskSheet: View {
             modelContext.insert(subtask)
         }
 
-        withAnimation { showSuccess = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { dismiss() }
+        dismiss()
+        taskCreationManager.presentSuccessToast()
     }
 
     private func applyContainer(_ task: AppTask) {

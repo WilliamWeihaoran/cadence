@@ -14,6 +14,8 @@ struct CreateListSheet: View {
     @State private var selectedIcon = "folder.fill"
     @State private var dueDate: Date = Date()
     @State private var hasDueDate: Bool = false
+    @State private var hideDueDateIfEmpty = true
+    @State private var hideSectionDueDateIfEmpty = true
 
     enum ListType: String, CaseIterable {
         case area = "Area"
@@ -106,6 +108,18 @@ struct CreateListSheet: View {
                     // Icon
                     fieldLabel("Icon")
                     IconGrid(selected: $selectedIcon)
+
+                    fieldLabel("Task Due Date Display")
+                    Toggle("Hide due date if empty", isOn: $hideDueDateIfEmpty)
+                        .toggleStyle(.switch)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.text)
+
+                    fieldLabel("Column Due Date Display")
+                    Toggle("Hide column due date if empty", isOn: $hideSectionDueDateIfEmpty)
+                        .toggleStyle(.switch)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.text)
                 }
                 .padding(24)
             }
@@ -150,11 +164,15 @@ struct CreateListSheet: View {
         case .area:
             let area = Area(name: trimmed, context: context, colorHex: selectedColor, icon: selectedIcon)
             area.order = (context.areas ?? []).count
+            area.hideDueDateIfEmpty = hideDueDateIfEmpty
+            area.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
             modelContext.insert(area)
         case .project:
             let project = Project(name: trimmed, context: context, colorHex: selectedColor)
             project.icon = selectedIcon
             project.order = (context.projects ?? []).count
+            project.hideDueDateIfEmpty = hideDueDateIfEmpty
+            project.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
             if hasDueDate { project.dueDate = DateFormatters.dateKey(from: dueDate) }
             modelContext.insert(project)
         }

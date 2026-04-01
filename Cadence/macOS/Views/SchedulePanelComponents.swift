@@ -494,7 +494,13 @@ struct TaskDetailPopover: View {
 
                 HStack(spacing: 10) {
                     Button {
-                        task.status = task.isDone ? .todo : .done
+                        if task.isDone {
+                            task.completedAt = nil
+                            task.status = .todo
+                        } else {
+                            task.completedAt = Date()
+                            task.status = .done
+                        }
                     } label: {
                         Label(task.isDone ? "Unmark Done" : "Mark Done",
                               systemImage: task.isDone ? "circle" : "checkmark.circle.fill")

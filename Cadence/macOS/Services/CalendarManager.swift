@@ -164,7 +164,7 @@ final class CalendarManager {
     // MARK: - Update External Event (iCal event edited in Cadence)
 
     /// Update an EKEvent's title and time, then save back to iCal.
-    func updateEvent(_ event: EKEvent, title: String, startMin: Int, durationMinutes: Int, dateKey: String) {
+    func updateEvent(_ event: EKEvent, title: String, startMin: Int, durationMinutes: Int, dateKey: String, calendarID: String? = nil) {
         guard let baseDate = DateFormatters.date(from: dateKey) else { return }
         let cal = Calendar.current
         let startDate = cal.date(byAdding: .minute, value: startMin, to: baseDate) ?? baseDate
@@ -172,6 +172,11 @@ final class CalendarManager {
         event.title = title.isEmpty ? "Untitled" : title
         event.startDate = startDate
         event.endDate = endDate
+        if let calendarID,
+           let targetCalendar = store.calendar(withIdentifier: calendarID),
+           targetCalendar.allowsContentModifications {
+            event.calendar = targetCalendar
+        }
         do {
             try store.save(event, span: .thisEvent)
         } catch {

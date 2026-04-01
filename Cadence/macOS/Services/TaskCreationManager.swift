@@ -24,6 +24,10 @@ final class TaskCreationManager {
 
     var isPresented: Bool = false
     var seed: TaskCreationSeed = TaskCreationSeed()
+    var showSuccessToast: Bool = false
+
+    @ObservationIgnored
+    private var successToastTask: Task<Void, Never>?
 
     private init() {}
 
@@ -54,6 +58,20 @@ final class TaskCreationManager {
     func dismiss() {
         isPresented = false
         seed = TaskCreationSeed()
+    }
+
+    func presentSuccessToast() {
+        successToastTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.16)) {
+            showSuccessToast = true
+        }
+        successToastTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 850_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.16)) {
+                showSuccessToast = false
+            }
+        }
     }
 }
 #endif

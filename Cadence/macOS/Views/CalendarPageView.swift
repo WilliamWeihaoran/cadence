@@ -38,6 +38,7 @@ struct CalendarPageView: View {
     @AppStorage("calendarRememberedTimelineDateKey") private var rememberedDateKey: String = ""
     @State private var hContentOffset: CGFloat = 0
     @State private var visibleMonthIdx: Int = 60  // index into MonthGridView's 120-month window
+    @State private var monthGridResetNonce: Int = 0
     @State private var isRestoringVerticalScroll = true
     @State private var isRestoringHorizontalScroll = true
     @State private var didRestoreTimelineScroll = false
@@ -113,7 +114,13 @@ struct CalendarPageView: View {
             Divider().background(Theme.borderSubtle)
 
             if viewMode == .month {
-                MonthGridView(allTasks: allTasks, tasksByDate: tasksByDateForMonth, visibleMonthIdx: $visibleMonthIdx)
+                MonthGridView(
+                    allTasks: allTasks,
+                    tasksByDate: tasksByDateForMonth,
+                    visibleMonthIdx: $visibleMonthIdx,
+                    scrollToTodayTrigger: scrollToTodayTrigger
+                )
+                .id("month-grid-\(monthGridResetNonce)")
             } else {
                 GeometryReader { geo in
                     let colWidth = max(80, (geo.size.width - calTimeTotalWidth) / CGFloat(viewMode.daysCount))
@@ -234,7 +241,10 @@ struct CalendarPageView: View {
                                 }
                             }
                             .onChange(of: viewMode) { _, newMode in
-                                if newMode != .month {
+                                if newMode == .month {
+                                    visibleMonthIdx = 60
+                                    monthGridResetNonce += 1
+                                } else {
                                     didRestoreTimelineScroll = false
                                 }
                             }

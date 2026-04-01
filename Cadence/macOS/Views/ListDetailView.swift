@@ -58,6 +58,14 @@ private struct ListDetailView: View {
     @State private var showEdit = false
     @State private var keyMonitor: Any? = nil
     @State private var showArchivedKanbanColumns = false
+    @State private var kanbanSortField: TaskSortField = .custom
+    @State private var kanbanSortDirection: TaskSortDirection = .ascending
+
+    private var kanbanUDKey: String {
+        if let a = area { return "kanban_\(a.id.uuidString)" }
+        if let p = project { return "kanban_\(p.id.uuidString)" }
+        return "kanban_generic"
+    }
 
     private var name: String     { area?.name     ?? project?.name     ?? "" }
     private var colorHex: String { area?.colorHex ?? project?.colorHex ?? "#4a9eff" }
@@ -135,6 +143,8 @@ private struct ListDetailView: View {
                 }
                 Spacer()
                 if tab == .kanban, allowsSectionEditing {
+                    ListDetailEnumPickerBadge(title: "Sort", selection: $kanbanSortField)
+                    ListDetailEnumPickerBadge(title: "Order", selection: $kanbanSortDirection)
                     Button {
                         showArchivedKanbanColumns.toggle()
                     } label: {
@@ -176,12 +186,7 @@ private struct ListDetailView: View {
                 case .tasks:
                     ListTasksView(tasks: tasks, area: area, project: project)
                 case .kanban:
-                    ListSectionsKanbanView(
-                        tasks: tasks,
-                        area: area,
-                        project: project,
-                        showArchived: $showArchivedKanbanColumns
-                    )
+                    kanbanBody
                 case .documents:
                     DocumentsView(area: area, project: project)
                 case .links:
@@ -211,6 +216,9 @@ private struct ListDetailView: View {
         .onAppear {
             restoreRememberedTab()
             installKeyMonitorIfNeeded()
+            let ud = UserDefaults.standard
+            if let raw = ud.string(forKey: "\(kanbanUDKey)_sortField"), let v = TaskSortField(rawValue: raw) { kanbanSortField = v }
+            if let raw = ud.string(forKey: "\(kanbanUDKey)_sortDir"), let v = TaskSortDirection(rawValue: raw) { kanbanSortDirection = v }
         }
         .onDisappear {
             removeKeyMonitor()
@@ -218,10 +226,25 @@ private struct ListDetailView: View {
         .onChange(of: tab) { _, newValue in
             UserDefaults.standard.set(newValue.rawValue, forKey: tabDefaultsKey)
         }
+        .onChange(of: kanbanSortField) { _, v in UserDefaults.standard.set(v.rawValue, forKey: "\(kanbanUDKey)_sortField") }
+        .onChange(of: kanbanSortDirection) { _, v in UserDefaults.standard.set(v.rawValue, forKey: "\(kanbanUDKey)_sortDir") }
     }
 
     private var allowsSectionEditing: Bool {
         area != nil || project != nil
+    }
+
+    @ViewBuilder
+    private var kanbanBody: some View {
+        ListSectionsKanbanView(
+            tasks: tasks,
+            universeTasks: tasks,
+            area: area,
+            project: project,
+            showArchived: $showArchivedKanbanColumns,
+            sortField: kanbanSortField,
+            sortDirection: kanbanSortDirection
+        )
     }
 
     private func restoreRememberedTab() {
@@ -264,6 +287,63 @@ private struct ListDetailView: View {
         guard let currentIndex = tabs.firstIndex(of: tab), !tabs.isEmpty else { return }
         let nextIndex = (currentIndex + delta + tabs.count) % tabs.count
         tab = tabs[nextIndex]
+    }
+}
+
+private struct ListDetailEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>: View where T.RawValue == String {
+    let title: String
+    @Binding var selection: T
+    @State private var showPicker = false
+
+    var body: some View {
+        Button { showPicker.toggle() } label: {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                Text(selection.rawValue)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.text)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Theme.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.cadencePlain)
+        .popover(isPresented: $showPicker) {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(T.allCases), id: \.id) { value in
+                    Button {
+                        selection = value
+                        showPicker = false
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(value.rawValue).font(.system(size: 13)).foregroundStyle(Theme.text)
+                            Spacer()
+                            if selection.id == value.id {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Theme.blue)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .background(selection.id == value.id ? Theme.blue.opacity(0.08) : .clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.cadencePlain)
+                }
+            }
+            .padding(.vertical, 6)
+            .frame(minWidth: 170)
+            .background(Theme.surfaceElevated)
+        }
     }
 }
 
