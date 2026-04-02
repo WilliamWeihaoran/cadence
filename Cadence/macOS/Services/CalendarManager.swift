@@ -96,7 +96,7 @@ final class CalendarManager {
 
     // MARK: - Create Standalone Event (direct iCal event, not linked to a task)
 
-    func createStandaloneEvent(title: String, startMin: Int, durationMinutes: Int, calendarID: String, date: Date) {
+    func createStandaloneEvent(title: String, startMin: Int, durationMinutes: Int, calendarID: String, date: Date, notes: String = "") {
         guard isAuthorized else { return }
         guard let calendar = store.calendar(withIdentifier: calendarID) else { return }
         let event = EKEvent(eventStore: store)
@@ -105,6 +105,7 @@ final class CalendarManager {
         event.startDate = startOfDay.addingTimeInterval(TimeInterval(startMin * 60))
         event.endDate = startOfDay.addingTimeInterval(TimeInterval((startMin + max(5, durationMinutes)) * 60))
         event.isAllDay = false
+        event.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes
         event.calendar = calendar
         do {
             try store.save(event, span: .thisEvent)
@@ -123,6 +124,35 @@ final class CalendarManager {
         let end = cal.date(byAdding: .day, value: 1, to: start) ?? start
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
         return store.events(matching: predicate).filter { !$0.isAllDay }
+    }
+
+    func searchEvents(matching query: String, pastDays: Int = 60, futureDays: Int = 365) -> [EKEvent] {
+        guard isAuthorized else { return [] }
+
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let now = Date()
+        let start = Calendar.current.date(byAdding: .day, value: -pastDays, to: now) ?? now
+        let end = Calendar.current.date(byAdding: .day, value: futureDays, to: now) ?? now
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+
+        let events = store.events(matching: predicate).filter { !$0.isAllDay }
+        guard !trimmed.isEmpty else {
+            return events
+                .filter { ($0.endDate ?? now) >= now }
+                .sorted { ($0.startDate ?? now) < ($1.startDate ?? now) }
+        }
+
+        let needle = trimmed.localizedLowercase
+        return events
+            .filter { event in
+                let fields = [
+                    event.title ?? "",
+                    event.notes ?? "",
+                    event.calendar?.title ?? ""
+                ]
+                return fields.contains { $0.localizedLowercase.contains(needle) }
+            }
+            .sorted { ($0.startDate ?? now) < ($1.startDate ?? now) }
     }
 
     // MARK: - Create or Update Event (Cadence task → iCal)
@@ -164,7 +194,7 @@ final class CalendarManager {
     // MARK: - Update External Event (iCal event edited in Cadence)
 
     /// Update an EKEvent's title and time, then save back to iCal.
-    func updateEvent(_ event: EKEvent, title: String, startMin: Int, durationMinutes: Int, dateKey: String, calendarID: String? = nil) {
+    func updateEvent(_ event: EKEvent, title: String, startMin: Int, durationMinutes: Int, dateKey: String, calendarID: String? = nil, notes: String? = nil) {
         guard let baseDate = DateFormatters.date(from: dateKey) else { return }
         let cal = Calendar.current
         let startDate = cal.date(byAdding: .minute, value: startMin, to: baseDate) ?? baseDate
@@ -172,6 +202,9 @@ final class CalendarManager {
         event.title = title.isEmpty ? "Untitled" : title
         event.startDate = startDate
         event.endDate = endDate
+        if let notes {
+            event.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes
+        }
         if let calendarID,
            let targetCalendar = store.calendar(withIdentifier: calendarID),
            targetCalendar.allowsContentModifications {

@@ -1,9 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import SwiftData
-import UniformTypeIdentifiers
 
-private let sidebarStaticDragPrefix = "sidebar-static::"
 
 enum SidebarStaticDestination: String, CaseIterable, Identifiable {
     case today
@@ -68,147 +66,99 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
 struct SidebarView: View {
     @Binding var selection: SidebarItem?
     @Query(sort: \Context.order) private var contexts: [Context]
-    @AppStorage("sidebarCoreOrder") private var sidebarCoreOrderRaw = ""
-    @AppStorage("sidebarTrackOrder") private var sidebarTrackOrderRaw = ""
+    @Query private var allTasks: [AppTask]
+    @Query private var habits: [Habit]
+    @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
     @AppStorage("sidebarHiddenTabs") private var sidebarHiddenTabsRaw = ""
 
-    @State private var showCreateContext = false
     @State private var contextForNewList: Context? = nil
-    @State private var draggingStaticDestination: SidebarStaticDestination? = nil
-    @State private var dragOverCoreDestination: SidebarStaticDestination? = nil
-    @State private var dragOverTrackDestination: SidebarStaticDestination? = nil
+
+    private var todayKey: String { DateFormatters.todayKey() }
+
+    private func count(for destination: SidebarStaticDestination) -> Int? {
+        switch destination {
+        case .today:
+            let n = allTasks.filter { !$0.isDone && !$0.isCancelled && ($0.scheduledDate == todayKey || $0.dueDate == todayKey) }.count
+            return n > 0 ? n : nil
+        case .allTasks:
+            let n = allTasks.filter { !$0.isDone && !$0.isCancelled }.count
+            return n > 0 ? n : nil
+        case .inbox:
+            let n = allTasks.filter { !$0.isDone && !$0.isCancelled && $0.area == nil && $0.project == nil }.count
+            return n > 0 ? n : nil
+        case .goals:
+            return activeGoals.isEmpty ? nil : activeGoals.count
+        case .habits:
+            return habits.isEmpty ? nil : habits.count
+        case .focus, .calendar:
+            return nil
+        }
+    }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 10) {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 9) {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .fill(Theme.surfaceElevated)
-                        .frame(width: 34, height: 34)
+                        .frame(width: 30, height: 30)
                         .overlay {
                             Image(systemName: "checklist.checked")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(Theme.blue)
                         }
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Cadence")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(Theme.text)
                         Text("Workspace")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Theme.dim)
                     }
                 }
-                .padding(.bottom, 4)
+                .padding(.bottom, 2)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(coreDestinations) { destination in
-                        SidebarRow(item: destination.item, icon: destination.icon, label: destination.label, color: destination.color, selection: $selection)
-                            .overlay(alignment: .top) {
-                                if dragOverCoreDestination == destination {
-                                    Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
-                                }
+                let allDestinations = allVisibleDestinations
+                if !allDestinations.isEmpty {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                        ForEach(allDestinations) { destination in
+                            SidebarCardButton(
+                                destination: destination,
+                                count: count(for: destination),
+                                isSelected: selection == destination.item
+                            ) {
+                                selection = destination.item
                             }
-                            .animation(.easeInOut(duration: 0.15), value: dragOverCoreDestination)
-                            .onDrag {
-                                draggingStaticDestination = destination
-                                return NSItemProvider(object: NSString(string: "\(sidebarStaticDragPrefix)\(destination.rawValue)"))
-                            }
-                            .onDrop(
-                                of: [UTType.text],
-                                delegate: SidebarStaticDropDelegate(
-                                    target: destination,
-                                    dragging: $draggingStaticDestination,
-                                    hovered: Binding(
-                                        get: { dragOverCoreDestination },
-                                        set: { dragOverCoreDestination = $0 }
-                                    ),
-                                    current: coreDestinations,
-                                    save: saveCoreDestinations
-                                )
-                            )
+                        }
                     }
                 }
-                .animation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08), value: coreDestinations.map(\.rawValue))
 
                 SidebarSection(title: "ORGANIZE") {
-                    ForEach(contexts) { context in
+                    ForEach(contexts.filter { !$0.isArchived }) { context in
                         ContextSection(
                             context: context,
                             selection: $selection,
                             onAddList: { contextForNewList = context }
                         )
+                        .padding(.vertical, 2)
                     }
                 }
-
-                SidebarSection(title: "TRACK") {
-                    ForEach(trackDestinations) { destination in
-                        SidebarRow(item: destination.item, icon: destination.icon, label: destination.label, color: destination.color, selection: $selection)
-                            .overlay(alignment: .top) {
-                                if dragOverTrackDestination == destination {
-                                    Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
-                                }
-                            }
-                            .animation(.easeInOut(duration: 0.15), value: dragOverTrackDestination)
-                            .onDrag {
-                                draggingStaticDestination = destination
-                                return NSItemProvider(object: NSString(string: "\(sidebarStaticDragPrefix)\(destination.rawValue)"))
-                            }
-                            .onDrop(
-                                of: [UTType.text],
-                                delegate: SidebarStaticDropDelegate(
-                                    target: destination,
-                                    dragging: $draggingStaticDestination,
-                                    hovered: Binding(
-                                        get: { dragOverTrackDestination },
-                                        set: { dragOverTrackDestination = $0 }
-                                    ),
-                                    current: trackDestinations,
-                                    save: saveTrackDestinations
-                                )
-                            )
-                    }
-                }
-                .animation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08), value: trackDestinations.map(\.rawValue))
 
                 SidebarSection(title: "NOTES") {
                     SidebarRow(item: .notes, icon: "doc.text", label: "Notes", color: Theme.purple, selection: $selection)
                 }
 
-                Button {
-                    showCreateContext = true
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "plus.circle")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("New Context")
-                            .font(.system(size: 13, weight: .medium))
-                        Spacer()
-                    }
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Theme.surfaceElevated.opacity(0.68))
-                    )
-                }
-                .buttonStyle(.cadencePlain)
-
-                Spacer(minLength: 8)
+                Spacer(minLength: 4)
 
                 SidebarRow(item: .settings, icon: "gearshape.fill", label: "Settings", color: Theme.dim, selection: $selection)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 14)
-            .padding(.bottom, 14)
+            .padding(.horizontal, 10)
+            .padding(.top, 12)
+            .padding(.bottom, 12)
         }
         .scrollIndicators(.hidden)
         .background(Theme.surface)
-        .sheet(isPresented: $showCreateContext) {
-            CreateContextSheet()
-        }
         .sheet(item: $contextForNewList) { ctx in
             CreateListSheet(context: ctx)
         }
@@ -224,51 +174,64 @@ struct SidebarView: View {
         sidebarHiddenTabsRaw = set.map(\.rawValue).joined(separator: ",")
     }
 
-    private var coreDestinations: [SidebarStaticDestination] {
-        resolveDestinations(
-            rawValue: sidebarCoreOrderRaw,
-            defaults: [.today, .allTasks, .focus, .inbox, .calendar]
-        ).filter { !hiddenTabs.contains($0) }
+    private var allVisibleDestinations: [SidebarStaticDestination] {
+        let allDefaults: [SidebarStaticDestination] = [.today, .allTasks, .focus, .inbox, .calendar, .goals, .habits]
+        return allDefaults.filter { !hiddenTabs.contains($0) }
     }
+}
 
-    private var trackDestinations: [SidebarStaticDestination] {
-        resolveDestinations(
-            rawValue: sidebarTrackOrderRaw,
-            defaults: [.goals, .habits]
-        ).filter { !hiddenTabs.contains($0) }
-    }
+private struct SidebarCardButton: View {
+    let destination: SidebarStaticDestination
+    let count: Int?
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
 
-    private func resolveDestinations(rawValue: String, defaults: [SidebarStaticDestination]) -> [SidebarStaticDestination] {
-        let stored = rawValue
-            .split(separator: ",")
-            .compactMap { SidebarStaticDestination(rawValue: String($0)) }
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top) {
+                    Image(systemName: destination.icon)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(isSelected ? .white : destination.color)
 
-        let filtered = stored.filter(defaults.contains)
-        let missing = defaults.filter { !filtered.contains($0) }
-        let resolved = filtered + missing
-        return resolved.isEmpty ? defaults : resolved
-    }
+                    Spacer()
 
-    private func reorderStatic(
-        moving: SidebarStaticDestination,
-        before target: SidebarStaticDestination,
-        in source: [SidebarStaticDestination],
-        save: ([SidebarStaticDestination]) -> Void
-    ) {
-        guard let fromIndex = source.firstIndex(of: moving),
-              let toIndex = source.firstIndex(of: target) else { return }
-        var updated = source
-        let item = updated.remove(at: fromIndex)
-        updated.insert(item, at: fromIndex < toIndex ? toIndex - 1 : toIndex)
-        save(updated)
-    }
+                    if let count {
+                        Text("\(count)")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(isSelected ? .white : destination.color)
+                    }
+                }
+                .padding(.top, 10)
+                .padding(.horizontal, 10)
 
-    private func saveCoreDestinations(_ destinations: [SidebarStaticDestination]) {
-        sidebarCoreOrderRaw = destinations.map(\.rawValue).joined(separator: ",")
-    }
+                Spacer(minLength: 6)
 
-    private func saveTrackDestinations(_ destinations: [SidebarStaticDestination]) {
-        sidebarTrackOrderRaw = destinations.map(\.rawValue).joined(separator: ",")
+                Text(destination.label)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isSelected ? .white : Theme.text)
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 9)
+            }
+            .frame(maxWidth: .infinity, minHeight: 68)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelected
+                        ? destination.color
+                        : destination.color.opacity(isHovered ? 0.22 : 0.14))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(
+                        isSelected ? destination.color.opacity(0.5) : destination.color.opacity(isHovered ? 0.3 : 0.18),
+                        lineWidth: 1
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
     }
 }
 

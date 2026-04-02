@@ -21,6 +21,10 @@ struct CadenceApp: App {
                 .environment(TaskCompletionAnimationManager.shared)
                 .environment(SectionCompletionAnimationManager.shared)
                 .environment(TaskCreationManager.shared)
+                .environment(TodayTimelineFocusManager.shared)
+                .environment(GlobalSearchManager.shared)
+                .environment(ListNavigationManager.shared)
+                .environment(CalendarNavigationManager.shared)
 #else
             iOSRootView()
                 .environment(ThemeManager.shared)

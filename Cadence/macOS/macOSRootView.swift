@@ -2,6 +2,7 @@
 import SwiftUI
 import SwiftData
 import AppKit
+import EventKit
 
 enum SidebarItem: Hashable {
     case today
@@ -26,8 +27,13 @@ struct macOSRootView: View {
     @Environment(HoveredTaskDatePickerManager.self) private var hoveredTaskDatePickerManager
     @Environment(TaskCreationManager.self) private var taskCreationManager
     @Environment(CalendarManager.self) private var calendarManager
+    @Environment(TodayTimelineFocusManager.self) private var todayTimelineFocusManager
+    @Environment(GlobalSearchManager.self) private var globalSearchManager
+    @Environment(ListNavigationManager.self) private var listNavigationManager
+    @Environment(CalendarNavigationManager.self) private var calendarNavigationManager
     @Environment(\.modelContext) private var modelContext
     @State private var keyMonitor: Any? = nil
+    @State private var lastCmdReturnTime: Date? = nil
     @State private var showTimelineSidebar = false
     private let hoveredTaskManager = HoveredTaskManager.shared
     private let hoveredEditableManager = HoveredEditableManager.shared
@@ -135,6 +141,9 @@ struct macOSRootView: View {
             SuccessToastLayerView()
             DeleteConfirmationLayerView()
             DatePickerLayerView()
+            GlobalSearchLayerView(
+                onSelect: handleSearchSelection
+            )
         }
         .ignoresSafeArea(.container, edges: .top)
         .onAppear {
@@ -247,11 +256,29 @@ struct macOSRootView: View {
                 }
             }
 
+            if globalSearchManager.isPresented {
+                switch event.keyCode {
+                case 53: // Escape
+                    globalSearchManager.dismiss()
+                    return nil
+                default:
+                    if event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
+                       event.keyCode == 40 {
+                        return nil
+                    }
+                    return event
+                }
+            }
+
             guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) else {
                 return event
             }
 
             switch event.keyCode {
+            case 40: // Cmd+K
+                clearAppEditingFocus()
+                globalSearchManager.present()
+                return nil
             case 51: // Cmd+Delete — delete hovered event first, fall back to hovered task
                 if hoveredEditableManager.triggerDelete() { return nil }
                 guard let task = hoveredTaskManager.hoveredTask else { return event }
@@ -271,7 +298,8 @@ struct macOSRootView: View {
                 if event.modifierFlags.contains(.shift) {
                     hoveredTaskDatePickerManager.present(for: task, kind: .doDate)
                 } else {
-                    task.scheduledDate = DateFormatters.todayKey()
+                    let todayKey = DateFormatters.todayKey()
+                    task.scheduledDate = task.scheduledDate == todayKey ? "" : todayKey
                 }
                 return nil
             case 2: // Cmd+D / Cmd+Shift+D — mark due today or open due-date picker
@@ -279,16 +307,31 @@ struct macOSRootView: View {
                 if event.modifierFlags.contains(.shift) {
                     hoveredTaskDatePickerManager.present(for: task, kind: .dueDate)
                 } else {
-                    task.dueDate = DateFormatters.todayKey()
+                    let todayKey = DateFormatters.todayKey()
+                    task.dueDate = task.dueDate == todayKey ? "" : todayKey
                 }
                 return nil
             case 35: // Cmd+P — cycle priority
                 guard let task = hoveredTaskManager.hoveredTask, !event.modifierFlags.contains(.shift) else { return event }
                 task.priority = task.priority.nextCycled
                 return nil
-            case 36, 76: // Cmd+Return / Cmd+Enter — toggle completion for hovered task
+            case 36, 76: // Cmd+Return / Cmd+Enter — toggle completion / cancel for hovered task
+                guard !taskCreationManager.isPresented else { return event }
                 if let task = hoveredTaskManager.hoveredTask {
-                    taskCompletionAnimationManager.toggleCompletion(for: task)
+                    let now = Date()
+                    let isDoubleTap = lastCmdReturnTime.map { now.timeIntervalSince($0) < 0.4 } ?? false
+                    lastCmdReturnTime = now
+                    if isDoubleTap {
+                        // Double-tap: if pending completion → switch to cancel; if pending cancel → undo; else → cancel
+                        if taskCompletionAnimationManager.isPending(task) {
+                            taskCompletionAnimationManager.cancelPending(for: task.id)
+                            taskCompletionAnimationManager.toggleCancellation(for: task)
+                        } else {
+                            taskCompletionAnimationManager.toggleCancellation(for: task)
+                        }
+                    } else {
+                        taskCompletionAnimationManager.toggleCompletion(for: task)
+                    }
                     return nil
                 }
                 if hoveredSectionManager.triggerToggleComplete() { return nil }
@@ -304,8 +347,17 @@ struct macOSRootView: View {
                 }
                 return nil
             case 42: // Cmd+\ — toggle timeline sidebar
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    showTimelineSidebar.toggle()
+                if selection == .today || selection == nil {
+                    if showTimelineSidebar {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showTimelineSidebar = false
+                        }
+                    }
+                    todayTimelineFocusManager.requestFocus()
+                } else {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showTimelineSidebar.toggle()
+                    }
                 }
                 return nil
             case 1: // Cmd+S — toggle sidebar
@@ -360,6 +412,60 @@ struct macOSRootView: View {
         withAnimation(.easeInOut(duration: 0.22)) {
             columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
         }
+    }
+
+    private func handleSearchSelection(_ result: GlobalSearchResult) {
+        switch result.destination {
+        case .command(let command):
+            switch command {
+            case .newTask:
+                clearAppEditingFocus()
+                taskCreationManager.present()
+            case .focus:
+                selection = .focus
+            case .today:
+                selection = .today
+            case .allTasks:
+                selection = .allTasks
+            case .calendar:
+                selection = .calendar
+            case .settings:
+                selection = .settings
+            }
+        case .sidebar(let item):
+            selection = item
+        case .area(let id):
+            selection = .area(id)
+        case .project(let id):
+            selection = .project(id)
+        case .goals:
+            selection = .goals
+        case .habits:
+            selection = .habits
+        case .task(let id):
+            let descriptor = FetchDescriptor<AppTask>()
+            guard let task = (try? modelContext.fetch(descriptor))?.first(where: { $0.id == id }) else { break }
+            if let project = task.project {
+                listNavigationManager.open(projectID: project.id, page: .tasks)
+                selection = .project(project.id)
+            } else if let area = task.area {
+                listNavigationManager.open(areaID: area.id, page: .tasks)
+                selection = .area(area.id)
+            } else if task.goal != nil {
+                selection = .allTasks
+            } else {
+                selection = .inbox
+            }
+        case .event(let eventID):
+            let event = calendarManager.searchEvents(matching: "")
+                .first { ($0.eventIdentifier ?? "") == eventID }
+            if let startDate = event?.startDate {
+                calendarNavigationManager.open(date: startDate)
+            }
+            selection = .calendar
+        }
+
+        globalSearchManager.dismiss()
     }
 }
 
@@ -453,6 +559,22 @@ private struct DatePickerLayerView: View {
             )
             .transition(.opacity.combined(with: .scale(scale: 0.985)))
             .zIndex(21)
+        }
+    }
+}
+
+private struct GlobalSearchLayerView: View {
+    @Environment(GlobalSearchManager.self) private var globalSearchManager
+    let onSelect: (GlobalSearchResult) -> Void
+
+    var body: some View {
+        if globalSearchManager.isPresented {
+            GlobalSearchOverlay(
+                onSelect: onSelect,
+                onDismiss: { globalSearchManager.dismiss() }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.985)))
+            .zIndex(40)
         }
     }
 }

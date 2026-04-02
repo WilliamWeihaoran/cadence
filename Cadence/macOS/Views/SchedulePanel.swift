@@ -12,12 +12,14 @@ let blockInset:     CGFloat = timeLabelWidth + timeLabelPad  // 42
 struct SchedulePanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
+    @Environment(TodayTimelineFocusManager.self) private var todayTimelineFocusManager
     @Query private var allTasks: [AppTask]
 
     @AppStorage("scheduleZoomLevel") private var zoomLevel: Int = 1
     @AppStorage("scheduleRememberedScrollHour") private var rememberedScrollHour: Int = -1
     @State private var isRestoringScroll = true
     @State private var didRestoreScroll = false
+    @State private var isFocusHighlighted = false
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -90,8 +92,8 @@ struct SchedulePanel: View {
                                     SchedulingActions.dropTask(task, to: todayKey, startMin: startMin)
                                 },
                                 externalEvents: externalEventItems,
-                                onCreateEvent: { title, startMin, endMin, calendarID in
-                                    calendarManager.createStandaloneEvent(title: title, startMin: startMin, durationMinutes: endMin - startMin, calendarID: calendarID, date: Date())
+                                onCreateEvent: { title, startMin, endMin, calendarID, notes in
+                                    calendarManager.createStandaloneEvent(title: title, startMin: startMin, durationMinutes: endMin - startMin, calendarID: calendarID, date: Date(), notes: notes)
                                 }
                             )
                         }
@@ -116,16 +118,42 @@ struct SchedulePanel: View {
                             }
                         }
                     }
+                    .onChange(of: todayTimelineFocusManager.focusRequestID) { _, _ in
+                        focusTimeline(using: proxy)
+                    }
                 }
             }
         }
         .background(Theme.bg)
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Theme.blue.opacity(isFocusHighlighted ? 0.95 : 0), lineWidth: 2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 6)
+        }
         .onChange(of: calendarManager.storeVersion) {
             // Sync task times when iCal events are moved or deleted externally
             for task in allTasks where !task.calendarEventID.isEmpty {
                 calendarManager.syncTaskFromLinkedEvent(task)
             }
             try? modelContext.save()
+        }
+    }
+
+    private func focusTimeline(using proxy: ScrollViewProxy) {
+        clearAppEditingFocus()
+        let currentHour = Calendar.current.component(.hour, from: Date())
+        let targetHour = max(schedStartHour, min(currentHour - 1, schedEndHour - 1))
+        withAnimation(.easeInOut(duration: 0.22)) {
+            proxy.scrollTo(targetHour, anchor: .top)
+        }
+        withAnimation(.easeOut(duration: 0.16)) {
+            isFocusHighlighted = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            withAnimation(.easeOut(duration: 0.24)) {
+                isFocusHighlighted = false
+            }
         }
     }
 }

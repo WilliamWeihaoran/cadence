@@ -10,6 +10,13 @@ struct ListTasksView: View {
         let tasks: [AppTask]
     }
 
+    struct FrozenTaskGroup {
+        let id: String
+        let title: String
+        let accent: Color
+        let taskIDs: [UUID]
+    }
+
     let tasks: [AppTask]
     var area: Area?
     var project: Project?
@@ -21,7 +28,8 @@ struct ListTasksView: View {
     @State private var sortDirection: TaskSortDirection = .ascending
     @State private var collapsedGroupIDs: Set<String> = []
     @State private var isCompletedCollapsed = true
-    @State private var frozenTaskOrder: [UUID]? = nil
+    @State private var frozenTaskOrder: [AppTask]? = nil
+    @State private var frozenGroupedTasks: [FrozenTaskGroup]? = nil
     @State private var dragOverTaskID: UUID? = nil
 
     private var udKeyPrefix: String {
@@ -32,16 +40,26 @@ struct ListTasksView: View {
     @FocusState private var addFocused: Bool
 
     private var activeTasks: [AppTask] {
-        let sorted = sortedTasks(tasks.filter { !$0.isDone && !$0.isCancelled })
+        let sorted = tasks.filter { !$0.isDone && !$0.isCancelled }.taskSorted(by: sortField, direction: sortDirection)
         guard let frozen = frozenTaskOrder else { return sorted }
-        let byID = Dictionary(uniqueKeysWithValues: sorted.map { ($0.id, $0) })
-        return frozen.compactMap { byID[$0] } + sorted.filter { !frozen.contains($0.id) }
+        let activeFrozen = frozen.filter { !$0.isDone }
+        let frozenIDs = Set(activeFrozen.map(\.id))
+        return activeFrozen + sorted.filter { !frozenIDs.contains($0.id) }
     }
-    private var doneTasks: [AppTask] { tasks.filter { $0.isDone }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) } }
+    private var doneTasks: [AppTask] { tasks.filter { $0.isDone || $0.isCancelled }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) } }
     private var sectionNames: [String] { area?.sectionNames ?? project?.sectionNames ?? [TaskSectionDefaults.defaultName] }
     private var todayKey: String { DateFormatters.todayKey() }
 
     private var groupedActiveTasks: [TaskGroup] {
+        if let frozenGroupedTasks {
+            let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+            return frozenGroupedTasks.compactMap { group in
+                let resolvedTasks = group.taskIDs.compactMap { tasksByID[$0] }.filter { !$0.isDone }
+                guard !resolvedTasks.isEmpty else { return nil }
+                return TaskGroup(id: group.id, title: group.title, accent: group.accent, tasks: resolvedTasks)
+            }
+        }
+
         switch groupingMode {
         case .none:
             return [
@@ -117,9 +135,9 @@ struct ListTasksView: View {
             .background(Theme.surfaceElevated)
 
             HStack(spacing: 8) {
-                ListTasksEnumPickerBadge(title: "Sort", selection: $sortField)
-                ListTasksEnumPickerBadge(title: "Order", selection: $sortDirection)
-                ListTasksEnumPickerBadge(title: "Group", selection: $groupingMode)
+                CadenceEnumPickerBadge(title: "Sort", selection: $sortField)
+                CadenceEnumPickerBadge(title: "Order", selection: $sortDirection)
+                CadenceEnumPickerBadge(title: "Group", selection: $groupingMode)
                 Spacer()
             }
             .padding(.horizontal, 20)
@@ -213,6 +231,7 @@ struct ListTasksView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .cadenceSoftPageBounce()
             .animation(.easeOut(duration: 0.26), value: activeTasks.map(\.id))
         }
         .background(
@@ -239,7 +258,16 @@ struct ListTasksView: View {
         .background {
             ListTasksHoverFreezeObserver(
                 frozenOrder: $frozenTaskOrder,
-                naturalIDs: sortedTasks(tasks.filter { !$0.isDone && !$0.isCancelled }).map(\.id)
+                frozenGroups: $frozenGroupedTasks,
+                naturalTasks: tasks.filter { !$0.isDone && !$0.isCancelled }.taskSorted(by: sortField, direction: sortDirection)
+                ,groupSnapshot: groupedActiveTasks.map { group in
+                    FrozenTaskGroup(
+                        id: group.id,
+                        title: group.title,
+                        accent: group.accent,
+                        taskIDs: group.tasks.map(\.id)
+                    )
+                }
             )
         }
     }
@@ -268,34 +296,6 @@ struct ListTasksView: View {
         }
     }
 
-    private func sortedTasks(_ input: [AppTask]) -> [AppTask] {
-        input.sorted { lhs, rhs in
-            let ordered: Bool
-            switch sortField {
-            case .custom:
-                ordered = lhs.order < rhs.order
-            case .date:
-                let ld = lhs.scheduledDate.isEmpty ? "9999-99-99" : lhs.scheduledDate
-                let rd = rhs.scheduledDate.isEmpty ? "9999-99-99" : rhs.scheduledDate
-                ordered = ld == rd ? lhs.order < rhs.order : ld < rd
-            case .priority:
-                let lp = priorityRank(lhs.priority)
-                let rp = priorityRank(rhs.priority)
-                ordered = lp == rp ? lhs.order < rhs.order : lp < rp
-            }
-            return sortDirection == .ascending ? ordered : !ordered
-        }
-    }
-
-    private func priorityRank(_ priority: TaskPriority) -> Int {
-        switch priority {
-        case .none: return 0
-        case .low: return 1
-        case .medium: return 2
-        case .high: return 3
-        }
-    }
-
     private func toggleGroup(_ id: String) {
         if collapsedGroupIDs.contains(id) {
             collapsedGroupIDs.remove(id)
@@ -314,68 +314,11 @@ struct ListTasksView: View {
     }
 }
 
-private struct ListTasksEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>: View where T.RawValue == String {
-    let title: String
-    @Binding var selection: T
-    @State private var showPicker = false
-
-    var body: some View {
-        Button { showPicker.toggle() } label: {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                Text(selection.rawValue)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.text)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
-        }
-        .buttonStyle(.cadencePlain)
-        .popover(isPresented: $showPicker) {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(T.allCases), id: \.id) { value in
-                    Button {
-                        selection = value
-                        showPicker = false
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(value.rawValue).font(.system(size: 13)).foregroundStyle(Theme.text)
-                            Spacer()
-                            if selection.id == value.id {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(Theme.blue)
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .background(selection.id == value.id ? Theme.blue.opacity(0.08) : .clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.cadencePlain)
-                }
-            }
-            .padding(.vertical, 6)
-            .frame(minWidth: 170)
-            .background(Theme.surfaceElevated)
-        }
-    }
-}
-
 struct ListLogView: View {
     let tasks: [AppTask]
 
     private var doneTasks: [AppTask] {
-        tasks.filter { $0.isDone }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
+        tasks.filter { $0.isDone || $0.isCancelled }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
     }
 
     var body: some View {
@@ -470,19 +413,28 @@ struct TabButton: View {
 
 private struct ListTasksHoverFreezeObserver: View {
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
-    @Binding var frozenOrder: [UUID]?
-    let naturalIDs: [UUID]
+    @Binding var frozenOrder: [AppTask]?
+    @Binding var frozenGroups: [ListTasksView.FrozenTaskGroup]?
+    let naturalTasks: [AppTask]
+    let groupSnapshot: [ListTasksView.FrozenTaskGroup]
+    @State private var isPointerInsideSurface = false
+    private let releaseAnimation = Animation.spring(response: 0.34, dampingFraction: 0.86, blendDuration: 0.08)
 
     var body: some View {
         Color.clear
-            .allowsHitTesting(false)
+            .contentShape(Rectangle())
             .onChange(of: hoveredTaskManager.hoveredTask?.id) { _, newID in
                 if newID != nil {
-                    if frozenOrder == nil { frozenOrder = naturalIDs }
-                } else if frozenOrder != nil {
-                    frozenOrder = nil
+                    if frozenOrder == nil { frozenOrder = naturalTasks }
+                    if frozenGroups == nil { frozenGroups = groupSnapshot }
+                } else if !isPointerInsideSurface, frozenOrder != nil || frozenGroups != nil {
+                    withAnimation(releaseAnimation) {
+                        frozenOrder = nil
+                        frozenGroups = nil
+                    }
                 }
             }
+            .onHover { isPointerInsideSurface = $0 }
     }
 }
 #endif

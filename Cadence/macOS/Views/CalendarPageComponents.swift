@@ -466,8 +466,8 @@ struct CalDayColumn: View {
                 SchedulingActions.dropTask(task, to: dateKey, startMin: startMin)
             },
             externalEvents: externalEventItems,
-            onCreateEvent: { title, startMin, endMin, calendarID in
-                calendarManager.createStandaloneEvent(title: title, startMin: startMin, durationMinutes: endMin - startMin, calendarID: calendarID, date: date)
+            onCreateEvent: { title, startMin, endMin, calendarID, notes in
+                calendarManager.createStandaloneEvent(title: title, startMin: startMin, durationMinutes: endMin - startMin, calendarID: calendarID, date: date, notes: notes)
             }
         )
         .overlay(alignment: .trailing) {

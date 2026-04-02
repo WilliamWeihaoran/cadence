@@ -8,6 +8,7 @@ import Foundation
     var colorHex: String = "#4a9eff"
     var icon: String = "square.stack.fill"
     var order: Int = 0
+    var isArchived: Bool = false
 
     @Relationship(inverse: \Area.context) var areas: [Area]? = nil
     @Relationship(inverse: \Project.context) var projects: [Project]? = nil

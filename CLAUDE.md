@@ -45,6 +45,7 @@ Cadence/
 │   ├── CadenceHoverStyles.swift   # Shared hover highlight styles for clickable controls
 │   └── Components/
 │       ├── CadenceDatePicker.swift  # Month calendar date picker + MonthCalendarPanel
+│       ├── CadenceScrollElasticity.swift # Shared NSScrollView elasticity tuning for page surfaces
 │       ├── EstimatePickerControl.swift # Shared estimate picker control
 │       ├── EmptyStateView.swift     # Reusable empty state (message, subtitle, icon)
 │       ├── FilterPill.swift         # Tappable filter tag pill
@@ -71,7 +72,7 @@ Cadence/
     │   ├── HabitsView.swift       # Habit list, detail view, heatmap, CreateHabitSheet
     │   ├── NotesView.swift        # Note list + editor (NoteListRow, NoteEditorPane)
     │   ├── FocusView.swift        # Focus timer UI with log session popover
-    │   ├── SidebarView.swift      # Fully custom sidebar with hover states + drag-to-reorder
+    │   ├── SidebarView.swift      # Fully custom sidebar with nested context grouping + drag-to-reorder
     │   ├── SidebarComponents.swift # Sidebar helper rows/sections/drop helpers
     │   ├── ListDetailView.swift   # Area/Project detail shell: Tasks, Kanban, Documents, Links, Completed
     │   ├── ListDetailComponents.swift # List task view, grouping modes, completed view
@@ -80,7 +81,8 @@ Cadence/
     │   ├── KanbanBoardSectionView.swift # Shared board wrapper used by kanban views
     │   ├── DocumentsView.swift    # Markdown document list + editor
     │   ├── LinksView.swift        # Saved link list + add UI
-    │   └── SettingsView.swift     # App settings
+    │   ├── GlobalSearchView.swift # Spotlight-style in-app command palette/search overlay
+    │   └── SettingsView.swift     # Category-based settings shell, including archived/completed lists
     ├── Sheets/
     │   ├── CreateContextSheet.swift
     │   ├── CreateListSheet.swift  # Creates Area or Project
@@ -95,7 +97,7 @@ Cadence/
         ├── TaskCreationManager.swift   # CreateTaskSheet + success toast flag after create
         ├── GlobalHotKeyManager.swift   # Carbon API global hotkey to open quick task panel system-wide
         ├── QuickTaskPanelController.swift  # NSPanel for system-wide quick task creation
-        ├── HoveredTaskManager.swift    # Hovered task + hoveredDateKind (.doDate / .dueDate) for shortcuts
+        ├── HoveredTaskManager.swift    # Hovered task + hoveredDateKind (.doDate / .dueDate) for shortcuts; delayed clear to reduce regroup thrash
         ├── HoveredEditableManager.swift  # Tracks hover state for edit/delete keyboard shortcuts
         ├── HoveredTaskDatePickerManager.swift # Shared overlay for hovered-task do/due date picking
         ├── HoveredKanbanColumnManager.swift # Tracks hovered kanban column for Cmd+N
@@ -104,6 +106,10 @@ Cadence/
         ├── SectionCompletionAnimationManager.swift # Delayed green-fill completion flow for sections
         ├── DeleteConfirmationManager.swift # Custom delete confirmation overlay
         ├── SchedulingService.swift     # SchedulingActions: createTask/dropTask helpers for timeline
+        ├── GlobalSearchManager.swift   # Presents the in-app command palette
+        ├── ListNavigationManager.swift # Opens areas/projects/tasks from global search
+        ├── CalendarNavigationManager.swift # Jumps calendar to searched events/days
+        ├── TodayTimelineFocusManager.swift # Focus/highlight the built-in Today timeline from Cmd+\
         ├── AppFocus.swift              # clearAppEditingFocus() — resigns first responder app-wide
         └── PersistenceController.swift # (legacy/unused — SwiftData handles persistence)
 ```
@@ -115,14 +121,15 @@ All SwiftData `@Model` classes. **Critical CloudKit rule: all to-many relationsh
 Context:   id, name, colorHex, icon, order
            → areas:[Area]?, projects:[Project]?, tasks:[AppTask]?, goals:[Goal]?, habits:[Habit]?
 
-Area:      id, name, desc, colorHex, icon, order, linkedCalendarID, hideDueDateIfEmpty,
+Area:      id, name, desc, status("active"|"done"|"archived"), colorHex, icon, order, linkedCalendarID, hideDueDateIfEmpty,
            hideSectionDueDateIfEmpty (hides Kanban column due date UI when the column has no due date)
            → context:Context?, tasks:[AppTask]?, projects:[Project]?, documents:[Document]?, links:[SavedLink]?
+           computed: isDone, isArchived, isActive
 
-Project:   id, name, desc, status("active"|"done"|"paused"|"cancelled"), colorHex, icon,
+Project:   id, name, desc, status("active"|"done"|"archived"|"paused"|"cancelled"), colorHex, icon,
            dueDate(yyyy-MM-dd), order, linkedCalendarID, hideDueDateIfEmpty, hideSectionDueDateIfEmpty
            → context:Context?, area:Area?, tasks:[AppTask]?, documents:[Document]?, links:[SavedLink]?
-           computed: isDone, completionRate
+           computed: isDone, isArchived, isActive, completionRate
 
 Goal:      id, title, desc, startDate(yyyy-MM-dd), endDate(yyyy-MM-dd),
            progressType("subtasks"|"hours"), targetHours, loggedHours,
@@ -133,10 +140,11 @@ Goal:      id, title, desc, startDate(yyyy-MM-dd), endDate(yyyy-MM-dd),
 AppTask:   id, title, notes, priority("none"|"low"|"medium"|"high"),
            status("todo"|"inprogress"|"done"|"cancelled"),
            dueDate(yyyy-MM-dd), scheduledDate(yyyy-MM-dd), scheduledStartMin(-1=unscheduled),
-           estimatedMinutes, actualMinutes, calendarEventID, order, createdAt, sectionName
+           estimatedMinutes, actualMinutes, calendarEventID, order, createdAt, completedAt,
+           sectionName
            → area:Area?, project:Project?, goal:Goal?, context:Context?, subtasks:[Subtask]?
            computed: isDone, isCancelled, scheduledEndMin, containerName, containerColor,
-                     resolvedSectionName, shouldShowDueDateField
+                     resolvedSectionName, shouldShowDueDateField, hidesEmptyDueDateInList
 
 Subtask:   id, title, isDone, order, createdAt → parentTask:AppTask?
 
@@ -220,6 +228,7 @@ TimeFormatters.durationLabel(actual: Int, estimated: Int)  // "45/60m"
 - Never instantiate `DateFormatter()` inline — always use `DateFormatters.*` statics
 - Drag-to-reorder uses `.draggable`/`.dropDestination` with prefixed string payloads (NOT `.onMove` — it doesn't work on macOS sidebar or plain lists)
 - Reorder and sidebar moves use `withAnimation(.spring(...))` so order changes animate smoothly.
+- Non-kanban page scroll views can use `CadenceScrollElasticity` to soften vertical rubber-banding.
 
 ## Task lists: sort, group, and row UI
 **Enums** (`TasksPanel.swift`, shared by list-style surfaces): `TaskSortField` (date, priority, **custom**), `TaskSortDirection`, `TaskGroupingMode` (by date, by list, by priority, **none**). **Custom** sort uses `task.order` (manual drag reorder). **None** grouping shows a single flat section.
@@ -228,7 +237,9 @@ TimeFormatters.durationLabel(actual: Int, estimated: Int)  // "45/60m"
 
 **Drag across groups:** Dropping a task into another group/section can update the relevant attribute (e.g. do date, list, priority, kanban section) and `order`.
 
-**`MacTaskRow` (TasksPanelComponents.swift):** Container (area/project/inbox) uses pill styling; do/due dates are smaller, lower-contrast metadata (icons + text) with hover affordances, not pills. Overdue tasks can show red emphasis; “over-do” (past do date) is not amber-tinted on the row. Estimate and list pickers use `EstimatePickerControl(compact: true)` / compact container control. Priority strip height is slightly less than the row; estimate/focus controls sit beside the title when hovered.
+**`MacTaskRow` (TasksPanelComponents.swift):** Container (area/project/inbox) uses pill styling; do/due dates are smaller, lower-contrast metadata (icons + text) with hover affordances, not pills. Due date badge only renders when `!task.dueDate.isEmpty` — no empty clickable badge. Overdue tasks can show red emphasis; “over-do” (past do date) is not amber-tinted on the row. Estimate and list pickers use `EstimatePickerControl(compact: true)` / compact container control. Priority strip height is slightly less than the row; estimate/focus controls sit beside the title when hovered.
+
+**`ContainerPickerBadge` / `TaskSectionPickerBadge` (TasksPanelComponents.swift):** Both popovers open with a search bar auto-focused. Search filters by `hasPrefix` (case-insensitive). Navigation: ↑↓ arrows or `Enter` to select the highlighted item. The highlighted item is tracked by `highlightIdx` (index into `flatFiltered` / `filteredSections`), resets to 0 on query change or close. List name capped at 80pt (60 compact), section name at 70pt — both truncate with `…`. Rows use dedicated `ContainerPickerRow` / `SectionPickerRow` View structs (not `@ViewBuilder` functions) with `let isHighlighted: Bool` for reliable in-place updates. Checkmark follows `isHighlighted`. Hover + highlight share a single `rowBackground` computed property.
 
 ## Today view task scope
 The Today **tasks** column only includes tasks that are **do today**, **due today**, **past do** (over-do), or **past due**, plus work tied to **sections due today**. A one-time **rollover** banner can appear when there are over-do tasks from the previous day; dismissing it merges those tasks into normal grouping.
@@ -251,10 +262,33 @@ The same shared sheet is used for:
 - the system-wide quick task panel (`QuickTaskPanelController`)
 
 `CreateTaskSheet` behavior:
-- title field autofocuses on open
-- `Cmd+Return` creates the task
-- list + section can be preseeded
-- on success the sheet **closes immediately**; feedback is a brief global **“Task created”** toast (`TaskCreationManager.showSuccessToast` / `presentSuccessToast()` in `macOSRootView`), not a lingering sheet overlay
+- Title field autofocuses on open; `Cmd+Return` creates the task
+- Layout: full-width content area, chip strip at bottom: `[List] [Section?] ─── [Do Date] [Due Date] [Priority]`
+- No estimate button; notes field is compact (height 40)
+- Do date does **not** default to today — only pre-set if `doDateKey` is provided in the seed
+- Priority chip displays short labels: **N/A / L / M / H**; picker still shows full names
+- List + section can be preseeded; section picker normalizes to available sections on container change
+- On success the sheet **closes immediately**; feedback is a brief global **”Task created”** toast
+
+**Sheet-local keyboard shortcuts** (active whenever the sheet window is focused):
+- `Cmd+T` — set do date to today (or cancel if already today)
+- `Cmd+Shift+T` — open do date picker
+- `Cmd+D` — set due date to today (or cancel if already today)
+- `Cmd+Shift+D` — open due date picker
+- `Cmd+P` — cycle priority (none → low → medium → high → none)
+- `Cmd+Shift+=` / `Cmd+Shift+-` — nudge do date ±1 day (sets to today first if unset); **while tilde panel is open**, these cycle the highlighted list/section item instead
+
+**Tilde trigger (`~`) for inline list search:**
+- Typing `~` at the start of the title or immediately after a space opens a list-search popover anchored at the `~` badge (cursor position)
+- The `~` is consumed from the title while the panel is open; a highlighted `~` badge replaces it visually in the title row
+- Navigate with ↑↓ arrows or `Cmd+Shift+=/−`; `Enter` selects highlighted item
+- After a list is selected, a section picker opens immediately at the same location with “Default” pre-highlighted
+- `Tab` in either panel closes it and puts `~` back in the title, returning focus there
+- Implementation: `TildeMode` enum (`.none` / `.list` / `.section`) on `CreateTaskSheet`; `tildeFlatContainers` computed property builds a flat ordered list for index-based highlighting
+- **Title ZStack pattern:** The `TextField` is always in the hierarchy (never removed) — hidden with `opacity(0)` + `allowsHitTesting(false)` when tilde mode is active. Removing and re-inserting an `NSTextField` causes macOS to select-all on re-focus. A ZStack overlay shows `Text(title) + Text(“~”)` badge when tilde mode is active, with `.popover` attached to the `~` badge.
+- **Picker row structs:** `TildeContainerPickerRow` and `TildeSectionPickerRow` are dedicated `View` structs with `let isHighlighted: Bool` props (not `@ViewBuilder` functions). The checkmark follows `isHighlighted`, not `isSelected`. Hover and highlight backgrounds are consolidated into a single `rowBackground` computed property inside the Button label — never two separate `.background()` modifiers on different layers.
+- **Section search focus:** `TildeSectionSearchPanel` is a standalone struct with its own `@FocusState private var isSearchFocused: Bool`. macOS popovers are separate `NSWindow` instances — parent `@FocusState` cannot reliably capture `.onKeyPress` events inside the popover. The panel sets focus via `onAppear { DispatchQueue.main.async { isSearchFocused = true } }`.
+- **ForEach identity:** Use `ForEach(Array(items.enumerated()), id: \.element.id)` with `Identifiable` items — never `ForEach(indices, id: \.self)`. Integer IDs cause SwiftUI to reuse the same view for different rows, breaking highlight state. Never put `.id(highlightIdx)` on a container VStack — it destroys/recreates the whole list on each arrow press, briefly showing double highlights.
 
 ## Keyboard Shortcuts (macOSRootView)
 Global local monitor unless noted. **Hovered task date nudge** requires the pointer over a **do** or **due** control (`HoveredTaskManager.hoveredDateKind`).
@@ -267,14 +301,30 @@ Global local monitor unless noted. **Hovered task date nudge** requires the poin
 - **Cmd+P** — cycle hovered task priority (`none → low → medium → high → none`)
 - **Cmd+Return** — toggle completion for hovered task; also creates a task in `CreateTaskSheet`
 - **Cmd+N** — create a task in the hovered kanban column
+- **Cmd+K** — open the global command palette / search overlay
 - **Cmd+S** — toggle **main** sidebar visibility (also a floating control; works in Focus mode)
-- **Cmd+\\** — toggle **right** timeline sidebar (`SchedulePanel`, same behaviors as Today’s timeline — drag tasks to schedule)
+- **Cmd+\\** — outside Today, toggle the **right** timeline sidebar; on Today, focus and highlight the built-in timeline pane instead
 - **Cmd+Z / Cmd+Shift+Z** — undo / redo (SwiftData `UndoManager`)
 
 **List detail (Area/Project):** **Cmd+Shift+[ / ]** cycles tabs (Tasks, Kanban, Documents, …) — implemented in `ListDetailView`; it does not conflict with date nudge (different chords).
 
 ## Hovered date overlay (`HoveredTaskDatePickerOverlay` in macOSRootView)
 `Cmd+Shift+T` / `Cmd+Shift+D` shows an overlay with **`MonthCalendarPanel` embedded inline** (no extra click to open the calendar). Clear / Cancel / Apply use full hit targets (`contentShape`, minimum sizes).
+
+## Global Search / Command Palette
+- Triggered with **Cmd+K**
+- Spotlight-style centered overlay with grouped results and arrow-key navigation
+- Searches pages (including hidden sidebar tabs), contexts/areas/projects, tasks, calendar events, goals, and habits
+- Includes a **Commands** section with app actions like `New Task`, `Focus`, `Today`, `All Tasks`, `Calendar`, and `Settings`
+- Matching is token/prefix-weighted rather than loose substring-only search
+- Selecting an area/project/task/event navigates directly to the relevant destination
+
+## List Lifecycle
+- Areas and projects can be **completed**, **archived**, or **deleted**
+- Active lists appear in the sidebar; completed/archived lists are hidden from the active sidebar but remain searchable
+- Lifecycle actions live in the edit sheets (`EditAreaSheet`, `EditProjectSheet`)
+- A dedicated **Lists** category in Settings shows all completed and archived areas/projects with reopen / unarchive / delete actions
+- Deleting a list recursively deletes its tasks, documents, links, and any nested projects in the case of an area
 
 ## Timeline / Scheduling Architecture
 The scheduling UI is shared between `SchedulePanel` (today's view) and `CalendarPageView` (multi-day). Both use `TimelineDayCanvas` as the rendering and interaction engine.
@@ -290,14 +340,15 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 **Coordinate rule:** Visual blocks and interactive hit targets must both use `.position(x:y:)` from the same `blockX/blockY` values. Never mix `.offset()` and `.padding()` for positioning in the same layer.
 
 ## What's Built (macOS)
-- [x] Fully custom sidebar with hover states and drag-to-reorder; **project due date** on list rows (red flag, clickable) replaces the old area/project type label where applicable
+- [x] Fully custom sidebar with nested context grouping, hover states, drag-to-reorder, and active-only list visibility; **project due date** on list rows (red flag, clickable) replaces the old area/project type label where applicable
 - [x] Today view: note + **scoped** task list + schedule; optional **right** timeline (**Cmd+\\**); sort/group like other lists
 - [x] Row-based task lists with collapsible grouping and completed/logbook sections
 - [x] Today task view grouped by list in sidebar order, with Inbox pinned first; overdue / over-do / rollover UX
 - [x] All Tasks: **list** vs **kanban** modes; shared sort UI; list has grouping, kanban **sort only** (no grouping)
 - [x] Inbox: unassigned tasks, capture bar, drag-to-reorder, sort/group controls
-- [x] Full task creation sheet (title, notes, due date, do date, priority, container, section, subtasks)
+- [x] Full task creation sheet (title, notes, due date, do date, priority, container, section, subtasks); tilde (`~`) inline list/section search from the title field
 - [x] Global hotkey to open task creation from anywhere in the OS
+- [x] In-app Spotlight-style command palette / global search (`Cmd+K`)
 - [x] Custom delete confirmation overlay
 - [x] Hover-driven task shortcuts for edit/delete/do/due/priority/completion
 - [x] Drag-to-schedule tasks from task list to timeline
@@ -312,6 +363,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Daily notes with markdown editor
 - [x] Focus timer with log session popover (logs actual minutes, propagates to goals/areas/projects)
 - [x] Area/Project detail: Tasks, Kanban, Documents, Links, Completed
+- [x] Area/Project lifecycle: complete, archive, delete; completed/archived lists recoverable from Settings
 - [x] Section-based kanban with editable/reorderable/archiveable columns (Cmd+E on section header; autosave section editor)
 - [x] Per-list **hide column due date when empty** (`hideSectionDueDateIfEmpty` on Area/Project; create/edit list sheets)
 - [x] Section-level due dates and completion
@@ -319,7 +371,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Apple Calendar sync (EventKit): create, update, delete, observe; event editor can **move event to another calendar**
 - [x] Multiple dark themes selectable in Settings
 - [x] CloudKit sync
-- [x] Settings view
+- [x] Category-based Settings shell with contexts reordering, calendar linking, sidebar tab visibility, and archived/completed list management
 
 ## What's Not Built Yet
 - [ ] iOS app (stub only)

@@ -114,7 +114,7 @@ struct TaskInspectorDateControl: View {
             HStack(spacing: 6) {
                 quickPill("Today", offset: 0)
                 quickPill("Tomorrow", offset: 1)
-                quickPill("Next Week", weekOffset: true)
+                quickPill("This Weekend", weekend: true)
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
@@ -150,10 +150,15 @@ struct TaskInspectorDateControl: View {
     }
 
     @ViewBuilder
-    private func quickPill(_ label: String, offset: Int = 0, weekOffset: Bool = false) -> some View {
+    private func quickPill(_ label: String, offset: Int = 0, weekend: Bool = false) -> some View {
         let target: Date = {
             let today = cal.startOfDay(for: Date())
-            if weekOffset { return cal.date(byAdding: .weekOfYear, value: 1, to: today) ?? today }
+            if weekend {
+                let todayWeekday = cal.component(.weekday, from: today)
+                if todayWeekday == 7 || todayWeekday == 1 { return today }
+                let daysUntilSaturday = (7 - todayWeekday + 7) % 7
+                return cal.date(byAdding: .day, value: daysUntilSaturday, to: today) ?? today
+            }
             return cal.date(byAdding: .day, value: offset, to: today) ?? today
         }()
         let isSelected = isOn && cal.isDate(date, inSameDayAs: target)
@@ -180,7 +185,7 @@ struct QuickCreateChoicePopover: View {
     let startMin: Int
     let endMin: Int
     let onCreateTask: (String) -> Void
-    let onCreateEvent: ((String, String) -> Void)?
+    let onCreateEvent: ((String, String, String) -> Void)?
     let onCancel: () -> Void
 
     enum Mode { case timeBlock, calendarEvent }
@@ -189,6 +194,7 @@ struct QuickCreateChoicePopover: View {
     @State private var mode: Mode = .timeBlock
     @State private var title = ""
     @State private var selectedCalendarID = ""
+    @State private var notes = ""
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -224,6 +230,21 @@ struct QuickCreateChoicePopover: View {
                         style: .compact
                     )
                 }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Notes")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+
+                    TextEditor(text: $notes)
+                        .scrollContentBackground(.hidden)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.text)
+                        .frame(minHeight: 84)
+                        .padding(8)
+                        .background(Theme.surfaceElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
             }
 
             HStack(spacing: 8) {
@@ -254,7 +275,7 @@ struct QuickCreateChoicePopover: View {
         if mode == .timeBlock {
             onCreateTask(title)
         } else {
-            onCreateEvent?(title, selectedCalendarID)
+            onCreateEvent?(title, selectedCalendarID, notes)
         }
     }
 

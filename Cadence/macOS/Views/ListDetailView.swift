@@ -53,6 +53,7 @@ private struct ListDetailView: View {
     var project: Project?
 
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
+    @Environment(ListNavigationManager.self) private var listNavigationManager
     @AppStorage("listDetailDefaultPage") private var defaultPageRawValue = ListDetailPage.tasks.rawValue
     @State private var tab: ListDetailPage = .tasks
     @State private var showEdit = false
@@ -143,8 +144,8 @@ private struct ListDetailView: View {
                 }
                 Spacer()
                 if tab == .kanban, allowsSectionEditing {
-                    ListDetailEnumPickerBadge(title: "Sort", selection: $kanbanSortField)
-                    ListDetailEnumPickerBadge(title: "Order", selection: $kanbanSortDirection)
+                    CadenceEnumPickerBadge(title: "Sort", selection: $kanbanSortField)
+                    CadenceEnumPickerBadge(title: "Order", selection: $kanbanSortDirection)
                     Button {
                         showArchivedKanbanColumns.toggle()
                     } label: {
@@ -215,6 +216,7 @@ private struct ListDetailView: View {
         }
         .onAppear {
             restoreRememberedTab()
+            applyPendingNavigationIfNeeded()
             installKeyMonitorIfNeeded()
             let ud = UserDefaults.standard
             if let raw = ud.string(forKey: "\(kanbanUDKey)_sortField"), let v = TaskSortField(rawValue: raw) { kanbanSortField = v }
@@ -225,6 +227,9 @@ private struct ListDetailView: View {
         }
         .onChange(of: tab) { _, newValue in
             UserDefaults.standard.set(newValue.rawValue, forKey: tabDefaultsKey)
+        }
+        .onChange(of: listNavigationManager.request?.token) { _, _ in
+            applyPendingNavigationIfNeeded()
         }
         .onChange(of: kanbanSortField) { _, v in UserDefaults.standard.set(v.rawValue, forKey: "\(kanbanUDKey)_sortField") }
         .onChange(of: kanbanSortDirection) { _, v in UserDefaults.standard.set(v.rawValue, forKey: "\(kanbanUDKey)_sortDir") }
@@ -258,6 +263,14 @@ private struct ListDetailView: View {
         tab = rememberedTab
     }
 
+    private func applyPendingNavigationIfNeeded() {
+        guard let request = listNavigationManager.consumeIfMatches(
+            areaID: area?.id,
+            projectID: project?.id
+        ) else { return }
+        tab = request.page
+    }
+
     private func installKeyMonitorIfNeeded() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -287,63 +300,6 @@ private struct ListDetailView: View {
         guard let currentIndex = tabs.firstIndex(of: tab), !tabs.isEmpty else { return }
         let nextIndex = (currentIndex + delta + tabs.count) % tabs.count
         tab = tabs[nextIndex]
-    }
-}
-
-private struct ListDetailEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>: View where T.RawValue == String {
-    let title: String
-    @Binding var selection: T
-    @State private var showPicker = false
-
-    var body: some View {
-        Button { showPicker.toggle() } label: {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                Text(selection.rawValue)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.text)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
-        }
-        .buttonStyle(.cadencePlain)
-        .popover(isPresented: $showPicker) {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(T.allCases), id: \.id) { value in
-                    Button {
-                        selection = value
-                        showPicker = false
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(value.rawValue).font(.system(size: 13)).foregroundStyle(Theme.text)
-                            Spacer()
-                            if selection.id == value.id {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(Theme.blue)
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .background(selection.id == value.id ? Theme.blue.opacity(0.08) : .clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.cadencePlain)
-                }
-            }
-            .padding(.vertical, 6)
-            .frame(minWidth: 170)
-            .background(Theme.surfaceElevated)
-        }
     }
 }
 

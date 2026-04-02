@@ -39,8 +39,15 @@ enum TaskStatus: String, Codable, CaseIterable, Hashable {
 enum ProjectStatus: String, Codable, CaseIterable, Hashable {
     case active    = "active"
     case done      = "done"
+    case archived  = "archived"
     case paused    = "paused"
     case cancelled = "cancelled"
+}
+
+enum AreaStatus: String, Codable, CaseIterable, Hashable {
+    case active   = "active"
+    case done     = "done"
+    case archived = "archived"
 }
 
 // MARK: - Goal enums

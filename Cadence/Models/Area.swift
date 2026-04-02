@@ -6,6 +6,12 @@ import Foundation
     var id: UUID = UUID()
     var name: String = ""
     var desc: String = ""
+    var statusRaw: String = "active"
+
+    var status: AreaStatus {
+        get { AreaStatus(rawValue: statusRaw) ?? .active }
+        set { statusRaw = newValue.rawValue }
+    }
     var colorHex: String = "#4a9eff"
     var icon: String = "folder.fill"
     var order: Int = 0
@@ -28,6 +34,10 @@ import Foundation
         self.colorHex = colorHex
         self.icon = icon
     }
+
+    var isDone: Bool { status == .done }
+    var isArchived: Bool { status == .archived }
+    var isActive: Bool { status == .active }
 
     var sectionNames: [String] {
         get {

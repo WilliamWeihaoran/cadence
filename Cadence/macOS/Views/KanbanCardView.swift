@@ -3,7 +3,7 @@ import SwiftUI
 import SwiftData
 
 struct KanbanCard: View {
-    private enum MetaAction {
+    private enum MetaAction: Hashable {
         case none
         case priority
         case doDate
@@ -11,7 +11,7 @@ struct KanbanCard: View {
     }
 
     private struct MetaItem: Identifiable {
-        let id = UUID()
+        let id: String
         let icon: String
         let text: String
         let tint: Color
@@ -32,8 +32,8 @@ struct KanbanCard: View {
     @State private var showDoDatePicker = false
     @State private var doDatePickerDate: Date = Date()
     @State private var doDateViewMonth: Date = Date()
-    @State private var showEstimatePicker = false
     @State private var isHovered = false
+    @State private var isPointerOverCard = false
     @State private var showTaskInspector = false
 
     var body: some View {
@@ -101,34 +101,14 @@ struct KanbanCard: View {
             showTaskInspector = true
         }
         .onHover { hovering in
-            isHovered = hovering || isPresentingInlinePopover
-            if hovering {
-                hoveredTaskManager.beginHovering(task, source: .kanban)
-                hoveredEditableManager.beginHovering(id: "kanban-task-\(task.id.uuidString)") {
-                    showTaskInspector = true
-                } onDelete: {
-                    deleteConfirmationManager.present(
-                        title: "Delete Task?",
-                        message: "This will permanently delete \"\(task.title.isEmpty ? "Untitled" : task.title)\"."
-                    ) {
-                        if hoveredTaskManager.hoveredTask?.id == task.id {
-                            hoveredTaskManager.hoveredTask = nil
-                        }
-                        modelContext.delete(task)
-                    }
-                }
-            } else if !isPresentingInlinePopover {
-                hoveredTaskManager.endHovering(task)
-                hoveredEditableManager.endHovering(id: "kanban-task-\(task.id.uuidString)")
-            }
+            isPointerOverCard = hovering
+            syncInteractiveHoverState()
         }
         .onChange(of: isPresentingInlinePopover) { _, isPresented in
             if isPresented {
-                isHovered = true
+                syncInteractiveHoverState()
             } else {
-                isHovered = false
-                hoveredTaskManager.endHovering(task)
-                hoveredEditableManager.endHovering(id: "kanban-task-\(task.id.uuidString)")
+                syncInteractiveHoverState()
             }
         }
         .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
@@ -137,25 +117,15 @@ struct KanbanCard: View {
     }
 
     private var metadataRows: [[MetaItem]] {
-        var rows: [[MetaItem]] = [[doDateMetaItem, estimateMetaItem]]
         if let dueDateMetaItem {
-            rows.append([dueDateMetaItem])
+            return [[doDateMetaItem, dueDateMetaItem]]
         }
-        return rows
-    }
-
-    private var estimateMetaItem: MetaItem {
-        MetaItem(
-            icon: "clock",
-            text: TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes),
-            tint: Theme.dim,
-            textColor: Theme.dim,
-            action: .none
-        )
+        return [[doDateMetaItem]]
     }
 
     private var doDateMetaItem: MetaItem {
         MetaItem(
+            id: "do-date",
             icon: "sun.max.fill",
             text: task.scheduledDate.isEmpty ? "Do" : DateFormatters.relativeDate(from: task.scheduledDate),
             tint: task.scheduledDate.isEmpty ? Theme.dim : Theme.amber,
@@ -167,6 +137,7 @@ struct KanbanCard: View {
     private var dueDateMetaItem: MetaItem? {
         guard task.shouldShowDueDateField else { return nil }
         return MetaItem(
+            id: "due-date",
             icon: "flag.fill",
             text: task.dueDate.isEmpty ? "Due" : DateFormatters.relativeDate(from: task.dueDate),
             tint: task.dueDate.isEmpty ? Theme.dim : Theme.red,
@@ -197,18 +168,11 @@ struct KanbanCard: View {
 
         switch item.action {
         case .none:
-            Button {
-                showEstimatePicker.toggle()
-            } label: {
-                label
-            }
-            .buttonStyle(.cadencePlain)
-            .popover(isPresented: $showEstimatePicker) {
-                estimatePickerPopover
-            }
+            EmptyView()
         case .priority:
             Button {
-                showPriorityPicker.toggle()
+                showPriorityPicker = true
+                syncInteractiveHoverState()
             } label: {
                 label
             }
@@ -277,90 +241,40 @@ struct KanbanCard: View {
         .background(Theme.surfaceElevated)
     }
 
-    private var estimatePickerPopover: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(
-                [(0, "No estimate"), (5, "5 min"), (15, "15 min"),
-                 (30, "30 min"), (45, "45 min"), (60, "1 hour"), (90, "1.5 hrs")],
-                id: \.0
-            ) { mins, label in
-                Button {
-                    task.estimatedMinutes = mins
-                    showEstimatePicker = false
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "timer")
-                            .font(.system(size: 12))
-                            .foregroundStyle(task.estimatedMinutes == mins ? Theme.blue : Theme.dim)
-                            .frame(width: 16)
-                        Text(label)
-                            .font(.system(size: 13))
-                            .foregroundStyle(task.estimatedMinutes == mins ? Theme.text : Theme.muted)
-                        Spacer()
-                        if task.estimatedMinutes == mins {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Theme.blue)
-                        }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(task.estimatedMinutes == mins ? Theme.blue.opacity(0.08) : Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.cadencePlain)
-                .cadenceHoverHighlight(cornerRadius: 6, fillColor: Theme.blue.opacity(0.08), strokeColor: .clear)
-            }
-        }
-        .padding(6)
-        .frame(minWidth: 160)
-        .background(Theme.surfaceElevated)
-    }
-
     private var dueDatePickerPopover: some View {
-        VStack(spacing: 0) {
-            MonthCalendarPanel(
-                selection: $dueDatePickerDate,
-                viewMonth: $dueDateViewMonth,
-                isOpen: Binding(
-                    get: { showDueDatePicker },
-                    set: { newVal in
-                        if !newVal { task.dueDate = DateFormatters.dateKey(from: dueDatePickerDate) }
-                        showDueDatePicker = newVal
-                    }
-                )
-            )
-            if !task.dueDate.isEmpty {
-                Divider().background(Theme.borderSubtle)
-                Button("Clear date") { task.dueDate = ""; showDueDatePicker = false }
-                    .font(.system(size: 11)).foregroundStyle(Theme.red)
-                    .buttonStyle(.cadencePlain).padding(.vertical, 8)
+        CadenceQuickDatePopover(
+            selection: Binding(
+                get: { dueDatePickerDate },
+                set: {
+                    dueDatePickerDate = $0
+                    task.dueDate = DateFormatters.dateKey(from: $0)
+                }
+            ),
+            viewMonth: $dueDateViewMonth,
+            isOpen: $showDueDatePicker,
+            showsClear: true,
+            onClear: {
+                task.dueDate = ""
             }
-        }
+        )
     }
 
     private var doDatePickerPopover: some View {
-        VStack(spacing: 0) {
-            MonthCalendarPanel(
-                selection: $doDatePickerDate,
-                viewMonth: $doDateViewMonth,
-                isOpen: Binding(
-                    get: { showDoDatePicker },
-                    set: { newVal in
-                        if !newVal { task.scheduledDate = DateFormatters.dateKey(from: doDatePickerDate) }
-                        showDoDatePicker = newVal
-                    }
-                )
-            )
-            if !task.scheduledDate.isEmpty {
-                Divider().background(Theme.borderSubtle)
-                Button("Clear date") { task.scheduledDate = ""; showDoDatePicker = false }
-                    .font(.system(size: 11)).foregroundStyle(Theme.red)
-                    .buttonStyle(.cadencePlain).padding(.vertical, 8)
+        CadenceQuickDatePopover(
+            selection: Binding(
+                get: { doDatePickerDate },
+                set: {
+                    doDatePickerDate = $0
+                    task.scheduledDate = DateFormatters.dateKey(from: $0)
+                }
+            ),
+            viewMonth: $doDateViewMonth,
+            isOpen: $showDoDatePicker,
+            showsClear: true,
+            onClear: {
+                task.scheduledDate = ""
             }
-        }
+        )
     }
 
     private func openDueDatePicker() {
@@ -369,7 +283,8 @@ struct KanbanCard: View {
         var comps = Calendar.current.dateComponents([.year, .month], from: resolved)
         comps.day = 1
         dueDateViewMonth = Calendar.current.date(from: comps) ?? resolved
-        showDueDatePicker.toggle()
+        showDueDatePicker = true
+        syncInteractiveHoverState()
     }
 
     private func openDoDatePicker() {
@@ -378,7 +293,32 @@ struct KanbanCard: View {
         var comps = Calendar.current.dateComponents([.year, .month], from: resolved)
         comps.day = 1
         doDateViewMonth = Calendar.current.date(from: comps) ?? resolved
-        showDoDatePicker.toggle()
+        showDoDatePicker = true
+        syncInteractiveHoverState()
+    }
+
+    private func syncInteractiveHoverState() {
+        let isActive = isPointerOverCard || isPresentingInlinePopover
+        isHovered = isActive
+        if isActive {
+            hoveredTaskManager.beginHovering(task, source: .kanban)
+            hoveredEditableManager.beginHovering(id: "kanban-task-\(task.id.uuidString)") {
+                showTaskInspector = true
+            } onDelete: {
+                deleteConfirmationManager.present(
+                    title: "Delete Task?",
+                    message: "This will permanently delete \"\(task.title.isEmpty ? "Untitled" : task.title)\"."
+                ) {
+                    if hoveredTaskManager.hoveredTask?.id == task.id {
+                        hoveredTaskManager.hoveredTask = nil
+                    }
+                    modelContext.delete(task)
+                }
+            }
+        } else {
+            hoveredTaskManager.endHovering(task)
+            hoveredEditableManager.endHovering(id: "kanban-task-\(task.id.uuidString)")
+        }
     }
 
     private var isOverdue: Bool {
@@ -405,7 +345,7 @@ struct KanbanCard: View {
     }
 
     private var isPresentingInlinePopover: Bool {
-        showPriorityPicker || showDueDatePicker || showDoDatePicker || showEstimatePicker
+        showPriorityPicker || showDueDatePicker || showDoDatePicker
     }
 
     private var urgencyBackgroundTint: Color {

@@ -64,7 +64,7 @@ struct TimelineBlockStyle {
         cornerRadius: 5,
         horizontalPadding: 6,
         verticalPadding: 3,
-        blockWidthFraction: 0.9
+        blockWidthFraction: 0.95
     )
 }
 

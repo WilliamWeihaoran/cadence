@@ -49,6 +49,24 @@ private struct TodayTaskGroup: Identifiable {
     var tasks: [AppTask]
 }
 
+private struct FrozenTodayTaskGroup {
+    let id: String
+    let contextIcon: String?
+    let contextColor: Color?
+    let listIcon: String
+    let listName: String
+    let listColor: Color
+    let taskIDs: [UUID]
+}
+
+private struct FrozenFlatTaskSection {
+    let id: String
+    let title: String
+    let labelColor: Color
+    let dropKey: String?
+    let taskIDs: [UUID]
+}
+
 // MARK: - Task Row Style
 
 enum MacTaskRowStyle {
@@ -78,7 +96,9 @@ struct TasksPanel: View {
     @State private var localSortField: TaskSortField = .date
     @State private var localSortDirection: TaskSortDirection = .ascending
     @State private var localGroupingMode: TaskGroupingMode = .byDate
-    @State private var frozenTaskOrder: [UUID]? = nil
+    @State private var frozenTaskOrder: [AppTask]? = nil
+    @State private var frozenListGroups: [FrozenTodayTaskGroup]? = nil
+    @State private var frozenFlatSections: [FrozenFlatTaskSection]? = nil
     @State private var dragOverTaskID: UUID? = nil
 
     init(
@@ -150,41 +170,54 @@ struct TasksPanel: View {
         allTasks.filter { !$0.isDone && !$0.isCancelled }
     }
     private var byDoDateBaseSortedTasks: [AppTask] {
-        byDoDateBaseTasks.sorted { lhs, rhs in
-            let result: Bool
-            switch activeSortField {
-            case .custom:
-                result = lhs.order < rhs.order
-            case .date:
-                let leftDate = lhs.scheduledDate.isEmpty ? "9999-99-99" : lhs.scheduledDate
-                let rightDate = rhs.scheduledDate.isEmpty ? "9999-99-99" : rhs.scheduledDate
-                if leftDate != rightDate {
-                    result = leftDate < rightDate
-                } else {
-                    result = lhs.order < rhs.order
-                }
-            case .priority:
-                let lp = priorityRank(lhs.priority)
-                let rp = priorityRank(rhs.priority)
-                if lp != rp {
-                    result = lp < rp
-                } else {
-                    result = lhs.order < rhs.order
-                }
-            }
-            return activeSortDirection == .ascending ? result : !result
-        }
+        byDoDateBaseTasks.taskSorted(by: activeSortField, direction: activeSortDirection)
     }
     private func applyFreeze(_ sorted: [AppTask]) -> [AppTask] {
         guard let frozen = frozenTaskOrder else { return sorted }
-        let byID = Dictionary(uniqueKeysWithValues: sorted.map { ($0.id, $0) })
-        return frozen.compactMap { byID[$0] } + sorted.filter { !frozen.contains($0.id) }
+        let activeFrozen = frozen.filter { !$0.isDone }
+        let frozenIDs = Set(activeFrozen.map(\.id))
+        return activeFrozen + sorted.filter { !frozenIDs.contains($0.id) }
     }
 
     private var byDoDateSortedTasks: [AppTask] {
         applyFreeze(byDoDateBaseSortedTasks)
     }
-    private var doneTasks: [AppTask] { allTasks.filter { $0.isDone }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) } }
+    private var doneTasks: [AppTask] { allTasks.filter { $0.isDone || $0.isCancelled }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) } }
+
+    private var resolvedFrozenListGroups: [TodayTaskGroup]? {
+        guard let frozenListGroups else { return nil }
+        let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+        return frozenListGroups.compactMap { group in
+            let resolvedTasks = group.taskIDs.compactMap { tasksByID[$0] }.filter { !$0.isDone }
+            guard !resolvedTasks.isEmpty else { return nil }
+            return TodayTaskGroup(
+                id: group.id,
+                contextIcon: group.contextIcon,
+                contextColor: group.contextColor,
+                listIcon: group.listIcon,
+                listName: group.listName,
+                listColor: group.listColor,
+                tasks: resolvedTasks
+            )
+        }
+    }
+
+    private var resolvedFrozenFlatSections: [FrozenFlatTaskSection]? {
+        guard let frozenFlatSections else { return nil }
+        let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+        return frozenFlatSections.compactMap { section in
+            let resolvedTasks = section.taskIDs.compactMap { tasksByID[$0] }.filter { !$0.isDone }
+            guard !resolvedTasks.isEmpty else { return nil }
+            return FrozenFlatTaskSection(
+                id: section.id,
+                title: section.title,
+                labelColor: section.labelColor,
+                dropKey: section.dropKey,
+                taskIDs: resolvedTasks.map(\.id)
+            )
+        }
+    }
+
     private var sidebarListOrder: [String] {
         var order: [String] = ["inbox"]
         for context in contexts.sorted(by: { $0.order < $1.order }) {
@@ -198,6 +231,7 @@ struct TasksPanel: View {
 
     var body: some View {
         let sortedByDoDate: [AppTask] = mode == .byDoDate ? byDoDateSortedTasks : []
+        let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
         VStack(alignment: .leading, spacing: 0) {
             if showsHeader {
                 TasksPanelHeader(mode: mode)
@@ -217,23 +251,39 @@ struct TasksPanel: View {
                         if enableControls {
                             switch activeGroupingMode {
                             case .none:
-                                if !todayTasks.isEmpty {
+                                if let frozenSections = resolvedFrozenFlatSections {
+                                    ForEach(frozenSections, id: \.id) { section in
+                                        flatSection(label: section.title, tasks: section.taskIDs.compactMap { tasksByID[$0] }, labelColor: section.labelColor, dropKey: section.dropKey)
+                                    }
+                                } else if !todayTasks.isEmpty {
                                     flatSection(label: "Today Tasks", tasks: todayTasks, labelColor: Theme.dim)
                                 }
                             case .byDate:
-                                if !overdue.isEmpty { flatSection(label: "Past Due", tasks: overdue, labelColor: Theme.red) }
-                                if !overdoTasks.isEmpty { flatSection(label: "Past Do", tasks: overdoTasks, labelColor: Theme.amber) }
-                                if !dueTodayTasks.isEmpty { flatSection(label: "Due Today", tasks: dueTodayTasks, labelColor: Theme.red.opacity(0.85)) }
-                                if !doTodayTasks.isEmpty { flatSection(label: "Do Today", tasks: doTodayTasks, labelColor: Theme.blue) }
+                                if let frozenSections = resolvedFrozenFlatSections {
+                                    ForEach(frozenSections, id: \.id) { section in
+                                        flatSection(label: section.title, tasks: section.taskIDs.compactMap { tasksByID[$0] }, labelColor: section.labelColor, dropKey: section.dropKey)
+                                    }
+                                } else {
+                                    if !overdue.isEmpty { flatSection(label: "Past Due", tasks: overdue, labelColor: Theme.red) }
+                                    if !overdoTasks.isEmpty { flatSection(label: "Past Do", tasks: overdoTasks, labelColor: Theme.amber) }
+                                    if !dueTodayTasks.isEmpty { flatSection(label: "Due Today", tasks: dueTodayTasks, labelColor: Theme.red.opacity(0.85)) }
+                                    if !doTodayTasks.isEmpty { flatSection(label: "Do Today", tasks: doTodayTasks, labelColor: Theme.blue) }
+                                }
                             case .byList:
                                 ForEach(groupedTasks(todayTasks)) { group in
                                     groupSection(group: group)
                                 }
                             case .byPriority:
-                                ForEach(TaskPriority.allCases.reversed(), id: \.self) { priority in
-                                    let tasks = todayTasks.filter { $0.priority == priority }
-                                    if !tasks.isEmpty {
-                                        flatSection(label: priority.label, tasks: tasks, labelColor: Theme.priorityColor(priority), dropKey: "priority:\(priority.rawValue)")
+                                if let frozenSections = resolvedFrozenFlatSections {
+                                    ForEach(frozenSections, id: \.id) { section in
+                                        flatSection(label: section.title, tasks: section.taskIDs.compactMap { tasksByID[$0] }, labelColor: section.labelColor, dropKey: section.dropKey)
+                                    }
+                                } else {
+                                    ForEach(TaskPriority.allCases.reversed(), id: \.self) { priority in
+                                        let tasks = todayTasks.filter { $0.priority == priority }
+                                        if !tasks.isEmpty {
+                                            flatSection(label: priority.label, tasks: tasks, labelColor: Theme.priorityColor(priority), dropKey: "priority:\(priority.rawValue)")
+                                        }
                                     }
                                 }
                             }
@@ -249,25 +299,41 @@ struct TasksPanel: View {
                         let todayK = todayKey
                         switch activeGroupingMode {
                         case .none:
-                            if !sortedByDoDate.isEmpty {
+                            if let frozenSections = resolvedFrozenFlatSections {
+                                ForEach(frozenSections, id: \.id) { section in
+                                    flatSection(label: section.title, tasks: section.taskIDs.compactMap { tasksByID[$0] }, labelColor: section.labelColor, dropKey: section.dropKey)
+                                }
+                            } else if !sortedByDoDate.isEmpty {
                                 flatSection(label: "Tasks", tasks: sortedByDoDate, labelColor: Theme.dim)
                             }
                         case .byDate:
-                            let todayTasks = sortedByDoDate.filter { $0.scheduledDate == todayK }
-                            let upcomingTasks = sortedByDoDate.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate != todayK }
-                            let unscheduledTasks = sortedByDoDate.filter { taskIsUnscheduled($0) }
-                            if !todayTasks.isEmpty  { flatSection(label: "Do Today",    tasks: todayTasks,    labelColor: Theme.blue, dropKey: "date:today")  }
-                            if !upcomingTasks.isEmpty { flatSection(label: "Scheduled", tasks: upcomingTasks, labelColor: Theme.dim,  dropKey: "date:scheduled") }
-                            if !unscheduledTasks.isEmpty { flatSection(label: "Unscheduled", tasks: unscheduledTasks, labelColor: Theme.amber, dropKey: "date:unscheduled") }
+                            if let frozenSections = resolvedFrozenFlatSections {
+                                ForEach(frozenSections, id: \.id) { section in
+                                    flatSection(label: section.title, tasks: section.taskIDs.compactMap { tasksByID[$0] }, labelColor: section.labelColor, dropKey: section.dropKey)
+                                }
+                            } else {
+                                let todayTasks = sortedByDoDate.filter { $0.scheduledDate == todayK }
+                                let upcomingTasks = sortedByDoDate.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate != todayK }
+                                let unscheduledTasks = sortedByDoDate.filter { taskIsUnscheduled($0) }
+                                if !todayTasks.isEmpty  { flatSection(label: "Do Today",    tasks: todayTasks,    labelColor: Theme.blue, dropKey: "date:today")  }
+                                if !upcomingTasks.isEmpty { flatSection(label: "Scheduled", tasks: upcomingTasks, labelColor: Theme.dim,  dropKey: "date:scheduled") }
+                                if !unscheduledTasks.isEmpty { flatSection(label: "Unscheduled", tasks: unscheduledTasks, labelColor: Theme.amber, dropKey: "date:unscheduled") }
+                            }
                         case .byList:
                             ForEach(groupedTasks(sortedByDoDate)) { group in
                                 groupSection(group: group)
                             }
                         case .byPriority:
-                            ForEach(TaskPriority.allCases.reversed(), id: \.self) { priority in
-                                let tasks = sortedByDoDate.filter { $0.priority == priority }
-                                if !tasks.isEmpty {
-                                    flatSection(label: priority.label, tasks: tasks, labelColor: Theme.priorityColor(priority), dropKey: "priority:\(priority.rawValue)")
+                            if let frozenSections = resolvedFrozenFlatSections {
+                                ForEach(frozenSections, id: \.id) { section in
+                                    flatSection(label: section.title, tasks: section.taskIDs.compactMap { tasksByID[$0] }, labelColor: section.labelColor, dropKey: section.dropKey)
+                                }
+                            } else {
+                                ForEach(TaskPriority.allCases.reversed(), id: \.self) { priority in
+                                    let tasks = sortedByDoDate.filter { $0.priority == priority }
+                                    if !tasks.isEmpty {
+                                        flatSection(label: priority.label, tasks: tasks, labelColor: Theme.priorityColor(priority), dropKey: "priority:\(priority.rawValue)")
+                                    }
                                 }
                             }
                         }
@@ -285,6 +351,7 @@ struct TasksPanel: View {
                 .padding(.top, showsHeader && mode == .todayOverview ? 12 : 0)
                 .padding(.bottom, 16)
             }
+            .cadenceSoftPageBounce()
         }
         .background(
             Color.clear.contentShape(Rectangle()).onTapGesture { clearAppEditingFocus() }
@@ -305,19 +372,29 @@ struct TasksPanel: View {
         .background {
             HoverFreezeObserver(
                 frozenOrder: $frozenTaskOrder,
-                naturalIDs: mode == .todayOverview
-                    ? todayEligibleTasks.sorted(by: compareTasksForCurrentSort).map(\.id)
-                    : sortedByDoDate.map(\.id)
+                frozenListGroups: $frozenListGroups,
+                frozenFlatSections: $frozenFlatSections,
+                naturalTasks: mode == .todayOverview
+                    ? todayEligibleTasks.sorted(by: compareTasksForCurrentSort)
+                    : sortedByDoDate
+                ,
+                listGroupSnapshot: {
+                    let snapshotTasks = mode == .todayOverview
+                        ? (shouldShowRolloverNotice ? todayGroupedTaskItems : todayEligibleTasks)
+                        : sortedByDoDate
+                    return activeGroupingMode == .byList ? currentFrozenListGroupSnapshot(for: snapshotTasks) : []
+                }(),
+                flatSectionSnapshot: activeGroupingMode == .byList ? [] : currentFrozenFlatSectionSnapshot()
             )
         }
     }
 
     private var controlsBar: some View {
         HStack(spacing: 8) {
-            TasksPanelEnumPickerBadge(title: "Sort", selection: $localSortField)
-            TasksPanelEnumPickerBadge(title: "Order", selection: $localSortDirection)
-            TasksPanelEnumPickerBadge(title: "Group", selection: $localGroupingMode,
-                                      excluded: mode == .todayOverview ? [.byDate] : [])
+            CadenceEnumPickerBadge(title: "Sort", selection: $localSortField)
+            CadenceEnumPickerBadge(title: "Order", selection: $localSortDirection)
+            CadenceEnumPickerBadge(title: "Group", selection: $localGroupingMode,
+                                   excluded: mode == .todayOverview ? [.byDate] : [])
             Spacer()
         }
         .padding(.horizontal, 16)
@@ -328,6 +405,10 @@ struct TasksPanel: View {
     // MARK: - Grouping
 
     private func groupedTasks(_ tasks: [AppTask]) -> [TodayTaskGroup] {
+        if let resolvedFrozenListGroups {
+            return resolvedFrozenListGroups
+        }
+
         var groups: [String: TodayTaskGroup] = [:]
 
         for task in tasks {
@@ -386,6 +467,94 @@ struct TasksPanel: View {
         }
     }
 
+    private func makeFlatSection(
+        id: String,
+        title: String,
+        tasks: [AppTask],
+        labelColor: Color,
+        dropKey: String? = nil
+    ) -> FrozenFlatTaskSection? {
+        guard !tasks.isEmpty else { return nil }
+        return FrozenFlatTaskSection(
+            id: id,
+            title: title,
+            labelColor: labelColor,
+            dropKey: dropKey,
+            taskIDs: tasks.map(\.id)
+        )
+    }
+
+    private func currentFrozenListGroupSnapshot(for tasks: [AppTask]) -> [FrozenTodayTaskGroup] {
+        groupedTasks(tasks).map { group in
+            FrozenTodayTaskGroup(
+                id: group.id,
+                contextIcon: group.contextIcon,
+                contextColor: group.contextColor,
+                listIcon: group.listIcon,
+                listName: group.listName,
+                listColor: group.listColor,
+                taskIDs: group.tasks.map(\.id)
+            )
+        }
+    }
+
+    private func currentFrozenFlatSectionSnapshot() -> [FrozenFlatTaskSection] {
+        switch mode {
+        case .todayOverview:
+            let todayTasks = shouldShowRolloverNotice ? todayGroupedTaskItems : todayEligibleTasks
+            switch activeGroupingMode {
+            case .none:
+                return [makeFlatSection(id: "today-tasks", title: "Today Tasks", tasks: todayTasks, labelColor: Theme.dim)].compactMap { $0 }
+            case .byDate:
+                return [
+                    makeFlatSection(id: "past-due", title: "Past Due", tasks: overdue, labelColor: Theme.red),
+                    makeFlatSection(id: "past-do", title: "Past Do", tasks: overdoTasks, labelColor: Theme.amber),
+                    makeFlatSection(id: "due-today", title: "Due Today", tasks: dueTodayTasks, labelColor: Theme.red.opacity(0.85)),
+                    makeFlatSection(id: "do-today", title: "Do Today", tasks: doTodayTasks, labelColor: Theme.blue)
+                ].compactMap { $0 }
+            case .byList:
+                return []
+            case .byPriority:
+                return TaskPriority.allCases.reversed().compactMap { priority in
+                    makeFlatSection(
+                        id: "priority-\(priority.rawValue)",
+                        title: priority.label,
+                        tasks: todayTasks.filter { $0.priority == priority },
+                        labelColor: Theme.priorityColor(priority),
+                        dropKey: "priority:\(priority.rawValue)"
+                    )
+                }
+            }
+        case .byDoDate:
+            let todayK = todayKey
+            switch activeGroupingMode {
+            case .none:
+                return [makeFlatSection(id: "tasks", title: "Tasks", tasks: byDoDateSortedTasks, labelColor: Theme.dim)].compactMap { $0 }
+            case .byDate:
+                let todayTasks = byDoDateSortedTasks.filter { $0.scheduledDate == todayK }
+                let upcomingTasks = byDoDateSortedTasks.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate != todayK }
+                let unscheduledTasks = byDoDateSortedTasks.filter { taskIsUnscheduled($0) }
+                return [
+                    makeFlatSection(id: "do-today", title: "Do Today", tasks: todayTasks, labelColor: Theme.blue, dropKey: "date:today"),
+                    makeFlatSection(id: "scheduled", title: "Scheduled", tasks: upcomingTasks, labelColor: Theme.dim, dropKey: "date:scheduled"),
+                    makeFlatSection(id: "unscheduled", title: "Unscheduled", tasks: unscheduledTasks, labelColor: Theme.amber, dropKey: "date:unscheduled")
+                ].compactMap { $0 }
+            case .byList:
+                return []
+            case .byPriority:
+                return TaskPriority.allCases.reversed().compactMap { priority in
+                    makeFlatSection(
+                        id: "priority-\(priority.rawValue)",
+                        title: priority.label,
+                        tasks: byDoDateSortedTasks.filter { $0.priority == priority },
+                        labelColor: Theme.priorityColor(priority),
+                        dropKey: "priority:\(priority.rawValue)"
+                    )
+                }
+            }
+        }
+    }
+
     private func compareTasksForCurrentSort(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
         // Keep the legacy today ranking only for the dedicated Today overview mode.
         if mode == .todayOverview && !enableControls {
@@ -396,28 +565,7 @@ struct TasksPanel: View {
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
 
-        let ascending: Bool
-        switch activeSortField {
-        case .custom:
-            ascending = lhs.order < rhs.order
-        case .date:
-            let leftDate = lhs.scheduledDate.isEmpty ? "9999-99-99" : lhs.scheduledDate
-            let rightDate = rhs.scheduledDate.isEmpty ? "9999-99-99" : rhs.scheduledDate
-            if leftDate != rightDate {
-                ascending = leftDate < rightDate
-            } else {
-                ascending = lhs.order < rhs.order
-            }
-        case .priority:
-            let lp = priorityRank(lhs.priority)
-            let rp = priorityRank(rhs.priority)
-            if lp != rp {
-                ascending = lp < rp
-            } else {
-                ascending = lhs.order < rhs.order
-            }
-        }
-        return activeSortDirection == .ascending ? ascending : !ascending
+        return taskSortPrecedes(lhs, rhs, field: activeSortField, direction: activeSortDirection)
     }
 
     private func todayTaskSortRank(_ task: AppTask) -> Int {
@@ -715,14 +863,6 @@ struct TasksPanel: View {
         tasks.filter { !$0.isDone }.count - (overdueCount(in: tasks) ?? 0)
     }
 
-    private func priorityRank(_ priority: TaskPriority) -> Int {
-        switch priority {
-        case .none: return 0
-        case .low: return 1
-        case .medium: return 2
-        case .high: return 3
-        }
-    }
 
     private func taskDragPayload(for task: AppTask) -> String {
         "listTask:\(task.id.uuidString)"
@@ -794,82 +934,34 @@ struct TasksPanel: View {
 
 private struct HoverFreezeObserver: View {
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
-    @Binding var frozenOrder: [UUID]?
-    let naturalIDs: [UUID]
+    @Binding var frozenOrder: [AppTask]?
+    @Binding var frozenListGroups: [FrozenTodayTaskGroup]?
+    @Binding var frozenFlatSections: [FrozenFlatTaskSection]?
+    let naturalTasks: [AppTask]
+    let listGroupSnapshot: [FrozenTodayTaskGroup]
+    let flatSectionSnapshot: [FrozenFlatTaskSection]
+    @State private var isPointerInsideSurface = false
+    private let releaseAnimation = Animation.spring(response: 0.34, dampingFraction: 0.86, blendDuration: 0.08)
 
     var body: some View {
         Color.clear
-            .allowsHitTesting(false)
+            .contentShape(Rectangle())
             .onChange(of: hoveredTaskManager.hoveredTask?.id) { _, newID in
                 if newID != nil {
-                    if frozenOrder == nil { frozenOrder = naturalIDs }
-                } else if frozenOrder != nil {
-                    frozenOrder = nil
-                }
-            }
-    }
-}
-
-private struct TasksPanelEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>: View where T.RawValue == String {
-    let title: String
-    @Binding var selection: T
-    var excluded: [T] = []
-    @State private var showPicker = false
-
-    private var availableCases: [T] {
-        Array(T.allCases).filter { item in !excluded.contains(where: { $0.id == item.id }) }
-    }
-
-    var body: some View {
-        Button { showPicker.toggle() } label: {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                Text(selection.rawValue)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.text)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
-        }
-        .buttonStyle(.cadencePlain)
-        .popover(isPresented: $showPicker) {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(availableCases, id: \.id) { value in
-                    Button {
-                        selection = value
-                        showPicker = false
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(value.rawValue).font(.system(size: 13)).foregroundStyle(Theme.text)
-                            Spacer()
-                            if selection.id == value.id {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(Theme.blue)
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .background(selection.id == value.id ? Theme.blue.opacity(0.08) : .clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    if frozenOrder == nil { frozenOrder = naturalTasks }
+                    if frozenListGroups == nil && !listGroupSnapshot.isEmpty { frozenListGroups = listGroupSnapshot }
+                    if frozenFlatSections == nil && !flatSectionSnapshot.isEmpty { frozenFlatSections = flatSectionSnapshot }
+                } else if !isPointerInsideSurface, frozenOrder != nil {
+                    withAnimation(releaseAnimation) {
+                        frozenOrder = nil
+                        frozenListGroups = nil
+                        frozenFlatSections = nil
                     }
-                    .buttonStyle(.cadencePlain)
                 }
             }
-            .padding(.vertical, 6)
-            .frame(minWidth: 170)
-            .background(Theme.surfaceElevated)
-        }
+            .onHover { isPointerInsideSurface = $0 }
     }
 }
+
 
 #endif

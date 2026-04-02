@@ -30,6 +30,8 @@ import Foundation
     @Relationship(inverse: \SavedLink.project) var links: [SavedLink]? = nil
 
     var isDone: Bool { status == .done }
+    var isArchived: Bool { status == .archived }
+    var isActive: Bool { status == .active }
 
     var completionRate: Double {
         let all = tasks ?? []

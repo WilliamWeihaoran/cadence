@@ -36,7 +36,11 @@ struct CadenceDatePicker: View {
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
-            MonthCalendarPanel(selection: $selection, viewMonth: $viewMonth, isOpen: $isOpen)
+            CadenceQuickDatePopover(
+                selection: $selection,
+                viewMonth: $viewMonth,
+                isOpen: $isOpen
+            )
         }
         .onChange(of: selection) {
             var comps = Calendar.current.dateComponents([.year, .month], from: selection)
@@ -69,19 +73,6 @@ struct MonthCalendarPanel: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.text)
                 Spacer()
-                Button {
-                    selection = cal.startOfDay(for: Date())
-                    syncViewMonthToSelection()
-                } label: {
-                    Text("Today")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.blue)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Theme.blue.opacity(0.10))
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.cadencePlain)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -186,6 +177,96 @@ struct MonthCalendarPanel: View {
         }
         while days.count % 7 != 0 { days.append(nil) }
         return days
+    }
+}
+
+struct CadenceQuickDatePopover: View {
+    @Binding var selection: Date
+    @Binding var viewMonth: Date
+    @Binding var isOpen: Bool
+    var showsClear: Bool = true
+    var onClear: (() -> Void)? = nil
+    var inlineStyle: Bool = false
+
+    private let cal = Calendar.current
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                quickPill("Today", target: today)
+                quickPill("Tomorrow", target: tomorrow)
+                if let weekend = thisWeekend {
+                    quickPill("This Weekend", target: weekend)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+
+            Divider().background(Theme.borderSubtle)
+
+            MonthCalendarPanel(
+                selection: Binding(
+                    get: { selection },
+                    set: { newValue in
+                        selection = newValue
+                        isOpen = false
+                    }
+                ),
+                viewMonth: $viewMonth,
+                isOpen: $isOpen,
+                inlineStyle: inlineStyle
+            )
+
+            if showsClear {
+                Divider().background(Theme.borderSubtle)
+                Button("Clear date") {
+                    onClear?()
+                    isOpen = false
+                }
+                .buttonStyle(.cadencePlain)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.red)
+                .padding(.vertical, 10)
+            }
+        }
+        .background(inlineStyle ? Color.clear : Theme.surfaceElevated)
+    }
+
+    private var today: Date {
+        cal.startOfDay(for: Date())
+    }
+
+    private var tomorrow: Date {
+        cal.date(byAdding: .day, value: 1, to: today) ?? today
+    }
+
+    private var thisWeekend: Date? {
+        let todayWeekday = cal.component(.weekday, from: today)
+        if todayWeekday == 7 || todayWeekday == 1 {
+            return today
+        }
+        let daysUntilSaturday = (7 - todayWeekday + 7) % 7
+        return cal.date(byAdding: .day, value: daysUntilSaturday, to: today)
+    }
+
+    @ViewBuilder
+    private func quickPill(_ label: String, target: Date) -> some View {
+        let isSelected = cal.isDate(selection, inSameDayAs: target)
+        Button {
+            selection = target
+            isOpen = false
+        } label: {
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isSelected ? .white : Theme.muted)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(isSelected ? Theme.blue : Theme.surface)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.cadencePlain)
+        .modifier(PickerHoverHighlight(cornerRadius: 999))
     }
 }
 

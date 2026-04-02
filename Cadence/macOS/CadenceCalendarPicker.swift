@@ -13,8 +13,12 @@ struct CadenceCalendarPickerList: View {
     /// Called after the user taps a row so the parent can dismiss the popover.
     var onPick: (() -> Void)? = nil
 
+    @State private var searchQuery = ""
+    @State private var highlightIdx = 0
+    @FocusState private var isSearchFocused: Bool
+
     /// Calendars grouped by their account/source, each group sorted by name.
-    private var groups: [(source: String, cals: [EKCalendar])] {
+    private var allGroups: [(source: String, cals: [EKCalendar])] {
         var dict: [String: [EKCalendar]] = [:]
         for cal in calendars {
             let src = cal.source?.title ?? "Other"
@@ -25,41 +29,94 @@ struct CadenceCalendarPickerList: View {
             .sorted { $0.source < $1.source }
     }
 
+    private var groups: [(source: String, cals: [EKCalendar])] {
+        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return allGroups }
+        let needle = trimmed.localizedLowercase
+        return allGroups.compactMap { group in
+            let filtered = group.cals.filter { cal in
+                cal.title.localizedLowercase.contains(needle) ||
+                group.source.localizedLowercase.contains(needle)
+            }
+            guard !filtered.isEmpty else { return nil }
+            return (source: group.source, cals: filtered)
+        }
+    }
+
+    private struct PickerItem: Equatable {
+        let id: String
+        let label: String
+        let color: Color?
+    }
+
+    private var flattenedItems: [PickerItem] {
+        var items: [PickerItem] = []
+        if allowNone {
+            items.append(PickerItem(id: "", label: "None", color: nil))
+        }
+        for group in groups {
+            items.append(contentsOf: group.cals.map {
+                PickerItem(id: $0.calendarIdentifier, label: $0.title, color: Color(cgColor: $0.cgColor))
+            })
+        }
+        return items
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if allowNone {
-                row(id: "", label: "None", color: nil)
-                Divider().background(Theme.borderSubtle).padding(.vertical, 2)
-            }
-            ForEach(groups, id: \.source) { group in
-                Text(group.source.uppercased())
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .kerning(0.6)
-                    .padding(.horizontal, 14)
-                    .padding(.top, 8)
-                    .padding(.bottom, 2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            searchField
 
-                ForEach(group.cals, id: \.calendarIdentifier) { cal in
-                    row(
-                        id: cal.calendarIdentifier,
-                        label: cal.title,
-                        color: Color(cgColor: cal.cgColor)
-                    )
+            Divider().background(Theme.borderSubtle).padding(.top, 6)
+
+            if groups.isEmpty && !(allowNone && searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                Text("No matching calendars")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                if allowNone {
+                    row(id: "", label: "None", color: nil)
+                    Divider().background(Theme.borderSubtle).padding(.vertical, 2)
+                }
+                ForEach(groups, id: \.source) { group in
+                    Text(group.source.uppercased())
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .kerning(0.6)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 8)
+                        .padding(.bottom, 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    ForEach(group.cals, id: \.calendarIdentifier) { cal in
+                        row(
+                            id: cal.calendarIdentifier,
+                            label: cal.title,
+                            color: Color(cgColor: cal.cgColor)
+                        )
+                    }
                 }
             }
         }
         .padding(.vertical, 4)
-        .frame(minWidth: 210)
+        .frame(minWidth: 240)
+        .onAppear {
+            isSearchFocused = true
+            syncHighlight()
+        }
+        .onChange(of: searchQuery) { _, _ in
+            syncHighlight()
+        }
     }
 
     @ViewBuilder
     private func row(id: String, label: String, color: Color?) -> some View {
         let isSelected = selectedID == id
+        let isHighlighted = highlightIdx < flattenedItems.count && flattenedItems[highlightIdx].id == id
         Button {
-            selectedID = id
-            onPick?()
+            pick(id)
         } label: {
             HStack(spacing: 10) {
                 Group {
@@ -87,13 +144,76 @@ struct CadenceCalendarPickerList: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
             .frame(minHeight: 30)
-            .background(isSelected ? Theme.blue.opacity(0.08) : Color.clear)
+            .background(isSelected ? Theme.blue.opacity(0.08) : (isHighlighted ? Theme.blue.opacity(0.05) : Color.clear))
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.cadencePlain)
         .modifier(CalendarPickerRowHover())
         .padding(.horizontal, 4)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.dim)
+
+            TextField("Search calendars", text: $searchQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.text)
+                .focused($isSearchFocused)
+                .onSubmit {
+                    guard highlightIdx >= 0, highlightIdx < flattenedItems.count else { return }
+                    pick(flattenedItems[highlightIdx].id)
+                }
+
+            if !searchQuery.isEmpty {
+                Button {
+                    searchQuery = ""
+                    isSearchFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim)
+                }
+                .buttonStyle(.cadencePlain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Theme.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 8)
+        .onMoveCommand { direction in
+            guard !flattenedItems.isEmpty else { return }
+            switch direction {
+            case .down:
+                highlightIdx = min(highlightIdx + 1, flattenedItems.count - 1)
+            case .up:
+                highlightIdx = max(highlightIdx - 1, 0)
+            default:
+                break
+            }
+        }
+    }
+
+    private func pick(_ id: String) {
+        selectedID = id
+        onPick?()
+    }
+
+    private func syncHighlight() {
+        guard !flattenedItems.isEmpty else {
+            highlightIdx = 0
+            return
+        }
+        if let selectedIndex = flattenedItems.firstIndex(where: { $0.id == selectedID }) {
+            highlightIdx = selectedIndex
+        } else {
+            highlightIdx = min(highlightIdx, flattenedItems.count - 1)
+        }
     }
 }
 

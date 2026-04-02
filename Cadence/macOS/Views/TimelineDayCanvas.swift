@@ -16,7 +16,7 @@ struct TimelineDayCanvas: View {
     let onDropTaskAtMinute: (AppTask, Int) -> Void
     var externalEvents: [CalendarEventItem] = []
     /// Optional: if provided, the drag-to-create popover will offer a "Calendar Event" tab.
-    var onCreateEvent: ((String, Int, Int, String) -> Void)? = nil
+    var onCreateEvent: ((String, Int, Int, String, String) -> Void)? = nil
 
     @State private var dragStartMin: Int? = nil
     @State private var dragEndMin: Int? = nil
@@ -159,9 +159,9 @@ struct TimelineDayCanvas: View {
                                 pendingStartMin = nil
                                 pendingEndMin = nil
                             },
-                            onCreateEvent: onCreateEvent == nil ? nil : { title, calendarID in
+                            onCreateEvent: onCreateEvent == nil ? nil : { title, calendarID, notes in
                                 if let start = pendingStartMin, let end = pendingEndMin {
-                                    onCreateEvent?(title.isEmpty ? "New Event" : title, start, end, calendarID)
+                                    onCreateEvent?(title.isEmpty ? "New Event" : title, start, end, calendarID, notes)
                                 }
                                 showNewTaskPopover = false
                                 pendingStartMin = nil
@@ -362,8 +362,8 @@ private struct TimelineDropDelegate: DropDelegate {
         }
 
         _ = provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard let uuidString = object as? NSString,
-                  let uuid = UUID(uuidString: uuidString as String) else { return }
+            guard let payload = object as? NSString,
+                  let uuid = taskID(from: payload as String) else { return }
 
             Task { @MainActor in
                 guard let task = allTasks.first(where: { $0.id == uuid }) else { return }
@@ -382,14 +382,21 @@ private struct TimelineDropDelegate: DropDelegate {
               let provider = info.itemProviders(for: [UTType.text]).first else { return }
 
         _ = provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard let uuidString = object as? NSString,
-                  let uuid = UUID(uuidString: uuidString as String) else { return }
+            guard let payload = object as? NSString,
+                  let uuid = taskID(from: payload as String) else { return }
 
             Task { @MainActor in
                 guard isTargeted else { return }  // Drop already completed — discard stale result
                 previewTaskID = uuid
             }
         }
+    }
+
+    private func taskID(from payload: String) -> UUID? {
+        if payload.hasPrefix("listTask:") {
+            return UUID(uuidString: String(payload.dropFirst(9)))
+        }
+        return UUID(uuidString: payload)
     }
 }
 #endif

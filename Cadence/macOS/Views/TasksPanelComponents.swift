@@ -86,10 +86,10 @@ struct MacTaskRow: View {
                 .padding(.vertical, 3)
 
             Button {
-                taskCompletionAnimationManager.toggleCompletion(for: task)
+                handleCompletionTap()
             } label: {
-                Image(systemName: task.isDone ? "checkmark.circle.fill" : (isPendingCompletion ? "circle.inset.filled" : "circle"))
-                    .foregroundStyle(task.isDone || isPendingCompletion ? Theme.green : Theme.dim)
+                Image(systemName: completionButtonIcon)
+                    .foregroundStyle(completionButtonColor)
                     .font(.system(size: 18))
             }
             .buttonStyle(.cadencePlain)
@@ -102,30 +102,36 @@ struct MacTaskRow: View {
 
             Text(task.title.isEmpty ? "Untitled" : task.title)
                 .font(.system(size: 15))
-                .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
-                .strikethrough(task.isDone, color: Theme.dim)
+                .foregroundStyle(task.isDone || task.isCancelled ? Theme.dim : Theme.text)
+                .strikethrough(task.isDone || task.isCancelled || isPendingCancel, color: Theme.dim)
                 .lineLimit(1)
 
-            if isHovered {
-                EstimatePickerControl(value: $task.estimatedMinutes, compact: true)
-                    .padding(.leading, 8)
-
-                if !task.isDone && !task.isCancelled {
-                    Button { focusManager.startFocus(task: task) } label: {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 20, height: 20)
-                            .background(Theme.blue)
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.cadencePlain)
-                    .help("Start focus session")
+            if task.isCancelled {
+                Text("Cancelled")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Theme.dim.opacity(0.14))
+                    .clipShape(Capsule())
                     .padding(.leading, 6)
-                }
             }
 
             Spacer(minLength: 4)
+
+            if isHovered && !task.isDone && !task.isCancelled {
+                Button { focusManager.startFocus(task: task) } label: {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Theme.blue)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.cadencePlain)
+                .help("Start focus session")
+                .padding(.trailing, 6)
+            }
 
             if !task.dueDate.isEmpty {
                 dueDateBadgeList
@@ -182,7 +188,7 @@ struct MacTaskRow: View {
         .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             TaskDetailPopover(task: task)
         }
-        .opacity(task.isDone ? 0.5 : 1.0)
+        .opacity(task.isDone || task.isCancelled ? 0.5 : 1.0)
     }
 
     private var doDatePill: some View {
@@ -193,14 +199,24 @@ struct MacTaskRow: View {
                 Image(systemName: "sun.max.fill")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Theme.amber)
-                Text(DateFormatters.relativeDate(from: task.scheduledDate))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(
-                        isOverdo
-                            ? Theme.red
-                            : (isDoToday ? Theme.amber.opacity(0.75) : Theme.dim.opacity(0.68))
-                    )
+                    .frame(width: 10, alignment: .leading)
+
+                ZStack {
+                    Text("Tomorrow")
+                        .font(.system(size: 11, weight: .medium))
+                        .opacity(0)
+
+                    Text(DateFormatters.relativeDate(from: task.scheduledDate))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(
+                            isOverdo
+                                ? Theme.red
+                                : (isDoToday ? Theme.amber.opacity(0.75) : Theme.dim.opacity(0.68))
+                        )
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
             }
+            .fixedSize(horizontal: true, vertical: false)
             .underline(isDoDateHovered)
             .padding(.horizontal, 4)
             .padding(.vertical, 2)
@@ -227,14 +243,24 @@ struct MacTaskRow: View {
                 Image(systemName: "sun.max.fill")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(task.scheduledDate.isEmpty ? Theme.dim : .yellow)
-                Text(task.scheduledDate.isEmpty ? "Do" : DateFormatters.relativeDate(from: task.scheduledDate))
-                    .font(.system(size: 13))
-                    .foregroundStyle(
-                        isOverdo
-                            ? Theme.red
-                            : (isDoToday ? .yellow : (task.scheduledDate.isEmpty ? Theme.dim : Theme.muted))
-                    )
+                    .frame(width: 12, alignment: .leading)
+
+                ZStack {
+                    Text("Tomorrow")
+                        .font(.system(size: 13))
+                        .opacity(0)
+
+                    Text(task.scheduledDate.isEmpty ? "Do" : DateFormatters.relativeDate(from: task.scheduledDate))
+                        .font(.system(size: 13))
+                        .foregroundStyle(
+                            isOverdo
+                                ? Theme.red
+                                : (isDoToday ? .yellow : (task.scheduledDate.isEmpty ? Theme.dim : Theme.muted))
+                        )
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
             }
+            .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showDoDatePicker) { doDatePickerPopover }
@@ -272,47 +298,39 @@ struct MacTaskRow: View {
     }
 
     private var dueDatePickerPopover: some View {
-        VStack(spacing: 0) {
-            MonthCalendarPanel(
-                selection: $dueDatePickerDate,
-                viewMonth: $dueDateViewMonth,
-                isOpen: Binding(
-                    get: { showDueDatePicker },
-                    set: { newVal in
-                        if !newVal { task.dueDate = DateFormatters.dateKey(from: dueDatePickerDate) }
-                        showDueDatePicker = newVal
-                    }
-                )
-            )
-            if !task.dueDate.isEmpty {
-                Divider().background(Theme.borderSubtle)
-                Button("Clear date") { task.dueDate = ""; showDueDatePicker = false }
-                    .font(.system(size: 11)).foregroundStyle(Theme.red)
-                    .buttonStyle(.cadencePlain).padding(.vertical, 8)
+        CadenceQuickDatePopover(
+            selection: Binding(
+                get: { dueDatePickerDate },
+                set: {
+                    dueDatePickerDate = $0
+                    task.dueDate = DateFormatters.dateKey(from: $0)
+                }
+            ),
+            viewMonth: $dueDateViewMonth,
+            isOpen: $showDueDatePicker,
+            showsClear: true,
+            onClear: {
+                task.dueDate = ""
             }
-        }
+        )
     }
 
     private var doDatePickerPopover: some View {
-        VStack(spacing: 0) {
-            MonthCalendarPanel(
-                selection: $doDatePickerDate,
-                viewMonth: $doDateViewMonth,
-                isOpen: Binding(
-                    get: { showDoDatePicker },
-                    set: { newVal in
-                        if !newVal { task.scheduledDate = DateFormatters.dateKey(from: doDatePickerDate) }
-                        showDoDatePicker = newVal
-                    }
-                )
-            )
-            if !task.scheduledDate.isEmpty {
-                Divider().background(Theme.borderSubtle)
-                Button("Clear date") { task.scheduledDate = ""; showDoDatePicker = false }
-                    .font(.system(size: 11)).foregroundStyle(Theme.red)
-                    .buttonStyle(.cadencePlain).padding(.vertical, 8)
+        CadenceQuickDatePopover(
+            selection: Binding(
+                get: { doDatePickerDate },
+                set: {
+                    doDatePickerDate = $0
+                    task.scheduledDate = DateFormatters.dateKey(from: $0)
+                }
+            ),
+            viewMonth: $doDateViewMonth,
+            isOpen: $showDoDatePicker,
+            showsClear: true,
+            onClear: {
+                task.scheduledDate = ""
             }
-        }
+        )
     }
 
     private func openDueDatePicker() {
@@ -388,6 +406,37 @@ struct MacTaskRow: View {
         taskCompletionAnimationManager.isPending(task)
     }
 
+    private var isPendingCancel: Bool {
+        taskCompletionAnimationManager.isPendingCancel(task)
+    }
+
+    private var completionButtonIcon: String {
+        if task.isCancelled { return "xmark.circle.fill" }
+        if task.isDone      { return "checkmark.circle.fill" }
+        if isPendingCancel  { return "xmark.circle" }
+        if isPendingCompletion { return "circle.inset.filled" }
+        return "circle"
+    }
+
+    private var completionButtonColor: Color {
+        if task.isCancelled || isPendingCancel { return Theme.dim }
+        if task.isDone || isPendingCompletion   { return Theme.green }
+        return Theme.dim
+    }
+
+    private func handleCompletionTap() {
+        if isPendingCompletion {
+            // Already animating to complete — second tap cancels instead
+            taskCompletionAnimationManager.cancelPending(for: task.id)
+            taskCompletionAnimationManager.toggleCancellation(for: task)
+        } else if isPendingCancel {
+            // Already animating to cancel — second tap undoes it
+            taskCompletionAnimationManager.cancelCancelPending(for: task.id)
+        } else {
+            taskCompletionAnimationManager.toggleCompletion(for: task)
+        }
+    }
+
     private var urgencyBackgroundTint: Color {
         guard !task.isDone else { return isHovered ? Theme.blue.opacity(0.05) : .clear }
         if isOverdue {
@@ -414,6 +463,18 @@ struct MacTaskRow: View {
                                 .fill(Theme.green.opacity(0.24))
                                 .frame(
                                     width: proxy.size.width * taskCompletionAnimationManager.progress(for: task, now: context.date),
+                                    alignment: .leading
+                                )
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                } else if isPendingCancel {
+                    TimelineView(.animation) { context in
+                        GeometryReader { proxy in
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Theme.dim.opacity(0.18))
+                                .frame(
+                                    width: proxy.size.width * taskCompletionAnimationManager.cancelProgress(for: task, now: context.date),
                                     alignment: .leading
                                 )
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -467,6 +528,9 @@ struct ContainerPickerBadge: View {
     var compact: Bool = false
 
     @State private var showPicker = false
+    @State private var searchQuery = ""
+    @State private var highlightIdx = 0
+    @FocusState private var isSearchFocused: Bool
 
     private var label: String {
         switch selection {
@@ -505,11 +569,51 @@ struct ContainerPickerBadge: View {
         }
     }
 
+    private func matches(_ name: String) -> Bool {
+        searchQuery.isEmpty || name.lowercased().hasPrefix(searchQuery.lowercased())
+    }
+
+    private var filteredGroupedContainers: [(context: Context, areas: [Area], projects: [Project])] {
+        groupedContainers.compactMap { group in
+            let filteredAreas    = group.areas.filter    { matches($0.name) }
+            let filteredProjects = group.projects.filter { matches($0.name) }
+            guard !filteredAreas.isEmpty || !filteredProjects.isEmpty else { return nil }
+            return (group.context, filteredAreas, filteredProjects)
+        }
+    }
+
+    /// Flat ordered list of all visible tags — drives index-based highlighting.
+    private var flatFiltered: [TaskContainerSelection] {
+        var result: [TaskContainerSelection] = []
+        if matches("Inbox") { result.append(.inbox) }
+        for group in filteredGroupedContainers {
+            for a in group.areas    { result.append(.area(a.id)) }
+            for p in group.projects { result.append(.project(p.id)) }
+        }
+        return result
+    }
+
+    private var highlightedTag: TaskContainerSelection? {
+        guard !flatFiltered.isEmpty else { return nil }
+        return flatFiltered[min(highlightIdx, flatFiltered.count - 1)]
+    }
+
+    private func selectHighlighted() {
+        guard let tag = highlightedTag else { return }
+        selection = tag
+        showPicker = false
+    }
+
     var body: some View {
         Button { showPicker.toggle() } label: {
             HStack(spacing: 4) {
                 Image(systemName: labelIcon).font(.system(size: compact ? 9 : 10)).foregroundStyle(labelColor)
-                Text(label).font(.system(size: compact ? 10 : 11)).foregroundStyle(Theme.muted)
+                Text(label)
+                    .font(.system(size: compact ? 10 : 11))
+                    .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: compact ? 60 : 80, alignment: .leading)
                 Image(systemName: "chevron.down").font(.system(size: compact ? 7 : 8, weight: .semibold)).foregroundStyle(Theme.dim)
             }
             .padding(.horizontal, compact ? 6 : 8)
@@ -521,67 +625,123 @@ struct ContainerPickerBadge: View {
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker) {
-            VStack(alignment: .leading, spacing: 2) {
-                containerRow(icon: "tray", name: "Inbox", color: Theme.dim, tag: .inbox)
-
-                if !groupedContainers.isEmpty {
-                    Divider().background(Theme.borderSubtle).padding(.vertical, 2)
-
-                    ForEach(groupedContainers, id: \.context.id) { group in
-                        Text(group.context.name.uppercased())
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(Color(hex: group.context.colorHex))
-                            .kerning(0.6)
-                            .padding(.horizontal, 12)
-                            .padding(.top, 6)
-                            .padding(.bottom, 2)
-
-                        ForEach(group.areas) { area in
-                            containerRow(icon: area.icon, name: area.name, color: Color(hex: area.colorHex), tag: .area(area.id))
+            VStack(alignment: .leading, spacing: 0) {
+                // ── Search bar ──────────────────────────────────────────────
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                    TextField("Search…", text: $searchQuery)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.text)
+                        .focused($isSearchFocused)
+                        .onSubmit { selectHighlighted() }
+                        .onKeyPress(.upArrow) {
+                            highlightIdx = max(highlightIdx - 1, 0)
+                            return .handled
                         }
+                        .onKeyPress(.downArrow) {
+                            let n = flatFiltered.count
+                            if n > 0 { highlightIdx = min(highlightIdx + 1, n - 1) }
+                            return .handled
+                        }
+                    if !searchQuery.isEmpty {
+                        Button { searchQuery = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.dim.opacity(0.5))
+                        }
+                        .buttonStyle(.cadencePlain)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
 
-                        ForEach(group.projects) { project in
-                            containerRow(icon: project.icon, name: project.name, color: Color(hex: project.colorHex), tag: .project(project.id))
+                Divider().background(Theme.borderSubtle)
+
+                // ── Results ─────────────────────────────────────────────────
+                VStack(alignment: .leading, spacing: 2) {
+                    if matches("Inbox") {
+                        ContainerPickerRow(
+                            icon: "tray", name: "Inbox", color: Theme.dim,
+                            isHighlighted: highlightedTag == .inbox,
+                            isSelected: selection == .inbox,
+                            action: { selection = .inbox; showPicker = false }
+                        )
+                    }
+
+                    if !filteredGroupedContainers.isEmpty {
+                        Divider().background(Theme.borderSubtle).padding(.vertical, 2)
+
+                        ForEach(filteredGroupedContainers, id: \.context.id) { group in
+                            Text(group.context.name.uppercased())
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Color(hex: group.context.colorHex))
+                                .kerning(0.6)
+                                .padding(.horizontal, 12)
+                                .padding(.top, 6)
+                                .padding(.bottom, 2)
+
+                            ForEach(group.areas) { area in
+                                ContainerPickerRow(
+                                    icon: area.icon, name: area.name,
+                                    color: Color(hex: area.colorHex),
+                                    isHighlighted: highlightedTag == .area(area.id),
+                                    isSelected: selection == .area(area.id),
+                                    action: { selection = .area(area.id); showPicker = false }
+                                )
+                            }
+
+                            ForEach(group.projects) { project in
+                                ContainerPickerRow(
+                                    icon: project.icon, name: project.name,
+                                    color: Color(hex: project.colorHex),
+                                    isHighlighted: highlightedTag == .project(project.id),
+                                    isSelected: selection == .project(project.id),
+                                    action: { selection = .project(project.id); showPicker = false }
+                                )
+                            }
                         }
                     }
                 }
+                .padding(.vertical, 6)
             }
-            .padding(.vertical, 6).frame(minWidth: 190).background(Theme.surfaceElevated)
+            .frame(minWidth: 190)
+            .background(Theme.surfaceElevated)
+            .onAppear { highlightIdx = 0; DispatchQueue.main.async { isSearchFocused = true } }
+            .onChange(of: showPicker) { _, isShown in if !isShown { searchQuery = ""; highlightIdx = 0 } }
+            .onChange(of: searchQuery) { _, _ in highlightIdx = 0 }
         }
     }
 
-    @ViewBuilder
-    private func containerRow(icon: String, name: String, color: Color, tag: TaskContainerSelection) -> some View {
-        let isSelected = selection == tag
-        Button { selection = tag; showPicker = false } label: {
-            HStack(spacing: 8) {
-                Image(systemName: icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 16)
-                Text(name).font(.system(size: 13)).foregroundStyle(Theme.text)
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)
-                }
-            }
-            .padding(.horizontal, 12).padding(.vertical, 7).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-            .background(isSelected ? Theme.blue.opacity(0.08) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.cadencePlain)
-        .modifier(TaskPickerRowHover())
-    }
 }
+
 
 struct TaskSectionPickerBadge: View {
     @Binding var selection: String
     let sections: [String]
 
     @State private var showPicker = false
+    @State private var searchQuery = ""
+    @State private var highlightIdx = 0
+    @FocusState private var isSearchFocused: Bool
 
     private var resolvedSections: [String] {
         let cleaned = sections
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         return cleaned.isEmpty ? [TaskSectionDefaults.defaultName] : cleaned
+    }
+
+    private var filteredSections: [String] {
+        guard !searchQuery.isEmpty else { return resolvedSections }
+        return resolvedSections.filter { $0.lowercased().hasPrefix(searchQuery.lowercased()) }
+    }
+
+    private var highlightedSection: String? {
+        guard !filteredSections.isEmpty else { return nil }
+        return filteredSections[min(highlightIdx, filteredSections.count - 1)]
     }
 
     private var label: String {
@@ -597,6 +757,9 @@ struct TaskSectionPickerBadge: View {
                 Text(label)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 70, alignment: .leading)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(Theme.dim)
@@ -610,55 +773,135 @@ struct TaskSectionPickerBadge: View {
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("SECTIONS")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .kerning(0.6)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 2)
-
-                ForEach(resolvedSections, id: \.self) { section in
-                    sectionRow(section)
+            VStack(alignment: .leading, spacing: 0) {
+                // ── Search bar ──────────────────────────────────────────────
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                    TextField("Search…", text: $searchQuery)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.text)
+                        .focused($isSearchFocused)
+                        .onSubmit {
+                            if let s = highlightedSection { selection = s; showPicker = false }
+                        }
+                        .onKeyPress(.upArrow) {
+                            highlightIdx = max(highlightIdx - 1, 0)
+                            return .handled
+                        }
+                        .onKeyPress(.downArrow) {
+                            let n = filteredSections.count
+                            if n > 0 { highlightIdx = min(highlightIdx + 1, n - 1) }
+                            return .handled
+                        }
+                    if !searchQuery.isEmpty {
+                        Button { searchQuery = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.dim.opacity(0.5))
+                        }
+                        .buttonStyle(.cadencePlain)
+                    }
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+
+                Divider().background(Theme.borderSubtle)
+
+                // ── Results ─────────────────────────────────────────────────
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(filteredSections, id: \.self) { section in
+                        SectionPickerRow(
+                            section: section,
+                            isHighlighted: section == highlightedSection,
+                            isSelected: section.caseInsensitiveCompare(selection) == .orderedSame,
+                            action: { selection = section; showPicker = false }
+                        )
+                    }
+                }
+                .padding(.vertical, 6)
             }
-            .padding(.vertical, 6)
             .frame(minWidth: 170)
             .background(Theme.surfaceElevated)
+            .onAppear { highlightIdx = 0; DispatchQueue.main.async { isSearchFocused = true } }
+            .onChange(of: showPicker) { _, isShown in if !isShown { searchQuery = ""; highlightIdx = 0 } }
+            .onChange(of: searchQuery) { _, _ in highlightIdx = 0 }
         }
     }
 
-    @ViewBuilder
-    private func sectionRow(_ section: String) -> some View {
-        let isSelected = section.caseInsensitiveCompare(selection) == .orderedSame
-        Button {
-            selection = section
-            showPicker = false
-        } label: {
+}
+
+// MARK: - Picker row structs
+
+private struct ContainerPickerRow: View {
+    let icon: String
+    let name: String
+    let color: Color
+    let isHighlighted: Bool
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: section.caseInsensitiveCompare(TaskSectionDefaults.defaultName) == .orderedSame ? "square.grid.2x2" : "rectangle.split.3x1")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 16)
-                Text(section)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.text)
+                Image(systemName: icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 16)
+                Text(name).font(.system(size: 13)).foregroundStyle(Theme.text)
                 Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.blue)
+                if isHighlighted {
+                    Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .background(isSelected ? Theme.blue.opacity(0.08) : Color.clear)
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            .background(rowBackground)
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.cadencePlain)
-        .modifier(TaskPickerRowHover())
+        .onHover { isHovered = $0 }
+    }
+
+    private var rowBackground: Color {
+        if isHighlighted { return Theme.blue.opacity(0.08) }
+        if isHovered { return Theme.blue.opacity(0.06) }
+        return .clear
+    }
+}
+
+private struct SectionPickerRow: View {
+    let section: String
+    let isHighlighted: Bool
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: section.caseInsensitiveCompare(TaskSectionDefaults.defaultName) == .orderedSame
+                      ? "square.grid.2x2" : "rectangle.split.3x1")
+                    .font(.system(size: 11)).foregroundStyle(Theme.dim).frame(width: 16)
+                Text(section).font(.system(size: 13)).foregroundStyle(Theme.text)
+                Spacer()
+                if isHighlighted {
+                    Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            .background(rowBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.cadencePlain)
+        .onHover { isHovered = $0 }
+    }
+
+    private var rowBackground: Color {
+        if isHighlighted { return Theme.blue.opacity(0.08) }
+        if isHovered { return Theme.blue.opacity(0.06) }
+        return .clear
     }
 }
 
@@ -769,6 +1012,70 @@ struct StaticTaskGroupHeader: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.clear)
                 .allowsHitTesting(false)
+        }
+    }
+}
+
+// MARK: - Shared Sort/Group picker badge
+
+struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>: View where T.RawValue == String {
+    let title: String
+    @Binding var selection: T
+    var excluded: [T] = []
+    @State private var showPicker = false
+
+    private var availableCases: [T] {
+        Array(T.allCases).filter { item in !excluded.contains(where: { $0.id == item.id }) }
+    }
+
+    var body: some View {
+        Button { showPicker.toggle() } label: {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                Text(selection.rawValue)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.text)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Theme.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.cadencePlain)
+        .popover(isPresented: $showPicker) {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(availableCases, id: \.id) { value in
+                    Button {
+                        selection = value
+                        showPicker = false
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(value.rawValue).font(.system(size: 13)).foregroundStyle(Theme.text)
+                            Spacer()
+                            if selection.id == value.id {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Theme.blue)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .background(selection.id == value.id ? Theme.blue.opacity(0.08) : .clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.cadencePlain)
+                }
+            }
+            .padding(.vertical, 6)
+            .frame(minWidth: 170)
+            .background(Theme.surfaceElevated)
         }
     }
 }

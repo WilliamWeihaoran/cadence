@@ -13,90 +13,24 @@ struct ContextSection: View {
     @State private var dragOverAreaID: UUID? = nil
     @State private var dragOverProjectID: UUID? = nil
 
-    private var areas: [Area] { (context.areas ?? []).sorted { $0.order < $1.order } }
-    private var projects: [Project] { (context.projects ?? []).sorted { $0.order < $1.order } }
+    private var areas: [Area] { (context.areas ?? []).filter(\.isActive).sorted { $0.order < $1.order } }
+    private var projects: [Project] { (context.projects ?? []).filter(\.isActive).sorted { $0.order < $1.order } }
+    private var hasLists: Bool { !areas.isEmpty || !projects.isEmpty }
 
     var body: some View {
-        Section {
-            ForEach(areas) { area in
-                SidebarListRow(
-                    item: .area(area.id),
-                    icon: area.icon,
-                    label: area.name,
-                    color: Color(hex: area.colorHex),
-                    kind: .area,
-                    dueDateKey: nil,
-                    onSetDueDate: nil,
-                    selection: $selection,
-                    onEdit: { areaForEdit = area }
-                )
-                .overlay(alignment: .top) {
-                    if dragOverAreaID == area.id {
-                        Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
-                    }
-                }
-                .animation(.easeInOut(duration: 0.15), value: dragOverAreaID)
-                .onDrag {
-                    draggingAreaID = area.id
-                    return NSItemProvider(object: NSString(string: "area:\(area.id.uuidString)"))
-                }
-                .onDrop(
-                    of: [UTType.text],
-                    delegate: SidebarUUIDDropDelegate(
-                        targetID: area.id,
-                        draggingID: $draggingAreaID,
-                        onEnter: { id in dragOverAreaID = id },
-                        onExit: { id in if dragOverAreaID == id { dragOverAreaID = nil } },
-                        onReorder: reorderArea
-                    )
-                )
-            }
-
-            ForEach(projects) { project in
-                SidebarListRow(
-                    item: .project(project.id),
-                    icon: project.icon,
-                    label: project.name,
-                    color: Color(hex: project.colorHex),
-                    kind: .project,
-                    dueDateKey: project.dueDate,
-                    onSetDueDate: { newKey in
-                        project.dueDate = newKey
-                    },
-                    selection: $selection,
-                    onEdit: { projectForEdit = project }
-                )
-                .overlay(alignment: .top) {
-                    if dragOverProjectID == project.id {
-                        Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
-                    }
-                }
-                .animation(.easeInOut(duration: 0.15), value: dragOverProjectID)
-                .onDrag {
-                    draggingProjectID = project.id
-                    return NSItemProvider(object: NSString(string: "project:\(project.id.uuidString)"))
-                }
-                .onDrop(
-                    of: [UTType.text],
-                    delegate: SidebarUUIDDropDelegate(
-                        targetID: project.id,
-                        draggingID: $draggingProjectID,
-                        onEnter: { id in dragOverProjectID = id },
-                        onExit: { id in if dragOverProjectID == id { dragOverProjectID = nil } },
-                        onReorder: reorderProject
-                    )
-                )
-            }
-        } header: {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: context.icon)
                     .font(.system(size: 10))
                     .foregroundStyle(Color(hex: context.colorHex))
+
                 Text(context.name.uppercased())
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .kerning(0.8)
+
                 Spacer()
+
                 Button(action: onAddList) {
                     Image(systemName: "plus")
                         .font(.system(size: 10, weight: .semibold))
@@ -105,6 +39,107 @@ struct ContextSection: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
+            }
+            .padding(.horizontal, 2)
+
+            if hasLists {
+                HStack(alignment: .top, spacing: 8) {
+                    RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        .fill(Color(hex: context.colorHex).opacity(0.22))
+                        .frame(width: 2)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(areas) { area in
+                            SidebarListRow(
+                                item: .area(area.id),
+                                icon: area.icon,
+                                label: area.name,
+                                color: Color(hex: area.colorHex),
+                                kind: .area,
+                                dueDateKey: nil,
+                                onSetDueDate: nil,
+                                selection: $selection,
+                                onEdit: { areaForEdit = area }
+                            )
+                            .overlay(alignment: .top) {
+                                if dragOverAreaID == area.id {
+                                    Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
+                                }
+                            }
+                            .animation(.easeInOut(duration: 0.15), value: dragOverAreaID)
+                            .onDrag {
+                                draggingAreaID = area.id
+                                return NSItemProvider(object: NSString(string: "area:\(area.id.uuidString)"))
+                            }
+                            .onDrop(
+                                of: [UTType.text],
+                                delegate: SidebarUUIDDropDelegate(
+                                    targetID: area.id,
+                                    draggingID: $draggingAreaID,
+                                    onEnter: { id in dragOverAreaID = id },
+                                    onExit: { id in if dragOverAreaID == id { dragOverAreaID = nil } },
+                                    onReorder: reorderArea
+                                )
+                            )
+                        }
+
+                        ForEach(projects) { project in
+                            SidebarListRow(
+                                item: .project(project.id),
+                                icon: project.icon,
+                                label: project.name,
+                                color: Color(hex: project.colorHex),
+                                kind: .project,
+                                dueDateKey: project.dueDate,
+                                onSetDueDate: { newKey in
+                                    project.dueDate = newKey
+                                },
+                                selection: $selection,
+                                onEdit: { projectForEdit = project }
+                            )
+                            .overlay(alignment: .top) {
+                                if dragOverProjectID == project.id {
+                                    Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
+                                }
+                            }
+                            .animation(.easeInOut(duration: 0.15), value: dragOverProjectID)
+                            .onDrag {
+                                draggingProjectID = project.id
+                                return NSItemProvider(object: NSString(string: "project:\(project.id.uuidString)"))
+                            }
+                            .onDrop(
+                                of: [UTType.text],
+                                delegate: SidebarUUIDDropDelegate(
+                                    targetID: project.id,
+                                    draggingID: $draggingProjectID,
+                                    onEnter: { id in dragOverProjectID = id },
+                                    onExit: { id in if dragOverProjectID == id { dragOverProjectID = nil } },
+                                    onReorder: reorderProject
+                                )
+                            )
+                        }
+                    }
+                }
+                .padding(.leading, 8)
+            } else {
+                Button(action: onAddList) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Add first list")
+                            .font(.system(size: 12, weight: .medium))
+                        Spacer()
+                    }
+                    .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Theme.surfaceElevated.opacity(0.55))
+                    )
+                }
+                .buttonStyle(.cadencePlain)
+                .padding(.leading, 8)
             }
         }
         .sheet(item: $areaForEdit) { area in
@@ -150,11 +185,11 @@ struct SidebarRow: View {
         Button {
             selection = item
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 9) {
                 Image(systemName: icon)
                     .foregroundStyle(color)
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 16)
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 15)
 
                 Text(label)
                     .font(.system(size: 13, weight: .medium))
@@ -162,11 +197,11 @@ struct SidebarRow: View {
 
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 8)
             .background(backgroundFillShape)
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .strokeBorder(borderColor, lineWidth: selection == item ? 1 : 0.8)
             }
             .contentShape(Rectangle())
@@ -193,7 +228,7 @@ struct SidebarRow: View {
 private extension SidebarRow {
     @ViewBuilder
     var backgroundFillShape: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
+        RoundedRectangle(cornerRadius: 11, style: .continuous)
             .fill(backgroundFill)
     }
 }
@@ -250,7 +285,7 @@ struct SidebarListRow: View {
                 } icon: {
                     Image(systemName: icon)
                         .foregroundStyle(color)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                 }
 
                 Spacer(minLength: 8)
@@ -259,14 +294,14 @@ struct SidebarListRow: View {
                     dueDateBadge(dueDateKey)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(selection == item ? Theme.blue.opacity(0.18) : (isHovered ? Theme.surfaceElevated.opacity(0.85) : Color.clear))
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(selection == item ? Theme.blue.opacity(0.16) : (isHovered ? Theme.surfaceElevated.opacity(0.78) : Color.clear))
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(selection == item ? Theme.blue.opacity(0.3) : Theme.borderSubtle.opacity(isHovered ? 0.75 : 0), lineWidth: 1)
             }
             .contentShape(Rectangle())
@@ -304,30 +339,21 @@ struct SidebarListRow: View {
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showDueDatePicker) {
-            VStack(spacing: 0) {
-                MonthCalendarPanel(
-                    selection: $dueDatePickerDate,
-                    viewMonth: $dueDateViewMonth,
-                    isOpen: Binding(
-                        get: { showDueDatePicker },
-                        set: { newValue in
-                            if !newValue {
-                                onSetDueDate?(DateFormatters.dateKey(from: dueDatePickerDate))
-                            }
-                            showDueDatePicker = newValue
-                        }
-                    )
-                )
-                Divider().background(Theme.borderSubtle)
-                Button("Clear date") {
+            CadenceQuickDatePopover(
+                selection: Binding(
+                    get: { dueDatePickerDate },
+                    set: {
+                        dueDatePickerDate = $0
+                        onSetDueDate?(DateFormatters.dateKey(from: $0))
+                    }
+                ),
+                viewMonth: $dueDateViewMonth,
+                isOpen: $showDueDatePicker,
+                showsClear: true,
+                onClear: {
                     onSetDueDate?("")
-                    showDueDatePicker = false
                 }
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.red)
-                .buttonStyle(.cadencePlain)
-                .padding(.vertical, 8)
-            }
+            )
         }
     }
 
@@ -346,58 +372,25 @@ struct SidebarSection<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .kerning(0.8)
-                .padding(.horizontal, 10)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .kerning(0.8)
+                Rectangle()
+                    .fill(Theme.borderSubtle.opacity(0.65))
+                    .frame(height: 1)
+            }
+            .padding(.horizontal, 2)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 content
             }
         }
     }
 }
 
-struct SidebarStaticDropDelegate: DropDelegate {
-    let target: SidebarStaticDestination
-    @Binding var dragging: SidebarStaticDestination?
-    @Binding var hovered: SidebarStaticDestination?
-    let current: [SidebarStaticDestination]
-    let save: ([SidebarStaticDestination]) -> Void
-
-    func dropEntered(info: DropInfo) {
-        hovered = target
-    }
-
-    func dropExited(info: DropInfo) {
-        if hovered == target { hovered = nil }
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        if hovered == target { hovered = nil }
-        guard let dragging, dragging != target,
-              let fromIndex = current.firstIndex(of: dragging),
-              let toIndex = current.firstIndex(of: target) else {
-            self.dragging = nil
-            return false
-        }
-
-        var updated = current
-        let moved = updated.remove(at: fromIndex)
-        updated.insert(moved, at: fromIndex < toIndex ? toIndex - 1 : toIndex)
-        withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
-            save(updated)
-        }
-        self.dragging = nil
-        return true
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-}
 
 struct SidebarUUIDDropDelegate: DropDelegate {
     let targetID: UUID

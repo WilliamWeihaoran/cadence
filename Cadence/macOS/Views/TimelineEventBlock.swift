@@ -113,13 +113,14 @@ struct TimelineEventBlock: View {
             ) {
                 CalendarEventEditPopover(
                     item: item,
-                    onSave: { title, startMin, duration, calendarID in
+                    onSave: { title, startMin, duration, calendarID, notes in
                         let dateKey = DateFormatters.dateKey(from: item.ekEvent.startDate)
                         calendarManager.updateEvent(item.ekEvent, title: title,
                                                     startMin: startMin,
                                                     durationMinutes: duration,
                                                     dateKey: dateKey,
-                                                    calendarID: calendarID)
+                                                    calendarID: calendarID,
+                                                    notes: notes)
                         selectedEventID = nil
                     },
                     onDelete: {
@@ -266,7 +267,7 @@ struct TimelineEventBlock: View {
 
 struct CalendarEventEditPopover: View {
     let item: CalendarEventItem
-    let onSave: (String, Int, Int, String) -> Void
+    let onSave: (String, Int, Int, String, String) -> Void
     let onDelete: () -> Void
     @Environment(CalendarManager.self) private var calendarManager
 
@@ -276,8 +277,9 @@ struct CalendarEventEditPopover: View {
     @State private var startText: String
     @State private var endText: String
     @State private var selectedCalendarID: String
+    @State private var notes: String
 
-    init(item: CalendarEventItem, onSave: @escaping (String, Int, Int, String) -> Void, onDelete: @escaping () -> Void) {
+    init(item: CalendarEventItem, onSave: @escaping (String, Int, Int, String, String) -> Void, onDelete: @escaping () -> Void) {
         self.item = item
         self.onSave = onSave
         self.onDelete = onDelete
@@ -289,6 +291,7 @@ struct CalendarEventEditPopover: View {
         _startText = State(initialValue: TimeFormatters.timeString(from: s))
         _endText   = State(initialValue: TimeFormatters.timeString(from: e))
         _selectedCalendarID = State(initialValue: item.ekEvent.calendar.calendarIdentifier)
+        _notes = State(initialValue: item.ekEvent.notes ?? "")
     }
 
     private var durationMinutes: Int { max(0, endMin - startMin) }
@@ -369,9 +372,26 @@ struct CalendarEventEditPopover: View {
                     }
                 }
 
+                infoCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Notes", systemImage: "note.text")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+
+                        TextEditor(text: $notes)
+                            .scrollContentBackground(.hidden)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.text)
+                            .frame(minHeight: 96)
+                            .padding(8)
+                            .background(Theme.surfaceElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+
                 // Actions
                 HStack(spacing: 10) {
-                    Button { onSave(title, startMin, durationMinutes, selectedCalendarID) } label: {
+                    Button { onSave(title, startMin, durationMinutes, selectedCalendarID, notes) } label: {
                         Label("Save", systemImage: "checkmark.circle.fill")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Theme.blue)

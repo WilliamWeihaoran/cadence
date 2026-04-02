@@ -19,10 +19,13 @@ final class HoveredTaskManager {
     var hoveredTask: AppTask? = nil
     var hoveredSource: HoveredTaskSource? = nil
     var hoveredDateKind: HoveredTaskDateKind? = nil
+    private var pendingClearWorkItem: DispatchWorkItem? = nil
 
     private init() {}
 
     func beginHovering(_ task: AppTask, source: HoveredTaskSource) {
+        pendingClearWorkItem?.cancel()
+        pendingClearWorkItem = nil
         if hoveredTask?.id == task.id, hoveredSource == source { return }
         hoveredTask = task
         hoveredSource = source
@@ -42,9 +45,17 @@ final class HoveredTaskManager {
 
     func endHovering(_ task: AppTask) {
         guard hoveredTask?.id == task.id else { return }
-        hoveredTask = nil
-        hoveredSource = nil
-        hoveredDateKind = nil
+        pendingClearWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard self.hoveredTask?.id == task.id else { return }
+            self.hoveredTask = nil
+            self.hoveredSource = nil
+            self.hoveredDateKind = nil
+            self.pendingClearWorkItem = nil
+        }
+        pendingClearWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: workItem)
     }
 }
 #endif

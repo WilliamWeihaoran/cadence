@@ -3,6 +3,7 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 import EventKit
+import Combine
 
 let calBaseHourHeight: CGFloat = 60
 let calStartHour = 0
@@ -29,6 +30,7 @@ enum CalViewMode: String, CaseIterable {
 
 struct CalendarPageView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(CalendarNavigationManager.self) private var calendarNavigationManager
     @Query private var allTasks: [AppTask]
 
     @State private var viewMode: CalViewMode = .week
@@ -36,12 +38,19 @@ struct CalendarPageView: View {
     @AppStorage("calendarZoomLevel") private var zoomLevel: Int = 1
     @AppStorage("calendarRememberedTimelineHour") private var rememberedScrollHour: Int = -1
     @AppStorage("calendarRememberedTimelineDateKey") private var rememberedDateKey: String = ""
-    @State private var hContentOffset: CGFloat = 0
     @State private var visibleMonthIdx: Int = 60  // index into MonthGridView's 120-month window
     @State private var monthGridResetNonce: Int = 0
     @State private var isRestoringVerticalScroll = true
     @State private var isRestoringHorizontalScroll = true
     @State private var didRestoreTimelineScroll = false
+    @State private var visibleTimelineDayIndex: Int?
+    @State private var visibleTimelineHour: Int?
+    @State private var pendingDayPersistence: DispatchWorkItem?
+    @State private var pendingHourPersistence: DispatchWorkItem?
+    @State private var externalJumpDayIndex: Int?
+    @State private var externalJumpHour: Int?
+    @State private var externalJumpToken: UUID?
+    @StateObject private var timelineScrollState = CalendarTimelineScrollState()
 
     private let cal = Calendar.current
     private var bufferStart: Date {
@@ -137,18 +146,13 @@ struct CalendarPageView: View {
                                 .overlay(alignment: .trailing) {
                                     Rectangle().fill(Theme.borderSubtle.opacity(0.7)).frame(width: 1)
                                 }
-                            LazyHStack(spacing: 0) {
-                                ForEach(0..<calRenderDays, id: \.self) { dayIdx in
-                                    let date = cal.date(byAdding: .day, value: dayIdx, to: bufferStart)!
-                                    CalDayHeaderView(date: date)
-                                        .frame(width: colWidth)
-                                }
-                            }
-                            .frame(width: totalDaysWidth, alignment: .leading)
-                            .offset(x: hContentOffset)
-                            .transaction { $0.animation = nil }
-                            .frame(width: timelineViewportWidth, alignment: .leading)
-                            .clipped()
+                            CalendarTimelineHeaderStrip(
+                                bufferStart: bufferStart,
+                                colWidth: colWidth,
+                                totalDaysWidth: totalDaysWidth,
+                                timelineViewportWidth: timelineViewportWidth,
+                                scrollState: timelineScrollState
+                            )
                         }
                         .frame(height: calDayHeaderHeight)
                         .background(Theme.surface)
@@ -193,24 +197,46 @@ struct CalendarPageView: View {
                                         .scrollTargetBehavior(CalendarColumnSnap(colWidth: colWidth))
                                         .scrollBounceBehavior(.basedOnSize, axes: [.horizontal])
                                         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in
+                                            timelineScrollState.headerOffset = -x
                                             guard didRestoreTimelineScroll, !isRestoringHorizontalScroll else { return }
-                                            hContentOffset = -x
                                             let rawDay = Int(round(x / max(colWidth, 1)))
                                             let clampedDay = min(max(rawDay, 0), calRenderDays - 1)
-                                            let visibleDate = cal.date(byAdding: .day, value: clampedDay, to: bufferStart) ?? Date()
-                                            rememberedDateKey = DateFormatters.dateKey(from: visibleDate)
+                                            guard visibleTimelineDayIndex != clampedDay else { return }
+                                            visibleTimelineDayIndex = clampedDay
+                                            schedulePersistVisibleTimelineDay(clampedDay)
                                         }
                                         .onAppear {
-                                            restoreTimelineScrollIfNeeded(vProxy: vProxy, hProxy: hProxy)
+                                            restoreTimelineScrollIfNeeded(vProxy: vProxy, hProxy: hProxy, colWidth: colWidth)
+                                            if externalJumpToken != nil, let day = externalJumpDayIndex {
+                                                timelineScrollState.headerOffset = -CGFloat(day) * colWidth
+                                                DispatchQueue.main.async {
+                                                    hProxy.scrollTo("day_\(day)", anchor: .leading)
+                                                }
+                                            }
                                         }
                                         .onChange(of: scrollToTodayTrigger) {
+                                            pendingDayPersistence?.cancel()
                                             rememberedDateKey = DateFormatters.todayKey()
+                                            visibleTimelineDayIndex = todayDayIdx
                                             isRestoringHorizontalScroll = true
-                                            hContentOffset = -CGFloat(todayDayIdx) * colWidth
+                                            timelineScrollState.headerOffset = -CGFloat(todayDayIdx) * colWidth
                                             withAnimation {
                                                 hProxy.scrollTo("day_\(todayDayIdx)", anchor: .leading)
                                             }
                                             DispatchQueue.main.async {
+                                                isRestoringHorizontalScroll = false
+                                            }
+                                        }
+                                        .onChange(of: externalJumpToken) { _, _ in
+                                            guard let day = externalJumpDayIndex else { return }
+                                            pendingDayPersistence?.cancel()
+                                            visibleTimelineDayIndex = day
+                                            isRestoringHorizontalScroll = true
+                                            timelineScrollState.headerOffset = -CGFloat(day) * colWidth
+                                            withAnimation(.easeInOut(duration: 0.2)) {
+                                                hProxy.scrollTo("day_\(day)", anchor: .leading)
+                                            }
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
                                                 isRestoringHorizontalScroll = false
                                             }
                                         }
@@ -220,18 +246,28 @@ struct CalendarPageView: View {
                             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
                                 guard didRestoreTimelineScroll, !isRestoringVerticalScroll else { return }
                                 let rawHour = calStartHour + Int(y / max(hourHeight, 1))
-                                rememberedScrollHour = min(max(rawHour, calStartHour), calEndHour - 1)
+                                let clampedHour = min(max(rawHour, calStartHour), calEndHour - 1)
+                                guard visibleTimelineHour != clampedHour else { return }
+                                visibleTimelineHour = clampedHour
+                                schedulePersistVisibleTimelineHour(clampedHour)
                             }
                             .onAppear {
                                 didRestoreTimelineScroll = false
                                 isRestoringVerticalScroll = true
                                 isRestoringHorizontalScroll = true
+                                if externalJumpToken != nil, let hour = externalJumpHour {
+                                    DispatchQueue.main.async {
+                                        vProxy.scrollTo("tl_\(hour)", anchor: .top)
+                                    }
+                                }
                             }
                             .scrollBounceBehavior(.always, axes: [.vertical])
                             .onChange(of: scrollToTodayTrigger) {
                                 let currentHour = Calendar.current.component(.hour, from: Date())
                                 let scrollHour = max(calStartHour, currentHour - 1)
+                                pendingHourPersistence?.cancel()
                                 rememberedScrollHour = scrollHour
+                                visibleTimelineHour = scrollHour
                                 isRestoringVerticalScroll = true
                                 withAnimation {
                                     vProxy.scrollTo("tl_\(scrollHour)", anchor: .top)
@@ -248,6 +284,18 @@ struct CalendarPageView: View {
                                     didRestoreTimelineScroll = false
                                 }
                             }
+                            .onChange(of: externalJumpToken) { _, _ in
+                                guard let hour = externalJumpHour else { return }
+                                pendingHourPersistence?.cancel()
+                                visibleTimelineHour = hour
+                                isRestoringVerticalScroll = true
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    vProxy.scrollTo("tl_\(hour)", anchor: .top)
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                                    isRestoringVerticalScroll = false
+                                }
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -256,6 +304,15 @@ struct CalendarPageView: View {
             }
         }
         .background(Theme.bg)
+        .onAppear {
+            if let request = calendarNavigationManager.request {
+                applyExternalCalendarJump(request)
+            }
+        }
+        .onChange(of: calendarNavigationManager.request?.token) { _, _ in
+            guard let request = calendarNavigationManager.request else { return }
+            applyExternalCalendarJump(request)
+        }
     }
 
     private var visibleMonthLabel: String {
@@ -272,8 +329,8 @@ struct CalendarPageView: View {
         if viewMode == .month {
             return visibleMonthLabel
         }
-        let visibleDate = DateFormatters.date(from: rememberedDateKey)
-            ?? cal.date(byAdding: .day, value: rememberedTimelineDayIndex, to: bufferStart)
+        let dayIndex = visibleTimelineDayIndex ?? rememberedTimelineDayIndex
+        let visibleDate = cal.date(byAdding: .day, value: dayIndex, to: bufferStart)
             ?? Date()
         return DateFormatters.monthYear.string(from: visibleDate)
     }
@@ -284,7 +341,7 @@ struct CalendarPageView: View {
         return min(max(day, 0), calRenderDays - 1)
     }
 
-    private func restoreTimelineScrollIfNeeded(vProxy: ScrollViewProxy, hProxy: ScrollViewProxy) {
+    private func restoreTimelineScrollIfNeeded(vProxy: ScrollViewProxy, hProxy: ScrollViewProxy, colWidth: CGFloat) {
         guard !didRestoreTimelineScroll else { return }
 
         let currentHour = Calendar.current.component(.hour, from: Date())
@@ -295,6 +352,9 @@ struct CalendarPageView: View {
         didRestoreTimelineScroll = true
         isRestoringHorizontalScroll = true
         isRestoringVerticalScroll = true
+        visibleTimelineDayIndex = targetDay
+        visibleTimelineHour = scrollHour
+        timelineScrollState.headerOffset = -CGFloat(targetDay) * colWidth
 
         DispatchQueue.main.async {
             hProxy.scrollTo("day_\(targetDay)", anchor: .leading)
@@ -305,6 +365,45 @@ struct CalendarPageView: View {
                 isRestoringVerticalScroll = false
             }
         }
+    }
+
+    private func schedulePersistVisibleTimelineDay(_ dayIndex: Int) {
+        pendingDayPersistence?.cancel()
+        let date = cal.date(byAdding: .day, value: dayIndex, to: bufferStart) ?? Date()
+        let dateKey = DateFormatters.dateKey(from: date)
+        let workItem = DispatchWorkItem {
+            rememberedDateKey = dateKey
+            pendingDayPersistence = nil
+        }
+        pendingDayPersistence = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: workItem)
+    }
+
+    private func schedulePersistVisibleTimelineHour(_ hour: Int) {
+        pendingHourPersistence?.cancel()
+        let workItem = DispatchWorkItem {
+            rememberedScrollHour = hour
+            pendingHourPersistence = nil
+        }
+        pendingHourPersistence = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: workItem)
+    }
+
+    private func applyExternalCalendarJump(_ request: CalendarNavigationManager.Request) {
+        viewMode = .week
+        rememberedDateKey = request.dateKey
+        let targetDay = min(max(
+            cal.dateComponents([.day], from: bufferStart, to: cal.startOfDay(for: DateFormatters.date(from: request.dateKey) ?? Date())).day ?? todayDayIdx,
+            0
+        ), calRenderDays - 1)
+        let targetHour = min(max(request.preferredHour - 1, calStartHour), calEndHour - 1)
+        visibleTimelineDayIndex = targetDay
+        visibleTimelineHour = targetHour
+        externalJumpDayIndex = targetDay
+        externalJumpHour = targetHour
+        externalJumpToken = request.token
+        timelineScrollState.headerOffset = -CGFloat(targetDay) * max(1, calTimeWidth)
+        calendarNavigationManager.clear()
     }
 
     // tasksByDate for month view — all tasks with a due date or scheduled date
@@ -320,5 +419,34 @@ struct CalendarPageView: View {
         return dict
     }
 
+}
+
+private final class CalendarTimelineScrollState: ObservableObject {
+    @Published var headerOffset: CGFloat = 0
+}
+
+private struct CalendarTimelineHeaderStrip: View {
+    let bufferStart: Date
+    let colWidth: CGFloat
+    let totalDaysWidth: CGFloat
+    let timelineViewportWidth: CGFloat
+    @ObservedObject var scrollState: CalendarTimelineScrollState
+
+    private let cal = Calendar.current
+
+    var body: some View {
+        LazyHStack(spacing: 0) {
+            ForEach(0..<calRenderDays, id: \.self) { dayIdx in
+                let date = cal.date(byAdding: .day, value: dayIdx, to: bufferStart)!
+                CalDayHeaderView(date: date)
+                    .frame(width: colWidth)
+            }
+        }
+        .frame(width: totalDaysWidth, alignment: .leading)
+        .offset(x: scrollState.headerOffset)
+        .transaction { $0.animation = nil }
+        .frame(width: timelineViewportWidth, alignment: .leading)
+        .clipped()
+    }
 }
 #endif
