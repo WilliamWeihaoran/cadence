@@ -62,6 +62,10 @@ final class TaskCreationManager {
 
     func presentSuccessToast() {
         successToastTask?.cancel()
+        // Bring the main app window to front so the in-app toast is visible,
+        // even when called from the global quick-capture panel.
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.windows.first(where: { $0.isKind(of: NSWindow.self) && !$0.isKind(of: NSPanel.self) })?.makeKeyAndOrderFront(nil)
         withAnimation(.easeInOut(duration: 0.16)) {
             showSuccessToast = true
         }

@@ -63,8 +63,8 @@ Cadence/
     │   ├── SchedulePanel.swift    # Today's hour-by-hour timeline with drag scheduling + task inspector
     │   ├── SchedulePanelComponents.swift # Inspector/helper components used by SchedulePanel
     │   ├── InboxView.swift        # Inbox: tasks with no area/project, capture bar, drag-to-reorder
-    │   ├── CalendarPageView.swift # Calendar: Week/2W/Month views, infinite scroll, drag scheduling
-    │   ├── TimelineDayCanvas.swift  # Main canvas: drag-to-create, drop zones, interaction state
+    │   ├── CalendarPageView.swift # Calendar: Week/2W/Month views, infinite scroll, drag scheduling; week/2W view has a scrollable all-day banner (90pt, `calAllDayBannerHeight`) showing unscheduled tasks + all-day events as draggable chips
+    │   ├── TimelineDayCanvas.swift  # Main canvas: drag-to-create, drop zones, interaction state; accepts `"allDayEvent:<eventID>"` payload to schedule all-day events
     │   ├── TimelineMetrics.swift    # Pixel↔minute coordinate math, snapping
     │   ├── TimelineTaskBlock.swift  # Draggable task card with tap/popover detail
     │   ├── TimelineEventBlock.swift # Calendar event block (read-only display)
@@ -73,13 +73,13 @@ Cadence/
     │   ├── NotesView.swift        # Note list + editor (NoteListRow, NoteEditorPane)
     │   ├── FocusView.swift        # Focus timer UI with log session popover
     │   ├── SidebarView.swift      # Fully custom sidebar with nested context grouping + drag-to-reorder
-    │   ├── SidebarComponents.swift # Sidebar helper rows/sections/drop helpers
+    │   ├── SidebarComponents.swift # Sidebar helper rows/sections/drop helpers; drag reorder uses SidebarDragContext.shared (plain class) + DropDelegate to avoid gesture conflicts with sidebar card buttons
     │   ├── ListDetailView.swift   # Area/Project detail shell: Tasks, Kanban, Documents, Links, Completed
     │   ├── ListDetailComponents.swift # List task view, grouping modes, completed view
     │   ├── KanbanView.swift       # Section-based kanban boards for lists and All Tasks
     │   ├── KanbanCardView.swift   # Shared kanban task card
     │   ├── KanbanBoardSectionView.swift # Shared board wrapper used by kanban views
-    │   ├── DocumentsView.swift    # Markdown document list + editor
+    │   ├── DocumentsView.swift    # Markdown document list + editor; H1 heading in content auto-syncs to document.title; each doc gets its own NSTextView via .id(doc.id) to isolate undo stacks
     │   ├── LinksView.swift        # Saved link list + add UI
     │   ├── GlobalSearchView.swift # Spotlight-style in-app command palette/search overlay
     │   └── SettingsView.swift     # Category-based settings shell, including archived/completed lists
@@ -92,9 +92,9 @@ Cadence/
     ├── Editor/
     │   └── MarkdownEditorView.swift  # NSTextView subclass with live markdown styling
     └── Services/
-        ├── CalendarManager.swift       # EventKit: create/update/delete/observe; updateEvent can change calendar
+        ├── CalendarManager.swift       # EventKit: create/update/delete/observe; updateEvent can change calendar; fetchAllDayEvents(for:), event(withIdentifier:), convertAllDayEventToTimed(_:startMin:dateKey:)
         ├── FocusManager.swift          # @Observable singleton for focus timer state
-        ├── TaskCreationManager.swift   # CreateTaskSheet + success toast flag after create
+        ├── TaskCreationManager.swift   # CreateTaskSheet + success toast; presentSuccessToast() activates the main window before showing the in-app toast (works from quick capture panel)
         ├── GlobalHotKeyManager.swift   # Carbon API global hotkey to open quick task panel system-wide
         ├── QuickTaskPanelController.swift  # NSPanel for system-wide quick task creation
         ├── HoveredTaskManager.swift    # Hovered task + hoveredDateKind (.doDate / .dueDate) for shortcuts; delayed clear to reduce regroup thrash
@@ -109,6 +109,7 @@ Cadence/
         ├── GlobalSearchManager.swift   # Presents the in-app command palette
         ├── ListNavigationManager.swift # Opens areas/projects/tasks from global search
         ├── CalendarNavigationManager.swift # Jumps calendar to searched events/days
+        ├── TaskSubtaskEntryManager.swift # Opens hovered tasks directly into focused subtask-entry mode
         ├── TodayTimelineFocusManager.swift # Focus/highlight the built-in Today timeline from Cmd+\
         ├── AppFocus.swift              # clearAppEditingFocus() — resigns first responder app-wide
         └── PersistenceController.swift # (legacy/unused — SwiftData handles persistence)
@@ -226,7 +227,8 @@ TimeFormatters.durationLabel(actual: Int, estimated: Int)  // "45/60m"
 - Minutes from midnight (`scheduledStartMin`) for time scheduling; -1 = unscheduled
 - `@Query` in views that need live sorted lists; child views receive models as `let` props
 - Never instantiate `DateFormatter()` inline — always use `DateFormatters.*` statics
-- Drag-to-reorder uses `.draggable`/`.dropDestination` with prefixed string payloads (NOT `.onMove` — it doesn't work on macOS sidebar or plain lists)
+- Drag-to-reorder in **task lists** (InboxView, ListDetailView) uses `.draggable`/`.dropDestination` (SwiftUI Transferable API) with prefixed string payloads (NOT `.onMove` — it doesn't work on macOS sidebar or plain lists)
+- Drag-to-reorder in the **sidebar** uses `.onDrag`/`.onDrop` with `DropDelegate` (NOT `.draggable`/`.dropDestination` — that API installs gesture recognizers that delay tap recognition across the whole ScrollView, breaking sidebar card button clicks). The dragged ID is stored in `SidebarDragContext.shared` (a plain class, not `@State`) so it survives SwiftUI view updates between `onDrag` and `performDrop`.
 - Reorder and sidebar moves use `withAnimation(.spring(...))` so order changes animate smoothly.
 - Non-kanban page scroll views can use `CadenceScrollElasticity` to soften vertical rubber-banding.
 
@@ -239,19 +241,24 @@ TimeFormatters.durationLabel(actual: Int, estimated: Int)  // "45/60m"
 
 **`MacTaskRow` (TasksPanelComponents.swift):** Container (area/project/inbox) uses pill styling; do/due dates are smaller, lower-contrast metadata (icons + text) with hover affordances, not pills. Due date badge only renders when `!task.dueDate.isEmpty` — no empty clickable badge. Overdue tasks can show red emphasis; “over-do” (past do date) is not amber-tinted on the row. Estimate and list pickers use `EstimatePickerControl(compact: true)` / compact container control. Priority strip height is slightly less than the row; estimate/focus controls sit beside the title when hovered.
 
+**Performance:** `MacTaskRow` does NOT read `TaskCompletionAnimationManager` directly. The completion button and animated background are extracted into `TaskCompletionButton` and `TaskRowBackground` sub-view structs, each with their own `@Environment(TaskCompletionAnimationManager.self)`. This scopes SwiftUI observation so only those small sub-views re-render on animation ticks — not every visible row.
+
 **`ContainerPickerBadge` / `TaskSectionPickerBadge` (TasksPanelComponents.swift):** Both popovers open with a search bar auto-focused. Search filters by `hasPrefix` (case-insensitive). Navigation: ↑↓ arrows or `Enter` to select the highlighted item. The highlighted item is tracked by `highlightIdx` (index into `flatFiltered` / `filteredSections`), resets to 0 on query change or close. List name capped at 80pt (60 compact), section name at 70pt — both truncate with `…`. Rows use dedicated `ContainerPickerRow` / `SectionPickerRow` View structs (not `@ViewBuilder` functions) with `let isHighlighted: Bool` for reliable in-place updates. Checkmark follows `isHighlighted`. Hover + highlight share a single `rowBackground` computed property.
 
 ## Today view task scope
 The Today **tasks** column only includes tasks that are **do today**, **due today**, **past do** (over-do), or **past due**, plus work tied to **sections due today**. A one-time **rollover** banner can appear when there are over-do tasks from the previous day; dismissing it merges those tasks into normal grouping.
 
+Page-level filters should carry through to the page's internal sections. In practice, the Today **Completed** section only shows tasks whose `completedAt` is **today**.
+
 **Layout:** `TodayView` uses an `HSplitView` with tuned `minWidth` / `idealWidth` / `layoutPriority` so notepad and schedule get more default space than the task column (user-adjustable dividers).
 
 ## Drag-to-Reorder Payload Prefixes
 Each drag context uses a unique prefix to prevent cross-context drops:
-- `"area:\(id)"` — sidebar area rows
-- `"project:\(id)"` — sidebar project rows
-- `"listTask:\(id)"` — task rows in InboxView and ListDetailView
+- `"area:\(id)"` — sidebar area rows (`.onDrag`/`.onDrop` + `SidebarAreaDropDelegate`)
+- `"project:\(id)"` — sidebar project rows (`.onDrag`/`.onDrop` + `SidebarProjectDropDelegate`)
+- `"listTask:\(id)"` — task rows in InboxView and ListDetailView (`.draggable`/`.dropDestination`)
 - `"\(id)"` (plain UUID) — tasks dragged from TasksPanel onto the timeline
+- `"allDayEvent:\(eventIdentifier)"` — all-day event chips dragged from the calendar header onto a day column timeline
 
 ## Task Creation
 `TaskCreationManager` is an `@Observable` singleton (`TaskCreationManager.shared`) injected via `.environment`. Call `taskCreationManager.present(...)` with optional seed values (title, notes, dueDateKey, doDateKey, priority, container, sectionName) to show `CreateTaskSheet`.
@@ -268,7 +275,7 @@ The same shared sheet is used for:
 - Do date does **not** default to today — only pre-set if `doDateKey` is provided in the seed
 - Priority chip displays short labels: **N/A / L / M / H**; picker still shows full names
 - List + section can be preseeded; section picker normalizes to available sections on container change
-- On success the sheet **closes immediately**; feedback is a brief global **”Task created”** toast
+- On success the sheet **closes immediately**; feedback is a brief global **”Task created”** toast — when closing the quick-capture panel, `presentSuccessToast()` is called after a 250ms delay so the panel fully dismisses first, then activates the main app window to make the toast visible
 
 **Sheet-local keyboard shortcuts** (active whenever the sheet window is focused):
 - `Cmd+T` — set do date to today (or cancel if already today)
@@ -300,11 +307,13 @@ Global local monitor unless noted. **Hovered task date nudge** requires the poin
 - **Cmd+Shift+Plus / Cmd+Shift+Minus** — nudge hovered do or due date by one calendar day (forward / back)
 - **Cmd+P** — cycle hovered task priority (`none → low → medium → high → none`)
 - **Cmd+Return** — toggle completion for hovered task; also creates a task in `CreateTaskSheet`
+- **Cmd+/** — toggle cancellation for hovered task (same cancel/undo-cancel behavior and animations)
 - **Cmd+N** — create a task in the hovered kanban column
 - **Cmd+K** — open the global command palette / search overlay
-- **Cmd+S** — toggle **main** sidebar visibility (also a floating control; works in Focus mode)
+- **Cmd+O** — toggle **main** sidebar visibility (also a floating control; works in Focus mode)
+- **Cmd+S** — for a hovered task, open a focused **subtasks-only** popover with the subtask field ready for typing
 - **Cmd+\\** — outside Today, toggle the **right** timeline sidebar; on Today, focus and highlight the built-in timeline pane instead
-- **Cmd+Z / Cmd+Shift+Z** — undo / redo (SwiftData `UndoManager`)
+- **Cmd+Z / Cmd+Shift+Z** — undo / redo; routes to SwiftData `UndoManager` **unless** an `NSTextView` or `NSTextField` is first responder, in which case the event is passed through so the text view's own undo stack handles it (covers markdown editors and notepads)
 
 **List detail (Area/Project):** **Cmd+Shift+[ / ]** cycles tabs (Tasks, Kanban, Documents, …) — implemented in `ListDetailView`; it does not conflict with date nudge (different chords).
 
@@ -344,6 +353,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Today view: note + **scoped** task list + schedule; optional **right** timeline (**Cmd+\\**); sort/group like other lists
 - [x] Row-based task lists with collapsible grouping and completed/logbook sections
 - [x] Today task view grouped by list in sidebar order, with Inbox pinned first; overdue / over-do / rollover UX
+- [x] Today completed section scoped to tasks completed today
 - [x] All Tasks: **list** vs **kanban** modes; shared sort UI; list has grouping, kanban **sort only** (no grouping)
 - [x] Inbox: unassigned tasks, capture bar, drag-to-reorder, sort/group controls
 - [x] Full task creation sheet (title, notes, due date, do date, priority, container, section, subtasks); tilde (`~`) inline list/section search from the title field
@@ -351,6 +361,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] In-app Spotlight-style command palette / global search (`Cmd+K`)
 - [x] Custom delete confirmation overlay
 - [x] Hover-driven task shortcuts for edit/delete/do/due/priority/completion
+- [x] Hover-driven subtask-entry shortcut (`Cmd+S`) that opens a subtasks-only popover
 - [x] Drag-to-schedule tasks from task list to timeline
 - [x] Timeline drag-to-create new tasks
 - [x] Timeline drag-to-reposition existing tasks (with grab-offset preserved)
@@ -361,6 +372,10 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Goals view: Gantt-style timeline, 2W/Month/Quarter/Year/5Y scales
 - [x] Habits: list, detail, 52-week heatmap, streak tracking, create sheet
 - [x] Daily notes with markdown editor
+- [x] Shared markdown editor supports ordered lists from normal `1. ` typing, tab/shift-tab list indentation, and 5 nesting levels
+- [x] New documents start with the document title as the first markdown heading; editing the H1 in the document body syncs back to `document.title`
+- [x] Documents: each selected doc gets its own `NSTextView` instance (`.id(doc.id)`) so undo history is isolated per document
+- [x] Cmd+Z / Cmd+Shift+Z undo/redo works inside markdown editors and notepads (passes through to NSTextView's own undo stack when text field is focused)
 - [x] Focus timer with log session popover (logs actual minutes, propagates to goals/areas/projects)
 - [x] Area/Project detail: Tasks, Kanban, Documents, Links, Completed
 - [x] Area/Project lifecycle: complete, archive, delete; completed/archived lists recoverable from Settings
@@ -369,6 +384,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Section-level due dates and completion
 - [x] Sections due today surfaced in Today view
 - [x] Apple Calendar sync (EventKit): create, update, delete, observe; event editor can **move event to another calendar**
+- [x] Calendar week/2W view: all-day banner shows all-day events + unscheduled tasks as draggable chips; chips are scrollable and clickable (opens task inspector); dragging a chip onto a day column schedules it at the dropped time
 - [x] Multiple dark themes selectable in Settings
 - [x] CloudKit sync
 - [x] Category-based Settings shell with contexts reordering, calendar linking, sidebar tab visibility, and archived/completed list management

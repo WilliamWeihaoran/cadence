@@ -77,9 +77,10 @@ struct DocumentsView: View {
             .frame(minWidth: 160, idealWidth: 200, maxWidth: 260)
             .background(Theme.surface)
 
-            // Editor
+            // Editor — .id(doc.id) ensures a fresh NSTextView (and undo stack) per document
             if let doc = selectedDoc {
                 MarkdownEditor(doc: doc)
+                    .id(doc.id)
             } else {
                 ZStack {
                     Theme.bg
@@ -104,6 +105,7 @@ struct DocumentsView: View {
         doc.area = area
         doc.project = project
         doc.order = docs.count
+        doc.content = defaultDocumentContent(for: doc.title)
         modelContext.insert(doc)
         selectedDocID = doc.id
     }
@@ -118,6 +120,12 @@ struct DocumentsView: View {
             }
             modelContext.delete(doc)
         }
+    }
+
+    private func defaultDocumentContent(for title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let headingTitle = trimmed.isEmpty ? "Untitled" : trimmed
+        return "# \(headingTitle)\n\n"
     }
 }
 
@@ -154,6 +162,7 @@ private struct DocRow: View {
         .padding(.vertical, 7)
         .background(isSelected ? Theme.blue.opacity(0.15) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .contentShape(Rectangle())
         .cadenceHoverHighlight(
             cornerRadius: 6,
             fillColor: Theme.blue.opacity(isSelected ? 0.16 : 0.06),
@@ -175,7 +184,17 @@ private struct MarkdownEditor: View {
         MarkdownEditorView(text: $doc.content)
             .onChange(of: doc.content) {
                 doc.updatedAt = Date()
+                syncTitleFromH1()
             }
+    }
+
+    private func syncTitleFromH1() {
+        // Extract the first H1 line ("# Title") and keep doc.title in sync with it
+        let firstLine = doc.content.prefix(while: { $0 != "\n" })
+        guard firstLine.hasPrefix("# ") else { return }
+        let h1Text = String(firstLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+        guard !h1Text.isEmpty, h1Text != doc.title else { return }
+        doc.title = h1Text
     }
 }
 #endif

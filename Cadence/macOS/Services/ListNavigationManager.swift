@@ -8,6 +8,7 @@ final class ListNavigationManager {
         var areaID: UUID?
         var projectID: UUID?
         var page: ListDetailPage
+        var sectionName: String? = nil
         var token: UUID = UUID()
     }
 
@@ -23,6 +24,14 @@ final class ListNavigationManager {
 
     func open(projectID: UUID, page: ListDetailPage) {
         request = Request(areaID: nil, projectID: projectID, page: page)
+    }
+
+    func open(areaID: UUID, page: ListDetailPage, sectionName: String?) {
+        request = Request(areaID: areaID, projectID: nil, page: page, sectionName: sectionName)
+    }
+
+    func open(projectID: UUID, page: ListDetailPage, sectionName: String?) {
+        request = Request(areaID: nil, projectID: projectID, page: page, sectionName: sectionName)
     }
 
     func consumeIfMatches(areaID: UUID?, projectID: UUID?) -> Request? {

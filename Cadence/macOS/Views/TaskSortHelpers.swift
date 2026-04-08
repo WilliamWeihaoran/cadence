@@ -38,4 +38,40 @@ extension Array where Element == AppTask {
         sorted { taskSortPrecedes($0, $1, field: field, direction: direction) }
     }
 }
+
+struct TaskDateBuckets {
+    let overdueIDs: Set<UUID>
+    let dueTodayIDs: Set<UUID>
+    let doTodayIDs: Set<UUID>
+
+    func contains(_ task: AppTask) -> Bool {
+        overdueIDs.contains(task.id) || dueTodayIDs.contains(task.id) || doTodayIDs.contains(task.id)
+    }
+}
+
+func classifyTasksByDate(_ tasks: [AppTask], todayKey: String) -> TaskDateBuckets {
+    var overdueIDs = Set<UUID>()
+    var dueTodayIDs = Set<UUID>()
+    var doTodayIDs = Set<UUID>()
+
+    for task in tasks {
+        if !task.dueDate.isEmpty && task.dueDate < todayKey {
+            overdueIDs.insert(task.id)
+        } else if task.dueDate == todayKey {
+            dueTodayIDs.insert(task.id)
+        }
+    }
+
+    for task in tasks where !overdueIDs.contains(task.id) && !dueTodayIDs.contains(task.id) {
+        if task.scheduledDate == todayKey {
+            doTodayIDs.insert(task.id)
+        }
+    }
+
+    return TaskDateBuckets(
+        overdueIDs: overdueIDs,
+        dueTodayIDs: dueTodayIDs,
+        doTodayIDs: doTodayIDs
+    )
+}
 #endif

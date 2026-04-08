@@ -70,6 +70,8 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @AppStorage("listDetailDefaultPage") private var listDetailDefaultPage = ListDetailPage.tasks.rawValue
     @AppStorage("sidebarHiddenTabs") private var sidebarHiddenTabsRaw = ""
+    @AppStorage("sidebarTabOrder") private var sidebarTabOrderRaw = ""
+    @AppStorage("sidebarTabColors") private var sidebarTabColorsRaw = ""
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order)    private var areas:    [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -78,6 +80,7 @@ struct SettingsView: View {
     @State private var pendingDeleteProject: Project? = nil
     @State private var pendingDeleteContext: Context? = nil
     @State private var showCreateContext = false
+    @State private var editingSidebarTab: SidebarStaticDestination? = nil
 
     var body: some View {
         HStack(spacing: 0) {
@@ -150,6 +153,24 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showCreateContext) {
             CreateContextSheet()
+        }
+        .sheet(item: $editingSidebarTab) { destination in
+            SidebarTabEditorSheet(
+                destination: destination,
+                tintHex: Binding(
+                    get: { destination.resolvedColorHex(from: sidebarTabColorsRaw) },
+                    set: { setTabColor(destination, hex: $0) }
+                ),
+                isVisible: Binding(
+                    get: { !hiddenTabs.contains(destination) },
+                    set: { newValue in
+                        let isCurrentlyVisible = !hiddenTabs.contains(destination)
+                        if newValue != isCurrentlyVisible {
+                            toggleTab(destination)
+                        }
+                    }
+                )
+            )
         }
     }
 
@@ -313,41 +334,44 @@ struct SettingsView: View {
         Set(sidebarHiddenTabsRaw.split(separator: ",").compactMap { SidebarStaticDestination(rawValue: String($0)) })
     }
 
+    private var orderedSidebarTabs: [SidebarStaticDestination] {
+        SidebarStaticDestination.orderedDestinations(from: sidebarTabOrderRaw)
+    }
+
     private func toggleTab(_ destination: SidebarStaticDestination) {
         var set = hiddenTabs
         if set.contains(destination) { set.remove(destination) } else { set.insert(destination) }
         sidebarHiddenTabsRaw = set.map(\.rawValue).joined(separator: ",")
     }
 
+    private func setTabColor(_ destination: SidebarStaticDestination, hex: String) {
+        var colors = SidebarStaticDestination.colorHexMap(from: sidebarTabColorsRaw)
+        colors[destination] = hex
+        sidebarTabColorsRaw = SidebarStaticDestination.rawColorString(from: colors)
+    }
+
+    private func moveSidebarTab(_ dragged: SidebarStaticDestination, before target: SidebarStaticDestination) {
+        var current = orderedSidebarTabs
+        guard let fromIndex = current.firstIndex(of: dragged),
+              let toIndex = current.firstIndex(of: target) else { return }
+        let moved = current.remove(at: fromIndex)
+        current.insert(moved, at: toIndex > fromIndex ? toIndex - 1 : toIndex)
+        sidebarTabOrderRaw = SidebarStaticDestination.rawOrderString(from: current)
+    }
+
     private var sidebarTabsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             settingsCard {
                 VStack(spacing: 0) {
-                    let allToggleable = SidebarStaticDestination.allCases
-                    ForEach(Array(allToggleable.enumerated()), id: \.element.id) { index, destination in
-                        HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 7)
-                                .fill(destination.color.opacity(0.15))
-                                .frame(width: 30, height: 30)
-                                .overlay {
-                                    Image(systemName: destination.icon)
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(destination.color)
-                                }
-                            Text(destination.label)
-                                .font(.system(size: 13))
-                                .foregroundStyle(Theme.text)
-                            Spacer()
-                            Toggle("", isOn: Binding(
-                                get: { !hiddenTabs.contains(destination) },
-                                set: { _ in toggleTab(destination) }
-                            ))
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
-                            .tint(Theme.blue)
-                        }
-                        .padding(.vertical, 10)
-                        if index < allToggleable.count - 1 {
+                    ForEach(Array(orderedSidebarTabs.enumerated()), id: \.element.id) { index, destination in
+                        SidebarTabSettingsRow(
+                            destination: destination,
+                            tintHex: destination.resolvedColorHex(from: sidebarTabColorsRaw),
+                            isVisible: !hiddenTabs.contains(destination),
+                            onEdit: { editingSidebarTab = destination },
+                            onDropBefore: { moveSidebarTab($0, before: destination) }
+                        )
+                        if index < orderedSidebarTabs.count - 1 {
                             Divider().background(Theme.borderSubtle).padding(.leading, 42)
                         }
                     }
@@ -772,306 +796,4 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Calendar Link Row
-
-private struct CalendarLinkRow: View {
-    let icon: String
-    let name: String
-    let color: Color
-    @Binding var linkedCalendarID: String
-    let calendars: [EKCalendar]
-
-    var body: some View {
-        HStack(spacing: 12) {
-            // Icon
-            RoundedRectangle(cornerRadius: 6)
-                .fill(color.opacity(0.18))
-                .frame(width: 28, height: 28)
-                .overlay {
-                    Image(systemName: icon)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(color)
-                }
-
-            Text(name)
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.text)
-
-            Spacer()
-
-            CadenceCalendarPickerButton(
-                calendars: calendars,
-                selectedID: $linkedCalendarID,
-                style: .compact
-            )
-            .fixedSize()
-        }
-        .padding(.vertical, 10)
-    }
-}
-
-private struct ContextSettingsRow: View {
-    @Bindable var context: Context
-    let onDropBefore: (UUID) -> Void
-    let onArchive: () -> Void
-    let onDelete: () -> Void
-
-    @State private var isHovered = false
-    @State private var isDropTarget = false
-    @State private var isEditing = false
-    @State private var editName = ""
-    @State private var editColor = ""
-    @State private var editIcon = ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(hex: isEditing ? editColor : context.colorHex).opacity(0.18))
-                    .frame(width: 28, height: 28)
-                    .overlay {
-                        Image(systemName: isEditing ? editIcon : context.icon)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color(hex: isEditing ? editColor : context.colorHex))
-                    }
-
-                Text(isEditing ? (editName.isEmpty ? context.name : editName) : context.name)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.text)
-
-                Spacer()
-
-                if isHovered && !isEditing {
-                    HStack(spacing: 4) {
-                        actionButton(icon: "pencil") { startEditing() }
-                        actionButton(icon: "archivebox", color: Theme.amber) { onArchive() }
-                        actionButton(icon: "trash", color: Theme.red) { onDelete() }
-                    }
-                    .transition(.opacity)
-                }
-
-                if !isEditing {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                }
-            }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 2)
-            .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isDropTarget ? Theme.blue.opacity(0.10) : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(isDropTarget ? Theme.blue.opacity(0.45) : Color.clear, lineWidth: 1)
-            )
-
-            if isEditing {
-                VStack(alignment: .leading, spacing: 12) {
-                    TextField("Context name", text: $editName)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.text)
-                        .padding(8)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.borderSubtle))
-
-                    Text("COLOR")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .kerning(0.8)
-                    ColorGrid(selected: $editColor)
-
-                    Text("ICON")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .kerning(0.8)
-                    IconGrid(selected: $editIcon)
-
-                    HStack {
-                        Spacer()
-                        Button("Cancel") {
-                            withAnimation(.easeInOut(duration: 0.15)) { isEditing = false }
-                        }
-                        .buttonStyle(.cadencePlain)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.muted)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-
-                        Button("Save") { saveEdit() }
-                            .buttonStyle(.cadencePlain)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(editName.trimmingCharacters(in: .whitespaces).isEmpty ? Theme.blue.opacity(0.4) : Theme.blue)
-                            .clipShape(RoundedRectangle(cornerRadius: 7))
-                            .disabled(editName.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                    .padding(.bottom, 4)
-                }
-                .padding(.bottom, 10)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .animation(.easeInOut(duration: 0.15), value: isEditing)
-        .onHover { isHovered = $0 }
-        .draggable(context.id.uuidString)
-        .dropDestination(for: String.self) { items, _ in
-            guard let draggedID = items.compactMap(UUID.init(uuidString:)).first else { return false }
-            onDropBefore(draggedID)
-            isDropTarget = false
-            return true
-        } isTargeted: { targeted in
-            isDropTarget = targeted
-        }
-    }
-
-    @ViewBuilder
-    private func actionButton(icon: String, color: Color = Theme.dim, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 11))
-                .foregroundStyle(color)
-                .frame(width: 26, height: 26)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.cadencePlain)
-    }
-
-    private func startEditing() {
-        editName = context.name
-        editColor = context.colorHex
-        editIcon = context.icon
-        withAnimation(.easeInOut(duration: 0.15)) { isEditing = true }
-    }
-
-    private func saveEdit() {
-        let trimmed = editName.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        context.name = trimmed
-        context.colorHex = editColor
-        context.icon = editIcon
-        withAnimation(.easeInOut(duration: 0.15)) { isEditing = false }
-    }
-}
-
-private struct ArchivedContextRow: View {
-    let context: Context
-    let onRestore: () -> Void
-    let onDelete: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color(hex: context.colorHex).opacity(0.12))
-                .frame(width: 28, height: 28)
-                .overlay {
-                    Image(systemName: context.icon)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color(hex: context.colorHex).opacity(0.5))
-                }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(context.name)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.muted)
-                Text("Archived")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.amber)
-            }
-
-            Spacer()
-
-            Button("Restore", action: onRestore)
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-
-            Button("Delete", action: onDelete)
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Theme.red)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-        .padding(.vertical, 10)
-    }
-}
-
-private struct ListLifecycleRow: View {
-    let icon: String
-    let title: String
-    let subtitle: String
-    let color: Color
-    let statusLabel: String
-    let primaryLabel: String
-    let onPrimary: () -> Void
-    let onDelete: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(color.opacity(0.18))
-                .frame(width: 28, height: 28)
-                .overlay {
-                    Image(systemName: icon)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(color)
-                }
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text(statusLabel)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(statusLabel == "Completed" ? Theme.green : Theme.amber)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background((statusLabel == "Completed" ? Theme.green : Theme.amber).opacity(0.14))
-                        .clipShape(Capsule())
-                }
-                if !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
-                }
-            }
-
-            Spacer()
-
-            Button(primaryLabel, action: onPrimary)
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-
-            Button("Delete", action: onDelete)
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Theme.red)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-        .padding(.vertical, 10)
-    }
-}
 #endif

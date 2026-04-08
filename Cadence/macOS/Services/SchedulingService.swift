@@ -15,11 +15,11 @@ enum SchedulingActions {
         // No calendar sync here — task has no area/project container yet when created from timeline drag
     }
 
-    /// Move an existing task to a new date/time. Assigns a 60-min default if the task has no estimate.
+    /// Move an existing task to a new date/time. Assigns a 30-min default if the task has no estimate.
     static func dropTask(_ task: AppTask, to dateKey: String, startMin: Int) {
         task.scheduledDate = dateKey
         task.scheduledStartMin = startMin
-        if task.estimatedMinutes <= 0 { task.estimatedMinutes = 60 }
+        if task.estimatedMinutes <= 0 { task.estimatedMinutes = 30 }
         syncToCalendarIfLinked(task)
     }
 

@@ -3,22 +3,6 @@ import SwiftUI
 import SwiftData
 
 struct KanbanCard: View {
-    private enum MetaAction: Hashable {
-        case none
-        case priority
-        case doDate
-        case dueDate
-    }
-
-    private struct MetaItem: Identifiable {
-        let id: String
-        let icon: String
-        let text: String
-        let tint: Color
-        let textColor: Color
-        let action: MetaAction
-    }
-
     @Bindable var task: AppTask
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
@@ -45,34 +29,19 @@ struct KanbanCard: View {
                 .padding(.vertical, 12)
 
             VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 10) {
-                    Button {
-                        taskCompletionAnimationManager.toggleCompletion(for: task)
-                    } label: {
-                        Image(systemName: task.isDone ? "checkmark.circle.fill" : (isPendingCompletion ? "circle.inset.filled" : "circle"))
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(task.isDone || isPendingCompletion ? Theme.green : Theme.dim)
-                    }
-                    .buttonStyle(.cadencePlain)
+                KanbanCardHeader(
+                    title: task.title,
+                    titleColor: task.isDone || task.isCancelled ? Theme.dim : Theme.text,
+                    isStruckThrough: task.isDone || isPendingCancel,
+                    completionButtonIcon: completionButtonIcon,
+                    completionButtonColor: completionButtonColor,
+                    onCompletionTap: handleCompletionTap
+                )
 
-                    Text(task.title)
-                        .font(.system(size: 13.5, weight: .semibold))
-                        .foregroundStyle(task.isDone || task.isCancelled ? Theme.dim : Theme.text)
-                        .strikethrough(task.isDone, color: Theme.dim)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(metadataRows.indices, id: \.self) { rowIndex in
-                        HStack(spacing: 6) {
-                            ForEach(metadataRows[rowIndex]) { item in
-                                metaChip(item)
-                            }
-                        }
-                    }
-                }
+                KanbanMetadataRows(
+                    rows: metadataRows,
+                    chipContent: { item in AnyView(metaChip(item)) }
+                )
 
                 let sortedSubtasks = (task.subtasks ?? []).sorted { $0.order < $1.order }
                 if !sortedSubtasks.isEmpty {
@@ -116,15 +85,16 @@ struct KanbanCard: View {
         }
     }
 
-    private var metadataRows: [[MetaItem]] {
-        if let dueDateMetaItem {
-            return [[doDateMetaItem, dueDateMetaItem]]
-        }
-        return [[doDateMetaItem]]
+    private var metadataRows: [[KanbanMetaItem]] {
+        KanbanCardStateSupport.metadataRows(
+            for: task,
+            doDateMetaItem: doDateMetaItem,
+            dueDateMetaItem: dueDateMetaItem
+        )
     }
 
-    private var doDateMetaItem: MetaItem {
-        MetaItem(
+    private var doDateMetaItem: KanbanMetaItem {
+        KanbanMetaItem(
             id: "do-date",
             icon: "sun.max.fill",
             text: task.scheduledDate.isEmpty ? "Do" : DateFormatters.relativeDate(from: task.scheduledDate),
@@ -134,9 +104,9 @@ struct KanbanCard: View {
         )
     }
 
-    private var dueDateMetaItem: MetaItem? {
+    private var dueDateMetaItem: KanbanMetaItem? {
         guard task.shouldShowDueDateField else { return nil }
-        return MetaItem(
+        return KanbanMetaItem(
             id: "due-date",
             icon: "flag.fill",
             text: task.dueDate.isEmpty ? "Due" : DateFormatters.relativeDate(from: task.dueDate),
@@ -147,98 +117,51 @@ struct KanbanCard: View {
     }
 
     @ViewBuilder
-    private func metaChip(_ item: MetaItem) -> some View {
-        let label = HStack(spacing: 5) {
-            Image(systemName: item.icon)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(item.tint)
-                .frame(width: 10)
-            Text(item.text)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(item.textColor)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface.opacity(0.66))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-
+    private func metaChip(_ item: KanbanMetaItem) -> some View {
         switch item.action {
         case .none:
             EmptyView()
         case .priority:
-            Button {
-                showPriorityPicker = true
-                syncInteractiveHoverState()
-            } label: {
-                label
-            }
-            .buttonStyle(.cadencePlain)
-            .popover(isPresented: $showPriorityPicker) { priorityPickerPopover }
+            KanbanPriorityMetaButton(
+                item: item,
+                priority: $task.priority,
+                isPresented: $showPriorityPicker,
+                onOpen: {
+                    showPriorityPicker = true
+                    syncInteractiveHoverState()
+                }
+            )
         case .doDate:
-            Button {
-                openDoDatePicker()
-            } label: {
-                label
-            }
-            .buttonStyle(.cadencePlain)
-            .onHover { hovering in
-                if hovering {
-                    hoveredTaskManager.beginHoveringDate(.doDate, for: task)
-                } else {
-                    hoveredTaskManager.endHoveringDate(for: task)
-                }
-            }
-            .popover(isPresented: $showDoDatePicker) { doDatePickerPopover }
-        case .dueDate:
-            Button {
-                openDueDatePicker()
-            } label: {
-                label
-            }
-            .buttonStyle(.cadencePlain)
-            .onHover { hovering in
-                if hovering {
-                    hoveredTaskManager.beginHoveringDate(.dueDate, for: task)
-                } else {
-                    hoveredTaskManager.endHoveringDate(for: task)
-                }
-            }
-            .popover(isPresented: $showDueDatePicker) { dueDatePickerPopover }
-        }
-    }
-
-    private var priorityPickerPopover: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(TaskPriority.allCases, id: \.self) { p in
-                Button {
-                    task.priority = p
-                    showPriorityPicker = false
-                } label: {
-                    HStack(spacing: 8) {
-                        if p == .none {
-                            Text("—").font(.system(size: 13)).foregroundStyle(Theme.dim).frame(width: 7)
-                        } else {
-                            Circle().fill(Theme.priorityColor(p)).frame(width: 7, height: 7)
-                        }
-                        Text(p.label).font(.system(size: 13)).foregroundStyle(Theme.text)
-                        Spacer()
-                        if task.priority == p {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)
-                        }
+            KanbanDateMetaButton(
+                item: item,
+                isPresented: $showDoDatePicker,
+                onOpen: openDoDatePicker,
+                onHoverChanged: { hovering in
+                    if hovering {
+                        hoveredTaskManager.beginHoveringDate(.doDate, for: task)
+                    } else {
+                        hoveredTaskManager.endHoveringDate(for: task)
                     }
-                    .padding(.horizontal, 12).padding(.vertical, 7).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                 }
-                .buttonStyle(.cadencePlain)
+            ) {
+                doDatePickerPopover
+            }
+        case .dueDate:
+            KanbanDateMetaButton(
+                item: item,
+                isPresented: $showDueDatePicker,
+                onOpen: openDueDatePicker,
+                onHoverChanged: { hovering in
+                    if hovering {
+                        hoveredTaskManager.beginHoveringDate(.dueDate, for: task)
+                    } else {
+                        hoveredTaskManager.endHoveringDate(for: task)
+                    }
+                }
+            ) {
+                dueDatePickerPopover
             }
         }
-        .padding(.vertical, 6)
-        .frame(minWidth: 150)
-        .background(Theme.surfaceElevated)
     }
 
     private var dueDatePickerPopover: some View {
@@ -278,70 +201,86 @@ struct KanbanCard: View {
     }
 
     private func openDueDatePicker() {
-        let resolved = task.dueDate.isEmpty ? Date() : (DateFormatters.date(from: task.dueDate) ?? Date())
-        dueDatePickerDate = resolved
-        var comps = Calendar.current.dateComponents([.year, .month], from: resolved)
-        comps.day = 1
-        dueDateViewMonth = Calendar.current.date(from: comps) ?? resolved
-        showDueDatePicker = true
+        KanbanCardStateSupport.openDatePicker(
+            dateKey: task.dueDate,
+            setSelection: { dueDatePickerDate = $0 },
+            setViewMonth: { dueDateViewMonth = $0 },
+            setPresented: { showDueDatePicker = $0 }
+        )
         syncInteractiveHoverState()
     }
 
     private func openDoDatePicker() {
-        let resolved = task.scheduledDate.isEmpty ? Date() : (DateFormatters.date(from: task.scheduledDate) ?? Date())
-        doDatePickerDate = resolved
-        var comps = Calendar.current.dateComponents([.year, .month], from: resolved)
-        comps.day = 1
-        doDateViewMonth = Calendar.current.date(from: comps) ?? resolved
-        showDoDatePicker = true
+        KanbanCardStateSupport.openDatePicker(
+            dateKey: task.scheduledDate,
+            setSelection: { doDatePickerDate = $0 },
+            setViewMonth: { doDateViewMonth = $0 },
+            setPresented: { showDoDatePicker = $0 }
+        )
         syncInteractiveHoverState()
     }
 
     private func syncInteractiveHoverState() {
-        let isActive = isPointerOverCard || isPresentingInlinePopover
-        isHovered = isActive
-        if isActive {
-            hoveredTaskManager.beginHovering(task, source: .kanban)
-            hoveredEditableManager.beginHovering(id: "kanban-task-\(task.id.uuidString)") {
-                showTaskInspector = true
-            } onDelete: {
-                deleteConfirmationManager.present(
-                    title: "Delete Task?",
-                    message: "This will permanently delete \"\(task.title.isEmpty ? "Untitled" : task.title)\"."
-                ) {
-                    if hoveredTaskManager.hoveredTask?.id == task.id {
-                        hoveredTaskManager.hoveredTask = nil
-                    }
-                    modelContext.delete(task)
-                }
-            }
-        } else {
-            hoveredTaskManager.endHovering(task)
-            hoveredEditableManager.endHovering(id: "kanban-task-\(task.id.uuidString)")
-        }
+        KanbanCardStateSupport.syncInteractiveHoverState(
+            task: task,
+            isPointerOverCard: isPointerOverCard,
+            isPresentingInlinePopover: isPresentingInlinePopover,
+            setHovered: { isHovered = $0 },
+            hoveredTaskManager: hoveredTaskManager,
+            hoveredEditableManager: hoveredEditableManager,
+            deleteConfirmationManager: deleteConfirmationManager,
+            modelContext: modelContext,
+            showTaskInspector: $showTaskInspector
+        )
     }
 
     private var isOverdue: Bool {
-        guard !task.dueDate.isEmpty, !task.isDone else { return false }
-        return task.dueDate < DateFormatters.todayKey()
+        KanbanCardComputedSupport.isOverdue(task: task)
     }
 
     private var isOverdo: Bool {
-        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
-        return (DateFormatters.dayOffset(from: task.scheduledDate) ?? 0) < 0
+        KanbanCardComputedSupport.isOverdo(task: task)
     }
 
     private var isDoToday: Bool {
-        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
-        return task.scheduledDate == DateFormatters.todayKey()
+        KanbanCardComputedSupport.isDoToday(task: task)
     }
 
     private var priorityBarColor: Color {
-        task.isDone ? Theme.dim.opacity(0.4) : Theme.priorityColor(task.priority)
+        KanbanCardComputedSupport.priorityBarColor(task: task)
     }
 
     private var isPendingCompletion: Bool {
         taskCompletionAnimationManager.isPending(task)
+    }
+
+    private var isPendingCancel: Bool {
+        taskCompletionAnimationManager.isPendingCancel(task)
+    }
+
+    private var completionButtonIcon: String {
+        KanbanCardComputedSupport.completionButtonIcon(
+            task: task,
+            isPendingCompletion: isPendingCompletion,
+            isPendingCancel: isPendingCancel
+        )
+    }
+
+    private var completionButtonColor: Color {
+        KanbanCardComputedSupport.completionButtonColor(
+            task: task,
+            isPendingCompletion: isPendingCompletion,
+            isPendingCancel: isPendingCancel
+        )
+    }
+
+    private func handleCompletionTap() {
+        KanbanCardComputedSupport.handleCompletionTap(
+            task: task,
+            isPendingCompletion: isPendingCompletion,
+            isPendingCancel: isPendingCancel,
+            manager: taskCompletionAnimationManager
+        )
     }
 
     private var isPresentingInlinePopover: Bool {
@@ -349,51 +288,22 @@ struct KanbanCard: View {
     }
 
     private var urgencyBackgroundTint: Color {
-        guard !task.isDone else { return isHovered ? Theme.blue.opacity(0.075) : .clear }
-        if isOverdue {
-            return Theme.red.opacity(isHovered ? 0.22 : 0.16)
-        }
-        if isOverdo {
-            return Theme.amber.opacity(isHovered ? 0.26 : 0.2)
-        }
-        return isHovered ? Theme.blue.opacity(0.075) : .clear
+        KanbanCardComputedSupport.urgencyBackgroundTint(task: task, isHovered: isHovered)
     }
 
     @ViewBuilder
     private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 8)
-            .fill(isHovered ? Theme.surfaceElevated.opacity(1.0) : Theme.surfaceElevated)
-            .overlay {
-                if urgencyBackgroundTint != .clear {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(urgencyBackgroundTint)
-                }
-            }
-            .overlay {
-                if isPendingCompletion {
-                    TimelineView(.animation) { context in
-                        GeometryReader { proxy in
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Theme.green.opacity(0.24))
-                                .frame(
-                                    width: proxy.size.width * taskCompletionAnimationManager.progress(for: task, now: context.date),
-                                    alignment: .leading
-                                )
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                }
-            }
-            .overlay {
-                if task.isDone {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Theme.surface.opacity(0.18))
-                }
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(.white.opacity(0.04))
-            }
+        TimelineView(.animation) { context in
+            KanbanCardBackground(
+                isHovered: isHovered,
+                isDone: task.isDone,
+                isPendingCompletion: isPendingCompletion,
+                isPendingCancel: isPendingCancel,
+                urgencyBackgroundTint: urgencyBackgroundTint,
+                completionProgress: taskCompletionAnimationManager.progress(for: task, now: context.date),
+                cancelProgress: taskCompletionAnimationManager.cancelProgress(for: task, now: context.date)
+            )
+        }
     }
 }
 #endif

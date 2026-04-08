@@ -75,7 +75,7 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
     var dueDate: String = ""            // YYYY-MM-DD or ""
     var scheduledDate: String = ""      // YYYY-MM-DD — the day this is time-blocked
     var scheduledStartMin: Int = -1     // minutes from midnight (-1 = not scheduled)
-    var estimatedMinutes: Int = 0       // 0 = no estimate
+    var estimatedMinutes: Int = 30
     var actualMinutes: Int = 0          // cumulative actual time logged
     var calendarEventID: String = ""    // EKEvent identifier
     var sectionName: String = TaskSectionDefaults.defaultName
@@ -94,10 +94,10 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
     var isDone: Bool { status == .done }
     var isCancelled: Bool { status == .cancelled }
 
-    /// End time in minutes from midnight (start + duration, default 60min if no estimate)
+    /// End time in minutes from midnight (start + duration, default 30min if no estimate)
     var scheduledEndMin: Int {
         guard scheduledStartMin >= 0 else { return -1 }
-        return scheduledStartMin + max(estimatedMinutes, 60)
+        return scheduledStartMin + max(estimatedMinutes, 30)
     }
 
     var containerName: String {

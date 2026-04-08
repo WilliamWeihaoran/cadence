@@ -1,0 +1,222 @@
+#if os(macOS)
+import SwiftUI
+import EventKit
+
+struct GlobalSearchIndexedSource {
+    let sections: [GlobalSearchSection]
+}
+
+enum GlobalSearchIndexSupport {
+    static func buildIndexedSource(
+        query: String,
+        hiddenTabs: Set<SidebarStaticDestination>,
+        areas: [Area],
+        projects: [Project],
+        tasks: [AppTask],
+        goals: [Goal],
+        habits: [Habit],
+        eventResults: [GlobalSearchResult]
+    ) -> GlobalSearchIndexedSource {
+        var sections: [GlobalSearchSection] = []
+
+        appendSection(.commands, results: commandResults(query: query), into: &sections)
+        appendSection(.pages, results: pageResults(query: query, hiddenTabs: hiddenTabs), into: &sections)
+        appendSection(.areas, results: areaResults(areas: areas, query: query), into: &sections)
+        appendSection(.projects, results: projectResults(projects: projects, query: query), into: &sections)
+        appendSection(.tasks, results: taskResults(tasks: tasks, query: query), into: &sections)
+        appendSection(.events, results: eventResults, into: &sections)
+        appendSection(.goals, results: goalResults(goals: goals, query: query), into: &sections)
+        appendSection(.habits, results: habitResults(habits: habits, query: query), into: &sections)
+
+        return GlobalSearchIndexedSource(sections: sections)
+    }
+
+    static func appendSection(
+        _ category: GlobalSearchCategory,
+        results: [GlobalSearchResult],
+        into sections: inout [GlobalSearchSection]
+    ) {
+        guard !results.isEmpty else { return }
+        sections.append(.init(category: category, results: results))
+    }
+
+    static func commandResults(query: String) -> [GlobalSearchResult] {
+        rankedResults(
+            GlobalSearchCommandDefinition.all.compactMap { definition in
+                guard matches(query: query, fields: [definition.title, definition.subtitle, definition.aliases]) else { return nil }
+                return GlobalSearchResult(
+                    id: "command-\(definition.command.rawValue)",
+                    category: .commands,
+                    title: definition.title,
+                    subtitle: definition.subtitle,
+                    icon: definition.icon,
+                    tintHex: definition.tintHex,
+                    destination: .command(definition.command)
+                )
+            },
+            query: query
+        )
+    }
+
+    static func pageResults(query: String, hiddenTabs: Set<SidebarStaticDestination>) -> [GlobalSearchResult] {
+        rankedResults(GlobalSearchPageDefinition.all.compactMap { page in
+            let subtitle = if let toggleable = page.toggleable, hiddenTabs.contains(toggleable) {
+                "\(page.baseSubtitle) • Hidden from sidebar"
+            } else {
+                page.baseSubtitle
+            }
+            guard matches(query: query, fields: [page.label, subtitle, page.aliases]) else { return nil }
+            return GlobalSearchResult(
+                id: "page-\(page.label)",
+                category: .pages,
+                title: page.label,
+                subtitle: subtitle,
+                icon: page.icon,
+                tintHex: page.tintHex,
+                destination: .sidebar(page.item)
+            )
+        }, query: query)
+    }
+
+    static func areaResults(areas: [Area], query: String) -> [GlobalSearchResult] {
+        rankedResults(areas.compactMap { area in
+            let contextName = area.context?.name ?? "No context"
+            let lifecycle = area.isArchived ? "archived" : (area.isDone ? "completed done" : "active")
+            guard matches(query: query, fields: [area.name, area.desc, contextName, lifecycle]) else { return nil }
+            return GlobalSearchResult(
+                id: "area-\(area.id.uuidString)",
+                category: .areas,
+                title: area.name,
+                subtitle: "\(contextName) • \(area.tasks?.filter { !$0.isDone }.count ?? 0) active tasks • \(area.isArchived ? "Archived" : (area.isDone ? "Completed" : "Active"))",
+                icon: area.icon,
+                tintHex: area.colorHex,
+                destination: .area(area.id)
+            )
+        }, query: query)
+    }
+
+    static func projectResults(projects: [Project], query: String) -> [GlobalSearchResult] {
+        rankedResults(projects.compactMap { project in
+            let contextName = project.context?.name ?? "No context"
+            let areaName = project.area?.name
+            let summary = [contextName, areaName].compactMap { $0 }.joined(separator: " • ")
+            let lifecycle = project.isArchived ? "archived" : (project.isDone ? "completed done" : "active")
+            guard matches(query: query, fields: [project.name, project.desc, summary, lifecycle]) else { return nil }
+            return GlobalSearchResult(
+                id: "project-\(project.id.uuidString)",
+                category: .projects,
+                title: project.name,
+                subtitle: "\(summary) • \(project.tasks?.filter { !$0.isDone }.count ?? 0) active tasks • \(project.isArchived ? "Archived" : (project.isDone ? "Completed" : "Active"))",
+                icon: project.icon,
+                tintHex: project.colorHex,
+                destination: .project(project.id)
+            )
+        }, query: query)
+    }
+
+    static func taskResults(tasks: [AppTask], query: String) -> [GlobalSearchResult] {
+        let base = tasks
+            .filter { !$0.isCancelled }
+            .sorted {
+                if $0.isDone != $1.isDone { return !$0.isDone && $1.isDone }
+                if $0.order != $1.order { return $0.order < $1.order }
+                return $0.createdAt > $1.createdAt
+            }
+
+        return Array(rankedResults(base.compactMap { task in
+            let container = task.project?.name ?? task.area?.name ?? (task.goal?.title ?? "Inbox")
+            let contextName = task.context?.name ?? ""
+            let notesSnippet = task.notes.isEmpty ? "" : task.notes
+            let statusAliases = [
+                task.isDone ? "completed done" : "active todo",
+                task.priority.label,
+                task.resolvedSectionName
+            ].joined(separator: " ")
+            guard matches(query: query, fields: [task.title, container, contextName, notesSnippet, statusAliases]) else { return nil }
+
+            let meta: [String] = [
+                container,
+                task.scheduledDate.isEmpty ? nil : "Do \(DateFormatters.relativeDate(from: task.scheduledDate))",
+                task.dueDate.isEmpty ? nil : "Due \(DateFormatters.relativeDate(from: task.dueDate))",
+                task.isDone ? "Completed" : "Active"
+            ].compactMap { $0 }
+
+            return GlobalSearchResult(
+                id: "task-\(task.id.uuidString)",
+                category: .tasks,
+                title: task.title.isEmpty ? "Untitled Task" : task.title,
+                subtitle: meta.joined(separator: " • "),
+                icon: task.scheduledStartMin >= 0 ? "calendar.badge.clock" : "checkmark.circle",
+                tintHex: task.containerColor,
+                destination: .task(task.id)
+            )
+        }, query: query).prefix(query.isEmpty ? 10 : 14))
+    }
+
+    static func goalResults(goals: [Goal], query: String) -> [GlobalSearchResult] {
+        Array(rankedResults(goals.compactMap { goal in
+            let contextName = goal.context?.name ?? "No context"
+            guard matches(query: query, fields: [goal.title, goal.desc, contextName]) else { return nil }
+            return GlobalSearchResult(
+                id: "goal-\(goal.id.uuidString)",
+                category: .goals,
+                title: goal.title,
+                subtitle: "\(contextName) • \(Int(goal.progress * 100))% complete",
+                icon: "target",
+                tintHex: goal.colorHex,
+                destination: .goals
+            )
+        }, query: query).prefix(query.isEmpty ? 6 : 10))
+    }
+
+    static func habitResults(habits: [Habit], query: String) -> [GlobalSearchResult] {
+        Array(rankedResults(habits.compactMap { habit in
+            let contextName = habit.context?.name ?? "No context"
+            guard matches(query: query, fields: [habit.title, contextName]) else { return nil }
+            return GlobalSearchResult(
+                id: "habit-\(habit.id.uuidString)",
+                category: .habits,
+                title: habit.title,
+                subtitle: "\(contextName) • \(habit.currentStreak) day streak",
+                icon: habit.icon,
+                tintHex: habit.colorHex,
+                destination: .habits
+            )
+        }, query: query).prefix(query.isEmpty ? 6 : 10))
+    }
+
+    static func eventResults(from events: [EKEvent], query: String) -> [GlobalSearchResult] {
+        let mapped = Array(events.prefix(query.isEmpty ? 6 : 12)).map { event in
+            let item = CalendarEventItem(event: event)
+            let startDate = event.startDate ?? Date()
+            let timeLabel = "\(DateFormatters.dayOfWeek.string(from: startDate)), \(DateFormatters.shortDate.string(from: startDate))"
+            let subtitle = [
+                item.calendarTitle,
+                timeLabel,
+                TimeFormatters.timeRange(startMin: item.startMin, endMin: item.startMin + item.durationMinutes)
+            ]
+            .filter { !$0.isEmpty }
+            .joined(separator: " • ")
+
+            return GlobalSearchResult(
+                id: "event-\(item.id)",
+                category: .events,
+                title: item.title,
+                subtitle: subtitle,
+                icon: "calendar",
+                tintHex: item.calendarColor.globalSearchHexString() ?? (Theme.purple.globalSearchHexString() ?? "#9E8CFF"),
+                destination: .event(item.id)
+            )
+        }
+        return rankedResults(mapped, query: query)
+    }
+
+    static func rankedResults(_ results: [GlobalSearchResult], query: String) -> [GlobalSearchResult] {
+        GlobalSearchMatcher.rankResults(results, query: query)
+    }
+
+    static func matches(query: String, fields: [String]) -> Bool {
+        GlobalSearchMatcher.matchScore(query: query, fields: fields) != nil
+    }
+}
+#endif

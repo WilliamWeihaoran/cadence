@@ -126,6 +126,36 @@ final class CalendarManager {
         return store.events(matching: predicate).filter { !$0.isAllDay }
     }
 
+    /// Fetch all all-day events for a specific day.
+    func fetchAllDayEvents(for date: Date) -> [EKEvent] {
+        guard isAuthorized else { return [] }
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: date)
+        let end = cal.date(byAdding: .day, value: 1, to: start) ?? start
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        return store.events(matching: predicate).filter { $0.isAllDay }
+    }
+
+    /// Returns an EKEvent from the store by its identifier.
+    func event(withIdentifier identifier: String) -> EKEvent? {
+        guard !identifier.isEmpty else { return nil }
+        return store.event(withIdentifier: identifier)
+    }
+
+    /// Convert an all-day event to a timed event at the specified minute offset on the given date.
+    func convertAllDayEventToTimed(_ event: EKEvent, startMin: Int, dateKey: String) {
+        guard let baseDate = DateFormatters.date(from: dateKey) else { return }
+        let cal = Calendar.current
+        event.isAllDay = false
+        event.startDate = cal.date(byAdding: .minute, value: startMin, to: baseDate) ?? baseDate
+        event.endDate = cal.date(byAdding: .minute, value: startMin + 60, to: baseDate) ?? baseDate
+        do {
+            try store.save(event, span: .thisEvent)
+        } catch {
+            print("CalendarManager: failed to convert all-day event: \(error)")
+        }
+    }
+
     func searchEvents(matching query: String, pastDays: Int = 60, futureDays: Int = 365) -> [EKEvent] {
         guard isAuthorized else { return [] }
 
@@ -176,7 +206,7 @@ final class CalendarManager {
 
         let cal = Calendar.current
         let startDate = cal.date(byAdding: .minute, value: task.scheduledStartMin, to: baseDate) ?? baseDate
-        let durationMinutes = max(task.estimatedMinutes, 60)
+        let durationMinutes = max(task.estimatedMinutes, 30)
         let endDate = cal.date(byAdding: .minute, value: durationMinutes, to: startDate) ?? startDate
 
         event.startDate = startDate

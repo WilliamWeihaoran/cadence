@@ -61,6 +61,7 @@ private struct ListDetailView: View {
     @State private var showArchivedKanbanColumns = false
     @State private var kanbanSortField: TaskSortField = .custom
     @State private var kanbanSortDirection: TaskSortDirection = .ascending
+    @State private var highlightedKanbanSectionName: String?
 
     private var kanbanUDKey: String {
         if let a = area { return "kanban_\(a.id.uuidString)" }
@@ -248,7 +249,8 @@ private struct ListDetailView: View {
             project: project,
             showArchived: $showArchivedKanbanColumns,
             sortField: kanbanSortField,
-            sortDirection: kanbanSortDirection
+            sortDirection: kanbanSortDirection,
+            highlightedSectionName: highlightedKanbanSectionName
         )
     }
 
@@ -269,6 +271,7 @@ private struct ListDetailView: View {
             projectID: project?.id
         ) else { return }
         tab = request.page
+        highlightedKanbanSectionName = request.page == .kanban ? request.sectionName : nil
     }
 
     private func installKeyMonitorIfNeeded() {
