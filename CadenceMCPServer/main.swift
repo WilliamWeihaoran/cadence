@@ -6,7 +6,11 @@ do {
     let container = try CadenceModelContainerFactory.makeReadWriteContainer()
     let context = ModelContext(container)
     let readService = CadenceReadService(context: context)
-    let writeService = CadenceWriteService(context: context, notifiesExternalWrites: true)
+    let writeService = CadenceWriteService(
+        context: context,
+        notifiesExternalWrites: true,
+        auditLogger: try CadenceMCPAuditLogger.defaultLogger()
+    )
     let server = Server(
         name: "cadence-mcp",
         version: "0.1.0",

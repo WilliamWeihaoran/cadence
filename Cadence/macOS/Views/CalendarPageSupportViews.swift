@@ -1,5 +1,6 @@
 #if os(macOS)
 import Combine
+import EventKit
 import SwiftUI
 
 enum CalViewMode: String, CaseIterable {
@@ -80,8 +81,10 @@ struct CalendarTimelineHeaderStrip: View {
     let totalDaysWidth: CGFloat
     let timelineViewportWidth: CGFloat
     @ObservedObject var scrollState: CalendarTimelineScrollState
+    let eventCache: CalendarEventDayCache
     let unscheduledTasksByDate: [String: [AppTask]]
 
+    @Environment(CalendarManager.self) private var calendarManager
     private let cal = Calendar.current
 
     private var visibleRange: ClosedRange<Int> {
@@ -98,11 +101,12 @@ struct CalendarTimelineHeaderStrip: View {
                 .frame(width: totalDaysWidth, alignment: .leading)
 
             HStack(spacing: 0) {
-                ForEach(Array(visibleRange), id: \.self) { dayIdx in
+                ForEach(visibleRange, id: \.self) { dayIdx in
                     let date = cal.date(byAdding: .day, value: dayIdx, to: bufferStart)!
                     let key = DateFormatters.dateKey(from: date)
                     CalDayHeaderView(
                         date: date,
+                        allDayEvents: eventCache.allDayEvents(for: date, calendarManager: calendarManager),
                         unscheduledTasks: unscheduledTasksByDate[key] ?? []
                     )
                     .frame(width: colWidth)
@@ -111,7 +115,6 @@ struct CalendarTimelineHeaderStrip: View {
             .offset(x: CGFloat(visibleRange.lowerBound) * colWidth + scrollState.headerOffset)
         }
         .frame(width: totalDaysWidth, alignment: .leading)
-        .compositingGroup()
         .transaction { $0.animation = nil }
         .frame(width: timelineViewportWidth, alignment: .leading)
         .clipped()
@@ -126,6 +129,8 @@ struct CalendarTimelineViewport: View {
     @Binding var rememberedDateKey: String
     let bufferStart: Date
     let allTasks: [AppTask]
+    let areas: [Area]
+    let projects: [Project]
     let tasksByDate: [String: [AppTask]]
     let unscheduledTasksByDate: [String: [AppTask]]
     let todayDayIdx: Int
@@ -139,6 +144,7 @@ struct CalendarTimelineViewport: View {
     @Binding var externalJumpHour: Int?
     let externalJumpToken: UUID?
     @ObservedObject var timelineScrollState: CalendarTimelineScrollState
+    let eventCache: CalendarEventDayCache
     let onPersistVisibleTimelineDay: (Int) -> Void
     let onPersistVisibleTimelineHour: (Int) -> Void
     let onRestoreTimelineScrollIfNeeded: (ScrollViewProxy, ScrollViewProxy, CGFloat) -> Void
@@ -173,6 +179,7 @@ struct CalendarTimelineViewport: View {
                     totalDaysWidth: viewportMetrics.totalDaysWidth,
                     timelineViewportWidth: viewportMetrics.timelineViewportWidth,
                     scrollState: timelineScrollState,
+                    eventCache: eventCache,
                     unscheduledTasksByDate: unscheduledTasksByDate
                 )
             }
@@ -189,6 +196,8 @@ struct CalendarTimelineViewport: View {
                         CalendarTimelineDayScroller(
                             bufferStart: bufferStart,
                             allTasks: allTasks,
+                            areas: areas,
+                            projects: projects,
                             tasksByDate: tasksByDate,
                             hourHeight: viewportMetrics.hourHeight,
                             colWidth: viewportMetrics.colWidth,
@@ -202,6 +211,7 @@ struct CalendarTimelineViewport: View {
                             externalJumpDayIndex: $externalJumpDayIndex,
                             externalJumpToken: externalJumpToken,
                             timelineScrollState: timelineScrollState,
+                            eventCache: eventCache,
                             onPersistVisibleTimelineDay: onPersistVisibleTimelineDay,
                             onRestoreTimelineScrollIfNeeded: { hProxy, colWidth in
                                 onRestoreTimelineScrollIfNeeded(vProxy, hProxy, colWidth)

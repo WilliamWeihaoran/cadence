@@ -48,6 +48,9 @@ enum CadenceMCPToolDefinitions {
                 "containerId": "Optional area/project UUID.",
                 "limit": "Optional result limit, capped at 200.",
             ])),
+            Tool(name: "get_recent_mcp_writes", description: "Read recent Cadence MCP write audit log entries.", inputSchema: schema([
+                "limit": "Optional result limit, capped at 200.",
+            ])),
             Tool(name: "create_task", description: "Create a Cadence task without Calendar side effects.", inputSchema: schema([
                 "title": "Task title.",
                 "notes": "Optional notes.",
@@ -86,6 +89,10 @@ enum CadenceMCPToolDefinitions {
             Tool(name: "complete_task", description: "Mark a Cadence task done and spawn a recurring follow-up when applicable.", inputSchema: schema(["taskId": "Task UUID."])),
             Tool(name: "reopen_task", description: "Reopen a Cadence task as todo.", inputSchema: schema(["taskId": "Task UUID."])),
             Tool(name: "cancel_task", description: "Cancel a Cadence task without deleting it.", inputSchema: schema(["taskId": "Task UUID."])),
+            Tool(name: "bulk_cancel_tasks", description: "Cancel multiple Cadence tasks without deleting them. Requires exact taskIds or a titlePrefix of at least 8 characters.", inputSchema: schema([
+                "taskIds": "Optional array of exact task UUIDs. Cannot be combined with titlePrefix.",
+                "titlePrefix": "Optional title prefix, minimum 8 characters. Cannot be combined with taskIds.",
+            ])),
             Tool(name: "append_core_note", description: "Append text to a daily, weekly, or permanent Cadence note, creating it if needed.", inputSchema: schema([
                 "kind": "daily, weekly, or permanent.",
                 "content": "Text to append.",
@@ -95,13 +102,17 @@ enum CadenceMCPToolDefinitions {
         ]
     }
 
-    static var diagnostics: [String: String] {
-        [
+    static func diagnostics(auditLogPath: String?) -> [String: String] {
+        var payload = [
             "name": "cadence-mcp",
             "version": serverVersion,
             "mode": "read-write",
             "toolCount": "\(tools.count)",
         ]
+        if let auditLogPath {
+            payload["auditLogPath"] = auditLogPath
+        }
+        return payload
     }
 
     private static func schema(_ properties: [String: String]) -> Value {

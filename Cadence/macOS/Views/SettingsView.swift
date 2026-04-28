@@ -711,15 +711,7 @@ struct SettingsView: View {
     }
 
     private func deleteContext(_ context: Context) {
-        for area in context.areas ?? [] { deleteArea(area) }
-        for project in context.projects ?? [] { deleteProject(project) }
-        for task in context.tasks ?? [] { modelContext.delete(task) }
-        for goal in context.goals ?? [] { modelContext.delete(goal) }
-        for habit in context.habits ?? [] {
-            for completion in habit.completions ?? [] { modelContext.delete(completion) }
-            modelContext.delete(habit)
-        }
-        modelContext.delete(context)
+        modelContext.deleteContext(context)
         try? modelContext.save()
     }
 

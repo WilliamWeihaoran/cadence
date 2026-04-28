@@ -293,9 +293,12 @@ struct GoalTimelineBar: View {
               let start = DateFormatters.ymd.date(from: goal.startDate),
               let end = DateFormatters.ymd.date(from: goal.endDate) else { return nil }
 
-        let adjStart = cal.date(byAdding: .day, value: dayOffset, to: start)!
-        let adjEnd = cal.date(byAdding: .day, value: dayOffset, to: end)!
-        let viewEnd = cal.date(byAdding: .day, value: scale.renderDays, to: viewStartDate)!
+        guard let shifted = GoalTimelineDateMath.shiftedRange(start: start, end: end, dayOffset: dayOffset, calendar: cal),
+              let viewEnd = GoalTimelineDateMath.renderEndDate(startDate: viewStartDate, scale: scale, calendar: cal) else {
+            return nil
+        }
+        let adjStart = shifted.start
+        let adjEnd = shifted.end
 
         let clampedStart = max(adjStart, viewStartDate)
         let clampedEnd = min(adjEnd, viewEnd)
@@ -403,7 +406,9 @@ struct DependencyArrowCanvas: View {
               let start = DateFormatters.ymd.date(from: goal.startDate),
               let end = DateFormatters.ymd.date(from: goal.endDate) else { return nil }
 
-        let viewEnd = cal.date(byAdding: .day, value: scale.renderDays, to: renderStartDate)!
+        guard let viewEnd = GoalTimelineDateMath.renderEndDate(startDate: renderStartDate, scale: scale, calendar: cal) else {
+            return nil
+        }
         let cStart = max(start, renderStartDate)
         let cEnd = min(end, viewEnd)
         guard cStart < cEnd else { return nil }

@@ -80,23 +80,46 @@ struct CadenceScheduleTaskOptions: Sendable {
     var clearScheduledDate: Bool = false
 }
 
+struct CadenceBulkCancelTaskOptions: Sendable {
+    var taskIds: [String]? = nil
+    var titlePrefix: String? = nil
+}
+
+private struct PendingAuditEntry {
+    let tool: String
+    let entityType: String
+    let entityId: String
+    let summary: String
+
+    static func task(tool: String, id: UUID, summary: String) -> PendingAuditEntry {
+        PendingAuditEntry(tool: tool, entityType: "task", entityId: id.uuidString, summary: summary)
+    }
+
+    static func coreNote(id: UUID, summary: String) -> PendingAuditEntry {
+        PendingAuditEntry(tool: "append_core_note", entityType: "core_note", entityId: id.uuidString, summary: summary)
+    }
+}
+
 @MainActor
 final class CadenceWriteService {
     private let context: ModelContext
     private let readService: CadenceReadService
     private let notifiesExternalWrites: Bool
+    private let auditLogger: CadenceMCPAuditLogger?
 
-    init(container: ModelContainer, notifiesExternalWrites: Bool = false) {
+    init(container: ModelContainer, notifiesExternalWrites: Bool = false, auditLogger: CadenceMCPAuditLogger? = nil) {
         let context = ModelContext(container)
         self.context = context
         self.readService = CadenceReadService(context: context)
         self.notifiesExternalWrites = notifiesExternalWrites
+        self.auditLogger = auditLogger
     }
 
-    init(context: ModelContext, notifiesExternalWrites: Bool = false) {
+    init(context: ModelContext, notifiesExternalWrites: Bool = false, auditLogger: CadenceMCPAuditLogger? = nil) {
         self.context = context
         self.readService = CadenceReadService(context: context)
         self.notifiesExternalWrites = notifiesExternalWrites
+        self.auditLogger = auditLogger
     }
 
     func createTask(options: CadenceCreateTaskOptions) throws -> CadenceTaskDetail {
@@ -135,7 +158,7 @@ final class CadenceWriteService {
             context.insert(subtask)
         }
 
-        try saveAndNotify()
+        try saveNotifyAndAudit(.task(tool: "create_task", id: task.id, summary: "Created task: \(task.title)"))
         return try readService.getTask(taskID: task.id.uuidString)
     }
 
@@ -192,7 +215,7 @@ final class CadenceWriteService {
         }
         if let dependencyIDs { task.dependencyTaskIDs = dependencyIDs }
 
-        try saveAndNotify()
+        try saveNotifyAndAudit(.task(tool: "update_task", id: task.id, summary: "Updated task: \(task.title)"))
         return try readService.getTask(taskID: task.id.uuidString)
     }
 
@@ -227,7 +250,7 @@ final class CadenceWriteService {
             }
         }
 
-        try saveAndNotify()
+        try saveNotifyAndAudit(.task(tool: "schedule_task", id: task.id, summary: "Scheduled task: \(task.title)"))
         return try readService.getTask(taskID: task.id.uuidString)
     }
 
@@ -253,7 +276,13 @@ final class CadenceWriteService {
         }
 
         if didChange {
-            try saveAndNotify()
+            var auditEntries: [PendingAuditEntry] = [
+                .task(tool: "complete_task", id: task.id, summary: "Completed task: \(task.title)")
+            ]
+            if let spawnedTaskID {
+                auditEntries.append(.task(tool: "complete_task", id: spawnedTaskID, summary: "Spawned recurring task from: \(task.title)"))
+            }
+            try saveNotifyAndAudit(auditEntries)
         }
         return CadenceCompleteTaskResult(
             task: try readService.getTask(taskID: task.id.uuidString),
@@ -266,7 +295,7 @@ final class CadenceWriteService {
         if task.completedAt != nil || task.status != .todo {
             task.completedAt = nil
             task.status = .todo
-            try saveAndNotify()
+            try saveNotifyAndAudit(.task(tool: "reopen_task", id: task.id, summary: "Reopened task: \(task.title)"))
         }
         return try readService.getTask(taskID: task.id.uuidString)
     }
@@ -276,9 +305,64 @@ final class CadenceWriteService {
         if task.completedAt != nil || task.status != .cancelled {
             task.completedAt = nil
             task.status = .cancelled
-            try saveAndNotify()
+            try saveNotifyAndAudit(.task(tool: "cancel_task", id: task.id, summary: "Cancelled task: \(task.title)"))
         }
         return try readService.getTask(taskID: task.id.uuidString)
+    }
+
+    func bulkCancelTasks(options: CadenceBulkCancelTaskOptions) throws -> CadenceBulkCancelResult {
+        let tasks = try fetchTasks()
+        let ids = options.taskIds?.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } ?? []
+        let prefix = options.titlePrefix?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !ids.isEmpty && prefix?.isEmpty == false {
+            throw CadenceWriteError.invalidCombination("taskIds and titlePrefix cannot be combined.")
+        }
+        if ids.isEmpty && prefix?.isEmpty != false {
+            throw CadenceWriteError.invalidCombination("Provide taskIds or titlePrefix.")
+        }
+
+        let selectedTasks: [AppTask]
+        if !ids.isEmpty {
+            var seen = Set<UUID>()
+            let requestedIDs = try ids.map(uuid).filter { seen.insert($0).inserted }
+            selectedTasks = try requestedIDs.map { id in
+                guard let task = tasks.first(where: { $0.id == id }) else {
+                    throw CadenceReadError.taskNotFound(id.uuidString)
+                }
+                return task
+            }
+        } else {
+            guard let prefix else { throw CadenceWriteError.invalidCombination("Provide taskIds or titlePrefix.") }
+            guard prefix.count >= 8 else {
+                throw CadenceWriteError.invalidCombination("titlePrefix must be at least 8 characters for bulk cancellation.")
+            }
+            let normalizedPrefix = prefix.lowercased()
+            selectedTasks = tasks.filter {
+                !$0.isCancelled && $0.title.lowercased().hasPrefix(normalizedPrefix)
+            }
+        }
+
+        guard !selectedTasks.isEmpty else {
+            throw CadenceWriteError.noChanges
+        }
+
+        var changed: [AppTask] = []
+        for task in selectedTasks where task.status != .cancelled || task.completedAt != nil {
+            task.completedAt = nil
+            task.status = .cancelled
+            changed.append(task)
+        }
+
+        if !changed.isEmpty {
+            try saveNotifyAndAudit(changed.map {
+                .task(tool: "bulk_cancel_tasks", id: $0.id, summary: "Bulk cancelled task: \($0.title)")
+            })
+        }
+
+        return CadenceBulkCancelResult(
+            cancelledTasks: try selectedTasks.map { try readService.getTask(taskID: $0.id.uuidString).summary }
+        )
     }
 
     func appendCoreNote(kind: String, content: String, dateKey: String? = nil, separator: String? = nil) throws -> CadenceCoreNotesSnapshot {
@@ -287,6 +371,7 @@ final class CadenceWriteService {
         let resolvedDateKey = try resolvedDateKey(dateKey)
         let separator = separator ?? "\n\n"
         let now = Date()
+        let auditEntry: PendingAuditEntry
 
         switch normalizedKind {
         case "daily":
@@ -299,6 +384,7 @@ final class CadenceWriteService {
             }
             append(text, separator: separator, to: &note.content)
             note.updatedAt = now
+            auditEntry = .coreNote(id: note.id, summary: "Appended daily core note: \(resolvedDateKey)")
         case "weekly":
             let resolvedWeekKey = try weekKey(for: resolvedDateKey)
             let note: WeeklyNote
@@ -310,6 +396,7 @@ final class CadenceWriteService {
             }
             append(text, separator: separator, to: &note.content)
             note.updatedAt = now
+            auditEntry = .coreNote(id: note.id, summary: "Appended weekly core note: \(resolvedWeekKey)")
         case "permanent":
             let note: PermNote
             if let existing = try fetchPermNotes().first {
@@ -320,18 +407,41 @@ final class CadenceWriteService {
             }
             append(text, separator: separator, to: &note.content)
             note.updatedAt = now
+            auditEntry = .coreNote(id: note.id, summary: "Appended permanent core note")
         default:
             throw CadenceWriteError.invalidNoteKind(kind)
         }
 
-        try saveAndNotify()
+        try saveNotifyAndAudit(auditEntry)
         return try readService.coreNotes(dateKey: resolvedDateKey)
     }
 
-    private func saveAndNotify() throws {
+    private func saveNotifyAndAudit(_ entry: PendingAuditEntry) throws {
+        try saveNotifyAndAudit([entry])
+    }
+
+    private func saveNotifyAndAudit(_ entries: [PendingAuditEntry]) throws {
         try context.save()
         if notifiesExternalWrites {
             CadenceModelContainerFactory.notifyExternalWrite()
+        }
+        for entry in entries {
+            recordAudit(entry)
+        }
+    }
+
+    private func recordAudit(_ entry: PendingAuditEntry) {
+        guard let auditLogger else { return }
+        do {
+            try auditLogger.record(
+                tool: entry.tool,
+                entityType: entry.entityType,
+                entityId: entry.entityId,
+                summary: entry.summary
+            )
+        } catch {
+            let message = "Cadence MCP audit log failed: \(error.localizedDescription)\n"
+            FileHandle.standardError.write(Data(message.utf8))
         }
     }
 

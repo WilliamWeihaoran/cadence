@@ -9,6 +9,8 @@ struct CalendarPageView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarNavigationManager.self) private var calendarNavigationManager
     @Query private var allTasks: [AppTask]
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
 
     @State private var viewMode: CalViewMode = .week
     @State private var scrollToTodayTrigger = false
@@ -27,6 +29,7 @@ struct CalendarPageView: View {
     @State private var externalJumpDayIndex: Int?
     @State private var externalJumpHour: Int?
     @State private var externalJumpToken: UUID?
+    @State private var calendarEventDayCache = CalendarEventDayCache()
     @StateObject private var timelineScrollState = CalendarTimelineScrollState()
 
     private let cal = Calendar.current
@@ -70,6 +73,8 @@ struct CalendarPageView: View {
                         rememberedDateKey: $rememberedDateKey,
                         bufferStart: bufferStart,
                         allTasks: allTasks,
+                        areas: areas,
+                        projects: projects,
                         tasksByDate: tasksByDate,
                         unscheduledTasksByDate: unscheduledTasksByDate,
                         todayDayIdx: todayDayIdx,
@@ -83,6 +88,7 @@ struct CalendarPageView: View {
                         externalJumpHour: $externalJumpHour,
                         externalJumpToken: externalJumpToken,
                         timelineScrollState: timelineScrollState,
+                        eventCache: calendarEventDayCache,
                         onPersistVisibleTimelineDay: { day in
                             schedulePersistVisibleTimelineDay(day)
                         },

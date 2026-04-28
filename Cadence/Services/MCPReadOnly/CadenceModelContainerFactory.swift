@@ -48,7 +48,7 @@ enum CadenceModelContainerFactory {
             return overrideURL
         }
 
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let home = userHomeDirectory
         let appContainerURL = home
             .appendingPathComponent("Library/Containers")
             .appendingPathComponent(appContainerIdentifier)
@@ -75,6 +75,12 @@ enum CadenceModelContainerFactory {
             .appendingPathComponent(".cadence-mcp-refresh")
     }
 
+    static func auditLogURL() throws -> URL {
+        try resolvedStoreURL()
+            .deletingLastPathComponent()
+            .appendingPathComponent("mcp-audit.log")
+    }
+
     static func notifyExternalWrite() {
         guard let markerURL = try? refreshMarkerURL() else { return }
         let timestamp = ISO8601DateFormatter().string(from: Date())
@@ -87,5 +93,13 @@ enum CadenceModelContainerFactory {
         } else {
             FileManager.default.createFile(atPath: markerURL.path, contents: data)
         }
+    }
+
+    private static var userHomeDirectory: URL {
+        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+        URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        #else
+        FileManager.default.homeDirectoryForCurrentUser
+        #endif
     }
 }

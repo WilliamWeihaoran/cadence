@@ -109,17 +109,11 @@ struct MonthDayCell: View {
 
 struct CalDayHeaderView: View {
     let date: Date
+    var allDayEvents: [EKEvent] = []
     var unscheduledTasks: [AppTask] = []
 
-    @Environment(CalendarManager.self) private var calendarManager
     private let cal = Calendar.current
     private var isToday: Bool { cal.isDateInToday(date) }
-
-    private var allDayEvents: [EKEvent] {
-        let _ = calendarManager.storeVersion
-        guard calendarManager.isAuthorized else { return [] }
-        return calendarManager.fetchAllDayEvents(for: date)
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -219,21 +213,21 @@ struct CalDayColumn: View {
     let date: Date
     let tasks: [AppTask]
     let allTasks: [AppTask]
+    let areas: [Area]
+    let projects: [Project]
+    let eventCache: CalendarEventDayCache
     let colWidth: CGFloat
     let hourHeight: CGFloat
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
-    @Query(sort: \Area.order) private var areas: [Area]
-    @Query(sort: \Project.order) private var projects: [Project]
 
     private var dateKey: String {
         DateFormatters.dateKey(from: date)
     }
 
     private var externalEventItems: [CalendarEventItem] {
-        let _ = calendarManager.storeVersion
         let linkedIDs = Set(allTasks.compactMap { $0.calendarEventID.isEmpty ? nil : $0.calendarEventID })
-        return calendarManager.fetchEvents(for: date)
+        return eventCache.timedEvents(for: date, calendarManager: calendarManager)
             .filter { event in
                 guard let id = event.eventIdentifier else { return true }
                 return !linkedIDs.contains(id)

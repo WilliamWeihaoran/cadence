@@ -81,7 +81,7 @@ struct GoalsView: View {
     private var cal: Calendar { Calendar.current }
 
     private var renderStartDate: Date {
-        cal.date(byAdding: .day, value: -scale.leadDays, to: cal.startOfDay(for: Date()))!
+        GoalTimelineDateMath.renderStartDate(scale: scale, calendar: cal)
     }
 
     private var todayDayIdx: Int { scale.leadDays }
@@ -348,8 +348,11 @@ struct GoalsView: View {
         guard dayOffset != 0 else { return }
         guard let start = DateFormatters.ymd.date(from: goal.startDate),
               let end = DateFormatters.ymd.date(from: goal.endDate) else { return }
-        let newStart = cal.date(byAdding: .day, value: dayOffset, to: start)!
-        let newEnd   = cal.date(byAdding: .day, value: dayOffset, to: end)!
+        guard let shifted = GoalTimelineDateMath.shiftedRange(start: start, end: end, dayOffset: dayOffset, calendar: cal) else {
+            return
+        }
+        let newStart = shifted.start
+        let newEnd = shifted.end
         goal.startDate = DateFormatters.ymd.string(from: newStart)
         goal.endDate   = DateFormatters.ymd.string(from: newEnd)
     }

@@ -124,3 +124,7 @@ struct CadenceCompleteTaskResult: Codable, Sendable {
     let task: CadenceTaskDetail
     let spawnedRecurringTask: CadenceTaskDetail?
 }
+
+struct CadenceBulkCancelResult: Codable, Sendable {
+    let cancelledTasks: [CadenceTaskSummary]
+}

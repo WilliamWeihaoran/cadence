@@ -376,6 +376,13 @@ final class CadenceReadService {
         return Array(blockedTasks(from: candidates, allTasks: tasks, limit: cappedLimit(limit)).prefix(cappedLimit(limit)))
     }
 
+    func recentMCPWrites(limit: Int = 50) throws -> [CadenceMCPAuditEntry] {
+        try CadenceMCPAuditLogger.recentEntries(
+            limit: limit,
+            logURL: CadenceModelContainerFactory.auditLogURL()
+        )
+    }
+
     private func blockedTasks(from candidates: [AppTask], allTasks: [AppTask], limit: Int) -> [CadenceBlockedTask] {
         candidates
             .filter { $0.isBlocked(in: allTasks) }

@@ -32,7 +32,7 @@ struct CadenceMCPToolRouter {
     private func callTool(name: String, arguments: [String: Value]) throws -> String {
         switch name {
         case "mcp_diagnostics":
-            return try encode(CadenceMCPToolDefinitions.diagnostics)
+            return try encode(CadenceMCPToolDefinitions.diagnostics(auditLogPath: try? CadenceModelContainerFactory.auditLogURL().path))
 
         case "get_today_brief":
             return try encode(readService.todayBrief(dateKey: try arguments.dateKey("date")))
@@ -96,6 +96,9 @@ struct CadenceMCPToolRouter {
                 limit: arguments.int("limit") ?? 50
             ))
 
+        case "get_recent_mcp_writes":
+            return try encode(readService.recentMCPWrites(limit: arguments.int("limit") ?? 50))
+
         case "create_task":
             return try encode(writeService.createTask(options: CadenceCreateTaskOptions(
                 title: try arguments.requiredString("title"),
@@ -145,6 +148,12 @@ struct CadenceMCPToolRouter {
 
         case "cancel_task":
             return try encode(writeService.cancelTask(taskID: try arguments.requiredString("taskId")))
+
+        case "bulk_cancel_tasks":
+            return try encode(writeService.bulkCancelTasks(options: CadenceBulkCancelTaskOptions(
+                taskIds: arguments.stringArray("taskIds"),
+                titlePrefix: arguments.string("titlePrefix")
+            )))
 
         case "append_core_note":
             return try encode(writeService.appendCoreNote(

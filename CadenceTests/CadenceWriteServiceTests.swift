@@ -192,6 +192,99 @@ struct CadenceWriteServiceTests {
         #expect(snapshot.permanentNote == nil)
     }
 
+    @Test func auditLoggerRecordsSuccessfulWritesAndSkipsInvalidWrites() throws {
+        let auditURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cadence-mcp-audit-\(UUID().uuidString)")
+            .appendingPathExtension("log")
+        defer { try? FileManager.default.removeItem(at: auditURL) }
+
+        let logger = CadenceMCPAuditLogger(
+            logURL: auditURL,
+            clock: { Date(timeIntervalSince1970: 1) }
+        )
+        let fixture = try Fixture(auditLogger: logger)
+        let created = try fixture.writeService.createTask(options: .init(title: "Audit me"))
+        _ = try fixture.writeService.updateTask(options: .init(taskId: created.summary.id, notes: "Audited update"))
+        _ = try fixture.writeService.scheduleTask(options: .init(
+            taskId: created.summary.id,
+            scheduledDate: "2026-04-28",
+            scheduledStartMin: 600
+        ))
+        _ = try fixture.writeService.completeTask(taskID: created.summary.id)
+        _ = try fixture.writeService.reopenTask(taskID: created.summary.id)
+        _ = try fixture.writeService.cancelTask(taskID: created.summary.id)
+        _ = try fixture.writeService.appendCoreNote(kind: "daily", content: "Audited note", dateKey: "2026-04-28")
+
+        let entries = try readAuditEntries(from: auditURL)
+        #expect(entries.map(\.tool) == [
+            "create_task",
+            "update_task",
+            "schedule_task",
+            "complete_task",
+            "reopen_task",
+            "cancel_task",
+            "append_core_note",
+        ])
+        #expect(entries.allSatisfy { $0.timestamp == "1970-01-01T00:00:01Z" })
+        #expect(entries.allSatisfy { !$0.entityId.isEmpty })
+        #expect(entries.first?.summary == "Created task: Audit me")
+        #expect(try CadenceMCPAuditLogger.recentEntries(limit: 2, logURL: auditURL).map(\.tool) == [
+            "append_core_note",
+            "cancel_task",
+        ])
+
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateTask(options: .init(
+                taskId: created.summary.id,
+                priority: "urgent"
+            ))
+        }
+        #expect(try readAuditEntries(from: auditURL).count == entries.count)
+    }
+
+    @Test func bulkCancelTasksRequiresSpecificScopeAndAuditsChangedTasks() throws {
+        let auditURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cadence-mcp-bulk-audit-\(UUID().uuidString)")
+            .appendingPathExtension("log")
+        defer { try? FileManager.default.removeItem(at: auditURL) }
+
+        let fixture = try Fixture(auditLogger: CadenceMCPAuditLogger(logURL: auditURL))
+        let first = AppTask(title: "MCP TEST cleanup one")
+        let second = AppTask(title: "MCP TEST cleanup two")
+        let unrelated = AppTask(title: "Personal cleanup")
+        fixture.modelContext.insert(first)
+        fixture.modelContext.insert(second)
+        fixture.modelContext.insert(unrelated)
+        try fixture.modelContext.save()
+
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.bulkCancelTasks(options: .init(titlePrefix: "MCP"))
+        }
+
+        let result = try fixture.writeService.bulkCancelTasks(options: .init(titlePrefix: "MCP TEST"))
+        #expect(result.cancelledTasks.map(\.title).sorted() == ["MCP TEST cleanup one", "MCP TEST cleanup two"])
+        #expect(result.cancelledTasks.allSatisfy { $0.isCancelled })
+        #expect(try fixture.readService.getTask(taskID: unrelated.id.uuidString).summary.isCancelled == false)
+
+        let auditEntries = try readAuditEntries(from: auditURL)
+        #expect(auditEntries.map(\.tool) == ["bulk_cancel_tasks", "bulk_cancel_tasks"])
+        #expect(auditEntries.allSatisfy { $0.summary.hasPrefix("Bulk cancelled task: MCP TEST cleanup") })
+    }
+
+    private func readAuditEntries(from url: URL) throws -> [TestAuditEntry] {
+        let content = try String(contentsOf: url, encoding: .utf8)
+        return try content
+            .split(separator: "\n")
+            .map { try JSONDecoder().decode(TestAuditEntry.self, from: Data($0.utf8)) }
+    }
+
+    private struct TestAuditEntry: Decodable {
+        let timestamp: String
+        let tool: String
+        let entityId: String
+        let summary: String
+    }
+
     @MainActor
     private final class Fixture {
         let container: ModelContainer
@@ -201,11 +294,11 @@ struct CadenceWriteServiceTests {
         let context: Context
         let project: Project
 
-        init() throws {
+        init(auditLogger: CadenceMCPAuditLogger? = nil) throws {
             container = try CadenceModelContainerFactory.makeInMemoryContainer()
             modelContext = ModelContext(container)
             readService = CadenceReadService(context: modelContext)
-            writeService = CadenceWriteService(context: modelContext)
+            writeService = CadenceWriteService(context: modelContext, auditLogger: auditLogger)
             context = Context(name: "Work")
             project = Project(name: "Cadence MCP", context: context)
             project.sectionNames = [TaskSectionDefaults.defaultName, "Build"]

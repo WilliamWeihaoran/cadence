@@ -31,13 +31,15 @@ import Foundation
         let cal = Calendar.current
         var date = cal.startOfDay(for: Date())
         let todayStr = DateFormatters.dateKey(from: date)
-        let yesterdayStr = DateFormatters.dateKey(from: cal.date(byAdding: .day, value: -1, to: date)!)
+        guard let yesterday = cal.date(byAdding: .day, value: -1, to: date) else { return 0 }
+        let yesterdayStr = DateFormatters.dateKey(from: yesterday)
         guard dates.contains(todayStr) || dates.contains(yesterdayStr) else { return 0 }
-        if !dates.contains(todayStr) { date = cal.date(byAdding: .day, value: -1, to: date)! }
+        if !dates.contains(todayStr) { date = yesterday }
         var streak = 0
         while dates.contains(DateFormatters.dateKey(from: date)) {
             streak += 1
-            date = cal.date(byAdding: .day, value: -1, to: date)!
+            guard let previous = cal.date(byAdding: .day, value: -1, to: date) else { break }
+            date = previous
         }
         return streak
     }

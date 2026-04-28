@@ -22,6 +22,8 @@ struct CalendarTimelineTimeRail: View {
 struct CalendarTimelineDayScroller: View {
     let bufferStart: Date
     let allTasks: [AppTask]
+    let areas: [Area]
+    let projects: [Project]
     let tasksByDate: [String: [AppTask]]
     let hourHeight: CGFloat
     let colWidth: CGFloat
@@ -35,6 +37,7 @@ struct CalendarTimelineDayScroller: View {
     @Binding var externalJumpDayIndex: Int?
     let externalJumpToken: UUID?
     @ObservedObject var timelineScrollState: CalendarTimelineScrollState
+    let eventCache: CalendarEventDayCache
     let onPersistVisibleTimelineDay: (Int) -> Void
     let onRestoreTimelineScrollIfNeeded: (ScrollViewProxy, CGFloat) -> Void
     let scrollToTodayTrigger: Bool
@@ -52,6 +55,9 @@ struct CalendarTimelineDayScroller: View {
                             date: date,
                             tasks: tasksByDate[key] ?? [],
                             allTasks: allTasks,
+                            areas: areas,
+                            projects: projects,
+                            eventCache: eventCache,
                             colWidth: colWidth,
                             hourHeight: hourHeight
                         )
@@ -63,6 +69,7 @@ struct CalendarTimelineDayScroller: View {
             }
             .frame(width: timelineViewportWidth, alignment: .leading)
             .scrollBounceBehavior(.basedOnSize, axes: [.horizontal])
+            .transaction { $0.animation = nil }
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in
                 timelineScrollState.setHeaderOffset(-x)
                 guard didRestoreTimelineScroll, !isRestoringHorizontalScroll else { return }

@@ -30,12 +30,14 @@ EXPECTED_TOOLS = {
     "get_document",
     "search_cadence",
     "get_blocked_tasks",
+    "get_recent_mcp_writes",
     "create_task",
     "update_task",
     "schedule_task",
     "complete_task",
     "reopen_task",
     "cancel_task",
+    "bulk_cancel_tasks",
     "append_core_note",
 }
 
@@ -130,6 +132,9 @@ def main() -> int:
         diagnostics = json.loads(diagnostics_response["result"]["content"][0]["text"])
         if diagnostics["mode"] != "read-write":
             raise AssertionError(f"expected read-write diagnostics, got {diagnostics}")
+        audit_log = Path(temp_store.name) / "mcp-audit.log"
+        if diagnostics.get("auditLogPath") != str(audit_log):
+            raise AssertionError(f"expected audit log path {audit_log}, got {diagnostics.get('auditLogPath')}")
 
         arguments = {"date": date_arg} if date_arg else {}
         send(
@@ -265,6 +270,60 @@ def main() -> int:
         if not invalid_duration["result"].get("isError", False):
             raise AssertionError("create_task with invalid duration should return an MCP tool error")
 
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "tools/call",
+                "params": {"name": "bulk_cancel_tasks", "arguments": {"titlePrefix": "MCP"}},
+            }
+        )
+        invalid_bulk_prefix = read_response(13)
+        if not invalid_bulk_prefix["result"].get("isError", False):
+            raise AssertionError("bulk_cancel_tasks with a short titlePrefix should return an MCP tool error")
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 14,
+                "method": "tools/call",
+                "params": {"name": "bulk_cancel_tasks", "arguments": {"titlePrefix": "MCP smoke"}},
+            }
+        )
+        bulk_cancel = read_response(14)
+        if bulk_cancel["result"].get("isError", False):
+            raise AssertionError(bulk_cancel["result"]["content"][0]["text"])
+        bulk_cancel_payload = json.loads(bulk_cancel["result"]["content"][0]["text"])
+        if len(bulk_cancel_payload["cancelledTasks"]) < 3:
+            raise AssertionError(f"expected bulk cancel to cancel smoke tasks, got {bulk_cancel_payload}")
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 15,
+                "method": "tools/call",
+                "params": {"name": "get_recent_mcp_writes", "arguments": {"limit": 4}},
+            }
+        )
+        recent_writes_response = read_response(15)
+        if recent_writes_response["result"].get("isError", False):
+            raise AssertionError(recent_writes_response["result"]["content"][0]["text"])
+        recent_writes = json.loads(recent_writes_response["result"]["content"][0]["text"])
+        if not recent_writes or recent_writes[0]["tool"] != "bulk_cancel_tasks":
+            raise AssertionError(f"expected newest audit entry to be bulk_cancel_tasks, got {recent_writes}")
+
+        if not audit_log.exists():
+            raise AssertionError("expected MCP writes to create an audit log")
+        audit_entries = [json.loads(line) for line in audit_log.read_text().splitlines() if line.strip()]
+        create_audits = [entry for entry in audit_entries if entry["tool"] == "create_task"]
+        if len(create_audits) < 3:
+            raise AssertionError(f"expected at least 3 create_task audit entries, got {len(create_audits)}")
+        bulk_cancel_audits = [entry for entry in audit_entries if entry["tool"] == "bulk_cancel_tasks"]
+        if len(bulk_cancel_audits) < 3:
+            raise AssertionError(f"expected at least 3 bulk_cancel_tasks audit entries, got {len(bulk_cancel_audits)}")
+        if any("MCP smoke invalid duration" in entry["summary"] for entry in audit_entries):
+            raise AssertionError("invalid write should not be present in the audit log")
+
         server_info = initialize["result"]["serverInfo"]
         print(f"OK {server_info['name']} {server_info['version']}")
         print(f"OK tools/list {len(tool_names)} tools")
@@ -274,6 +333,9 @@ def main() -> int:
         print("OK natural date/duration")
         print("OK word duration")
         print("OK invalid duration error")
+        print("OK bulk cancel")
+        print("OK recent MCP writes")
+        print(f"OK audit log entries={len(audit_entries)}")
         print("OK tool error paths")
         return 0
     finally:

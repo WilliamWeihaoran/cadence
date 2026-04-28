@@ -357,15 +357,12 @@ struct CreateTaskSheet: View {
 
     // MARK: - Logic
 
+    private var containerResolver: TaskContainerResolver {
+        TaskContainerResolver(areas: areas, projects: projects)
+    }
+
     private var availableSections: [String] {
-        switch selectedContainer {
-        case .inbox:
-            return [TaskSectionDefaults.defaultName]
-        case .area(let areaID):
-            return areas.first(where: { $0.id == areaID })?.sectionNames ?? [TaskSectionDefaults.defaultName]
-        case .project(let projectID):
-            return projects.first(where: { $0.id == projectID })?.sectionNames ?? [TaskSectionDefaults.defaultName]
-        }
+        containerResolver.availableSections(for: selectedContainer)
     }
 
     private var showsSectionPicker: Bool {
@@ -409,23 +406,18 @@ struct CreateTaskSheet: View {
 
     private func createTask() {
         guard !trimmedTitle.isEmpty else { return }
-        let task = AppTask(title: trimmedTitle)
-        task.notes       = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        task.priority    = selectedPriority
-        task.sectionName = selectedSectionName
-        if hasDueDate { task.dueDate       = DateFormatters.dateKey(from: dueDate) }
-        if hasDoDate  { task.scheduledDate  = DateFormatters.dateKey(from: doDate)  }
-        applyContainer(task)
-        modelContext.insert(task)
-        if task.scheduledStartMin >= 0 { SchedulingActions.syncToCalendarIfLinked(task) }
-
-        for (i, subtaskTitle) in subtaskTitles.enumerated() {
-            let trimmed = subtaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { continue }
-            let subtask = Subtask(title: trimmed)
-            subtask.parentTask = task
-            subtask.order = i
-            modelContext.insert(subtask)
+        let draft = TaskCreationDraft(
+            title: title,
+            notes: notes,
+            priority: selectedPriority,
+            container: selectedContainer,
+            sectionName: selectedSectionName,
+            dueDateKey: hasDueDate ? DateFormatters.dateKey(from: dueDate) : "",
+            scheduledDateKey: hasDoDate ? DateFormatters.dateKey(from: doDate) : "",
+            subtaskTitles: subtaskTitles
+        )
+        guard TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: modelContext) != nil else {
+            return
         }
 
         if dismissAction != nil {
@@ -496,21 +488,6 @@ struct CreateTaskSheet: View {
         tildeSearchQuery  = ""
         tildeHighlightIdx = 0
         tildeMode = .section
-    }
-
-    private func applyContainer(_ task: AppTask) {
-        switch selectedContainer {
-        case .inbox:
-            task.area = nil; task.project = nil; task.context = nil
-        case .area(let areaID):
-            if let area = areas.first(where: { $0.id == areaID }) {
-                task.area = area; task.project = nil; task.context = area.context
-            }
-        case .project(let projectID):
-            if let project = projects.first(where: { $0.id == projectID }) {
-                task.project = project; task.area = nil; task.context = project.context
-            }
-        }
     }
 
     private func dismiss() {
