@@ -6,21 +6,7 @@ struct PersistenceController {
 
     let container: ModelContainer
 
-    static let schema = Schema([
-        Context.self,
-        Area.self,
-        Project.self,
-        AppTask.self,
-        Subtask.self,
-        DailyNote.self,
-        WeeklyNote.self,
-        PermNote.self,
-        Document.self,
-        SavedLink.self,
-        Goal.self,
-        Habit.self,
-        HabitCompletion.self,
-    ])
+    static let schema = CadenceSchema.schema
 
     init() {
         if let c = try? PersistenceController.makeContainer() {

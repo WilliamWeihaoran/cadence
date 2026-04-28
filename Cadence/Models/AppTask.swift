@@ -72,12 +72,19 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
         get { TaskStatus(rawValue: statusRaw) ?? .todo }
         set { statusRaw = newValue.rawValue }
     }
+    var recurrenceRule: TaskRecurrenceRule {
+        get { TaskRecurrenceRule(rawValue: recurrenceRaw) ?? .none }
+        set { recurrenceRaw = newValue.rawValue }
+    }
     var dueDate: String = ""            // YYYY-MM-DD or ""
     var scheduledDate: String = ""      // YYYY-MM-DD — the day this is time-blocked
     var scheduledStartMin: Int = -1     // minutes from midnight (-1 = not scheduled)
     var estimatedMinutes: Int = 30
     var actualMinutes: Int = 0          // cumulative actual time logged
     var calendarEventID: String = ""    // EKEvent identifier
+    var recurrenceRaw: String = TaskRecurrenceRule.none.rawValue
+    var dependencyTaskIDsRaw: String = ""
+    var recurrenceSpawnedTaskIDRaw: String = ""
     var sectionName: String = TaskSectionDefaults.defaultName
     var order: Int = 0
     var createdAt: Date = Date()
@@ -93,6 +100,25 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
 
     var isDone: Bool { status == .done }
     var isCancelled: Bool { status == .cancelled }
+    var isRecurring: Bool { recurrenceRule != .none }
+
+    var dependencyTaskIDs: [UUID] {
+        get {
+            dependencyTaskIDsRaw
+                .split(separator: ",")
+                .compactMap { UUID(uuidString: String($0)) }
+        }
+        set {
+            var seen = Set<UUID>()
+            let unique = newValue.filter { seen.insert($0).inserted }
+            dependencyTaskIDsRaw = unique.map(\.uuidString).joined(separator: ",")
+        }
+    }
+
+    var recurrenceSpawnedTaskID: UUID? {
+        get { UUID(uuidString: recurrenceSpawnedTaskIDRaw) }
+        set { recurrenceSpawnedTaskIDRaw = newValue?.uuidString ?? "" }
+    }
 
     /// End time in minutes from midnight (start + duration, default 30min if no estimate)
     var scheduledEndMin: Int {
@@ -125,6 +151,16 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
 
     var shouldShowDueDateField: Bool {
         !dueDate.isEmpty || !hidesEmptyDueDateInList
+    }
+
+    func unresolvedDependencies(in allTasks: [AppTask]) -> [AppTask] {
+        guard !dependencyTaskIDs.isEmpty else { return [] }
+        let ids = Set(dependencyTaskIDs)
+        return allTasks.filter { ids.contains($0.id) && !$0.isDone && !$0.isCancelled && $0.id != id }
+    }
+
+    func isBlocked(in allTasks: [AppTask]) -> Bool {
+        !unresolvedDependencies(in: allTasks).isEmpty
     }
 
     init(title: String) {

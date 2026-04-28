@@ -106,20 +106,21 @@ struct EditAreaSheet: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                    .buttonStyle(.cadencePlain)
-                    .foregroundStyle(Theme.muted)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                Button("Save") { onSave() }
-                    .buttonStyle(.cadencePlain)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .opacity(name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
+                CadenceActionButton(
+                    title: "Cancel",
+                    role: .ghost,
+                    size: .compact
+                ) {
+                    dismiss()
+                }
+                CadenceActionButton(
+                    title: "Save",
+                    role: .primary,
+                    size: .compact,
+                    isDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty
+                ) {
+                    onSave()
+                }
             }
             .padding(16)
         }
@@ -300,20 +301,21 @@ struct EditProjectSheet: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                    .buttonStyle(.cadencePlain)
-                    .foregroundStyle(Theme.muted)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                Button("Save") { save() }
-                    .buttonStyle(.cadencePlain)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .opacity(name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
+                CadenceActionButton(
+                    title: "Cancel",
+                    role: .ghost,
+                    size: .compact
+                ) {
+                    dismiss()
+                }
+                CadenceActionButton(
+                    title: "Save",
+                    role: .primary,
+                    size: .compact,
+                    isDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty
+                ) {
+                    save()
+                }
             }
             .padding(16)
         }

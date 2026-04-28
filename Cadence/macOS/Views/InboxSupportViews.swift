@@ -117,6 +117,7 @@ struct InboxTaskGroupSectionView: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
+    let allTasks: [AppTask]
     @Binding var dragOverTaskID: UUID?
     let onReorderTask: (UUID, UUID) -> Void
 
@@ -138,7 +139,7 @@ struct InboxTaskGroupSectionView: View {
             .listRowInsets(.init())
 
             ForEach(group.tasks) { task in
-                MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
+                MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects, allTasks: allTasks)
                     .listRowInsets(.init())
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -174,6 +175,7 @@ struct InboxCompletedSectionView: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
+    let allTasks: [AppTask]
     let isCollapsed: Bool
     let onToggle: () -> Void
 
@@ -193,7 +195,7 @@ struct InboxCompletedSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
+                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects, allTasks: allTasks)
                         .listRowInsets(.init())
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)

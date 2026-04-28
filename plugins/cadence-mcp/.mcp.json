@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cadence-mcp": {
+      "command": "./scripts/run-cadence-mcp.sh",
+      "args": [],
+      "cwd": "."
+    }
+  }
+}

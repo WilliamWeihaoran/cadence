@@ -13,6 +13,7 @@ struct macOSRootMainShell<Content: View>: View {
             if columnVisibility != .detailOnly {
                 SidebarView(selection: $selection)
                     .frame(width: 264)
+                    .contentShape(Rectangle())
                     .background(
                         LinearGradient(
                             colors: [Theme.surface.opacity(0.98), Theme.surfaceElevated.opacity(0.98)],
@@ -25,6 +26,7 @@ struct macOSRootMainShell<Content: View>: View {
                             .fill(Theme.borderSubtle.opacity(0.85))
                             .frame(width: 1)
                     }
+                    .zIndex(10)
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
 
@@ -37,6 +39,8 @@ struct macOSRootMainShell<Content: View>: View {
                     timelineSidebarOverlay
                 }
             }
+            .clipped()
+            .zIndex(0)
         }
         .preferredColorScheme(.dark)
     }

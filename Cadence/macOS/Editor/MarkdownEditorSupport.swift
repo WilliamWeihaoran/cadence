@@ -1,9 +1,16 @@
 #if os(macOS)
 import AppKit
 
+extension NSAttributedString.Key {
+    static let cadenceMarkdownHidden = NSAttributedString.Key("CadenceMarkdownHidden")
+    static let cadenceMarkdownDivider = NSAttributedString.Key("CadenceMarkdownDivider")
+    static let cadenceMarkdownQuoteDepth = NSAttributedString.Key("CadenceMarkdownQuoteDepth")
+}
+
 enum MarkdownListPrefixKind {
     case bullet
     case dash
+    case plus
     case todo
     case done
     case ordered
@@ -28,6 +35,26 @@ enum MarkdownListSupport {
     static func orderedMarker(forIndentation indentation: String) -> String {
         let level = min(indentation.count / 4, 4)
         return MarkdownStylist.orderedMarker(for: level, index: 1)
+    }
+
+    static func orderedLevel(forIndentation indentation: String) -> Int {
+        min(normalizedIndentation(indentation).count / 4, 4)
+    }
+
+    static func orderedIndex(for marker: String) -> Int? {
+        let normalized = marker.trimmingCharacters(in: .whitespaces)
+        let bare = normalized.hasSuffix(".") ? String(normalized.dropLast()) : normalized
+        if let number = Int(bare) {
+            return number
+        }
+        if let romanValue = MarkdownStylist.romanToInt(bare.lowercased()) {
+            return romanValue
+        }
+        if bare.count == 1, let scalar = bare.lowercased().unicodeScalars.first,
+           (97...122).contains(scalar.value) {
+            return Int(scalar.value - 96)
+        }
+        return nil
     }
 
     static func nextOrderedMarker(after marker: String) -> String {
@@ -58,6 +85,7 @@ enum MarkdownListSupport {
         let simplePrefixes: [(String, MarkdownListPrefixKind, String)] = [
             ("• ", .bullet, "• "),
             ("– ", .dash, "– "),
+            ("+ ", .plus, "+ "),
             ("○ ", .todo, "○ "),
             ("● ", .done, "● ")
         ]
@@ -80,8 +108,9 @@ enum MarkdownListSupport {
         guard originalMatch.kind == .ordered,
               let updatedMatch = listPrefixMatch(in: line) else { return line }
 
-        let updatedLevel = min(normalizedIndentation(updatedMatch.indentation).count / 4, 4)
-        let targetMarker = MarkdownStylist.orderedMarker(for: updatedLevel, index: 1)
+        let updatedLevel = orderedLevel(forIndentation: updatedMatch.indentation)
+        let targetIndex = orderedIndex(for: updatedMatch.marker) ?? 1
+        let targetMarker = MarkdownStylist.orderedMarker(for: updatedLevel, index: targetIndex)
         guard updatedMatch.marker != targetMarker else { return line }
 
         let indentationCount = updatedMatch.indentation.count
@@ -99,6 +128,67 @@ enum MarkdownListSupport {
     }
 }
 
+enum MarkdownHiddenRangeSupport {
+    static func hiddenRange(containing location: Int, in storage: NSTextStorage?) -> NSRange? {
+        guard let storage, storage.length > 0 else { return nil }
+        let clamped = max(0, min(location, storage.length - 1))
+        var effectiveRange = NSRange(location: NSNotFound, length: 0)
+        let isHidden = (storage.attribute(.cadenceMarkdownHidden, at: clamped, effectiveRange: &effectiveRange) as? Bool) == true
+        guard isHidden,
+              effectiveRange.location != NSNotFound,
+              effectiveRange.length > 0 else { return nil }
+        return effectiveRange
+    }
+
+    static func snappedCaretLocation(_ location: Int, in storage: NSTextStorage?, preferringForward: Bool = true) -> Int {
+        guard let storage else { return location }
+        let length = storage.length
+        guard length > 0 else { return 0 }
+
+        if location < length, let hidden = hiddenRange(containing: location, in: storage) {
+            return preferringForward ? NSMaxRange(hidden) : hidden.location
+        }
+        if location > 0, let hidden = hiddenRange(containing: location - 1, in: storage), location < NSMaxRange(hidden) {
+            return preferringForward ? NSMaxRange(hidden) : hidden.location
+        }
+        return min(location, length)
+    }
+
+    static func nextVisibleCaretLocation(from location: Int, movingForward: Bool, in storage: NSTextStorage?) -> Int {
+        guard let storage else { return location }
+        let length = storage.length
+        guard length > 0 else { return 0 }
+
+        var candidate = min(max(location, 0), length)
+        if movingForward {
+            if candidate < length { candidate += 1 }
+            while candidate < length {
+                if let hidden = hiddenRange(containing: candidate, in: storage) {
+                    candidate = NSMaxRange(hidden)
+                } else {
+                    break
+                }
+            }
+            return min(candidate, length)
+        } else {
+            if candidate > 0 { candidate -= 1 }
+            while candidate > 0 {
+                if let hidden = hiddenRange(containing: candidate, in: storage) {
+                    let nextCandidate = hidden.location
+                    if nextCandidate >= candidate {
+                        candidate -= 1
+                    } else {
+                        candidate = nextCandidate
+                    }
+                } else {
+                    break
+                }
+            }
+            return max(candidate, 0)
+        }
+    }
+}
+
 enum MarkdownStylist {
     static let bgColor        = NSColor(hex: "#0f1117")
     static let textColor      = NSColor(hex: "#e2e8f0")
@@ -109,8 +199,6 @@ enum MarkdownStylist {
 
     static let baseFont   = NSFont.systemFont(ofSize: 14)
     static let monoFont   = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-    static let hiddenFont = NSFont.systemFont(ofSize: 0.01)
-
     static let baseAttributes: [NSAttributedString.Key: Any] = [
         .font: baseFont,
         .foregroundColor: textColor
@@ -138,6 +226,13 @@ enum MarkdownStylist {
         }
 
         applyInline(storage: storage, text: nsText,
+                    pattern: "\\*\\*\\*(.+?)\\*\\*\\*", markerLen: 3,
+                    contentStyle: { range, s in
+                        let existing = s.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? baseFont
+                        let italic = NSFontManager.shared.convert(existing, toHaveTrait: .italicFontMask)
+                        s.addAttribute(.font, value: NSFontManager.shared.convert(italic, toHaveTrait: .boldFontMask), range: range)
+                    })
+        applyInline(storage: storage, text: nsText,
                     pattern: "\\*\\*(.+?)\\*\\*", markerLen: 2,
                     contentStyle: { range, s in
                         let existing = s.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? baseFont
@@ -157,21 +252,52 @@ enum MarkdownStylist {
                         s.addAttribute(.foregroundColor, value: dimColor, range: range)
                         s.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
                     })
+        applyInline(storage: storage, text: nsText,
+                    pattern: "==(.+?)==", markerLen: 2,
+                    contentStyle: { range, s in
+                        s.addAttribute(.backgroundColor, value: blueColor.withAlphaComponent(0.18), range: range)
+                    })
+        applyLinks(storage, text: nsText)
+        applyWikiLinks(storage, text: nsText)
+        applyCodeFences(storage, text: nsText)
 
         storage.endEditing()
     }
 
     private static func applyLine(storage: NSTextStorage, line: String, lineRange: NSRange, lineStart: Int) {
-        if line.hasPrefix("### ") {
-            heading(storage, lineRange, lineStart, prefixLen: 4, size: 16)
+        if line.hasPrefix("###### ") {
+            heading(storage, lineRange, lineStart, prefixLen: 7, size: 15)
+        } else if line.hasPrefix("##### ") {
+            heading(storage, lineRange, lineStart, prefixLen: 6, size: 17)
+        } else if line.hasPrefix("#### ") {
+            heading(storage, lineRange, lineStart, prefixLen: 5, size: 19)
+        } else if line.hasPrefix("### ") {
+            heading(storage, lineRange, lineStart, prefixLen: 4, size: 22)
         } else if line.hasPrefix("## ") {
-            heading(storage, lineRange, lineStart, prefixLen: 3, size: 19)
+            heading(storage, lineRange, lineStart, prefixLen: 3, size: 26)
         } else if line.hasPrefix("# ") {
-            heading(storage, lineRange, lineStart, prefixLen: 2, size: 24)
-        } else if line.hasPrefix("> ") {
-            hide(storage, NSRange(location: lineStart, length: 2))
-            let rest = NSRange(location: lineStart + 2, length: max(0, lineRange.length - 2))
-            storage.addAttribute(.foregroundColor, value: NSColor(hex: "#c4d4e8"), range: rest)
+            heading(storage, lineRange, lineStart, prefixLen: 2, size: 30)
+        } else if let quote = blockquoteMatch(in: line) {
+            let paragraph = NSMutableParagraphStyle()
+            let levelInset = CGFloat(max(quote.depth - 1, 0)) * 12
+            paragraph.lineSpacing = 4
+            paragraph.firstLineHeadIndent = 18 + levelInset
+            paragraph.headIndent = 18 + levelInset
+            paragraph.paragraphSpacingBefore = 4
+            paragraph.paragraphSpacing = 4
+
+            storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
+            storage.addAttribute(.cadenceMarkdownQuoteDepth, value: quote.depth, range: lineRange)
+            hide(storage, NSRange(location: lineStart + quote.indentation.count, length: quote.prefix.count - quote.indentation.count))
+
+            let restStart = lineStart + quote.prefix.count
+            let rest = NSRange(location: restStart, length: max(0, lineRange.length - quote.prefix.count))
+            if rest.length > 0 {
+                storage.addAttribute(.foregroundColor, value: NSColor(hex: "#c4d4e8"), range: rest)
+                let existing = storage.attribute(.font, at: rest.location, effectiveRange: nil) as? NSFont ?? baseFont
+                let italic = NSFontManager.shared.convert(existing, toHaveTrait: .italicFontMask)
+                storage.addAttribute(.font, value: italic, range: rest)
+            }
         } else if let ordered = orderedListMatch(in: line) {
             let level = min(ordered.indentation.count / 4, 4)
             let ps = listStyle(for: level, markerWidth: ordered.marker.count + 1)
@@ -189,7 +315,7 @@ enum MarkdownStylist {
                 let bulletRange = NSRange(location: markerLocation, length: min(1, lineRange.length))
                 storage.addAttribute(.foregroundColor, value: blueColor, range: bulletRange)
                 storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 20), range: bulletRange)
-            case "–":
+            case "–", "+":
                 storage.addAttribute(.foregroundColor, value: dimColor,
                                      range: NSRange(location: markerLocation, length: min(2, max(0, lineRange.length - bullet.indentation.count))))
             case "○", "●":
@@ -205,17 +331,13 @@ enum MarkdownStylist {
             default:
                 break
             }
-        } else if line == "---" || line == "***" || line == "___" {
-            let block = NSTextBlock()
-            block.backgroundColor = NSColor(hex: "#252a3d")
+        } else if isDividerLine(line) {
             let ps = NSMutableParagraphStyle()
-            ps.textBlocks = [block]
-            ps.minimumLineHeight = 1
-            ps.maximumLineHeight = 1
+            ps.alignment = .center
             ps.paragraphSpacingBefore = 8
             ps.paragraphSpacing = 8
             storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
-            storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 0.01), range: lineRange)
+            storage.addAttribute(.cadenceMarkdownDivider, value: true, range: lineRange)
             storage.addAttribute(.foregroundColor, value: NSColor.clear, range: lineRange)
         }
     }
@@ -223,9 +345,32 @@ enum MarkdownStylist {
     private static func unorderedListMatch(in line: String) -> (indentation: String, marker: String)? {
         let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
         let trimmed = String(line.dropFirst(indentation.count))
-        let markers = ["• ", "– ", "○ ", "● "]
+        let markers = ["• ", "– ", "+ ", "○ ", "● "]
         guard let prefix = markers.first(where: { trimmed.hasPrefix($0) }) else { return nil }
         return (indentation, String(prefix.prefix(1)))
+    }
+
+    private static func blockquoteMatch(in line: String) -> (indentation: String, prefix: String, depth: Int)? {
+        guard let regex = try? NSRegularExpression(pattern: #"^([ \t]*)(>\s*)+"#),
+              let match = regex.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) else {
+            return nil
+        }
+
+        let prefixRange = match.range(at: 0)
+        let indentationRange = match.range(at: 1)
+        let nsLine = line as NSString
+        let indentation = indentationRange.location != NSNotFound ? nsLine.substring(with: indentationRange) : ""
+        let prefix = nsLine.substring(with: prefixRange)
+        let depth = prefix.filter { $0 == ">" }.count
+        return depth > 0 ? (indentation, prefix, depth) : nil
+    }
+
+    private static func isDividerLine(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 3 else { return false }
+        return trimmed.allSatisfy { $0 == "-" } ||
+            trimmed.allSatisfy { $0 == "*" } ||
+            trimmed.allSatisfy { $0 == "_" }
     }
 
     private static func orderedListMatch(in line: String) -> (indentation: String, marker: String)? {
@@ -287,8 +432,16 @@ enum MarkdownStylist {
     }
 
     private static func heading(_ storage: NSTextStorage, _ lineRange: NSRange, _ lineStart: Int, prefixLen: Int, size: CGFloat) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 4
+        paragraph.firstLineHeadIndent = 0
+        paragraph.headIndent = 0
+        paragraph.paragraphSpacingBefore = 4
+        paragraph.paragraphSpacing = 4
+
         storage.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: size), range: lineRange)
         storage.addAttribute(.foregroundColor, value: textColor, range: lineRange)
+        storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
         hide(storage, NSRange(location: lineStart, length: prefixLen))
     }
 
@@ -328,10 +481,97 @@ enum MarkdownStylist {
         }
     }
 
+    private static func applyLinks(_ storage: NSTextStorage, text: NSString) {
+        guard let regex = try? NSRegularExpression(pattern: #"(?<!\!)\[(.+?)\]\((.+?)\)"#) else { return }
+        regex.enumerateMatches(in: text as String, range: NSRange(location: 0, length: text.length)) { match, _, _ in
+            guard let match, match.numberOfRanges >= 3 else { return }
+
+            let labelRange = match.range(at: 1)
+            let urlRange = match.range(at: 2)
+            let fullRange = match.range(at: 0)
+            guard labelRange.location != NSNotFound, urlRange.location != NSNotFound else { return }
+
+            storage.addAttribute(.foregroundColor, value: blueColor, range: labelRange)
+            storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: labelRange)
+            storage.addAttribute(.foregroundColor, value: dimColor, range: urlRange)
+            storage.addAttribute(.font, value: monoFont, range: urlRange)
+
+            let hiddenRanges = [
+                NSRange(location: fullRange.location, length: 1),
+                NSRange(location: labelRange.location + labelRange.length, length: 2),
+                NSRange(location: urlRange.location + urlRange.length, length: 1)
+            ]
+            hiddenRanges.forEach { hide(storage, $0) }
+        }
+    }
+
+    private static func applyWikiLinks(_ storage: NSTextStorage, text: NSString) {
+        guard let regex = try? NSRegularExpression(pattern: #"\[\[([^\[\]]+?)\]\]"#) else { return }
+        regex.enumerateMatches(in: text as String, range: NSRange(location: 0, length: text.length)) { match, _, _ in
+            guard let match, match.numberOfRanges >= 2 else { return }
+            let fullRange = match.range(at: 0)
+            let labelRange = match.range(at: 1)
+            guard labelRange.location != NSNotFound else { return }
+
+            let label = text.substring(with: labelRange).trimmingCharacters(in: .whitespacesAndNewlines)
+            let isTaskReference = label.lowercased().hasPrefix("task:")
+
+            storage.addAttribute(.foregroundColor, value: isTaskReference ? greenColor : blueColor, range: labelRange)
+            storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: labelRange)
+            if isTaskReference {
+                storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .semibold), range: labelRange)
+            }
+
+            hide(storage, NSRange(location: fullRange.location, length: 2))
+            hide(storage, NSRange(location: fullRange.location + fullRange.length - 2, length: 2))
+        }
+    }
+
+    private static func applyCodeFences(_ storage: NSTextStorage, text: NSString) {
+        guard let regex = try? NSRegularExpression(pattern: #"(?s)```([^\n`]*)\n(.*?)\n?```"#) else { return }
+        regex.enumerateMatches(in: text as String, range: NSRange(location: 0, length: text.length)) { match, _, _ in
+            guard let match, match.numberOfRanges >= 3 else { return }
+
+            let fullRange = match.range(at: 0)
+            let languageRange = match.range(at: 1)
+            let codeRange = match.range(at: 2)
+
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineSpacing = 4
+            paragraph.firstLineHeadIndent = 14
+            paragraph.headIndent = 14
+            paragraph.paragraphSpacingBefore = 6
+            paragraph.paragraphSpacing = 6
+
+            storage.addAttributes([
+                .font: monoFont,
+                .foregroundColor: greenColor,
+                .backgroundColor: codeBackground,
+                .paragraphStyle: paragraph
+            ], range: codeRange)
+
+            if languageRange.location != NSNotFound, languageRange.length > 0 {
+                storage.addAttribute(.foregroundColor, value: dimColor, range: languageRange)
+                storage.addAttribute(.font, value: monoFont, range: languageRange)
+            }
+
+            let snippet = text.substring(with: fullRange)
+            guard let firstFenceRange = snippet.range(of: "```"),
+                  let lastFenceRange = snippet.range(of: "```", options: .backwards) else { return }
+
+            let firstFenceLocation = fullRange.location + snippet.distance(from: snippet.startIndex, to: firstFenceRange.lowerBound)
+            let lastFenceLocation = fullRange.location + snippet.distance(from: snippet.startIndex, to: lastFenceRange.lowerBound)
+            hide(storage, NSRange(location: firstFenceLocation, length: 3))
+            hide(storage, NSRange(location: lastFenceLocation, length: 3))
+        }
+    }
+
     private static func hide(_ storage: NSTextStorage, _ range: NSRange) {
         guard range.length > 0 else { return }
-        storage.addAttribute(.font, value: hiddenFont, range: range)
+        storage.addAttribute(.cadenceMarkdownHidden, value: true, range: range)
+        storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 0.1), range: range)
         storage.addAttribute(.foregroundColor, value: NSColor.clear, range: range)
+        storage.removeAttribute(.kern, range: range)
     }
 
     static let baseParagraphStyle: NSParagraphStyle = {
@@ -341,12 +581,12 @@ enum MarkdownStylist {
     }()
 
     private static func listStyle(for level: Int, markerWidth: Int) -> NSParagraphStyle {
-        let unit: CGFloat = 22
-        let markerInset: CGFloat = 18
+        let unit: CGFloat = 12
+        let markerInset: CGFloat = 8
         let base = CGFloat(level) * unit
         let ps = NSMutableParagraphStyle()
         ps.firstLineHeadIndent = base + markerInset
-        ps.headIndent = base + markerInset + CGFloat(markerWidth * 8)
+        ps.headIndent = base + markerInset + CGFloat(Double(markerWidth) * 5.5)
         ps.lineSpacing = 4
         return ps
     }

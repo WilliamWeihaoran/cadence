@@ -1,0 +1,35 @@
+{
+  "name": "cadence-mcp",
+  "version": "0.1.0",
+  "description": "Read-only local MCP tools for Cadence tasks, projects, and notes.",
+  "author": {
+    "name": "William Wei",
+    "email": "",
+    "url": ""
+  },
+  "homepage": "",
+  "repository": "",
+  "license": "UNLICENSED",
+  "keywords": [
+    "cadence",
+    "productivity",
+    "mcp"
+  ],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Cadence MCP",
+    "shortDescription": "Read Cadence tasks, projects, notes, and documents.",
+    "longDescription": "Local read-only MCP tools for querying Cadence data from Codex.",
+    "developerName": "William Wei",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Show my Cadence brief for today.",
+      "Find blocked Cadence tasks.",
+      "Search Cadence notes for a topic."
+    ],
+    "brandColor": "#4A9EFF"
+  }
+}

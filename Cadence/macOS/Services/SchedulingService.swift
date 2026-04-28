@@ -15,6 +15,53 @@ enum SchedulingActions {
         // No calendar sync here — task has no area/project container yet when created from timeline drag
     }
 
+    /// Create and insert a new scheduled task in a specific list/section.
+    static func createTask(
+        title: String,
+        dateKey: String,
+        startMin: Int,
+        endMin: Int,
+        containerSelection: TaskContainerSelection,
+        sectionName: String,
+        areas: [Area],
+        projects: [Project],
+        in context: ModelContext
+    ) {
+        let task = AppTask(title: title)
+        task.scheduledDate = dateKey
+        task.scheduledStartMin = startMin
+        task.estimatedMinutes = max(5, endMin - startMin)
+
+        switch containerSelection {
+        case .inbox:
+            task.area = nil
+            task.project = nil
+            task.context = nil
+            task.sectionName = TaskSectionDefaults.defaultName
+        case .area(let areaID):
+            if let area = areas.first(where: { $0.id == areaID }) {
+                task.area = area
+                task.project = nil
+                task.context = area.context
+                task.sectionName = normalizedSectionName(sectionName, availableSections: area.sectionNames)
+            } else {
+                task.sectionName = TaskSectionDefaults.defaultName
+            }
+        case .project(let projectID):
+            if let project = projects.first(where: { $0.id == projectID }) {
+                task.project = project
+                task.area = nil
+                task.context = project.context
+                task.sectionName = normalizedSectionName(sectionName, availableSections: project.sectionNames)
+            } else {
+                task.sectionName = TaskSectionDefaults.defaultName
+            }
+        }
+
+        context.insert(task)
+        syncToCalendarIfLinked(task)
+    }
+
     /// Move an existing task to a new date/time. Assigns a 30-min default if the task has no estimate.
     static func dropTask(_ task: AppTask, to dateKey: String, startMin: Int) {
         task.scheduledDate = dateKey
@@ -36,6 +83,16 @@ enum SchedulingActions {
         guard !task.calendarEventID.isEmpty else { return }
         CalendarManager.shared.deleteEvent(calendarEventID: task.calendarEventID)
         task.calendarEventID = ""
+    }
+
+    private static func normalizedSectionName(_ sectionName: String, availableSections: [String]) -> String {
+        let cleaned = availableSections
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let resolved = cleaned.isEmpty ? [TaskSectionDefaults.defaultName] : cleaned
+        return resolved.first(where: { $0.caseInsensitiveCompare(sectionName) == .orderedSame })
+            ?? resolved.first
+            ?? TaskSectionDefaults.defaultName
     }
 }
 

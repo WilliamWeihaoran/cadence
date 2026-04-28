@@ -12,7 +12,7 @@ struct TimelineDayCanvas: View {
     let style: TimelineBlockStyle
     let showCurrentTimeDot: Bool
     let dropBehavior: TimelineDropBehavior
-    let onCreateTask: (String, Int, Int) -> Void
+    let onCreateTask: (String, Int, Int, TaskContainerSelection, String) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
     var externalEvents: [CalendarEventItem] = []
     /// Optional: if provided, the drag-to-create popover will offer a "Calendar Event" tab.
@@ -154,9 +154,15 @@ struct TimelineDayCanvas: View {
                     QuickCreateChoicePopover(
                         startMin: start,
                         endMin: end,
-                        onCreateTask: { title in
+                        onCreateTask: { title, containerSelection, sectionName in
                             if let start = pendingStartMin, let end = pendingEndMin {
-                                onCreateTask(title.isEmpty ? "New Task" : title, start, end)
+                                onCreateTask(
+                                    title.isEmpty ? "New Task" : title,
+                                    start,
+                                    end,
+                                    containerSelection,
+                                    sectionName
+                                )
                             }
                             showNewTaskPopover = false
                             pendingStartMin = nil

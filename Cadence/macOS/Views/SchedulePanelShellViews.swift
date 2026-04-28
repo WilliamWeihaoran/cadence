@@ -3,11 +3,24 @@ import SwiftUI
 
 struct SchedulePanelHeader: View {
     @Binding var zoomLevel: Int
+    let onExport: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
             PanelHeader(eyebrow: "Schedule", title: "Timeline")
             Spacer()
+            Button {
+                onExport()
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 28, height: 28)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.cadencePlain)
+            .padding(.trailing, 8)
             TimelineZoomControl(zoomLevel: $zoomLevel, range: 1...3)
                 .padding(.trailing, 12)
         }
@@ -21,7 +34,7 @@ struct SchedulePanelTimelineViewport: View {
     let scheduledTasks: [AppTask]
     let todayKey: String
     let externalEventItems: [CalendarEventItem]
-    let onCreateTask: (String, Int, Int) -> Void
+    let onCreateTask: (String, Int, Int, TaskContainerSelection, String) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
     let onCreateEvent: (String, Int, Int, String, String) -> Void
 

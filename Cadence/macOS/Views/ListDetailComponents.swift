@@ -7,6 +7,7 @@ struct ListTasksView: View {
     var area: Area?
     var project: Project?
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \AppTask.createdAt, order: .reverse) private var allTasks: [AppTask]
     @State private var newTitle = ""
     @State private var selectedSectionName = TaskSectionDefaults.defaultName
     @State private var groupingMode: TaskGroupingMode = .byDate
@@ -125,6 +126,7 @@ struct ListTasksView: View {
                         isCollapsed: collapsedGroupIDs.contains(group.id),
                         overdueCount: overdueCount(in: group.tasks),
                         regularCount: regularCount(in: group.tasks),
+                        allTasks: allTasks,
                         dragOverTaskID: $dragOverTaskID,
                         onToggle: { toggleGroup(group.id) },
                         onReorderTask: reorderTask
@@ -134,6 +136,7 @@ struct ListTasksView: View {
                 if !doneTasks.isEmpty {
                     ListTasksCompletedSectionView(
                         tasks: doneTasks,
+                        allTasks: allTasks,
                         isCollapsed: isCompletedCollapsed,
                         onToggle: { isCompletedCollapsed.toggle() }
                     )

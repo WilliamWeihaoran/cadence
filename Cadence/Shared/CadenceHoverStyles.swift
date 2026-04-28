@@ -24,6 +24,7 @@ private struct CadencePlainButtonBody: View {
 
     var body: some View {
         configuration.label
+            .contentShape(RoundedRectangle(cornerRadius: 10))
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Theme.blue.opacity(backgroundOpacity))

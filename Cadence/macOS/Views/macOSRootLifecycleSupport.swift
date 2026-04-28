@@ -11,6 +11,7 @@ enum macOSRootLifecycleSupport {
         if modelContext.undoManager == nil {
             modelContext.undoManager = UndoManager()
         }
+        TaskCompletionAnimationManager.shared.modelContext = modelContext
         installKeyMonitorIfNeeded()
         GlobalHotKeyManager.shared.registerIfNeeded()
         Task {

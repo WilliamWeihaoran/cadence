@@ -1,6 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import EventKit
+import SwiftData
 
 // MARK: - Timeline Event Block
 
@@ -270,6 +271,8 @@ struct CalendarEventEditPopover: View {
     let onSave: (String, Int, Int, String, String) -> Void
     let onDelete: () -> Void
     @Environment(CalendarManager.self) private var calendarManager
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \EventNote.updatedAt, order: .reverse) private var eventNotes: [EventNote]
 
     @State private var title: String
     @State private var startMin: Int
@@ -278,6 +281,7 @@ struct CalendarEventEditPopover: View {
     @State private var endText: String
     @State private var selectedCalendarID: String
     @State private var notes: String
+    @State private var presentedEventNote: EventNote?
 
     init(item: CalendarEventItem, onSave: @escaping (String, Int, Int, String, String) -> Void, onDelete: @escaping () -> Void) {
         self.item = item
@@ -295,6 +299,9 @@ struct CalendarEventEditPopover: View {
     }
 
     private var durationMinutes: Int { max(0, endMin - startMin) }
+    private var linkedEventNote: EventNote? {
+        EventNoteSupport.note(for: item.id, in: eventNotes)
+    }
 
     private var durationLabel: String {
         let mins = durationMinutes
@@ -373,6 +380,35 @@ struct CalendarEventEditPopover: View {
                 }
 
                 infoCard {
+                    HStack(alignment: .center, spacing: 10) {
+                        Label("Note", systemImage: "doc.text")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                            .frame(width: 88, alignment: .leading)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(linkedEventNote?.title.isEmpty == false ? linkedEventNote!.title : "No linked note yet")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(linkedEventNote == nil ? Theme.dim : Theme.text)
+                                .lineLimit(1)
+                            Text(linkedEventNote == nil ? "Create a markdown note for this event." : "Open the note linked to this event.")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(Theme.dim)
+                                .lineLimit(2)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        Button(linkedEventNote == nil ? "Create" : "Open") {
+                            openEventNote()
+                        }
+                        .buttonStyle(.cadencePlain)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.blue)
+                    }
+                }
+
+                infoCard {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("Notes", systemImage: "note.text")
                             .font(.system(size: 11, weight: .semibold))
@@ -422,6 +458,14 @@ struct CalendarEventEditPopover: View {
                 .fill(Theme.surface)
                 .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.08), lineWidth: 1))
         )
+        .sheet(isPresented: Binding(
+            get: { presentedEventNote != nil },
+            set: { if !$0 { presentedEventNote = nil } }
+        )) {
+            if let presentedEventNote {
+                EventNoteEditorSheet(note: presentedEventNote, eventTitle: item.title)
+            }
+        }
     }
 
     @ViewBuilder
@@ -465,6 +509,14 @@ struct CalendarEventEditPopover: View {
         if isAM && hour == 12 { hour = 0 }
         guard hour >= 0, hour < 24, m >= 0, m < 60 else { return nil }
         return hour * 60 + m
+    }
+
+    private func openEventNote() {
+        presentedEventNote = EventNoteSupport.noteForEditing(
+            calendarEventID: item.id,
+            eventTitle: item.title,
+            notes: eventNotes
+        ) { modelContext.insert($0) }
     }
 }
 #endif

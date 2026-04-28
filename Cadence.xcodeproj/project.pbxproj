@@ -6,6 +6,33 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A10000002FCE000000000201 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000101 /* main.swift */; };
+		A10000002FCE000000000202 /* CadenceMCPToolRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000102 /* CadenceMCPToolRouter.swift */; };
+		A10000002FCE000000000203 /* ModelEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000103 /* ModelEnums.swift */; };
+		A10000002FCE000000000204 /* Context.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000104 /* Context.swift */; };
+		A10000002FCE000000000205 /* Area.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000105 /* Area.swift */; };
+		A10000002FCE000000000206 /* Project.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000106 /* Project.swift */; };
+		A10000002FCE000000000207 /* Goal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000107 /* Goal.swift */; };
+		A10000002FCE000000000208 /* AppTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000108 /* AppTask.swift */; };
+		A10000002FCE000000000209 /* Subtask.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000109 /* Subtask.swift */; };
+		A10000002FCE00000000020A /* Habit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010A /* Habit.swift */; };
+		A10000002FCE00000000020B /* HabitCompletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010B /* HabitCompletion.swift */; };
+		A10000002FCE00000000020C /* DailyNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010C /* DailyNote.swift */; };
+		A10000002FCE00000000020D /* WeeklyNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010D /* WeeklyNote.swift */; };
+		A10000002FCE00000000020E /* PermNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010E /* PermNote.swift */; };
+		A10000002FCE00000000020F /* Document.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010F /* Document.swift */; };
+		A10000002FCE000000000210 /* SavedLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000110 /* SavedLink.swift */; };
+		A10000002FCE000000000211 /* EventNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000111 /* EventNote.swift */; };
+		A10000002FCE000000000212 /* DateFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000112 /* DateFormatters.swift */; };
+		A10000002FCE000000000213 /* CadenceSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000113 /* CadenceSchema.swift */; };
+		A10000002FCE000000000214 /* CadenceReadDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000114 /* CadenceReadDTOs.swift */; };
+		A10000002FCE000000000215 /* CadenceSearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000115 /* CadenceSearchMatcher.swift */; };
+		A10000002FCE000000000216 /* CadenceModelContainerFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000116 /* CadenceModelContainerFactory.swift */; };
+		A10000002FCE000000000217 /* CadenceReadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000117 /* CadenceReadService.swift */; };
+		A10000002FCE000000000218 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = A10000002FCE000000000302 /* MCP */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		8850FF312F75C94C00A80F43 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +54,30 @@
 		8850FF1F2F75C94900A80F43 /* Cadence.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cadence.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8850FF302F75C94C00A80F43 /* CadenceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CadenceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8850FF3A2F75C94C00A80F43 /* CadenceUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CadenceUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000002FCE000000000100 /* CadenceMCPServer */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = CadenceMCPServer; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000002FCE000000000101 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000102 /* CadenceMCPToolRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CadenceMCPToolRouter.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000103 /* ModelEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/ModelEnums.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000104 /* Context.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Context.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000105 /* Area.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Area.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000106 /* Project.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Project.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000107 /* Goal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Goal.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000108 /* AppTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/AppTask.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000109 /* Subtask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Subtask.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000010A /* Habit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Habit.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000010B /* HabitCompletion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/HabitCompletion.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000010C /* DailyNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/DailyNote.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000010D /* WeeklyNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/WeeklyNote.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000010E /* PermNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/PermNote.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000010F /* Document.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Document.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000110 /* SavedLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/SavedLink.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000111 /* EventNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/EventNote.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000112 /* DateFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/DateFormatters.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000113 /* CadenceSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceSchema.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000114 /* CadenceReadDTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000115 /* CadenceSearchMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000116 /* CadenceModelContainerFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000117 /* CadenceReadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceReadService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -82,6 +133,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000002FCE000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000002FCE000000000218 /* MCP in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -89,6 +148,7 @@
 			isa = PBXGroup;
 			children = (
 				8850FF212F75C94900A80F43 /* Cadence */,
+				A10000002FCE000000000004 /* CadenceMCPServer */,
 				8850FF332F75C94C00A80F43 /* CadenceTests */,
 				8850FF3D2F75C94C00A80F43 /* CadenceUITests */,
 				8850FF202F75C94900A80F43 /* Products */,
@@ -99,10 +159,20 @@
 			isa = PBXGroup;
 			children = (
 				8850FF1F2F75C94900A80F43 /* Cadence.app */,
+				A10000002FCE000000000100 /* CadenceMCPServer */,
 				8850FF302F75C94C00A80F43 /* CadenceTests.xctest */,
 				8850FF3A2F75C94C00A80F43 /* CadenceUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A10000002FCE000000000004 /* CadenceMCPServer */ = {
+			isa = PBXGroup;
+			children = (
+				A10000002FCE000000000101 /* main.swift */,
+				A10000002FCE000000000102 /* CadenceMCPToolRouter.swift */,
+			);
+			path = CadenceMCPServer;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -176,6 +246,25 @@
 			productReference = 8850FF3A2F75C94C00A80F43 /* CadenceUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		A10000002FCE000000000006 /* CadenceMCPServer */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000002FCE00000000000A /* Build configuration list for PBXNativeTarget "CadenceMCPServer" */;
+			buildPhases = (
+				A10000002FCE000000000007 /* Sources */,
+				A10000002FCE000000000005 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CadenceMCPServer;
+			packageProductDependencies = (
+				A10000002FCE000000000302 /* MCP */,
+			);
+			productName = CadenceMCPServer;
+			productReference = A10000002FCE000000000100 /* CadenceMCPServer */;
+			productType = "com.apple.product-type.tool";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -197,6 +286,9 @@
 						CreatedOnToolsVersion = 26.3;
 						TestTargetID = 8850FF1E2F75C94900A80F43;
 					};
+					A10000002FCE000000000006 = {
+						CreatedOnToolsVersion = 26.3;
+					};
 				};
 			};
 			buildConfigurationList = 8850FF1A2F75C94900A80F43 /* Build configuration list for PBXProject "Cadence" */;
@@ -208,12 +300,16 @@
 			);
 			mainGroup = 8850FF162F75C94900A80F43;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A10000002FCE000000000301 /* XCRemoteSwiftPackageReference "swift-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8850FF202F75C94900A80F43 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				8850FF1E2F75C94900A80F43 /* Cadence */,
+				A10000002FCE000000000006 /* CadenceMCPServer */,
 				8850FF2F2F75C94C00A80F43 /* CadenceTests */,
 				8850FF392F75C94C00A80F43 /* CadenceUITests */,
 			);
@@ -263,6 +359,36 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000002FCE000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000002FCE000000000203 /* ModelEnums.swift in Sources */,
+				A10000002FCE000000000204 /* Context.swift in Sources */,
+				A10000002FCE000000000205 /* Area.swift in Sources */,
+				A10000002FCE000000000206 /* Project.swift in Sources */,
+				A10000002FCE000000000207 /* Goal.swift in Sources */,
+				A10000002FCE000000000208 /* AppTask.swift in Sources */,
+				A10000002FCE000000000209 /* Subtask.swift in Sources */,
+				A10000002FCE00000000020A /* Habit.swift in Sources */,
+				A10000002FCE00000000020B /* HabitCompletion.swift in Sources */,
+				A10000002FCE00000000020C /* DailyNote.swift in Sources */,
+				A10000002FCE00000000020D /* WeeklyNote.swift in Sources */,
+				A10000002FCE00000000020E /* PermNote.swift in Sources */,
+				A10000002FCE00000000020F /* Document.swift in Sources */,
+				A10000002FCE000000000210 /* SavedLink.swift in Sources */,
+				A10000002FCE000000000211 /* EventNote.swift in Sources */,
+				A10000002FCE000000000212 /* DateFormatters.swift in Sources */,
+				A10000002FCE000000000213 /* CadenceSchema.swift in Sources */,
+				A10000002FCE000000000214 /* CadenceReadDTOs.swift in Sources */,
+				A10000002FCE000000000215 /* CadenceSearchMatcher.swift in Sources */,
+				A10000002FCE000000000216 /* CadenceModelContainerFactory.swift in Sources */,
+				A10000002FCE000000000217 /* CadenceReadService.swift in Sources */,
+				A10000002FCE000000000202 /* CadenceMCPToolRouter.swift in Sources */,
+				A10000002FCE000000000201 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -594,6 +720,52 @@
 			};
 			name = Release;
 		};
+		A10000002FCE000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SM6Y3D2D55;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.haoranwei.CadenceMCPServer;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A10000002FCE000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SM6Y3D2D55;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.haoranwei.CadenceMCPServer;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -633,7 +805,35 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		A10000002FCE00000000000A /* Build configuration list for PBXNativeTarget "CadenceMCPServer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000002FCE000000000008 /* Debug */,
+				A10000002FCE000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A10000002FCE000000000301 /* XCRemoteSwiftPackageReference "swift-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/modelcontextprotocol/swift-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.12.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A10000002FCE000000000302 /* MCP */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000002FCE000000000301 /* XCRemoteSwiftPackageReference "swift-sdk" */;
+			productName = MCP;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 8850FF172F75C94900A80F43 /* Project object */;
 }

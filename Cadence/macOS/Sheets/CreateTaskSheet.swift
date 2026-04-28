@@ -262,27 +262,24 @@ struct CreateTaskSheet: View {
             Divider().background(Theme.borderSubtle)
 
             // ── Footer ────────────────────────────────────────────────────────
-            HStack(spacing: 0) {
+            HStack(spacing: 8) {
                 Spacer(minLength: 0)
-                Button { dismiss() } label: {
-                    Text("Cancel")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.muted)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .contentShape(Rectangle())
+                CadenceActionButton(
+                    title: "Cancel",
+                    role: .ghost,
+                    size: .regular
+                ) {
+                    dismiss()
                 }
-                .buttonStyle(.cadencePlain)
-                Button("Create Task") { createTask() }
-                    .buttonStyle(.cadencePlain)
-                    .foregroundStyle(.white)
-                    .font(.system(size: 13, weight: .semibold))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(trimmedTitle.isEmpty ? Theme.blue.opacity(0.45) : Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .disabled(trimmedTitle.isEmpty)
-                    .keyboardShortcut(.return, modifiers: [.command])
+                CadenceActionButton(
+                    title: "Create Task",
+                    role: .primary,
+                    size: .regular,
+                    isDisabled: trimmedTitle.isEmpty,
+                    shortcut: KeyboardShortcut(.return, modifiers: [.command])
+                ) {
+                    createTask()
+                }
                     .padding(.trailing, 12)
             }
             .padding(.vertical, 2)

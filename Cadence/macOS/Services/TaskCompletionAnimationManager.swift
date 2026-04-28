@@ -1,12 +1,14 @@
 #if os(macOS)
 import SwiftUI
 import Observation
+import SwiftData
 
 @MainActor
 @Observable
 final class TaskCompletionAnimationManager {
     static let shared = TaskCompletionAnimationManager()
     static let animationDuration: TimeInterval = 2.5
+    var modelContext: ModelContext?
 
     // Completion (green)
     private(set) var pendingStartTimes: [UUID: Date] = [:]
@@ -36,8 +38,7 @@ final class TaskCompletionAnimationManager {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
-                task.completedAt = nil
-                task.status = .todo
+                TaskWorkflowService.markTodo(task)
             }
             return
         }
@@ -69,8 +70,12 @@ final class TaskCompletionAnimationManager {
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
-                    task.completedAt = Date()
-                    task.status = .done
+                    if let context = self.modelContext {
+                        TaskWorkflowService.markDone(task, in: context)
+                    } else {
+                        task.completedAt = Date()
+                        task.status = .done
+                    }
                 }
             }
         }

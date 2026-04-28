@@ -9,6 +9,7 @@ struct MacTaskRow: View {
     var contexts: [Context] = []
     var areas: [Area] = []
     var projects: [Project] = []
+    var allTasks: [AppTask] = []
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(HoveredTaskManager.self)    private var hoveredTaskManager
@@ -59,9 +60,20 @@ struct MacTaskRow: View {
                     .padding(.leading, 6)
             }
 
+            if isBlocked {
+                Text("Blocked")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.amber)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Theme.amber.opacity(0.14))
+                    .clipShape(Capsule())
+                    .padding(.leading, 6)
+            }
+
             Spacer(minLength: 4)
 
-            if isHovered && !task.isDone && !task.isCancelled {
+            if isHovered && !task.isDone && !task.isCancelled && !isBlocked {
                 Button { focusManager.startFocus(task: task) } label: {
                     Image(systemName: "play.fill")
                         .font(.system(size: 8, weight: .semibold))
@@ -175,6 +187,10 @@ struct MacTaskRow: View {
             }
         }
         .popover(isPresented: $showDoDatePicker) { doDatePickerPopover }
+    }
+
+    private var isBlocked: Bool {
+        task.isBlocked(in: allTasks)
     }
 
     private var doDateBadge: some View {

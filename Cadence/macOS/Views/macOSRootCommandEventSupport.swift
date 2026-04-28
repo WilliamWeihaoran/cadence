@@ -4,7 +4,7 @@ import SwiftData
 import AppKit
 
 enum RootCommandEventSupport {
-    static func handleModalConfirmations(_ event: NSEvent, context: RootCommandContext) -> NSEvent?? {
+    static func handleModalConfirmations(_ event: NSEvent, context: RootCommandContext) -> NSEvent? {
         if context.deleteConfirmationManager.request != nil {
             switch event.keyCode {
             case 36, 76:
@@ -14,7 +14,7 @@ enum RootCommandEventSupport {
                 context.deleteConfirmationManager.cancel()
                 return nil
             default:
-                break
+                return event
             }
         }
 
@@ -27,11 +27,11 @@ enum RootCommandEventSupport {
                 context.hoveredTaskDatePickerManager.cancel()
                 return nil
             default:
-                break
+                return event
             }
         }
 
-        return event
+        return nil
     }
 
     static func handlePresentedGlobalSearch(_ event: NSEvent, context: RootCommandContext) -> NSEvent? {

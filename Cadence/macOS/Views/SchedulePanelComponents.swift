@@ -5,6 +5,7 @@ import EventKit
 
 struct TaskDetailPopover: View {
     @Bindable var task: AppTask
+    @Query(sort: \AppTask.createdAt, order: .reverse) private var allTasks: [AppTask]
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order)    private var areas:    [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -16,6 +17,17 @@ struct TaskDetailPopover: View {
     @State private var newSubtaskTitle = ""
     @State private var presentationMode: TaskDetailPresentationMode = .full
     @FocusState private var subtaskFieldFocused: Bool
+
+    private var availableSections: [String] {
+        switch taskContainerBinding.wrappedValue {
+        case .inbox:
+            return [TaskSectionDefaults.defaultName]
+        case .area(let id):
+            return areas.first(where: { $0.id == id })?.sectionNames ?? [TaskSectionDefaults.defaultName]
+        case .project(let id):
+            return projects.first(where: { $0.id == id })?.sectionNames ?? [TaskSectionDefaults.defaultName]
+        }
+    }
 
     private var taskContainerBinding: Binding<TaskContainerSelection> {
         Binding(
@@ -43,19 +55,38 @@ struct TaskDetailPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 if presentationMode == .full {
-                    TaskDetailHeaderSection(task: task, showPriorityPicker: $showPriorityPicker)
-
-                    TaskDetailMetadataSection(
+                    TaskDetailHeaderSection(
                         task: task,
+                        showPriorityPicker: $showPriorityPicker,
                         contexts: contexts,
                         areas: areas,
                         projects: projects,
                         taskContainerBinding: taskContainerBinding
                     )
 
-                    TaskDetailNotesSection(task: task)
+                    TaskInspectorSectionGroup(
+                        title: "Overview",
+                        subtitle: "Schedule, placement, and workflow in one compact view."
+                    ) {
+                        TaskDetailCompactOverviewSection(
+                            task: task,
+                            contexts: contexts,
+                            areas: areas,
+                            projects: projects,
+                            allTasks: allTasks,
+                            taskContainerBinding: taskContainerBinding,
+                            availableSections: availableSections
+                        )
+                    }
+
+                    TaskInspectorSectionGroup(
+                        title: "Notes",
+                        subtitle: "Context and details."
+                    ) {
+                        TaskDetailNotesSection(task: task)
+                    }
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(task.title.isEmpty ? "Untitled task" : task.title)
@@ -68,28 +99,35 @@ struct TaskDetailPopover: View {
                     }
                 }
 
-                TaskDetailSubtasksSection(
-                    task: task,
-                    newSubtaskTitle: $newSubtaskTitle,
-                    subtaskFieldFocused: $subtaskFieldFocused,
-                    onAddSubtask: addSubtask,
-                    onDeleteSubtask: { subtask in
-                        deleteConfirmationManager.present(
-                            title: "Delete Subtask?",
-                            message: "This will permanently delete \"\(subtask.title.isEmpty ? "Untitled" : subtask.title)\"."
-                        ) {
-                            modelContext.delete(subtask)
+                TaskInspectorSectionGroup(
+                    title: "Subtasks",
+                    subtitle: "Checklist for this task."
+                ) {
+                    TaskDetailSubtasksSection(
+                        task: task,
+                        newSubtaskTitle: $newSubtaskTitle,
+                        subtaskFieldFocused: $subtaskFieldFocused,
+                        onAddSubtask: addSubtask,
+                        onDeleteSubtask: { subtask in
+                            deleteConfirmationManager.present(
+                                title: "Delete Subtask?",
+                                message: "This will permanently delete \"\(subtask.title.isEmpty ? "Untitled" : subtask.title)\"."
+                            ) {
+                                modelContext.delete(subtask)
+                            }
                         }
-                    }
-                )
+                    )
+                }
 
                 if presentationMode == .full {
-                    TaskDetailActionsSection(task: task)
+                    TaskInspectorSectionGroup(title: "Actions") {
+                        TaskDetailActionsSection(task: task)
+                    }
                 }
             }
-            .padding(18)
+            .padding(14)
         }
-        .frame(width: presentationMode == .subtasksOnly ? 340 : 380)
+        .frame(width: presentationMode == .subtasksOnly ? 332 : 372)
         .background(
             RoundedRectangle(cornerRadius: 20)
                 .fill(Theme.surface)
@@ -103,6 +141,9 @@ struct TaskDetailPopover: View {
         }
         .onChange(of: taskSubtaskEntryManager.requestedTaskID) { _, _ in
             focusSubtaskFieldIfRequested()
+        }
+        .onChange(of: taskContainerBinding.wrappedValue) { _, _ in
+            normalizeTaskSectionSelection()
         }
     }
 
@@ -122,6 +163,16 @@ struct TaskDetailPopover: View {
         presentationMode = .subtasksOnly
         DispatchQueue.main.async {
             subtaskFieldFocused = true
+        }
+    }
+
+    private func normalizeTaskSectionSelection() {
+        let cleaned = availableSections
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let validSections = cleaned.isEmpty ? [TaskSectionDefaults.defaultName] : cleaned
+        if !validSections.contains(where: { $0.caseInsensitiveCompare(task.sectionName) == .orderedSame }) {
+            task.sectionName = validSections.first ?? TaskSectionDefaults.defaultName
         }
     }
 }

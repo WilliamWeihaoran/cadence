@@ -223,6 +223,8 @@ struct CalDayColumn: View {
     let hourHeight: CGFloat
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
 
     private var dateKey: String {
         DateFormatters.dateKey(from: date)
@@ -250,8 +252,18 @@ struct CalDayColumn: View {
             style: .calendar,
             showCurrentTimeDot: true,
             dropBehavior: .perHour,
-            onCreateTask: { title, startMin, endMin in
-                SchedulingActions.createTask(title: title, dateKey: dateKey, startMin: startMin, endMin: endMin, in: modelContext)
+            onCreateTask: { title, startMin, endMin, containerSelection, sectionName in
+                SchedulingActions.createTask(
+                    title: title,
+                    dateKey: dateKey,
+                    startMin: startMin,
+                    endMin: endMin,
+                    containerSelection: containerSelection,
+                    sectionName: sectionName,
+                    areas: areas,
+                    projects: projects,
+                    in: modelContext
+                )
             },
             onDropTaskAtMinute: { task, startMin in
                 SchedulingActions.dropTask(task, to: dateKey, startMin: startMin)

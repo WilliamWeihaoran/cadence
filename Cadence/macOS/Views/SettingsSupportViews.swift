@@ -121,24 +121,22 @@ struct ContextSettingsRow: View {
 
                     HStack {
                         Spacer()
-                        Button("Cancel") {
+                        CadenceActionButton(
+                            title: "Cancel",
+                            role: .ghost,
+                            size: .compact
+                        ) {
                             withAnimation(.easeInOut(duration: 0.15)) { isEditing = false }
                         }
-                        .buttonStyle(.cadencePlain)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.muted)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
 
-                        Button("Save") { saveEdit() }
-                            .buttonStyle(.cadencePlain)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(editName.trimmingCharacters(in: .whitespaces).isEmpty ? Theme.blue.opacity(0.4) : Theme.blue)
-                            .clipShape(RoundedRectangle(cornerRadius: 7))
-                            .disabled(editName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        CadenceActionButton(
+                            title: "Save",
+                            role: .primary,
+                            size: .compact,
+                            isDisabled: editName.trimmingCharacters(in: .whitespaces).isEmpty
+                        ) {
+                            saveEdit()
+                        }
                     }
                     .padding(.bottom, 4)
                 }
@@ -354,14 +352,13 @@ struct SidebarTabEditorSheet: View {
 
             HStack {
                 Spacer()
-                Button("Done") { dismiss() }
-                    .buttonStyle(.cadencePlain)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 9))
+                CadenceActionButton(
+                    title: "Done",
+                    role: .primary,
+                    size: .compact
+                ) {
+                    dismiss()
+                }
             }
         }
         .padding(22)

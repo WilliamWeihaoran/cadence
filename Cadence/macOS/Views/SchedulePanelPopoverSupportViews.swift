@@ -1,6 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import SwiftData
+import EventKit
 
 enum TaskDetailPresentationMode {
     case full
@@ -10,6 +11,30 @@ enum TaskDetailPresentationMode {
 struct TaskDetailHeaderSection: View {
     @Bindable var task: AppTask
     @Binding var showPriorityPicker: Bool
+    let contexts: [Context]
+    let areas: [Area]
+    let projects: [Project]
+    let taskContainerBinding: Binding<TaskContainerSelection>
+
+    enum TildeMode {
+        case none
+        case list
+        case section
+    }
+
+    private struct TildeContainerItem: Identifiable {
+        let tag: TaskContainerSelection
+        let icon: String
+        let name: String
+        let color: Color
+        var id: TaskContainerSelection { tag }
+    }
+
+    @State private var tildeMode: TildeMode = .none
+    @State private var tildeSearchQuery = ""
+    @State private var tildeHighlightIdx = 0
+    @FocusState private var isTitleFocused: Bool
+    @FocusState private var isTildeSearchFocused: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -23,18 +48,70 @@ struct TaskDetailHeaderSection: View {
                 }
 
             VStack(alignment: .leading, spacing: 4) {
-                TextField("Task title", text: $task.title, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1...8)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .layoutPriority(1)
+                ZStack(alignment: .leading) {
+                    TextField("Task title", text: $task.title, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1...8)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(1)
+                        .focused($isTitleFocused)
+                        .onChange(of: task.title) { _, newVal in
+                            if newVal.hasSuffix("~") {
+                                let prefix = String(newVal.dropLast())
+                                if prefix.isEmpty || prefix.hasSuffix(" ") {
+                                    task.title = prefix
+                                    tildeSearchQuery = ""
+                                    tildeHighlightIdx = 0
+                                    tildeMode = .list
+                                }
+                            }
+                        }
+                        .opacity(tildeMode == .none ? 1 : 0)
+                        .allowsHitTesting(tildeMode == .none)
+
+                    if tildeMode != .none {
+                        HStack(spacing: 4) {
+                            if !task.title.isEmpty {
+                                Text(task.title)
+                                    .font(.system(size: 17, weight: .bold))
+                                    .foregroundStyle(Theme.text)
+                                    .lineLimit(1)
+                                    .fixedSize()
+                            }
+                            Text("~")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Theme.blue)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                .popover(
+                                    isPresented: Binding(
+                                        get: { tildeMode != .none },
+                                        set: { if !$0 { tildeMode = .none } }
+                                    ),
+                                    arrowEdge: .bottom
+                                ) {
+                                    if tildeMode == .list {
+                                        tildeListSearchView
+                                    } else {
+                                        tildeSectionSearchView
+                                    }
+                                }
+                        }
+                    }
+                }
 
                 Text(scheduleDescriptor)
-                    .font(.system(size: 11))
+                    .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(Theme.surfaceElevated.opacity(0.7))
+                    .clipShape(Capsule())
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -51,6 +128,159 @@ struct TaskDetailHeaderSection: View {
 
     private var timeRange: String {
         TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledStartMin + max(task.estimatedMinutes, 5))
+    }
+
+    private var availableSections: [String] {
+        switch taskContainerBinding.wrappedValue {
+        case .inbox:
+            return [TaskSectionDefaults.defaultName]
+        case .area(let areaID):
+            return areas.first(where: { $0.id == areaID })?.sectionNames ?? [TaskSectionDefaults.defaultName]
+        case .project(let projectID):
+            return projects.first(where: { $0.id == projectID })?.sectionNames ?? [TaskSectionDefaults.defaultName]
+        }
+    }
+
+    private var tildeFlatContainers: [TildeContainerItem] {
+        let q = tildeSearchQuery.lowercased()
+        func matches(_ name: String) -> Bool { q.isEmpty || name.lowercased().hasPrefix(q) }
+
+        var result: [TildeContainerItem] = []
+        if matches("Inbox") {
+            result.append(.init(tag: .inbox, icon: "tray", name: "Inbox", color: Theme.dim))
+        }
+        for context in contexts {
+            for area in areas.filter({ $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
+                if matches(area.name) {
+                    result.append(.init(tag: .area(area.id), icon: area.icon, name: area.name, color: Color(hex: area.colorHex)))
+                }
+            }
+            for project in projects.filter({ $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
+                if matches(project.name) {
+                    result.append(.init(tag: .project(project.id), icon: project.icon, name: project.name, color: Color(hex: project.colorHex)))
+                }
+            }
+        }
+        return result
+    }
+
+    private func normalizeSelectedSection() {
+        let validSections = availableSections
+        if !validSections.contains(where: { $0.caseInsensitiveCompare(task.sectionName) == .orderedSame }) {
+            task.sectionName = validSections.first ?? TaskSectionDefaults.defaultName
+        }
+    }
+
+    private func selectTildeContainer() {
+        let items = tildeFlatContainers
+        guard !items.isEmpty else { return }
+        selectTildeContainerItem(items[min(tildeHighlightIdx, items.count - 1)].tag)
+    }
+
+    private func selectTildeContainerItem(_ tag: TaskContainerSelection) {
+        taskContainerBinding.wrappedValue = tag
+        normalizeSelectedSection()
+        tildeSearchQuery = ""
+        tildeHighlightIdx = 0
+        tildeMode = .section
+    }
+
+    private var tildeListSearchView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack {
+                Button("") {
+                    let n = tildeFlatContainers.count
+                    if n > 0 { tildeHighlightIdx = min(tildeHighlightIdx + 1, n - 1) }
+                }
+                .keyboardShortcut("=", modifiers: [.command, .shift])
+                Button("") { tildeHighlightIdx = max(tildeHighlightIdx - 1, 0) }
+                    .keyboardShortcut("-", modifiers: [.command, .shift])
+            }
+            .frame(width: 0, height: 0)
+            .clipped()
+
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+                TextField("Search lists…", text: $tildeSearchQuery)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.text)
+                    .focused($isTildeSearchFocused)
+                    .onSubmit { selectTildeContainer() }
+                    .onKeyPress(.upArrow) {
+                        tildeHighlightIdx = max(tildeHighlightIdx - 1, 0)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        let n = tildeFlatContainers.count
+                        if n > 0 { tildeHighlightIdx = min(tildeHighlightIdx + 1, n - 1) }
+                        return .handled
+                    }
+                    .onKeyPress(.tab) {
+                        task.title += "~"
+                        tildeMode = .none
+                        DispatchQueue.main.async { isTitleFocused = true }
+                        return .handled
+                    }
+                if !tildeSearchQuery.isEmpty {
+                    Button { tildeSearchQuery = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.dim.opacity(0.5))
+                    }
+                    .buttonStyle(.cadencePlain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            Divider().background(Theme.borderSubtle)
+
+            let items = tildeFlatContainers
+            if items.isEmpty {
+                Text("No results")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            } else {
+                VStack(spacing: 2) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                        TildeContainerPickerRow(
+                            icon: item.icon,
+                            name: item.name,
+                            color: item.color,
+                            isHighlighted: i == tildeHighlightIdx,
+                            isSelected: taskContainerBinding.wrappedValue == item.tag,
+                            action: { selectTildeContainerItem(item.tag) }
+                        )
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+        }
+        .frame(minWidth: 200)
+        .background(Theme.surfaceElevated)
+        .onAppear { DispatchQueue.main.async { isTildeSearchFocused = true } }
+        .onChange(of: tildeSearchQuery) { _, _ in tildeHighlightIdx = 0 }
+    }
+
+    private var tildeSectionSearchView: some View {
+        TildeSectionSearchPanel(
+            sections: availableSections,
+            selectedSectionName: task.sectionName,
+            onSelect: { section in
+                task.sectionName = section
+                tildeMode = .none
+                DispatchQueue.main.async { isTitleFocused = true }
+            },
+            onDismiss: {
+                tildeMode = .none
+                DispatchQueue.main.async { isTitleFocused = true }
+            }
+        )
     }
 
     private var scheduleDescriptor: String {
@@ -105,182 +335,114 @@ struct TaskPriorityPickerPopover: View {
     }
 }
 
-struct TaskDetailMetadataSection: View {
+struct TaskDetailCompactOverviewSection: View {
     @Bindable var task: AppTask
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
+    let allTasks: [AppTask]
     let taskContainerBinding: Binding<TaskContainerSelection>
-
-    var body: some View {
-        TaskInspectorInfoCard {
-            TaskInspectorDetailRow(title: "Time", icon: "clock") {
-                Text(task.scheduledStartMin >= 0 ? timeRange : "Not time-blocked")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(task.scheduledStartMin >= 0 ? Theme.text : Theme.dim)
-            }
-
-            TaskInspectorDetailRow(title: "Do", icon: "calendar") {
-                TaskInspectorDateControl(
-                    label: "Set do",
-                    icon: "calendar",
-                    activeColor: Theme.blue,
-                    isOn: Binding(
-                        get: { !task.scheduledDate.isEmpty },
-                        set: { isOn in
-                            if !isOn { task.scheduledDate = "" }
-                        }
-                    ),
-                    date: Binding(
-                        get: { DateFormatters.date(from: task.scheduledDate) ?? Date() },
-                        set: { task.scheduledDate = DateFormatters.dateKey(from: $0) }
-                    )
-                )
-            }
-
-            TaskInspectorDetailRow(title: "Due", icon: "calendar.badge.exclamationmark") {
-                TaskInspectorDateControl(
-                    label: "Set due",
-                    icon: "calendar.badge.exclamationmark",
-                    activeColor: Theme.red,
-                    isOn: Binding(
-                        get: { !task.dueDate.isEmpty },
-                        set: { isOn in
-                            if !isOn { task.dueDate = "" }
-                        }
-                    ),
-                    date: Binding(
-                        get: { DateFormatters.date(from: task.dueDate) ?? Date() },
-                        set: { task.dueDate = DateFormatters.dateKey(from: $0) }
-                    )
-                )
-            }
-
-            TaskInspectorDetailRow(title: "List", icon: "tray.full") {
-                ContainerPickerBadge(selection: taskContainerBinding, contexts: contexts, areas: areas, projects: projects)
-            }
-
-            TaskInspectorDetailRow(title: "Estimated", icon: "clock") {
-                EstimatePickerControl(value: $task.estimatedMinutes)
-            }
-
-            TaskInspectorDetailRow(title: "Actual", icon: "clock.badge.checkmark") {
-                MinutesField(value: $task.actualMinutes)
-            }
-        }
-    }
-
-    private var timeRange: String {
-        TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledStartMin + max(task.estimatedMinutes, 5))
-    }
-}
-
-struct TaskDetailNotesSection: View {
-    @Bindable var task: AppTask
+    let availableSections: [String]
 
     var body: some View {
         TaskInspectorInfoCard {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Notes")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-
-                TextEditor(text: Binding(
-                    get: { task.notes },
-                    set: { task.notes = $0 }
-                ))
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.text)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 44)
-                .padding(8)
-                .background(Theme.surfaceElevated.opacity(0.75))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-        }
-    }
-}
-
-struct TaskDetailSubtasksSection: View {
-    @Bindable var task: AppTask
-    @Binding var newSubtaskTitle: String
-    @FocusState.Binding var subtaskFieldFocused: Bool
-    let onAddSubtask: () -> Void
-    let onDeleteSubtask: (Subtask) -> Void
-
-    var body: some View {
-        TaskInspectorInfoCard {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Subtasks")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-
-                let sortedSubtasks = (task.subtasks ?? []).sorted { $0.order < $1.order }
-                ForEach(sortedSubtasks) { subtask in
-                    SubtaskRow(subtask: subtask, showDelete: true) {
-                        onDeleteSubtask(subtask)
+                HStack(alignment: .top, spacing: 10) {
+                    compactField("Do", icon: "calendar") {
+                        TaskInspectorDateControl(
+                            label: "Set do",
+                            icon: "calendar",
+                            activeColor: Theme.blue,
+                            isOn: Binding(
+                                get: { !task.scheduledDate.isEmpty },
+                                set: { isOn in
+                                    if !isOn { task.scheduledDate = "" }
+                                }
+                            ),
+                            date: Binding(
+                                get: { DateFormatters.date(from: task.scheduledDate) ?? Date() },
+                                set: { task.scheduledDate = DateFormatters.dateKey(from: $0) }
+                            )
+                        )
+                    }
+                    
+                    compactField("Due", icon: "calendar.badge.exclamationmark") {
+                        TaskInspectorDateControl(
+                            label: "Set due",
+                            icon: "calendar.badge.exclamationmark",
+                            activeColor: Theme.red,
+                            isOn: Binding(
+                                get: { !task.dueDate.isEmpty },
+                                set: { isOn in
+                                    if !isOn { task.dueDate = "" }
+                                }
+                            ),
+                            date: Binding(
+                                get: { DateFormatters.date(from: task.dueDate) ?? Date() },
+                                set: { task.dueDate = DateFormatters.dateKey(from: $0) }
+                            )
+                        )
                     }
                 }
 
-                HStack(spacing: 8) {
-                    Image(systemName: "plus.circle")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.dim.opacity(0.6))
-                    TextField("Add subtask…", text: $newSubtaskTitle)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.text)
-                        .focused($subtaskFieldFocused)
-                        .onSubmit { onAddSubtask() }
+                HStack(alignment: .top, spacing: 10) {
+                    compactField("List", icon: "tray.full") {
+                        ContainerPickerBadge(selection: taskContainerBinding, contexts: contexts, areas: areas, projects: projects)
+                    }
+
+                    compactField("Section", icon: "square.split.2x1") {
+                        TaskSectionPickerBadge(selection: $task.sectionName, sections: availableSections)
+                    }
                 }
-                .padding(.vertical, 2)
+
+                HStack(alignment: .top, spacing: 10) {
+                    compactField("Repeats", icon: "arrow.clockwise") {
+                        TaskInspectorRecurrenceControl(task: task)
+                    }
+
+                    compactField("Estimate", icon: "clock") {
+                        EstimatePickerControl(value: $task.estimatedMinutes)
+                    }
+                }
+            }
+
+            Divider()
+                .background(Theme.borderSubtle.opacity(0.7))
+
+            VStack(alignment: .leading, spacing: 10) {
+                compactField("Event", icon: "link") {
+                    TaskInspectorEventAttachmentControl(task: task)
+                }
+
+                compactField("Blocked By", icon: "arrow.triangle.branch") {
+                    TaskInspectorDependencyControl(task: task, allTasks: allTasks)
+                }
+
+                compactField("Actual", icon: "clock.badge.checkmark") {
+                    MinutesField(value: $task.actualMinutes)
+                }
             }
         }
     }
-}
 
-struct TaskDetailActionsSection: View {
-    @Bindable var task: AppTask
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Button {
-                if task.isDone {
-                    task.completedAt = nil
-                    task.status = .todo
-                } else {
-                    task.completedAt = Date()
-                    task.status = .done
-                }
-            } label: {
-                Label(task.isDone ? "Unmark Done" : "Mark Done",
-                      systemImage: task.isDone ? "circle" : "checkmark.circle.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(task.isDone ? Theme.dim : Theme.green)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+    @ViewBuilder
+    private func compactField<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+            } icon: {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
             }
-            .buttonStyle(.cadencePlain)
+            .labelStyle(.titleAndIcon)
 
-            if task.scheduledStartMin >= 0 {
-                Button {
-                    SchedulingActions.removeFromCalendar(task)
-                    task.scheduledStartMin = -1
-                    task.scheduledDate = ""
-                } label: {
-                    Label("Unschedule", systemImage: "calendar.badge.minus")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.cadencePlain)
-            }
+            content()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
+
 #endif

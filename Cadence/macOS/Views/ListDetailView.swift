@@ -31,7 +31,8 @@ struct ProjectDetailLoader: View {
 enum ListDetailPage: String, CaseIterable, Identifiable {
     case tasks     = "Tasks"
     case kanban    = "Kanban"
-    case documents = "Documents"
+    case planning  = "Planning"
+    case documents = "Notes"
     case links     = "Links"
     case completed = "Completed"
 
@@ -41,6 +42,7 @@ enum ListDetailPage: String, CaseIterable, Identifiable {
         switch self {
         case .tasks:     return "checkmark.square"
         case .kanban:    return "square.grid.3x2"
+        case .planning:  return "timeline.selection"
         case .documents: return "doc.text"
         case .links:     return "link"
         case .completed: return "list.bullet.clipboard"
@@ -189,6 +191,8 @@ private struct ListDetailView: View {
                     ListTasksView(tasks: tasks, area: area, project: project)
                 case .kanban:
                     kanbanBody
+                case .planning:
+                    ListPlanningView(tasks: tasks, area: area, project: project)
                 case .documents:
                     DocumentsView(area: area, project: project)
                 case .links:

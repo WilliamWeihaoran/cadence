@@ -261,42 +261,38 @@ struct HoveredTaskDatePickerOverlay: View {
                 Divider().background(Theme.borderSubtle)
 
                 HStack(spacing: 10) {
-                    Button(action: onClear) {
-                        Text("Clear")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Theme.red)
-                            .frame(minWidth: 74, minHeight: 36)
-                            .contentShape(Rectangle())
-                            .background(Theme.surfaceElevated)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    CadenceActionButton(
+                        title: "Clear",
+                        role: .destructive,
+                        size: .regular,
+                        minWidth: 74
+                    ) {
+                        onClear()
                     }
-                    .buttonStyle(.cadencePlain)
 
                     Spacer()
 
-                    Button(action: onCancel) {
-                        Text("Cancel")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Theme.dim)
-                            .frame(minWidth: 96, minHeight: 36)
-                            .contentShape(Rectangle())
-                            .background(Theme.surfaceElevated)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    CadenceActionButton(
+                        title: "Cancel",
+                        role: .secondary,
+                        size: .regular,
+                        tint: Theme.dim,
+                        minWidth: 96,
+                        shortcut: .cancelAction
+                    ) {
+                        onCancel()
                     }
-                    .buttonStyle(.cadencePlain)
-                    .keyboardShortcut(.cancelAction)
 
-                    Button(action: onConfirm) {
-                        Text("Apply")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(minWidth: 96, minHeight: 36)
-                            .contentShape(Rectangle())
-                            .background(request.kind == .doDate ? Theme.blue : Theme.amber)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    CadenceActionButton(
+                        title: "Apply",
+                        role: .primary,
+                        size: .regular,
+                        tint: request.kind == .doDate ? Theme.blue : Theme.amber,
+                        minWidth: 96,
+                        shortcut: .defaultAction
+                    ) {
+                        onConfirm()
                     }
-                    .buttonStyle(.cadencePlain)
-                    .keyboardShortcut(.defaultAction)
                 }
                 .padding(20)
             }
@@ -354,25 +350,27 @@ struct DeleteConfirmationOverlay: View {
 
                 HStack(spacing: 10) {
                     Spacer()
-                    Button("Cancel", action: onCancel)
-                        .buttonStyle(.cadencePlain)
-                        .keyboardShortcut(.cancelAction)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    CadenceActionButton(
+                        title: "Cancel",
+                        role: .secondary,
+                        size: .regular,
+                        tint: Theme.dim,
+                        minWidth: 96,
+                        shortcut: .cancelAction
+                    ) {
+                        onCancel()
+                    }
 
-                    Button(confirmLabel, action: onConfirm)
-                        .buttonStyle(.cadencePlain)
-                        .keyboardShortcut(.defaultAction)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 9)
-                        .background(Theme.red)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    CadenceActionButton(
+                        title: confirmLabel,
+                        role: .primary,
+                        size: .regular,
+                        tint: Theme.red,
+                        minWidth: 96,
+                        shortcut: .defaultAction
+                    ) {
+                        onConfirm()
+                    }
                 }
                 .padding(20)
             }

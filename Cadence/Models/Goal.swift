@@ -23,6 +23,8 @@ import Foundation
     }
     var order: Int = 0
     var createdAt: Date = Date()
+    // Dependency IDs stored as JSON array of UUID strings (finish-to-start: this goal depends on listed goals)
+    var dependsOnGoalIDsJSON: String = ""
 
     var context: Context? = nil
     @Relationship(inverse: \AppTask.goal) var tasks: [AppTask]? = nil

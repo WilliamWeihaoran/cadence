@@ -27,20 +27,50 @@ struct TimelineDraftGhostLayer: View {
     let metrics: TimelineMetrics
     let style: TimelineBlockStyle
 
+    private var durationMinutes: Int {
+        max(5, endMinute - startMinute)
+    }
+
+    private var durationLabel: String {
+        if durationMinutes < 60 { return "\(durationMinutes)m" }
+        if durationMinutes % 60 == 0 { return "\(durationMinutes / 60)h" }
+        return String(format: "%.1fh", Double(durationMinutes) / 60.0)
+    }
+
     var body: some View {
         let y = metrics.yOffset(for: startMinute)
-        let height = metrics.height(for: endMinute - startMinute, minHeight: style.minHeight)
+        let height = metrics.height(for: durationMinutes, minHeight: style.minHeight)
         let ghostWidth = max(0, width - style.leadingInset - style.trailingInset)
 
-        RoundedRectangle(cornerRadius: style.cornerRadius)
-            .fill(Theme.blue.opacity(0.18))
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: style.cornerRadius)
+                .fill(Theme.blue.opacity(0.18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: style.cornerRadius)
+                        .stroke(Theme.blue.opacity(0.55), lineWidth: 1)
+                )
+
+            HStack(spacing: 8) {
+                Text(TimeFormatters.timeRange(startMin: startMinute, endMin: endMinute))
+                Text(durationLabel)
+                    .foregroundStyle(Theme.blue.opacity(0.95))
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Theme.text)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(.ultraThinMaterial)
+            .clipShape(Capsule())
             .overlay(
-                RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .stroke(Theme.blue.opacity(0.55), lineWidth: 1)
+                Capsule()
+                    .stroke(Theme.blue.opacity(0.28), lineWidth: 1)
             )
-            .frame(width: ghostWidth, height: height)
-            .offset(x: style.leadingInset, y: y)
-            .allowsHitTesting(false)
+            .padding(.top, 6)
+            .padding(.leading, 6)
+        }
+        .frame(width: ghostWidth, height: height, alignment: .topLeading)
+        .offset(x: style.leadingInset, y: y)
+        .allowsHitTesting(false)
     }
 }
 

@@ -14,8 +14,17 @@ struct MarkdownEditorView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
 
-        let textView = CadenceTextView()
         let contentSize = scrollView.contentSize
+        let textStorage = NSTextStorage()
+        let layoutManager = CadenceLayoutManager()
+        let textContainer = NSTextContainer(
+            containerSize: NSSize(width: contentSize.width, height: CGFloat.greatestFiniteMagnitude)
+        )
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(textContainer)
+
+        let textView = CadenceTextView(frame: NSRect(origin: .zero, size: CGSize(width: contentSize.width, height: 0)),
+                                       textContainer: textContainer)
         textView.frame = NSRect(origin: .zero, size: CGSize(width: contentSize.width, height: 0))
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true

@@ -34,6 +34,44 @@ enum TaskStatus: String, Codable, CaseIterable, Hashable {
     case cancelled   = "cancelled"
 }
 
+enum TaskRecurrenceRule: String, Codable, CaseIterable, Hashable {
+    case none    = "none"
+    case daily   = "daily"
+    case weekly  = "weekly"
+    case monthly = "monthly"
+    case yearly  = "yearly"
+
+    var label: String {
+        switch self {
+        case .none: return "Never"
+        case .daily: return "Daily"
+        case .weekly: return "Weekly"
+        case .monthly: return "Monthly"
+        case .yearly: return "Yearly"
+        }
+    }
+
+    var shortLabel: String {
+        switch self {
+        case .none: return "None"
+        case .daily: return "Daily"
+        case .weekly: return "Weekly"
+        case .monthly: return "Monthly"
+        case .yearly: return "Yearly"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .none: return "arrow.clockwise"
+        case .daily: return "sun.max"
+        case .weekly: return "calendar"
+        case .monthly: return "calendar.badge.clock"
+        case .yearly: return "calendar.circle"
+        }
+    }
+}
+
 // MARK: - Project enums
 
 enum ProjectStatus: String, Codable, CaseIterable, Hashable {

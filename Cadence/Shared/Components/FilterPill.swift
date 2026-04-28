@@ -25,6 +25,7 @@ struct FilterPill: View {
             .foregroundStyle(isSelected ? color : Theme.dim)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .frame(minHeight: 32)
             .background(
                 RoundedRectangle(cornerRadius: 9)
                     .fill(isSelected ? color.opacity(0.1) : Color.clear)
@@ -36,6 +37,7 @@ struct FilterPill: View {
                             )
                     )
             )
+            .contentShape(RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.cadencePlain)
     }

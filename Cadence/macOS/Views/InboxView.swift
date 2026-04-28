@@ -92,6 +92,7 @@ struct InboxView: View {
                             contexts: contexts,
                             areas: areas,
                             projects: projects,
+                            allTasks: allTasks,
                             dragOverTaskID: $dragOverTaskID,
                             onReorderTask: reorderTask
                         )
@@ -103,6 +104,7 @@ struct InboxView: View {
                             contexts: contexts,
                             areas: areas,
                             projects: projects,
+                            allTasks: allTasks,
                             isCollapsed: isCompletedCollapsed,
                             onToggle: { isCompletedCollapsed.toggle() }
                         )

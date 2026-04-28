@@ -2,6 +2,31 @@
 import SwiftUI
 import SwiftData
 import EventKit
+import AppKit
+import UniformTypeIdentifiers
+
+private struct PlainTextExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.plainText] }
+
+    let text: String
+
+    init(text: String) {
+        self.text = text
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        if let data = configuration.file.regularFileContents,
+           let text = String(data: data, encoding: .utf8) {
+            self.text = text
+        } else {
+            self.text = ""
+        }
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
+}
 
 let schedStartHour = 0
 let schedEndHour   = 24
@@ -14,12 +39,16 @@ struct SchedulePanel: View {
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(TodayTimelineFocusManager.self) private var todayTimelineFocusManager
     @Query private var allTasks: [AppTask]
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
 
     @AppStorage("scheduleZoomLevel") private var zoomLevel: Int = 1
     @AppStorage("scheduleRememberedScrollHour") private var rememberedScrollHour: Int = -1
     @State private var isRestoringScroll = true
     @State private var didRestoreScroll = false
     @State private var isFocusHighlighted = false
+    @State private var exportDocument: PlainTextExportDocument?
+    @State private var isExportingTimeline = false
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -39,7 +68,7 @@ struct SchedulePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SchedulePanelHeader(zoomLevel: $zoomLevel)
+            SchedulePanelHeader(zoomLevel: $zoomLevel, onExport: exportTodayPlan)
 
             Divider().background(Theme.borderSubtle)
 
@@ -53,8 +82,18 @@ struct SchedulePanel: View {
                             scheduledTasks: scheduledTasks,
                             todayKey: todayKey,
                             externalEventItems: externalEventItems,
-                            onCreateTask: { title, startMin, endMin in
-                                SchedulingActions.createTask(title: title, dateKey: todayKey, startMin: startMin, endMin: endMin, in: modelContext)
+                            onCreateTask: { title, startMin, endMin, containerSelection, sectionName in
+                                SchedulingActions.createTask(
+                                    title: title,
+                                    dateKey: todayKey,
+                                    startMin: startMin,
+                                    endMin: endMin,
+                                    containerSelection: containerSelection,
+                                    sectionName: sectionName,
+                                    areas: areas,
+                                    projects: projects,
+                                    in: modelContext
+                                )
                             },
                             onDropTaskAtMinute: { task, startMin in
                                 SchedulingActions.dropTask(task, to: todayKey, startMin: startMin)
@@ -90,6 +129,14 @@ struct SchedulePanel: View {
             }
         }
         .background(Theme.bg)
+        .fileExporter(
+            isPresented: $isExportingTimeline,
+            document: exportDocument,
+            contentType: .plainText,
+            defaultFilename: "Cadence Schedule \(todayKey)"
+        ) { _ in
+            exportDocument = nil
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Theme.blue.opacity(isFocusHighlighted ? 0.95 : 0), lineWidth: 2)
@@ -112,6 +159,32 @@ struct SchedulePanel: View {
         ) {
             isFocusHighlighted = $0
         }
+    }
+
+    private func exportTodayPlan() {
+        let taskLines = scheduledTasks
+            .sorted { $0.scheduledStartMin < $1.scheduledStartMin }
+            .map { task in
+                "- \(TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledStartMin + max(task.estimatedMinutes, 30))) • \(task.title.isEmpty ? "Untitled Task" : task.title)"
+            }
+
+        let eventLines = externalEventItems
+            .sorted { $0.startMin < $1.startMin }
+            .map { event in
+                "- \(TimeFormatters.timeRange(startMin: event.startMin, endMin: event.startMin + max(event.durationMinutes, 5))) • \(event.title)"
+            }
+
+        let markdown = """
+        # Schedule for \(todayKey)
+
+        ## Tasks
+        \(taskLines.isEmpty ? "- None" : taskLines.joined(separator: "\n"))
+
+        ## Calendar Events
+        \(eventLines.isEmpty ? "- None" : eventLines.joined(separator: "\n"))
+        """
+        exportDocument = PlainTextExportDocument(text: markdown)
+        isExportingTimeline = true
     }
 }
 #endif

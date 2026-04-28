@@ -13,6 +13,7 @@ struct ListTasksGroupSectionView: View {
     let isCollapsed: Bool
     let overdueCount: Int?
     let regularCount: Int
+    let allTasks: [AppTask]
     @Binding var dragOverTaskID: UUID?
     let onToggle: () -> Void
     let onReorderTask: (UUID, UUID) -> Void
@@ -36,7 +37,7 @@ struct ListTasksGroupSectionView: View {
 
             if !isCollapsed {
                 ForEach(group.tasks) { task in
-                    MacTaskRow(task: task, style: .list)
+                    MacTaskRow(task: task, style: .list, allTasks: allTasks)
                         .padding(.leading, 16)
                         .listRowInsets(.init())
                         .listRowBackground(Color.clear)
@@ -71,6 +72,7 @@ struct ListTasksGroupSectionView: View {
 
 struct ListTasksCompletedSectionView: View {
     let tasks: [AppTask]
+    let allTasks: [AppTask]
     let isCollapsed: Bool
     let onToggle: () -> Void
 
@@ -90,7 +92,7 @@ struct ListTasksCompletedSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: .list)
+                    MacTaskRow(task: task, style: .list, allTasks: allTasks)
                         .padding(.leading, 16)
                         .listRowInsets(.init())
                         .listRowBackground(Color.clear)

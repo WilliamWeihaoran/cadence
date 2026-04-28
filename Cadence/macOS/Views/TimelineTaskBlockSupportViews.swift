@@ -27,25 +27,52 @@ struct TimelineDraggedTaskPreview: View {
         TimeFormatters.timeRange(startMin: startMinute, endMin: startMinute + max(durationMinutes, 5))
     }
 
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: style.cornerRadius)
-                .fill(Theme.blue.opacity(0.16))
-                .overlay(
-                    RoundedRectangle(cornerRadius: style.cornerRadius)
-                        .stroke(Theme.blue.opacity(0.55), lineWidth: 1)
-                )
-                .frame(width: frame.width, height: frame.height)
+    private var dragDurationLabel: String {
+        guard durationMinutes > 0 else { return "" }
+        if durationMinutes < 60 { return "\(durationMinutes)m" }
+        if durationMinutes % 60 == 0 { return "\(durationMinutes / 60)h" }
+        return String(format: "%.1fh", Double(durationMinutes) / 60.0)
+    }
 
-            timelineBlockBody(
-                task: task,
-                durationMinutes: durationMinutes,
-                timeRangeLabel: timeRangeLabel,
-                frame: frame,
-                style: style,
-                showSelection: true
-            )
-            .opacity(0.92)
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            ZStack {
+                RoundedRectangle(cornerRadius: style.cornerRadius)
+                    .fill(Theme.blue.opacity(0.16))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: style.cornerRadius)
+                            .stroke(Theme.blue.opacity(0.55), lineWidth: 1)
+                    )
+                    .frame(width: frame.width, height: frame.height)
+
+                timelineBlockBody(
+                    task: task,
+                    durationMinutes: durationMinutes,
+                    timeRangeLabel: timeRangeLabel,
+                    frame: frame,
+                    style: style,
+                    showSelection: true
+                )
+                .opacity(0.92)
+            }
+
+            if !dragDurationLabel.isEmpty {
+                Text(dragDurationLabel)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Theme.bg.opacity(0.94))
+                            .overlay(
+                                Capsule()
+                                    .stroke(Theme.blue.opacity(0.45), lineWidth: 1)
+                            )
+                    )
+                    .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+                    .offset(x: -8, y: -10)
+            }
         }
         .allowsHitTesting(false)
         .frame(width: frame.width, height: frame.height)

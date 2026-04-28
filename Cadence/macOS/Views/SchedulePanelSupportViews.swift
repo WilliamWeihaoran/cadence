@@ -1,6 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import EventKit
+import SwiftData
 
 struct ScheduleTimeRailRow: View {
     let hour: Int
@@ -74,7 +75,7 @@ struct TaskInspectorDateControl: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .frame(width: 148, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(minHeight: 30)
                 .contentShape(Rectangle())
                 .background(isHovered ? activeColor.opacity(0.08) : Theme.surface.opacity(0.45))
@@ -92,7 +93,7 @@ struct TaskInspectorDateControl: View {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim.opacity(isOn ? 0.65 : 0))
-                    .frame(width: 14, height: 14)
+                    .frame(width: 16, height: 16)
             }
             .buttonStyle(.cadencePlain)
             .disabled(!isOn)
@@ -178,20 +179,31 @@ struct TaskInspectorDateControl: View {
 }
 
 struct QuickCreateChoicePopover: View {
+    enum TildeMode { case none, list, section }
+
     let startMin: Int
     let endMin: Int
-    let onCreateTask: (String) -> Void
+    let onCreateTask: (String, TaskContainerSelection, String) -> Void
     let onCreateEvent: ((String, String, String) -> Void)?
     let onCancel: () -> Void
 
     enum Mode { case timeBlock, calendarEvent }
 
     @Environment(CalendarManager.self) private var calendarManager
+    @Query(sort: \Context.order) private var contexts: [Context]
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
     @State private var mode: Mode = .timeBlock
     @State private var title = ""
     @State private var selectedCalendarID = ""
     @State private var notes = ""
+    @State private var selectedContainer: TaskContainerSelection = .inbox
+    @State private var selectedSectionName: String = TaskSectionDefaults.defaultName
+    @State private var tildeMode: TildeMode = .none
+    @State private var tildeSearchQuery = ""
+    @State private var tildeHighlightIdx = 0
     @FocusState private var focused: Bool
+    @FocusState private var isTildeSearchFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -209,12 +221,58 @@ struct QuickCreateChoicePopover: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
 
-            TextField(mode == .timeBlock ? "Task title" : "Event title", text: $title)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .focused($focused)
-                .onSubmit { create() }
+            ZStack(alignment: .leading) {
+                TextField(mode == .timeBlock ? "Task title" : "Event title", text: $title)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .focused($focused)
+                    .onSubmit { create() }
+                    .onChange(of: title) { _, newValue in
+                        guard mode == .timeBlock, newValue.hasSuffix("~") else { return }
+                        let prefix = String(newValue.dropLast())
+                        if prefix.isEmpty || prefix.hasSuffix(" ") {
+                            title = prefix
+                            tildeSearchQuery = ""
+                            tildeHighlightIdx = 0
+                            tildeMode = .list
+                        }
+                    }
+                    .opacity(tildeMode == .none ? 1 : 0)
+                    .allowsHitTesting(tildeMode == .none)
+
+                if tildeMode != .none {
+                    HStack(spacing: 4) {
+                        if !title.isEmpty {
+                            Text(title)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Theme.text)
+                                .fixedSize()
+                        }
+                        Text("~")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Theme.blue)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .popover(
+                                isPresented: Binding(
+                                    get: { tildeMode != .none },
+                                    set: { if !$0 { tildeMode = .none } }
+                                ),
+                                arrowEdge: .bottom
+                            ) {
+                                if tildeMode == .list {
+                                    tildeListSearchView
+                                } else {
+                                    tildeSectionSearchView
+                                }
+                            }
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
 
             if mode == .calendarEvent {
                 let calendars = calendarManager.writableCalendars
@@ -244,16 +302,22 @@ struct QuickCreateChoicePopover: View {
             }
 
             HStack(spacing: 8) {
-                Button("Cancel") { onCancel() }
-                    .buttonStyle(.cadencePlain)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
+                CadenceActionButton(
+                    title: "Cancel",
+                    role: .ghost,
+                    size: .compact
+                ) {
+                    onCancel()
+                }
                 Spacer()
-                Button("Create") { create() }
-                    .buttonStyle(.cadencePlain)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-                    .disabled(mode == .calendarEvent && selectedCalendarID.isEmpty)
+                CadenceActionButton(
+                    title: "Create",
+                    role: .secondary,
+                    size: .compact,
+                    isDisabled: mode == .calendarEvent && selectedCalendarID.isEmpty
+                ) {
+                    create()
+                }
             }
         }
         .padding(14)
@@ -261,6 +325,7 @@ struct QuickCreateChoicePopover: View {
         .background(Theme.surface)
         .onAppear {
             focused = true
+            normalizeSelectedSection()
             if let first = calendarManager.writableCalendars.first {
                 selectedCalendarID = first.calendarIdentifier
             }
@@ -269,10 +334,171 @@ struct QuickCreateChoicePopover: View {
 
     private func create() {
         if mode == .timeBlock {
-            onCreateTask(title)
+            onCreateTask(title, selectedContainer, selectedSectionName)
         } else {
             onCreateEvent?(title, selectedCalendarID, notes)
         }
+    }
+
+    private var availableSections: [String] {
+        switch selectedContainer {
+        case .inbox:
+            return [TaskSectionDefaults.defaultName]
+        case .area(let areaID):
+            return areas.first(where: { $0.id == areaID })?.sectionNames ?? [TaskSectionDefaults.defaultName]
+        case .project(let projectID):
+            return projects.first(where: { $0.id == projectID })?.sectionNames ?? [TaskSectionDefaults.defaultName]
+        }
+    }
+
+    private struct TildeContainerItem: Identifiable {
+        let tag: TaskContainerSelection
+        let icon: String
+        let name: String
+        let color: Color
+        var id: TaskContainerSelection { tag }
+    }
+
+    private var tildeFlatContainers: [TildeContainerItem] {
+        let query = tildeSearchQuery.lowercased()
+        func matches(_ name: String) -> Bool { query.isEmpty || name.lowercased().hasPrefix(query) }
+
+        var result: [TildeContainerItem] = []
+        if matches("Inbox") {
+            result.append(.init(tag: .inbox, icon: "tray", name: "Inbox", color: Theme.dim))
+        }
+        for context in contexts {
+            for area in areas.filter({ $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
+                if matches(area.name) {
+                    result.append(.init(tag: .area(area.id), icon: area.icon, name: area.name, color: Color(hex: area.colorHex)))
+                }
+            }
+            for project in projects.filter({ $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
+                if matches(project.name) {
+                    result.append(.init(tag: .project(project.id), icon: project.icon, name: project.name, color: Color(hex: project.colorHex)))
+                }
+            }
+        }
+        return result
+    }
+
+    private func normalizeSelectedSection() {
+        let validSections = availableSections
+        if !validSections.contains(where: { $0.caseInsensitiveCompare(selectedSectionName) == .orderedSame }) {
+            selectedSectionName = validSections.first ?? TaskSectionDefaults.defaultName
+        }
+    }
+
+    private func selectTildeContainer() {
+        let items = tildeFlatContainers
+        guard !items.isEmpty else { return }
+        selectTildeContainerItem(items[min(tildeHighlightIdx, items.count - 1)].tag)
+    }
+
+    private func selectTildeContainerItem(_ tag: TaskContainerSelection) {
+        selectedContainer = tag
+        normalizeSelectedSection()
+        tildeSearchQuery = ""
+        tildeHighlightIdx = 0
+        tildeMode = .section
+    }
+
+    private var tildeListSearchView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack {
+                Button("") {
+                    let count = tildeFlatContainers.count
+                    if count > 0 { tildeHighlightIdx = min(tildeHighlightIdx + 1, count - 1) }
+                }
+                .keyboardShortcut("=", modifiers: [.command, .shift])
+                Button("") { tildeHighlightIdx = max(tildeHighlightIdx - 1, 0) }
+                    .keyboardShortcut("-", modifiers: [.command, .shift])
+            }
+            .frame(width: 0, height: 0)
+            .clipped()
+
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+                TextField("Search lists…", text: $tildeSearchQuery)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.text)
+                    .focused($isTildeSearchFocused)
+                    .onSubmit { selectTildeContainer() }
+                    .onKeyPress(.upArrow) {
+                        tildeHighlightIdx = max(tildeHighlightIdx - 1, 0)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        let count = tildeFlatContainers.count
+                        if count > 0 { tildeHighlightIdx = min(tildeHighlightIdx + 1, count - 1) }
+                        return .handled
+                    }
+                    .onKeyPress(.tab) {
+                        title += "~"
+                        tildeMode = .none
+                        DispatchQueue.main.async { focused = true }
+                        return .handled
+                    }
+                if !tildeSearchQuery.isEmpty {
+                    Button { tildeSearchQuery = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.dim.opacity(0.5))
+                    }
+                    .buttonStyle(.cadencePlain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            Divider().background(Theme.borderSubtle)
+
+            let items = tildeFlatContainers
+            if items.isEmpty {
+                Text("No results")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            } else {
+                VStack(spacing: 2) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        TildeContainerPickerRow(
+                            icon: item.icon,
+                            name: item.name,
+                            color: item.color,
+                            isHighlighted: index == tildeHighlightIdx,
+                            isSelected: selectedContainer == item.tag,
+                            action: { selectTildeContainerItem(item.tag) }
+                        )
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+        }
+        .frame(minWidth: 200)
+        .background(Theme.surfaceElevated)
+        .onAppear { DispatchQueue.main.async { isTildeSearchFocused = true } }
+        .onChange(of: tildeSearchQuery) { _, _ in tildeHighlightIdx = 0 }
+    }
+
+    private var tildeSectionSearchView: some View {
+        TildeSectionSearchPanel(
+            sections: availableSections,
+            selectedSectionName: selectedSectionName,
+            onSelect: { section in
+                selectedSectionName = section
+                tildeMode = .none
+                DispatchQueue.main.async { focused = true }
+            },
+            onDismiss: {
+                tildeMode = .none
+                DispatchQueue.main.async { focused = true }
+            }
+        )
     }
 
     @ViewBuilder
@@ -292,16 +518,28 @@ struct TaskInspectorInfoCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             content
         }
-        .padding(14)
-        .background(Theme.surface.opacity(0.85))
+        .padding(12)
+        .background(Theme.surfaceElevated.opacity(0.72))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Theme.borderSubtle, lineWidth: 1)
         )
+    }
+}
+
+struct TaskInspectorSectionGroup<Content: View>: View {
+    let title: String
+    var subtitle: String? = nil
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content
+        }
     }
 }
 
@@ -311,15 +549,24 @@ struct TaskInspectorDetailRow<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Label(title, systemImage: icon)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .frame(width: 76, alignment: .leading)
+        HStack(alignment: .top, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 11)
+                Text(title)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+            }
+            .frame(width: 76, alignment: .leading)
+            .padding(.top, 7)
+
             content
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer(minLength: 0)
         }
+        .frame(minHeight: 28, alignment: .top)
     }
 }
 

@@ -3,6 +3,8 @@ import SwiftUI
 
 struct TodayTaskGroup: Identifiable {
     let id: String
+    let contextID: String?
+    let contextName: String?
     let contextIcon: String?
     let contextColor: Color?
     let listIcon: String
@@ -13,12 +15,22 @@ struct TodayTaskGroup: Identifiable {
 
 struct FrozenTodayTaskGroup {
     let id: String
+    let contextID: String?
+    let contextName: String?
     let contextIcon: String?
     let contextColor: Color?
     let listIcon: String
     let listName: String
     let listColor: Color
     let taskIDs: [UUID]
+}
+
+struct TodayTaskContextSection: Identifiable {
+    let id: String
+    let contextName: String?
+    let contextIcon: String?
+    let contextColor: Color?
+    let groups: [TodayTaskGroup]
 }
 
 struct FrozenFlatTaskSection {
@@ -35,6 +47,8 @@ struct TasksPanelGroupSectionView: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
+    let allTasks: [AppTask]
+    var showsContextIcon: Bool = true
     let isCollapsed: Bool
     let overdueCount: Int?
     let regularCount: Int
@@ -50,7 +64,7 @@ struct TasksPanelGroupSectionView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.dim)
 
-                if let ctxIcon = group.contextIcon, let ctxColor = group.contextColor {
+                if showsContextIcon, let ctxIcon = group.contextIcon, let ctxColor = group.contextColor {
                     Image(systemName: ctxIcon)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(ctxColor)
@@ -99,7 +113,7 @@ struct TasksPanelGroupSectionView: View {
 
         if !isCollapsed {
             ForEach(group.tasks) { task in
-                MacTaskRow(task: task, style: .todayGrouped, contexts: contexts, areas: areas, projects: projects)
+                MacTaskRow(task: task, style: .todayGrouped, contexts: contexts, areas: areas, projects: projects, allTasks: allTasks)
                     .draggable(taskDragPayload(task))
                     .dropDestination(for: String.self) { items, _ in
                         guard let payload = items.first else { return false }
@@ -125,6 +139,96 @@ struct TasksPanelGroupSectionView: View {
     }
 }
 
+struct TodayTaskContextSectionView: View {
+    let section: TodayTaskContextSection
+    @Binding var dragOverTaskID: UUID?
+    let contexts: [Context]
+    let areas: [Area]
+    let projects: [Project]
+    let allTasks: [AppTask]
+    let collapsedGroupIDs: Set<String>
+    let overdueCount: ([AppTask]) -> Int?
+    let regularCount: ([AppTask]) -> Int
+    let onToggleGroup: (String) -> Void
+    let taskDragPayload: (AppTask) -> String
+    let onDropOnGroupPayload: (TodayTaskGroup, String) -> Bool
+    let onDropOnTaskPayload: (TodayTaskGroup, String, AppTask) -> Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let contextName = section.contextName {
+                HStack(spacing: 12) {
+                    if let contextIcon = section.contextIcon, let contextColor = section.contextColor {
+                        HStack(spacing: 8) {
+                            Image(systemName: contextIcon)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(contextColor)
+
+                            Text(contextName)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(contextColor)
+                                .kerning(0.9)
+                                .textCase(.uppercase)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(contextColor.opacity(0.13))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(contextColor.opacity(0.28), lineWidth: 1)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    } else {
+                        Text(contextName)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(section.contextColor ?? Theme.text)
+                            .kerning(0.9)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background((section.contextColor ?? Theme.surfaceElevated).opacity(0.12))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke((section.contextColor ?? Theme.borderSubtle).opacity(0.28), lineWidth: 1)
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+
+                    Rectangle()
+                        .fill((section.contextColor ?? Theme.borderSubtle).opacity(0.24))
+                        .frame(height: 1.5)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 22)
+                .padding(.bottom, 4)
+            }
+
+            ForEach(section.groups) { group in
+                TasksPanelGroupSectionView(
+                    group: group,
+                    dragOverTaskID: $dragOverTaskID,
+                    contexts: contexts,
+                    areas: areas,
+                    projects: projects,
+                    allTasks: allTasks,
+                    showsContextIcon: false,
+                    isCollapsed: collapsedGroupIDs.contains(group.id),
+                    overdueCount: overdueCount(group.tasks),
+                    regularCount: regularCount(group.tasks),
+                    onToggle: { onToggleGroup(group.id) },
+                    taskDragPayload: taskDragPayload,
+                    onDropOnGroupPayload: { payload in
+                        onDropOnGroupPayload(group, payload)
+                    },
+                    onDropOnTaskPayload: { payload, targetTask in
+                        onDropOnTaskPayload(group, payload, targetTask)
+                    }
+                )
+            }
+        }
+    }
+}
+
 struct TasksPanelFlatSectionView: View {
     let label: String
     let tasks: [AppTask]
@@ -132,6 +236,7 @@ struct TasksPanelFlatSectionView: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
+    let allTasks: [AppTask]
     let isCollapsed: Bool
     let overdueCount: Int?
     let regularCount: Int
@@ -167,7 +272,7 @@ struct TasksPanelFlatSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
+                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects, allTasks: allTasks)
                         .draggable(taskDragPayload(task))
                         .dropDestination(for: String.self) { items, _ in
                             guard let payload = items.first else { return false }
@@ -199,6 +304,7 @@ struct TasksPanelCompletedSectionView: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
+    let allTasks: [AppTask]
     let isCollapsed: Bool
     let onToggle: () -> Void
     let taskDragPayload: (AppTask) -> String
@@ -216,7 +322,7 @@ struct TasksPanelCompletedSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: mode == .todayOverview ? .todayGrouped : .standard, contexts: contexts, areas: areas, projects: projects)
+                    MacTaskRow(task: task, style: mode == .todayOverview ? .todayGrouped : .standard, contexts: contexts, areas: areas, projects: projects, allTasks: allTasks)
                         .draggable(taskDragPayload(task))
                         .padding(.leading, 16)
                         .transition(.asymmetric(

@@ -197,6 +197,8 @@ struct TasksPanel: View {
             guard !resolvedTasks.isEmpty else { return nil }
             return TodayTaskGroup(
                 id: group.id,
+                contextID: group.contextID,
+                contextName: group.contextName,
                 contextIcon: group.contextIcon,
                 contextColor: group.contextColor,
                 listIcon: group.listIcon,
@@ -246,7 +248,11 @@ struct TasksPanel: View {
                             TasksPanelRolloverNoticeSectionView(tasks: overdoTasks) {
                                 withAnimation(.easeOut(duration: 0.2)) {
                                     for task in overdoTasks {
+                                        if task.scheduledStartMin >= 0 {
+                                            SchedulingActions.removeFromCalendar(task)
+                                        }
                                         task.scheduledDate = todayKey
+                                        task.scheduledStartMin = -1
                                     }
                                     rolloverNoticeDismissedDate = todayKey
                                     try? modelContext.save()
@@ -282,34 +288,7 @@ struct TasksPanel: View {
                                     if !doTodayTasks.isEmpty { liveFlatSection(label: "Do Today", tasks: doTodayTasks, labelColor: Theme.blue) }
                                 }
                             case .byList:
-                                ForEach(groupedTasks(todayTasks)) { group in
-                                    TasksPanelGroupSectionView(
-                                        group: group,
-                                        dragOverTaskID: $dragOverTaskID,
-                                        contexts: contexts,
-                                        areas: areas,
-                                        projects: projects,
-                                        isCollapsed: collapsedGroupIDs.contains(group.id),
-                                        overdueCount: overdueCount(in: group.tasks),
-                                        regularCount: regularCount(in: group.tasks),
-                                        onToggle: { toggleGroup(group.id) },
-                                        taskDragPayload: taskDragPayload,
-                                        onDropOnGroupPayload: { payload in
-                                            guard let droppedID = taskID(from: payload),
-                                                  let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                                            assignTask(droppedTask, for: "list:\(group.id)")
-                                            return true
-                                        },
-                                        onDropOnTaskPayload: { payload, targetTask in
-                                            guard let droppedID = taskID(from: payload),
-                                                  droppedID != targetTask.id,
-                                                  let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                                            assignTask(droppedTask, for: "list:\(group.id)")
-                                            reorderTask(droppedID: droppedID, targetID: targetTask.id, scopeTasks: group.tasks)
-                                            return true
-                                        }
-                                    )
-                                }
+                                todayListSections(groups: groupedTasks(todayTasks))
                             case .byPriority:
                                 if let frozenSections = resolvedFrozenFlatSections {
                                     ForEach(frozenSections, id: \.id) { section in
@@ -320,6 +299,7 @@ struct TasksPanel: View {
                                             contexts: contexts,
                                             areas: areas,
                                             projects: projects,
+                                            allTasks: allTasks,
                                             isCollapsed: collapsedGroupIDs.contains("flat-\(section.title.lowercased().replacingOccurrences(of: " ", with: "-"))"),
                                             overdueCount: overdueCount(in: section.taskIDs.compactMap { tasksByID[$0] }),
                                             regularCount: regularCount(in: section.taskIDs.compactMap { tasksByID[$0] }),
@@ -358,6 +338,7 @@ struct TasksPanel: View {
                                                 contexts: contexts,
                                                 areas: areas,
                                                 projects: projects,
+                                                allTasks: allTasks,
                                                 isCollapsed: collapsedGroupIDs.contains("flat-\(priority.label.lowercased().replacingOccurrences(of: " ", with: "-"))"),
                                                 overdueCount: overdueCount(in: tasks),
                                                 regularCount: regularCount(in: tasks),
@@ -386,34 +367,7 @@ struct TasksPanel: View {
                         } else {
                             let groups = groupedTasks(todayGroupedTaskItems)
                             if !groups.isEmpty {
-                                ForEach(groups) { group in
-                                    TasksPanelGroupSectionView(
-                                        group: group,
-                                        dragOverTaskID: $dragOverTaskID,
-                                        contexts: contexts,
-                                        areas: areas,
-                                        projects: projects,
-                                        isCollapsed: collapsedGroupIDs.contains(group.id),
-                                        overdueCount: overdueCount(in: group.tasks),
-                                        regularCount: regularCount(in: group.tasks),
-                                        onToggle: { toggleGroup(group.id) },
-                                        taskDragPayload: taskDragPayload,
-                                        onDropOnGroupPayload: { payload in
-                                            guard let droppedID = taskID(from: payload),
-                                                  let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                                            assignTask(droppedTask, for: "list:\(group.id)")
-                                            return true
-                                        },
-                                        onDropOnTaskPayload: { payload, targetTask in
-                                            guard let droppedID = taskID(from: payload),
-                                                  droppedID != targetTask.id,
-                                                  let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                                            assignTask(droppedTask, for: "list:\(group.id)")
-                                            reorderTask(droppedID: droppedID, targetID: targetTask.id, scopeTasks: group.tasks)
-                                            return true
-                                        }
-                                    )
-                                }
+                                todayListSections(groups: groups)
                             }
                         }
                     } else {
@@ -448,6 +402,7 @@ struct TasksPanel: View {
                                     contexts: contexts,
                                     areas: areas,
                                     projects: projects,
+                                    allTasks: allTasks,
                                     isCollapsed: collapsedGroupIDs.contains(group.id),
                                     overdueCount: overdueCount(in: group.tasks),
                                     regularCount: regularCount(in: group.tasks),
@@ -491,6 +446,7 @@ struct TasksPanel: View {
                             contexts: contexts,
                             areas: areas,
                             projects: projects,
+                            allTasks: allTasks,
                             isCollapsed: isCompletedCollapsed,
                             onToggle: { isCompletedCollapsed.toggle() },
                             taskDragPayload: taskDragPayload
@@ -555,6 +511,7 @@ struct TasksPanel: View {
             contexts: contexts,
             areas: areas,
             projects: projects,
+            allTasks: allTasks,
             isCollapsed: collapsedGroupIDs.contains("flat-\(label.lowercased().replacingOccurrences(of: " ", with: "-"))"),
             overdueCount: overdueCount(in: tasks),
             regularCount: regularCount(in: tasks),
@@ -645,6 +602,81 @@ struct TasksPanel: View {
 
     // MARK: - Grouping
 
+    private func todayContextSections(from groups: [TodayTaskGroup]) -> [TodayTaskContextSection] {
+        var orderedSections: [TodayTaskContextSection] = []
+        var groupedContextMap: [String: Int] = [:]
+
+        for group in groups {
+            if let contextID = group.contextID {
+                if let index = groupedContextMap[contextID] {
+                    orderedSections[index] = TodayTaskContextSection(
+                        id: orderedSections[index].id,
+                        contextName: orderedSections[index].contextName,
+                        contextIcon: orderedSections[index].contextIcon,
+                        contextColor: orderedSections[index].contextColor,
+                        groups: orderedSections[index].groups + [group]
+                    )
+                } else {
+                    groupedContextMap[contextID] = orderedSections.count
+                    orderedSections.append(
+                        TodayTaskContextSection(
+                            id: "context-\(contextID)",
+                            contextName: group.contextName,
+                            contextIcon: group.contextIcon,
+                            contextColor: group.contextColor,
+                            groups: [group]
+                        )
+                    )
+                }
+            } else {
+                orderedSections.append(
+                    TodayTaskContextSection(
+                        id: "group-\(group.id)",
+                        contextName: nil,
+                        contextIcon: nil,
+                        contextColor: nil,
+                        groups: [group]
+                    )
+                )
+            }
+        }
+
+        return orderedSections
+    }
+
+    @ViewBuilder
+    private func todayListSections(groups: [TodayTaskGroup]) -> some View {
+        ForEach(todayContextSections(from: groups)) { section in
+            TodayTaskContextSectionView(
+                section: section,
+                dragOverTaskID: $dragOverTaskID,
+                contexts: contexts,
+                areas: areas,
+                projects: projects,
+                allTasks: allTasks,
+                collapsedGroupIDs: collapsedGroupIDs,
+                overdueCount: { overdueCount(in: $0) },
+                regularCount: { regularCount(in: $0) },
+                onToggleGroup: toggleGroup,
+                taskDragPayload: taskDragPayload,
+                onDropOnGroupPayload: { group, payload in
+                    guard let droppedID = taskID(from: payload),
+                          let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
+                    assignTask(droppedTask, for: "list:\(group.id)")
+                    return true
+                },
+                onDropOnTaskPayload: { group, payload, targetTask in
+                    guard let droppedID = taskID(from: payload),
+                          droppedID != targetTask.id,
+                          let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
+                    assignTask(droppedTask, for: "list:\(group.id)")
+                    reorderTask(droppedID: droppedID, targetID: targetTask.id, scopeTasks: group.tasks)
+                    return true
+                }
+            )
+        }
+    }
+
     private func groupedTasks(_ tasks: [AppTask]) -> [TodayTaskGroup] {
         if let resolvedFrozenListGroups {
             return resolvedFrozenListGroups
@@ -659,6 +691,8 @@ struct TasksPanel: View {
                 if groups[key] == nil {
                     groups[key] = TodayTaskGroup(
                         id: key,
+                        contextID: area.context?.id.uuidString,
+                        contextName: area.context?.name,
                         contextIcon: area.context?.icon,
                         contextColor: area.context.map { Color(hex: $0.colorHex) },
                         listIcon: area.icon,
@@ -672,6 +706,8 @@ struct TasksPanel: View {
                 if groups[key] == nil {
                     groups[key] = TodayTaskGroup(
                         id: key,
+                        contextID: project.context?.id.uuidString,
+                        contextName: project.context?.name,
                         contextIcon: project.context?.icon,
                         contextColor: project.context.map { Color(hex: $0.colorHex) },
                         listIcon: project.icon,
@@ -685,6 +721,8 @@ struct TasksPanel: View {
                 if groups[key] == nil {
                     groups[key] = TodayTaskGroup(
                         id: "inbox",
+                        contextID: nil,
+                        contextName: nil,
                         contextIcon: nil, contextColor: nil,
                         listIcon: "tray.fill",
                         listName: "Inbox",
@@ -729,6 +767,8 @@ struct TasksPanel: View {
         groupedTasks(tasks).map { group in
             FrozenTodayTaskGroup(
                 id: group.id,
+                contextID: group.contextID,
+                contextName: group.contextName,
                 contextIcon: group.contextIcon,
                 contextColor: group.contextColor,
                 listIcon: group.listIcon,

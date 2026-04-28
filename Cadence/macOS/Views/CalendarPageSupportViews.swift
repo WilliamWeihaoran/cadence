@@ -84,20 +84,33 @@ struct CalendarTimelineHeaderStrip: View {
 
     private let cal = Calendar.current
 
+    private var visibleRange: ClosedRange<Int> {
+        let leadingDay = max(0, Int(floor((-scrollState.headerOffset) / max(colWidth, 1))))
+        let visibleCount = max(1, Int(ceil(timelineViewportWidth / max(colWidth, 1))))
+        let lowerBound = max(0, leadingDay - 2)
+        let upperBound = min(calRenderDays - 1, leadingDay + visibleCount + 2)
+        return lowerBound...upperBound
+    }
+
     var body: some View {
-        LazyHStack(spacing: 0) {
-            ForEach(0..<calRenderDays, id: \.self) { dayIdx in
-                let date = cal.date(byAdding: .day, value: dayIdx, to: bufferStart)!
-                let key = DateFormatters.dateKey(from: date)
-                CalDayHeaderView(
-                    date: date,
-                    unscheduledTasks: unscheduledTasksByDate[key] ?? []
-                )
-                .frame(width: colWidth)
+        ZStack(alignment: .leading) {
+            Color.clear
+                .frame(width: totalDaysWidth, alignment: .leading)
+
+            HStack(spacing: 0) {
+                ForEach(Array(visibleRange), id: \.self) { dayIdx in
+                    let date = cal.date(byAdding: .day, value: dayIdx, to: bufferStart)!
+                    let key = DateFormatters.dateKey(from: date)
+                    CalDayHeaderView(
+                        date: date,
+                        unscheduledTasks: unscheduledTasksByDate[key] ?? []
+                    )
+                    .frame(width: colWidth)
+                }
             }
+            .offset(x: CGFloat(visibleRange.lowerBound) * colWidth + scrollState.headerOffset)
         }
         .frame(width: totalDaysWidth, alignment: .leading)
-        .offset(x: scrollState.headerOffset)
         .compositingGroup()
         .transaction { $0.animation = nil }
         .frame(width: timelineViewportWidth, alignment: .leading)

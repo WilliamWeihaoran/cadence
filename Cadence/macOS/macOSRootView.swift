@@ -52,22 +52,14 @@ struct macOSRootView: View {
             ) {
                 detailView
             }
-
-            VStack {
-                HStack {
-                    RootSidebarToggleButton(
-                        isSidebarHidden: columnVisibility == .detailOnly,
-                        action: toggleSidebarVisibility
-                    )
-
-                    Spacer()
-                }
+            .overlay(alignment: .topLeading) {
+                RootSidebarToggleButton(
+                    isSidebarHidden: columnVisibility == .detailOnly,
+                    action: toggleSidebarVisibility
+                )
                 .padding(.leading, 10)
                 .padding(.top, 10)
-
-                Spacer()
             }
-            .zIndex(5)
 
             macOSRootOverlayStack(handleSearchSelection: handleSearchSelection)
         }

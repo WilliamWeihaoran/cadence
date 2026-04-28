@@ -128,15 +128,21 @@ private struct AddLinkBar: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { onCancel() }
-                    .buttonStyle(.cadencePlain)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
-                Button("Save") { onSave() }
-                    .buttonStyle(.cadencePlain)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-                    .disabled(url.trimmingCharacters(in: .whitespaces).isEmpty)
+                CadenceActionButton(
+                    title: "Cancel",
+                    role: .ghost,
+                    size: .compact
+                ) {
+                    onCancel()
+                }
+                CadenceActionButton(
+                    title: "Save",
+                    role: .secondary,
+                    size: .compact,
+                    isDisabled: url.trimmingCharacters(in: .whitespaces).isEmpty
+                ) {
+                    onSave()
+                }
             }
         }
         .padding(.horizontal, 20)

@@ -10,26 +10,36 @@ func taskPriorityRank(_ priority: TaskPriority) -> Int {
     }
 }
 
+private func taskSortFallbackPrecedes(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
+    if lhs.order != rhs.order { return lhs.order < rhs.order }
+    if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+
+    let titleComparison = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+    if titleComparison != .orderedSame { return titleComparison == .orderedAscending }
+
+    return lhs.id.uuidString < rhs.id.uuidString
+}
+
 /// Returns true if `lhs` should sort before `rhs` under the given field and direction.
 /// This is the canonical comparison used by both `taskSorted` and any inline sort in views.
 func taskSortPrecedes(_ lhs: AppTask, _ rhs: AppTask, field: TaskSortField, direction: TaskSortDirection) -> Bool {
     switch field {
     case .custom:
-        return lhs.order < rhs.order
+        return taskSortFallbackPrecedes(lhs, rhs)
     case .date:
         let ld = lhs.scheduledDate.isEmpty ? "9999-99-99" : lhs.scheduledDate
         let rd = rhs.scheduledDate.isEmpty ? "9999-99-99" : rhs.scheduledDate
         if ld != rd {
             return direction == .ascending ? ld < rd : ld > rd
         }
-        return lhs.order < rhs.order
+        return taskSortFallbackPrecedes(lhs, rhs)
     case .priority:
         let lp = taskPriorityRank(lhs.priority)
         let rp = taskPriorityRank(rhs.priority)
         if lp != rp {
             return direction == .ascending ? lp < rp : lp > rp
         }
-        return lhs.order < rhs.order
+        return taskSortFallbackPrecedes(lhs, rhs)
     }
 }
 

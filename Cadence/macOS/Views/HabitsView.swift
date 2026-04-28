@@ -8,80 +8,62 @@ struct HabitsView: View {
 
     @State private var selectedHabitID: UUID? = nil
     @State private var showCreateHabit = false
-
-    private var selectedHabit: Habit? {
-        habits.first { $0.id == selectedHabitID }
-    }
+    @State private var searchText = ""
+    @State private var filter: HabitListFilter = .today
 
     private var todayKey: String { DateFormatters.todayKey() }
 
+    private var selectedHabit: Habit? {
+        visibleHabits.first { $0.id == selectedHabitID } ?? habits.first { $0.id == selectedHabitID }
+    }
+
+    private var visibleHabits: [Habit] {
+        habits.filter { habit in
+            let matchesSearch: Bool
+            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                matchesSearch = true
+            } else {
+                let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                matchesSearch = habit.title.lowercased().contains(query)
+                    || habit.frequencySummary.lowercased().contains(query)
+                    || (habit.context?.name.lowercased().contains(query) ?? false)
+            }
+
+            return matchesSearch && filter.matches(habit)
+        }
+    }
+
+    private var doneTodayCount: Int {
+        habits.filter { $0.isDone(on: todayKey) }.count
+    }
+
+    private var dueTodayCount: Int {
+        habits.filter(\.isDueToday).count
+    }
+
+    private var activeStreakCount: Int {
+        habits.filter { $0.currentStreak > 0 }.count
+    }
+
+    private var averageLast30Completion: Int {
+        guard !habits.isEmpty else { return 0 }
+        let avg = habits.reduce(0.0) { $0 + Double($1.last30DayCompletionRate) }
+            / Double(habits.count)
+        return Int(avg.rounded())
+    }
+
     var body: some View {
         HSplitView {
-            // Left: habit list
-            VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Text("Habits")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                    Spacer()
-                    Button {
-                        showCreateHabit = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Theme.blue)
-                    }
-                    .buttonStyle(.cadencePlain)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 20)
-                .padding(.bottom, 14)
+            leftPane
+                .frame(minWidth: 300, idealWidth: 340)
+                .background(Theme.surface)
 
-                Divider().background(Theme.borderSubtle)
-
-                if habits.isEmpty {
-                    Spacer()
-                    EmptyStateView(
-                        message: "No habits yet",
-                        subtitle: "Tap + to create one",
-                        icon: "flame.fill"
-                    )
-                    Spacer()
-                } else {
-                    ScrollView {
-                        VStack(spacing: 2) {
-                            ForEach(habits) { habit in
-                                HabitListRow(
-                                    habit: habit,
-                                    todayKey: todayKey,
-                                    isSelected: selectedHabitID == habit.id,
-                                    onSelect: { selectedHabitID = habit.id },
-                                    onToggle: { toggleHabit(habit) }
-                                )
-                            }
-                        }
-                        .padding(8)
-                    }
-                }
-            }
-            .frame(minWidth: 240, idealWidth: 280)
-            .background(Theme.surface)
-
-            // Right: detail / heatmap
             if let habit = selectedHabit {
-                HabitDetailView(habit: habit)
+                HabitDetailView(habit: habit, todayKey: todayKey, onToggle: {
+                    toggleHabit(habit)
+                })
             } else {
-                ZStack {
-                    Theme.bg
-                    VStack(spacing: 8) {
-                        Image(systemName: "flame.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(Theme.dim)
-                        Text("Select a habit")
-                            .foregroundStyle(Theme.dim)
-                    }
-                }
+                HabitsEmptyDetail()
             }
         }
         .background(Theme.bg)
@@ -90,6 +72,141 @@ struct HabitsView: View {
         }
         .onAppear {
             if selectedHabitID == nil { selectedHabitID = habits.first?.id }
+        }
+        .onChange(of: visibleHabits.map(\.id)) {
+            if let selectedHabitID, visibleHabits.contains(where: { $0.id == selectedHabitID }) {
+                return
+            }
+            self.selectedHabitID = visibleHabits.first?.id ?? habits.first?.id
+        }
+    }
+
+    private var leftPane: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Habits")
+                            .font(.system(size: 30, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                        Text("Daily systems, streaks, and consistency.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.muted)
+                    }
+
+                    Spacer(minLength: 16)
+
+                    CadenceActionButton(
+                        title: "New Habit",
+                        systemImage: "plus",
+                        role: .primary,
+                        size: .compact
+                    ) {
+                        showCreateHabit = true
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                        TextField("Search habits, frequency, context", text: $searchText)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.text)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Theme.borderSubtle, lineWidth: 1)
+                    )
+                }
+
+                HStack(spacing: 8) {
+                    ForEach(HabitListFilter.allCases, id: \.self) { item in
+                        CadencePillButton(
+                            title: item.label,
+                            isSelected: filter == item,
+                            minWidth: 58
+                        ) {
+                            filter = item
+                        }
+                    }
+                }
+                .padding(4)
+                .background(Theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Theme.borderSubtle, lineWidth: 1)
+                )
+
+                HStack(spacing: 10) {
+                    HabitSummaryTile(
+                        title: "Today",
+                        value: "\(doneTodayCount)/\(dueTodayCount)",
+                        subtitle: dueTodayCount == 0 ? "Nothing due" : "Completed due habits",
+                        color: Theme.green,
+                        icon: "checkmark.circle.fill"
+                    )
+                    HabitSummaryTile(
+                        title: "Streaking",
+                        value: "\(activeStreakCount)",
+                        subtitle: "Habits with a live streak",
+                        color: Theme.amber,
+                        icon: "flame.fill"
+                    )
+                    HabitSummaryTile(
+                        title: "Consistency",
+                        value: "\(averageLast30Completion)%",
+                        subtitle: "Average last 30 days",
+                        color: Theme.blue,
+                        icon: "chart.bar.fill"
+                    )
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 18)
+            .background(Theme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 18))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(Theme.borderSubtle, lineWidth: 1)
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+
+            Divider().background(Theme.borderSubtle)
+
+            if visibleHabits.isEmpty {
+                Spacer()
+                EmptyStateView(
+                    message: searchText.isEmpty ? "No habits yet" : "No matching habits",
+                    subtitle: searchText.isEmpty ? "Create a habit to start building momentum." : "Try a different search or filter.",
+                    icon: "flame.fill"
+                )
+                Spacer()
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 10) {
+                        ForEach(visibleHabits) { habit in
+                            HabitListCard(
+                                habit: habit,
+                                todayKey: todayKey,
+                                isSelected: selectedHabitID == habit.id,
+                                onSelect: { selectedHabitID = habit.id },
+                                onToggle: { toggleHabit(habit) }
+                            )
+                        }
+                    }
+                    .padding(14)
+                }
+            }
         }
     }
 
@@ -100,260 +217,6 @@ struct HabitsView: View {
         } else {
             let c = HabitCompletion(date: todayKey, habit: habit)
             modelContext.insert(c)
-        }
-    }
-}
-
-// MARK: - Habit List Row
-
-private struct HabitListRow: View {
-    let habit: Habit
-    let todayKey: String
-    let isSelected: Bool
-    let onSelect: () -> Void
-    let onToggle: () -> Void
-
-    private var isDoneToday: Bool {
-        (habit.completions ?? []).contains { $0.date == todayKey }
-    }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            // Icon
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(hex: habit.colorHex).opacity(0.15))
-                    .frame(width: 32, height: 32)
-                Image(systemName: habit.icon)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color(hex: habit.colorHex))
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(habit.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-
-                HStack(spacing: 4) {
-                    Image(systemName: "flame.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(Theme.amber)
-                    Text("\(habit.currentStreak) day streak")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.dim)
-                }
-            }
-
-            Spacer()
-
-            // Check-in button
-            Button(action: onToggle) {
-                Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(isDoneToday ? Color(hex: habit.colorHex) : Theme.borderSubtle)
-            }
-            .buttonStyle(.cadencePlain)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(isSelected ? Theme.blue.opacity(0.1) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .contentShape(Rectangle())
-        .onTapGesture { onSelect() }
-    }
-}
-
-// MARK: - Habit Detail View
-
-private struct HabitDetailView: View {
-    let habit: Habit
-
-    private var totalCompletions: Int {
-        (habit.completions ?? []).count
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // Header
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(hex: habit.colorHex).opacity(0.15))
-                            .frame(width: 48, height: 48)
-                        Image(systemName: habit.icon)
-                            .font(.system(size: 22))
-                            .foregroundStyle(Color(hex: habit.colorHex))
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(habit.title)
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(Theme.text)
-                        Text(frequencyDescription)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.dim)
-                    }
-                    Spacer()
-                }
-
-                // Stats row
-                HStack(spacing: 20) {
-                    StatPill(value: "\(habit.currentStreak)", label: "Current Streak", icon: "flame.fill", color: Theme.amber)
-                    StatPill(value: "\(totalCompletions)", label: "Total Check-ins", icon: "checkmark.circle.fill", color: Color(hex: habit.colorHex))
-                    StatPill(value: bestStreakString, label: "Best Streak", icon: "trophy.fill", color: Theme.purple)
-                }
-
-                // Heatmap
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Activity")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .kerning(0.8)
-
-                    HabitHeatmap(habit: habit)
-                }
-            }
-            .padding(24)
-        }
-        .background(Theme.bg)
-    }
-
-    private var frequencyDescription: String {
-        switch habit.frequencyType {
-        case .daily: return "Every day"
-        case .daysOfWeek:
-            let days = habit.frequencyDays
-            let names = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
-            let selected = days.sorted().compactMap { i in names.indices.contains(i) ? names[i] : nil }
-            return selected.isEmpty ? "Custom days" : selected.joined(separator: ", ")
-        case .timesPerWeek:
-            return "\(habit.targetCount)x per week"
-        case .monthly:
-            return "Monthly"
-        }
-    }
-
-    private var bestStreakString: String {
-        let dates = Set((habit.completions ?? []).map { $0.date })
-        let cal = Calendar.current
-        var best = 0
-        var current = 0
-        let today = cal.startOfDay(for: Date())
-        for i in stride(from: 365, through: 0, by: -1) {
-            guard let date = cal.date(byAdding: .day, value: -i, to: today) else { continue }
-            if dates.contains(DateFormatters.dateKey(from: date)) {
-                current += 1
-                best = max(best, current)
-            } else {
-                current = 0
-            }
-        }
-        return "\(best)"
-    }
-}
-
-// MARK: - Stat Pill
-
-private struct StatPill: View {
-    let value: String
-    let label: String
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 12))
-                    .foregroundStyle(color)
-                Text(value)
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(Theme.text)
-            }
-            Text(label)
-                .font(.system(size: 10))
-                .foregroundStyle(Theme.dim)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-}
-
-// MARK: - Habit Heatmap
-
-private struct HabitHeatmap: View {
-    let habit: Habit
-
-    private let cellSize: CGFloat = 12
-    private let gap: CGFloat = 2
-    private let weeks = 52
-
-    private var completionDates: Set<String> {
-        Set((habit.completions ?? []).map { $0.date })
-    }
-
-    private var cal: Calendar { Calendar.current }
-
-    // Start date = 52 weeks ago, aligned to Sunday
-    private var startDate: Date {
-        let today = cal.startOfDay(for: Date())
-        let daysBack = weeks * 7
-        let rawStart = cal.date(byAdding: .day, value: -daysBack, to: today) ?? today
-        // align to Sunday (weekday 1)
-        let weekday = cal.component(.weekday, from: rawStart)
-        let offset = weekday - 1
-        return cal.date(byAdding: .day, value: -offset, to: rawStart) ?? rawStart
-    }
-
-    private var months: [(label: String, weekCol: Int)] {
-        var result: [(String, Int)] = []
-        var seenMonths = Set<Int>()
-        for weekIdx in 0..<weeks {
-            guard let weekStart = cal.date(byAdding: .day, value: weekIdx * 7, to: startDate) else { continue }
-            let month = cal.component(.month, from: weekStart)
-            if !seenMonths.contains(month) {
-                seenMonths.insert(month)
-                result.append((DateFormatters.monthAbbrev.string(from: weekStart), weekIdx))
-            }
-        }
-        return result
-    }
-
-    var body: some View {
-        let fmt = DateFormatters.ymd
-        VStack(alignment: .leading, spacing: 4) {
-            // Month labels
-            ZStack(alignment: .topLeading) {
-                Color.clear.frame(height: 16)
-                ForEach(months, id: \.weekCol) { m in
-                    Text(m.label)
-                        .font(.system(size: 9))
-                        .foregroundStyle(Theme.dim)
-                        .offset(x: CGFloat(m.weekCol) * (cellSize + gap))
-                }
-            }
-
-            // Grid
-            HStack(alignment: .top, spacing: gap) {
-                ForEach(0..<weeks, id: \.self) { weekIdx in
-                    VStack(spacing: gap) {
-                        ForEach(0..<7, id: \.self) { dayOfWeek in
-                            let dayOffset = weekIdx * 7 + dayOfWeek
-                            let date = cal.date(byAdding: .day, value: dayOffset, to: startDate) ?? startDate
-                            let key = fmt.string(from: date)
-                            let isDone = completionDates.contains(key)
-                            let isFuture = date > Date()
-
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(isFuture ? Color.clear : (isDone ? Color(hex: habit.colorHex) : Theme.borderSubtle))
-                                .frame(width: cellSize, height: cellSize)
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -389,7 +252,6 @@ struct CreateHabitSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    // Title
                     fieldLabel("Title")
                     TextField("e.g. Morning Run, Read 30 min", text: $title)
                         .textFieldStyle(.plain)
@@ -400,7 +262,6 @@ struct CreateHabitSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
 
-                    // Context
                     if !allContexts.isEmpty {
                         fieldLabel("Context")
                         Picker("", selection: $selectedContextID) {
@@ -413,15 +274,12 @@ struct CreateHabitSheet: View {
                         .foregroundStyle(Theme.text)
                     }
 
-                    // Icon
                     fieldLabel("Icon")
                     IconGrid(selected: $selectedIcon)
 
-                    // Color
                     fieldLabel("Color")
                     ColorGrid(selected: $selectedColor)
 
-                    // Frequency type
                     fieldLabel("Frequency")
                     Picker("", selection: $frequencyType) {
                         ForEach(HabitFrequency.allCases, id: \.self) { f in
@@ -430,12 +288,11 @@ struct CreateHabitSheet: View {
                     }
                     .pickerStyle(.segmented)
 
-                    // Frequency details
                     switch frequencyType {
                     case .daysOfWeek:
                         HStack(spacing: 6) {
                             ForEach(0..<7, id: \.self) { i in
-                                let dayVal = i + 1 // Mon=1..Sun=7
+                                let dayVal = i + 1
                                 Button(dayNames[i]) {
                                     if selectedDays.contains(dayVal) {
                                         selectedDays.remove(dayVal)
@@ -481,20 +338,21 @@ struct CreateHabitSheet: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                    .buttonStyle(.cadencePlain)
-                    .foregroundStyle(Theme.muted)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                Button("Create") { create() }
-                    .buttonStyle(.cadencePlain)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .opacity(title.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
+                CadenceActionButton(
+                    title: "Cancel",
+                    role: .ghost,
+                    size: .compact
+                ) {
+                    dismiss()
+                }
+                CadenceActionButton(
+                    title: "Create",
+                    role: .primary,
+                    size: .compact,
+                    isDisabled: title.trimmingCharacters(in: .whitespaces).isEmpty
+                ) {
+                    create()
+                }
             }
             .padding(16)
         }
@@ -520,19 +378,23 @@ struct CreateHabitSheet: View {
         habit.order = habits.count
 
         switch frequencyType {
-        case .daysOfWeek:
-            habit.frequencyDays = Array(selectedDays).sorted()
-        case .timesPerWeek:
-            habit.frequencyDays = [timesPerWeek]
-        case .monthly:
-            habit.frequencyDays = [monthlyDay]
         case .daily:
             habit.frequencyDays = []
+            habit.targetCount = 1
+        case .daysOfWeek:
+            habit.frequencyDays = selectedDays.sorted()
+            habit.targetCount = max(1, selectedDays.count)
+        case .timesPerWeek:
+            habit.frequencyDays = [timesPerWeek]
+            habit.targetCount = timesPerWeek
+        case .monthly:
+            habit.frequencyDays = [monthlyDay]
+            habit.targetCount = 1
         }
 
-        if let ctxID = selectedContextID,
-           let ctx = try? modelContext.fetch(FetchDescriptor<Context>()).first(where: { $0.id == ctxID }) {
-            habit.context = ctx
+        if let selectedContextID,
+           let context = allContexts.first(where: { $0.id == selectedContextID }) {
+            habit.context = context
         }
 
         modelContext.insert(habit)
