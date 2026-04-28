@@ -565,49 +565,27 @@ final class CadenceReadService {
     }
 
     private func resolvedDateKey(_ dateKey: String?) throws -> String {
-        guard let dateKey, !dateKey.isEmpty else { return DateFormatters.todayKey() }
-        _ = try parsedDate(dateKey)
-        return dateKey
+        try CadenceMCPServiceSupport.resolvedDateKey(dateKey)
     }
 
     private func weekKey(for dateKey: String) throws -> String {
-        DateFormatters.weekKey(from: try parsedDate(dateKey))
+        try CadenceMCPServiceSupport.weekKey(for: dateKey)
     }
 
     private func parsedDate(_ dateKey: String) throws -> Date {
-        guard let date = DateFormatters.date(from: dateKey) else {
-            throw CadenceReadError.invalidDate(dateKey)
-        }
-        return date
+        try CadenceMCPServiceSupport.parsedDate(dateKey)
     }
 
     private func uuid(from id: String) throws -> UUID {
-        guard let uuid = UUID(uuidString: id) else {
-            throw CadenceReadError.invalidIdentifier(id)
-        }
-        return uuid
+        try CadenceMCPServiceSupport.uuid(from: id)
     }
 
     private func normalizeContainerKind(_ value: String) throws -> String {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard normalized == "area" || normalized == "project" else {
-            throw CadenceReadError.invalidContainerKind(value)
-        }
-        return normalized
+        try CadenceMCPServiceSupport.normalizeContainerKind(value)
     }
 
     private func resolvedContainerFilter(kind: String?, id: String?) throws -> (kind: String, id: UUID)? {
-        let normalizedKind = kind?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedID = id?.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        switch (normalizedKind?.isEmpty == false ? normalizedKind : nil, normalizedID?.isEmpty == false ? normalizedID : nil) {
-        case (.none, .none):
-            return nil
-        case (.some(let kind), .some(let id)):
-            return (try normalizeContainerKind(kind), try uuid(from: id))
-        default:
-            throw CadenceReadError.incompleteContainerFilter
-        }
+        try CadenceMCPServiceSupport.resolvedContainerFilter(kind: kind, id: id)
     }
 
     private func validateTaskStatuses(_ statuses: [String]) throws -> Set<String> {
@@ -650,7 +628,7 @@ final class CadenceReadService {
     }
 
     private func cappedLimit(_ limit: Int) -> Int {
-        min(max(limit, 0), 200)
+        CadenceMCPServiceSupport.cappedLimit(limit)
     }
 
     private func format(_ date: Date) -> String {
@@ -658,16 +636,10 @@ final class CadenceReadService {
     }
 
     private func excerpt(_ text: String, maxLength: Int = 240) -> String {
-        let cleaned = text
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard cleaned.count > maxLength else { return cleaned }
-        return String(cleaned.prefix(maxLength)).trimmingCharacters(in: .whitespacesAndNewlines)
+        CadenceMCPServiceSupport.excerpt(text, maxLength: maxLength)
     }
 
     private func resolvedTitle(_ value: String, fallback: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? fallback : trimmed
+        CadenceMCPServiceSupport.resolvedTitle(value, fallback: fallback)
     }
 }

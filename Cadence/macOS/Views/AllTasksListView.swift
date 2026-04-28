@@ -109,56 +109,7 @@ struct AllTasksListView: View {
     }
 
     private func listGroups(from activeTasks: [AppTask]) -> [TodayTaskGroup] {
-        var groups: [String: TodayTaskGroup] = [:]
-
-        for task in activeTasks {
-            let key: String
-            if let area = task.area {
-                key = "a_\(area.id.uuidString)"
-                groups[key] = groups[key] ?? TodayTaskGroup(
-                    id: key,
-                    contextID: area.context?.id.uuidString,
-                    contextName: area.context?.name,
-                    contextIcon: area.context?.icon,
-                    contextColor: area.context.map { Color(hex: $0.colorHex) },
-                    listIcon: area.icon,
-                    listName: area.name,
-                    listColor: Color(hex: area.colorHex),
-                    tasks: []
-                )
-            } else if let project = task.project {
-                key = "p_\(project.id.uuidString)"
-                groups[key] = groups[key] ?? TodayTaskGroup(
-                    id: key,
-                    contextID: project.context?.id.uuidString,
-                    contextName: project.context?.name,
-                    contextIcon: project.context?.icon,
-                    contextColor: project.context.map { Color(hex: $0.colorHex) },
-                    listIcon: project.icon,
-                    listName: project.name,
-                    listColor: Color(hex: project.colorHex),
-                    tasks: []
-                )
-            } else {
-                key = "inbox"
-                groups[key] = groups[key] ?? TodayTaskGroup(
-                    id: "inbox",
-                    contextID: nil,
-                    contextName: nil,
-                    contextIcon: nil,
-                    contextColor: nil,
-                    listIcon: "tray.fill",
-                    listName: "Inbox",
-                    listColor: Theme.dim,
-                    tasks: []
-                )
-            }
-            groups[key]?.tasks.append(task)
-        }
-
-        let orderedKeys = TasksPanelSupport.sidebarListOrder(contexts: contexts).filter { groups[$0] != nil }
-        let unorderedKeys = groups.keys.filter { !orderedKeys.contains($0) }.sorted()
-        return (orderedKeys + unorderedKeys).compactMap { groups[$0] }
+        TasksPanelSupport.listGroups(from: activeTasks, contexts: contexts)
     }
 
     var body: some View {

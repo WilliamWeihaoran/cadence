@@ -96,6 +96,83 @@ enum TasksPanelSupport {
         )
     }
 
+    static func listGroups(
+        from tasks: [AppTask],
+        contexts: [Context],
+        taskOrder: ([AppTask]) -> [AppTask] = { $0 }
+    ) -> [TodayTaskGroup] {
+        var groups: [String: TodayTaskGroup] = [:]
+
+        for task in tasks {
+            let key = listGroupKey(for: task)
+            if groups[key] == nil {
+                groups[key] = listGroupShell(for: task, key: key)
+            }
+            groups[key]?.tasks.append(task)
+        }
+
+        let orderedKeys = sidebarListOrder(contexts: contexts).filter { groups[$0] != nil }
+        let unorderedKeys = groups.keys
+            .filter { !orderedKeys.contains($0) }
+            .sorted()
+
+        return (orderedKeys + unorderedKeys).compactMap { key in
+            guard var group = groups[key] else { return nil }
+            group.tasks = taskOrder(group.tasks)
+            return group
+        }
+    }
+
+    private static func listGroupKey(for task: AppTask) -> String {
+        if let area = task.area {
+            return "a_\(area.id.uuidString)"
+        }
+        if let project = task.project {
+            return "p_\(project.id.uuidString)"
+        }
+        return "inbox"
+    }
+
+    private static func listGroupShell(for task: AppTask, key: String) -> TodayTaskGroup {
+        if let area = task.area {
+            return TodayTaskGroup(
+                id: key,
+                contextID: area.context?.id.uuidString,
+                contextName: area.context?.name,
+                contextIcon: area.context?.icon,
+                contextColor: area.context.map { Color(hex: $0.colorHex) },
+                listIcon: area.icon,
+                listName: area.name,
+                listColor: Color(hex: area.colorHex),
+                tasks: []
+            )
+        }
+        if let project = task.project {
+            return TodayTaskGroup(
+                id: key,
+                contextID: project.context?.id.uuidString,
+                contextName: project.context?.name,
+                contextIcon: project.context?.icon,
+                contextColor: project.context.map { Color(hex: $0.colorHex) },
+                listIcon: project.icon,
+                listName: project.name,
+                listColor: Color(hex: project.colorHex),
+                tasks: []
+            )
+        }
+        return TodayTaskGroup(
+            id: "inbox",
+            contextID: nil,
+            contextName: nil,
+            contextIcon: nil,
+            contextColor: nil,
+            listIcon: "tray.fill",
+            listName: "Inbox",
+            listColor: Theme.dim,
+            tasks: []
+        )
+    }
+
     static func overdueCount(in tasks: [AppTask], todayKey: String) -> Int? {
         let count = tasks.filter { !$0.isDone && !$0.dueDate.isEmpty && $0.dueDate < todayKey }.count
         return count > 0 ? count : nil

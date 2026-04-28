@@ -32,6 +32,9 @@
 		A10000002FCE000000000217 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000117 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift */; };
 		A10000002FCE000000000218 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = A10000002FCE000000000302 /* MCP */; };
 		A10000002FCE000000000219 /* Cadence/Services/MCPReadOnly/CadenceWriteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000118 /* Cadence/Services/MCPReadOnly/CadenceWriteService.swift */; };
+		A10000002FCE00000000021A /* Cadence/Services/MCPReadOnly/CadenceMCPServiceSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000119 /* Cadence/Services/MCPReadOnly/CadenceMCPServiceSupport.swift */; };
+		A10000002FCE00000000021B /* CadenceMCPToolDefinitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000011A /* CadenceMCPToolDefinitions.swift */; };
+		A10000002FCE00000000021C /* CadenceMCPArgumentParsing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000011B /* CadenceMCPArgumentParsing.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -80,6 +83,9 @@
 		A10000002FCE000000000116 /* Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000117 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceReadService.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000118 /* Cadence/Services/MCPReadOnly/CadenceWriteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceWriteService.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000119 /* Cadence/Services/MCPReadOnly/CadenceMCPServiceSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceMCPServiceSupport.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000011A /* CadenceMCPToolDefinitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CadenceMCPToolDefinitions.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000011B /* CadenceMCPArgumentParsing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CadenceMCPArgumentParsing.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -169,6 +175,7 @@
 				A10000002FCE000000000114 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift */,
 				A10000002FCE000000000115 /* Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift */,
 				A10000002FCE000000000116 /* Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift */,
+				A10000002FCE000000000119 /* Cadence/Services/MCPReadOnly/CadenceMCPServiceSupport.swift */,
 				A10000002FCE000000000117 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift */,
 				A10000002FCE000000000118 /* Cadence/Services/MCPReadOnly/CadenceWriteService.swift */,
 			);
@@ -203,6 +210,8 @@
 			children = (
 				A10000002FCE000000000101 /* main.swift */,
 				A10000002FCE000000000102 /* CadenceMCPToolRouter.swift */,
+				A10000002FCE00000000011A /* CadenceMCPToolDefinitions.swift */,
+				A10000002FCE00000000011B /* CadenceMCPArgumentParsing.swift */,
 			);
 			path = CadenceMCPServer;
 			sourceTree = "<group>";
@@ -418,9 +427,12 @@
 				A10000002FCE000000000214 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift in Sources */,
 				A10000002FCE000000000215 /* Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift in Sources */,
 				A10000002FCE000000000216 /* Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift in Sources */,
+				A10000002FCE00000000021A /* Cadence/Services/MCPReadOnly/CadenceMCPServiceSupport.swift in Sources */,
 				A10000002FCE000000000217 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift in Sources */,
 				A10000002FCE000000000219 /* Cadence/Services/MCPReadOnly/CadenceWriteService.swift in Sources */,
 				A10000002FCE000000000202 /* CadenceMCPToolRouter.swift in Sources */,
+				A10000002FCE00000000021B /* CadenceMCPToolDefinitions.swift in Sources */,
+				A10000002FCE00000000021C /* CadenceMCPArgumentParsing.swift in Sources */,
 				A10000002FCE000000000201 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

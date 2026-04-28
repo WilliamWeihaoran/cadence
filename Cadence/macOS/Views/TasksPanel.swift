@@ -225,10 +225,6 @@ struct TasksPanel: View {
         }
     }
 
-    private var sidebarListOrder: [String] {
-        TasksPanelSupport.sidebarListOrder(contexts: contexts)
-    }
-
     var body: some View {
         let sortedByDoDate: [AppTask] = mode == .byDoDate ? byDoDateSortedTasks : []
         let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
@@ -682,67 +678,8 @@ struct TasksPanel: View {
             return resolvedFrozenListGroups
         }
 
-        var groups: [String: TodayTaskGroup] = [:]
-
-        for task in tasks {
-            let key: String
-            if let area = task.area {
-                key = "a_\(area.id.uuidString)"
-                if groups[key] == nil {
-                    groups[key] = TodayTaskGroup(
-                        id: key,
-                        contextID: area.context?.id.uuidString,
-                        contextName: area.context?.name,
-                        contextIcon: area.context?.icon,
-                        contextColor: area.context.map { Color(hex: $0.colorHex) },
-                        listIcon: area.icon,
-                        listName: area.name,
-                        listColor: Color(hex: area.colorHex),
-                        tasks: []
-                    )
-                }
-            } else if let project = task.project {
-                key = "p_\(project.id.uuidString)"
-                if groups[key] == nil {
-                    groups[key] = TodayTaskGroup(
-                        id: key,
-                        contextID: project.context?.id.uuidString,
-                        contextName: project.context?.name,
-                        contextIcon: project.context?.icon,
-                        contextColor: project.context.map { Color(hex: $0.colorHex) },
-                        listIcon: project.icon,
-                        listName: project.name,
-                        listColor: Color(hex: project.colorHex),
-                        tasks: []
-                    )
-                }
-            } else {
-                key = "inbox"
-                if groups[key] == nil {
-                    groups[key] = TodayTaskGroup(
-                        id: "inbox",
-                        contextID: nil,
-                        contextName: nil,
-                        contextIcon: nil, contextColor: nil,
-                        listIcon: "tray.fill",
-                        listName: "Inbox",
-                        listColor: Theme.dim,
-                        tasks: []
-                    )
-                }
-            }
-            groups[key]!.tasks.append(task)
-        }
-
-        let orderedKeys = sidebarListOrder.filter { groups[$0] != nil }
-        let unorderedKeys = groups.keys
-            .filter { !orderedKeys.contains($0) }
-            .sorted()
-
-        return (orderedKeys + unorderedKeys).compactMap { key in
-            guard var group = groups[key] else { return nil }
-            group.tasks = applyFreeze(group.tasks.sorted(by: compareTasksForCurrentSort))
-            return group
+        return TasksPanelSupport.listGroups(from: tasks, contexts: contexts) { groupTasks in
+            applyFreeze(groupTasks.sorted(by: compareTasksForCurrentSort))
         }
     }
 

@@ -368,41 +368,27 @@ final class CadenceWriteService {
     }
 
     private func normalizedRequiredText(_ value: String, emptyError: Error) throws -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw emptyError }
-        return trimmed
+        try CadenceMCPServiceSupport.normalizedRequiredText(value, emptyError: emptyError)
     }
 
     private func validatedOptionalDate(_ dateKey: String?) throws -> String? {
-        guard let dateKey, !dateKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        _ = try parsedDate(dateKey)
-        return dateKey
+        try CadenceMCPServiceSupport.validatedOptionalDate(dateKey)
     }
 
     private func resolvedDateKey(_ dateKey: String?) throws -> String {
-        guard let dateKey, !dateKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return DateFormatters.todayKey()
-        }
-        _ = try parsedDate(dateKey)
-        return dateKey
+        try CadenceMCPServiceSupport.resolvedDateKey(dateKey)
     }
 
     private func weekKey(for dateKey: String) throws -> String {
-        DateFormatters.weekKey(from: try parsedDate(dateKey))
+        try CadenceMCPServiceSupport.weekKey(for: dateKey)
     }
 
     private func parsedDate(_ dateKey: String) throws -> Date {
-        guard let date = DateFormatters.date(from: dateKey) else {
-            throw CadenceReadError.invalidDate(dateKey)
-        }
-        return date
+        try CadenceMCPServiceSupport.parsedDate(dateKey)
     }
 
     private func uuid(from id: String) throws -> UUID {
-        guard let uuid = UUID(uuidString: id) else {
-            throw CadenceReadError.invalidIdentifier(id)
-        }
-        return uuid
+        try CadenceMCPServiceSupport.uuid(from: id)
     }
 
     private func validatePriority(_ value: String) throws -> TaskPriority {
@@ -453,11 +439,7 @@ final class CadenceWriteService {
     }
 
     private func normalizedContainerKind(_ value: String) throws -> String {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard normalized == "area" || normalized == "project" else {
-            throw CadenceReadError.invalidContainerKind(value)
-        }
-        return normalized
+        try CadenceMCPServiceSupport.normalizeContainerKind(value)
     }
 
     private func resolveContainer(kind: String?, id: String?) throws -> CadenceResolvedContainer? {
@@ -512,27 +494,15 @@ final class CadenceWriteService {
     }
 
     private func normalizedSectionName(_ value: String?, container: CadenceResolvedContainer?) -> String {
-        let requested = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard let container else { return TaskSectionDefaults.defaultName }
-        let available = container.sectionNames
-        if !requested.isEmpty, let match = available.first(where: { $0.caseInsensitiveCompare(requested) == .orderedSame }) {
-            return match
-        }
-        return available.first ?? TaskSectionDefaults.defaultName
+        CadenceMCPServiceSupport.normalizedSectionName(value, container: container)
     }
 
     private func normalizedSubtaskTitles(_ values: [String]) -> [String] {
-        values
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        CadenceMCPServiceSupport.normalizedSubtaskTitles(values)
     }
 
     private func append(_ text: String, separator: String, to content: inout String) {
-        if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            content = text
-        } else {
-            content += separator + text
-        }
+        CadenceMCPServiceSupport.append(text, separator: separator, to: &content)
     }
 
     private func makeNextRecurringTask(from task: AppTask) -> AppTask {
@@ -594,19 +564,5 @@ final class CadenceWriteService {
 
         guard let next = calendar.date(byAdding: component, value: value, to: date) else { return nil }
         return DateFormatters.dateKey(from: next)
-    }
-}
-
-private enum CadenceResolvedContainer {
-    case area(Area)
-    case project(Project)
-
-    var sectionNames: [String] {
-        switch self {
-        case .area(let area):
-            return area.sectionNames
-        case .project(let project):
-            return project.sectionNames
-        }
     }
 }
