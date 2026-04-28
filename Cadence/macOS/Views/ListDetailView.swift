@@ -64,6 +64,7 @@ private struct ListDetailView: View {
     @State private var kanbanSortField: TaskSortField = .custom
     @State private var kanbanSortDirection: TaskSortDirection = .ascending
     @State private var highlightedKanbanSectionName: String?
+    @State private var requestedEventNoteID: UUID?
 
     private var kanbanUDKey: String {
         if let a = area { return "kanban_\(a.id.uuidString)" }
@@ -194,7 +195,7 @@ private struct ListDetailView: View {
                 case .planning:
                     ListPlanningView(tasks: tasks, area: area, project: project)
                 case .documents:
-                    DocumentsView(area: area, project: project)
+                    DocumentsView(area: area, project: project, requestedEventNoteID: $requestedEventNoteID)
                 case .links:
                     LinksView(area: area, project: project)
                 case .completed:
@@ -276,6 +277,7 @@ private struct ListDetailView: View {
         ) else { return }
         tab = request.page
         highlightedKanbanSectionName = request.page == .kanban ? request.sectionName : nil
+        requestedEventNoteID = request.page == .documents ? request.eventNoteID : nil
     }
 
     private func installKeyMonitorIfNeeded() {

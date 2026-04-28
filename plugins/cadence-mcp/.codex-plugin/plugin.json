@@ -1,7 +1,7 @@
 {
   "name": "cadence-mcp",
   "version": "0.1.0",
-  "description": "Read-only local MCP tools for Cadence tasks, projects, and notes.",
+  "description": "Local MCP tools for reading Cadence data and safely writing tasks and core notes.",
   "author": {
     "name": "William Wei",
     "email": "",
@@ -18,12 +18,13 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Cadence MCP",
-    "shortDescription": "Read Cadence tasks, projects, notes, and documents.",
-    "longDescription": "Local read-only MCP tools for querying Cadence data from Codex.",
+    "shortDescription": "Read Cadence and safely write tasks/core notes.",
+    "longDescription": "Local MCP tools for querying Cadence data and conservatively mutating tasks plus daily, weekly, and permanent notes from Codex.",
     "developerName": "William Wei",
     "category": "Productivity",
     "capabilities": [
-      "Read"
+      "Read",
+      "Write"
     ],
     "defaultPrompt": [
       "Show my Cadence brief for today.",

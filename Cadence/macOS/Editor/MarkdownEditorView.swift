@@ -6,7 +6,7 @@ struct MarkdownEditorView: NSViewRepresentable {
     @Binding var text: String
 
     func makeNSView(context: NSViewRepresentableContext<MarkdownEditorView>) -> NSScrollView {
-        let scrollView = NSScrollView()
+        let scrollView = MarkdownEditorScrollView()
         scrollView.drawsBackground = true
         scrollView.backgroundColor = NSColor(hex: "#0f1117")
         scrollView.hasVerticalScroller = true
@@ -47,6 +47,7 @@ struct MarkdownEditorView: NSViewRepresentable {
         textView.typingAttributes = MarkdownStylist.baseAttributes
 
         scrollView.documentView = textView
+        MarkdownEditorScrollSupport.refreshLayout(in: scrollView)
         return scrollView
     }
 
@@ -59,10 +60,56 @@ struct MarkdownEditorView: NSViewRepresentable {
             let safe = NSRange(location: min(sel.location, (text as NSString).length), length: 0)
             textView.setSelectedRange(safe)
         }
+        MarkdownEditorScrollSupport.refreshLayout(in: scrollView)
     }
 
     func makeCoordinator() -> MarkdownEditorCoordinator {
         MarkdownEditorCoordinator(parent: self)
+    }
+}
+
+private final class MarkdownEditorScrollView: NSScrollView {
+    override func layout() {
+        super.layout()
+        MarkdownEditorScrollSupport.refreshLayout(in: self)
+    }
+}
+
+enum MarkdownEditorScrollSupport {
+    static func refreshLayout(in scrollView: NSScrollView) {
+        guard let textView = scrollView.documentView as? NSTextView,
+              let textContainer = textView.textContainer,
+              let layoutManager = textView.layoutManager else { return }
+
+        let contentSize = scrollView.contentSize
+        let targetWidth = max(1, contentSize.width)
+        let currentSize = textView.frame.size
+
+        textView.minSize = NSSize(width: 0, height: contentSize.height)
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.textContainer?.widthTracksTextView = true
+        textContainer.containerSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
+
+        if abs(currentSize.width - targetWidth) > 0.5 {
+            textView.setFrameSize(NSSize(width: targetWidth, height: max(currentSize.height, contentSize.height)))
+        }
+
+        layoutManager.ensureLayout(for: textContainer)
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        let targetHeight = max(
+            contentSize.height,
+            ceil(usedRect.maxY + textView.textContainerInset.height * 2 + 1)
+        )
+
+        let updatedSize = textView.frame.size
+        if abs(updatedSize.height - targetHeight) > 0.5 || abs(updatedSize.width - targetWidth) > 0.5 {
+            textView.setFrameSize(NSSize(width: targetWidth, height: targetHeight))
+        }
     }
 }
 #endif

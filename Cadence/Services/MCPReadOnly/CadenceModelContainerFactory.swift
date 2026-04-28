@@ -17,6 +17,18 @@ enum CadenceModelContainerFactory {
         return try ModelContainer(for: CadenceSchema.schema, configurations: [configuration])
     }
 
+    static func makeReadWriteContainer() throws -> ModelContainer {
+        let storeURL = try resolvedStoreURL()
+        let configuration = ModelConfiguration(
+            "Cadence",
+            schema: CadenceSchema.schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none
+        )
+        return try ModelContainer(for: CadenceSchema.schema, configurations: [configuration])
+    }
+
     static func makeInMemoryContainer() throws -> ModelContainer {
         let configuration = ModelConfiguration(
             schema: CadenceSchema.schema,
@@ -55,5 +67,25 @@ enum CadenceModelContainerFactory {
             appContainerURL.path,
             unsandboxedURL.path,
         ])
+    }
+
+    static func refreshMarkerURL() throws -> URL {
+        try resolvedStoreURL()
+            .deletingLastPathComponent()
+            .appendingPathComponent(".cadence-mcp-refresh")
+    }
+
+    static func notifyExternalWrite() {
+        guard let markerURL = try? refreshMarkerURL() else { return }
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let data = Data(timestamp.utf8)
+        if FileManager.default.fileExists(atPath: markerURL.path),
+           let handle = try? FileHandle(forWritingTo: markerURL) {
+            try? handle.truncate(atOffset: 0)
+            try? handle.write(contentsOf: data)
+            try? handle.close()
+        } else {
+            FileManager.default.createFile(atPath: markerURL.path, contents: data)
+        }
     }
 }

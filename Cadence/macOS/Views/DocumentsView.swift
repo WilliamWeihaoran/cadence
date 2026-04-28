@@ -7,12 +7,22 @@ import UniformTypeIdentifiers
 struct DocumentsView: View {
     var area: Area? = nil
     var project: Project? = nil
+    @Binding var requestedEventNoteID: UUID?
+
+    init(area: Area? = nil, project: Project? = nil, requestedEventNoteID: Binding<UUID?> = .constant(nil)) {
+        self.area = area
+        self.project = project
+        _requestedEventNoteID = requestedEventNoteID
+    }
 
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
+    @Environment(CalendarManager.self) private var calendarManager
     @State private var selectedDocID: UUID? = nil
+    @State private var selectedEventNoteID: UUID? = nil
     @Query(sort: \Document.order) private var allDocs: [Document]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Query(sort: \EventNote.updatedAt, order: .reverse) private var allEventNotes: [EventNote]
 
     private var docs: [Document] {
         if let area {
@@ -25,6 +35,19 @@ struct DocumentsView: View {
 
     private var selectedDoc: Document? {
         docs.first { $0.id == selectedDocID }
+    }
+
+    private var linkedCalendarID: String {
+        area?.linkedCalendarID ?? project?.linkedCalendarID ?? ""
+    }
+
+    private var meetingNotes: [EventNote] {
+        guard !linkedCalendarID.isEmpty else { return [] }
+        return allEventNotes.filter { $0.calendarID == linkedCalendarID }
+    }
+
+    private var selectedEventNote: EventNote? {
+        meetingNotes.first { $0.id == selectedEventNoteID }
     }
 
     private var tasks: [AppTask] {
@@ -76,23 +99,55 @@ struct DocumentsView: View {
                 Divider().background(Theme.borderSubtle)
 
                 ScrollView {
-                    VStack(spacing: 2) {
-                        ForEach(docs) { doc in
-                            DocRow(doc: doc, isSelected: selectedDocID == doc.id)
-                                .onTapGesture { selectedDocID = doc.id }
-                                .contextMenu {
-                                    Button(role: .destructive) {
-                                        deleteDoc(doc)
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        if !meetingNotes.isEmpty {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Meeting Notes")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Theme.dim)
+                                    .textCase(.uppercase)
+                                    .padding(.horizontal, 12)
+                                    .padding(.top, 4)
+                                ForEach(meetingNotes) { note in
+                                    MeetingNoteListRow(note: note, isSelected: selectedEventNoteID == note.id)
+                                        .onTapGesture {
+                                            selectedEventNoteID = note.id
+                                            selectedDocID = nil
+                                            requestedEventNoteID = nil
+                                        }
                                 }
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            if !meetingNotes.isEmpty && !docs.isEmpty {
+                                Text("Notes")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Theme.dim)
+                                    .textCase(.uppercase)
+                                    .padding(.horizontal, 12)
+                            }
+
+                            ForEach(docs) { doc in
+                                DocRow(doc: doc, isSelected: selectedDocID == doc.id)
+                                    .onTapGesture {
+                                        selectedDocID = doc.id
+                                        selectedEventNoteID = nil
+                                    }
+                                    .contextMenu {
+                                        Button(role: .destructive) {
+                                            deleteDoc(doc)
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                    }
+                            }
                         }
                     }
                     .padding(8)
                 }
 
-                if docs.isEmpty {
+                if docs.isEmpty && meetingNotes.isEmpty {
                     Spacer()
                     EmptyStateView(
                         message: "No notes",
@@ -106,7 +161,9 @@ struct DocumentsView: View {
             .background(Theme.surface)
 
             // Editor — .id(doc.id) ensures a fresh NSTextView (and undo stack) per document
-            if let doc = selectedDoc {
+            if let eventNote = selectedEventNote {
+                EventNoteInlineEditorPane(note: eventNote)
+            } else if let doc = selectedDoc {
                 VStack(spacing: 0) {
                     NoteReferenceStrip(
                         doc: doc,
@@ -133,7 +190,21 @@ struct DocumentsView: View {
         }
         .background(Theme.bg)
         .onAppear {
-            if selectedDocID == nil { selectedDocID = docs.first?.id }
+            backfillMeetingNoteMetadata()
+            applyRequestedEventNoteSelection()
+            if selectedDocID == nil, selectedEventNoteID == nil {
+                selectedEventNoteID = meetingNotes.first?.id
+                if selectedEventNoteID == nil {
+                    selectedDocID = docs.first?.id
+                }
+            }
+        }
+        .onChange(of: requestedEventNoteID) { _, _ in
+            applyRequestedEventNoteSelection()
+        }
+        .onChange(of: allEventNotes.map(\.id)) { _, _ in
+            backfillMeetingNoteMetadata()
+            applyRequestedEventNoteSelection()
         }
     }
 
@@ -145,6 +216,7 @@ struct DocumentsView: View {
         doc.content = defaultDocumentContent(for: doc.title)
         modelContext.insert(doc)
         selectedDocID = doc.id
+        selectedEventNoteID = nil
     }
 
     private func deleteDoc(_ doc: Document) {
@@ -163,6 +235,23 @@ struct DocumentsView: View {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let headingTitle = trimmed.isEmpty ? "Untitled" : trimmed
         return "# \(headingTitle)\n\n"
+    }
+
+    private func applyRequestedEventNoteSelection() {
+        guard let requestedEventNoteID else { return }
+        guard meetingNotes.contains(where: { $0.id == requestedEventNoteID }) else { return }
+        selectedEventNoteID = requestedEventNoteID
+        selectedDocID = nil
+        self.requestedEventNoteID = nil
+    }
+
+    private func backfillMeetingNoteMetadata() {
+        for note in allEventNotes where note.calendarID.isEmpty {
+            EventNoteSupport.backfillMetadataIfPossible(note, calendarManager: calendarManager)
+        }
+        if modelContext.hasChanges {
+            try? modelContext.save()
+        }
     }
 
     private func exportDocumentAsMarkdown(_ doc: Document) {

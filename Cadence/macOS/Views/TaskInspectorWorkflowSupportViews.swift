@@ -404,9 +404,14 @@ struct TaskInspectorEventAttachmentControl: View {
 
     private func openEventNote(for event: EKEvent) {
         let eventID = event.eventIdentifier ?? task.calendarEventID
+        let metadata = EventNoteSupport.eventDateMetadata(from: event)
         presentedEventNote = EventNoteSupport.noteForEditing(
             calendarEventID: eventID,
             eventTitle: event.title ?? "Linked Event",
+            calendarID: event.calendar.calendarIdentifier,
+            eventDateKey: metadata.dateKey,
+            eventStartMin: metadata.startMin,
+            eventEndMin: metadata.endMin,
             notes: eventNotes
         ) { modelContext.insert($0) }
     }

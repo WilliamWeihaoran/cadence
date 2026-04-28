@@ -166,8 +166,7 @@ private final class MarkdownSlashCommandPickerController {
     }
 
     private func caretAnchorRect(for textView: NSTextView, at characterIndex: Int) -> NSRect {
-        guard let layoutManager = textView.layoutManager,
-              let textContainer = textView.textContainer else {
+        guard let layoutManager = textView.layoutManager else {
             return NSRect(x: textView.textContainerInset.width, y: textView.textContainerInset.height, width: 1, height: 18)
         }
 
@@ -379,6 +378,9 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         MarkdownStylist.apply(to: textView)
         if let cadenceTextView = textView as? CadenceTextView {
             cadenceTextView.snapCaretAwayFromHiddenMarkdown(preferringForward: true)
+        }
+        if let scrollView = textView.enclosingScrollView {
+            MarkdownEditorScrollSupport.refreshLayout(in: scrollView)
         }
         textView.typingAttributes = MarkdownStylist.baseAttributes
     }

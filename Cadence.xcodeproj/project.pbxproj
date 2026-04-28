@@ -9,28 +9,29 @@
 /* Begin PBXBuildFile section */
 		A10000002FCE000000000201 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000101 /* main.swift */; };
 		A10000002FCE000000000202 /* CadenceMCPToolRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000102 /* CadenceMCPToolRouter.swift */; };
-		A10000002FCE000000000203 /* ModelEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000103 /* ModelEnums.swift */; };
-		A10000002FCE000000000204 /* Context.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000104 /* Context.swift */; };
-		A10000002FCE000000000205 /* Area.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000105 /* Area.swift */; };
-		A10000002FCE000000000206 /* Project.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000106 /* Project.swift */; };
-		A10000002FCE000000000207 /* Goal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000107 /* Goal.swift */; };
-		A10000002FCE000000000208 /* AppTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000108 /* AppTask.swift */; };
-		A10000002FCE000000000209 /* Subtask.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000109 /* Subtask.swift */; };
-		A10000002FCE00000000020A /* Habit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010A /* Habit.swift */; };
-		A10000002FCE00000000020B /* HabitCompletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010B /* HabitCompletion.swift */; };
-		A10000002FCE00000000020C /* DailyNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010C /* DailyNote.swift */; };
-		A10000002FCE00000000020D /* WeeklyNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010D /* WeeklyNote.swift */; };
-		A10000002FCE00000000020E /* PermNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010E /* PermNote.swift */; };
-		A10000002FCE00000000020F /* Document.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010F /* Document.swift */; };
-		A10000002FCE000000000210 /* SavedLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000110 /* SavedLink.swift */; };
-		A10000002FCE000000000211 /* EventNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000111 /* EventNote.swift */; };
-		A10000002FCE000000000212 /* DateFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000112 /* DateFormatters.swift */; };
-		A10000002FCE000000000213 /* CadenceSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000113 /* CadenceSchema.swift */; };
-		A10000002FCE000000000214 /* CadenceReadDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000114 /* CadenceReadDTOs.swift */; };
-		A10000002FCE000000000215 /* CadenceSearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000115 /* CadenceSearchMatcher.swift */; };
-		A10000002FCE000000000216 /* CadenceModelContainerFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000116 /* CadenceModelContainerFactory.swift */; };
-		A10000002FCE000000000217 /* CadenceReadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000117 /* CadenceReadService.swift */; };
+		A10000002FCE000000000203 /* Cadence/Models/ModelEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000103 /* Cadence/Models/ModelEnums.swift */; };
+		A10000002FCE000000000204 /* Cadence/Models/Context.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000104 /* Cadence/Models/Context.swift */; };
+		A10000002FCE000000000205 /* Cadence/Models/Area.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000105 /* Cadence/Models/Area.swift */; };
+		A10000002FCE000000000206 /* Cadence/Models/Project.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000106 /* Cadence/Models/Project.swift */; };
+		A10000002FCE000000000207 /* Cadence/Models/Goal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000107 /* Cadence/Models/Goal.swift */; };
+		A10000002FCE000000000208 /* Cadence/Models/AppTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000108 /* Cadence/Models/AppTask.swift */; };
+		A10000002FCE000000000209 /* Cadence/Models/Subtask.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000109 /* Cadence/Models/Subtask.swift */; };
+		A10000002FCE00000000020A /* Cadence/Models/Habit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010A /* Cadence/Models/Habit.swift */; };
+		A10000002FCE00000000020B /* Cadence/Models/HabitCompletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010B /* Cadence/Models/HabitCompletion.swift */; };
+		A10000002FCE00000000020C /* Cadence/Models/DailyNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010C /* Cadence/Models/DailyNote.swift */; };
+		A10000002FCE00000000020D /* Cadence/Models/WeeklyNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010D /* Cadence/Models/WeeklyNote.swift */; };
+		A10000002FCE00000000020E /* Cadence/Models/PermNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010E /* Cadence/Models/PermNote.swift */; };
+		A10000002FCE00000000020F /* Cadence/Models/Document.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010F /* Cadence/Models/Document.swift */; };
+		A10000002FCE000000000210 /* Cadence/Models/SavedLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000110 /* Cadence/Models/SavedLink.swift */; };
+		A10000002FCE000000000211 /* Cadence/Models/EventNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000111 /* Cadence/Models/EventNote.swift */; };
+		A10000002FCE000000000212 /* Cadence/Shared/DateFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000112 /* Cadence/Shared/DateFormatters.swift */; };
+		A10000002FCE000000000213 /* Cadence/Services/CadenceSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000113 /* Cadence/Services/CadenceSchema.swift */; };
+		A10000002FCE000000000214 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000114 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift */; };
+		A10000002FCE000000000215 /* Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000115 /* Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift */; };
+		A10000002FCE000000000216 /* Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000116 /* Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift */; };
+		A10000002FCE000000000217 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000117 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift */; };
 		A10000002FCE000000000218 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = A10000002FCE000000000302 /* MCP */; };
+		A10000002FCE000000000219 /* Cadence/Services/MCPReadOnly/CadenceWriteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000118 /* Cadence/Services/MCPReadOnly/CadenceWriteService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -57,27 +58,28 @@
 		A10000002FCE000000000100 /* CadenceMCPServer */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = CadenceMCPServer; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000002FCE000000000101 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000102 /* CadenceMCPToolRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CadenceMCPToolRouter.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000103 /* ModelEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/ModelEnums.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000104 /* Context.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Context.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000105 /* Area.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Area.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000106 /* Project.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Project.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000107 /* Goal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Goal.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000108 /* AppTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/AppTask.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000109 /* Subtask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Subtask.swift; sourceTree = "<group>"; };
-		A10000002FCE00000000010A /* Habit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Habit.swift; sourceTree = "<group>"; };
-		A10000002FCE00000000010B /* HabitCompletion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/HabitCompletion.swift; sourceTree = "<group>"; };
-		A10000002FCE00000000010C /* DailyNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/DailyNote.swift; sourceTree = "<group>"; };
-		A10000002FCE00000000010D /* WeeklyNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/WeeklyNote.swift; sourceTree = "<group>"; };
-		A10000002FCE00000000010E /* PermNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/PermNote.swift; sourceTree = "<group>"; };
-		A10000002FCE00000000010F /* Document.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Document.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000110 /* SavedLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/SavedLink.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000111 /* EventNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/EventNote.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000112 /* DateFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/DateFormatters.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000113 /* CadenceSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceSchema.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000114 /* CadenceReadDTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000115 /* CadenceSearchMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000116 /* CadenceModelContainerFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000117 /* CadenceReadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceReadService.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000103 /* Cadence/Models/ModelEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/ModelEnums.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000104 /* Cadence/Models/Context.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Context.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000105 /* Cadence/Models/Area.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Area.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000106 /* Cadence/Models/Project.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Project.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000107 /* Cadence/Models/Goal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Goal.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000108 /* Cadence/Models/AppTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/AppTask.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000109 /* Cadence/Models/Subtask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Subtask.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000010A /* Cadence/Models/Habit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Habit.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000010B /* Cadence/Models/HabitCompletion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/HabitCompletion.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000010C /* Cadence/Models/DailyNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/DailyNote.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000010D /* Cadence/Models/WeeklyNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/WeeklyNote.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000010E /* Cadence/Models/PermNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/PermNote.swift; sourceTree = "<group>"; };
+		A10000002FCE00000000010F /* Cadence/Models/Document.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Document.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000110 /* Cadence/Models/SavedLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/SavedLink.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000111 /* Cadence/Models/EventNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/EventNote.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000112 /* Cadence/Shared/DateFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/DateFormatters.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000113 /* Cadence/Services/CadenceSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceSchema.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000114 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000115 /* Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000116 /* Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000117 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceReadService.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000118 /* Cadence/Services/MCPReadOnly/CadenceWriteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceWriteService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -144,6 +146,35 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		88167E092FA107DC006071A0 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				A10000002FCE000000000103 /* Cadence/Models/ModelEnums.swift */,
+				A10000002FCE000000000104 /* Cadence/Models/Context.swift */,
+				A10000002FCE000000000105 /* Cadence/Models/Area.swift */,
+				A10000002FCE000000000106 /* Cadence/Models/Project.swift */,
+				A10000002FCE000000000107 /* Cadence/Models/Goal.swift */,
+				A10000002FCE000000000108 /* Cadence/Models/AppTask.swift */,
+				A10000002FCE000000000109 /* Cadence/Models/Subtask.swift */,
+				A10000002FCE00000000010A /* Cadence/Models/Habit.swift */,
+				A10000002FCE00000000010B /* Cadence/Models/HabitCompletion.swift */,
+				A10000002FCE00000000010C /* Cadence/Models/DailyNote.swift */,
+				A10000002FCE00000000010D /* Cadence/Models/WeeklyNote.swift */,
+				A10000002FCE00000000010E /* Cadence/Models/PermNote.swift */,
+				A10000002FCE00000000010F /* Cadence/Models/Document.swift */,
+				A10000002FCE000000000110 /* Cadence/Models/SavedLink.swift */,
+				A10000002FCE000000000111 /* Cadence/Models/EventNote.swift */,
+				A10000002FCE000000000112 /* Cadence/Shared/DateFormatters.swift */,
+				A10000002FCE000000000113 /* Cadence/Services/CadenceSchema.swift */,
+				A10000002FCE000000000114 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift */,
+				A10000002FCE000000000115 /* Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift */,
+				A10000002FCE000000000116 /* Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift */,
+				A10000002FCE000000000117 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift */,
+				A10000002FCE000000000118 /* Cadence/Services/MCPReadOnly/CadenceWriteService.swift */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		8850FF162F75C94900A80F43 = {
 			isa = PBXGroup;
 			children = (
@@ -152,6 +183,7 @@
 				8850FF332F75C94C00A80F43 /* CadenceTests */,
 				8850FF3D2F75C94C00A80F43 /* CadenceUITests */,
 				8850FF202F75C94900A80F43 /* Products */,
+				88167E092FA107DC006071A0 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -366,27 +398,28 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A10000002FCE000000000203 /* ModelEnums.swift in Sources */,
-				A10000002FCE000000000204 /* Context.swift in Sources */,
-				A10000002FCE000000000205 /* Area.swift in Sources */,
-				A10000002FCE000000000206 /* Project.swift in Sources */,
-				A10000002FCE000000000207 /* Goal.swift in Sources */,
-				A10000002FCE000000000208 /* AppTask.swift in Sources */,
-				A10000002FCE000000000209 /* Subtask.swift in Sources */,
-				A10000002FCE00000000020A /* Habit.swift in Sources */,
-				A10000002FCE00000000020B /* HabitCompletion.swift in Sources */,
-				A10000002FCE00000000020C /* DailyNote.swift in Sources */,
-				A10000002FCE00000000020D /* WeeklyNote.swift in Sources */,
-				A10000002FCE00000000020E /* PermNote.swift in Sources */,
-				A10000002FCE00000000020F /* Document.swift in Sources */,
-				A10000002FCE000000000210 /* SavedLink.swift in Sources */,
-				A10000002FCE000000000211 /* EventNote.swift in Sources */,
-				A10000002FCE000000000212 /* DateFormatters.swift in Sources */,
-				A10000002FCE000000000213 /* CadenceSchema.swift in Sources */,
-				A10000002FCE000000000214 /* CadenceReadDTOs.swift in Sources */,
-				A10000002FCE000000000215 /* CadenceSearchMatcher.swift in Sources */,
-				A10000002FCE000000000216 /* CadenceModelContainerFactory.swift in Sources */,
-				A10000002FCE000000000217 /* CadenceReadService.swift in Sources */,
+				A10000002FCE000000000203 /* Cadence/Models/ModelEnums.swift in Sources */,
+				A10000002FCE000000000204 /* Cadence/Models/Context.swift in Sources */,
+				A10000002FCE000000000205 /* Cadence/Models/Area.swift in Sources */,
+				A10000002FCE000000000206 /* Cadence/Models/Project.swift in Sources */,
+				A10000002FCE000000000207 /* Cadence/Models/Goal.swift in Sources */,
+				A10000002FCE000000000208 /* Cadence/Models/AppTask.swift in Sources */,
+				A10000002FCE000000000209 /* Cadence/Models/Subtask.swift in Sources */,
+				A10000002FCE00000000020A /* Cadence/Models/Habit.swift in Sources */,
+				A10000002FCE00000000020B /* Cadence/Models/HabitCompletion.swift in Sources */,
+				A10000002FCE00000000020C /* Cadence/Models/DailyNote.swift in Sources */,
+				A10000002FCE00000000020D /* Cadence/Models/WeeklyNote.swift in Sources */,
+				A10000002FCE00000000020E /* Cadence/Models/PermNote.swift in Sources */,
+				A10000002FCE00000000020F /* Cadence/Models/Document.swift in Sources */,
+				A10000002FCE000000000210 /* Cadence/Models/SavedLink.swift in Sources */,
+				A10000002FCE000000000211 /* Cadence/Models/EventNote.swift in Sources */,
+				A10000002FCE000000000212 /* Cadence/Shared/DateFormatters.swift in Sources */,
+				A10000002FCE000000000213 /* Cadence/Services/CadenceSchema.swift in Sources */,
+				A10000002FCE000000000214 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift in Sources */,
+				A10000002FCE000000000215 /* Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift in Sources */,
+				A10000002FCE000000000216 /* Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift in Sources */,
+				A10000002FCE000000000217 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift in Sources */,
+				A10000002FCE000000000219 /* Cadence/Services/MCPReadOnly/CadenceWriteService.swift in Sources */,
 				A10000002FCE000000000202 /* CadenceMCPToolRouter.swift in Sources */,
 				A10000002FCE000000000201 /* main.swift in Sources */,
 			);

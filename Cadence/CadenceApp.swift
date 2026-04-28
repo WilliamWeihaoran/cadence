@@ -24,6 +24,7 @@ struct CadenceApp: App {
                 .environment(TodayTimelineFocusManager.shared)
                 .environment(GlobalSearchManager.shared)
                 .environment(ListNavigationManager.shared)
+                .environment(NotesNavigationManager.shared)
                 .environment(CalendarNavigationManager.shared)
                 .environment(TaskSubtaskEntryManager.shared)
 #else

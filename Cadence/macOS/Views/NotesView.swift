@@ -6,9 +6,12 @@ struct NotesView: View {
     enum NotesPage: String, CaseIterable {
         case daily  = "Daily"
         case weekly = "Weekly"
+        case meeting = "Meeting"
     }
 
+    @Environment(NotesNavigationManager.self) private var notesNavigationManager
     @State private var page: NotesPage = .daily
+    @State private var requestedMeetingNoteID: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,11 +44,23 @@ struct NotesView: View {
                 switch page {
                 case .daily:  DailyNotesPage()
                 case .weekly: WeeklyNotesPage()
+                case .meeting: MeetingNotesPage(requestedNoteID: $requestedMeetingNoteID)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Theme.bg)
+        .onAppear { applyPendingNavigationIfNeeded() }
+        .onChange(of: notesNavigationManager.request?.token) { _, _ in
+            applyPendingNavigationIfNeeded()
+        }
+    }
+
+    private func applyPendingNavigationIfNeeded() {
+        guard let request = notesNavigationManager.request else { return }
+        page = request.page
+        requestedMeetingNoteID = request.eventNoteID
+        notesNavigationManager.clear()
     }
 }
 
@@ -207,6 +222,114 @@ private struct WeeklyNotesPage: View {
     }
 }
 
+// MARK: - Meeting Notes Page
+
+private struct MeetingNotesPage: View {
+    @Binding var requestedNoteID: UUID?
+
+    @Query(sort: \EventNote.updatedAt, order: .reverse) private var allNotes: [EventNote]
+    @Environment(\.modelContext) private var modelContext
+    @Environment(CalendarManager.self) private var calendarManager
+
+    @State private var selectedNoteID: UUID?
+
+    private var selectedNote: EventNote? {
+        allNotes.first { $0.id == selectedNoteID }
+    }
+
+    var body: some View {
+        HSplitView {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Meeting Notes")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
+
+                Divider().background(Theme.borderSubtle)
+
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(allNotes) { note in
+                            MeetingNoteListRow(note: note, isSelected: selectedNoteID == note.id)
+                                .onTapGesture {
+                                    selectedNoteID = note.id
+                                    requestedNoteID = nil
+                                }
+                        }
+                    }
+                    .padding(8)
+                }
+
+                if allNotes.isEmpty {
+                    Spacer()
+                    EmptyStateView(
+                        message: "No meeting notes yet",
+                        subtitle: "Create one from a calendar event",
+                        icon: "doc.text"
+                    )
+                    Spacer()
+                }
+            }
+            .frame(minWidth: 200, idealWidth: 260)
+            .background(Theme.surface)
+
+            if let note = selectedNote {
+                EventNoteInlineEditorPane(note: note)
+            } else {
+                noteEditorPlaceholder
+            }
+        }
+        .onAppear {
+            backfillMetadata()
+            applyRequestedSelection()
+            if selectedNoteID == nil {
+                selectedNoteID = allNotes.first?.id
+            }
+        }
+        .onChange(of: requestedNoteID) { _, _ in
+            applyRequestedSelection()
+        }
+        .onChange(of: allNotes.map(\.id)) { _, _ in
+            applyRequestedSelection()
+            if let selectedNoteID, allNotes.contains(where: { $0.id == selectedNoteID }) {
+                return
+            }
+            selectedNoteID = allNotes.first?.id
+        }
+    }
+
+    private var noteEditorPlaceholder: some View {
+        ZStack {
+            Theme.bg
+            VStack(spacing: 8) {
+                Image(systemName: "doc.text").font(.system(size: 32)).foregroundStyle(Theme.dim)
+                Text("Select a meeting note").foregroundStyle(Theme.dim)
+            }
+        }
+    }
+
+    private func applyRequestedSelection() {
+        guard let requestedNoteID else { return }
+        guard allNotes.contains(where: { $0.id == requestedNoteID }) else { return }
+        selectedNoteID = requestedNoteID
+        self.requestedNoteID = nil
+    }
+
+    private func backfillMetadata() {
+        for note in allNotes where note.calendarID.isEmpty {
+            EventNoteSupport.backfillMetadataIfPossible(note, calendarManager: calendarManager)
+        }
+        if modelContext.hasChanges {
+            try? modelContext.save()
+        }
+    }
+}
+
 // MARK: - Daily Note List Row
 
 struct NoteListRow: View {
@@ -284,6 +407,54 @@ private struct WeeklyNoteListRow: View {
     }
 }
 
+struct MeetingNoteListRow: View {
+    let note: EventNote
+    let isSelected: Bool
+
+    private var preview: String {
+        note.content.components(separatedBy: "\n")
+            .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? "Empty note"
+    }
+
+    private var detail: String {
+        if let date = DateFormatters.date(from: note.eventDateKey) {
+            if note.eventStartMin >= 0, note.eventEndMin >= 0 {
+                return "\(DateFormatters.shortDate.string(from: date)) • \(TimeFormatters.timeRange(startMin: note.eventStartMin, endMin: note.eventEndMin))"
+            }
+            return DateFormatters.shortDate.string(from: date)
+        }
+        return "Updated \(DateFormatters.shortDate.string(from: note.updatedAt))"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(note.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Event Note" : note.title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+            Text(detail)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.muted)
+                .lineLimit(1)
+            Text(preview)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isSelected ? Theme.blue.opacity(0.12) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .contentShape(Rectangle())
+        .cadenceHoverHighlight(
+            cornerRadius: 6,
+            fillColor: Theme.blue.opacity(isSelected ? 0.14 : 0.06),
+            strokeColor: Theme.blue.opacity(isSelected ? 0.22 : 0.12)
+        )
+    }
+}
+
 // MARK: - Daily Note Editor Pane
 
 private struct DailyNoteEditorPane: View {
@@ -330,6 +501,48 @@ private struct WeeklyNoteEditorPane: View {
             Divider().background(Theme.borderSubtle)
             MarkdownEditorView(text: $note.content)
                 .onChange(of: note.content) { note.updatedAt = Date() }
+        }
+        .background(Theme.surface)
+    }
+}
+
+struct EventNoteInlineEditorPane: View {
+    @Bindable var note: EventNote
+
+    private var titleBinding: Binding<String> {
+        Binding(
+            get: { note.title },
+            set: {
+                note.title = $0
+                note.updatedAt = Date()
+            }
+        )
+    }
+
+    private var contentBinding: Binding<String> {
+        Binding(
+            get: { note.content },
+            set: {
+                note.content = $0
+                note.updatedAt = Date()
+            }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Meeting".uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim).kerning(0.8)
+                TextField("Event note title", text: titleBinding)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Theme.text)
+            }
+            .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
+            Divider().background(Theme.borderSubtle)
+            MarkdownEditorView(text: contentBinding)
         }
         .background(Theme.surface)
     }

@@ -8,6 +8,7 @@ enum GlobalSearchCategory: String, CaseIterable {
     case projects = "Projects"
     case tasks = "Tasks"
     case events = "Calendar Events"
+    case meetingNotes = "Meeting Notes"
     case goals = "Goals"
     case habits = "Habits"
 }
@@ -19,6 +20,7 @@ enum GlobalSearchDestination: Hashable {
     case project(UUID)
     case task(UUID)
     case event(String)
+    case eventNote(UUID)
     case goals
     case habits
 }

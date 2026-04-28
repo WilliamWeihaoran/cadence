@@ -26,7 +26,7 @@ enum CadenceReadError: Error, LocalizedError, Sendable {
         case .invalidStatus(let value):
             return "Invalid status value: \(value)."
         case .invalidScope(let value):
-            return "Invalid search scope: \(value). Expected tasks, containers, documents, or core_notes."
+            return "Invalid search scope: \(value). Expected tasks, containers, documents, core_notes, or event_notes."
         case .incompleteContainerFilter:
             return "containerKind and containerId must be provided together."
         case .taskNotFound(let value):
@@ -58,6 +58,10 @@ final class CadenceReadService {
 
     init(container: ModelContainer) {
         context = ModelContext(container)
+    }
+
+    init(context: ModelContext) {
+        self.context = context
     }
 
     func todayBrief(dateKey: String? = nil) throws -> CadenceTodayBrief {
@@ -292,7 +296,7 @@ final class CadenceReadService {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 
-        let selectedScopes = try validateScopes(scopes ?? ["tasks", "containers", "documents", "core_notes"])
+        let selectedScopes = try validateScopes(scopes ?? ["tasks", "containers", "documents", "core_notes", "event_notes"])
         var hits: [CadenceSearchHit] = []
 
         if selectedScopes.contains("tasks") {
@@ -341,6 +345,22 @@ final class CadenceReadService {
             hits += try fetchPermNotes().compactMap { note in
                 guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: ["notepad permanent note", note.content]) else { return nil }
                 return CadenceSearchHit(entityType: "permanent_note", entityId: note.id.uuidString, title: "Notepad", subtitle: "Permanent note", excerpt: excerpt(note.content), score: score)
+            }
+        }
+
+        if selectedScopes.contains("event_notes") {
+            hits += try fetchEventNotes().compactMap { note in
+                let title = resolvedTitle(note.title, fallback: "Event Note")
+                let fields = [title, note.content, note.eventDateKey]
+                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: fields) else { return nil }
+                return CadenceSearchHit(
+                    entityType: "event_note",
+                    entityId: note.id.uuidString,
+                    title: title,
+                    subtitle: "Meeting note",
+                    excerpt: excerpt(note.content),
+                    score: score
+                )
             }
         }
 
@@ -395,6 +415,10 @@ final class CadenceReadService {
 
     private func fetchPermNotes() throws -> [PermNote] {
         try context.fetch(FetchDescriptor<PermNote>())
+    }
+
+    private func fetchEventNotes() throws -> [EventNote] {
+        try context.fetch(FetchDescriptor<EventNote>())
     }
 
     private func taskSummary(_ task: AppTask, allTasks: [AppTask]) -> CadenceTaskSummary {
@@ -615,7 +639,7 @@ final class CadenceReadService {
     }
 
     private func validateScopes(_ scopes: [String]) throws -> Set<String> {
-        let valid = Set(["tasks", "containers", "documents", "core_notes"])
+        let valid = Set(["tasks", "containers", "documents", "core_notes", "event_notes"])
         return try Set(scopes.map { scope in
             let normalized = scope.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard valid.contains(normalized) else {

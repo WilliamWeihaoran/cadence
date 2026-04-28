@@ -461,9 +461,7 @@ struct AllTasksPageView: View {
             Group {
                 switch mode {
                 case .list:
-                    TasksPanel(
-                        mode: .byDoDate,
-                        showsHeader: false,
+                    AllTasksListView(
                         sortField: sortField,
                         sortDirection: sortDirection,
                         groupingMode: groupingMode

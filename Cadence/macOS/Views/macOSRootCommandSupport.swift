@@ -29,6 +29,7 @@ struct RootSearchSelectionContext {
     let calendarManager: CalendarManager
     let globalSearchManager: GlobalSearchManager
     let listNavigationManager: ListNavigationManager
+    let notesNavigationManager: NotesNavigationManager
     let calendarNavigationManager: CalendarNavigationManager
     let clearAppEditingFocus: () -> Void
     let setSelection: (SidebarItem) -> Void

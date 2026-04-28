@@ -4,9 +4,7 @@ import SwiftData
 
 struct NotePanel: View {
     @Environment(\.modelContext) private var modelContext
-    @Query private var allDailyNotes:  [DailyNote]
-    @Query private var allWeeklyNotes: [WeeklyNote]
-    @Query private var allPermNotes:   [PermNote]
+    @Environment(\.scenePhase) private var scenePhase
 
     enum NoteTab: String, CaseIterable {
         case today  = "Today"
@@ -18,6 +16,7 @@ struct NotePanel: View {
     @State private var todayNote:  DailyNote?
     @State private var weekNote:   WeeklyNote?
     @State private var permNote:   PermNote?
+    @State private var notesContext: ModelContext?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -44,7 +43,7 @@ struct NotePanel: View {
                     if let note = todayNote {
                         MarkdownEditorView(text: Binding(
                             get: { note.content },
-                            set: { note.content = $0; note.updatedAt = Date() }
+                            set: { update(note: note, content: $0) }
                         ))
                     } else {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -53,7 +52,7 @@ struct NotePanel: View {
                     if let note = weekNote {
                         MarkdownEditorView(text: Binding(
                             get: { note.content },
-                            set: { note.content = $0; note.updatedAt = Date() }
+                            set: { update(note: note, content: $0) }
                         ))
                     } else {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -62,7 +61,7 @@ struct NotePanel: View {
                     if let note = permNote {
                         MarkdownEditorView(text: Binding(
                             get: { note.content },
-                            set: { note.content = $0; note.updatedAt = Date() }
+                            set: { update(note: note, content: $0) }
                         ))
                     } else {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -72,6 +71,13 @@ struct NotePanel: View {
         }
         .background(Theme.surface)
         .onAppear { loadOrCreate() }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            refreshFromStore()
+        }
+        .onChange(of: activeTab) { _, _ in
+            refreshFromStore()
+        }
     }
 
     private var headerTitle: String {
@@ -83,31 +89,92 @@ struct NotePanel: View {
     }
 
     private func loadOrCreate() {
+        let context = notesContext ?? makeNotesContext()
+        notesContext = context
+
         let todayKey = DateFormatters.todayKey()
-        if let existing = allDailyNotes.first(where: { $0.date == todayKey }) {
+        if let existing = fetchDailyNote(date: todayKey, in: context) {
             todayNote = existing
         } else {
             let note = DailyNote(date: todayKey)
-            modelContext.insert(note)
+            context.insert(note)
             todayNote = note
         }
 
         let wKey = DateFormatters.currentWeekKey()
-        if let existing = allWeeklyNotes.first(where: { $0.weekKey == wKey }) {
+        if let existing = fetchWeeklyNote(weekKey: wKey, in: context) {
             weekNote = existing
         } else {
             let note = WeeklyNote(weekKey: wKey)
-            modelContext.insert(note)
+            context.insert(note)
             weekNote = note
         }
 
-        if let existing = allPermNotes.first {
+        if let existing = fetchPermanentNote(in: context) {
             permNote = existing
         } else {
             let note = PermNote()
-            modelContext.insert(note)
+            context.insert(note)
             permNote = note
         }
+
+        try? context.save()
+    }
+
+    private func refreshFromStore() {
+        if let notesContext, notesContext.hasChanges {
+            try? notesContext.save()
+        }
+
+        notesContext = makeNotesContext()
+        todayNote = nil
+        weekNote = nil
+        permNote = nil
+        loadOrCreate()
+    }
+
+    private func makeNotesContext() -> ModelContext {
+        ModelContext(modelContext.container)
+    }
+
+    private func update(note: DailyNote, content: String) {
+        note.content = content
+        note.updatedAt = Date()
+        try? notesContext?.save()
+    }
+
+    private func update(note: WeeklyNote, content: String) {
+        note.content = content
+        note.updatedAt = Date()
+        try? notesContext?.save()
+    }
+
+    private func update(note: PermNote, content: String) {
+        note.content = content
+        note.updatedAt = Date()
+        try? notesContext?.save()
+    }
+
+    private func fetchDailyNote(date: String, in context: ModelContext) -> DailyNote? {
+        var descriptor = FetchDescriptor<DailyNote>(
+            predicate: #Predicate { $0.date == date }
+        )
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
+    }
+
+    private func fetchWeeklyNote(weekKey: String, in context: ModelContext) -> WeeklyNote? {
+        var descriptor = FetchDescriptor<WeeklyNote>(
+            predicate: #Predicate { $0.weekKey == weekKey }
+        )
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
+    }
+
+    private func fetchPermanentNote(in context: ModelContext) -> PermNote? {
+        var descriptor = FetchDescriptor<PermNote>()
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
     }
 }
 

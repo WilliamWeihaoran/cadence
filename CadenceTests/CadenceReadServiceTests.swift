@@ -87,16 +87,25 @@ struct CadenceReadServiceTests {
         let fixture = try Fixture()
         let task = AppTask(title: "Deep work block")
         let doc = Document(title: "Deep research notes")
+        let eventNote = EventNote(calendarEventID: "event-1", eventTitle: "Deep meeting")
+        eventNote.content = "Decisions about launch planning"
         doc.content = "Long-form thinking about MCP"
         fixture.modelContext.insert(task)
         fixture.modelContext.insert(doc)
+        fixture.modelContext.insert(eventNote)
         try fixture.modelContext.save()
 
         let taskHits = try fixture.service.search(query: "deep", scopes: ["tasks"])
         let docHits = try fixture.service.search(query: "deep", scopes: ["documents"])
+        let eventNoteTitleHits = try fixture.service.search(query: "deep", scopes: ["event_notes"])
+        let eventNoteBodyHits = try fixture.service.search(query: "launch")
+        let eventNoteScopedBodyHits = try fixture.service.search(query: "launch", scopes: ["event_notes"])
 
         #expect(taskHits.map(\.entityType) == ["task"])
         #expect(docHits.map(\.entityType) == ["document"])
+        #expect(eventNoteTitleHits.map(\.entityType) == ["event_note"])
+        #expect(eventNoteBodyHits.contains { $0.entityType == "event_note" })
+        #expect(eventNoteScopedBodyHits.map(\.entityType) == ["event_note"])
     }
 
     @Test func invalidEnumsAndPartialContainerFiltersThrow() throws {

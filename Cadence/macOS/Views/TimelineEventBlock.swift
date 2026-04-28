@@ -512,9 +512,14 @@ struct CalendarEventEditPopover: View {
     }
 
     private func openEventNote() {
+        let metadata = EventNoteSupport.eventDateMetadata(from: item.ekEvent)
         presentedEventNote = EventNoteSupport.noteForEditing(
             calendarEventID: item.id,
             eventTitle: item.title,
+            calendarID: item.ekEvent.calendar.calendarIdentifier,
+            eventDateKey: metadata.dateKey,
+            eventStartMin: metadata.startMin,
+            eventEndMin: metadata.endMin,
             notes: eventNotes
         ) { modelContext.insert($0) }
     }

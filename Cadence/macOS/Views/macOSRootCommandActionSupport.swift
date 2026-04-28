@@ -128,6 +128,9 @@ enum RootCommandActionSupport {
                 context.calendarNavigationManager.open(date: startDate)
             }
             context.setSelection(.calendar)
+        case .eventNote(let noteID):
+            context.notesNavigationManager.openMeetingNote(id: noteID)
+            context.setSelection(.notes)
         }
 
         context.globalSearchManager.dismiss()

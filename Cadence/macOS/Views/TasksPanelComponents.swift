@@ -10,6 +10,7 @@ struct MacTaskRow: View {
     var areas: [Area] = []
     var projects: [Project] = []
     var allTasks: [AppTask] = []
+    var blockedTaskIDs: Set<UUID>? = nil
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(HoveredTaskManager.self)    private var hoveredTaskManager
@@ -190,7 +191,10 @@ struct MacTaskRow: View {
     }
 
     private var isBlocked: Bool {
-        task.isBlocked(in: allTasks)
+        if let blockedTaskIDs {
+            return blockedTaskIDs.contains(task.id)
+        }
+        return task.isBlocked(in: allTasks)
     }
 
     private var doDateBadge: some View {

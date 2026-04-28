@@ -119,3 +119,8 @@ struct CadenceDocumentDetail: Codable, Sendable {
     let createdAt: String
     let updatedAt: String
 }
+
+struct CadenceCompleteTaskResult: Codable, Sendable {
+    let task: CadenceTaskDetail
+    let spawnedRecurringTask: CadenceTaskDetail?
+}
