@@ -79,16 +79,16 @@ Cadence/
     │   ├── GoalsView.swift        # Goal timeline (Gantt-style), multi-scale (2W to 5Y)
     │   ├── HabitsView.swift       # Habit list, detail view, heatmap, CreateHabitSheet
     │   ├── NotesView.swift        # Note list + editor (NoteListRow, NoteEditorPane)
-    │   ├── FocusView.swift        # Focus timer UI; surfaces ready vs blocked work and filters blocked tasks out of focus picking
+    │   ├── FocusView.swift        # Focus timer UI, task picking, session logging, actual-minute propagation
     │   ├── SidebarView.swift      # Fully custom sidebar shell with static tabs + settings icon
     │   ├── SidebarComponents.swift # Context/list rows + drag/drop helpers; reorder uses SidebarDragContext.shared + DropDelegate
     │   ├── ListDetailView.swift   # Area/Project detail shell: Tasks, Kanban, Planning, Notes, Links, Completed
     │   ├── ListDetailComponents.swift # List task view, grouping modes, completed view
+    │   ├── ListPlanningView.swift # Scheduling-focused list planning page: upcoming do/due dates plus unscheduled backlog
     │   ├── KanbanView.swift       # Section-based kanban orchestration for lists and All Tasks
     │   ├── KanbanCardView.swift   # Shared kanban task card; hover/edit/action state stays here
     │   ├── KanbanBoardSectionView.swift # Shared board wrapper used by kanban views
     │   ├── DocumentsView.swift    # Notes/documents list + markdown editor; H1 heading in content auto-syncs to document.title; exports Markdown + rendered PDF; each doc gets its own NSTextView via .id(doc.id) to isolate undo stacks
-    │   ├── ListPlanningView.swift # List-level planning timeline with dependency arrows and recurring/backlog awareness
     │   ├── EventNoteSupportViews.swift # Linked note sheet/editor for calendar events
     │   ├── LinksView.swift        # Saved link list + add UI
     │   ├── GlobalSearchView.swift # Spotlight-style overlay; ranking/index/state split into support files
@@ -118,7 +118,7 @@ Cadence/
         ├── SectionCompletionAnimationManager.swift # Delayed green-fill completion flow for sections
         ├── DeleteConfirmationManager.swift # Custom delete confirmation overlay
         ├── SchedulingService.swift     # SchedulingActions: createTask/dropTask helpers for timeline, including direct container/section creation and drag-create list/section targeting
-        ├── TaskWorkflowService.swift   # Completion flow for recurring tasks and dependency-aware progression
+        ├── TaskWorkflowService.swift   # Completion flow for recurring tasks
         ├── GlobalSearchManager.swift   # Presents the in-app command palette
         ├── ListNavigationManager.swift # Opens areas/projects/tasks from global search
         ├── CalendarNavigationManager.swift # Jumps calendar to searched events/days
@@ -342,11 +342,7 @@ The same shared sheet is used for:
 - Slash commands cover common transforms like headings, todo/done, quote, rule, link, and task inserts
 - Hidden markdown markers are skipped by caret traversal instead of behaving like visible cursor stops
 
-## Planning / Dependencies / Recurrence
-- Each area/project list now includes a dedicated **Planning** tab
-- Planning is timeline-first, with one row per task, date columns across the top, and visible dependency connectors between task bars
-- Planning ordering prefers blockers before the tasks they unlock so relationships read more clearly
-- Tasks can declare dependencies (`dependencyTaskIDs`), and blocked tasks surface as blocked in task UIs
+## Recurrence
 - Recurring tasks are part of the core task workflow; completing one spawns the next occurrence through `TaskWorkflowService`
 - If a recurring task is scheduled, the next occurrence continues through the normal scheduling path
 
@@ -440,11 +436,10 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Documents: each selected doc gets its own `NSTextView` instance (`.id(doc.id)`) so undo history is isolated per document
 - [x] Cmd+Z / Cmd+Shift+Z undo/redo works inside markdown editors and notepads (passes through to NSTextView's own undo stack when text field is focused)
 - [x] Slash command picker opens at the insertion caret inside notes
-- [x] Focus timer with log session popover (logs actual minutes, propagates to goals/areas/projects); surfaces ready vs blocked work and filters blocked tasks out of focus picking
+- [x] Focus timer with log session popover (logs actual minutes, propagates to goals/areas/projects)
 - [x] Area/Project detail: Tasks, Kanban, Planning, Notes, Links, Completed
-- [x] List Planning tab with a timeline-first planning surface and visible dependency arrows
+- [x] List Planning page: upcoming schedule columns, due-only visibility, and unscheduled backlog without a prerequisite graph
 - [x] Recurring task completion flow that generates the next occurrence
-- [x] Task dependencies editable from the inspector and reflected in blocked-task UI
 - [x] Attach tasks to existing calendar events
 - [x] Linked notes for calendar events
 - [x] Area/Project lifecycle: complete, archive, delete; completed/archived lists recoverable from Settings

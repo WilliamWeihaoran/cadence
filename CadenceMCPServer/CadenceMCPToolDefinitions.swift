@@ -43,11 +43,6 @@ enum CadenceMCPToolDefinitions {
                 "scopes": "Optional scopes: tasks, containers, documents, core_notes, event_notes.",
                 "limit": "Optional result limit, capped at 200.",
             ])),
-            Tool(name: "get_blocked_tasks", description: "List active Cadence tasks blocked by unresolved dependencies.", inputSchema: schema([
-                "containerKind": "Optional area or project.",
-                "containerId": "Optional area/project UUID.",
-                "limit": "Optional result limit, capped at 200.",
-            ])),
             Tool(name: "get_recent_mcp_writes", description: "Read recent Cadence MCP write audit log entries.", inputSchema: schema([
                 "limit": "Optional result limit, capped at 200.",
             ])),
@@ -62,7 +57,6 @@ enum CadenceMCPToolDefinitions {
                 "containerKind": "Optional area or project.",
                 "containerId": "Optional area/project UUID.",
                 "sectionName": "Optional container section name.",
-                "dependencyTaskIds": "Optional array of dependency task UUIDs.",
                 "subtaskTitles": "Optional array of subtask titles.",
             ])),
             Tool(name: "update_task", description: "Safely update editable fields on one Cadence task.", inputSchema: schema([
@@ -77,7 +71,6 @@ enum CadenceMCPToolDefinitions {
                 "containerId": "Optional area/project UUID.",
                 "clearContainer": "Set true to move task to inbox.",
                 "sectionName": "Optional container section name.",
-                "dependencyTaskIds": "Optional replacement array of dependency task UUIDs.",
             ])),
             Tool(name: "schedule_task", description: "Set or clear a Cadence task do-date/time without Calendar side effects.", inputSchema: schema([
                 "taskId": "Task UUID.",

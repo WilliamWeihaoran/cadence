@@ -42,7 +42,7 @@ enum ListDetailPage: String, CaseIterable, Identifiable {
         switch self {
         case .tasks:     return "checkmark.square"
         case .kanban:    return "square.grid.3x2"
-        case .planning:  return "timeline.selection"
+        case .planning:  return "calendar"
         case .documents: return "doc.text"
         case .links:     return "link"
         case .completed: return "list.bullet.clipboard"

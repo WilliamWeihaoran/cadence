@@ -89,13 +89,6 @@ struct CadenceMCPToolRouter {
                 limit: arguments.int("limit") ?? 50
             ))
 
-        case "get_blocked_tasks":
-            return try encode(readService.blockedTasks(
-                containerKind: arguments.string("containerKind"),
-                containerID: arguments.string("containerId"),
-                limit: arguments.int("limit") ?? 50
-            ))
-
         case "get_recent_mcp_writes":
             return try encode(readService.recentMCPWrites(limit: arguments.int("limit") ?? 50))
 
@@ -111,7 +104,6 @@ struct CadenceMCPToolRouter {
                 containerKind: arguments.string("containerKind"),
                 containerId: arguments.string("containerId"),
                 sectionName: arguments.string("sectionName"),
-                dependencyTaskIds: arguments.stringArray("dependencyTaskIds"),
                 subtaskTitles: arguments.stringArray("subtaskTitles")
             )))
 
@@ -127,8 +119,7 @@ struct CadenceMCPToolRouter {
                 containerKind: arguments.string("containerKind"),
                 containerId: arguments.string("containerId"),
                 clearContainer: arguments.bool("clearContainer") ?? false,
-                sectionName: arguments.string("sectionName"),
-                dependencyTaskIds: arguments.stringArray("dependencyTaskIds")
+                sectionName: arguments.string("sectionName")
             )))
 
         case "schedule_task":

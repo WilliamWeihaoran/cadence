@@ -90,7 +90,6 @@ final class CadenceReadService {
             .prefix(50)
             .map { taskSummary($0, allTasks: tasks) }
 
-        let blocked = blockedTasks(from: activeTasks, allTasks: tasks, limit: 50)
         let notes = try coreNotes(dateKey: resolvedDateKey)
         let noteSnippets = [notes.dailyNote, notes.weeklyNote, notes.permanentNote].compactMap { $0 }
 
@@ -100,7 +99,6 @@ final class CadenceReadService {
             dueToday: dueToday,
             overdue: overdue,
             inbox: Array(inbox),
-            blockedTasks: blocked,
             noteSnippets: noteSnippets
         )
     }
@@ -180,7 +178,6 @@ final class CadenceReadService {
             summary: taskSummary(task, allTasks: tasks),
             notes: task.notes,
             actualMinutes: task.actualMinutes,
-            dependencyTaskIds: task.dependencyTaskIDs.map(\.uuidString),
             subtasks: subtasks,
             createdAt: format(task.createdAt),
             completedAt: task.completedAt.map(format)
@@ -220,11 +217,9 @@ final class CadenceReadService {
         let uuid = try uuid(from: id)
         let tasks = try fetchTasks()
         let containerTasks = try filterTasks(tasks, containerKind: kind, containerID: uuid)
-        let allTasks = tasks
         let active = containerTasks.filter { !$0.isDone && !$0.isCancelled }
         let today = DateFormatters.todayKey()
         let overdue = active.filter { !$0.dueDate.isEmpty && $0.dueDate < today }
-        let blocked = active.filter { $0.isBlocked(in: allTasks) }
         let documents = try documentsForContainer(kind: kind, id: uuid)
             .sorted { $0.order < $1.order }
             .map(documentSummary)
@@ -234,7 +229,6 @@ final class CadenceReadService {
             activeTaskCount: active.count,
             completedTaskCount: containerTasks.filter(\.isDone).count,
             overdueTaskCount: overdue.count,
-            blockedTaskCount: blocked.count,
             documents: documents
         )
     }
@@ -367,33 +361,11 @@ final class CadenceReadService {
         return Array(CadenceSearchMatcher.rank(hits, query: trimmed).prefix(cappedLimit(limit)))
     }
 
-    func blockedTasks(containerKind: String? = nil, containerID: String? = nil, limit: Int = 50) throws -> [CadenceBlockedTask] {
-        let tasks = try fetchTasks()
-        var candidates = tasks.filter { !$0.isDone && !$0.isCancelled }
-        if let containerFilter = try resolvedContainerFilter(kind: containerKind, id: containerID) {
-            candidates = try filterTasks(candidates, containerKind: containerFilter.kind, containerID: containerFilter.id)
-        }
-        return Array(blockedTasks(from: candidates, allTasks: tasks, limit: cappedLimit(limit)).prefix(cappedLimit(limit)))
-    }
-
     func recentMCPWrites(limit: Int = 50) throws -> [CadenceMCPAuditEntry] {
         try CadenceMCPAuditLogger.recentEntries(
             limit: limit,
             logURL: CadenceModelContainerFactory.auditLogURL()
         )
-    }
-
-    private func blockedTasks(from candidates: [AppTask], allTasks: [AppTask], limit: Int) -> [CadenceBlockedTask] {
-        candidates
-            .filter { $0.isBlocked(in: allTasks) }
-            .sorted(by: taskSort)
-            .prefix(limit)
-            .map { task in
-                CadenceBlockedTask(
-                    task: taskSummary(task, allTasks: allTasks),
-                    unresolvedDependencies: task.unresolvedDependencies(in: allTasks).map { taskSummary($0, allTasks: allTasks) }
-                )
-            }
     }
 
     private func fetchTasks() throws -> [AppTask] {
@@ -441,7 +413,6 @@ final class CadenceReadService {
             container: taskContainer(task),
             goal: task.goal.map(goalRef),
             sectionName: task.resolvedSectionName,
-            isBlocked: task.isBlocked(in: allTasks),
             isDone: task.isDone,
             isCancelled: task.isCancelled
         )

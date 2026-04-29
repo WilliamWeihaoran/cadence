@@ -45,22 +45,6 @@ struct CadenceReadServiceTests {
         #expect(results.map(\.title) == ["Write MCP bridge"])
     }
 
-    @Test func blockedTasksExposeUnresolvedDependencies() throws {
-        let fixture = try Fixture()
-        let blocker = AppTask(title: "Decide DTO names")
-        let blocked = AppTask(title: "Implement tools")
-        blocked.dependencyTaskIDs = [blocker.id]
-        fixture.modelContext.insert(blocker)
-        fixture.modelContext.insert(blocked)
-        try fixture.modelContext.save()
-
-        let blockedTasks = try fixture.service.blockedTasks()
-
-        #expect(blockedTasks.count == 1)
-        #expect(blockedTasks.first?.task.title == "Implement tools")
-        #expect(blockedTasks.first?.unresolvedDependencies.first?.title == "Decide DTO names")
-    }
-
     @Test func containerSummaryCountsTasksAndDocuments() throws {
         let fixture = try Fixture()
         let active = AppTask(title: "Active")

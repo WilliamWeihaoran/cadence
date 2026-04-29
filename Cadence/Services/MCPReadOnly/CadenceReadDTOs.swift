@@ -37,7 +37,6 @@ struct CadenceTaskSummary: Codable, Sendable {
     let container: CadenceContainerRef?
     let goal: CadenceGoalRef?
     let sectionName: String
-    let isBlocked: Bool
     let isDone: Bool
     let isCancelled: Bool
 }
@@ -46,7 +45,6 @@ struct CadenceTaskDetail: Codable, Sendable {
     let summary: CadenceTaskSummary
     let notes: String
     let actualMinutes: Int
-    let dependencyTaskIds: [String]
     let subtasks: [CadenceSubtaskSummary]
     let createdAt: String
     let completedAt: String?
@@ -92,13 +90,7 @@ struct CadenceTodayBrief: Codable, Sendable {
     let dueToday: [CadenceTaskSummary]
     let overdue: [CadenceTaskSummary]
     let inbox: [CadenceTaskSummary]
-    let blockedTasks: [CadenceBlockedTask]
     let noteSnippets: [CadenceNotePayload]
-}
-
-struct CadenceBlockedTask: Codable, Sendable {
-    let task: CadenceTaskSummary
-    let unresolvedDependencies: [CadenceTaskSummary]
 }
 
 struct CadenceContainerSummary: Codable, Sendable {
@@ -106,7 +98,6 @@ struct CadenceContainerSummary: Codable, Sendable {
     let activeTaskCount: Int
     let completedTaskCount: Int
     let overdueTaskCount: Int
-    let blockedTaskCount: Int
     let documents: [CadenceDocumentSummary]
 }
 

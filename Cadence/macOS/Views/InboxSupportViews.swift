@@ -139,7 +139,7 @@ struct InboxTaskGroupSectionView: View {
             .listRowInsets(.init())
 
             ForEach(group.tasks) { task in
-                MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects, allTasks: allTasks)
+                MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
                     .listRowInsets(.init())
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -195,7 +195,7 @@ struct InboxCompletedSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects, allTasks: allTasks)
+                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
                         .listRowInsets(.init())
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)

@@ -19,16 +19,11 @@ enum TaskWorkflowService {
         task.status = .todo
     }
 
-    static func unresolvedDependencies(for task: AppTask, in allTasks: [AppTask]) -> [AppTask] {
-        task.unresolvedDependencies(in: allTasks)
-    }
-
     private static func makeNextRecurringTask(from task: AppTask) -> AppTask {
         let nextTask = AppTask(title: task.title)
         nextTask.notes = task.notes
         nextTask.priority = task.priority
         nextTask.recurrenceRule = task.recurrenceRule
-        nextTask.dependencyTaskIDs = task.dependencyTaskIDs
         nextTask.estimatedMinutes = max(task.estimatedMinutes, 30)
         nextTask.sectionName = task.sectionName
         nextTask.area = task.area

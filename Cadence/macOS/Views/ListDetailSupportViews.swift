@@ -37,7 +37,7 @@ struct ListTasksGroupSectionView: View {
 
             if !isCollapsed {
                 ForEach(group.tasks) { task in
-                    MacTaskRow(task: task, style: .list, allTasks: allTasks)
+                    MacTaskRow(task: task, style: .list)
                         .padding(.leading, 16)
                         .listRowInsets(.init())
                         .listRowBackground(Color.clear)
@@ -92,7 +92,7 @@ struct ListTasksCompletedSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: .list, allTasks: allTasks)
+                    MacTaskRow(task: task, style: .list)
                         .padding(.leading, 16)
                         .listRowInsets(.init())
                         .listRowBackground(Color.clear)

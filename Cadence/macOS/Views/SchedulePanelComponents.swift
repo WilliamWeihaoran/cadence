@@ -5,7 +5,6 @@ import EventKit
 
 struct TaskDetailPopover: View {
     @Bindable var task: AppTask
-    @Query(sort: \AppTask.createdAt, order: .reverse) private var allTasks: [AppTask]
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order)    private var areas:    [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -55,7 +54,7 @@ struct TaskDetailPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 if presentationMode == .full {
                     TaskDetailHeaderSection(
                         task: task,
@@ -75,7 +74,6 @@ struct TaskDetailPopover: View {
                             contexts: contexts,
                             areas: areas,
                             projects: projects,
-                            allTasks: allTasks,
                             taskContainerBinding: taskContainerBinding,
                             availableSections: availableSections
                         )
@@ -127,12 +125,12 @@ struct TaskDetailPopover: View {
             }
             .padding(14)
         }
-        .frame(width: presentationMode == .subtasksOnly ? 332 : 372)
+        .frame(width: presentationMode == .subtasksOnly ? 332 : 360)
         .background(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Theme.surface)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 20)
+                    RoundedRectangle(cornerRadius: 12)
                         .stroke(.white.opacity(0.08), lineWidth: 1)
                 )
         )

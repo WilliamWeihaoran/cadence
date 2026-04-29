@@ -7,9 +7,6 @@ import Testing
 struct CadenceWriteServiceTests {
     @Test func createTaskValidatesAndReturnsDetail() throws {
         let fixture = try Fixture()
-        let blocker = AppTask(title: "Unblock me")
-        fixture.modelContext.insert(blocker)
-        try fixture.modelContext.save()
 
         let detail = try fixture.writeService.createTask(options: .init(
             title: "  Ship write MCP  ",
@@ -22,7 +19,6 @@ struct CadenceWriteServiceTests {
             containerKind: "project",
             containerId: fixture.project.id.uuidString,
             sectionName: "Build",
-            dependencyTaskIds: [blocker.id.uuidString],
             subtaskTitles: [" DTOs ", "", "Router"]
         ))
 
@@ -34,7 +30,6 @@ struct CadenceWriteServiceTests {
         #expect(detail.summary.estimatedMinutes == 45)
         #expect(detail.summary.container?.id == fixture.project.id.uuidString)
         #expect(detail.summary.sectionName == "Build")
-        #expect(detail.dependencyTaskIds == [blocker.id.uuidString])
         #expect(detail.subtasks.map(\.title) == ["DTOs", "Router"])
     }
 

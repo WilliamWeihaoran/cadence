@@ -29,7 +29,6 @@ EXPECTED_TOOLS = {
     "list_documents",
     "get_document",
     "search_cadence",
-    "get_blocked_tasks",
     "get_recent_mcp_writes",
     "create_task",
     "update_task",

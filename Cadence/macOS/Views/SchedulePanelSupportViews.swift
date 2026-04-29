@@ -518,15 +518,15 @@ struct TaskInspectorInfoCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             content
         }
-        .padding(12)
-        .background(Theme.surfaceElevated.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(10)
+        .background(Theme.surfaceElevated.opacity(0.38))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Theme.borderSubtle, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Theme.borderSubtle.opacity(0.82), lineWidth: 1)
         )
     }
 }

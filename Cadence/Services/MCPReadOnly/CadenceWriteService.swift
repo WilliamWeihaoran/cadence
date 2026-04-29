@@ -10,8 +10,6 @@ enum CadenceWriteError: Error, LocalizedError, Sendable {
     case invalidEstimatedMinutes(Int)
     case invalidCombination(String)
     case noChanges
-    case dependencyNotFound(String)
-    case selfDependency
     case cannotCompleteCancelledTask(String)
 
     var errorDescription: String? {
@@ -32,10 +30,6 @@ enum CadenceWriteError: Error, LocalizedError, Sendable {
             return message
         case .noChanges:
             return "No valid changes were provided."
-        case .dependencyNotFound(let id):
-            return "No dependency task found with id \(id)."
-        case .selfDependency:
-            return "A task cannot depend on itself."
         case .cannotCompleteCancelledTask(let id):
             return "Cancelled task \(id) cannot be completed."
         }
@@ -53,7 +47,6 @@ struct CadenceCreateTaskOptions: Sendable {
     var containerKind: String? = nil
     var containerId: String? = nil
     var sectionName: String? = nil
-    var dependencyTaskIds: [String]? = nil
     var subtaskTitles: [String]? = nil
 }
 
@@ -69,7 +62,6 @@ struct CadenceUpdateTaskOptions: Sendable {
     var containerId: String? = nil
     var clearContainer: Bool = false
     var sectionName: String? = nil
-    var dependencyTaskIds: [String]? = nil
 }
 
 struct CadenceScheduleTaskOptions: Sendable {
@@ -129,8 +121,6 @@ final class CadenceWriteService {
         let scheduledDate = try validatedOptionalDate(options.scheduledDate)
         let scheduledStartMin = try validateOptionalScheduledStart(options.scheduledStartMin)
         let estimatedMinutes = try validateEstimatedMinutes(options.estimatedMinutes ?? 30)
-        let allTasks = try fetchTasks()
-        let dependencyIDs = try validateDependencyIDs(options.dependencyTaskIds ?? [], allTasks: allTasks, taskID: nil)
         let container = try resolveContainer(kind: options.containerKind, id: options.containerId)
         let sectionName = normalizedSectionName(options.sectionName, container: container)
         let subtaskTitles = normalizedSubtaskTitles(options.subtaskTitles ?? [])
@@ -146,7 +136,6 @@ final class CadenceWriteService {
         task.scheduledDate = scheduledDate ?? ""
         task.scheduledStartMin = scheduledStartMin ?? -1
         task.estimatedMinutes = estimatedMinutes
-        task.dependencyTaskIDs = dependencyIDs
         task.sectionName = sectionName
         apply(container: container, to: task)
 
@@ -164,13 +153,11 @@ final class CadenceWriteService {
 
     func updateTask(options: CadenceUpdateTaskOptions) throws -> CadenceTaskDetail {
         let task = try findTask(options.taskId)
-        let allTasks = try fetchTasks()
 
         let title = try options.title.map { try normalizedRequiredText($0, emptyError: CadenceWriteError.emptyTitle) }
         let priority = try options.priority.map(validatePriority)
         let dueDate = try validatedOptionalDate(options.dueDate)
         let estimatedMinutes = try options.estimatedMinutes.map(validateEstimatedMinutes)
-        let dependencyIDs = try options.dependencyTaskIds.map { try validateDependencyIDs($0, allTasks: allTasks, taskID: task.id) }
         let container = try resolveContainer(kind: options.containerKind, id: options.containerId)
 
         if options.clearDueDate && dueDate != nil {
@@ -190,7 +177,7 @@ final class CadenceWriteService {
         }
         let sectionName = options.sectionName.map { normalizedSectionName($0, container: finalContainer) }
 
-        guard title != nil || options.notes != nil || priority != nil || dueDate != nil || options.clearDueDate || estimatedMinutes != nil || container != nil || options.clearContainer || sectionName != nil || dependencyIDs != nil else {
+        guard title != nil || options.notes != nil || priority != nil || dueDate != nil || options.clearDueDate || estimatedMinutes != nil || container != nil || options.clearContainer || sectionName != nil else {
             throw CadenceWriteError.noChanges
         }
 
@@ -213,7 +200,6 @@ final class CadenceWriteService {
         } else if options.clearContainer {
             task.sectionName = TaskSectionDefaults.defaultName
         }
-        if let dependencyIDs { task.dependencyTaskIDs = dependencyIDs }
 
         try saveNotifyAndAudit(.task(tool: "update_task", id: task.id, summary: "Updated task: \(task.title)"))
         return try readService.getTask(taskID: task.id.uuidString)
@@ -524,22 +510,6 @@ final class CadenceWriteService {
         return value
     }
 
-    private func validateDependencyIDs(_ values: [String], allTasks: [AppTask], taskID: UUID?) throws -> [UUID] {
-        var result: [UUID] = []
-        var seen = Set<UUID>()
-        for value in values {
-            let id = try uuid(from: value)
-            if id == taskID { throw CadenceWriteError.selfDependency }
-            guard allTasks.contains(where: { $0.id == id }) else {
-                throw CadenceWriteError.dependencyNotFound(value)
-            }
-            if seen.insert(id).inserted {
-                result.append(id)
-            }
-        }
-        return result
-    }
-
     private func normalizeNoteKind(_ value: String) throws -> String {
         let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard ["daily", "weekly", "permanent"].contains(normalized) else {
@@ -620,7 +590,6 @@ final class CadenceWriteService {
         nextTask.notes = task.notes
         nextTask.priority = task.priority
         nextTask.recurrenceRule = task.recurrenceRule
-        nextTask.dependencyTaskIDs = task.dependencyTaskIDs
         nextTask.estimatedMinutes = max(task.estimatedMinutes, 30)
         nextTask.sectionName = task.sectionName
         nextTask.area = task.area

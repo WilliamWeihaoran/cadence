@@ -56,20 +56,6 @@ struct AllTasksListView: View {
         Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
     }
 
-    private var blockedTaskIDs: Set<UUID> {
-        let lookup = tasksByID
-        return Set(
-            allTasks.compactMap { task in
-                guard !task.dependencyTaskIDs.isEmpty else { return nil }
-                let hasUnresolvedDependency = task.dependencyTaskIDs.contains { dependencyID in
-                    guard dependencyID != task.id, let dependency = lookup[dependencyID] else { return false }
-                    return !dependency.isDone && !dependency.isCancelled
-                }
-                return hasUnresolvedDependency ? task.id : nil
-            }
-        )
-    }
-
     private func flatSections(from activeTasks: [AppTask]) -> [AllTasksFlatSection] {
         switch groupingMode {
         case .none:
@@ -117,7 +103,6 @@ struct AllTasksListView: View {
         let completedCount = completedTaskCount
         let visibleCompletedTasks = isCompletedCollapsed ? [] : completedTasks
         let taskLookup = tasksByID
-        let blockedIDs = blockedTaskIDs
 
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -132,8 +117,6 @@ struct AllTasksListView: View {
                             contexts: contexts,
                             areas: areas,
                             projects: projects,
-                            allTasks: allTasks,
-                            blockedTaskIDs: blockedIDs,
                             dragOverTaskID: $dragOverTaskID,
                             onToggle: { toggleSection(group.id) },
                             taskDragPayload: taskDragPayload,
@@ -163,8 +146,6 @@ struct AllTasksListView: View {
                             contexts: contexts,
                             areas: areas,
                             projects: projects,
-                            allTasks: allTasks,
-                            blockedTaskIDs: blockedIDs,
                             dragOverTaskID: $dragOverTaskID,
                             onToggle: { toggleSection(section.id) },
                             taskDragPayload: taskDragPayload,
@@ -197,8 +178,6 @@ struct AllTasksListView: View {
                         contexts: contexts,
                         areas: areas,
                         projects: projects,
-                        allTasks: allTasks,
-                        blockedTaskIDs: blockedIDs,
                         onToggle: { isCompletedCollapsed.toggle() },
                         taskDragPayload: taskDragPayload
                     )
@@ -278,8 +257,6 @@ private struct AllTasksFlatSectionView: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
-    let allTasks: [AppTask]
-    let blockedTaskIDs: Set<UUID>
     @Binding var dragOverTaskID: UUID?
     let onToggle: () -> Void
     let taskDragPayload: (AppTask) -> String
@@ -312,8 +289,6 @@ private struct AllTasksFlatSectionView: View {
                         contexts: contexts,
                         areas: areas,
                         projects: projects,
-                        allTasks: allTasks,
-                        blockedTaskIDs: blockedTaskIDs,
                         dragOverTaskID: $dragOverTaskID,
                         taskDragPayload: taskDragPayload,
                         onDropOnTaskPayload: onDropOnTaskPayload
@@ -333,8 +308,6 @@ private struct AllTasksListGroupView: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
-    let allTasks: [AppTask]
-    let blockedTaskIDs: Set<UUID>
     @Binding var dragOverTaskID: UUID?
     let onToggle: () -> Void
     let taskDragPayload: (AppTask) -> String
@@ -405,8 +378,6 @@ private struct AllTasksListGroupView: View {
                         contexts: contexts,
                         areas: areas,
                         projects: projects,
-                        allTasks: allTasks,
-                        blockedTaskIDs: blockedTaskIDs,
                         dragOverTaskID: $dragOverTaskID,
                         taskDragPayload: taskDragPayload,
                         onDropOnTaskPayload: onDropOnTaskPayload
@@ -426,8 +397,6 @@ private struct AllTasksCompletedSectionView: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
-    let allTasks: [AppTask]
-    let blockedTaskIDs: Set<UUID>
     let onToggle: () -> Void
     let taskDragPayload: (AppTask) -> String
 
@@ -444,7 +413,7 @@ private struct AllTasksCompletedSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects, allTasks: allTasks, blockedTaskIDs: blockedTaskIDs)
+                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
                         .draggable(taskDragPayload(task))
                         .padding(.leading, 16)
                 }
@@ -459,14 +428,12 @@ private struct AllTasksRowHost: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
-    let allTasks: [AppTask]
-    let blockedTaskIDs: Set<UUID>
     @Binding var dragOverTaskID: UUID?
     let taskDragPayload: (AppTask) -> String
     let onDropOnTaskPayload: (String, AppTask) -> Bool
 
     var body: some View {
-        MacTaskRow(task: task, style: style, contexts: contexts, areas: areas, projects: projects, allTasks: allTasks, blockedTaskIDs: blockedTaskIDs)
+        MacTaskRow(task: task, style: style, contexts: contexts, areas: areas, projects: projects)
             .draggable(taskDragPayload(task))
             .dropDestination(for: String.self) { items, _ in
                 guard let payload = items.first else { return false }

@@ -201,84 +201,127 @@ struct SettingsView: View {
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             settingsCard {
-                HStack(alignment: .top, spacing: 14) {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill((appleAccountManager.isSignedIn ? Theme.green : Theme.dim).opacity(0.16))
-                        .frame(width: 42, height: 42)
-                        .overlay {
-                            Image(systemName: "person.crop.circle.fill")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(appleAccountManager.isSignedIn ? Theme.green : Theme.dim)
-                        }
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 14) {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill((appleAccountManager.isSignedIn ? Theme.green : Theme.dim).opacity(0.16))
+                            .frame(width: 42, height: 42)
+                            .overlay {
+                                Image(systemName: "person.crop.circle.fill")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(appleAccountManager.isSignedIn ? Theme.green : Theme.dim)
+                            }
 
-                    VStack(alignment: .leading, spacing: 7) {
-                        if let profile = appleAccountManager.profile {
-                            Text(profile.displayName)
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Theme.text)
-                            if !profile.email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Text(profile.email)
+                        VStack(alignment: .leading, spacing: 7) {
+                            if let profile = appleAccountManager.profile {
+                                Text(profile.displayName)
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(Theme.text)
+                                if !profile.email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    Text(profile.email)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Theme.dim)
+                                }
+                                Text("Signed in \(DateFormatters.shortDate.string(from: profile.signedInAt))")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.muted)
+                            } else {
+                                Text("Sign in with Apple")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(Theme.text)
+                                Text("Use your Apple account as your Cadence identity. This does not lock the app or change iCloud sync.")
                                     .font(.system(size: 12))
                                     .foregroundStyle(Theme.dim)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
-                            Text("Signed in \(DateFormatters.shortDate.string(from: profile.signedInAt))")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.muted)
-                        } else {
-                            Text("Sign in with Apple")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Theme.text)
-                            Text("Use your Apple account as your Cadence identity. This does not lock the app or change iCloud sync.")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Theme.dim)
-                                .fixedSize(horizontal: false, vertical: true)
+
+                            if let statusMessage = appleAccountManager.statusMessage {
+                                Text(statusMessage)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.muted)
+                                    .padding(.top, 2)
+                            }
                         }
 
-                        if let statusMessage = appleAccountManager.statusMessage {
-                            Text(statusMessage)
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.muted)
-                                .padding(.top, 2)
+                        Spacer()
+
+                        if appleAccountManager.isSignedIn {
+                            Button("Sign Out") {
+                                appleAccountManager.signOut()
+                            }
+                            .buttonStyle(.cadencePlain)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.red)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Theme.red.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        } else {
+                            Button {
+                                appleAccountManager.signIn()
+                            } label: {
+                                HStack(spacing: 7) {
+                                    Image(systemName: "apple.logo")
+                                        .font(.system(size: 12, weight: .semibold))
+                                    Text(appleAccountManager.isAuthorizing ? "Signing In..." : "Sign in with Apple")
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 13)
+                                .padding(.vertical, 8)
+                                .background(appleAccountManager.isAuthorizing ? Theme.dim : Color.black)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            .buttonStyle(.cadencePlain)
+                            .disabled(appleAccountManager.isAuthorizing)
                         }
                     }
 
-                    Spacer()
+                    Divider()
+                        .background(Theme.borderSubtle)
 
-                    if appleAccountManager.isSignedIn {
-                        Button("Sign Out") {
-                            appleAccountManager.signOut()
-                        }
-                        .buttonStyle(.cadencePlain)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.red)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Theme.red.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    } else {
-                        Button {
-                            appleAccountManager.signIn()
-                        } label: {
-                            HStack(spacing: 7) {
-                                Image(systemName: "apple.logo")
-                                    .font(.system(size: 12, weight: .semibold))
-                                Text(appleAccountManager.isAuthorizing ? "Signing In..." : "Sign in with Apple")
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 8)
-                            .background(appleAccountManager.isAuthorizing ? Theme.dim : Color.black)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.cadencePlain)
-                        .disabled(appleAccountManager.isAuthorizing)
+                    VStack(spacing: 8) {
+                        accountDiagnosticRow(
+                            title: "Credential",
+                            value: appleAccountManager.credentialStatus.title,
+                            color: appleAccountManager.credentialStatus == .authorized ? Theme.green : Theme.dim
+                        )
+                        accountDiagnosticRow(
+                            title: "Apple Sign-In Entitlement",
+                            value: appleAccountManager.entitlementStatus.title,
+                            color: appleAccountManager.entitlementStatus.isConfigured ? Theme.green : Theme.amber,
+                            detail: appleAccountManager.entitlementStatus.detail
+                        )
                     }
                 }
             }
         }
         .onAppear {
             appleAccountManager.refreshCredentialState()
+        }
+    }
+
+    private func accountDiagnosticRow(
+        title: String,
+        value: String,
+        color: Color,
+        detail: String? = nil
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.muted)
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(value)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(color)
+                if let detail {
+                    Text(detail)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.muted)
+                }
+            }
         }
     }
 

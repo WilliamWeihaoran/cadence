@@ -66,4 +66,14 @@ struct CadenceTests {
         #expect(merged.signedInAt == refreshedAt)
     }
 
+    @Test func appleSignInEntitlementParsingRecognizesDefaultValue() {
+        let configured = AppleSignInEntitlementStatus.parsed(from: ["Default"])
+        let missing = AppleSignInEntitlementStatus.parsed(from: nil)
+
+        #expect(configured.isConfigured)
+        #expect(configured.title == "Available")
+        #expect(missing.isConfigured == false)
+        #expect(missing.title == "Missing")
+    }
+
 }

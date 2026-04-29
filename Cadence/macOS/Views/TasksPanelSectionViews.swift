@@ -113,7 +113,7 @@ struct TasksPanelGroupSectionView: View {
 
         if !isCollapsed {
             ForEach(group.tasks) { task in
-                MacTaskRow(task: task, style: .todayGrouped, contexts: contexts, areas: areas, projects: projects, allTasks: allTasks)
+                MacTaskRow(task: task, style: .todayGrouped, contexts: contexts, areas: areas, projects: projects)
                     .draggable(taskDragPayload(task))
                     .dropDestination(for: String.self) { items, _ in
                         guard let payload = items.first else { return false }
@@ -272,7 +272,7 @@ struct TasksPanelFlatSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects, allTasks: allTasks)
+                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
                         .draggable(taskDragPayload(task))
                         .dropDestination(for: String.self) { items, _ in
                             guard let payload = items.first else { return false }
@@ -322,7 +322,7 @@ struct TasksPanelCompletedSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: mode == .todayOverview ? .todayGrouped : .standard, contexts: contexts, areas: areas, projects: projects, allTasks: allTasks)
+                    MacTaskRow(task: task, style: mode == .todayOverview ? .todayGrouped : .standard, contexts: contexts, areas: areas, projects: projects)
                         .draggable(taskDragPayload(task))
                         .padding(.leading, 16)
                         .transition(.asymmetric(

@@ -29,7 +29,7 @@ struct FocusView: View {
             focusManager.elapsed += 1
         }
         .popover(isPresented: $showTaskPicker) {
-            FocusTaskPicker(tasks: allTasks.filter { !$0.isDone && !$0.isCancelled && !$0.isBlocked(in: allTasks) }) { task in
+            FocusTaskPicker(tasks: allTasks.filter { !$0.isDone && !$0.isCancelled }) { task in
                 focusManager.startFocus(task: task)
                 showTaskPicker = false
             }
@@ -42,13 +42,7 @@ struct FocusView: View {
 
     private var readyTasks: [AppTask] {
         allTasks
-            .filter { !$0.isDone && !$0.isCancelled && !$0.isBlocked(in: allTasks) }
-            .sorted(by: focusRanking)
-    }
-
-    private var blockedTasks: [AppTask] {
-        allTasks
-            .filter { !$0.isDone && !$0.isCancelled && $0.isBlocked(in: allTasks) }
+            .filter { !$0.isDone && !$0.isCancelled }
             .sorted(by: focusRanking)
     }
 
@@ -150,8 +144,7 @@ struct FocusView: View {
 
             FocusContextStrip(
                 task: task,
-                nextTasks: Array(readyTasks.filter { $0.id != task.id }.prefix(3)),
-                dependencies: task.unresolvedDependencies(in: allTasks)
+                nextTasks: Array(readyTasks.filter { $0.id != task.id }.prefix(3))
             )
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
@@ -250,25 +243,13 @@ struct FocusView: View {
             }
             .buttonStyle(.cadencePlain)
 
-            HStack(alignment: .top, spacing: 16) {
-                FocusTaskBucketCard(
-                    title: "Ready",
-                    subtitle: "Best next tasks",
-                    accent: Theme.blue,
-                    tasks: Array(readyTasks.prefix(5)),
-                    allTasks: allTasks,
-                    onSelect: { focusManager.startFocus(task: $0) }
-                )
-
-                FocusTaskBucketCard(
-                    title: "Blocked",
-                    subtitle: "Waiting on dependencies",
-                    accent: Theme.amber,
-                    tasks: Array(blockedTasks.prefix(5)),
-                    allTasks: allTasks,
-                    onSelect: { _ in }
-                )
-            }
+            FocusTaskBucketCard(
+                title: "Ready",
+                subtitle: "Best next tasks",
+                accent: Theme.blue,
+                tasks: Array(readyTasks.prefix(6)),
+                onSelect: { focusManager.startFocus(task: $0) }
+            )
             .padding(.horizontal, 24)
 
             Spacer()
@@ -527,7 +508,6 @@ private struct FocusTaskPicker: View {
 private struct FocusContextStrip: View {
     let task: AppTask
     let nextTasks: [AppTask]
-    let dependencies: [AppTask]
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -539,11 +519,7 @@ private struct FocusContextStrip: View {
                     if task.isRecurring {
                         statusChip(title: task.recurrenceRule.shortLabel, color: Theme.blue, icon: "arrow.clockwise")
                     }
-                    if !dependencies.isEmpty {
-                        statusChip(title: "\(dependencies.count) blocked", color: Theme.amber, icon: "arrow.triangle.branch")
-                    } else {
-                        statusChip(title: "Ready", color: Theme.green, icon: "checkmark.circle.fill")
-                    }
+                    statusChip(title: "Ready", color: Theme.green, icon: "checkmark.circle.fill")
                 }
             }
 
@@ -597,7 +573,6 @@ private struct FocusTaskBucketCard: View {
     let subtitle: String
     let accent: Color
     let tasks: [AppTask]
-    let allTasks: [AppTask]
     let onSelect: (AppTask) -> Void
 
     var body: some View {
@@ -644,7 +619,6 @@ private struct FocusTaskBucketCard: View {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.cadencePlain)
-                        .disabled(task.isBlocked(in: allTasks))
                     }
                 }
             }
@@ -662,9 +636,6 @@ private struct FocusTaskBucketCard: View {
     }
 
     private func detail(for task: AppTask) -> String {
-        if task.isBlocked(in: allTasks) {
-            return "Blocked by \(task.unresolvedDependencies(in: allTasks).count) task\(task.unresolvedDependencies(in: allTasks).count == 1 ? "" : "s")"
-        }
         if task.scheduledDate == DateFormatters.todayKey() {
             return "Scheduled today"
         }

@@ -18,7 +18,7 @@ struct TaskDetailNotesSection: View {
                 .frame(minHeight: 72)
                 .padding(8)
                 .background(Theme.surface.opacity(0.45))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 if task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("Add notes...")
@@ -88,7 +88,7 @@ struct TaskDetailActionsSection: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                     .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.cadencePlain)
 
@@ -104,7 +104,7 @@ struct TaskDetailActionsSection: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.cadencePlain)
             }

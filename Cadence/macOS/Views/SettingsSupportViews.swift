@@ -3,6 +3,7 @@ import SwiftUI
 import SwiftData
 import EventKit
 import AuthenticationServices
+import Security
 
 struct AppleAccountProfile: Equatable {
     var userIdentifier: String
@@ -95,6 +96,64 @@ enum AppleAccountProfileMerge {
     }
 }
 
+enum AppleAccountCredentialStatus: Equatable {
+    case unchecked
+    case authorized
+    case revoked
+    case notFound
+    case transferred
+    case unavailable
+
+    var title: String {
+        switch self {
+        case .unchecked: return "Not checked"
+        case .authorized: return "Authorized"
+        case .revoked: return "Revoked"
+        case .notFound: return "Not found"
+        case .transferred: return "Transferred"
+        case .unavailable: return "Signed out"
+        }
+    }
+}
+
+struct AppleSignInEntitlementStatus: Equatable {
+    var values: [String]
+
+    var isConfigured: Bool {
+        values.contains("Default")
+    }
+
+    var title: String {
+        isConfigured ? "Available" : "Missing"
+    }
+
+    var detail: String {
+        values.isEmpty ? "No Sign in with Apple entitlement found." : values.joined(separator: ", ")
+    }
+
+    static func current() -> AppleSignInEntitlementStatus {
+        guard let task = SecTaskCreateFromSelf(kCFAllocatorDefault),
+              let value = SecTaskCopyValueForEntitlement(
+                task,
+                "com.apple.developer.applesignin" as CFString,
+                nil
+              ) else {
+            return AppleSignInEntitlementStatus(values: [])
+        }
+        return parsed(from: value)
+    }
+
+    static func parsed(from value: Any?) -> AppleSignInEntitlementStatus {
+        if let values = value as? [String] {
+            return AppleSignInEntitlementStatus(values: values)
+        }
+        if let value = value as? String {
+            return AppleSignInEntitlementStatus(values: [value])
+        }
+        return AppleSignInEntitlementStatus(values: [])
+    }
+}
+
 @Observable
 final class AppleAccountManager: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
     static let shared = AppleAccountManager()
@@ -104,12 +163,17 @@ final class AppleAccountManager: NSObject, ASAuthorizationControllerDelegate, AS
     var profile: AppleAccountProfile?
     var statusMessage: String?
     var isAuthorizing = false
+    var credentialStatus: AppleAccountCredentialStatus
+    var entitlementStatus: AppleSignInEntitlementStatus
 
     var isSignedIn: Bool { profile != nil }
 
     init(storage: AppleAccountStorage = AppleAccountDefaultsStorage()) {
+        let loadedProfile = storage.loadProfile()
         self.storage = storage
-        self.profile = storage.loadProfile()
+        self.profile = loadedProfile
+        self.credentialStatus = loadedProfile == nil ? .unavailable : .unchecked
+        self.entitlementStatus = AppleSignInEntitlementStatus.current()
         super.init()
     }
 
@@ -130,22 +194,34 @@ final class AppleAccountManager: NSObject, ASAuthorizationControllerDelegate, AS
     func signOut() {
         storage.clearProfile()
         profile = nil
+        credentialStatus = .unavailable
         statusMessage = "Signed out."
     }
 
     func refreshCredentialState() {
-        guard let userIdentifier = profile?.userIdentifier else { return }
+        entitlementStatus = AppleSignInEntitlementStatus.current()
+        guard let userIdentifier = profile?.userIdentifier else {
+            credentialStatus = .unavailable
+            return
+        }
         ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userIdentifier) { [weak self] state, _ in
             DispatchQueue.main.async {
                 guard let self else { return }
                 switch state {
                 case .authorized:
-                    break
-                case .revoked, .notFound:
+                    self.credentialStatus = .authorized
+                case .revoked:
+                    self.credentialStatus = .revoked
+                    self.storage.clearProfile()
+                    self.profile = nil
+                    self.statusMessage = "Apple account access is no longer active."
+                case .notFound:
+                    self.credentialStatus = .notFound
                     self.storage.clearProfile()
                     self.profile = nil
                     self.statusMessage = "Apple account access is no longer active."
                 case .transferred:
+                    self.credentialStatus = .transferred
                     self.statusMessage = "Apple account transfer is in progress."
                 @unknown default:
                     break
@@ -171,6 +247,7 @@ final class AppleAccountManager: NSObject, ASAuthorizationControllerDelegate, AS
         )
         storage.saveProfile(merged)
         profile = merged
+        credentialStatus = .authorized
         statusMessage = "Signed in with Apple."
     }
 
