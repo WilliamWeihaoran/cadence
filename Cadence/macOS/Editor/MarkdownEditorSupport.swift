@@ -24,6 +24,16 @@ struct MarkdownListPrefixMatch {
 }
 
 enum MarkdownListSupport {
+    static func normalizedMarkdownListPrefixes(in text: String) -> String {
+        var changed = false
+        let lines = text.components(separatedBy: "\n").map { line -> String in
+            guard let normalized = normalizedMarkdownListLine(line) else { return line }
+            changed = true
+            return normalized
+        }
+        return changed ? lines.joined(separator: "\n") : text
+    }
+
     static func indentationPrefix(in text: NSString, replacingRange: NSRange) -> String? {
         let lineRange = text.lineRange(for: replacingRange)
         let prefixRange = NSRange(location: lineRange.location, length: replacingRange.location - lineRange.location)
@@ -39,6 +49,12 @@ enum MarkdownListSupport {
 
     static func orderedLevel(forIndentation indentation: String) -> Int {
         min(normalizedIndentation(indentation).count / 4, 4)
+    }
+
+    static func visualLevel(forIndentation indentation: String) -> Int {
+        let width = indentationWidth(indentation)
+        guard width > 0 else { return 0 }
+        return min(max(1, (width + 3) / 4), 4)
     }
 
     static func orderedIndex(for marker: String) -> Int? {
@@ -84,6 +100,8 @@ enum MarkdownListSupport {
 
         let simplePrefixes: [(String, MarkdownListPrefixKind, String)] = [
             ("• ", .bullet, "• "),
+            ("* ", .bullet, "* "),
+            ("- ", .bullet, "- "),
             ("– ", .dash, "– "),
             ("+ ", .plus, "+ "),
             ("○ ", .todo, "○ "),
@@ -125,6 +143,43 @@ enum MarkdownListSupport {
 
     private static func normalizedIndentation(_ indentation: String) -> String {
         indentation.replacingOccurrences(of: "\t", with: String(repeating: " ", count: 4))
+    }
+
+    private static func indentationWidth(_ indentation: String) -> Int {
+        indentation.reduce(into: 0) { width, character in
+            width += character == "\t" ? 4 : 1
+        }
+    }
+
+    private static func normalizedMarkdownListLine(_ line: String) -> String? {
+        let indentation = rawIndentation(in: line)
+        let trimmed = String(line.dropFirst(indentation.count))
+        guard !isMarkdownDividerLine(trimmed) else { return nil }
+
+        guard let regex = try? NSRegularExpression(pattern: #"^([*+-])\s+(?:\[([ xX])\]\s+)?"#),
+              let match = regex.firstMatch(in: trimmed, range: NSRange(location: 0, length: (trimmed as NSString).length)) else {
+            return nil
+        }
+
+        let prefix = (trimmed as NSString).substring(with: match.range)
+        let rest = String(trimmed.dropFirst(prefix.count))
+        let checkboxRange = match.range(at: 2)
+        if checkboxRange.location != NSNotFound {
+            let state = (trimmed as NSString).substring(with: checkboxRange)
+            return indentation + (state.lowercased() == "x" ? "● " : "○ ") + rest
+        }
+
+        return indentation + "• " + rest
+    }
+
+    private static func isMarkdownDividerLine(_ line: String) -> Bool {
+        let compact = line
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .filter { !$0.isWhitespace }
+        guard compact.count >= 3 else { return false }
+        return compact.allSatisfy { $0 == "-" } ||
+            compact.allSatisfy { $0 == "*" } ||
+            compact.allSatisfy { $0 == "_" }
     }
 }
 
@@ -299,23 +354,23 @@ enum MarkdownStylist {
                 storage.addAttribute(.font, value: italic, range: rest)
             }
         } else if let ordered = orderedListMatch(in: line) {
-            let level = min(ordered.indentation.count / 4, 4)
+            let level = MarkdownListSupport.visualLevel(forIndentation: ordered.indentation)
             let ps = listStyle(for: level, markerWidth: ordered.marker.count + 1)
             storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
             let markerRange = NSRange(location: lineStart + ordered.indentation.count, length: min(ordered.marker.count, lineRange.length))
             storage.addAttribute(.foregroundColor, value: blueColor, range: markerRange)
             storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .semibold), range: markerRange)
         } else if let bullet = unorderedListMatch(in: line) {
-            let level = min(bullet.indentation.count / 4, 4)
+            let level = MarkdownListSupport.visualLevel(forIndentation: bullet.indentation)
             let ps = listStyle(for: level, markerWidth: 2)
             storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
             let markerLocation = lineStart + bullet.indentation.count
             switch bullet.marker {
-            case "•":
+            case "•", "*":
                 let bulletRange = NSRange(location: markerLocation, length: min(1, lineRange.length))
                 storage.addAttribute(.foregroundColor, value: blueColor, range: bulletRange)
                 storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 20), range: bulletRange)
-            case "–", "+":
+            case "–", "-", "+":
                 storage.addAttribute(.foregroundColor, value: dimColor,
                                      range: NSRange(location: markerLocation, length: min(2, max(0, lineRange.length - bullet.indentation.count))))
             case "○", "●":
@@ -345,7 +400,7 @@ enum MarkdownStylist {
     private static func unorderedListMatch(in line: String) -> (indentation: String, marker: String)? {
         let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
         let trimmed = String(line.dropFirst(indentation.count))
-        let markers = ["• ", "– ", "+ ", "○ ", "● "]
+        let markers = ["• ", "* ", "- ", "– ", "+ ", "○ ", "● "]
         guard let prefix = markers.first(where: { trimmed.hasPrefix($0) }) else { return nil }
         return (indentation, String(prefix.prefix(1)))
     }
@@ -366,7 +421,9 @@ enum MarkdownStylist {
     }
 
     private static func isDividerLine(_ line: String) -> Bool {
-        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = line
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .filter { !$0.isWhitespace }
         guard trimmed.count >= 3 else { return false }
         return trimmed.allSatisfy { $0 == "-" } ||
             trimmed.allSatisfy { $0 == "*" } ||
@@ -432,6 +489,19 @@ enum MarkdownStylist {
     }
 
     private static func heading(_ storage: NSTextStorage, _ lineRange: NSRange, _ lineStart: Int, prefixLen: Int, size: CGFloat) {
+        let markerRange = NSRange(location: lineStart, length: min(prefixLen, lineRange.length))
+        let contentLength = max(0, lineRange.length - prefixLen)
+        let contentRange = NSRange(location: lineStart + prefixLen, length: contentLength)
+        let content = contentLength > 0 ? (storage.string as NSString).substring(with: contentRange) : ""
+        let hasVisibleContent = !content.trimmingCharacters(in: .whitespaces).isEmpty
+
+        guard hasVisibleContent else {
+            storage.addAttribute(.font, value: baseFont, range: lineRange)
+            storage.addAttribute(.foregroundColor, value: dimColor, range: markerRange)
+            storage.addAttribute(.paragraphStyle, value: baseParagraphStyle, range: lineRange)
+            return
+        }
+
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 4
         paragraph.firstLineHeadIndent = 0
@@ -442,7 +512,7 @@ enum MarkdownStylist {
         storage.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: size), range: lineRange)
         storage.addAttribute(.foregroundColor, value: textColor, range: lineRange)
         storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
-        hide(storage, NSRange(location: lineStart, length: prefixLen))
+        hide(storage, markerRange)
     }
 
     private static func applyInline(

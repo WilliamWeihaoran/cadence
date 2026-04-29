@@ -6,6 +6,7 @@ import EventKit
 struct SettingsView: View {
     private enum SettingsCategory: String, CaseIterable, Identifiable {
         case appearance
+        case account
         case navigation
         case sidebar
         case contexts
@@ -17,6 +18,7 @@ struct SettingsView: View {
         var title: String {
             switch self {
             case .appearance: return "Appearance"
+            case .account: return "Account"
             case .navigation: return "Navigation"
             case .sidebar: return "Sidebar"
             case .contexts: return "Contexts"
@@ -29,6 +31,8 @@ struct SettingsView: View {
             switch self {
             case .appearance:
                 return "Themes and overall visual mood."
+            case .account:
+                return "Apple account identity."
             case .navigation:
                 return "How lists open and behave by default."
             case .sidebar:
@@ -45,6 +49,7 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .appearance: return "paintpalette.fill"
+            case .account: return "person.crop.circle.fill"
             case .navigation: return "rectangle.stack.fill"
             case .sidebar: return "sidebar.left"
             case .contexts: return "square.stack.3d.up.fill"
@@ -56,6 +61,7 @@ struct SettingsView: View {
         var tint: Color {
             switch self {
             case .appearance: return Theme.blue
+            case .account: return Theme.green
             case .navigation: return Theme.green
             case .sidebar: return Theme.amber
             case .contexts: return Theme.red
@@ -67,6 +73,7 @@ struct SettingsView: View {
 
     @Environment(ThemeManager.self) private var themeManager
     @Environment(CalendarManager.self) private var calendarManager
+    @Environment(AppleAccountManager.self) private var appleAccountManager
     @Environment(\.modelContext) private var modelContext
     @AppStorage("listDetailDefaultPage") private var listDetailDefaultPage = ListDetailPage.tasks.rawValue
     @AppStorage("sidebarHiddenTabs") private var sidebarHiddenTabsRaw = ""
@@ -188,6 +195,90 @@ struct SettingsView: View {
                     themeOptionCard(option)
                 }
             }
+        }
+    }
+
+    private var accountSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            settingsCard {
+                HStack(alignment: .top, spacing: 14) {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill((appleAccountManager.isSignedIn ? Theme.green : Theme.dim).opacity(0.16))
+                        .frame(width: 42, height: 42)
+                        .overlay {
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(appleAccountManager.isSignedIn ? Theme.green : Theme.dim)
+                        }
+
+                    VStack(alignment: .leading, spacing: 7) {
+                        if let profile = appleAccountManager.profile {
+                            Text(profile.displayName)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Theme.text)
+                            if !profile.email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text(profile.email)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Theme.dim)
+                            }
+                            Text("Signed in \(DateFormatters.shortDate.string(from: profile.signedInAt))")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.muted)
+                        } else {
+                            Text("Sign in with Apple")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Theme.text)
+                            Text("Use your Apple account as your Cadence identity. This does not lock the app or change iCloud sync.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        if let statusMessage = appleAccountManager.statusMessage {
+                            Text(statusMessage)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.muted)
+                                .padding(.top, 2)
+                        }
+                    }
+
+                    Spacer()
+
+                    if appleAccountManager.isSignedIn {
+                        Button("Sign Out") {
+                            appleAccountManager.signOut()
+                        }
+                        .buttonStyle(.cadencePlain)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.red)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Theme.red.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    } else {
+                        Button {
+                            appleAccountManager.signIn()
+                        } label: {
+                            HStack(spacing: 7) {
+                                Image(systemName: "apple.logo")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text(appleAccountManager.isAuthorizing ? "Signing In..." : "Sign in with Apple")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 8)
+                            .background(appleAccountManager.isAuthorizing ? Theme.dim : Color.black)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.cadencePlain)
+                        .disabled(appleAccountManager.isAuthorizing)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            appleAccountManager.refreshCredentialState()
         }
     }
 
@@ -559,6 +650,8 @@ struct SettingsView: View {
 
                 if selectedCategory == .calendar {
                     authBadge
+                } else if selectedCategory == .account {
+                    accountBadge
                 }
             }
         }
@@ -569,6 +662,8 @@ struct SettingsView: View {
         switch selectedCategory {
         case .appearance:
             appearanceSection
+        case .account:
+            accountSection
         case .navigation:
             navigationSection
         case .sidebar:
@@ -586,6 +681,8 @@ struct SettingsView: View {
         switch selectedCategory {
         case .appearance:
             return "Pick the dark palette that best fits your workspace. Changes apply across the app immediately."
+        case .account:
+            return "Connect an Apple account for local identity. Cadence still works signed out."
         case .navigation:
             return "Choose which page new lists open on by default. Once you visit a specific list, Cadence still remembers that list's most recently opened page."
         case .sidebar:
@@ -640,6 +737,22 @@ struct SettingsView: View {
             }
         }
         .buttonStyle(.cadencePlain)
+    }
+
+    @ViewBuilder
+    private var accountBadge: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(appleAccountManager.isSignedIn ? Theme.green : Theme.dim)
+                .frame(width: 7, height: 7)
+            Text(appleAccountManager.isSignedIn ? "Signed in" : "Signed out")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(appleAccountManager.isSignedIn ? Theme.green : Theme.dim)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background((appleAccountManager.isSignedIn ? Theme.green : Theme.dim).opacity(0.12))
+        .clipShape(Capsule())
     }
 
     @ViewBuilder

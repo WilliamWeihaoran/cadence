@@ -53,11 +53,12 @@ struct MarkdownEditorView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: NSViewRepresentableContext<MarkdownEditorView>) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
-        if textView.string != text {
+        let displayText = MarkdownListSupport.normalizedMarkdownListPrefixes(in: text)
+        if textView.string != displayText {
             let sel = textView.selectedRange()
-            textView.string = text
+            textView.string = displayText
             MarkdownStylist.apply(to: textView)
-            let safe = NSRange(location: min(sel.location, (text as NSString).length), length: 0)
+            let safe = NSRange(location: min(sel.location, (displayText as NSString).length), length: 0)
             textView.setSelectedRange(safe)
         }
         MarkdownEditorScrollSupport.refreshLayout(in: scrollView)

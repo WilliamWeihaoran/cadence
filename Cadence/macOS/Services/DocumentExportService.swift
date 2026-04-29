@@ -50,8 +50,9 @@ enum DocumentExportService {
         let horizontalInset: CGFloat = 42
         let verticalInset: CGFloat = 42
         let contentWidth = pageWidth - (horizontalInset * 2)
+        let renderedContent = MarkdownListSupport.normalizedMarkdownListPrefixes(in: doc.content)
 
-        let textStorage = NSTextStorage(string: doc.content)
+        let textStorage = NSTextStorage(string: renderedContent)
         let layoutManager = CadenceLayoutManager()
         let textContainer = NSTextContainer(containerSize: NSSize(width: contentWidth, height: CGFloat.greatestFiniteMagnitude))
         textStorage.addLayoutManager(layoutManager)
@@ -65,7 +66,7 @@ enum DocumentExportService {
         textView.textContainerInset = NSSize(width: horizontalInset, height: verticalInset)
         textView.textContainer?.widthTracksTextView = false
         textView.textContainer?.containerSize = NSSize(width: contentWidth, height: CGFloat.greatestFiniteMagnitude)
-        textView.string = doc.content
+        textView.string = renderedContent
         MarkdownStylist.apply(to: textView)
 
         layoutManager.ensureLayout(for: textContainer)
