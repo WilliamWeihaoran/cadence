@@ -61,7 +61,7 @@ enum TimelineTaskBlockInteractionSupport {
                 if activeDragTaskID.wrappedValue == task.id {
                     activeDragTaskID.wrappedValue = nil
                 }
-                modelContext.delete(task)
+                modelContext.deleteTask(task)
             }
         }
     }

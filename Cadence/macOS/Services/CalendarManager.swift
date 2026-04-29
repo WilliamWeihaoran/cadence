@@ -27,9 +27,21 @@ final class CalendarManager {
     private let store = EKEventStore()
     private var storeObserver: NSObjectProtocol?
 
-    private init() {}
+    private init() {
+        refreshAuthorizationState()
+    }
 
     // MARK: - Authorization
+
+    func refreshAuthorizationState() {
+        switch EKEventStore.authorizationStatus(for: .event) {
+        case .fullAccess:
+            isAuthorized = true
+            startObserving()
+        default:
+            isAuthorized = false
+        }
+    }
 
     func requestAccess() async -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)

@@ -14,10 +14,7 @@ enum macOSRootLifecycleSupport {
         TaskCompletionAnimationManager.shared.modelContext = modelContext
         installKeyMonitorIfNeeded()
         GlobalHotKeyManager.shared.registerIfNeeded()
-        Task {
-            await CalendarManager.shared.requestAccess()
-            CalendarManager.shared.startObserving()
-        }
+        CalendarManager.shared.refreshAuthorizationState()
     }
 
     static func handleDisappear(removeKeyMonitor: () -> Void) {

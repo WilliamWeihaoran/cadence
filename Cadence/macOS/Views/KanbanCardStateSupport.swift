@@ -49,7 +49,7 @@ enum KanbanCardStateSupport {
                     if hoveredTaskManager.hoveredTask?.id == task.id {
                         hoveredTaskManager.hoveredTask = nil
                     }
-                    modelContext.delete(task)
+                    modelContext.deleteTask(task)
                 }
             }
         } else {

@@ -10,7 +10,7 @@ enum RootCommandActionSupport {
             title: "Delete Task?",
             message: "This will permanently delete \"\(task.title.isEmpty ? "Untitled" : task.title)\"."
         ) {
-            context.modelContext.delete(task)
+            context.modelContext.deleteTask(task)
             context.hoveredTaskManager.hoveredTask = nil
         }
     }
