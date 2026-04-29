@@ -8,7 +8,6 @@ struct FocusView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
 
-    @State private var noteContent = ""
     @State private var showTaskPicker = false
     @State private var showLogSheet = false
 
@@ -153,7 +152,10 @@ struct FocusView: View {
 
             // ── Notes + Schedule ──────────────────────────────────────────
             HSplitView {
-                MarkdownEditorView(text: $noteContent)
+                MarkdownEditor(text: Binding(
+                    get: { task.notes },
+                    set: { task.notes = $0 }
+                ))
                     .frame(minWidth: 280)
 
                 SchedulePanel()

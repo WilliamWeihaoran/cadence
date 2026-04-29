@@ -8,15 +8,11 @@ struct TaskDetailNotesSection: View {
     var body: some View {
         TaskInspectorInfoCard {
             ZStack(alignment: .topLeading) {
-                TextEditor(text: Binding(
+                MarkdownEditor(text: Binding(
                     get: { task.notes },
                     set: { task.notes = $0 }
                 ))
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.text)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 72)
-                .padding(8)
+                .frame(minHeight: 120)
                 .background(Theme.surface.opacity(0.45))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 

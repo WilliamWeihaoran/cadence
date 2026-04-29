@@ -476,7 +476,7 @@ private struct DailyNoteEditorPane: View {
             }
             .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
             Divider().background(Theme.borderSubtle)
-            MarkdownEditorView(text: $note.content)
+            MarkdownEditor(text: $note.content)
                 .onChange(of: note.content) { note.updatedAt = Date() }
         }
         .background(Theme.surface)
@@ -499,7 +499,7 @@ private struct WeeklyNoteEditorPane: View {
             }
             .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
             Divider().background(Theme.borderSubtle)
-            MarkdownEditorView(text: $note.content)
+            MarkdownEditor(text: $note.content)
                 .onChange(of: note.content) { note.updatedAt = Date() }
         }
         .background(Theme.surface)
@@ -542,7 +542,7 @@ struct EventNoteInlineEditorPane: View {
             }
             .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
             Divider().background(Theme.borderSubtle)
-            MarkdownEditorView(text: contentBinding)
+            MarkdownEditor(text: contentBinding)
         }
         .background(Theme.surface)
     }

@@ -56,7 +56,7 @@ struct EventNoteEditorSheet: View {
 
             Divider().background(Theme.borderSubtle)
 
-            MarkdownEditorView(text: Binding(
+            MarkdownEditor(text: Binding(
                 get: { note.content },
                 set: {
                     note.content = $0

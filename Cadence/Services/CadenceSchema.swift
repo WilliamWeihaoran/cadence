@@ -13,6 +13,7 @@ enum CadenceSchema {
         Document.self,
         SavedLink.self,
         EventNote.self,
+        MarkdownImageAsset.self,
         Goal.self,
         Habit.self,
         HabitCompletion.self,

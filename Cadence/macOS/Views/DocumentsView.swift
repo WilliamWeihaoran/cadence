@@ -21,6 +21,7 @@ struct DocumentsView: View {
     @Query(sort: \Document.order) private var allDocs: [Document]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \EventNote.updatedAt, order: .reverse) private var allEventNotes: [EventNote]
+    @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
 
     private var docs: [Document] {
         if let area {
@@ -72,7 +73,7 @@ struct DocumentsView: View {
                                 DocumentExportService.exportMarkdown(selectedDoc)
                             }
                             Button("Export PDF") {
-                                DocumentExportService.exportPDF(selectedDoc)
+                                DocumentExportService.exportPDF(selectedDoc, imageAssets: imageAssets)
                             }
                         } label: {
                             Image(systemName: "square.and.arrow.up")
@@ -170,7 +171,7 @@ struct DocumentsView: View {
                         onOpenNote: { selectedDocID = $0.id }
                     )
 
-                    MarkdownEditor(doc: doc)
+                    DocumentMarkdownEditor(doc: doc)
                         .id(doc.id)
                 }
             } else {
@@ -302,11 +303,11 @@ private struct DocRow: View {
 
 // MARK: - Markdown Editor
 
-private struct MarkdownEditor: View {
+private struct DocumentMarkdownEditor: View {
     @Bindable var doc: Document
 
     var body: some View {
-        MarkdownEditorView(text: $doc.content)
+        MarkdownEditor(text: $doc.content)
             .onChange(of: doc.content) {
                 doc.updatedAt = Date()
                 syncTitleFromH1()

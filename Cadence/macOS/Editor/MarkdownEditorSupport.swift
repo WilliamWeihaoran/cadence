@@ -5,6 +5,21 @@ extension NSAttributedString.Key {
     static let cadenceMarkdownHidden = NSAttributedString.Key("CadenceMarkdownHidden")
     static let cadenceMarkdownDivider = NSAttributedString.Key("CadenceMarkdownDivider")
     static let cadenceMarkdownQuoteDepth = NSAttributedString.Key("CadenceMarkdownQuoteDepth")
+    static let cadenceMarkdownImage = NSAttributedString.Key("CadenceMarkdownImage")
+}
+
+struct MarkdownImageLayoutInfo {
+    let id: UUID
+    let altText: String
+    let image: NSImage?
+    let displayWidth: CGFloat
+    let pixelSize: CGSize
+
+    func fittedSize(maxWidth: CGFloat) -> CGSize {
+        let width = min(max(1, displayWidth), max(1, maxWidth))
+        let aspect = pixelSize.height / max(pixelSize.width, 1)
+        return CGSize(width: width, height: max(60, width * aspect))
+    }
 }
 
 enum MarkdownListPrefixKind {
@@ -260,6 +275,11 @@ enum MarkdownStylist {
     ]
 
     static func apply(to textView: NSTextView) {
+        let imageAssets = (textView as? CadenceTextView)?.markdownImageAssets ?? [:]
+        apply(to: textView, imageAssets: imageAssets)
+    }
+
+    static func apply(to textView: NSTextView, imageAssets: [UUID: MarkdownImageRenderAsset]) {
         guard let storage = textView.textStorage else { return }
         let text = textView.string
         let nsText = text as NSString
@@ -276,7 +296,14 @@ enum MarkdownStylist {
         var pos = 0
         for line in text.components(separatedBy: "\n") {
             let len = (line as NSString).length
-            applyLine(storage: storage, line: line, lineRange: NSRange(location: pos, length: len), lineStart: pos)
+            applyLine(
+                storage: storage,
+                line: line,
+                lineRange: NSRange(location: pos, length: len),
+                lineStart: pos,
+                imageAssets: imageAssets,
+                textView: textView
+            )
             pos += len + 1
         }
 
@@ -319,7 +346,19 @@ enum MarkdownStylist {
         storage.endEditing()
     }
 
-    private static func applyLine(storage: NSTextStorage, line: String, lineRange: NSRange, lineStart: Int) {
+    private static func applyLine(
+        storage: NSTextStorage,
+        line: String,
+        lineRange: NSRange,
+        lineStart: Int,
+        imageAssets: [UUID: MarkdownImageRenderAsset],
+        textView: NSTextView
+    ) {
+        if let image = standaloneImage(in: line, imageAssets: imageAssets) {
+            applyImageBlock(storage: storage, lineRange: lineRange, image: image, textView: textView)
+            return
+        }
+
         if line.hasPrefix("###### ") {
             heading(storage, lineRange, lineStart, prefixLen: 7, size: 15)
         } else if line.hasPrefix("##### ") {
@@ -395,6 +434,49 @@ enum MarkdownStylist {
             storage.addAttribute(.cadenceMarkdownDivider, value: true, range: lineRange)
             storage.addAttribute(.foregroundColor, value: NSColor.clear, range: lineRange)
         }
+    }
+
+    private static func standaloneImage(
+        in line: String,
+        imageAssets: [UUID: MarkdownImageRenderAsset]
+    ) -> MarkdownImageLayoutInfo? {
+        guard let regex = try? NSRegularExpression(pattern: #"^!\[([^\]\n]*)\]\(cadence-image://([0-9A-Fa-f-]{36})\)\s*$"#) else {
+            return nil
+        }
+        let nsLine = line as NSString
+        let fullRange = NSRange(location: 0, length: nsLine.length)
+        guard let match = regex.firstMatch(in: line, range: fullRange),
+              let id = UUID(uuidString: nsLine.substring(with: match.range(at: 2)))
+        else { return nil }
+
+        let asset = imageAssets[id]
+        return MarkdownImageLayoutInfo(
+            id: id,
+            altText: nsLine.substring(with: match.range(at: 1)),
+            image: asset?.image,
+            displayWidth: asset?.displayWidth ?? MarkdownImageAssetService.defaultDisplayWidth,
+            pixelSize: asset?.pixelSize ?? CGSize(width: 640, height: 360)
+        )
+    }
+
+    private static func applyImageBlock(
+        storage: NSTextStorage,
+        lineRange: NSRange,
+        image: MarkdownImageLayoutInfo,
+        textView: NSTextView
+    ) {
+        guard lineRange.length > 0 else { return }
+        let contentWidth = max(1, textView.bounds.width - (textView.textContainerInset.width * 2) - 24)
+        let imageSize = image.fittedSize(maxWidth: contentWidth)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = imageSize.height + 18
+        paragraph.maximumLineHeight = imageSize.height + 18
+        paragraph.paragraphSpacingBefore = 8
+        paragraph.paragraphSpacing = 8
+
+        storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
+        storage.addAttribute(.cadenceMarkdownHidden, value: true, range: lineRange)
+        storage.addAttribute(.cadenceMarkdownImage, value: image, range: lineRange)
     }
 
     private static func unorderedListMatch(in line: String) -> (indentation: String, marker: String)? {

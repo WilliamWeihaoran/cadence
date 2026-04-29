@@ -13,12 +13,7 @@ struct PersistenceController {
             container = c
             return
         }
-        PersistenceController.deleteStoreFiles()
-        do {
-            container = try PersistenceController.makeContainer()
-        } catch {
-            fatalError("Could not create ModelContainer even after reset: \(error)")
-        }
+        fatalError("Could not create ModelContainer. Refusing to delete existing Cadence data automatically.")
     }
 
     private static func makeContainer() throws -> ModelContainer {

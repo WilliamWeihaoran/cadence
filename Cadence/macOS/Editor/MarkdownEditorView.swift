@@ -1,9 +1,96 @@
 #if os(macOS)
 import SwiftUI
 import AppKit
+import SwiftData
+import UniformTypeIdentifiers
+
+struct MarkdownEditor: View {
+    @Binding var text: String
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
+    @State private var textView: CadenceTextView?
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            MarkdownEditorView(
+                text: $text,
+                imageAssets: imageAssets,
+                onCreateImages: createAssets,
+                onResizeImage: resizeImage,
+                onTextViewChanged: { textView = $0 }
+            )
+
+            Button {
+                chooseImages()
+            } label: {
+                Image(systemName: "photo")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 28, height: 28)
+                    .background(Theme.surfaceElevated.opacity(0.92))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Theme.borderSubtle.opacity(0.85), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.cadencePlain)
+            .padding(.top, 10)
+            .padding(.trailing, 10)
+            .help("Insert image")
+        }
+    }
+
+    private func createAssets(images: [NSImage], urls: [URL]) -> [MarkdownImageAsset] {
+        var assets = MarkdownImageAssetService.createAssets(fromFileURLs: urls, in: modelContext)
+        assets.append(contentsOf: images.compactMap {
+            MarkdownImageAssetService.createAsset(from: $0, in: modelContext)
+        })
+        try? modelContext.save()
+        return assets
+    }
+
+    private func resizeImage(id: UUID, width: CGFloat) {
+        MarkdownImageAssetService.setDisplayWidth(width, for: id, in: imageAssets)
+        try? modelContext.save()
+    }
+
+    private func chooseImages() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        let completion: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK else { return }
+            let assets = createAssets(images: [], urls: panel.urls)
+            insertAssets(assets)
+        }
+
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            panel.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            panel.begin(completionHandler: completion)
+        }
+    }
+
+    private func insertAssets(_ assets: [MarkdownImageAsset]) {
+        guard !assets.isEmpty else { return }
+        if let textView {
+            textView.insertMarkdownImages(assets)
+        } else {
+            let markdown = assets.map { MarkdownImageAssetService.markdown(for: $0) }.joined(separator: "\n\n")
+            text += text.hasSuffix("\n") || text.isEmpty ? markdown + "\n" : "\n\n\(markdown)\n"
+        }
+    }
+}
 
 struct MarkdownEditorView: NSViewRepresentable {
     @Binding var text: String
+    var imageAssets: [MarkdownImageAsset] = []
+    var onCreateImages: ([NSImage], [URL]) -> [MarkdownImageAsset] = { _, _ in [] }
+    var onResizeImage: (UUID, CGFloat) -> Void = { _, _ in }
+    var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
 
     func makeNSView(context: NSViewRepresentableContext<MarkdownEditorView>) -> NSScrollView {
         let scrollView = MarkdownEditorScrollView()
@@ -45,6 +132,7 @@ struct MarkdownEditorView: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 20, height: 20)
         textView.font = MarkdownStylist.baseFont
         textView.typingAttributes = MarkdownStylist.baseAttributes
+        configure(textView, context: context)
 
         scrollView.documentView = textView
         MarkdownEditorScrollSupport.refreshLayout(in: scrollView)
@@ -53,6 +141,10 @@ struct MarkdownEditorView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: NSViewRepresentableContext<MarkdownEditorView>) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
+        context.coordinator.update(parent: self)
+        if let cadenceTextView = textView as? CadenceTextView {
+            configure(cadenceTextView, context: context)
+        }
         let displayText = MarkdownListSupport.normalizedMarkdownListPrefixes(in: text)
         if textView.string != displayText {
             let sel = textView.selectedRange()
@@ -62,12 +154,30 @@ struct MarkdownEditorView: NSViewRepresentable {
             }
             let safe = NSRange(location: min(sel.location, (displayText as NSString).length), length: 0)
             textView.setSelectedRange(safe)
+        } else {
+            MarkdownEditorScrollSupport.preservingScrollPosition(in: scrollView) {
+                MarkdownStylist.apply(to: textView)
+            }
         }
         MarkdownEditorScrollSupport.refreshLayout(in: scrollView)
     }
 
     func makeCoordinator() -> MarkdownEditorCoordinator {
         MarkdownEditorCoordinator(parent: self)
+    }
+
+    private func configure(_ textView: CadenceTextView, context: NSViewRepresentableContext<MarkdownEditorView>) {
+        textView.markdownImageAssets = Dictionary(
+            uniqueKeysWithValues: imageAssets.compactMap { asset in
+                MarkdownImageAssetService.renderAsset(for: asset.id, in: imageAssets).map { (asset.id, $0) }
+            }
+        )
+        textView.onCreateMarkdownImages = onCreateImages
+        textView.onResizeMarkdownImage = onResizeImage
+        textView.registerForDraggedTypes([.fileURL, .tiff, .png])
+        DispatchQueue.main.async {
+            onTextViewChanged(textView)
+        }
     }
 }
 

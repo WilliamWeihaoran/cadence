@@ -9,9 +9,9 @@ enum DocumentExportService {
         }
     }
 
-    static func exportPDF(_ doc: Document) {
+    static func exportPDF(_ doc: Document, imageAssets: [MarkdownImageAsset] = []) {
         presentSavePanel(suggestedName: suggestedName(for: doc, pathExtension: "pdf"), contentType: .pdf) { url in
-            guard let pdfData = renderedPDFData(for: doc) else { return }
+            guard let pdfData = renderedPDFData(for: doc, imageAssets: imageAssets) else { return }
             try? pdfData.write(to: url)
         }
     }
@@ -45,7 +45,7 @@ enum DocumentExportService {
         }
     }
 
-    private static func renderedPDFData(for doc: Document) -> Data? {
+    private static func renderedPDFData(for doc: Document, imageAssets: [MarkdownImageAsset]) -> Data? {
         let pageWidth: CGFloat = 612
         let horizontalInset: CGFloat = 42
         let verticalInset: CGFloat = 42
@@ -59,6 +59,11 @@ enum DocumentExportService {
         layoutManager.addTextContainer(textContainer)
 
         let textView = CadenceTextView(frame: .zero, textContainer: textContainer)
+        textView.markdownImageAssets = Dictionary(
+            uniqueKeysWithValues: imageAssets.compactMap { asset in
+                MarkdownImageAssetService.renderAsset(for: asset.id, in: imageAssets).map { (asset.id, $0) }
+            }
+        )
         textView.isEditable = false
         textView.isSelectable = false
         textView.drawsBackground = true

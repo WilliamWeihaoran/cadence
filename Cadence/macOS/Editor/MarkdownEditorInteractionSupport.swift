@@ -15,6 +15,7 @@ final class CadenceLayoutManager: NSLayoutManager {
         }
         drawQuoteBlocks(forGlyphRange: glyphsToShow, at: origin)
         drawDividerRules(forGlyphRange: glyphsToShow, at: origin)
+        drawMarkdownImages(forGlyphRange: glyphsToShow, at: origin)
     }
 
     private func drawQuoteBlocks(forGlyphRange glyphRange: NSRange, at origin: NSPoint) {
@@ -73,6 +74,64 @@ final class CadenceLayoutManager: NSLayoutManager {
         }
     }
 
+    private func drawMarkdownImages(forGlyphRange glyphRange: NSRange, at origin: NSPoint) {
+        guard let textStorage,
+              let textContainer = textContainers.first,
+              let textView = textContainer.textView as? CadenceTextView
+        else { return }
+
+        let characterRange = self.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        guard characterRange.length > 0 else { return }
+
+        textStorage.enumerateAttribute(.cadenceMarkdownImage, in: characterRange) { value, range, _ in
+            guard let info = value as? MarkdownImageLayoutInfo else { return }
+            guard range.location < textStorage.length else { return }
+
+            let glyphIndex = self.glyphIndexForCharacter(at: range.location)
+            guard glyphIndex < self.numberOfGlyphs else { return }
+
+            let lineRect = self.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil).offsetBy(dx: origin.x, dy: origin.y)
+            let contentWidth = max(1, textView.bounds.width - (textView.textContainerInset.width * 2) - 24)
+            let imageSize = info.fittedSize(maxWidth: contentWidth)
+            let imageRect = NSRect(
+                x: lineRect.minX + 8,
+                y: lineRect.minY + 9,
+                width: imageSize.width,
+                height: imageSize.height
+            )
+
+            textView.markdownImageRects[info.id] = imageRect
+
+            NSColor(hex: "#151a24").setFill()
+            NSBezierPath(roundedRect: imageRect.insetBy(dx: -1, dy: -1), xRadius: 9, yRadius: 9).fill()
+
+            if let image = info.image {
+                image.draw(in: imageRect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
+            } else {
+                NSColor(hex: "#1d2534").setFill()
+                NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8).fill()
+                let label = "Missing image"
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+                    .foregroundColor: MarkdownStylist.dimColor
+                ]
+                label.draw(at: NSPoint(x: imageRect.minX + 14, y: imageRect.midY - 8), withAttributes: attrs)
+            }
+
+            let handleRect = textView.resizeHandleRect(for: imageRect)
+            NSColor(hex: "#0f1117").withAlphaComponent(0.86).setFill()
+            NSBezierPath(roundedRect: handleRect, xRadius: 5, yRadius: 5).fill()
+            NSColor(hex: "#4a9eff").setStroke()
+            let handle = NSBezierPath()
+            handle.lineWidth = 1.4
+            handle.move(to: NSPoint(x: handleRect.minX + 4, y: handleRect.maxY - 5))
+            handle.line(to: NSPoint(x: handleRect.maxX - 5, y: handleRect.minY + 4))
+            handle.move(to: NSPoint(x: handleRect.minX + 8, y: handleRect.maxY - 5))
+            handle.line(to: NSPoint(x: handleRect.maxX - 5, y: handleRect.minY + 8))
+            handle.stroke()
+        }
+    }
+
     private func visibleGlyphRanges(in glyphRange: NSRange) -> [NSRange] {
         guard let textStorage, glyphRange.length > 0 else { return [glyphRange] }
 
@@ -116,6 +175,15 @@ final class CadenceLayoutManager: NSLayoutManager {
 }
 
 final class CadenceTextView: NSTextView {
+    var markdownImageAssets: [UUID: MarkdownImageRenderAsset] = [:]
+    var markdownImageRects: [UUID: NSRect] = [:]
+    var onCreateMarkdownImages: (([NSImage], [URL]) -> [MarkdownImageAsset])?
+    var onResizeMarkdownImage: ((UUID, CGFloat) -> Void)?
+
+    private var resizingImageID: UUID?
+    private var resizeStartX: CGFloat = 0
+    private var resizeStartWidth: CGFloat = 0
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if MarkdownKeyboardShortcutSupport.handle(event, in: self) {
             return true
@@ -123,8 +191,33 @@ final class CadenceTextView: NSTextView {
         return super.performKeyEquivalent(with: event)
     }
 
+    override func paste(_ sender: Any?) {
+        if insertImages(from: NSPasteboard.general) {
+            return
+        }
+        super.paste(sender)
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        hasImagePayload(sender.draggingPasteboard) ? .copy : super.draggingEntered(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if insertImages(from: sender.draggingPasteboard) {
+            return true
+        }
+        return super.performDragOperation(sender)
+    }
+
     override func mouseDown(with event: NSEvent) {
         let viewPoint = convert(event.locationInWindow, from: nil)
+        if let hit = imageResizeHit(at: viewPoint) {
+            resizingImageID = hit.id
+            resizeStartX = viewPoint.x
+            resizeStartWidth = hit.rect.width
+            return
+        }
+
         let containerPoint = NSPoint(
             x: viewPoint.x - textContainerInset.width,
             y: viewPoint.y - textContainerInset.height
@@ -160,6 +253,46 @@ final class CadenceTextView: NSTextView {
         snapCaretAwayFromHiddenMarkdown(preferringForward: true)
     }
 
+    override func mouseDragged(with event: NSEvent) {
+        guard let resizingImageID else {
+            super.mouseDragged(with: event)
+            return
+        }
+
+        let point = convert(event.locationInWindow, from: nil)
+        let newWidth = resizeStartWidth + (point.x - resizeStartX)
+        onResizeMarkdownImage?(resizingImageID, newWidth)
+        if let current = markdownImageAssets[resizingImageID] {
+            let clamped = min(
+                max(newWidth, MarkdownImageAssetService.minDisplayWidth),
+                MarkdownImageAssetService.maxDisplayWidth
+            )
+            markdownImageAssets[resizingImageID] = MarkdownImageRenderAsset(
+                id: current.id,
+                image: current.image,
+                displayWidth: clamped,
+                pixelSize: current.pixelSize
+            )
+        }
+        if let scrollView = enclosingScrollView {
+            MarkdownEditorScrollSupport.preservingScrollPosition(in: scrollView) {
+                MarkdownStylist.apply(to: self)
+                MarkdownEditorScrollSupport.refreshLayout(in: scrollView)
+            }
+        } else {
+            MarkdownStylist.apply(to: self)
+        }
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if resizingImageID != nil {
+            resizingImageID = nil
+            return
+        }
+        super.mouseUp(with: event)
+    }
+
     func snapCaretAwayFromHiddenMarkdown(preferringForward: Bool) {
         let selection = selectedRange()
         guard selection.length == 0 else { return }
@@ -171,6 +304,67 @@ final class CadenceTextView: NSTextView {
         if snapped != selection.location {
             setSelectedRange(NSRange(location: snapped, length: 0))
         }
+    }
+
+    func resizeHandleRect(for imageRect: NSRect) -> NSRect {
+        NSRect(x: imageRect.maxX - 22, y: imageRect.maxY - 22, width: 18, height: 18)
+    }
+
+    func insertMarkdownImages(_ assets: [MarkdownImageAsset]) {
+        guard !assets.isEmpty else { return }
+        let markdown = assets.map { MarkdownImageAssetService.markdown(for: $0) }.joined(separator: "\n\n")
+        let insertion = paddedInsertion(markdown)
+        let selection = selectedRange()
+        guard shouldChangeText(in: selection, replacementString: insertion) else { return }
+        textStorage?.replaceCharacters(in: selection, with: insertion)
+        let location = selection.location + (insertion as NSString).length
+        setSelectedRange(NSRange(location: location, length: 0))
+        didChangeText()
+    }
+
+    private func imageResizeHit(at point: NSPoint) -> (id: UUID, rect: NSRect)? {
+        for (id, rect) in markdownImageRects where resizeHandleRect(for: rect).contains(point) {
+            return (id, rect)
+        }
+        return nil
+    }
+
+    private func insertImages(from pasteboard: NSPasteboard) -> Bool {
+        let urls = MarkdownImageAssetService.imageFileURLs(from: pasteboard)
+        let images = urls.isEmpty ? MarkdownImageAssetService.images(from: pasteboard) : []
+        guard !urls.isEmpty || !images.isEmpty,
+              let assets = onCreateMarkdownImages?(images, urls),
+              !assets.isEmpty
+        else { return false }
+        insertMarkdownImages(assets)
+        return true
+    }
+
+    private func hasImagePayload(_ pasteboard: NSPasteboard) -> Bool {
+        !MarkdownImageAssetService.imageFileURLs(from: pasteboard).isEmpty ||
+            !MarkdownImageAssetService.images(from: pasteboard).isEmpty
+    }
+
+    private func paddedInsertion(_ markdown: String) -> String {
+        let nsText = string as NSString
+        let selection = selectedRange()
+        let needsLeadingBreak: Bool
+        if selection.location == 0 {
+            needsLeadingBreak = false
+        } else {
+            let previous = nsText.substring(with: NSRange(location: max(0, selection.location - 1), length: 1))
+            needsLeadingBreak = previous != "\n"
+        }
+
+        let needsTrailingBreak: Bool
+        if NSMaxRange(selection) >= nsText.length {
+            needsTrailingBreak = false
+        } else {
+            let next = nsText.substring(with: NSRange(location: NSMaxRange(selection), length: 1))
+            needsTrailingBreak = next != "\n"
+        }
+
+        return (needsLeadingBreak ? "\n\n" : "") + markdown + (needsTrailingBreak ? "\n\n" : "\n")
     }
 }
 
@@ -518,6 +712,10 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
     private let slashCommandPicker = MarkdownSlashCommandPickerController()
 
     init(parent: MarkdownEditorView) {
+        self.parent = parent
+    }
+
+    func update(parent: MarkdownEditorView) {
         self.parent = parent
     }
 

@@ -43,7 +43,7 @@ struct NotePanel: View {
                 switch activeTab {
                 case .today:
                     if let note = todayNote {
-                        MarkdownEditorView(text: Binding(
+                        MarkdownEditor(text: Binding(
                             get: { note.content },
                             set: { update(note: note, content: $0) }
                         ))
@@ -52,7 +52,7 @@ struct NotePanel: View {
                     }
                 case .week:
                     if let note = weekNote {
-                        MarkdownEditorView(text: Binding(
+                        MarkdownEditor(text: Binding(
                             get: { note.content },
                             set: { update(note: note, content: $0) }
                         ))
@@ -61,7 +61,7 @@ struct NotePanel: View {
                     }
                 case .notepad:
                     if let note = permNote {
-                        MarkdownEditorView(text: Binding(
+                        MarkdownEditor(text: Binding(
                             get: { note.content },
                             set: { update(note: note, content: $0) }
                         ))
