@@ -87,21 +87,24 @@ struct CalendarTimelineHeaderStrip: View {
     @Environment(CalendarManager.self) private var calendarManager
     private let cal = Calendar.current
 
-    private var visibleRange: ClosedRange<Int> {
-        let leadingDay = max(0, Int(floor((-scrollState.headerOffset) / max(colWidth, 1))))
-        let visibleCount = max(1, Int(ceil(timelineViewportWidth / max(colWidth, 1))))
-        let lowerBound = max(0, leadingDay - 2)
-        let upperBound = min(calRenderDays - 1, leadingDay + visibleCount + 2)
-        return lowerBound...upperBound
+    private var visibleRange: Range<Int> {
+        calendarTimelineHeaderVisibleRange(
+            headerOffset: scrollState.headerOffset,
+            colWidth: colWidth,
+            viewportWidth: timelineViewportWidth,
+            renderDays: calRenderDays
+        )
     }
 
     var body: some View {
+        let range = visibleRange
+
         ZStack(alignment: .leading) {
             Color.clear
                 .frame(width: totalDaysWidth, alignment: .leading)
 
             HStack(spacing: 0) {
-                ForEach(visibleRange, id: \.self) { dayIdx in
+                ForEach(range, id: \.self) { dayIdx in
                     let date = cal.date(byAdding: .day, value: dayIdx, to: bufferStart)!
                     let key = DateFormatters.dateKey(from: date)
                     CalDayHeaderView(
@@ -112,13 +115,31 @@ struct CalendarTimelineHeaderStrip: View {
                     .frame(width: colWidth)
                 }
             }
-            .offset(x: CGFloat(visibleRange.lowerBound) * colWidth + scrollState.headerOffset)
+            .offset(x: CGFloat(range.lowerBound) * colWidth + scrollState.headerOffset)
         }
         .frame(width: totalDaysWidth, alignment: .leading)
         .transaction { $0.animation = nil }
         .frame(width: timelineViewportWidth, alignment: .leading)
         .clipped()
     }
+}
+
+func calendarTimelineHeaderVisibleRange(
+    headerOffset: CGFloat,
+    colWidth: CGFloat,
+    viewportWidth: CGFloat,
+    renderDays: Int
+) -> Range<Int> {
+    guard renderDays > 0 else { return 0..<0 }
+
+    let safeColWidth = max(colWidth, 1)
+    let maxDayIndex = renderDays - 1
+    let rawLeadingDay = Int(floor((-headerOffset) / safeColWidth))
+    let leadingDay = min(max(rawLeadingDay, 0), maxDayIndex)
+    let visibleCount = max(1, Int(ceil(max(viewportWidth, 0) / safeColWidth)))
+    let lowerBound = max(0, leadingDay - 2)
+    let upperExclusive = min(renderDays, leadingDay + visibleCount + 3)
+    return lowerBound..<max(lowerBound, upperExclusive)
 }
 
 struct CalendarTimelineViewport: View {

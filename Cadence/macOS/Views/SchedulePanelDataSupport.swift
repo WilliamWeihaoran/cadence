@@ -11,28 +11,25 @@ enum SchedulePanelDataSupport {
     }
 
     static func externalEventItems(
-        from allTasks: [AppTask],
         calendarManager: CalendarManager,
         date: Date
     ) -> [CalendarEventItem] {
-        let linkedIDs = Set(allTasks.compactMap { $0.calendarEventID.isEmpty ? nil : $0.calendarEventID })
         return calendarManager.fetchEvents(for: date)
-            .filter { event in
-                guard let id = event.eventIdentifier else { return true }
-                return !linkedIDs.contains(id)
-            }
             .map { CalendarEventItem(event: $0) }
     }
 
     static func syncLinkedTasks(
         allTasks: [AppTask],
-        modelContext: ModelContext,
-        calendarManager: CalendarManager
+        modelContext: ModelContext
     ) {
+        var changed = false
         for task in allTasks where !task.calendarEventID.isEmpty {
-            calendarManager.syncTaskFromLinkedEvent(task)
+            task.calendarEventID = ""
+            changed = true
         }
-        try? modelContext.save()
+        if changed {
+            try? modelContext.save()
+        }
     }
 
     static func restoreScroll(

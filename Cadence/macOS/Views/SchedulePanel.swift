@@ -56,11 +56,10 @@ struct SchedulePanel: View {
         SchedulePanelDataSupport.scheduledTasks(from: allTasks, todayKey: todayKey)
     }
 
-    /// iCal events for today that aren't already represented by a Cadence task.
+    /// iCal events for today. Raw tasks are never treated as event attachments.
     private var externalEventItems: [CalendarEventItem] {
         let _ = calendarManager.storeVersion  // subscribe to store change refreshes
         return SchedulePanelDataSupport.externalEventItems(
-            from: allTasks,
             calendarManager: calendarManager,
             date: Date()
         )
@@ -146,8 +145,7 @@ struct SchedulePanel: View {
         .onChange(of: calendarManager.storeVersion) {
             SchedulePanelDataSupport.syncLinkedTasks(
                 allTasks: allTasks,
-                modelContext: modelContext,
-                calendarManager: calendarManager
+                modelContext: modelContext
             )
         }
     }

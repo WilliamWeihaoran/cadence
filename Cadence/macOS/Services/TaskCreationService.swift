@@ -78,7 +78,7 @@ struct TaskCreationService {
     }
 
     @discardableResult
-    func insertTask(from draft: TaskCreationDraft, into modelContext: ModelContext, syncCalendar: Bool = true) -> AppTask? {
+    func insertTask(from draft: TaskCreationDraft, into modelContext: ModelContext) -> AppTask? {
         guard !draft.trimmedTitle.isEmpty else { return nil }
 
         let task = AppTask(title: draft.trimmedTitle)
@@ -91,10 +91,6 @@ struct TaskCreationService {
 
         modelContext.insert(task)
         insertSubtasks(draft.subtaskTitles, parent: task, into: modelContext)
-
-        if syncCalendar {
-            SchedulingActions.syncToCalendarIfLinked(task)
-        }
         return task
     }
 

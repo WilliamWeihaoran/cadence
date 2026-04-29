@@ -11,7 +11,6 @@ enum TaskWorkflowService {
         let nextTask = makeNextRecurringTask(from: task)
         context.insert(nextTask)
         task.recurrenceSpawnedTaskID = nextTask.id
-        SchedulingActions.syncToCalendarIfLinked(nextTask)
     }
 
     static func markTodo(_ task: AppTask) {

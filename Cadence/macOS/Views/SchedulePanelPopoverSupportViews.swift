@@ -344,12 +344,10 @@ struct TaskDetailCompactOverviewSection: View {
     let availableSections: [String]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TaskInspectorInfoCard {
-                inspectorBandTitle("When")
-
-                HStack(alignment: .top, spacing: 8) {
-                    compactField("Do", icon: "calendar") {
+        TaskInspectorInfoCard {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 8) {
+                    compactControl {
                         TaskInspectorDateControl(
                             label: "Set do",
                             icon: "calendar",
@@ -367,7 +365,7 @@ struct TaskDetailCompactOverviewSection: View {
                         )
                     }
 
-                    compactField("Due", icon: "calendar.badge.exclamationmark") {
+                    compactControl {
                         TaskInspectorDateControl(
                             label: "Set due",
                             icon: "calendar.badge.exclamationmark",
@@ -386,91 +384,43 @@ struct TaskDetailCompactOverviewSection: View {
                     }
                 }
 
-                HStack(alignment: .top, spacing: 8) {
-                    compactField("Estimate", icon: "clock") {
+                HStack(alignment: .center, spacing: 8) {
+                    compactControl {
                         EstimatePickerControl(value: $task.estimatedMinutes)
                     }
 
-                    compactField("Repeats", icon: "arrow.clockwise") {
+                    compactControl {
                         TaskInspectorRecurrenceControl(task: task)
                     }
 
                     if task.actualMinutes > 0 {
-                        compactField("Actual", icon: "clock.badge.checkmark") {
+                        compactControl {
                             MinutesField(value: $task.actualMinutes)
                         }
                     }
                 }
-            }
 
-            TaskInspectorInfoCard {
-                inspectorBandTitle("Place")
+                Divider().background(Theme.borderSubtle.opacity(0.75))
 
-                HStack(alignment: .top, spacing: 8) {
-                    compactField("List", icon: "tray.full") {
+                HStack(alignment: .center, spacing: 8) {
+                    compactControl {
                         ContainerPickerBadge(selection: taskContainerBinding, contexts: contexts, areas: areas, projects: projects)
                     }
 
-                    compactField("Section", icon: "square.split.2x1") {
+                    compactControl {
                         TaskSectionPickerBadge(selection: $task.sectionName, sections: availableSections)
                     }
                 }
             }
-
-            TaskInspectorInfoCard {
-                inspectorBandTitle("Event")
-
-                compactWideField("Event", icon: "link") {
-                    TaskInspectorEventAttachmentControl(task: task)
-                }
-            }
         }
     }
 
     @ViewBuilder
-    private func compactField<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label {
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            } icon: {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            }
-            .labelStyle(.titleAndIcon)
-
+    private func compactControl<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 0) {
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private func compactWideField<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Label {
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            } icon: {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            }
-            .labelStyle(.titleAndIcon)
-            .frame(width: 78, alignment: .leading)
-            .padding(.top, 5)
-
-            content()
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func inspectorBandTitle(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.system(size: 9, weight: .bold))
-            .foregroundStyle(Theme.dim.opacity(0.82))
     }
 }
 

@@ -197,42 +197,6 @@ final class CalendarManager {
             .sorted { ($0.startDate ?? now) < ($1.startDate ?? now) }
     }
 
-    // MARK: - Create or Update Event (Cadence task → iCal)
-
-    func createOrUpdateEvent(for task: AppTask, calendarID: String) {
-        guard !task.scheduledDate.isEmpty, task.scheduledStartMin >= 0 else { return }
-        guard let calendar = store.calendar(withIdentifier: calendarID) else { return }
-
-        let event: EKEvent
-        if !task.calendarEventID.isEmpty,
-           let existing = store.event(withIdentifier: task.calendarEventID) {
-            event = existing
-        } else {
-            event = EKEvent(eventStore: store)
-            event.calendar = calendar
-        }
-
-        event.title = task.title.isEmpty ? "Untitled Task" : task.title
-
-        guard let baseDate = DateFormatters.date(from: task.scheduledDate) else { return }
-
-        let cal = Calendar.current
-        let startDate = cal.date(byAdding: .minute, value: task.scheduledStartMin, to: baseDate) ?? baseDate
-        let durationMinutes = max(task.estimatedMinutes, 30)
-        let endDate = cal.date(byAdding: .minute, value: durationMinutes, to: startDate) ?? startDate
-
-        event.startDate = startDate
-        event.endDate = endDate
-        event.isAllDay = false
-
-        do {
-            try store.save(event, span: .thisEvent)
-            task.calendarEventID = event.eventIdentifier
-        } catch {
-            print("CalendarManager: failed to save event: \(error)")
-        }
-    }
-
     // MARK: - Update External Event (iCal event edited in Cadence)
 
     /// Update an EKEvent's title and time, then save back to iCal.
@@ -261,46 +225,12 @@ final class CalendarManager {
 
     // MARK: - Delete Event
 
-    /// Delete a calendar event by its stored identifier string (used when unscheduling a task).
-    func deleteEvent(calendarEventID: String) {
-        guard !calendarEventID.isEmpty,
-              let event = store.event(withIdentifier: calendarEventID) else { return }
-        do {
-            try store.remove(event, span: .thisEvent)
-        } catch {
-            print("CalendarManager: failed to delete event: \(error)")
-        }
-    }
-
     /// Delete an EKEvent directly (used from the event edit popover).
     func deleteEvent(_ event: EKEvent) {
         do {
             try store.remove(event, span: .thisEvent)
         } catch {
             print("CalendarManager: failed to delete event: \(error)")
-        }
-    }
-
-    // MARK: - iCal → Cadence Task Sync
-
-    /// Sync a task's scheduled time from its linked EKEvent.
-    /// If the event was deleted externally, clears the task's schedule.
-    func syncTaskFromLinkedEvent(_ task: AppTask) {
-        guard !task.calendarEventID.isEmpty else { return }
-        if let event = store.event(withIdentifier: task.calendarEventID) {
-            let cal = Calendar.current
-            let comps = cal.dateComponents([.hour, .minute], from: event.startDate)
-            let newStartMin = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-            let newDuration = max(5, Int(event.endDate.timeIntervalSince(event.startDate) / 60))
-            let newDateKey = DateFormatters.dateKey(from: event.startDate)
-            task.scheduledStartMin = newStartMin
-            task.estimatedMinutes = newDuration
-            task.scheduledDate = newDateKey
-        } else {
-            // Event was deleted externally — unschedule the task
-            task.scheduledStartMin = -1
-            task.scheduledDate = ""
-            task.calendarEventID = ""
         }
     }
 }

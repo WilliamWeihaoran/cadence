@@ -14,7 +14,13 @@ struct MarkdownSlashCommand: Identifiable {
         .init(id: "h3", title: "Heading 3", subtitle: "Small section heading", replacement: (indentation: "", text: "### ", caretOffset: 4)),
         .init(id: "todo", title: "To-do", subtitle: "Unchecked task item", replacement: (indentation: "", text: "○ ", caretOffset: 2)),
         .init(id: "done", title: "Done", subtitle: "Checked task item", replacement: (indentation: "", text: "● ", caretOffset: 2)),
+        .init(id: "bullet", title: "Bullet List", subtitle: "Bulleted list item", replacement: (indentation: "", text: "• ", caretOffset: 2)),
+        .init(id: "number", title: "Numbered List", subtitle: "Ordered list item", replacement: (indentation: "", text: "1. ", caretOffset: 3)),
         .init(id: "quote", title: "Quote", subtitle: "Block quote line", replacement: (indentation: "", text: "> ", caretOffset: 2)),
+        .init(id: "code", title: "Code Block", subtitle: "Fenced code block", replacement: (indentation: "", text: "```\n\n```", caretOffset: 4)),
+        .init(id: "bold", title: "Bold", subtitle: "Strong text", replacement: (indentation: "", text: "****", caretOffset: 2)),
+        .init(id: "italic", title: "Italic", subtitle: "Emphasized text", replacement: (indentation: "", text: "**", caretOffset: 1)),
+        .init(id: "strike", title: "Strikethrough", subtitle: "Deleted text", replacement: (indentation: "", text: "~~~~", caretOffset: 2)),
         .init(id: "rule", title: "Divider", subtitle: "Horizontal divider rule", replacement: (indentation: "", text: "---", caretOffset: 3)),
         .init(id: "link", title: "Note Link", subtitle: "Insert [[link]]", replacement: (indentation: "", text: "[[]]", caretOffset: 2)),
         .init(id: "task", title: "Task Reference", subtitle: "Insert [[task:]]", replacement: (indentation: "", text: "[[task:]]", caretOffset: 7))
@@ -34,36 +40,36 @@ private struct MarkdownSlashCommandPickerView: View {
     let onSelect: (MarkdownSlashCommand) -> Void
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 2) {
             ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
                 Button {
                     onSelect(command)
                 } label: {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         Text("/\(command.id)")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(nsColor: MarkdownStylist.blueColor))
-                            .frame(width: 58, alignment: .leading)
+                            .frame(width: 54, alignment: .leading)
 
                         Text(command.title)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Color(nsColor: MarkdownStylist.textColor))
                             .lineLimit(1)
 
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
                     .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
                             .fill(index == highlightedIndex ? Color(nsColor: MarkdownStylist.blueColor).opacity(0.16) : Color.clear)
                     )
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(8)
-        .frame(width: 214)
+        .padding(6)
+        .frame(width: 198)
         .background(Color(nsColor: MarkdownStylist.bgColor))
     }
 }

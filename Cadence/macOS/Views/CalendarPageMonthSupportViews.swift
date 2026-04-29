@@ -21,12 +21,7 @@ struct MonthDayCell: View {
 
     private var calendarEvents: [CalendarEventItem] {
         let _ = calendarManager.storeVersion
-        let linkedIDs = Set(allTasks.compactMap { $0.calendarEventID.isEmpty ? nil : $0.calendarEventID })
         return calendarManager.fetchEvents(for: date)
-            .filter { event in
-                guard let id = event.eventIdentifier else { return true }
-                return !linkedIDs.contains(id)
-            }
             .map { CalendarEventItem(event: $0) }
     }
 
@@ -226,12 +221,7 @@ struct CalDayColumn: View {
     }
 
     private var externalEventItems: [CalendarEventItem] {
-        let linkedIDs = Set(allTasks.compactMap { $0.calendarEventID.isEmpty ? nil : $0.calendarEventID })
         return eventCache.timedEvents(for: date, calendarManager: calendarManager)
-            .filter { event in
-                guard let id = event.eventIdentifier else { return true }
-                return !linkedIDs.contains(id)
-            }
             .map { CalendarEventItem(event: $0) }
     }
 

@@ -76,4 +76,18 @@ struct CadenceTests {
         #expect(missing.title == "Missing")
     }
 
+    @Test func calendarHeaderVisibleRangeClampsOverscroll() {
+        let range = calendarTimelineHeaderVisibleRange(
+            headerOffset: -3_700,
+            colWidth: 1,
+            viewportWidth: 2,
+            renderDays: 3_650
+        )
+
+        #expect(range.lowerBound <= range.upperBound)
+        #expect(range.lowerBound >= 0)
+        #expect(range.upperBound <= 3_650)
+        #expect(range.contains(3_649))
+    }
+
 }

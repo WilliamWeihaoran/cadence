@@ -72,13 +72,15 @@ struct CalendarTimelineDayScroller: View {
             .transaction { $0.animation = nil }
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in
                 timelineScrollState.setHeaderOffset(-x)
-                guard didRestoreTimelineScroll, !isRestoringHorizontalScroll else { return }
                 let clampedDay = CalendarTimelineScrollSupport.clampedDayIndex(
                     offsetX: x,
                     colWidth: colWidth
                 )
-                guard visibleTimelineDayIndex != clampedDay else { return }
-                visibleTimelineDayIndex = clampedDay
+                if visibleTimelineDayIndex != clampedDay {
+                    visibleTimelineDayIndex = clampedDay
+                }
+
+                guard didRestoreTimelineScroll, !isRestoringHorizontalScroll else { return }
                 onPersistVisibleTimelineDay(clampedDay)
             }
             .onAppear {

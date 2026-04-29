@@ -814,22 +814,11 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
 
         let nsText = textView.string as NSString
         let safeCursor = min(max(selection.location, 0), nsText.length)
-        let referenceLocation = max(0, min(nsText.length == 0 ? 0 : nsText.length - 1, max(0, safeCursor - 1)))
-        let lineRange = nsText.lineRange(for: NSRange(location: referenceLocation, length: 0))
-        let prefixRange = NSRange(location: lineRange.location, length: safeCursor - lineRange.location)
-        let prefix = nsText.substring(with: prefixRange)
-
-        guard let regex = try? NSRegularExpression(pattern: #"^([ \t]*)/([A-Za-z0-9]*)$"#),
-              let match = regex.firstMatch(in: prefix, range: NSRange(location: 0, length: (prefix as NSString).length)) else {
-            return nil
-        }
-
-        let indentation = (prefix as NSString).substring(with: match.range(at: 1))
-        let query = (prefix as NSString).substring(with: match.range(at: 2))
+        guard let token = slashCommandToken(in: nsText, cursor: safeCursor, requiresTrailingSpace: false) else { return nil }
         return MarkdownSlashCommandContext(
-            range: prefixRange,
-            indentation: indentation,
-            query: query,
+            range: token.range,
+            indentation: token.indentation,
+            query: token.query,
             cursorLocation: safeCursor
         )
     }
@@ -879,20 +868,76 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
 
     private func typedSlashCommandMatch(in text: NSString, cursor: Int) -> (range: NSRange, replacement: String, caretOffset: Int)? {
         let safeCursor = min(max(cursor, 0), text.length)
-        let lineRange = text.lineRange(for: NSRange(location: max(0, safeCursor - 1), length: 0))
-        let prefixRange = NSRange(location: lineRange.location, length: safeCursor - lineRange.location)
-        let prefix = text.substring(with: prefixRange)
-        guard let regex = try? NSRegularExpression(pattern: #"^([ \t]*)/(h1|h2|h3|todo|done|quote|rule|link|task) $"#),
-              let match = regex.firstMatch(in: prefix, range: NSRange(location: 0, length: (prefix as NSString).length)) else {
-            return nil
+        guard let token = slashCommandToken(in: text, cursor: safeCursor, requiresTrailingSpace: true) else { return nil }
+        let command = token.query
+        guard let commandConfig = MarkdownSlashCommand.all.first(where: { $0.id == command }) else { return nil }
+        let replacement = token.indentation + commandConfig.replacement.text
+        return (token.range, replacement, token.indentation.count + commandConfig.replacement.caretOffset)
+    }
+
+    private func slashCommandToken(
+        in text: NSString,
+        cursor: Int,
+        requiresTrailingSpace: Bool
+    ) -> (range: NSRange, indentation: String, query: String)? {
+        let safeCursor = min(max(cursor, 0), text.length)
+        let tokenEnd: Int
+        if requiresTrailingSpace {
+            guard safeCursor > 0, MarkdownEditorCoordinator.isHorizontalWhitespace(text.character(at: safeCursor - 1)) else {
+                return nil
+            }
+            tokenEnd = safeCursor - 1
+        } else {
+            tokenEnd = safeCursor
         }
 
-        let indentation = (prefix as NSString).substring(with: match.range(at: 1))
-        let command = (prefix as NSString).substring(with: match.range(at: 2))
-        let replacementRange = NSRange(location: lineRange.location, length: prefixRange.length)
-        guard let commandConfig = MarkdownSlashCommand.all.first(where: { $0.id == command }) else { return nil }
-        let replacement = indentation + commandConfig.replacement.text
-        return (replacementRange, replacement, indentation.count + commandConfig.replacement.caretOffset)
+        let lineRange = text.lineRange(for: NSRange(location: max(0, tokenEnd - 1), length: 0))
+        guard tokenEnd >= lineRange.location else { return nil }
+
+        var slashLocation = tokenEnd
+        while slashLocation > lineRange.location {
+            let previous = text.character(at: slashLocation - 1)
+            if MarkdownEditorCoordinator.isASCIIAlphaNumeric(previous) {
+                slashLocation -= 1
+            } else {
+                break
+            }
+        }
+
+        guard slashLocation < text.length, text.character(at: slashLocation) == 47 else { return nil }
+        let beforeSlashRange = NSRange(location: lineRange.location, length: slashLocation - lineRange.location)
+        let beforeSlash = text.substring(with: beforeSlashRange)
+        let startsAtIndentedLine = beforeSlash.allSatisfy { $0 == " " || $0 == "\t" }
+
+        if !startsAtIndentedLine {
+            guard slashLocation > lineRange.location,
+                  MarkdownEditorCoordinator.isHorizontalWhitespace(text.character(at: slashLocation - 1)) else {
+                return nil
+            }
+        }
+
+        let queryRange = NSRange(location: slashLocation + 1, length: max(0, tokenEnd - slashLocation - 1))
+        let query = text.substring(with: queryRange)
+        let range: NSRange
+        let indentation: String
+        if startsAtIndentedLine {
+            range = NSRange(location: lineRange.location, length: tokenEnd - lineRange.location + (requiresTrailingSpace ? 1 : 0))
+            indentation = beforeSlash
+        } else {
+            range = NSRange(location: slashLocation, length: tokenEnd - slashLocation + (requiresTrailingSpace ? 1 : 0))
+            indentation = ""
+        }
+        return (range, indentation, query)
+    }
+
+    private static func isASCIIAlphaNumeric(_ character: unichar) -> Bool {
+        (character >= 48 && character <= 57) ||
+        (character >= 65 && character <= 90) ||
+        (character >= 97 && character <= 122)
+    }
+
+    private static func isHorizontalWhitespace(_ character: unichar) -> Bool {
+        character == 32 || character == 9
     }
 
     private func effectiveLineRange(for selection: NSRange, in text: NSString) -> NSRange {
