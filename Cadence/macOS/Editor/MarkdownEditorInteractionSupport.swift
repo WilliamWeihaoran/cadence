@@ -523,16 +523,23 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
 
     func textDidChange(_ notification: Notification) {
         guard let textView = notification.object as? NSTextView else { return }
+        let scrollView = textView.enclosingScrollView
         applyInputTransforms(to: textView)
         normalizeMarkdownListPrefixes(in: textView)
         updateSlashCommandPicker(for: textView)
         normalizeOrderedListMarkers(in: textView)
         parent.text = textView.string
-        MarkdownStylist.apply(to: textView)
+        if let scrollView {
+            MarkdownEditorScrollSupport.preservingScrollPosition(in: scrollView) {
+                MarkdownStylist.apply(to: textView)
+            }
+        } else {
+            MarkdownStylist.apply(to: textView)
+        }
         if let cadenceTextView = textView as? CadenceTextView {
             cadenceTextView.snapCaretAwayFromHiddenMarkdown(preferringForward: true)
         }
-        if let scrollView = textView.enclosingScrollView {
+        if let scrollView {
             MarkdownEditorScrollSupport.refreshLayout(in: scrollView)
         }
         textView.typingAttributes = MarkdownStylist.baseAttributes

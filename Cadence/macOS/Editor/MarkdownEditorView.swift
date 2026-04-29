@@ -56,8 +56,10 @@ struct MarkdownEditorView: NSViewRepresentable {
         let displayText = MarkdownListSupport.normalizedMarkdownListPrefixes(in: text)
         if textView.string != displayText {
             let sel = textView.selectedRange()
-            textView.string = displayText
-            MarkdownStylist.apply(to: textView)
+            MarkdownEditorScrollSupport.preservingScrollPosition(in: scrollView) {
+                textView.string = displayText
+                MarkdownStylist.apply(to: textView)
+            }
             let safe = NSRange(location: min(sel.location, (displayText as NSString).length), length: 0)
             textView.setSelectedRange(safe)
         }
@@ -77,7 +79,20 @@ private final class MarkdownEditorScrollView: NSScrollView {
 }
 
 enum MarkdownEditorScrollSupport {
+    static func preservingScrollPosition(in scrollView: NSScrollView, _ updates: () -> Void) {
+        let clipView = scrollView.contentView
+        let originalOrigin = clipView.bounds.origin
+        updates()
+        restoreScrollPosition(originalOrigin, in: scrollView)
+    }
+
     static func refreshLayout(in scrollView: NSScrollView) {
+        preservingScrollPosition(in: scrollView) {
+            refreshLayoutWithoutRestoringScroll(in: scrollView)
+        }
+    }
+
+    private static func refreshLayoutWithoutRestoringScroll(in scrollView: NSScrollView) {
         guard let textView = scrollView.documentView as? NSTextView,
               let textContainer = textView.textContainer,
               let layoutManager = textView.layoutManager else { return }
@@ -110,6 +125,29 @@ enum MarkdownEditorScrollSupport {
         let updatedSize = textView.frame.size
         if abs(updatedSize.height - targetHeight) > 0.5 || abs(updatedSize.width - targetWidth) > 0.5 {
             textView.setFrameSize(NSSize(width: targetWidth, height: targetHeight))
+        }
+    }
+
+    private static func restoreScrollPosition(_ origin: NSPoint, in scrollView: NSScrollView) {
+        guard let documentView = scrollView.documentView else { return }
+        let clipView = scrollView.contentView
+        let visibleSize = clipView.bounds.size
+        let documentSize = documentView.bounds.size
+        let maxX = max(0, documentSize.width - visibleSize.width)
+        let maxY = max(0, documentSize.height - visibleSize.height)
+        let restoredOrigin = NSPoint(
+            x: min(max(origin.x, 0), maxX),
+            y: min(max(origin.y, 0), maxY)
+        )
+
+        guard abs(clipView.bounds.origin.x - restoredOrigin.x) > 0.5 ||
+                abs(clipView.bounds.origin.y - restoredOrigin.y) > 0.5 else { return }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            clipView.scroll(to: restoredOrigin)
+            scrollView.reflectScrolledClipView(clipView)
         }
     }
 }

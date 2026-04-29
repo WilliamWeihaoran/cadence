@@ -11,12 +11,15 @@ struct TimelineDayCanvas: View {
     let width: CGFloat
     let style: TimelineBlockStyle
     let showCurrentTimeDot: Bool
+    var showHalfHourMarks: Bool = false
     let dropBehavior: TimelineDropBehavior
     let onCreateTask: (String, Int, Int, TaskContainerSelection, String) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
     var externalEvents: [CalendarEventItem] = []
     /// Optional: if provided, the drag-to-create popover will offer a "Calendar Event" tab.
     var onCreateEvent: ((String, Int, Int, String, String) -> Void)? = nil
+    /// Calendar pages should treat dragged time slots as events first; task timelines keep time blocks first.
+    var prefersCalendarEventCreation = false
     /// Optional: called when an all-day event chip is dropped onto the timeline, with the event identifier and target minute.
     var onDropAllDayEventAtMinute: ((String, Int) -> Void)? = nil
 
@@ -92,10 +95,20 @@ struct TimelineDayCanvas: View {
                 }
             )
 
-            let taskFrames = layouts.map { layout in
+            let blockedFrames = layouts.map { layout in
                 computeTimelineBlockFrame(
                     startMinute: layout.task.scheduledStartMin,
                     durationMinutes: layout.task.estimatedMinutes,
+                    column: layout.column,
+                    totalColumns: layout.totalColumns,
+                    totalWidth: width,
+                    metrics: metrics,
+                    style: style
+                )
+            } + eventLayouts.map { layout in
+                computeTimelineBlockFrame(
+                    startMinute: layout.item.startMin,
+                    durationMinutes: layout.item.durationMinutes,
                     column: layout.column,
                     totalColumns: layout.totalColumns,
                     totalWidth: width,
@@ -106,7 +119,8 @@ struct TimelineDayCanvas: View {
 
             TimelineCreateGridLayer(
                 metrics: metrics,
-                taskFrames: taskFrames,
+                blockedFrames: blockedFrames,
+                showHalfHourMarks: showHalfHourMarks,
                 activeDragTaskID: $activeDragTaskID,
                 onTapBackground: {
                     clearDraftCreation()
@@ -180,7 +194,8 @@ struct TimelineDayCanvas: View {
                             showNewTaskPopover = false
                             pendingStartMin = nil
                             pendingEndMin = nil
-                        }
+                        },
+                        defaultsToCalendarEvent: prefersCalendarEventCreation
                     )
                 )
             }

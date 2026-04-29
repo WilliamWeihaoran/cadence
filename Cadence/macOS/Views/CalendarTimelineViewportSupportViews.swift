@@ -27,6 +27,7 @@ struct CalendarTimelineDayScroller: View {
     let tasksByDate: [String: [AppTask]]
     let hourHeight: CGFloat
     let colWidth: CGFloat
+    let showHalfHourMarks: Bool
     let totalDaysWidth: CGFloat
     let timelineViewportWidth: CGFloat
     let todayDayIdx: Int
@@ -59,7 +60,8 @@ struct CalendarTimelineDayScroller: View {
                             projects: projects,
                             eventCache: eventCache,
                             colWidth: colWidth,
-                            hourHeight: hourHeight
+                            hourHeight: hourHeight,
+                            showHalfHourMarks: showHalfHourMarks
                         )
                         .frame(width: colWidth)
                         .id("day_\(dayIdx)")
@@ -71,6 +73,7 @@ struct CalendarTimelineDayScroller: View {
             .scrollBounceBehavior(.basedOnSize, axes: [.horizontal])
             .transaction { $0.animation = nil }
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in
+                guard !isRestoringHorizontalScroll else { return }
                 timelineScrollState.setHeaderOffset(-x)
                 let clampedDay = CalendarTimelineScrollSupport.clampedDayIndex(
                     offsetX: x,
@@ -80,7 +83,7 @@ struct CalendarTimelineDayScroller: View {
                     visibleTimelineDayIndex = clampedDay
                 }
 
-                guard didRestoreTimelineScroll, !isRestoringHorizontalScroll else { return }
+                guard didRestoreTimelineScroll else { return }
                 onPersistVisibleTimelineDay(clampedDay)
             }
             .onAppear {

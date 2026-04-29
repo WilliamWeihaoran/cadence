@@ -6,42 +6,27 @@ enum CalendarMonthGridInteractionSupport {
         y: CGFloat,
         offsets: [CGFloat],
         totalMonths: Int,
-        cellHeight: CGFloat,
         visibleMonthIdx: inout Int,
-        didInitialPosition: Bool,
-        currentMonthStart: Date,
-        todayMonthIdx: Int,
-        calendar: Calendar
+        didInitialPosition: Bool
     ) {
         guard didInitialPosition else { return }
-        let offsetBasedIdx = monthIndexForOffset(y: y, offsets: offsets, totalMonths: totalMonths)
-        let midpointY = y + (2 * cellHeight)
-        let midIdx = monthIndexForOffset(y: midpointY, offsets: offsets, totalMonths: totalMonths)
-        let month = calendar.date(byAdding: .month, value: midIdx - todayMonthIdx, to: currentMonthStart) ?? currentMonthStart
-        let dateFromMidpoint = calendar.date(byAdding: .day, value: 14, to: month) ?? month
-        let computedFromDate = monthIndex(
-            for: dateFromMidpoint,
-            currentMonthStart: currentMonthStart,
-            todayMonthIdx: todayMonthIdx,
-            calendar: calendar
-        )
+        let visibleTopY = max(y, 0)
+        let computedFromTop = monthIndexForOffset(y: visibleTopY, offsets: offsets, totalMonths: totalMonths)
         agentDebugLogMonthGrid(
             runId: "month-drift",
             hypothesisId: "H2",
             location: "CalendarPageComponents.swift:MonthGridView.onScrollGeometryChange",
-            message: "Computed visible month from scroll offset",
+            message: "Computed visible month from top scroll offset",
             data: [
                 "y": y,
-                "offsetBasedIdx": offsetBasedIdx,
-                "midpointY": midpointY,
-                "midIdx": midIdx,
-                "dateDerivedIdx": computedFromDate,
+                "visibleTopY": visibleTopY,
+                "computedFromTop": computedFromTop,
                 "previousVisibleMonthIdx": visibleMonthIdx,
                 "didInitialPosition": didInitialPosition
             ]
         )
-        if visibleMonthIdx != computedFromDate {
-            visibleMonthIdx = computedFromDate
+        if visibleMonthIdx != computedFromTop {
+            visibleMonthIdx = computedFromTop
         }
     }
 

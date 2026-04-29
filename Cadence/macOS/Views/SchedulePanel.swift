@@ -38,6 +38,7 @@ struct SchedulePanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(TodayTimelineFocusManager.self) private var todayTimelineFocusManager
+    var useStandardHeaderHeight = false
     @Query private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -68,6 +69,7 @@ struct SchedulePanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SchedulePanelHeader(zoomLevel: $zoomLevel, onExport: exportTodayPlan)
+                .frame(height: useStandardHeaderHeight ? todayPanelHeaderHeight : nil, alignment: .top)
 
             Divider().background(Theme.borderSubtle)
 

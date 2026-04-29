@@ -222,6 +222,7 @@ struct CalendarTimelineViewport: View {
                             tasksByDate: tasksByDate,
                             hourHeight: viewportMetrics.hourHeight,
                             colWidth: viewportMetrics.colWidth,
+                            showHalfHourMarks: zoomLevel == 3,
                             totalDaysWidth: viewportMetrics.totalDaysWidth,
                             timelineViewportWidth: viewportMetrics.timelineViewportWidth,
                             todayDayIdx: todayDayIdx,

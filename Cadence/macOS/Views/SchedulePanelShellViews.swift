@@ -67,6 +67,7 @@ struct SchedulePanelTimelineViewport: View {
                 width: canvasWidth,
                 style: .schedule,
                 showCurrentTimeDot: true,
+                showHalfHourMarks: zoomLevel == 3,
                 dropBehavior: .perHour,
                 onCreateTask: onCreateTask,
                 onDropTaskAtMinute: onDropTaskAtMinute,

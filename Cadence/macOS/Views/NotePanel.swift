@@ -5,6 +5,7 @@ import SwiftData
 struct NotePanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    var useStandardHeaderHeight = false
 
     enum NoteTab: String, CaseIterable {
         case today  = "Today"
@@ -20,19 +21,20 @@ struct NotePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            PanelHeader(eyebrow: "Notes", title: headerTitle)
+            VStack(alignment: .leading, spacing: 0) {
+                PanelHeader(eyebrow: "Notes", title: headerTitle)
 
-            // Tab bar
-            HStack(spacing: 0) {
-                ForEach(NoteTab.allCases, id: \.self) { tab in
-                    NotePanelTabButton(tab: tab, isSelected: activeTab == tab) {
-                        activeTab = tab
+                HStack(spacing: 0) {
+                    ForEach(NoteTab.allCases, id: \.self) { tab in
+                        NotePanelTabButton(tab: tab, isSelected: activeTab == tab) {
+                            activeTab = tab
+                        }
                     }
+                    Spacer()
                 }
-                Spacer()
+                .padding(.horizontal, 12)
             }
-            .padding(.horizontal, 12)
+            .frame(height: useStandardHeaderHeight ? todayPanelHeaderHeight : nil, alignment: .top)
 
             Divider().background(Theme.borderSubtle)
 

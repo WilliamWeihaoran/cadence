@@ -1,6 +1,8 @@
 #if os(macOS)
 import SwiftUI
 
+let todayPanelHeaderHeight: CGFloat = 110
+
 struct PanelHeader: View {
     let eyebrow: String
     let title: String

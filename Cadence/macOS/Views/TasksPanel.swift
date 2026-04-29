@@ -18,6 +18,7 @@ struct TasksPanel: View {
     let sortDirection: TaskSortDirection
     let groupingMode: TaskGroupingMode
     let enableControls: Bool
+    let useStandardHeaderHeight: Bool
     @AppStorage("todayRolloverNoticeDismissedDate") private var rolloverNoticeDismissedDate = ""
     @State private var collapsedGroupIDs: Set<String> = []
     @State private var isCompletedCollapsed = true
@@ -35,7 +36,8 @@ struct TasksPanel: View {
         sortField: TaskSortField = .date,
         sortDirection: TaskSortDirection = .ascending,
         groupingMode: TaskGroupingMode = .byDate,
-        enableControls: Bool = false
+        enableControls: Bool = false,
+        useStandardHeaderHeight: Bool = false
     ) {
         self.mode = mode
         self.showsHeader = showsHeader
@@ -43,6 +45,7 @@ struct TasksPanel: View {
         self.sortDirection = sortDirection
         self.groupingMode = groupingMode
         self.enableControls = enableControls
+        self.useStandardHeaderHeight = useStandardHeaderHeight
         let prefix = mode == .todayOverview ? "today" : "allTasks"
         let ud = UserDefaults.standard
         _localSortField = State(initialValue: TaskSortField(rawValue: ud.string(forKey: "\(prefix)SortField") ?? "") ?? sortField)
@@ -230,10 +233,13 @@ struct TasksPanel: View {
         let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
         VStack(alignment: .leading, spacing: 0) {
             if showsHeader {
-                TasksPanelHeader(mode: mode)
-                if enableControls {
-                    controlsBar
+                VStack(alignment: .leading, spacing: 0) {
+                    TasksPanelHeader(mode: mode)
+                    if enableControls {
+                        controlsBar
+                    }
                 }
+                .frame(height: useStandardHeaderHeight ? todayPanelHeaderHeight : nil, alignment: .top)
                 Divider().background(Theme.borderSubtle)
             }
 

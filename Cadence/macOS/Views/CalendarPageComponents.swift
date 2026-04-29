@@ -76,12 +76,8 @@ struct MonthGridView: View {
                         y: y,
                         offsets: offsets,
                         totalMonths: totalMonths,
-                        cellHeight: cellHeight,
                         visibleMonthIdx: &visibleMonthIdx,
-                        didInitialPosition: didInitialPosition,
-                        currentMonthStart: currentMonthStart,
-                        todayMonthIdx: todayMonthIdx,
-                        calendar: cal
+                        didInitialPosition: didInitialPosition
                     )
                 }
                 .onAppear {

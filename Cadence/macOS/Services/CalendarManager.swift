@@ -106,11 +106,20 @@ final class CalendarManager {
             .sorted { $0.title < $1.title }
     }
 
+    var defaultWritableCalendar: EKCalendar? {
+        if let calendar = store.defaultCalendarForNewEvents,
+           calendar.allowsContentModifications {
+            return calendar
+        }
+        return writableCalendars.first
+    }
+
     // MARK: - Create Standalone Event (direct iCal event, not linked to a task)
 
     func createStandaloneEvent(title: String, startMin: Int, durationMinutes: Int, calendarID: String, date: Date, notes: String = "") {
         guard isAuthorized else { return }
-        guard let calendar = store.calendar(withIdentifier: calendarID) else { return }
+        let selectedCalendar = calendarID.isEmpty ? defaultWritableCalendar : store.calendar(withIdentifier: calendarID)
+        guard let calendar = selectedCalendar, calendar.allowsContentModifications else { return }
         let event = EKEvent(eventStore: store)
         event.title = title.isEmpty ? "New Event" : title
         let startOfDay = Calendar.current.startOfDay(for: date)

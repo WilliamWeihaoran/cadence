@@ -180,6 +180,7 @@ struct TaskInspectorDateControl: View {
 
 struct QuickCreateChoicePopover: View {
     enum TildeMode { case none, list, section }
+    enum Mode { case timeBlock, calendarEvent }
 
     let startMin: Int
     let endMin: Int
@@ -187,13 +188,11 @@ struct QuickCreateChoicePopover: View {
     let onCreateEvent: ((String, String, String) -> Void)?
     let onCancel: () -> Void
 
-    enum Mode { case timeBlock, calendarEvent }
-
     @Environment(CalendarManager.self) private var calendarManager
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    @State private var mode: Mode = .timeBlock
+    @State private var mode: Mode
     @State private var title = ""
     @State private var selectedCalendarID = ""
     @State private var notes = ""
@@ -204,6 +203,23 @@ struct QuickCreateChoicePopover: View {
     @State private var tildeHighlightIdx = 0
     @FocusState private var focused: Bool
     @FocusState private var isTildeSearchFocused: Bool
+
+    init(
+        startMin: Int,
+        endMin: Int,
+        onCreateTask: @escaping (String, TaskContainerSelection, String) -> Void,
+        onCreateEvent: ((String, String, String) -> Void)?,
+        onCancel: @escaping () -> Void,
+        defaultsToCalendarEvent: Bool = false
+    ) {
+        self.startMin = startMin
+        self.endMin = endMin
+        self.onCreateTask = onCreateTask
+        self.onCreateEvent = onCreateEvent
+        self.onCancel = onCancel
+        let initialMode: Mode = defaultsToCalendarEvent && onCreateEvent != nil ? .calendarEvent : .timeBlock
+        _mode = State(initialValue: initialMode)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -256,25 +272,17 @@ struct QuickCreateChoicePopover: View {
                             .padding(.vertical, 2)
                             .background(Theme.blue)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .popover(
-                                isPresented: Binding(
-                                    get: { tildeMode != .none },
-                                    set: { if !$0 { tildeMode = .none } }
-                                ),
-                                arrowEdge: .bottom
-                            ) {
-                                if tildeMode == .list {
-                                    tildeListSearchView
-                                } else {
-                                    tildeSectionSearchView
-                                }
-                            }
                         Spacer(minLength: 0)
                     }
                 }
             }
 
+            if tildeMode != .none {
+                tildeInlineSearchView
+            }
+
             if mode == .calendarEvent {
+                let _ = calendarManager.storeVersion
                 let calendars = calendarManager.writableCalendars
                 if !calendars.isEmpty {
                     CadenceCalendarPickerButton(
@@ -314,7 +322,7 @@ struct QuickCreateChoicePopover: View {
                     title: "Create",
                     role: .secondary,
                     size: .compact,
-                    isDisabled: mode == .calendarEvent && selectedCalendarID.isEmpty
+                    isDisabled: mode == .calendarEvent && selectedCalendar == nil
                 ) {
                     create()
                 }
@@ -326,8 +334,9 @@ struct QuickCreateChoicePopover: View {
         .onAppear {
             focused = true
             normalizeSelectedSection()
-            if let first = calendarManager.writableCalendars.first {
-                selectedCalendarID = first.calendarIdentifier
+            if selectedCalendar == nil,
+               let calendar = calendarManager.defaultWritableCalendar {
+                selectedCalendarID = calendar.calendarIdentifier
             }
         }
     }
@@ -336,8 +345,13 @@ struct QuickCreateChoicePopover: View {
         if mode == .timeBlock {
             onCreateTask(title, selectedContainer, selectedSectionName)
         } else {
-            onCreateEvent?(title, selectedCalendarID, notes)
+            onCreateEvent?(title, selectedCalendar?.calendarIdentifier ?? selectedCalendarID, notes)
         }
+    }
+
+    private var selectedCalendar: EKCalendar? {
+        calendarManager.writableCalendars.first { $0.calendarIdentifier == selectedCalendarID }
+            ?? calendarManager.defaultWritableCalendar
     }
 
     private var availableSections: [String] {
@@ -485,6 +499,22 @@ struct QuickCreateChoicePopover: View {
         .onChange(of: tildeSearchQuery) { _, _ in tildeHighlightIdx = 0 }
     }
 
+    @ViewBuilder
+    private var tildeInlineSearchView: some View {
+        Group {
+            if tildeMode == .list {
+                tildeListSearchView
+            } else {
+                tildeSectionSearchView
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Theme.borderSubtle.opacity(0.8), lineWidth: 1)
+        )
+    }
+
     private var tildeSectionSearchView: some View {
         TildeSectionSearchPanel(
             sections: availableSections,
@@ -503,7 +533,14 @@ struct QuickCreateChoicePopover: View {
 
     @ViewBuilder
     private func modeButton(_ label: String, for target: Mode) -> some View {
-        Button(label) { mode = target }
+        Button(label) {
+            mode = target
+            if target == .calendarEvent,
+               selectedCalendar == nil,
+               let calendar = calendarManager.defaultWritableCalendar {
+                selectedCalendarID = calendar.calendarIdentifier
+            }
+        }
             .buttonStyle(.cadencePlain)
             .font(.system(size: 11, weight: mode == target ? .semibold : .regular))
             .foregroundStyle(mode == target ? Theme.text : Theme.dim)

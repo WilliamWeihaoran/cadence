@@ -25,11 +25,12 @@ enum CalendarTimelineScrollSupport {
         visibleTimelineDayIndex.wrappedValue = todayDayIdx
         isRestoringHorizontalScroll.wrappedValue = true
         timelineScrollState.jumpHeaderOffset(to: -CGFloat(todayDayIdx) * colWidth)
-        withAnimation {
-            hProxy.scrollTo("day_\(todayDayIdx)", anchor: .leading)
-        }
         DispatchQueue.main.async {
-            isRestoringHorizontalScroll.wrappedValue = false
+            hProxy.scrollTo("day_\(todayDayIdx)", anchor: .leading)
+            timelineScrollState.jumpHeaderOffset(to: -CGFloat(todayDayIdx) * colWidth)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                isRestoringHorizontalScroll.wrappedValue = false
+            }
         }
     }
 
@@ -47,7 +48,7 @@ enum CalendarTimelineScrollSupport {
         withAnimation(.easeInOut(duration: 0.2)) {
             hProxy.scrollTo("day_\(day)", anchor: .leading)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
             isRestoringHorizontalScroll.wrappedValue = false
         }
     }
@@ -63,11 +64,11 @@ enum CalendarTimelineScrollSupport {
         rememberedScrollHour.wrappedValue = scrollHour
         visibleTimelineHour.wrappedValue = scrollHour
         isRestoringVerticalScroll.wrappedValue = true
-        withAnimation {
-            vProxy.scrollTo("tl_\(scrollHour)", anchor: .top)
-        }
         DispatchQueue.main.async {
-            isRestoringVerticalScroll.wrappedValue = false
+            vProxy.scrollTo("tl_\(scrollHour)", anchor: .top)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                isRestoringVerticalScroll.wrappedValue = false
+            }
         }
     }
 
@@ -82,7 +83,7 @@ enum CalendarTimelineScrollSupport {
         withAnimation(.easeInOut(duration: 0.2)) {
             vProxy.scrollTo("tl_\(hour)", anchor: .top)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
             isRestoringVerticalScroll.wrappedValue = false
         }
     }

@@ -213,6 +213,7 @@ struct CalDayColumn: View {
     let eventCache: CalendarEventDayCache
     let colWidth: CGFloat
     let hourHeight: CGFloat
+    let showHalfHourMarks: Bool
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
 
@@ -235,6 +236,7 @@ struct CalDayColumn: View {
             width: colWidth,
             style: .calendar,
             showCurrentTimeDot: true,
+            showHalfHourMarks: showHalfHourMarks,
             dropBehavior: .perHour,
             onCreateTask: { title, startMin, endMin, containerSelection, sectionName in
                 SchedulingActions.createTask(
@@ -256,6 +258,7 @@ struct CalDayColumn: View {
             onCreateEvent: { title, startMin, endMin, calendarID, notes in
                 calendarManager.createStandaloneEvent(title: title, startMin: startMin, durationMinutes: endMin - startMin, calendarID: calendarID, date: date, notes: notes)
             },
+            prefersCalendarEventCreation: true,
             onDropAllDayEventAtMinute: { eventID, startMin in
                 guard let event = calendarManager.event(withIdentifier: eventID) else { return }
                 calendarManager.convertAllDayEventToTimed(event, startMin: startMin, dateKey: dateKey)

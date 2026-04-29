@@ -48,7 +48,7 @@ struct CalendarPageView: View {
             CalendarPageToolbar(
                 calendarTitleLabel: calendarTitleLabel,
                 viewMode: viewMode,
-                scrollToToday: { scrollToTodayTrigger.toggle() },
+                scrollToToday: { jumpToToday() },
                 setViewMode: { viewMode = $0 },
                 zoomLevel: $zoomLevel
             )
@@ -173,6 +173,20 @@ struct CalendarPageView: View {
         )
     }
 
+    private func jumpToToday() {
+        pendingDayPersistence?.cancel()
+        pendingDayPersistence = nil
+        pendingHourPersistence?.cancel()
+        pendingHourPersistence = nil
+
+        rememberedDateKey = DateFormatters.todayKey()
+        visibleTimelineDayIndex = todayDayIdx
+        if viewMode == .month {
+            visibleMonthIdx = 60
+        }
+        scrollToTodayTrigger.toggle()
+    }
+
     private func applyExternalCalendarJump(_ request: CalendarNavigationManager.Request) {
         viewMode = .week
         CalendarPageInteractionSupport.applyExternalCalendarJump(
@@ -185,8 +199,7 @@ struct CalendarPageView: View {
             externalJumpDayIndex: &externalJumpDayIndex,
             externalJumpHour: &externalJumpHour,
             externalJumpToken: &externalJumpToken,
-            rememberedDateKey: &rememberedDateKey,
-            timelineScrollState: timelineScrollState
+            rememberedDateKey: &rememberedDateKey
         ) {
             calendarNavigationManager.clear()
         }

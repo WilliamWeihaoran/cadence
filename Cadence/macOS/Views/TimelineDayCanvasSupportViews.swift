@@ -5,7 +5,8 @@ import UniformTypeIdentifiers
 struct TimelineCreateRow: View {
     let hour: Int
     let metrics: TimelineMetrics
-    let taskFrames: [TimelineBlockFrame]
+    let blockedFrames: [TimelineBlockFrame]
+    let showHalfHourMark: Bool
     @Binding var activeDragTaskID: UUID?
     let onTapBackground: () -> Void
     let onDragChanged: (Int, Int) -> Void
@@ -19,14 +20,23 @@ struct TimelineCreateRow: View {
             .overlay(alignment: .top) {
                 Divider().background(Theme.borderSubtle.opacity(0.5))
             }
+            .overlay(alignment: .top) {
+                if showHalfHourMark {
+                    Rectangle()
+                        .fill(Theme.borderSubtle.opacity(0.18))
+                        .frame(height: 0.5)
+                        .offset(y: metrics.hourHeight / 2)
+                        .allowsHitTesting(false)
+                }
+            }
             .contentShape(Rectangle())
             .onTapGesture(perform: onTapBackground)
             .gesture(
                 DragGesture(minimumDistance: 8, coordinateSpace: .local)
                     .onChanged { value in
                         guard activeDragTaskID == nil else { return }
-                        let absY = absoluteY(forLocalY: value.startLocation.y)
-                        guard !isInsideTaskBlock(y: absY) else { return }
+                        let startPoint = absolutePoint(for: value.startLocation)
+                        guard !isInsideBlockedBlock(point: startPoint) else { return }
                         onDragChanged(
                             absoluteMinute(forLocalY: value.startLocation.y),
                             absoluteMinute(forLocalY: value.location.y)
@@ -34,8 +44,8 @@ struct TimelineCreateRow: View {
                     }
                     .onEnded { value in
                         guard activeDragTaskID == nil else { return }
-                        let absY = absoluteY(forLocalY: value.startLocation.y)
-                        guard !isInsideTaskBlock(y: absY) else { return }
+                        let startPoint = absolutePoint(for: value.startLocation)
+                        guard !isInsideBlockedBlock(point: startPoint) else { return }
                         onDragEnded(
                             absoluteMinute(forLocalY: value.startLocation.y),
                             absoluteMinute(forLocalY: value.location.y)
@@ -48,13 +58,20 @@ struct TimelineCreateRow: View {
         CGFloat(hour - metrics.startHour) * metrics.hourHeight + y
     }
 
+    private func absolutePoint(for localPoint: CGPoint) -> CGPoint {
+        CGPoint(x: localPoint.x, y: absoluteY(forLocalY: localPoint.y))
+    }
+
     private func absoluteMinute(forLocalY y: CGFloat) -> Int {
         metrics.snappedMinute(fromY: absoluteY(forLocalY: y))
     }
 
-    private func isInsideTaskBlock(y: CGFloat) -> Bool {
-        taskFrames.contains { frame in
-            y >= frame.y && y <= frame.y + frame.height
+    private func isInsideBlockedBlock(point: CGPoint) -> Bool {
+        blockedFrames.contains { frame in
+            point.x >= frame.x &&
+            point.x <= frame.x + frame.width &&
+            point.y >= frame.y &&
+            point.y <= frame.y + frame.height
         }
     }
 }

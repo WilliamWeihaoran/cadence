@@ -45,7 +45,6 @@ enum CalendarPageInteractionSupport {
         externalJumpHour: inout Int?,
         externalJumpToken: inout UUID?,
         rememberedDateKey: inout String,
-        timelineScrollState: CalendarTimelineScrollState,
         clearRequest: () -> Void
     ) {
         rememberedDateKey = request.dateKey
@@ -60,7 +59,6 @@ enum CalendarPageInteractionSupport {
         externalJumpDayIndex = target.day
         externalJumpHour = target.hour
         externalJumpToken = request.token
-        timelineScrollState.jumpHeaderOffset(to: -CGFloat(target.day) * max(1, calTimeWidth))
         clearRequest()
     }
 }

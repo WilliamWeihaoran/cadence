@@ -3,7 +3,8 @@ import SwiftUI
 
 struct TimelineCreateGridLayer: View {
     let metrics: TimelineMetrics
-    let taskFrames: [TimelineBlockFrame]
+    let blockedFrames: [TimelineBlockFrame]
+    let showHalfHourMarks: Bool
     @Binding var activeDragTaskID: UUID?
     let onTapBackground: () -> Void
     let onDragChanged: (Int, Int) -> Void
@@ -15,7 +16,8 @@ struct TimelineCreateGridLayer: View {
                 TimelineCreateRow(
                     hour: hour,
                     metrics: metrics,
-                    taskFrames: taskFrames,
+                    blockedFrames: blockedFrames,
+                    showHalfHourMark: showHalfHourMarks,
                     activeDragTaskID: $activeDragTaskID,
                     onTapBackground: onTapBackground,
                     onDragChanged: onDragChanged,
