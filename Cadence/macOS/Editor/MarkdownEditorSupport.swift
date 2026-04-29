@@ -466,17 +466,22 @@ enum MarkdownStylist {
         textView: NSTextView
     ) {
         guard lineRange.length > 0 else { return }
+        let includesTrailingNewline = NSMaxRange(lineRange) < storage.length
+        let blockRange = NSRange(
+            location: lineRange.location,
+            length: min(storage.length - lineRange.location, lineRange.length + (includesTrailingNewline ? 1 : 0))
+        )
         let contentWidth = max(1, textView.bounds.width - (textView.textContainerInset.width * 2) - 24)
         let imageSize = image.fittedSize(maxWidth: contentWidth)
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = imageSize.height + 18
         paragraph.maximumLineHeight = imageSize.height + 18
         paragraph.paragraphSpacingBefore = 8
-        paragraph.paragraphSpacing = 8
+        paragraph.paragraphSpacing = 2
 
-        storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
-        storage.addAttribute(.cadenceMarkdownHidden, value: true, range: lineRange)
-        storage.addAttribute(.cadenceMarkdownImage, value: image, range: lineRange)
+        storage.addAttribute(.paragraphStyle, value: paragraph, range: blockRange)
+        storage.addAttribute(.cadenceMarkdownHidden, value: true, range: blockRange)
+        storage.addAttribute(.cadenceMarkdownImage, value: image, range: blockRange)
     }
 
     private static func unorderedListMatch(in line: String) -> (indentation: String, marker: String)? {

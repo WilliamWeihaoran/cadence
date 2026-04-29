@@ -90,4 +90,26 @@ struct CadenceTests {
         #expect(range.contains(3_649))
     }
 
+    @Test func slashCommandTokenDetectsLineAndInlineTriggers() throws {
+        let lineStart = "/" as NSString
+        let lineStartToken = try #require(MarkdownSlashCommandTokenSupport.token(in: lineStart, cursor: lineStart.length, requiresTrailingSpace: false))
+        #expect(lineStartToken.range == NSRange(location: 0, length: 1))
+        #expect(lineStartToken.query == "")
+
+        let inline = "Plan /h" as NSString
+        let inlineToken = try #require(MarkdownSlashCommandTokenSupport.token(in: inline, cursor: inline.length, requiresTrailingSpace: false))
+        #expect(inlineToken.range == NSRange(location: 5, length: 2))
+        #expect(inlineToken.query == "h")
+    }
+
+    @Test func slashCommandTokenAllowsBackslashAliasAndRejectsPaths() throws {
+        let backslash = "Plan \\h" as NSString
+        let backslashToken = try #require(MarkdownSlashCommandTokenSupport.token(in: backslash, cursor: backslash.length, requiresTrailingSpace: false))
+        #expect(backslashToken.range == NSRange(location: 5, length: 2))
+        #expect(backslashToken.query == "h")
+
+        let url = "https://example.com/" as NSString
+        #expect(MarkdownSlashCommandTokenSupport.token(in: url, cursor: url.length, requiresTrailingSpace: false) == nil)
+    }
+
 }

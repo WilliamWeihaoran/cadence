@@ -3,10 +3,33 @@ import SwiftUI
 import AppKit
 
 struct MarkdownSlashCommand: Identifiable {
+    enum Action {
+        case insertText(indentation: String, text: String, caretOffset: Int)
+        case chooseImage
+    }
+
     let id: String
     let title: String
     let subtitle: String
-    let replacement: (indentation: String, text: String, caretOffset: Int)
+    let action: Action
+
+    init(id: String, title: String, subtitle: String, replacement: (indentation: String, text: String, caretOffset: Int)) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.action = .insertText(
+            indentation: replacement.indentation,
+            text: replacement.text,
+            caretOffset: replacement.caretOffset
+        )
+    }
+
+    init(id: String, title: String, subtitle: String, action: Action) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.action = action
+    }
 
     static let all: [MarkdownSlashCommand] = [
         .init(id: "h1", title: "Heading 1", subtitle: "Large section heading", replacement: (indentation: "", text: "# ", caretOffset: 2)),
@@ -18,6 +41,7 @@ struct MarkdownSlashCommand: Identifiable {
         .init(id: "number", title: "Numbered List", subtitle: "Ordered list item", replacement: (indentation: "", text: "1. ", caretOffset: 3)),
         .init(id: "quote", title: "Quote", subtitle: "Block quote line", replacement: (indentation: "", text: "> ", caretOffset: 2)),
         .init(id: "code", title: "Code Block", subtitle: "Fenced code block", replacement: (indentation: "", text: "```\n\n```", caretOffset: 4)),
+        .init(id: "image", title: "Image", subtitle: "Insert image", action: .chooseImage),
         .init(id: "bold", title: "Bold", subtitle: "Strong text", replacement: (indentation: "", text: "****", caretOffset: 2)),
         .init(id: "italic", title: "Italic", subtitle: "Emphasized text", replacement: (indentation: "", text: "**", caretOffset: 1)),
         .init(id: "strike", title: "Strikethrough", subtitle: "Deleted text", replacement: (indentation: "", text: "~~~~", caretOffset: 2)),
@@ -32,6 +56,80 @@ struct MarkdownSlashCommandContext {
     let indentation: String
     let query: String
     let cursorLocation: Int
+}
+
+enum MarkdownSlashCommandTokenSupport {
+    static func token(
+        in text: NSString,
+        cursor: Int,
+        requiresTrailingSpace: Bool
+    ) -> (range: NSRange, indentation: String, query: String)? {
+        let safeCursor = min(max(cursor, 0), text.length)
+        let tokenEnd: Int
+        if requiresTrailingSpace {
+            guard safeCursor > 0, isHorizontalWhitespace(text.character(at: safeCursor - 1)) else {
+                return nil
+            }
+            tokenEnd = safeCursor - 1
+        } else {
+            tokenEnd = safeCursor
+        }
+
+        let lineRange = text.lineRange(for: NSRange(location: max(0, tokenEnd - 1), length: 0))
+        guard tokenEnd >= lineRange.location else { return nil }
+
+        var queryStart = tokenEnd
+        while queryStart > lineRange.location {
+            let previous = text.character(at: queryStart - 1)
+            if isASCIIAlphaNumeric(previous) {
+                queryStart -= 1
+            } else {
+                break
+            }
+        }
+
+        let slashLocation = queryStart - 1
+        guard slashLocation >= lineRange.location,
+              slashLocation < text.length,
+              isCommandSlash(text.character(at: slashLocation)) else { return nil }
+        let beforeSlashRange = NSRange(location: lineRange.location, length: slashLocation - lineRange.location)
+        let beforeSlash = text.substring(with: beforeSlashRange)
+        let startsAtIndentedLine = beforeSlash.allSatisfy { $0 == " " || $0 == "\t" }
+
+        if !startsAtIndentedLine {
+            guard slashLocation > lineRange.location,
+                  isHorizontalWhitespace(text.character(at: slashLocation - 1)) else {
+                return nil
+            }
+        }
+
+        let queryRange = NSRange(location: slashLocation + 1, length: max(0, tokenEnd - slashLocation - 1))
+        let query = text.substring(with: queryRange)
+        let range: NSRange
+        let indentation: String
+        if startsAtIndentedLine {
+            range = NSRange(location: lineRange.location, length: tokenEnd - lineRange.location + (requiresTrailingSpace ? 1 : 0))
+            indentation = beforeSlash
+        } else {
+            range = NSRange(location: slashLocation, length: tokenEnd - slashLocation + (requiresTrailingSpace ? 1 : 0))
+            indentation = ""
+        }
+        return (range, indentation, query)
+    }
+
+    private static func isCommandSlash(_ character: unichar) -> Bool {
+        character == 47 || character == 92
+    }
+
+    private static func isASCIIAlphaNumeric(_ character: unichar) -> Bool {
+        (character >= 48 && character <= 57) ||
+        (character >= 65 && character <= 90) ||
+        (character >= 97 && character <= 122)
+    }
+
+    private static func isHorizontalWhitespace(_ character: unichar) -> Bool {
+        character == 32 || character == 9
+    }
 }
 
 private struct MarkdownSlashCommandPickerView: View {
@@ -172,30 +270,37 @@ final class MarkdownSlashCommandPickerController {
     }
 
     private func caretAnchorRect(for textView: NSTextView, at characterIndex: Int) -> NSRect {
-        guard let layoutManager = textView.layoutManager else {
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else {
             return NSRect(x: textView.textContainerInset.width, y: textView.textContainerInset.height, width: 1, height: 18)
         }
 
         let length = (textView.string as NSString).length
         let safeIndex = min(max(characterIndex, 0), length)
+        layoutManager.ensureLayout(for: textContainer)
+        let origin = textView.textContainerOrigin
 
-        if safeIndex < length {
+        if safeIndex < length, layoutManager.numberOfGlyphs > 0 {
             let glyphIndex = layoutManager.glyphIndexForCharacter(at: safeIndex)
-            let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil, withoutAdditionalLayout: true)
+            let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
             let glyphLocation = layoutManager.location(forGlyphAt: glyphIndex)
             return NSRect(
-                x: textView.textContainerInset.width + lineRect.minX + glyphLocation.x,
-                y: textView.textContainerInset.height + lineRect.minY,
+                x: origin.x + lineRect.minX + glyphLocation.x,
+                y: origin.y + lineRect.minY,
                 width: 1,
                 height: max(lineRect.height, 18)
             )
         }
 
+        guard layoutManager.numberOfGlyphs > 0 else {
+            return NSRect(x: origin.x, y: origin.y, width: 1, height: 18)
+        }
+
         let fallbackGlyphIndex = max(layoutManager.numberOfGlyphs - 1, 0)
-        let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: fallbackGlyphIndex, effectiveRange: nil, withoutAdditionalLayout: true)
+        let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: fallbackGlyphIndex, effectiveRange: nil)
         return NSRect(
-            x: textView.textContainerInset.width + lineRect.maxX,
-            y: textView.textContainerInset.height + lineRect.minY,
+            x: origin.x + lineRect.maxX,
+            y: origin.y + lineRect.minY,
             width: 1,
             height: max(lineRect.height, 18)
         )

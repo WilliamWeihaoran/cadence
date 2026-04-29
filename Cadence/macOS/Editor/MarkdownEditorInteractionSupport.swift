@@ -1,6 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 final class CadenceLayoutManager: NSLayoutManager {
     override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
@@ -118,6 +119,13 @@ final class CadenceLayoutManager: NSLayoutManager {
                 label.draw(at: NSPoint(x: imageRect.minX + 14, y: imageRect.midY - 8), withAttributes: attrs)
             }
 
+            if textView.selectedMarkdownImageID == info.id {
+                NSColor(hex: "#4a9eff").setStroke()
+                let selectionPath = NSBezierPath(roundedRect: imageRect.insetBy(dx: -2, dy: -2), xRadius: 10, yRadius: 10)
+                selectionPath.lineWidth = 2
+                selectionPath.stroke()
+            }
+
             let handleRect = textView.resizeHandleRect(for: imageRect)
             NSColor(hex: "#0f1117").withAlphaComponent(0.86).setFill()
             NSBezierPath(roundedRect: handleRect, xRadius: 5, yRadius: 5).fill()
@@ -177,6 +185,7 @@ final class CadenceLayoutManager: NSLayoutManager {
 final class CadenceTextView: NSTextView {
     var markdownImageAssets: [UUID: MarkdownImageRenderAsset] = [:]
     var markdownImageRects: [UUID: NSRect] = [:]
+    var selectedMarkdownImageID: UUID?
     var onCreateMarkdownImages: (([NSImage], [URL]) -> [MarkdownImageAsset])?
     var onResizeMarkdownImage: ((UUID, CGFloat) -> Void)?
 
@@ -213,10 +222,20 @@ final class CadenceTextView: NSTextView {
         let viewPoint = convert(event.locationInWindow, from: nil)
         if let hit = imageResizeHit(at: viewPoint) {
             resizingImageID = hit.id
+            selectedMarkdownImageID = nil
             resizeStartX = viewPoint.x
             resizeStartWidth = hit.rect.width
             return
         }
+        if let hit = imageHit(at: viewPoint) {
+            selectedMarkdownImageID = hit.id
+            if let range = markdownImageRange(for: hit.id) {
+                setSelectedRange(NSRange(location: NSMaxRange(range), length: 0))
+            }
+            needsDisplay = true
+            return
+        }
+        selectedMarkdownImageID = nil
 
         let containerPoint = NSPoint(
             x: viewPoint.x - textContainerInset.width,
@@ -306,6 +325,27 @@ final class CadenceTextView: NSTextView {
         }
     }
 
+    func deleteMarkdownImageForCommand(backward: Bool) -> Bool {
+        if let selectedMarkdownImageID,
+           let range = markdownImageRange(for: selectedMarkdownImageID) {
+            deleteMarkdownImage(in: range)
+            return true
+        }
+
+        let selection = selectedRange()
+        if selection.length > 0,
+           let range = markdownImageRange(intersecting: selection) {
+            deleteMarkdownImage(in: NSUnionRange(selection, range))
+            return true
+        }
+
+        guard selection.length == 0 else { return false }
+        let probeLocation = backward ? selection.location - 1 : selection.location
+        guard let range = markdownImageRange(containingOrAdjacentTo: probeLocation) else { return false }
+        deleteMarkdownImage(in: range)
+        return true
+    }
+
     func resizeHandleRect(for imageRect: NSRect) -> NSRect {
         NSRect(x: imageRect.maxX - 22, y: imageRect.maxY - 22, width: 18, height: 18)
     }
@@ -322,11 +362,84 @@ final class CadenceTextView: NSTextView {
         didChangeText()
     }
 
+    func chooseMarkdownImages() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        let completion: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self,
+                  response == .OK,
+                  let assets = self.onCreateMarkdownImages?([], panel.urls),
+                  !assets.isEmpty else { return }
+            self.insertMarkdownImages(assets)
+        }
+
+        if let window {
+            panel.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            panel.begin(completionHandler: completion)
+        }
+    }
+
     private func imageResizeHit(at point: NSPoint) -> (id: UUID, rect: NSRect)? {
         for (id, rect) in markdownImageRects where resizeHandleRect(for: rect).contains(point) {
             return (id, rect)
         }
         return nil
+    }
+
+    private func imageHit(at point: NSPoint) -> (id: UUID, rect: NSRect)? {
+        for (id, rect) in markdownImageRects where rect.contains(point) {
+            return (id, rect)
+        }
+        return nil
+    }
+
+    private func markdownImageRange(for id: UUID) -> NSRange? {
+        guard let textStorage else { return nil }
+        var result: NSRange?
+        textStorage.enumerateAttribute(.cadenceMarkdownImage, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, stop in
+            guard let info = value as? MarkdownImageLayoutInfo, info.id == id else { return }
+            result = range
+            stop.pointee = true
+        }
+        return result
+    }
+
+    private func markdownImageRange(intersecting selection: NSRange) -> NSRange? {
+        guard let textStorage else { return nil }
+        var result: NSRange?
+        textStorage.enumerateAttribute(.cadenceMarkdownImage, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, stop in
+            guard value is MarkdownImageLayoutInfo,
+                  NSIntersectionRange(range, selection).length > 0 else { return }
+            result = range
+            stop.pointee = true
+        }
+        return result
+    }
+
+    private func markdownImageRange(containingOrAdjacentTo location: Int) -> NSRange? {
+        guard let textStorage, textStorage.length > 0 else { return nil }
+        let clamped = min(max(location, 0), textStorage.length - 1)
+        var effectiveRange = NSRange(location: NSNotFound, length: 0)
+        if textStorage.attribute(.cadenceMarkdownImage, at: clamped, effectiveRange: &effectiveRange) is MarkdownImageLayoutInfo,
+           effectiveRange.location != NSNotFound {
+            return effectiveRange
+        }
+        return nil
+    }
+
+    private func deleteMarkdownImage(in rawRange: NSRange) {
+        let range = NSIntersectionRange(rawRange, NSRange(location: 0, length: (string as NSString).length))
+        guard range.length > 0,
+              shouldChangeText(in: range, replacementString: "") else { return }
+        selectedMarkdownImageID = nil
+        textStorage?.replaceCharacters(in: range, with: "")
+        setSelectedRange(NSRange(location: range.location, length: 0))
+        typingAttributes = MarkdownStylist.baseAttributes
+        didChangeText()
     }
 
     private func insertImages(from pasteboard: NSPasteboard) -> Bool {
@@ -710,6 +823,8 @@ private enum MarkdownKeyboardShortcutSupport {
 final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
     private var parent: MarkdownEditorView
     private let slashCommandPicker = MarkdownSlashCommandPickerController()
+    private weak var pendingSlashCommandTextView: NSTextView?
+    private var slashCommandUpdateIsScheduled = false
 
     init(parent: MarkdownEditorView) {
         self.parent = parent
@@ -724,7 +839,6 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         let scrollView = textView.enclosingScrollView
         applyInputTransforms(to: textView)
         normalizeMarkdownListPrefixes(in: textView)
-        updateSlashCommandPicker(for: textView)
         normalizeOrderedListMarkers(in: textView)
         parent.text = textView.string
         if let scrollView {
@@ -741,6 +855,7 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
             MarkdownEditorScrollSupport.refreshLayout(in: scrollView)
         }
         textView.typingAttributes = MarkdownStylist.baseAttributes
+        scheduleSlashCommandPickerUpdate(for: textView)
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -790,16 +905,24 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
 
         if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
             if slashCommandPicker.isShown {
-                DispatchQueue.main.async { [weak self, weak textView] in
-                    if let textView {
-                        self?.updateSlashCommandPicker(for: textView)
-                    }
-                }
+                scheduleSlashCommandPickerUpdate(for: textView)
+            }
+            if let cadenceTextView = textView as? CadenceTextView,
+               cadenceTextView.deleteMarkdownImageForCommand(backward: true) {
+                return true
             }
             if deleteBackwardToPlainTextListItem(in: textView) {
                 return true
             }
             return deleteBackwardFromEmptyListItem(in: textView)
+        }
+
+        if commandSelector == #selector(NSResponder.deleteForward(_:)) {
+            if let cadenceTextView = textView as? CadenceTextView,
+               cadenceTextView.deleteMarkdownImageForCommand(backward: false) {
+                return true
+            }
+            return false
         }
 
         guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
@@ -1013,13 +1136,29 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         }
     }
 
+    private func scheduleSlashCommandPickerUpdate(for textView: NSTextView) {
+        pendingSlashCommandTextView = textView
+        guard !slashCommandUpdateIsScheduled else { return }
+        slashCommandUpdateIsScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            slashCommandUpdateIsScheduled = false
+            guard let textView = pendingSlashCommandTextView else {
+                slashCommandPicker.close()
+                return
+            }
+            pendingSlashCommandTextView = nil
+            updateSlashCommandPicker(for: textView)
+        }
+    }
+
     private func currentSlashCommandContext(in textView: NSTextView) -> MarkdownSlashCommandContext? {
         let selection = textView.selectedRange()
         guard selection.length == 0 else { return nil }
 
         let nsText = textView.string as NSString
         let safeCursor = min(max(selection.location, 0), nsText.length)
-        guard let token = slashCommandToken(in: nsText, cursor: safeCursor, requiresTrailingSpace: false) else { return nil }
+        guard let token = MarkdownSlashCommandTokenSupport.token(in: nsText, cursor: safeCursor, requiresTrailingSpace: false) else { return nil }
         return MarkdownSlashCommandContext(
             range: token.range,
             indentation: token.indentation,
@@ -1029,9 +1168,34 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
     }
 
     private func applySlashCommand(_ command: MarkdownSlashCommand, context: MarkdownSlashCommandContext, in textView: NSTextView) {
-        let replacement = context.indentation + command.replacement.text
-        replaceText(in: textView, range: context.range, with: replacement)
-        textView.setSelectedRange(NSRange(location: context.range.location + context.indentation.count + command.replacement.caretOffset, length: 0))
+        switch command.action {
+        case let .insertText(_, text, caretOffset):
+            let replacement = context.indentation + text
+            guard textView.shouldChangeText(in: context.range, replacementString: replacement) else {
+                slashCommandPicker.close()
+                return
+            }
+            textView.textStorage?.replaceCharacters(in: context.range, with: replacement)
+            textView.setSelectedRange(NSRange(location: context.range.location + context.indentation.count + caretOffset, length: 0))
+            textView.typingAttributes = MarkdownStylist.baseAttributes
+            textView.didChangeText()
+        case .chooseImage:
+            guard textView.shouldChangeText(in: context.range, replacementString: context.indentation) else {
+                slashCommandPicker.close()
+                return
+            }
+            textView.textStorage?.replaceCharacters(in: context.range, with: context.indentation)
+            textView.setSelectedRange(NSRange(location: context.range.location + context.indentation.count, length: 0))
+            textView.typingAttributes = MarkdownStylist.baseAttributes
+            textView.didChangeText()
+            DispatchQueue.main.async { [parent] in
+                if let cadenceTextView = textView as? CadenceTextView {
+                    cadenceTextView.chooseMarkdownImages()
+                } else {
+                    parent.onChooseImages()
+                }
+            }
+        }
         slashCommandPicker.close()
     }
 
@@ -1073,76 +1237,12 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
 
     private func typedSlashCommandMatch(in text: NSString, cursor: Int) -> (range: NSRange, replacement: String, caretOffset: Int)? {
         let safeCursor = min(max(cursor, 0), text.length)
-        guard let token = slashCommandToken(in: text, cursor: safeCursor, requiresTrailingSpace: true) else { return nil }
+        guard let token = MarkdownSlashCommandTokenSupport.token(in: text, cursor: safeCursor, requiresTrailingSpace: true) else { return nil }
         let command = token.query
         guard let commandConfig = MarkdownSlashCommand.all.first(where: { $0.id == command }) else { return nil }
-        let replacement = token.indentation + commandConfig.replacement.text
-        return (token.range, replacement, token.indentation.count + commandConfig.replacement.caretOffset)
-    }
-
-    private func slashCommandToken(
-        in text: NSString,
-        cursor: Int,
-        requiresTrailingSpace: Bool
-    ) -> (range: NSRange, indentation: String, query: String)? {
-        let safeCursor = min(max(cursor, 0), text.length)
-        let tokenEnd: Int
-        if requiresTrailingSpace {
-            guard safeCursor > 0, MarkdownEditorCoordinator.isHorizontalWhitespace(text.character(at: safeCursor - 1)) else {
-                return nil
-            }
-            tokenEnd = safeCursor - 1
-        } else {
-            tokenEnd = safeCursor
-        }
-
-        let lineRange = text.lineRange(for: NSRange(location: max(0, tokenEnd - 1), length: 0))
-        guard tokenEnd >= lineRange.location else { return nil }
-
-        var slashLocation = tokenEnd
-        while slashLocation > lineRange.location {
-            let previous = text.character(at: slashLocation - 1)
-            if MarkdownEditorCoordinator.isASCIIAlphaNumeric(previous) {
-                slashLocation -= 1
-            } else {
-                break
-            }
-        }
-
-        guard slashLocation < text.length, text.character(at: slashLocation) == 47 else { return nil }
-        let beforeSlashRange = NSRange(location: lineRange.location, length: slashLocation - lineRange.location)
-        let beforeSlash = text.substring(with: beforeSlashRange)
-        let startsAtIndentedLine = beforeSlash.allSatisfy { $0 == " " || $0 == "\t" }
-
-        if !startsAtIndentedLine {
-            guard slashLocation > lineRange.location,
-                  MarkdownEditorCoordinator.isHorizontalWhitespace(text.character(at: slashLocation - 1)) else {
-                return nil
-            }
-        }
-
-        let queryRange = NSRange(location: slashLocation + 1, length: max(0, tokenEnd - slashLocation - 1))
-        let query = text.substring(with: queryRange)
-        let range: NSRange
-        let indentation: String
-        if startsAtIndentedLine {
-            range = NSRange(location: lineRange.location, length: tokenEnd - lineRange.location + (requiresTrailingSpace ? 1 : 0))
-            indentation = beforeSlash
-        } else {
-            range = NSRange(location: slashLocation, length: tokenEnd - slashLocation + (requiresTrailingSpace ? 1 : 0))
-            indentation = ""
-        }
-        return (range, indentation, query)
-    }
-
-    private static func isASCIIAlphaNumeric(_ character: unichar) -> Bool {
-        (character >= 48 && character <= 57) ||
-        (character >= 65 && character <= 90) ||
-        (character >= 97 && character <= 122)
-    }
-
-    private static func isHorizontalWhitespace(_ character: unichar) -> Bool {
-        character == 32 || character == 9
+        guard case let .insertText(_, text, caretOffset) = commandConfig.action else { return nil }
+        let replacement = token.indentation + text
+        return (token.range, replacement, token.indentation.count + caretOffset)
     }
 
     private func effectiveLineRange(for selection: NSRange, in text: NSString) -> NSRange {

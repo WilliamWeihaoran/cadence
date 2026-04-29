@@ -17,6 +17,7 @@ struct MarkdownEditor: View {
                 imageAssets: imageAssets,
                 onCreateImages: createAssets,
                 onResizeImage: resizeImage,
+                onChooseImages: chooseImages,
                 onTextViewChanged: { textView = $0 }
             )
 
@@ -90,6 +91,7 @@ struct MarkdownEditorView: NSViewRepresentable {
     var imageAssets: [MarkdownImageAsset] = []
     var onCreateImages: ([NSImage], [URL]) -> [MarkdownImageAsset] = { _, _ in [] }
     var onResizeImage: (UUID, CGFloat) -> Void = { _, _ in }
+    var onChooseImages: () -> Void = {}
     var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
 
     func makeNSView(context: NSViewRepresentableContext<MarkdownEditorView>) -> NSScrollView {
