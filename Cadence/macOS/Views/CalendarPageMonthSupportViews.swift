@@ -66,8 +66,19 @@ struct MonthDayCell: View {
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(hex: task.containerColor).opacity(task.isDone ? 0.08 : 0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                                .fill(Theme.surfaceElevated)
+                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                                .fill(Color(hex: task.containerColor).opacity(task.isDone ? 0.06 : 0.12))
+                        }
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                            .stroke(.white.opacity(0.045), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.06), radius: 3, y: 1)
                 }
                 ForEach(eventChips) { event in
                     Text(event.title)
@@ -77,8 +88,19 @@ struct MonthDayCell: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(event.calendarColor.opacity(0.8))
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .background(
+                            ZStack {
+                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                                .fill(Theme.surfaceElevated)
+                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                                .fill(event.calendarColor.opacity(0.34))
+                            }
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                                .stroke(.white.opacity(0.06), lineWidth: 1)
+                        )
+                        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 1)
                 }
                 if overflow > 0 {
                     Text("+ \(overflow) more")
@@ -94,10 +116,14 @@ struct MonthDayCell: View {
         .frame(maxWidth: .infinity, minHeight: 130)
         .background(isToday ? Theme.blue.opacity(0.04) : Theme.bg)
         .overlay(alignment: .topTrailing) {
-            Rectangle().fill(Theme.borderSubtle.opacity(0.5)).frame(width: 0.5)
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.columnGridOpacity))
+                .frame(width: 0.5)
         }
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.borderSubtle.opacity(0.5)).frame(height: 0.5)
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.majorGridOpacity))
+                .frame(height: 0.5)
         }
     }
 }
@@ -135,7 +161,9 @@ struct CalDayHeaderView: View {
         }
         .frame(maxWidth: .infinity)
         .overlay(alignment: .trailing) {
-            Rectangle().fill(Theme.borderSubtle.opacity(0.4)).frame(width: 0.5)
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.columnGridOpacity))
+                .frame(width: 0.5)
         }
     }
 
@@ -172,8 +200,19 @@ struct AllDayTaskChip: View {
         .padding(.horizontal, 5)
         .padding(.vertical, 3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(hex: task.containerColor).opacity(showInspector ? 0.28 : 0.15))
-        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                    .fill(Theme.surfaceElevated)
+                RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                    .fill(Color(hex: task.containerColor).opacity(showInspector ? 0.18 : 0.12))
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                .stroke(.white.opacity(0.05), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.07), radius: 4, y: 1)
         .contentShape(Rectangle())
         .onTapGesture { showInspector = true }
         .popover(isPresented: $showInspector, arrowEdge: .bottom) {
@@ -195,11 +234,22 @@ struct AllDayEventChip: View {
             .font(.system(size: 10))
             .foregroundStyle(.white)
             .lineLimit(1)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(eventColor.opacity(0.8))
-            .clipShape(RoundedRectangle(cornerRadius: 3))
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                    .fill(Theme.surfaceElevated)
+                RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                    .fill(eventColor.opacity(0.34))
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                .stroke(.white.opacity(0.06), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 1)
             .draggable("allDayEvent:\(event.eventIdentifier ?? "")")
     }
 }
@@ -265,7 +315,9 @@ struct CalDayColumn: View {
             }
         )
         .overlay(alignment: .trailing) {
-            Rectangle().fill(Theme.borderSubtle.opacity(0.4)).frame(width: 0.5)
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.columnGridOpacity))
+                .frame(width: 0.5)
         }
     }
 }

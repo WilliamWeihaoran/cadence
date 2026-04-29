@@ -58,7 +58,7 @@ struct MonthGridView: View {
         VStack(spacing: 0) {
             MonthGridWeekdayHeader()
 
-            Divider().background(Theme.borderSubtle)
+            Divider().background(Theme.borderSubtle.opacity(CalendarVisualStyle.dividerOpacity))
 
             let offsets = cumulativeOffsets
             ScrollViewReader { proxy in
@@ -120,10 +120,14 @@ struct MonthWeeksView: View {
                             Color.clear
                                 .frame(maxWidth: .infinity, minHeight: 130)
                                 .overlay(alignment: .topTrailing) {
-                                    Rectangle().fill(Theme.borderSubtle.opacity(0.5)).frame(width: 0.5)
+                                    Rectangle()
+                                        .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.columnGridOpacity))
+                                        .frame(width: 0.5)
                                 }
                                 .overlay(alignment: .bottom) {
-                                    Rectangle().fill(Theme.borderSubtle.opacity(0.5)).frame(height: 0.5)
+                                    Rectangle()
+                                        .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.majorGridOpacity))
+                                        .frame(height: 0.5)
                                 }
                         }
                     }

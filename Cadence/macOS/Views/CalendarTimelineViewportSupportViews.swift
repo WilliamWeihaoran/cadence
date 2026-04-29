@@ -14,7 +14,9 @@ struct CalendarTimelineTimeRail: View {
         .frame(width: calTimeTotalWidth)
         .background(Theme.surface)
         .overlay(alignment: .trailing) {
-            Rectangle().fill(Theme.borderSubtle.opacity(0.7)).frame(width: 1)
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.dividerOpacity))
+                .frame(width: 0.5)
         }
     }
 }
@@ -70,6 +72,7 @@ struct CalendarTimelineDayScroller: View {
                 .frame(width: totalDaysWidth, alignment: .leading)
             }
             .frame(width: timelineViewportWidth, alignment: .leading)
+            .scrollTargetBehavior(DayBoundaryScrollTargetBehavior(dayWidth: colWidth))
             .scrollBounceBehavior(.basedOnSize, axes: [.horizontal])
             .transaction { $0.animation = nil }
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in

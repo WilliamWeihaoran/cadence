@@ -4,6 +4,12 @@ import AppKit
 import SwiftData
 import UniformTypeIdentifiers
 
+enum MarkdownEditorMetrics {
+    static let textInset: CGFloat = 20
+    static let lineFragmentPadding: CGFloat = 5
+    static let firstTextColumnInset: CGFloat = textInset + lineFragmentPadding
+}
+
 struct MarkdownEditor: View {
     @Binding var text: String
     @Environment(\.modelContext) private var modelContext
@@ -131,7 +137,10 @@ struct MarkdownEditorView: NSViewRepresentable {
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.backgroundColor = NSColor(hex: "#0f1117")
         textView.insertionPointColor = NSColor(hex: "#4a9eff")
-        textView.textContainerInset = NSSize(width: 20, height: 20)
+        textView.textContainerInset = NSSize(
+            width: MarkdownEditorMetrics.textInset,
+            height: MarkdownEditorMetrics.textInset
+        )
         textView.font = MarkdownStylist.baseFont
         textView.typingAttributes = MarkdownStylist.baseAttributes
         configure(textView, context: context)

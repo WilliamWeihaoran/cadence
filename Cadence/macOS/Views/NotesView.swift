@@ -475,6 +475,7 @@ struct MeetingNoteListRow: View {
 
 struct NoteEditorPane: View {
     @Bindable var note: Note
+    @Environment(\.modelContext) private var modelContext
 
     private var titleBinding: Binding<String> {
         Binding(
@@ -525,9 +526,15 @@ struct NoteEditorPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(kindLabel.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim).kerning(0.8)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(kindLabel.uppercased())
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.dim).kerning(0.8)
+                    Spacer()
+                    NoteAIActionMenu(note: note) { summary in
+                        appendSummary(summary)
+                    }
+                }
                 if shouldEditTitle {
                     TextField("Note title", text: titleBinding)
                         .textFieldStyle(.plain)
@@ -544,6 +551,15 @@ struct NoteEditorPane: View {
             MarkdownEditor(text: contentBinding)
         }
         .background(Theme.surface)
+    }
+
+    private func appendSummary(_ summary: String) {
+        let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSummary.isEmpty else { return }
+        let separator = note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
+        note.content = "\(note.content)\(separator)## AI Summary\n\n\(trimmedSummary)"
+        note.updatedAt = Date()
+        try? modelContext.save()
     }
 }
 #endif

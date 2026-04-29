@@ -48,7 +48,7 @@ struct TimelineBlockStyle {
         sideMarginFraction: 0,
         columnSpacing: 2,
         minHeight: 24,
-        cornerRadius: 6,
+        cornerRadius: 10,
         horizontalPadding: 8,
         verticalPadding: 4,
         blockWidthFraction: 0.9
@@ -60,11 +60,21 @@ struct TimelineBlockStyle {
         sideMarginFraction: 0,
         columnSpacing: 2,
         minHeight: 22,
-        cornerRadius: 5,
+        cornerRadius: 9,
         horizontalPadding: 6,
         verticalPadding: 3,
         blockWidthFraction: 0.95
     )
+}
+
+enum CalendarVisualStyle {
+    static let majorGridOpacity: Double = 0.11
+    static let minorGridOpacity: Double = 0.075
+    static let dividerOpacity: Double = 0.18
+    static let columnGridOpacity: Double = 0.09
+    static let chipRadius: CGFloat = 6
+    static let cardShadow = Color.black.opacity(0.16)
+    static let selectedCardShadow = Color.black.opacity(0.24)
 }
 
 enum TimelineDropBehavior {

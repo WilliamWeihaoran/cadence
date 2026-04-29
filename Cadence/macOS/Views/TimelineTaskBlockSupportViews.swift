@@ -223,16 +223,16 @@ func timelineBlockBody(
     .clipped()
     .background(
         ZStack {
-            RoundedRectangle(cornerRadius: style.cornerRadius).fill(Theme.bg)
+            RoundedRectangle(cornerRadius: style.cornerRadius).fill(Theme.surfaceElevated)
             RoundedRectangle(cornerRadius: style.cornerRadius)
-                .fill(taskColor.opacity(task.isDone ? 0.08 : 0.18))
+                .fill(taskColor.opacity(task.isDone ? 0.07 : 0.14))
             if isPendingCompletion {
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(taskColor.opacity(0.08 + (0.08 * completedTransitionOpacity)))
+                    .fill(taskColor.opacity(0.06 + (0.06 * completedTransitionOpacity)))
             }
             if showHover {
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(Theme.blue.opacity(0.06))
+                    .fill(Theme.blue.opacity(0.05))
             }
             if isPendingCompletion {
                 GeometryReader { proxy in
@@ -257,12 +257,17 @@ func timelineBlockBody(
         RoundedRectangle(cornerRadius: style.cornerRadius)
             .stroke(
                 showSelection
-                    ? taskColor.opacity(0.6)
-                    : (showHover ? taskColor.opacity(0.54) : taskColor.opacity(0.22)),
+                    ? taskColor.opacity(0.46)
+                    : (showHover ? taskColor.opacity(0.34) : .white.opacity(0.06)),
                 lineWidth: showHover ? 1.2 : 1
             )
     )
-    .shadow(color: showHover ? taskColor.opacity(0.12) : .clear, radius: 10, y: 2)
+    .shadow(
+        color: showHover || showSelection ? CalendarVisualStyle.selectedCardShadow : CalendarVisualStyle.cardShadow,
+        radius: showHover || showSelection ? 11 : 7,
+        x: 0,
+        y: showHover || showSelection ? 4 : 2
+    )
 }
 
 func timelineDragPreview(task: AppTask, style: TimelineBlockStyle) -> some View {

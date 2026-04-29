@@ -22,7 +22,17 @@ struct NotePanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                PanelHeader(eyebrow: "Notes", title: headerTitle)
+                HStack(alignment: .top, spacing: 10) {
+                    PanelHeader(eyebrow: "Notes", title: headerTitle)
+                    Spacer()
+                    if let activeNote {
+                        NoteAIActionMenu(note: activeNote) { summary in
+                            appendSummary(summary, to: activeNote)
+                        }
+                        .padding(.top, 12)
+                        .padding(.trailing, 12)
+                    }
+                }
 
                 HStack(spacing: 0) {
                     ForEach(NoteTab.allCases, id: \.self) { tab in
@@ -90,6 +100,14 @@ struct NotePanel: View {
         }
     }
 
+    private var activeNote: Note? {
+        switch activeTab {
+        case .today: return todayNote
+        case .week: return weekNote
+        case .notepad: return permNote
+        }
+    }
+
     private func loadOrCreate() {
         let context = notesContext ?? makeNotesContext()
         notesContext = context
@@ -119,6 +137,13 @@ struct NotePanel: View {
         note.content = content
         note.updatedAt = Date()
         try? notesContext?.save()
+    }
+
+    private func appendSummary(_ summary: String, to note: Note) {
+        let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSummary.isEmpty else { return }
+        let separator = note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
+        update(note: note, content: "\(note.content)\(separator)## AI Summary\n\n\(trimmedSummary)")
     }
 }
 

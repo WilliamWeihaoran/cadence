@@ -21,8 +21,19 @@ struct CalendarTimelineViewportMetrics {
     let hourHeight: CGFloat
 
     init(geoSize: CGSize, viewMode: CalViewMode, zoomLevel: Int) {
-        let computedColWidth = max(80, (geoSize.width - calTimeTotalWidth) / CGFloat(viewMode.daysCount))
-        let computedViewportWidth = max(0, geoSize.width - calTimeTotalWidth)
+        let availableTimelineWidth = max(0, geoSize.width - calTimeTotalWidth)
+        let targetDayCount = CGFloat(viewMode.daysCount)
+        let naturalColWidth = availableTimelineWidth / max(targetDayCount, 1)
+        let computedColWidth: CGFloat
+        let computedViewportWidth: CGFloat
+        if naturalColWidth >= 80 || availableTimelineWidth <= 0 {
+            computedColWidth = max(80, naturalColWidth)
+            computedViewportWidth = availableTimelineWidth
+        } else {
+            let visibleWholeDays = max(1, floor(availableTimelineWidth / 80))
+            computedColWidth = availableTimelineWidth / visibleWholeDays
+            computedViewportWidth = computedColWidth * visibleWholeDays
+        }
         let computedScrollViewportHeight = max(0, geoSize.height - calDayHeaderHeight - calAllDayBannerHeight - 1)
         let targetHours: CGFloat = zoomLevel == 1 ? 12 : zoomLevel == 2 ? 8 : 4
 
@@ -34,20 +45,28 @@ struct CalendarTimelineViewportMetrics {
     }
 }
 
+struct DayBoundaryScrollTargetBehavior: ScrollTargetBehavior {
+    let dayWidth: CGFloat
+
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        let safeDayWidth = max(dayWidth, 1)
+        let maxOffsetX = max(0, context.contentSize.width - context.containerSize.width)
+        let snappedX = (target.rect.minX / safeDayWidth).rounded(.toNearestOrAwayFromZero) * safeDayWidth
+        target.rect.origin.x = min(max(snappedX, 0), maxOffsetX)
+    }
+}
+
 final class CalendarTimelineScrollState: ObservableObject {
     @Published private(set) var headerOffset: CGFloat = 0
-    private let liveOffsetStep: CGFloat = 4
 
     func setHeaderOffset(_ newValue: CGFloat) {
-        let snappedValue = (newValue / liveOffsetStep).rounded(.toNearestOrAwayFromZero) * liveOffsetStep
-        guard abs(headerOffset - snappedValue) >= liveOffsetStep else { return }
-        headerOffset = snappedValue
+        guard abs(headerOffset - newValue) >= 0.5 else { return }
+        headerOffset = newValue
     }
 
     func jumpHeaderOffset(to newValue: CGFloat) {
-        let snappedValue = newValue.rounded(.toNearestOrAwayFromZero)
-        guard abs(headerOffset - snappedValue) >= 0.5 else { return }
-        headerOffset = snappedValue
+        guard abs(headerOffset - newValue) >= 0.5 else { return }
+        headerOffset = newValue
     }
 }
 

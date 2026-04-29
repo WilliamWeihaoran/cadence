@@ -185,7 +185,9 @@ struct CalendarTimelineViewport: View {
                     .fill(Theme.surface)
                     .frame(width: calTimeTotalWidth, height: calDayHeaderHeight + calAllDayBannerHeight)
                     .overlay(alignment: .trailing) {
-                        Rectangle().fill(Theme.borderSubtle.opacity(0.7)).frame(width: 1)
+                        Rectangle()
+                            .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.dividerOpacity))
+                            .frame(width: 0.5)
                     }
                     .overlay(alignment: .bottomLeading) {
                         Text("all-day")
@@ -207,7 +209,7 @@ struct CalendarTimelineViewport: View {
             .frame(height: calDayHeaderHeight + calAllDayBannerHeight)
             .background(Theme.surface)
 
-            Divider().background(Theme.borderSubtle)
+            Divider().background(Theme.borderSubtle.opacity(CalendarVisualStyle.dividerOpacity))
 
             ScrollViewReader { vProxy in
                 ScrollView(.vertical) {

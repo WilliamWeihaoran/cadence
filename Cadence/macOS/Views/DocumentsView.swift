@@ -163,6 +163,18 @@ struct DocumentsView: View {
                 NoteEditorPane(note: eventNote)
             } else if let doc = selectedDoc {
                 VStack(spacing: 0) {
+                    HStack {
+                        Spacer()
+                        NoteAIActionMenu(note: doc, area: area, project: project) { summary in
+                            appendSummary(summary, to: doc)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Theme.surface)
+
+                    Divider().background(Theme.borderSubtle)
+
                     NoteReferenceStrip(
                         note: doc,
                         docs: docs,
@@ -233,6 +245,15 @@ struct DocumentsView: View {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let headingTitle = trimmed.isEmpty ? "Untitled" : trimmed
         return "# \(headingTitle)\n\n"
+    }
+
+    private func appendSummary(_ summary: String, to note: Note) {
+        let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSummary.isEmpty else { return }
+        let separator = note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
+        note.content = "\(note.content)\(separator)## AI Summary\n\n\(trimmedSummary)"
+        note.updatedAt = Date()
+        try? modelContext.save()
     }
 
     private func applyRequestedEventNoteSelection() {

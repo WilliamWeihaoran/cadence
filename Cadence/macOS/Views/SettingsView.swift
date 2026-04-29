@@ -11,6 +11,7 @@ struct SettingsView: View {
         case sidebar
         case contexts
         case lists
+        case ai
         case calendar
 
         var id: String { rawValue }
@@ -23,6 +24,7 @@ struct SettingsView: View {
             case .sidebar: return "Sidebar"
             case .contexts: return "Contexts"
             case .lists: return "Lists"
+            case .ai: return "AI"
             case .calendar: return "Calendar"
             }
         }
@@ -41,6 +43,8 @@ struct SettingsView: View {
                 return "Add, edit, archive, and reorder contexts."
             case .lists:
                 return "Completed and archived areas and projects."
+            case .ai:
+                return "Bring your own OpenAI key for local AI actions."
             case .calendar:
                 return "Apple Calendar access and linked calendars."
             }
@@ -54,6 +58,7 @@ struct SettingsView: View {
             case .sidebar: return "sidebar.left"
             case .contexts: return "square.stack.3d.up.fill"
             case .lists: return "archivebox.fill"
+            case .ai: return "sparkles"
             case .calendar: return "calendar"
             }
         }
@@ -66,6 +71,7 @@ struct SettingsView: View {
             case .sidebar: return Theme.amber
             case .contexts: return Theme.red
             case .lists: return Theme.amber
+            case .ai: return Theme.blue
             case .calendar: return Theme.purple
             }
         }
@@ -73,6 +79,7 @@ struct SettingsView: View {
 
     @Environment(ThemeManager.self) private var themeManager
     @Environment(CalendarManager.self) private var calendarManager
+    @Environment(AISettingsManager.self) private var aiSettingsManager
     @Environment(AppleAccountManager.self) private var appleAccountManager
     @Environment(\.modelContext) private var modelContext
     @AppStorage("listDetailDefaultPage") private var listDetailDefaultPage = ListDetailPage.tasks.rawValue
@@ -88,6 +95,7 @@ struct SettingsView: View {
     @State private var pendingDeleteContext: Context? = nil
     @State private var showCreateContext = false
     @State private var editingSidebarTab: SidebarStaticDestination? = nil
+    @State private var aiAPIKeyDraft = ""
 
     var body: some View {
         HStack(spacing: 0) {
@@ -322,6 +330,131 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.muted)
                 }
             }
+        }
+    }
+
+    private var aiSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            settingsCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 14) {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill((aiSettingsManager.hasAPIKey ? Theme.green : Theme.dim).opacity(0.16))
+                            .frame(width: 42, height: 42)
+                            .overlay {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(aiSettingsManager.hasAPIKey ? Theme.green : Theme.dim)
+                            }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("OpenAI BYOK")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Theme.text)
+                            Text("Cadence stores your API key in Keychain and sends only the note you choose to summarize or extract tasks from.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let statusMessage = aiSettingsManager.statusMessage {
+                                Text(statusMessage)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.muted)
+                            }
+                        }
+
+                        Spacer()
+                    }
+
+                    Divider().background(Theme.borderSubtle)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("API Key")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.muted)
+                        SecureField(aiSettingsManager.hasAPIKey ? "Saved in Keychain" : "sk-...", text: $aiAPIKeyDraft)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 9)
+                            .background(Theme.surfaceElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: 9))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 9)
+                                    .stroke(Theme.borderSubtle, lineWidth: 1)
+                            }
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Model")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.muted)
+                        TextField("gpt-5.4-mini", text: Binding(
+                            get: { aiSettingsManager.model },
+                            set: { aiSettingsManager.model = $0 }
+                        ))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .background(Theme.surfaceElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 9))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 9)
+                                .stroke(Theme.borderSubtle, lineWidth: 1)
+                        }
+                    }
+
+                    HStack(spacing: 10) {
+                        Button("Save Key") {
+                            do {
+                                try aiSettingsManager.saveAPIKey(aiAPIKeyDraft)
+                                aiAPIKeyDraft = ""
+                            } catch {
+                                aiSettingsManager.statusMessage = AIErrorPresenter.message(for: error)
+                            }
+                        }
+                        .buttonStyle(.cadencePlain)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Theme.blue)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        Button(aiSettingsManager.isTestingConnection ? "Testing..." : "Test Connection") {
+                            Task { await aiSettingsManager.testConnection() }
+                        }
+                        .buttonStyle(.cadencePlain)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(aiSettingsManager.hasAPIKey ? Theme.blue : Theme.dim)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background((aiSettingsManager.hasAPIKey ? Theme.blue : Theme.dim).opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .disabled(!aiSettingsManager.hasAPIKey || aiSettingsManager.isTestingConnection)
+
+                        if aiSettingsManager.hasAPIKey {
+                            Button("Remove Key") {
+                                do {
+                                    try aiSettingsManager.removeAPIKey()
+                                } catch {
+                                    aiSettingsManager.statusMessage = AIErrorPresenter.message(for: error)
+                                }
+                            }
+                            .buttonStyle(.cadencePlain)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.red)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Theme.red.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear {
+            aiSettingsManager.refreshKeyStatus()
         }
     }
 
@@ -695,6 +828,8 @@ struct SettingsView: View {
                     authBadge
                 } else if selectedCategory == .account {
                     accountBadge
+                } else if selectedCategory == .ai {
+                    aiBadge
                 }
             }
         }
@@ -715,6 +850,8 @@ struct SettingsView: View {
             contextsSection
         case .lists:
             listsSection
+        case .ai:
+            aiSection
         case .calendar:
             calendarSection
         }
@@ -734,6 +871,8 @@ struct SettingsView: View {
             return "Add, edit, archive, and drag to reorder contexts. Archived contexts are hidden from the sidebar but not deleted."
         case .lists:
             return "Completed and archived lists live here so you can restore, reopen, or permanently delete them."
+        case .ai:
+            return "Use your own OpenAI API key for note summaries and task extraction. Cadence stores the key in Keychain."
         case .calendar:
             return "Scheduled tasks sync to Apple Calendar when their area or project has a linked calendar."
         }
@@ -795,6 +934,22 @@ struct SettingsView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background((appleAccountManager.isSignedIn ? Theme.green : Theme.dim).opacity(0.12))
+        .clipShape(Capsule())
+    }
+
+    @ViewBuilder
+    private var aiBadge: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(aiSettingsManager.hasAPIKey ? Theme.green : Theme.dim)
+                .frame(width: 7, height: 7)
+            Text(aiSettingsManager.hasAPIKey ? "Key saved" : "No key")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(aiSettingsManager.hasAPIKey ? Theme.green : Theme.dim)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background((aiSettingsManager.hasAPIKey ? Theme.green : Theme.dim).opacity(0.12))
         .clipShape(Capsule())
     }
 

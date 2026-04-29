@@ -18,12 +18,14 @@ struct TimelineCreateRow: View {
             .frame(maxWidth: .infinity)
             .frame(height: metrics.hourHeight)
             .overlay(alignment: .top) {
-                Divider().background(Theme.borderSubtle.opacity(0.5))
+                Rectangle()
+                    .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.majorGridOpacity))
+                    .frame(height: 0.5)
             }
             .overlay(alignment: .top) {
                 if showHalfHourMark {
                     Rectangle()
-                        .fill(Theme.borderSubtle.opacity(0.18))
+                        .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.minorGridOpacity))
                         .frame(height: 0.5)
                         .offset(y: metrics.hourHeight / 2)
                         .allowsHitTesting(false)

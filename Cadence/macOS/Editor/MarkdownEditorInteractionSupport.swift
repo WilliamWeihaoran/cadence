@@ -402,7 +402,7 @@ final class CadenceTextView: NSTextView {
         var result: NSRange?
         textStorage.enumerateAttribute(.cadenceMarkdownImage, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, stop in
             guard let info = value as? MarkdownImageLayoutInfo, info.id == id else { return }
-            result = range
+            result = expandedMarkdownImageDeletionRange(from: range)
             stop.pointee = true
         }
         return result
@@ -414,7 +414,7 @@ final class CadenceTextView: NSTextView {
         textStorage.enumerateAttribute(.cadenceMarkdownImage, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, stop in
             guard value is MarkdownImageLayoutInfo,
                   NSIntersectionRange(range, selection).length > 0 else { return }
-            result = range
+            result = expandedMarkdownImageDeletionRange(from: range)
             stop.pointee = true
         }
         return result
@@ -426,9 +426,26 @@ final class CadenceTextView: NSTextView {
         var effectiveRange = NSRange(location: NSNotFound, length: 0)
         if textStorage.attribute(.cadenceMarkdownImage, at: clamped, effectiveRange: &effectiveRange) is MarkdownImageLayoutInfo,
            effectiveRange.location != NSNotFound {
-            return effectiveRange
+            return expandedMarkdownImageDeletionRange(from: effectiveRange)
         }
         return nil
+    }
+
+    private func expandedMarkdownImageDeletionRange(from range: NSRange) -> NSRange {
+        let nsText = string as NSString
+        var deletionRange = NSIntersectionRange(range, NSRange(location: 0, length: nsText.length))
+        guard deletionRange.length > 0 else { return deletionRange }
+
+        let after = NSMaxRange(deletionRange)
+        if after < nsText.length, nsText.substring(with: NSRange(location: after, length: 1)) == "\n" {
+            deletionRange.length += 1
+        } else if deletionRange.location > 0,
+                  nsText.substring(with: NSRange(location: deletionRange.location - 1, length: 1)) == "\n" {
+            deletionRange.location -= 1
+            deletionRange.length += 1
+        }
+
+        return deletionRange
     }
 
     private func deleteMarkdownImage(in rawRange: NSRange) {

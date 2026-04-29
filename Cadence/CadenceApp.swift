@@ -11,6 +11,7 @@ struct CadenceApp: App {
             macOSRootView()
                 .environment(ThemeManager.shared)
                 .environment(CalendarManager.shared)
+                .environment(AISettingsManager.shared)
                 .environment(AppleAccountManager.shared)
                 .environment(FocusManager.shared)
                 .environment(DeleteConfirmationManager.shared)

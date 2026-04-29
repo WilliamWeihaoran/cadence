@@ -18,10 +18,10 @@ struct TaskDetailNotesSection: View {
 
                 if task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("Add notes...")
-                        .font(.system(size: 12))
+                        .font(.system(size: 14))
                         .foregroundStyle(Theme.dim.opacity(0.6))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 16)
+                        .padding(.leading, MarkdownEditorMetrics.firstTextColumnInset)
+                        .padding(.top, MarkdownEditorMetrics.textInset)
                         .allowsHitTesting(false)
                 }
             }

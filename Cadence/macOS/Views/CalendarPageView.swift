@@ -53,7 +53,7 @@ struct CalendarPageView: View {
                 zoomLevel: $zoomLevel
             )
 
-            Divider().background(Theme.borderSubtle)
+            Divider().background(Theme.borderSubtle.opacity(CalendarVisualStyle.dividerOpacity))
 
             if viewMode == .month {
                 MonthGridView(

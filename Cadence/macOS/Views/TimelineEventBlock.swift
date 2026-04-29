@@ -241,21 +241,30 @@ struct TimelineEventBlock: View {
         .clipped()
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: style.cornerRadius).fill(Theme.bg)
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(item.calendarColor.opacity(isSelected ? 0.92 : 0.82))
+                    .fill(Theme.surfaceElevated)
+                RoundedRectangle(cornerRadius: style.cornerRadius)
+                    .fill(item.calendarColor.opacity(isSelected ? 0.52 : 0.36))
+                RoundedRectangle(cornerRadius: style.cornerRadius)
+                    .fill(.white.opacity(isSelected ? 0.05 : 0.025))
             }
         )
         .overlay(
             RoundedRectangle(cornerRadius: style.cornerRadius)
-                .stroke(.white.opacity(isSelected ? 0.25 : 0.08), lineWidth: 1)
+                .stroke(.white.opacity(isSelected ? 0.22 : 0.07), lineWidth: 1)
         )
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(.white.opacity(isSelected ? 0.95 : 0.35))
+                .fill(.white.opacity(isSelected ? 0.55 : 0.18))
                 .frame(height: isSelected ? 2 : 1)
-                .padding(.horizontal, 1)
+                .padding(.horizontal, 8)
         }
+        .shadow(
+            color: isSelected ? CalendarVisualStyle.selectedCardShadow : CalendarVisualStyle.cardShadow,
+            radius: isSelected ? 12 : 8,
+            x: 0,
+            y: isSelected ? 5 : 3
+        )
     }
 
     private var timeRangeLabel: String {
