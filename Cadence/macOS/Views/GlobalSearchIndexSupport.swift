@@ -13,7 +13,7 @@ enum GlobalSearchIndexSupport {
         areas: [Area],
         projects: [Project],
         tasks: [AppTask],
-        eventNotes: [EventNote],
+        notes: [Note],
         goals: [Goal],
         habits: [Habit],
         eventResults: [GlobalSearchResult]
@@ -26,7 +26,7 @@ enum GlobalSearchIndexSupport {
         appendSection(.projects, results: projectResults(projects: projects, query: query), into: &sections)
         appendSection(.tasks, results: taskResults(tasks: tasks, query: query), into: &sections)
         appendSection(.events, results: eventResults, into: &sections)
-        appendSection(.meetingNotes, results: eventNoteResults(eventNotes: eventNotes, query: query), into: &sections)
+        appendSection(.meetingNotes, results: eventNoteResults(notes: notes, query: query), into: &sections)
         appendSection(.goals, results: goalResults(goals: goals, query: query), into: &sections)
         appendSection(.habits, results: habitResults(habits: habits, query: query), into: &sections)
 
@@ -213,14 +213,14 @@ enum GlobalSearchIndexSupport {
         return rankedResults(mapped, query: query)
     }
 
-    static func eventNoteResults(eventNotes: [EventNote], query: String) -> [GlobalSearchResult] {
-        let sorted = eventNotes.sorted {
+    static func eventNoteResults(notes: [Note], query: String) -> [GlobalSearchResult] {
+        let sorted = notes.filter { $0.kind == .meeting }.sorted {
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
             return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
         }
 
         return Array(rankedResults(sorted.compactMap { note in
-            let title = note.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Event Note" : note.title
+            let title = note.displayTitle
             let dateLabel: String
             if let date = DateFormatters.date(from: note.eventDateKey) {
                 if note.eventStartMin >= 0, note.eventEndMin >= 0 {

@@ -26,7 +26,7 @@ final class NotesNavigationManager {
 }
 
 struct EventNoteEditorSheet: View {
-    @Bindable var note: EventNote
+    @Bindable var note: Note
     let eventTitle: String
     @Environment(\.dismiss) private var dismiss
 
@@ -70,8 +70,8 @@ struct EventNoteEditorSheet: View {
 }
 
 enum EventNoteSupport {
-    static func note(for calendarEventID: String, in notes: [EventNote]) -> EventNote? {
-        notes.first { $0.calendarEventID == calendarEventID }
+    static func note(for calendarEventID: String, in notes: [Note]) -> Note? {
+        notes.first { $0.kind == .meeting && $0.calendarEventID == calendarEventID }
     }
 
     @discardableResult
@@ -82,9 +82,9 @@ enum EventNoteSupport {
         eventDateKey: String = "",
         eventStartMin: Int = -1,
         eventEndMin: Int = -1,
-        notes: [EventNote],
-        insert: (EventNote) -> Void
-    ) -> EventNote? {
+        notes: [Note],
+        insert: (Note) -> Void
+    ) -> Note? {
         guard !calendarEventID.isEmpty else { return nil }
         if let existing = note(for: calendarEventID, in: notes) {
             if existing.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -100,9 +100,12 @@ enum EventNoteSupport {
             return existing
         }
 
-        let created = EventNote(
+        let resolvedTitle = eventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Event Note" : eventTitle
+        let created = Note(
+            kind: .meeting,
+            title: resolvedTitle,
+            content: "# \(resolvedTitle)\n\n",
             calendarEventID: calendarEventID,
-            eventTitle: eventTitle,
             calendarID: calendarID,
             eventDateKey: eventDateKey,
             eventStartMin: eventStartMin,
@@ -124,7 +127,8 @@ enum EventNoteSupport {
         )
     }
 
-    static func backfillMetadataIfPossible(_ note: EventNote, calendarManager: CalendarManager) {
+    static func backfillMetadataIfPossible(_ note: Note, calendarManager: CalendarManager) {
+        guard note.kind == .meeting else { return }
         guard let event = calendarManager.event(withIdentifier: note.calendarEventID) else { return }
         let metadata = eventDateMetadata(from: event)
         updateMetadata(
@@ -137,7 +141,7 @@ enum EventNoteSupport {
     }
 
     static func updateMetadata(
-        _ note: EventNote,
+        _ note: Note,
         calendarID: String,
         eventDateKey: String,
         eventStartMin: Int,

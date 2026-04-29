@@ -272,7 +272,7 @@ struct CalendarEventEditPopover: View {
     let onDelete: () -> Void
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \EventNote.updatedAt, order: .reverse) private var eventNotes: [EventNote]
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
 
     @State private var title: String
     @State private var startMin: Int
@@ -281,7 +281,7 @@ struct CalendarEventEditPopover: View {
     @State private var endText: String
     @State private var selectedCalendarID: String
     @State private var notes: String
-    @State private var presentedEventNote: EventNote?
+    @State private var presentedEventNote: Note?
 
     init(item: CalendarEventItem, onSave: @escaping (String, Int, Int, String, String) -> Void, onDelete: @escaping () -> Void) {
         self.item = item
@@ -299,7 +299,11 @@ struct CalendarEventEditPopover: View {
     }
 
     private var durationMinutes: Int { max(0, endMin - startMin) }
-    private var linkedEventNote: EventNote? {
+    private var eventNotes: [Note] {
+        allNotes.filter { $0.kind == .meeting }
+    }
+
+    private var linkedEventNote: Note? {
         EventNoteSupport.note(for: item.id, in: eventNotes)
     }
 
@@ -387,7 +391,7 @@ struct CalendarEventEditPopover: View {
                             .frame(width: 88, alignment: .leading)
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(linkedEventNote?.title.isEmpty == false ? linkedEventNote!.title : "No linked note yet")
+                            Text(linkedEventNote?.displayTitle ?? "No linked note yet")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(linkedEventNote == nil ? Theme.dim : Theme.text)
                                 .lineLimit(1)

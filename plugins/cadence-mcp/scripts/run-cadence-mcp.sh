@@ -31,6 +31,7 @@ if [[ "$needs_build" == true ]]; then
     -project "$ROOT_DIR/Cadence.xcodeproj" \
     -scheme CadenceMCPServer \
     -configuration Debug \
+    -destination 'platform=macOS' \
     -derivedDataPath "$DERIVED_DATA_PATH" \
     build >/dev/stderr
 fi

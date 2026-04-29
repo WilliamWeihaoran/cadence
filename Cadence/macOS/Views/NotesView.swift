@@ -67,13 +67,19 @@ struct NotesView: View {
 // MARK: - Daily Notes Page
 
 private struct DailyNotesPage: View {
-    @Query(sort: \DailyNote.date, order: .reverse) private var allNotes: [DailyNote]
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Environment(\.modelContext) private var modelContext
 
     @State private var selectedNoteID: UUID? = nil
 
-    private var selectedNote: DailyNote? {
-        allNotes.first { $0.id == selectedNoteID }
+    private var notes: [Note] {
+        allNotes
+            .filter { $0.kind == .daily }
+            .sorted { $0.dateKey > $1.dateKey }
+    }
+
+    private var selectedNote: Note? {
+        notes.first { $0.id == selectedNoteID }
     }
 
     var body: some View {
@@ -94,15 +100,15 @@ private struct DailyNotesPage: View {
 
                 ScrollView {
                     VStack(spacing: 2) {
-                        ForEach(allNotes) { note in
-                            NoteListRow(note: note, isSelected: selectedNoteID == note.id)
+                        ForEach(notes) { note in
+                            DailyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
                                 .onTapGesture { selectedNoteID = note.id }
                         }
                     }
                     .padding(8)
                 }
 
-                if allNotes.isEmpty {
+                if notes.isEmpty {
                     Spacer()
                     EmptyStateView(message: "No notes yet",
                                    subtitle: "Notes are created automatically each day",
@@ -115,7 +121,7 @@ private struct DailyNotesPage: View {
 
             // Right: editor
             if let note = selectedNote {
-                DailyNoteEditorPane(note: note)
+                NoteEditorPane(note: note)
             } else {
                 noteEditorPlaceholder
             }
@@ -135,12 +141,12 @@ private struct DailyNotesPage: View {
 
     private func loadOrCreateToday() {
         let key = DateFormatters.todayKey()
-        if let existing = allNotes.first(where: { $0.date == key }) {
+        if let existing = notes.first(where: { $0.dateKey == key }) {
             selectedNoteID = existing.id
         } else {
-            let note = DailyNote(date: key)
-            modelContext.insert(note)
-            selectedNoteID = note.id
+            if let note = try? NoteMigrationService.dailyNote(for: key, in: modelContext) {
+                selectedNoteID = note.id
+            }
         }
     }
 }
@@ -148,13 +154,19 @@ private struct DailyNotesPage: View {
 // MARK: - Weekly Notes Page
 
 private struct WeeklyNotesPage: View {
-    @Query(sort: \WeeklyNote.weekKey, order: .reverse) private var allNotes: [WeeklyNote]
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Environment(\.modelContext) private var modelContext
 
     @State private var selectedNoteID: UUID? = nil
 
-    private var selectedNote: WeeklyNote? {
-        allNotes.first { $0.id == selectedNoteID }
+    private var notes: [Note] {
+        allNotes
+            .filter { $0.kind == .weekly }
+            .sorted { $0.weekKey > $1.weekKey }
+    }
+
+    private var selectedNote: Note? {
+        notes.first { $0.id == selectedNoteID }
     }
 
     var body: some View {
@@ -175,7 +187,7 @@ private struct WeeklyNotesPage: View {
 
                 ScrollView {
                     VStack(spacing: 2) {
-                        ForEach(allNotes) { note in
+                        ForEach(notes) { note in
                             WeeklyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
                                 .onTapGesture { selectedNoteID = note.id }
                         }
@@ -183,7 +195,7 @@ private struct WeeklyNotesPage: View {
                     .padding(8)
                 }
 
-                if allNotes.isEmpty {
+                if notes.isEmpty {
                     Spacer()
                     EmptyStateView(message: "No weekly notes yet",
                                    subtitle: "Weekly notes are created automatically",
@@ -196,7 +208,7 @@ private struct WeeklyNotesPage: View {
 
             // Right: editor
             if let note = selectedNote {
-                WeeklyNoteEditorPane(note: note)
+                NoteEditorPane(note: note)
             } else {
                 ZStack {
                     Theme.bg
@@ -212,12 +224,12 @@ private struct WeeklyNotesPage: View {
 
     private func loadOrCreateThisWeek() {
         let key = DateFormatters.currentWeekKey()
-        if let existing = allNotes.first(where: { $0.weekKey == key }) {
+        if let existing = notes.first(where: { $0.weekKey == key }) {
             selectedNoteID = existing.id
         } else {
-            let note = WeeklyNote(weekKey: key)
-            modelContext.insert(note)
-            selectedNoteID = note.id
+            if let note = try? NoteMigrationService.weeklyNote(for: key, in: modelContext) {
+                selectedNoteID = note.id
+            }
         }
     }
 }
@@ -227,14 +239,18 @@ private struct WeeklyNotesPage: View {
 private struct MeetingNotesPage: View {
     @Binding var requestedNoteID: UUID?
 
-    @Query(sort: \EventNote.updatedAt, order: .reverse) private var allNotes: [EventNote]
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
 
     @State private var selectedNoteID: UUID?
 
-    private var selectedNote: EventNote? {
-        allNotes.first { $0.id == selectedNoteID }
+    private var notes: [Note] {
+        allNotes.filter { $0.kind == .meeting }
+    }
+
+    private var selectedNote: Note? {
+        notes.first { $0.id == selectedNoteID }
     }
 
     var body: some View {
@@ -254,7 +270,7 @@ private struct MeetingNotesPage: View {
 
                 ScrollView {
                     VStack(spacing: 2) {
-                        ForEach(allNotes) { note in
+                        ForEach(notes) { note in
                             MeetingNoteListRow(note: note, isSelected: selectedNoteID == note.id)
                                 .onTapGesture {
                                     selectedNoteID = note.id
@@ -265,7 +281,7 @@ private struct MeetingNotesPage: View {
                     .padding(8)
                 }
 
-                if allNotes.isEmpty {
+                if notes.isEmpty {
                     Spacer()
                     EmptyStateView(
                         message: "No meeting notes yet",
@@ -279,7 +295,7 @@ private struct MeetingNotesPage: View {
             .background(Theme.surface)
 
             if let note = selectedNote {
-                EventNoteInlineEditorPane(note: note)
+                NoteEditorPane(note: note)
             } else {
                 noteEditorPlaceholder
             }
@@ -288,18 +304,18 @@ private struct MeetingNotesPage: View {
             backfillMetadata()
             applyRequestedSelection()
             if selectedNoteID == nil {
-                selectedNoteID = allNotes.first?.id
+                selectedNoteID = notes.first?.id
             }
         }
         .onChange(of: requestedNoteID) { _, _ in
             applyRequestedSelection()
         }
-        .onChange(of: allNotes.map(\.id)) { _, _ in
+        .onChange(of: notes.map(\.id)) { _, _ in
             applyRequestedSelection()
-            if let selectedNoteID, allNotes.contains(where: { $0.id == selectedNoteID }) {
+            if let selectedNoteID, notes.contains(where: { $0.id == selectedNoteID }) {
                 return
             }
-            selectedNoteID = allNotes.first?.id
+            selectedNoteID = notes.first?.id
         }
     }
 
@@ -315,13 +331,13 @@ private struct MeetingNotesPage: View {
 
     private func applyRequestedSelection() {
         guard let requestedNoteID else { return }
-        guard allNotes.contains(where: { $0.id == requestedNoteID }) else { return }
+        guard notes.contains(where: { $0.id == requestedNoteID }) else { return }
         selectedNoteID = requestedNoteID
         self.requestedNoteID = nil
     }
 
     private func backfillMetadata() {
-        for note in allNotes where note.calendarID.isEmpty {
+        for note in notes where note.calendarID.isEmpty {
             EventNoteSupport.backfillMetadataIfPossible(note, calendarManager: calendarManager)
         }
         if modelContext.hasChanges {
@@ -332,19 +348,19 @@ private struct MeetingNotesPage: View {
 
 // MARK: - Daily Note List Row
 
-struct NoteListRow: View {
-    let note: DailyNote
+struct DailyNoteListRow: View {
+    let note: Note
     let isSelected: Bool
 
     private var formattedDate: String {
-        guard let date = DateFormatters.date(from: note.date) else { return note.date }
+        guard let date = DateFormatters.date(from: note.dateKey) else { return note.dateKey }
         return DateFormatters.longDate.string(from: date)
     }
     private var preview: String {
         note.content.components(separatedBy: "\n")
             .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? "Empty note"
     }
-    private var isToday: Bool { note.date == DateFormatters.todayKey() }
+    private var isToday: Bool { note.dateKey == DateFormatters.todayKey() }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -373,7 +389,7 @@ struct NoteListRow: View {
 // MARK: - Weekly Note List Row
 
 private struct WeeklyNoteListRow: View {
-    let note: WeeklyNote
+    let note: Note
     let isSelected: Bool
 
     private var isThisWeek: Bool { note.weekKey == DateFormatters.currentWeekKey() }
@@ -408,7 +424,7 @@ private struct WeeklyNoteListRow: View {
 }
 
 struct MeetingNoteListRow: View {
-    let note: EventNote
+    let note: Note
     let isSelected: Bool
 
     private var preview: String {
@@ -428,7 +444,7 @@ struct MeetingNoteListRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(note.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Event Note" : note.title)
+            Text(note.displayTitle)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
@@ -455,59 +471,10 @@ struct MeetingNoteListRow: View {
     }
 }
 
-// MARK: - Daily Note Editor Pane
+// MARK: - Note Editor Pane
 
-private struct DailyNoteEditorPane: View {
-    @Bindable var note: DailyNote
-
-    private var formattedDate: String {
-        guard let date = DateFormatters.date(from: note.date) else { return note.date }
-        return DateFormatters.longDate.string(from: date)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Daily".uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim).kerning(0.8)
-                Text(formattedDate)
-                    .font(.system(size: 18, weight: .bold)).foregroundStyle(Theme.text)
-            }
-            .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
-            Divider().background(Theme.borderSubtle)
-            MarkdownEditor(text: $note.content)
-                .onChange(of: note.content) { note.updatedAt = Date() }
-        }
-        .background(Theme.surface)
-    }
-}
-
-// MARK: - Weekly Note Editor Pane
-
-private struct WeeklyNoteEditorPane: View {
-    @Bindable var note: WeeklyNote
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Weekly".uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim).kerning(0.8)
-                Text(DateFormatters.weekLabel(from: note.weekKey))
-                    .font(.system(size: 18, weight: .bold)).foregroundStyle(Theme.text)
-            }
-            .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
-            Divider().background(Theme.borderSubtle)
-            MarkdownEditor(text: $note.content)
-                .onChange(of: note.content) { note.updatedAt = Date() }
-        }
-        .background(Theme.surface)
-    }
-}
-
-struct EventNoteInlineEditorPane: View {
-    @Bindable var note: EventNote
+struct NoteEditorPane: View {
+    @Bindable var note: Note
 
     private var titleBinding: Binding<String> {
         Binding(
@@ -529,16 +496,48 @@ struct EventNoteInlineEditorPane: View {
         )
     }
 
+    private var shouldEditTitle: Bool {
+        note.kind == .list || note.kind == .meeting
+    }
+
+    private var kindLabel: String {
+        switch note.kind {
+        case .daily: return "Daily"
+        case .weekly: return "Weekly"
+        case .permanent: return "Permanent"
+        case .list: return "Note"
+        case .meeting: return "Meeting"
+        }
+    }
+
+    private var headerTitle: String {
+        switch note.kind {
+        case .daily:
+            guard let date = DateFormatters.date(from: note.dateKey) else { return note.displayTitle }
+            return DateFormatters.longDate.string(from: date)
+        case .weekly:
+            return DateFormatters.weekLabel(from: note.weekKey)
+        default:
+            return note.displayTitle
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Meeting".uppercased())
+                Text(kindLabel.uppercased())
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.dim).kerning(0.8)
-                TextField("Event note title", text: titleBinding)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Theme.text)
+                if shouldEditTitle {
+                    TextField("Note title", text: titleBinding)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                } else {
+                    Text(headerTitle)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                }
             }
             .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
             Divider().background(Theme.borderSubtle)

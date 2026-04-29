@@ -9,7 +9,7 @@ enum GlobalSearchDataSupport {
         areas: [Area],
         projects: [Project],
         tasks: [AppTask],
-        eventNotes: [EventNote],
+        notes: [Note],
         goals: [Goal],
         habits: [Habit],
         eventResults: [GlobalSearchResult]
@@ -20,7 +20,7 @@ enum GlobalSearchDataSupport {
             areas: areas,
             projects: projects,
             tasks: tasks,
-            eventNotes: eventNotes,
+            notes: notes,
             goals: goals,
             habits: habits,
             eventResults: eventResults
@@ -59,8 +59,8 @@ enum GlobalSearchDataSupport {
         GlobalSearchIndexSupport.eventResults(from: events, query: query)
     }
 
-    static func eventNoteResults(eventNotes: [EventNote], query: String) -> [GlobalSearchResult] {
-        GlobalSearchIndexSupport.eventNoteResults(eventNotes: eventNotes, query: query)
+    static func eventNoteResults(notes: [Note], query: String) -> [GlobalSearchResult] {
+        GlobalSearchIndexSupport.eventNoteResults(notes: notes, query: query)
     }
 
     static func rankResults(_ results: [GlobalSearchResult], query: String) -> [GlobalSearchResult] {

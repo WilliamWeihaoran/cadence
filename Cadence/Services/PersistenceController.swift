@@ -11,6 +11,7 @@ struct PersistenceController {
     init() {
         if let c = try? PersistenceController.makeContainer() {
             container = c
+            NoteMigrationService.migrateAndRecordFailure(in: ModelContext(c), source: "app-startup")
             return
         }
         fatalError("Could not create ModelContainer. Refusing to delete existing Cadence data automatically.")

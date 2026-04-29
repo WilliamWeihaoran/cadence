@@ -95,7 +95,7 @@ enum CadenceMCPToolDefinitions {
         ]
     }
 
-    static func diagnostics(auditLogPath: String?) -> [String: String] {
+    static func diagnostics(auditLogPath: String?, noteMigrationReport: NoteMigrationReport? = NoteMigrationService.lastReport()) -> [String: String] {
         var payload = [
             "name": "cadence-mcp",
             "version": serverVersion,
@@ -104,6 +104,18 @@ enum CadenceMCPToolDefinitions {
         ]
         if let auditLogPath {
             payload["auditLogPath"] = auditLogPath
+        }
+        if let noteMigrationReport {
+            payload["noteMigrationSuccess"] = "\(noteMigrationReport.success)"
+            payload["noteMigrationSource"] = noteMigrationReport.source
+            payload["noteMigrationInserted"] = "\(noteMigrationReport.insertedTotal)"
+            payload["noteMigrationScanned"] = "\(noteMigrationReport.legacyScannedTotal)"
+            payload["noteMigrationExistingNotes"] = "\(noteMigrationReport.existingNoteCount)"
+            payload["noteMigrationCanonicalDuplicates"] = "\(noteMigrationReport.canonicalDuplicateCount)"
+            payload["noteMigrationSkippedCanonical"] = "\(noteMigrationReport.skippedCanonicalDuplicate)"
+            if let errorMessage = noteMigrationReport.errorMessage {
+                payload["noteMigrationError"] = errorMessage
+            }
         }
         return payload
     }

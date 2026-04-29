@@ -26,6 +26,7 @@ import Foundation
     @Relationship(inverse: \AppTask.area) var tasks: [AppTask]? = nil
     @Relationship(inverse: \Project.area) var projects: [Project]? = nil
     @Relationship(inverse: \Document.area) var documents: [Document]? = nil
+    @Relationship(inverse: \Note.area) var notes: [Note]? = nil
     @Relationship(inverse: \SavedLink.area) var links: [SavedLink]? = nil
 
     init(name: String, context: Context? = nil, colorHex: String = "#4a9eff", icon: String = "folder.fill") {

@@ -1,0 +1,4 @@
+module CNIODarwin {
+umbrella header "/Users/williamwei/Library/Developer/Xcode/DerivedData/Cadence-cfagpqwpaaoeixfvenakmzkidwtg/SourcePackages/checkouts/swift-nio/Sources/CNIODarwin/include/CNIODarwin.h"
+export *
+}

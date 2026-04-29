@@ -16,36 +16,35 @@ struct DocumentsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(CalendarManager.self) private var calendarManager
-    @State private var selectedDocID: UUID? = nil
+    @State private var selectedNoteID: UUID? = nil
     @State private var selectedEventNoteID: UUID? = nil
-    @Query(sort: \Document.order) private var allDocs: [Document]
+    @Query(sort: \Note.order) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @Query(sort: \EventNote.updatedAt, order: .reverse) private var allEventNotes: [EventNote]
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
 
-    private var docs: [Document] {
+    private var docs: [Note] {
         if let area {
-            return allDocs.filter { $0.area?.id == area.id }
+            return allNotes.filter { $0.kind == .list && $0.area?.id == area.id }
         } else if let project {
-            return allDocs.filter { $0.project?.id == project.id }
+            return allNotes.filter { $0.kind == .list && $0.project?.id == project.id }
         }
         return []
     }
 
-    private var selectedDoc: Document? {
-        docs.first { $0.id == selectedDocID }
+    private var selectedDoc: Note? {
+        docs.first { $0.id == selectedNoteID }
     }
 
     private var linkedCalendarID: String {
         area?.linkedCalendarID ?? project?.linkedCalendarID ?? ""
     }
 
-    private var meetingNotes: [EventNote] {
+    private var meetingNotes: [Note] {
         guard !linkedCalendarID.isEmpty else { return [] }
-        return allEventNotes.filter { $0.calendarID == linkedCalendarID }
+        return allNotes.filter { $0.kind == .meeting && $0.calendarID == linkedCalendarID }
     }
 
-    private var selectedEventNote: EventNote? {
+    private var selectedEventNote: Note? {
         meetingNotes.first { $0.id == selectedEventNoteID }
     }
 
@@ -111,7 +110,7 @@ struct DocumentsView: View {
                                     MeetingNoteListRow(note: note, isSelected: selectedEventNoteID == note.id)
                                         .onTapGesture {
                                             selectedEventNoteID = note.id
-                                            selectedDocID = nil
+                                            selectedNoteID = nil
                                             requestedEventNoteID = nil
                                         }
                                 }
@@ -128,9 +127,9 @@ struct DocumentsView: View {
                             }
 
                             ForEach(docs) { doc in
-                                DocRow(doc: doc, isSelected: selectedDocID == doc.id)
+                                DocRow(note: doc, isSelected: selectedNoteID == doc.id)
                                     .onTapGesture {
-                                        selectedDocID = doc.id
+                                        selectedNoteID = doc.id
                                         selectedEventNoteID = nil
                                     }
                                     .contextMenu {
@@ -161,17 +160,17 @@ struct DocumentsView: View {
 
             // Editor — .id(doc.id) ensures a fresh NSTextView (and undo stack) per document
             if let eventNote = selectedEventNote {
-                EventNoteInlineEditorPane(note: eventNote)
+                NoteEditorPane(note: eventNote)
             } else if let doc = selectedDoc {
                 VStack(spacing: 0) {
                     NoteReferenceStrip(
-                        doc: doc,
+                        note: doc,
                         docs: docs,
                         tasks: tasks,
-                        onOpenNote: { selectedDocID = $0.id }
+                        onOpenNote: { selectedNoteID = $0.id }
                     )
 
-                    DocumentMarkdownEditor(doc: doc)
+                    ListNoteMarkdownEditor(note: doc)
                         .id(doc.id)
                 }
             } else {
@@ -191,40 +190,40 @@ struct DocumentsView: View {
         .onAppear {
             backfillMeetingNoteMetadata()
             applyRequestedEventNoteSelection()
-            if selectedDocID == nil, selectedEventNoteID == nil {
+            if selectedNoteID == nil, selectedEventNoteID == nil {
                 selectedEventNoteID = meetingNotes.first?.id
                 if selectedEventNoteID == nil {
-                    selectedDocID = docs.first?.id
+                    selectedNoteID = docs.first?.id
                 }
             }
         }
         .onChange(of: requestedEventNoteID) { _, _ in
             applyRequestedEventNoteSelection()
         }
-        .onChange(of: allEventNotes.map(\.id)) { _, _ in
+        .onChange(of: allNotes.map(\.id)) { _, _ in
             backfillMeetingNoteMetadata()
             applyRequestedEventNoteSelection()
         }
     }
 
     private func addDocument() {
-        let doc = Document()
+        let doc = Note(kind: .list)
         doc.area = area
         doc.project = project
         doc.order = docs.count
         doc.content = defaultDocumentContent(for: doc.title)
         modelContext.insert(doc)
-        selectedDocID = doc.id
+        selectedNoteID = doc.id
         selectedEventNoteID = nil
     }
 
-    private func deleteDoc(_ doc: Document) {
+    private func deleteDoc(_ doc: Note) {
         deleteConfirmationManager.present(
             title: "Delete Note?",
-            message: "This will permanently delete \"\(doc.title.isEmpty ? "Untitled" : doc.title)\"."
+            message: "This will permanently delete \"\(doc.displayTitle)\"."
         ) {
-            if selectedDocID == doc.id {
-                selectedDocID = docs.first { $0.id != doc.id }?.id
+            if selectedNoteID == doc.id {
+                selectedNoteID = docs.first { $0.id != doc.id }?.id
             }
             modelContext.delete(doc)
         }
@@ -240,12 +239,12 @@ struct DocumentsView: View {
         guard let requestedEventNoteID else { return }
         guard meetingNotes.contains(where: { $0.id == requestedEventNoteID }) else { return }
         selectedEventNoteID = requestedEventNoteID
-        selectedDocID = nil
+        selectedNoteID = nil
         self.requestedEventNoteID = nil
     }
 
     private func backfillMeetingNoteMetadata() {
-        for note in allEventNotes where note.calendarID.isEmpty {
+        for note in allNotes where note.kind == .meeting && note.calendarID.isEmpty {
             EventNoteSupport.backfillMetadataIfPossible(note, calendarManager: calendarManager)
         }
         if modelContext.hasChanges {
@@ -258,7 +257,7 @@ struct DocumentsView: View {
 // MARK: - Doc Row
 
 private struct DocRow: View {
-    @Bindable var doc: Document
+    @Bindable var note: Note
     let isSelected: Bool
     @State private var isEditingTitle = false
     @FocusState private var focused: Bool
@@ -269,7 +268,7 @@ private struct DocRow: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
             if isEditingTitle {
-                TextField("", text: $doc.title)
+                TextField("", text: $note.title)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.text)
@@ -277,7 +276,7 @@ private struct DocRow: View {
                     .onSubmit { isEditingTitle = false }
                     .onExitCommand { isEditingTitle = false }
             } else {
-                Text(doc.title.isEmpty ? "Untitled" : doc.title)
+                Text(note.displayTitle)
                     .font(.system(size: 13))
                     .foregroundStyle(isSelected ? Theme.text : Theme.muted)
                     .lineLimit(1)
@@ -303,38 +302,38 @@ private struct DocRow: View {
 
 // MARK: - Markdown Editor
 
-private struct DocumentMarkdownEditor: View {
-    @Bindable var doc: Document
+private struct ListNoteMarkdownEditor: View {
+    @Bindable var note: Note
 
     var body: some View {
-        MarkdownEditor(text: $doc.content)
-            .onChange(of: doc.content) {
-                doc.updatedAt = Date()
+        MarkdownEditor(text: $note.content)
+            .onChange(of: note.content) {
+                note.updatedAt = Date()
                 syncTitleFromH1()
             }
     }
 
     private func syncTitleFromH1() {
-        // Extract the first H1 line ("# Title") and keep doc.title in sync with it
-        let firstLine = doc.content.prefix(while: { $0 != "\n" })
+        // Extract the first H1 line ("# Title") and keep note.title in sync with it
+        let firstLine = note.content.prefix(while: { $0 != "\n" })
         guard firstLine.hasPrefix("# ") else { return }
         let h1Text = String(firstLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-        guard !h1Text.isEmpty, h1Text != doc.title else { return }
-        doc.title = h1Text
+        guard !h1Text.isEmpty, h1Text != note.title else { return }
+        note.title = h1Text
     }
 }
 
 private struct NoteReferenceStrip: View {
-    let doc: Document
-    let docs: [Document]
+    let note: Note
+    let docs: [Note]
     let tasks: [AppTask]
-    let onOpenNote: (Document) -> Void
+    let onOpenNote: (Note) -> Void
 
-    private var linkedNotes: [Document] {
-        let titles = MarkdownReferenceParser.noteLinks(in: doc.content)
+    private var linkedNotes: [Note] {
+        let titles = MarkdownReferenceParser.noteLinks(in: note.content)
         return titles.compactMap { title in
             docs.first {
-                $0.id != doc.id &&
+                $0.id != note.id &&
                 $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
                     .caseInsensitiveCompare(title) == .orderedSame
             }
@@ -342,7 +341,7 @@ private struct NoteReferenceStrip: View {
     }
 
     private var linkedTasks: [AppTask] {
-        let titles = MarkdownReferenceParser.taskReferences(in: doc.content)
+        let titles = MarkdownReferenceParser.taskReferences(in: note.content)
         return titles.compactMap { title in
             tasks.first {
                 $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -351,11 +350,11 @@ private struct NoteReferenceStrip: View {
         }
     }
 
-    private var backlinks: [Document] {
-        let currentTitle = doc.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var backlinks: [Note] {
+        let currentTitle = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !currentTitle.isEmpty else { return [] }
         return docs.filter { other in
-            other.id != doc.id &&
+            other.id != note.id &&
             MarkdownReferenceParser.noteLinks(in: other.content).contains {
                 $0.caseInsensitiveCompare(currentTitle) == .orderedSame
             }
@@ -373,7 +372,7 @@ private struct NoteReferenceStrip: View {
                             Button {
                                 onOpenNote(linked)
                             } label: {
-                                ReferenceChip(icon: "doc.text", title: linked.title.isEmpty ? "Untitled" : linked.title, tint: Theme.blue)
+                                ReferenceChip(icon: "doc.text", title: linked.displayTitle, tint: Theme.blue)
                             }
                             .buttonStyle(.cadencePlain)
                         }
@@ -394,7 +393,7 @@ private struct NoteReferenceStrip: View {
                             Button {
                                 onOpenNote(backlink)
                             } label: {
-                                ReferenceChip(icon: "arrow.uturn.backward.circle", title: backlink.title.isEmpty ? "Untitled" : backlink.title, tint: Theme.amber)
+                                ReferenceChip(icon: "arrow.uturn.backward.circle", title: backlink.displayTitle, tint: Theme.amber)
                             }
                             .buttonStyle(.cadencePlain)
                         }

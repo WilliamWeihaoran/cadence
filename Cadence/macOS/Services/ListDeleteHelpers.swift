@@ -23,6 +23,11 @@ extension ModelContext {
             areas.flatMap { Array($0.documents ?? []) } +
             projects.flatMap { Array($0.documents ?? []) }
         )
+        let notes = uniqueNotes(from:
+            areas.flatMap { Array($0.notes ?? []) } +
+            projects.flatMap { Array($0.notes ?? []) }
+        )
+        .filter { $0.kind == .list }
         let links = uniqueLinks(from:
             areas.flatMap { Array($0.links ?? []) } +
             projects.flatMap { Array($0.links ?? []) }
@@ -32,6 +37,7 @@ extension ModelContext {
         delete(subtasks)
         delete(tasks)
         delete(documents)
+        delete(notes)
         delete(links)
         delete(completions)
         delete(goals)
@@ -46,6 +52,7 @@ extension ModelContext {
         delete(uniqueSubtasks(from: tasks.flatMap { Array($0.subtasks ?? []) }))
         delete(uniqueTasks(from: tasks))
         delete(uniqueDocuments(from: Array(project.documents ?? [])))
+        delete(uniqueNotes(from: Array(project.notes ?? [])).filter { $0.kind == .list })
         delete(uniqueLinks(from: Array(project.links ?? [])))
         delete(project)
     }
@@ -59,6 +66,7 @@ extension ModelContext {
             deleteProject(project)
         }
         delete(uniqueDocuments(from: Array(area.documents ?? [])))
+        delete(uniqueNotes(from: Array(area.notes ?? [])).filter { $0.kind == .list })
         delete(uniqueLinks(from: Array(area.links ?? [])))
         delete(area)
     }
@@ -83,6 +91,10 @@ extension ModelContext {
 
     private func uniqueDocuments(from documents: [Document]) -> [Document] {
         dedupe(documents, by: \Document.id)
+    }
+
+    private func uniqueNotes(from notes: [Note]) -> [Note] {
+        dedupe(notes, by: \Note.id)
     }
 
     private func uniqueLinks(from links: [SavedLink]) -> [SavedLink] {

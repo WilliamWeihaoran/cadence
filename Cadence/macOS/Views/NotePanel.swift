@@ -14,9 +14,9 @@ struct NotePanel: View {
     }
 
     @State private var activeTab: NoteTab = .today
-    @State private var todayNote:  DailyNote?
-    @State private var weekNote:   WeeklyNote?
-    @State private var permNote:   PermNote?
+    @State private var todayNote:  Note?
+    @State private var weekNote:   Note?
+    @State private var permNote:   Note?
     @State private var notesContext: ModelContext?
 
     var body: some View {
@@ -94,33 +94,9 @@ struct NotePanel: View {
         let context = notesContext ?? makeNotesContext()
         notesContext = context
 
-        let todayKey = DateFormatters.todayKey()
-        if let existing = fetchDailyNote(date: todayKey, in: context) {
-            todayNote = existing
-        } else {
-            let note = DailyNote(date: todayKey)
-            context.insert(note)
-            todayNote = note
-        }
-
-        let wKey = DateFormatters.currentWeekKey()
-        if let existing = fetchWeeklyNote(weekKey: wKey, in: context) {
-            weekNote = existing
-        } else {
-            let note = WeeklyNote(weekKey: wKey)
-            context.insert(note)
-            weekNote = note
-        }
-
-        if let existing = fetchPermanentNote(in: context) {
-            permNote = existing
-        } else {
-            let note = PermNote()
-            context.insert(note)
-            permNote = note
-        }
-
-        try? context.save()
+        todayNote = try? NoteMigrationService.dailyNote(for: DateFormatters.todayKey(), in: context)
+        weekNote = try? NoteMigrationService.weeklyNote(for: DateFormatters.currentWeekKey(), in: context)
+        permNote = try? NoteMigrationService.permanentNote(in: context)
     }
 
     private func refreshFromStore() {
@@ -139,44 +115,10 @@ struct NotePanel: View {
         ModelContext(modelContext.container)
     }
 
-    private func update(note: DailyNote, content: String) {
+    private func update(note: Note, content: String) {
         note.content = content
         note.updatedAt = Date()
         try? notesContext?.save()
-    }
-
-    private func update(note: WeeklyNote, content: String) {
-        note.content = content
-        note.updatedAt = Date()
-        try? notesContext?.save()
-    }
-
-    private func update(note: PermNote, content: String) {
-        note.content = content
-        note.updatedAt = Date()
-        try? notesContext?.save()
-    }
-
-    private func fetchDailyNote(date: String, in context: ModelContext) -> DailyNote? {
-        var descriptor = FetchDescriptor<DailyNote>(
-            predicate: #Predicate { $0.date == date }
-        )
-        descriptor.fetchLimit = 1
-        return try? context.fetch(descriptor).first
-    }
-
-    private func fetchWeeklyNote(weekKey: String, in context: ModelContext) -> WeeklyNote? {
-        var descriptor = FetchDescriptor<WeeklyNote>(
-            predicate: #Predicate { $0.weekKey == weekKey }
-        )
-        descriptor.fetchLimit = 1
-        return try? context.fetch(descriptor).first
-    }
-
-    private func fetchPermanentNote(in context: ModelContext) -> PermNote? {
-        var descriptor = FetchDescriptor<PermNote>()
-        descriptor.fetchLimit = 1
-        return try? context.fetch(descriptor).first
     }
 }
 

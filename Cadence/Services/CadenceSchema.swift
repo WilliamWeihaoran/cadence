@@ -11,6 +11,7 @@ enum CadenceSchema {
         WeeklyNote.self,
         PermNote.self,
         Document.self,
+        Note.self,
         SavedLink.self,
         EventNote.self,
         MarkdownImageAsset.self,

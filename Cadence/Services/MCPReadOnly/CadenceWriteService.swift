@@ -101,6 +101,7 @@ final class CadenceWriteService {
 
     init(container: ModelContainer, notifiesExternalWrites: Bool = false, auditLogger: CadenceMCPAuditLogger? = nil) {
         let context = ModelContext(container)
+        NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-write-service")
         self.context = context
         self.readService = CadenceReadService(context: context)
         self.notifiesExternalWrites = notifiesExternalWrites
@@ -108,6 +109,7 @@ final class CadenceWriteService {
     }
 
     init(context: ModelContext, notifiesExternalWrites: Bool = false, auditLogger: CadenceMCPAuditLogger? = nil) {
+        NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-write-service-context")
         self.context = context
         self.readService = CadenceReadService(context: context)
         self.notifiesExternalWrites = notifiesExternalWrites
@@ -361,37 +363,25 @@ final class CadenceWriteService {
 
         switch normalizedKind {
         case "daily":
-            let note: DailyNote
-            if let existing = try fetchDailyNotes().first(where: { $0.date == resolvedDateKey }) {
-                note = existing
-            } else {
-                note = DailyNote(date: resolvedDateKey)
-                context.insert(note)
-            }
-            append(text, separator: separator, to: &note.content)
+            let note = try NoteMigrationService.dailyNote(for: resolvedDateKey, in: context)
+            var content = note.content
+            append(text, separator: separator, to: &content)
+            note.content = content
             note.updatedAt = now
             auditEntry = .coreNote(id: note.id, summary: "Appended daily core note: \(resolvedDateKey)")
         case "weekly":
             let resolvedWeekKey = try weekKey(for: resolvedDateKey)
-            let note: WeeklyNote
-            if let existing = try fetchWeeklyNotes().first(where: { $0.weekKey == resolvedWeekKey }) {
-                note = existing
-            } else {
-                note = WeeklyNote(weekKey: resolvedWeekKey)
-                context.insert(note)
-            }
-            append(text, separator: separator, to: &note.content)
+            let note = try NoteMigrationService.weeklyNote(for: resolvedWeekKey, in: context)
+            var content = note.content
+            append(text, separator: separator, to: &content)
+            note.content = content
             note.updatedAt = now
             auditEntry = .coreNote(id: note.id, summary: "Appended weekly core note: \(resolvedWeekKey)")
         case "permanent":
-            let note: PermNote
-            if let existing = try fetchPermNotes().first {
-                note = existing
-            } else {
-                note = PermNote()
-                context.insert(note)
-            }
-            append(text, separator: separator, to: &note.content)
+            let note = try NoteMigrationService.permanentNote(in: context)
+            var content = note.content
+            append(text, separator: separator, to: &content)
+            note.content = content
             note.updatedAt = now
             auditEntry = .coreNote(id: note.id, summary: "Appended permanent core note")
         default:
@@ -449,18 +439,6 @@ final class CadenceWriteService {
 
     private func fetchProjects() throws -> [Project] {
         try context.fetch(FetchDescriptor<Project>())
-    }
-
-    private func fetchDailyNotes() throws -> [DailyNote] {
-        try context.fetch(FetchDescriptor<DailyNote>())
-    }
-
-    private func fetchWeeklyNotes() throws -> [WeeklyNote] {
-        try context.fetch(FetchDescriptor<WeeklyNote>())
-    }
-
-    private func fetchPermNotes() throws -> [PermNote] {
-        try context.fetch(FetchDescriptor<PermNote>())
     }
 
     private func normalizedRequiredText(_ value: String, emptyError: Error) throws -> String {

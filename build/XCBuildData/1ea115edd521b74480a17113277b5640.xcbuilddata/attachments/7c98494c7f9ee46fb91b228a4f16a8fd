@@ -1,0 +1,319 @@
+{
+  "" : {
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPServer-primary.dia",
+    "emit-module-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPServer-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPServer-primary-emit-module.dia",
+    "pch" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPServer-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPServer-primary.swiftdeps"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/AppTask.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/AppTask.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/AppTask.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/AppTask.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/AppTask.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/AppTask.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/AppTask.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/AppTask.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/AppTask~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/Area.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Area.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Area.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Area.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Area.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Area.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Area.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Area.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Area~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/Context.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Context.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Context.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Context.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Context.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Context.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Context.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Context.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Context~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/DailyNote.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DailyNote.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DailyNote.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DailyNote.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DailyNote.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DailyNote.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DailyNote.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DailyNote.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DailyNote~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/Document.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Document.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Document.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Document.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Document.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Document.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Document.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Document.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Document~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/EventNote.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/EventNote.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/EventNote.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/EventNote.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/EventNote.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/EventNote.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/EventNote.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/EventNote.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/EventNote~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/Goal.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Goal.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Goal.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Goal.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Goal.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Goal.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Goal.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Goal.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Goal~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/Habit.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Habit.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Habit.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Habit.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Habit.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Habit.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Habit.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Habit.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Habit~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/HabitCompletion.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/HabitCompletion.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/HabitCompletion.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/HabitCompletion.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/HabitCompletion.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/HabitCompletion.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/HabitCompletion.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/HabitCompletion.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/HabitCompletion~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/MarkdownImageAsset.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/MarkdownImageAsset.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/MarkdownImageAsset.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/MarkdownImageAsset.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/MarkdownImageAsset.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/MarkdownImageAsset.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/MarkdownImageAsset.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/MarkdownImageAsset.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/MarkdownImageAsset~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/ModelEnums.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/ModelEnums.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/ModelEnums.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/ModelEnums.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/ModelEnums.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/ModelEnums.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/ModelEnums.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/ModelEnums.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/ModelEnums~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/Note.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Note.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Note.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Note.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Note.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Note.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Note.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Note.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Note~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/PermNote.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/PermNote.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/PermNote.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/PermNote.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/PermNote.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/PermNote.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/PermNote.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/PermNote.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/PermNote~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/Project.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Project.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Project.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Project.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Project.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Project.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Project.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Project.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Project~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/SavedLink.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/SavedLink.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/SavedLink.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/SavedLink.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/SavedLink.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/SavedLink.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/SavedLink.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/SavedLink.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/SavedLink~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/Subtask.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Subtask.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Subtask.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Subtask.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Subtask.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Subtask.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Subtask.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Subtask.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/Subtask~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Models/WeeklyNote.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/WeeklyNote.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/WeeklyNote.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/WeeklyNote.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/WeeklyNote.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/WeeklyNote.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/WeeklyNote.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/WeeklyNote.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/WeeklyNote~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Services/CadenceSchema.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSchema.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSchema.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSchema.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSchema.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSchema.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSchema.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSchema.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSchema~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Services/MCPReadOnly/CadenceMCPAuditLog.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPAuditLog.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPAuditLog.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPAuditLog.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPAuditLog.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPAuditLog.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPAuditLog.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPAuditLog.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPAuditLog~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Services/MCPReadOnly/CadenceMCPServiceSupport.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPServiceSupport.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPServiceSupport.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPServiceSupport.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPServiceSupport.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPServiceSupport.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPServiceSupport.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPServiceSupport.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPServiceSupport~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceModelContainerFactory.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceModelContainerFactory.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceModelContainerFactory.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceModelContainerFactory.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceModelContainerFactory.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceModelContainerFactory.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceModelContainerFactory.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceModelContainerFactory~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadDTOs.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadDTOs.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadDTOs.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadDTOs.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadDTOs.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadDTOs.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadDTOs.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadDTOs~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Services/MCPReadOnly/CadenceReadService.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadService.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadService.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadService.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadService.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadService.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadService.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadService.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceReadService~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSearchMatcher.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSearchMatcher.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSearchMatcher.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSearchMatcher.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSearchMatcher.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSearchMatcher.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSearchMatcher.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceSearchMatcher~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Services/MCPReadOnly/CadenceWriteService.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceWriteService.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceWriteService.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceWriteService.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceWriteService.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceWriteService.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceWriteService.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceWriteService.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceWriteService~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Services/NoteMigrationService.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/NoteMigrationService.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/NoteMigrationService.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/NoteMigrationService.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/NoteMigrationService.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/NoteMigrationService.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/NoteMigrationService.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/NoteMigrationService.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/NoteMigrationService~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/Cadence/Shared/DateFormatters.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DateFormatters.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DateFormatters.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DateFormatters.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DateFormatters.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DateFormatters.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DateFormatters.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DateFormatters.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/DateFormatters~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/CadenceMCPServer/CadenceMCPArgumentParsing.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPArgumentParsing.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPArgumentParsing.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPArgumentParsing.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPArgumentParsing.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPArgumentParsing.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPArgumentParsing.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPArgumentParsing.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPArgumentParsing~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/CadenceMCPServer/CadenceMCPToolDefinitions.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolDefinitions.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolDefinitions.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolDefinitions.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolDefinitions.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolDefinitions.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolDefinitions.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolDefinitions.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolDefinitions~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/CadenceMCPServer/CadenceMCPToolRouter.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolRouter.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolRouter.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolRouter.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolRouter.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolRouter.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolRouter.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolRouter.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/CadenceMCPToolRouter~partial.swiftmodule"
+  },
+  "/Users/williamwei/Desktop/Projects/Cadence/CadenceMCPServer/main.swift" : {
+    "const-values" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/main.swiftconstvalues",
+    "dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/main.d",
+    "diagnostics" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/main.dia",
+    "index-unit-output-path" : "/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/main.o",
+    "llvm-bc" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/main.bc",
+    "object" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/main.o",
+    "swift-dependencies" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/main.swiftdeps",
+    "swiftmodule" : "/Users/williamwei/Desktop/Projects/Cadence/build/Cadence.build/Debug/CadenceMCPServer.build/Objects-normal/x86_64/main~partial.swiftmodule"
+  }
+}
