@@ -87,4 +87,43 @@ struct GoalContributionResolverTests {
         #expect(goalOnlyTask.containerName == "")
         #expect(goalOnlyTask.containerColor == "#6b7a99")
     }
+
+    @Test func habitMomentumSummarizesLinkedHabitsWithoutChangingProgress() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let goal = Goal(title: "Health")
+        let daily = Habit(title: "Walk", goal: goal)
+        daily.frequencyType = .daily
+        let weekly = Habit(title: "Lift", goal: goal)
+        weekly.frequencyType = .daysOfWeek
+        weekly.frequencyDays = [2, 4]
+        let unrelated = Habit(title: "Read")
+        unrelated.frequencyType = .daily
+
+        let today = HabitCompletion(date: "2026-04-30", habit: daily)
+        let yesterday = HabitCompletion(date: "2026-04-29", habit: weekly)
+        let unrelatedToday = HabitCompletion(date: "2026-04-30", habit: unrelated)
+
+        modelContext.insert(goal)
+        modelContext.insert(daily)
+        modelContext.insert(weekly)
+        modelContext.insert(unrelated)
+        modelContext.insert(today)
+        modelContext.insert(yesterday)
+        modelContext.insert(unrelatedToday)
+        try modelContext.save()
+
+        let summary = GoalHabitMomentumResolver.summary(
+            for: goal,
+            now: DateFormatters.date(from: "2026-04-30") ?? Date()
+        )
+
+        #expect(summary.linkedHabitCount == 2)
+        #expect(summary.dueTodayCount == 2)
+        #expect(summary.doneTodayCount == 1)
+        #expect(summary.thisWeekCount == 2)
+        #expect(summary.last7DayCount == 2)
+        #expect(goal.progress == 0)
+    }
 }

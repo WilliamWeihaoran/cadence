@@ -197,6 +197,10 @@ struct GoalInspectorView: View {
         GoalContributionResolver.summary(for: goal)
     }
 
+    private var habitMomentum: GoalHabitMomentumSummary {
+        GoalHabitMomentumResolver.summary(for: goal)
+    }
+
     private var directTasks: [AppTask] {
         (goal.tasks ?? [])
             .filter { !$0.isCancelled }
@@ -263,6 +267,7 @@ struct GoalInspectorView: View {
             GoalSignalTile(title: "Deadline", value: goal.daysSummary, icon: "flag.fill", color: goal.isOverdue ? Theme.red : Theme.amber)
             GoalSignalTile(title: "Focus", value: summary.focusLabel, icon: "clock.fill", color: Theme.blue)
             GoalSignalTile(title: "Momentum", value: "\(summary.recentCompletedCount) done", icon: "sparkline", color: Theme.green)
+            GoalSignalTile(title: "Habit Momentum", value: habitMomentum.linkedHabitCount == 0 ? "No habits" : habitMomentum.dueTodayLabel, icon: "flame.fill", color: habitMomentum.doneTodayCount >= habitMomentum.dueTodayCount && habitMomentum.dueTodayCount > 0 ? Theme.green : Theme.amber)
             GoalSignalTile(title: "Overdue", value: "\(summary.overdueTaskCount)", icon: "exclamationmark.triangle.fill", color: summary.overdueTaskCount > 0 ? Theme.red : Theme.dim)
         }
     }

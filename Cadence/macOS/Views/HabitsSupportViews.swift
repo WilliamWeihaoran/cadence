@@ -30,6 +30,126 @@ enum HabitListFilter: CaseIterable {
     }
 }
 
+struct HabitGoalGroup: Identifiable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let icon: String
+    let colorHex: String
+    let habits: [Habit]
+}
+
+struct HabitTodayCockpit: View {
+    let dueCount: Int
+    let doneCount: Int
+    let openCount: Int
+    let goalCoverage: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("Today")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Theme.dim)
+            Text("\(doneCount)/\(dueCount)")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Theme.text)
+            Text(openCount == 0 ? "done" : "\(openCount) open")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(openCount == 0 ? Theme.green : Theme.amber)
+            Spacer()
+            Label(goalCoverage, systemImage: "target")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.blue)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Theme.surfaceElevated.opacity(0.65))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+    }
+}
+
+struct HabitSignalStrip: View {
+    let streakingCount: Int
+    let averageLast30Completion: Int
+    let linkedCount: Int
+    let totalCount: Int
+
+    var body: some View {
+        HStack(spacing: 10) {
+            HabitInlineMetric(icon: "flame.fill", value: "\(streakingCount)", label: "streaking", color: Theme.amber)
+            HabitInlineMetric(icon: "chart.bar.fill", value: "\(averageLast30Completion)%", label: "30d avg", color: Theme.blue)
+            HabitInlineMetric(icon: "target", value: "\(linkedCount)/\(totalCount)", label: "linked", color: Theme.green)
+        }
+    }
+}
+
+struct HabitInlineMetric: View {
+    let icon: String
+    let value: String
+    let label: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(color)
+            Text(value)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.text)
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.bg.opacity(0.34))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+    }
+}
+
+struct HabitGoalSectionView: View {
+    let group: HabitGoalGroup
+    let todayKey: String
+    let selectedHabitID: UUID?
+    let onSelect: (Habit) -> Void
+    let onToggle: (Habit) -> Void
+
+    private var doneCount: Int {
+        group.habits.filter { $0.isDone(on: todayKey) }.count
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 9) {
+                Text(group.title.uppercased())
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.dim)
+                Spacer()
+                Text("\(doneCount)/\(group.habits.count)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color(hex: group.colorHex))
+            }
+
+            VStack(spacing: 9) {
+                ForEach(group.habits) { habit in
+                    HabitListCard(
+                        habit: habit,
+                        todayKey: todayKey,
+                        isSelected: selectedHabitID == habit.id,
+                        onSelect: { onSelect(habit) },
+                        onToggle: { onToggle(habit) }
+                    )
+                }
+            }
+        }
+    }
+}
+
 struct HabitListCard: View {
     let habit: Habit
     let todayKey: String
@@ -43,22 +163,26 @@ struct HabitListCard: View {
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(hex: habit.colorHex).opacity(0.16))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: habit.icon)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color(hex: habit.colorHex))
-                }
+            HStack(spacing: 12) {
+                HabitIconTile(habit: habit, size: 34, iconSize: 15)
 
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 8) {
                         Text(habit.title)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(Theme.text)
                             .lineLimit(1)
+
+                        if let goal = habit.goal {
+                            Text(goal.title)
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Color(hex: goal.colorHex))
+                                .lineLimit(1)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color(hex: goal.colorHex).opacity(0.13))
+                                .clipShape(Capsule())
+                        }
 
                         if let ctx = habit.context {
                             Text(ctx.name)
@@ -72,45 +196,60 @@ struct HabitListCard: View {
                     }
 
                     HStack(spacing: 10) {
-                        Label(habit.frequencySummary, systemImage: "repeat")
+                        Text(habit.frequencySummary)
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.dim)
 
-                        Label("\(habit.currentStreak)d", systemImage: "flame.fill")
+                        Text(habit.currentStreak > 0 ? "\(habit.currentStreak)d streak" : "no streak")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Theme.amber)
 
                         if habit.isDueToday {
                             Text(isDoneToday ? "Done today" : "Due today")
                                 .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(isDoneToday ? Theme.green : Theme.blue)
+                            .foregroundStyle(isDoneToday ? Theme.green : Theme.blue)
                         }
                     }
-
-                    HabitRecentStrip(habit: habit)
                 }
 
                 Spacer(minLength: 8)
 
                 Button(action: onToggle) {
                     Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 22))
-                        .foregroundStyle(isDoneToday ? Color(hex: habit.colorHex) : Theme.borderSubtle)
+                        .font(.system(size: 24))
+                        .foregroundStyle(isDoneToday ? Color(hex: habit.colorHex) : Theme.dim.opacity(0.55))
                 }
                 .buttonStyle(.cadencePlain)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 13)
+            .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 14)
                     .fill(isSelected ? Theme.surfaceElevated : Theme.surface)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14)
-                    .stroke(isSelected ? Theme.blue.opacity(0.55) : Theme.borderSubtle, lineWidth: 1)
+                    .stroke(isSelected ? Color(hex: habit.goal?.colorHex ?? habit.colorHex).opacity(0.75) : Theme.borderSubtle, lineWidth: isSelected ? 1.5 : 1)
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+struct HabitIconTile: View {
+    let habit: Habit
+    var size: CGFloat
+    var iconSize: CGFloat
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: min(12, size * 0.28))
+                .fill(Color(hex: habit.colorHex).opacity(0.16))
+                .frame(width: size, height: size)
+            Image(systemName: habit.icon)
+                .font(.system(size: iconSize, weight: .semibold))
+                .foregroundStyle(Color(hex: habit.colorHex))
+        }
     }
 }
 
@@ -129,95 +268,25 @@ struct HabitDetailView: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack(alignment: .top, spacing: 18) {
-                    HStack(spacing: 14) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color(hex: habit.colorHex).opacity(0.18))
-                                .frame(width: 62, height: 62)
-                            Image(systemName: habit.icon)
-                                .font(.system(size: 26, weight: .semibold))
-                                .foregroundStyle(Color(hex: habit.colorHex))
-                        }
+            VStack(alignment: .leading, spacing: 16) {
+                habitHero
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 10) {
-                                Text(habit.title)
-                                    .font(.system(size: 28, weight: .bold))
-                                    .foregroundStyle(Theme.text)
-
-                                if let ctx = habit.context {
-                                    Text(ctx.name)
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(Color(hex: ctx.colorHex))
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Color(hex: ctx.colorHex).opacity(0.14))
-                                        .clipShape(Capsule())
-                                }
-                            }
-
-                            Text(habit.frequencySummary)
-                                .font(.system(size: 13))
-                                .foregroundStyle(Theme.muted)
-
-                            HStack(spacing: 8) {
-                                DetailMetaChip(label: habit.isDueToday ? "Due today" : "Not due today", color: habit.isDueToday ? Theme.blue : Theme.dim.opacity(0.8))
-                                DetailMetaChip(label: isDoneToday ? "Checked in" : "Pending", color: isDoneToday ? Theme.green : Theme.amber)
-                            }
-                        }
-                    }
-
-                    Spacer(minLength: 16)
-
-                    Button(action: onToggle) {
-                        HStack(spacing: 8) {
-                            Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
-                            Text(isDoneToday ? "Undo Today" : "Check In Today")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(isDoneToday ? Theme.green : Color(hex: habit.colorHex))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.cadencePlain)
-                }
-
-                HabitInfoCard(title: "Today") {
-                    HStack(spacing: 14) {
-                        HabitTodayPlanPill(
-                            title: habit.isDueToday ? "Due Today" : "Off Today",
-                            detail: habit.frequencyShortLabel,
-                            tint: habit.isDueToday ? Theme.blue : Theme.dim.opacity(0.9)
-                        )
-                        HabitTodayPlanPill(
-                            title: isDoneToday ? "Checked In" : "Still Open",
-                            detail: isDoneToday ? "Nice work" : "Ready when you are",
-                            tint: isDoneToday ? Theme.green : Theme.amber
-                        )
-                        HabitTodayPlanPill(
-                            title: "Last 7 Days",
-                            detail: "\(habit.last7DayCount) completions",
-                            tint: Color(hex: habit.colorHex)
-                        )
-                    }
+                HabitInfoCard(title: "Goal") {
+                    HabitGoalSupportCard(habit: habit)
                 }
 
                 HStack(spacing: 12) {
                     HabitDetailStatCard(
                         title: "Current Streak",
                         value: "\(habit.currentStreak)",
-                        subtitle: "days in a row",
+                        subtitle: "now",
                         color: Theme.amber,
                         icon: "flame.fill"
                     )
                     HabitDetailStatCard(
                         title: "Best Streak",
                         value: "\(habit.bestStreak)",
-                        subtitle: "best run so far",
+                        subtitle: "best run",
                         color: Theme.purple,
                         icon: "trophy.fill"
                     )
@@ -237,45 +306,109 @@ struct HabitDetailView: View {
                     )
                 }
 
-                HStack(alignment: .top, spacing: 16) {
-                    HabitInfoCard(title: "Recent Activity") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(habit.recentCompletionLabels, id: \.self) { label in
-                                HStack(spacing: 8) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Color(hex: habit.colorHex))
-                                    Text(label)
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Theme.text)
-                                    Spacer()
-                                }
-                            }
-
-                            if habit.recentCompletionLabels.isEmpty {
-                                Text("No recent check-ins yet.")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Theme.dim)
-                            }
-                        }
-                    }
-
-                    HabitInfoCard(title: "Cadence") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HabitMiniProgress(label: "This week", value: "\(habit.thisWeekCount)", detail: habit.thisWeekSummary, tint: Color(hex: habit.colorHex))
-                            HabitMiniProgress(label: "Last 7 days", value: "\(habit.last7DayCount)", detail: habit.last7DaySummary, tint: Theme.blue)
-                            HabitMiniProgress(label: "Expected rhythm", value: habit.frequencyShortLabel, detail: habit.frequencySummary, tint: Theme.amber)
-                        }
-                    }
-                }
-
-                HabitInfoCard(title: "Activity Heatmap") {
+                HabitInfoCard(title: "Activity") {
                     HabitHeatmap(habit: habit)
                 }
             }
             .padding(24)
         }
         .background(Theme.bg)
+    }
+
+    private var habitHero: some View {
+        HStack(alignment: .top, spacing: 16) {
+            HabitIconTile(habit: habit, size: 56, iconSize: 24)
+
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 10) {
+                    Text(habit.title)
+                        .font(.system(size: 25, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(2)
+
+                    if let ctx = habit.context {
+                        Text(ctx.name)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color(hex: ctx.colorHex))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(hex: ctx.colorHex).opacity(0.14))
+                            .clipShape(Capsule())
+                    }
+                }
+
+                Text(habit.frequencySummary)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.muted)
+
+                HStack(spacing: 8) {
+                    DetailMetaChip(label: habit.isDueToday ? "Due today" : "Not due today", color: habit.isDueToday ? Theme.blue : Theme.dim.opacity(0.8))
+                    DetailMetaChip(label: isDoneToday ? "Checked in" : "Pending", color: isDoneToday ? Theme.green : Theme.amber)
+                }
+            }
+
+            Spacer(minLength: 16)
+
+            CadenceActionButton(
+                title: isDoneToday ? "Undo" : "Check In Today",
+                systemImage: isDoneToday ? "arrow.uturn.backward" : "checkmark",
+                role: .primary,
+                size: .regular,
+                tint: isDoneToday ? Theme.green : Color(hex: habit.colorHex),
+                action: onToggle
+            )
+        }
+        .padding(20)
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(hex: habit.colorHex).opacity(0.24), lineWidth: 1))
+    }
+}
+
+struct HabitGoalSupportCard: View {
+    let habit: Habit
+
+    var body: some View {
+        if let goal = habit.goal {
+            HStack(spacing: 12) {
+                Image(systemName: "target")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color(hex: goal.colorHex))
+                    .frame(width: 36, height: 36)
+                    .background(Color(hex: goal.colorHex).opacity(0.13))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(goal.title)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                    Text(goal.desc.isEmpty ? "Supporting this outcome" : goal.desc)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(2)
+                }
+                Spacer()
+            }
+        } else {
+            HStack(spacing: 10) {
+                Image(systemName: "circle.dashed")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 34, height: 34)
+                    .background(Theme.surfaceElevated.opacity(0.75))
+                    .clipShape(RoundedRectangle(cornerRadius: 9))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("No linked goal")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                    Text("This habit is tracked independently.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                }
+                Spacer()
+            }
+        }
     }
 }
 

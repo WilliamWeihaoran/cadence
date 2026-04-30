@@ -4,6 +4,7 @@ import SwiftData
 
 struct HabitsView: View {
     @Query(sort: \Habit.order) private var habits: [Habit]
+    @Query(sort: \Goal.order) private var goals: [Goal]
     @Environment(\.modelContext) private var modelContext
 
     @State private var selectedHabitID: UUID? = nil
@@ -27,10 +28,76 @@ struct HabitsView: View {
                 matchesSearch = habit.title.lowercased().contains(query)
                     || habit.frequencySummary.lowercased().contains(query)
                     || (habit.context?.name.lowercased().contains(query) ?? false)
+                    || (habit.goal?.title.lowercased().contains(query) ?? false)
             }
 
             return matchesSearch && filter.matches(habit)
         }
+    }
+
+    private var activeGoals: [Goal] {
+        goals.filter { $0.status == .active }
+    }
+
+    private var dueHabitsToday: [Habit] {
+        habits.filter(\.isDueToday)
+    }
+
+    private var openHabitsToday: [Habit] {
+        dueHabitsToday.filter { !$0.isDone(on: todayKey) }
+    }
+
+    private var goalLinkedHabitCount: Int {
+        habits.filter { $0.goal != nil }.count
+    }
+
+    private var goalCoverageLabel: String {
+        guard !habits.isEmpty else { return "No habits yet" }
+        return "\(goalLinkedHabitCount)/\(habits.count) linked"
+    }
+
+    private var nextOpenHabit: Habit? {
+        openHabitsToday.sorted { lhs, rhs in
+            if lhs.goal != nil && rhs.goal == nil { return true }
+            if lhs.goal == nil && rhs.goal != nil { return false }
+            if lhs.currentStreak != rhs.currentStreak { return lhs.currentStreak > rhs.currentStreak }
+            return lhs.order < rhs.order
+        }.first
+    }
+
+    private var habitGroups: [HabitGoalGroup] {
+        var groups: [HabitGoalGroup] = activeGoals.compactMap { goal in
+            let linked = visibleHabits.filter { $0.goal?.id == goal.id }
+            guard !linked.isEmpty else { return nil }
+            return HabitGoalGroup(
+                id: goal.id.uuidString,
+                title: goal.title,
+                subtitle: GoalHabitMomentumResolver.summary(for: goal).dueTodayLabel,
+                icon: "target",
+                colorHex: goal.colorHex,
+                habits: linked
+            )
+        }
+
+        let unlinked = visibleHabits.filter { habit in
+            guard let goal = habit.goal else { return true }
+            return goal.status != .active
+        }
+
+        if !unlinked.isEmpty {
+            groups.append(
+                HabitGoalGroup(
+                    id: "unlinked",
+                    title: "Unlinked Habits",
+                    subtitle: "Attach to goals when the habit supports an outcome",
+                    icon: "circle.dashed",
+                    colorHex: "#6b7a99",
+                    habits: unlinked
+                )
+            )
+        }
+
+        return groups
     }
 
     private var doneTodayCount: Int {
@@ -89,7 +156,7 @@ struct HabitsView: View {
                         Text("Habits")
                             .font(.system(size: 30, weight: .bold))
                             .foregroundStyle(Theme.text)
-                        Text("Daily systems, streaks, and consistency.")
+                        Text("Daily systems tied to real outcomes.")
                             .font(.system(size: 13))
                             .foregroundStyle(Theme.muted)
                     }
@@ -106,12 +173,19 @@ struct HabitsView: View {
                     }
                 }
 
+                HabitTodayCockpit(
+                    dueCount: dueTodayCount,
+                    doneCount: doneTodayCount,
+                    openCount: openHabitsToday.count,
+                    goalCoverage: goalCoverageLabel
+                )
+
                 HStack(spacing: 10) {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.dim)
-                        TextField("Search habits, frequency, context", text: $searchText)
+                        TextField("Search habits, goals, frequency, context", text: $searchText)
                             .textFieldStyle(.plain)
                             .font(.system(size: 13))
                             .foregroundStyle(Theme.text)
@@ -144,46 +218,15 @@ struct HabitsView: View {
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(Theme.borderSubtle, lineWidth: 1)
                 )
-
-                HStack(spacing: 10) {
-                    HabitSummaryTile(
-                        title: "Today",
-                        value: "\(doneTodayCount)/\(dueTodayCount)",
-                        subtitle: dueTodayCount == 0 ? "Nothing due" : "Completed due habits",
-                        color: Theme.green,
-                        icon: "checkmark.circle.fill"
-                    )
-                    HabitSummaryTile(
-                        title: "Streaking",
-                        value: "\(activeStreakCount)",
-                        subtitle: "Habits with a live streak",
-                        color: Theme.amber,
-                        icon: "flame.fill"
-                    )
-                    HabitSummaryTile(
-                        title: "Consistency",
-                        value: "\(averageLast30Completion)%",
-                        subtitle: "Average last 30 days",
-                        color: Theme.blue,
-                        icon: "chart.bar.fill"
-                    )
-                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
-            .padding(.bottom, 18)
+            .padding(.bottom, 16)
             .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 18))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(Theme.borderSubtle, lineWidth: 1)
-            )
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
 
             Divider().background(Theme.borderSubtle)
 
-            if visibleHabits.isEmpty {
+            if habitGroups.isEmpty {
                 Spacer()
                 EmptyStateView(
                     message: searchText.isEmpty ? "No habits yet" : "No matching habits",
@@ -193,18 +236,18 @@ struct HabitsView: View {
                 Spacer()
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 10) {
-                        ForEach(visibleHabits) { habit in
-                            HabitListCard(
-                                habit: habit,
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(habitGroups) { group in
+                            HabitGoalSectionView(
+                                group: group,
                                 todayKey: todayKey,
-                                isSelected: selectedHabitID == habit.id,
-                                onSelect: { selectedHabitID = habit.id },
-                                onToggle: { toggleHabit(habit) }
+                                selectedHabitID: selectedHabitID,
+                                onSelect: { selectedHabitID = $0.id },
+                                onToggle: { toggleHabit($0) }
                             )
                         }
                     }
-                    .padding(14)
+                    .padding(16)
                 }
             }
         }
@@ -228,6 +271,7 @@ struct CreateHabitSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Habit.order) private var habits: [Habit]
     @Query(sort: \Context.order) private var allContexts: [Context]
+    @Query(sort: \Goal.order) private var allGoals: [Goal]
 
     @State private var title = ""
     @State private var selectedIcon = "star.fill"
@@ -237,6 +281,7 @@ struct CreateHabitSheet: View {
     @State private var timesPerWeek = 3
     @State private var monthlyDay = 1
     @State private var selectedContextID: UUID? = nil
+    @State private var selectedGoalID: UUID? = nil
     private let dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
     var body: some View {
@@ -268,6 +313,18 @@ struct CreateHabitSheet: View {
                             Text("None").tag(Optional<UUID>.none)
                             ForEach(allContexts) { ctx in
                                 Text(ctx.name).tag(Optional(ctx.id))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .foregroundStyle(Theme.text)
+                    }
+
+                    if !allGoals.isEmpty {
+                        fieldLabel("Goal")
+                        Picker("", selection: $selectedGoalID) {
+                            Text("None").tag(Optional<UUID>.none)
+                            ForEach(allGoals.filter { $0.status == .active }) { goal in
+                                Text(goal.title).tag(Optional(goal.id))
                             }
                         }
                         .pickerStyle(.menu)
@@ -392,10 +449,18 @@ struct CreateHabitSheet: View {
             habit.targetCount = 1
         }
 
+        let selectedGoal = selectedGoalID.flatMap { id in
+            allGoals.first { $0.id == id }
+        }
+
         if let selectedContextID,
            let context = allContexts.first(where: { $0.id == selectedContextID }) {
             habit.context = context
+        } else if let selectedGoal {
+            habit.context = selectedGoal.context
         }
+
+        habit.goal = selectedGoal
 
         modelContext.insert(habit)
         dismiss()

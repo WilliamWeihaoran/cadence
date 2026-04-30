@@ -14,7 +14,7 @@ struct ListDeleteHelpersTests {
         let project = Project(name: "Project", context: context, area: area)
         let goal = Goal(title: "Goal", context: context)
         let goalListLink = GoalListLink(goal: goal, area: area)
-        let habit = Habit(title: "Habit", context: context)
+        let habit = Habit(title: "Habit", context: context, goal: goal)
         let habitCompletion = HabitCompletion(date: "2026-04-29", habit: habit)
 
         let contextTask = AppTask(title: "Context task")

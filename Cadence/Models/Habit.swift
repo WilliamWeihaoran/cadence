@@ -19,6 +19,7 @@ import Foundation
     var createdAt: Date = Date()
 
     var context: Context? = nil
+    var goal: Goal? = nil
     @Relationship(inverse: \HabitCompletion.habit) var completions: [HabitCompletion]? = nil
 
     var frequencyDays: [Int] {
@@ -44,8 +45,9 @@ import Foundation
         return streak
     }
 
-    init(title: String, context: Context? = nil) {
+    init(title: String, context: Context? = nil, goal: Goal? = nil) {
         self.title = title
         self.context = context
+        self.goal = goal
     }
 }

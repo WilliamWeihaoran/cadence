@@ -33,6 +33,23 @@ struct GoalContributionSummary {
     }
 }
 
+struct GoalHabitMomentumSummary {
+    let linkedHabitCount: Int
+    let dueTodayCount: Int
+    let doneTodayCount: Int
+    let thisWeekCount: Int
+    let last7DayCount: Int
+
+    var dueTodayLabel: String {
+        guard dueTodayCount > 0 else { return "No habits due" }
+        return "\(doneTodayCount)/\(dueTodayCount) today"
+    }
+
+    var weeklyLabel: String {
+        "\(thisWeekCount) this week"
+    }
+}
+
 enum GoalContributionResolver {
     static func contributingTasks(for goal: Goal) -> [AppTask] {
         let directTasks = goal.tasks ?? []
@@ -100,6 +117,70 @@ enum GoalContributionResolver {
         case .medium: return 2
         case .low: return 1
         case .none: return 0
+        }
+    }
+}
+
+enum GoalHabitMomentumResolver {
+    static func summary(for goal: Goal, now: Date = Date()) -> GoalHabitMomentumSummary {
+        let habits = goal.habits ?? []
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        let todayKey = DateFormatters.dateKey(from: today)
+        let weekStart = calendar.dateInterval(of: .weekOfYear, for: today)?.start ?? today
+
+        var dueToday = 0
+        var doneToday = 0
+        var thisWeek = 0
+        var last7Days = 0
+
+        for habit in habits {
+            let keys = Set((habit.completions ?? []).map(\.date))
+            if isHabit(habit, dueOn: today, calendar: calendar) {
+                dueToday += 1
+                if keys.contains(todayKey) {
+                    doneToday += 1
+                }
+            }
+
+            for offset in 0..<7 {
+                guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
+                if keys.contains(DateFormatters.dateKey(from: date)) {
+                    last7Days += 1
+                }
+            }
+
+            for offset in 0..<7 {
+                guard let date = calendar.date(byAdding: .day, value: offset, to: weekStart), date <= today else { continue }
+                if keys.contains(DateFormatters.dateKey(from: date)) {
+                    thisWeek += 1
+                }
+            }
+        }
+
+        return GoalHabitMomentumSummary(
+            linkedHabitCount: habits.count,
+            dueTodayCount: dueToday,
+            doneTodayCount: doneToday,
+            thisWeekCount: thisWeek,
+            last7DayCount: last7Days
+        )
+    }
+
+    private static func isHabit(_ habit: Habit, dueOn date: Date, calendar: Calendar) -> Bool {
+        switch habit.frequencyType {
+        case .daily:
+            return true
+        case .daysOfWeek:
+            let weekday = calendar.component(.weekday, from: date)
+            let normalized = weekday == 1 ? 7 : weekday - 1
+            return habit.frequencyDays.contains(normalized)
+        case .timesPerWeek:
+            return true
+        case .monthly:
+            let day = calendar.component(.day, from: date)
+            let target = habit.frequencyDays.first ?? 1
+            return day == target
         }
     }
 }

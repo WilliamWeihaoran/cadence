@@ -29,6 +29,7 @@ import Foundation
     var context: Context? = nil
     @Relationship(inverse: \AppTask.goal) var tasks: [AppTask]? = nil
     @Relationship(inverse: \GoalListLink.goal) var listLinks: [GoalListLink]? = nil
+    @Relationship(inverse: \Habit.goal) var habits: [Habit]? = nil
 
     // Future TODO: sub-goals (parent/children relationship)
 
