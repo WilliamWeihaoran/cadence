@@ -27,7 +27,6 @@ enum TaskWorkflowService {
         nextTask.sectionName = task.sectionName
         nextTask.area = task.area
         nextTask.project = task.project
-        nextTask.goal = task.goal
         nextTask.context = task.context
 
         if !task.dueDate.isEmpty {

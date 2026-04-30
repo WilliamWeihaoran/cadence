@@ -5,6 +5,7 @@ enum HoveredTaskSource: Equatable {
     case list
     case kanban
     case timeline
+    case note
 }
 
 enum HoveredTaskDateKind: Equatable {

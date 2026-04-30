@@ -303,13 +303,22 @@ final class CadenceLayoutManager: NSLayoutManager {
             guard glyphIndex < self.numberOfGlyphs else { return }
 
             let lineRect = self.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil).offsetBy(dx: origin.x, dy: origin.y)
-            let cardRect = MarkdownTaskEmbedDrawing.cardRect(forLineRect: lineRect, textContainerWidth: textContainer.containerSize.width)
+            let cardRect = MarkdownTaskEmbedDrawing.cardRect(
+                forLineRect: lineRect,
+                textContainerWidth: textContainer.containerSize.width,
+                task: embed.task
+            )
             let checkboxRect = MarkdownTaskEmbedDrawing.checkboxRect(in: cardRect)
             textView.markdownTaskEmbedRects[embed.task.id] = MarkdownTaskEmbedHitRects(
                 card: cardRect,
                 checkbox: checkboxRect.insetBy(dx: -6, dy: -6)
             )
-            MarkdownTaskEmbedDrawing.drawCard(task: embed.task, cardRect: cardRect, checkboxRect: checkboxRect)
+            MarkdownTaskEmbedDrawing.drawCard(
+                task: embed.task,
+                cardRect: cardRect,
+                checkboxRect: checkboxRect,
+                isHovered: textView.hoveredMarkdownTaskEmbedID == embed.task.id
+            )
         }
     }
 
@@ -356,28 +365,70 @@ final class CadenceLayoutManager: NSLayoutManager {
 }
 
 private enum MarkdownTaskEmbedDrawing {
-    static func cardRect(forLineRect lineRect: NSRect, textContainerWidth: CGFloat) -> NSRect {
+    private struct Chip {
+        let label: String
+        let color: NSColor
+        let field: MarkdownTaskEmbedField
+    }
+
+    private struct ChipRect {
+        let field: MarkdownTaskEmbedField
+        let rect: NSRect
+    }
+
+    static func cardRect(
+        forLineRect lineRect: NSRect,
+        textContainerWidth: CGFloat,
+        task: MarkdownTaskEmbedRenderInfo
+    ) -> NSRect {
         NSRect(
             x: lineRect.minX + 8,
             y: lineRect.minY + 6,
             width: max(160, textContainerWidth - 16),
-            height: 46
+            height: task.cardHeight
         )
     }
 
     static func checkboxRect(in cardRect: NSRect) -> NSRect {
-        NSRect(x: cardRect.minX + 14, y: cardRect.midY - 8, width: 16, height: 16)
+        NSRect(x: cardRect.minX + 15, y: cardRect.midY - 9, width: 18, height: 18)
     }
 
-    static func drawCard(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect, checkboxRect: NSRect) {
-        let radius: CGFloat = 12
+    static func fieldHit(at point: NSPoint, task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect) -> MarkdownTaskEmbedField? {
+        let layout = fieldRects(task: task, cardRect: cardRect)
+        if layout.title.insetBy(dx: -3, dy: -3).contains(point) {
+            return .title
+        }
+        return layout.chips.first(where: { $0.rect.insetBy(dx: -3, dy: -3).contains(point) })?.field
+    }
+
+    static func subtaskHit(
+        at point: NSPoint,
+        task: MarkdownTaskEmbedRenderInfo,
+        cardRect: NSRect
+    ) -> MarkdownTaskEmbedSubtaskHitTarget? {
+        MarkdownTaskEmbedSubtaskHitTesting.hit(at: point, in: subtaskRects(task: task, cardRect: cardRect))
+    }
+
+    static func drawCard(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect, checkboxRect: NSRect, isHovered: Bool) {
+        let radius: CGFloat = 11
         let cardPath = NSBezierPath(roundedRect: cardRect, xRadius: radius, yRadius: radius)
-        NSColor(hex: "#151b24").withAlphaComponent(0.96).setFill()
+        (isHovered ? NSColor(hex: "#182236") : NSColor(hex: "#141b26"))
+            .withAlphaComponent(0.98)
+            .setFill()
         cardPath.fill()
 
-        NSColor(hex: "#33405b").withAlphaComponent(0.82).setStroke()
-        cardPath.lineWidth = 0.9
+        (isHovered ? MarkdownStylist.blueColor : NSColor(hex: "#33435f"))
+            .withAlphaComponent(isHovered ? 0.58 : 0.82)
+            .setStroke()
+        cardPath.lineWidth = isHovered ? 1.35 : 0.9
         cardPath.stroke()
+
+        if isHovered {
+            let glowPath = NSBezierPath(roundedRect: cardRect.insetBy(dx: -1, dy: -1), xRadius: radius + 1, yRadius: radius + 1)
+            MarkdownStylist.blueColor.withAlphaComponent(0.13).setStroke()
+            glowPath.lineWidth = 3
+            glowPath.stroke()
+        }
 
         let stripRect = NSRect(x: cardRect.minX, y: cardRect.minY + 5, width: 4, height: cardRect.height - 10)
         let stripColor = task.isMissing ? MarkdownStylist.dimColor : priorityColor(task.priorityRaw, fallback: task.containerColorHex)
@@ -386,15 +437,14 @@ private enum MarkdownTaskEmbedDrawing {
 
         drawCheckbox(task: task, rect: checkboxRect)
 
-        let titleOriginX = checkboxRect.maxX + 10
-        let chipStartX = drawChips(task: task, cardRect: cardRect, minX: titleOriginX)
-        let titleRect = NSRect(
-            x: titleOriginX,
-            y: cardRect.minY + 9,
-            width: max(40, chipStartX - titleOriginX - 8),
-            height: 22
-        )
-        drawTitle(task: task, in: titleRect)
+        let layout = fieldRects(task: task, cardRect: cardRect)
+        drawTitle(task: task, in: layout.title)
+        let chips = displayChips(for: task)
+        for chipRect in layout.chips {
+            guard let chip = chips.first(where: { $0.field == chipRect.field }) else { continue }
+            drawChip(label: chip.label, color: chip.color, rect: chipRect.rect)
+        }
+        drawSubtasks(task: task, cardRect: cardRect)
     }
 
     private static func drawCheckbox(task: MarkdownTaskEmbedRenderInfo, rect: NSRect) {
@@ -419,12 +469,12 @@ private enum MarkdownTaskEmbedDrawing {
         guard done else { return }
         NSColor(hex: "#0f1117").setStroke()
         let check = NSBezierPath()
-        check.lineWidth = 1.9
+        check.lineWidth = 2
         check.lineCapStyle = .round
         check.lineJoinStyle = .round
-        check.move(to: NSPoint(x: rect.minX + 4, y: rect.midY))
-        check.line(to: NSPoint(x: rect.minX + 7, y: rect.minY + 4.8))
-        check.line(to: NSPoint(x: rect.maxX - 3.5, y: rect.maxY - 4.3))
+        check.move(to: NSPoint(x: rect.minX + 4.6, y: rect.midY + 0.8))
+        check.line(to: NSPoint(x: rect.minX + 8, y: rect.maxY - 5))
+        check.line(to: NSPoint(x: rect.maxX - 4.8, y: rect.minY + 5))
         check.stroke()
     }
 
@@ -443,47 +493,78 @@ private enum MarkdownTaskEmbedDrawing {
         (task.title as NSString).draw(in: rect, withAttributes: attrs)
     }
 
-    private static func drawChips(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect, minX: CGFloat) -> CGFloat {
-        var chips: [(String, NSColor)] = []
+    private static func fieldRects(
+        task: MarkdownTaskEmbedRenderInfo,
+        cardRect: NSRect
+    ) -> (title: NSRect, chips: [ChipRect]) {
+        let contentMinX = checkboxRect(in: cardRect).maxX + 12
+        let contentMaxX = cardRect.maxX - 12
+        let titleRect = NSRect(
+            x: contentMinX,
+            y: cardRect.minY + 10,
+            width: max(60, contentMaxX - contentMinX),
+            height: 19
+        )
+
+        var chipRects: [ChipRect] = []
+        var x = contentMinX
+        let y = cardRect.minY + 38
+        for chip in displayChips(for: task) {
+            let width = min(max(42, chip.label.size(withAttributes: chipAttributes).width + 18), 128)
+            guard x + width <= contentMaxX else { break }
+            let rect = NSRect(x: x, y: y, width: width, height: 20)
+            chipRects.append(ChipRect(field: chip.field, rect: rect))
+            x = rect.maxX + 6
+        }
+        return (titleRect, chipRects)
+    }
+
+    private static func displayChips(for task: MarkdownTaskEmbedRenderInfo) -> [Chip] {
         if task.isMissing {
-            chips.append(("Missing", NSColor(hex: "#ff6b6b")))
-        } else if task.isCancelled {
-            chips.append(("Cancelled", MarkdownStylist.dimColor))
-        } else if task.isDone {
-            chips.append(("Done", MarkdownStylist.greenColor))
-        }
-        if !task.containerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            chips.append((task.containerName, NSColor(hex: task.containerColorHex)))
-        }
-        if !task.scheduledDate.isEmpty {
-            let label: String
-            if task.scheduledStartMin >= 0 {
-                label = DateFormatters.relativeDate(from: task.scheduledDate)
-            } else {
-                label = "Do " + DateFormatters.relativeDate(from: task.scheduledDate)
-            }
-            chips.append((label, MarkdownStylist.highlightFillColor))
-        }
-        if !task.dueDate.isEmpty {
-            chips.append(("Due " + DateFormatters.relativeDate(from: task.dueDate), NSColor(hex: "#ff6b6b")))
+            return [Chip(label: "Missing", color: NSColor(hex: "#ff6b6b"), field: .status)]
         }
 
-        guard !chips.isEmpty else { return cardRect.maxX - 12 }
-
-        var x = cardRect.maxX - 12
-        let y = cardRect.minY + 13
-        for chip in chips.reversed() {
-            let width = min(max(28, chip.0.size(withAttributes: chipAttributes).width + 14), 112)
-            let rect = NSRect(x: x - width, y: y, width: width, height: 20)
-            guard rect.minX > minX + 52 else { break }
-            drawChip(label: chip.0, color: chip.1, rect: rect)
-            x = rect.minX - 6
+        let statusColor: NSColor
+        switch TaskStatus(rawValue: task.statusRaw) ?? .todo {
+        case .todo:
+            statusColor = MarkdownStylist.dimColor
+        case .inProgress:
+            statusColor = MarkdownStylist.blueColor
+        case .done:
+            statusColor = MarkdownStylist.greenColor
+        case .cancelled:
+            statusColor = MarkdownStylist.dimColor
         }
-        return x
+
+        var chips: [Chip] = [
+            Chip(label: statusLabel(task.statusRaw), color: statusColor, field: .status),
+            Chip(label: priorityLabel(task.priorityRaw), color: priorityColor(task.priorityRaw, fallback: task.containerColorHex), field: .priority)
+        ]
+
+        let container = task.containerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        chips.append(Chip(
+            label: container.isEmpty ? "Inbox" : container,
+            color: container.isEmpty ? MarkdownStylist.dimColor : NSColor(hex: task.containerColorHex),
+            field: .container
+        ))
+
+        let section = task.sectionName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !section.isEmpty, section.caseInsensitiveCompare(TaskSectionDefaults.defaultName) != .orderedSame {
+            chips.append(Chip(label: section, color: MarkdownStylist.dimColor, field: .section))
+        }
+
+        chips.append(Chip(label: scheduledLabel(for: task), color: MarkdownStylist.highlightFillColor, field: .scheduledDate))
+        chips.append(Chip(label: dueLabel(for: task), color: NSColor(hex: "#ff6b6b"), field: .dueDate))
+        chips.append(Chip(label: estimateLabel(for: task), color: MarkdownStylist.blueColor, field: .estimate))
+
+        if let recurrence = TaskRecurrenceRule(rawValue: task.recurrenceRaw), recurrence != .none {
+            chips.append(Chip(label: recurrence.shortLabel, color: MarkdownStylist.greenColor, field: .recurrence))
+        }
+        return chips
     }
 
     private static func drawChip(label: String, color: NSColor, rect: NSRect) {
-        let path = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
         color.withAlphaComponent(0.13).setFill()
         path.fill()
         color.withAlphaComponent(0.38).setStroke()
@@ -498,10 +579,146 @@ private enum MarkdownTaskEmbedDrawing {
         (label as NSString).draw(in: rect.insetBy(dx: 6, dy: 3), withAttributes: attrs)
     }
 
+    private static func drawSubtasks(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect) {
+        guard task.hasSubtasks else { return }
+        let rects = subtaskRects(task: task, cardRect: cardRect)
+        guard !rects.isEmpty else { return }
+
+        let separatorY = cardRect.minY + 64
+        NSColor(hex: "#33435f").withAlphaComponent(0.42).setStroke()
+        let separator = NSBezierPath()
+        separator.lineWidth = 0.6
+        separator.move(to: NSPoint(x: cardRect.minX + 15, y: separatorY))
+        separator.line(to: NSPoint(x: cardRect.maxX - 12, y: separatorY))
+        separator.stroke()
+
+        let progressRect = NSRect(x: cardRect.minX + 15, y: cardRect.minY + 70, width: 36, height: 18)
+        drawProgressChip(label: "\(task.completedSubtaskCount)/\(task.subtaskTotalCount)", rect: progressRect)
+
+        for subtask in task.visibleSubtasks {
+            guard let rect = rects.first(where: { $0.subtaskID == subtask.id }) else { continue }
+            drawSubtask(subtask, checkboxRect: rect.checkbox ?? .zero, textRect: rect.text)
+        }
+
+        if task.hiddenSubtaskCount > 0, let overflowRect = rects.first(where: { $0.subtaskID == nil }) {
+            drawOverflowChip(count: task.hiddenSubtaskCount, rect: overflowRect.full)
+        }
+    }
+
+    private static func subtaskRects(
+        task: MarkdownTaskEmbedRenderInfo,
+        cardRect: NSRect
+    ) -> [MarkdownTaskEmbedSubtaskHitRect] {
+        guard task.hasSubtasks else { return [] }
+        let contentMinX = cardRect.minX + 59
+        let contentMaxX = cardRect.maxX - 12
+        let rowY = cardRect.minY + 70
+        let rowHeight: CGFloat = 18
+        var x = contentMinX
+        var rects: [MarkdownTaskEmbedSubtaskHitRect] = []
+
+        for subtask in task.visibleSubtasks {
+            let title = subtask.title.isEmpty ? "Untitled subtask" : subtask.title
+            let titleWidth = title.size(withAttributes: subtaskAttributes(done: subtask.isDone)).width
+            let width = min(max(58, titleWidth + 28), 150)
+            guard x + width <= contentMaxX else { break }
+
+            let full = NSRect(x: x, y: rowY, width: width, height: rowHeight)
+            let checkbox = NSRect(x: full.minX + 3, y: full.midY - 5, width: 10, height: 10)
+            let text = NSRect(x: checkbox.maxX + 5, y: full.minY + 1, width: max(16, full.width - 21), height: rowHeight - 2)
+            rects.append(.subtask(id: subtask.id, checkbox: checkbox, text: text, full: full))
+            x = full.maxX + 6
+        }
+
+        if task.hiddenSubtaskCount > 0 {
+            let label = "+\(task.hiddenSubtaskCount) more"
+            let width = min(max(48, label.size(withAttributes: subtaskMetaAttributes).width + 16), 84)
+            if x + width <= contentMaxX {
+                let full = NSRect(x: x, y: rowY, width: width, height: rowHeight)
+                rects.append(.overflow(text: full.insetBy(dx: 6, dy: 2), full: full))
+            }
+        }
+
+        return rects
+    }
+
+    private static func drawProgressChip(label: String, rect: NSRect) {
+        let path = NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5)
+        MarkdownStylist.blueColor.withAlphaComponent(0.12).setFill()
+        path.fill()
+        MarkdownStylist.blueColor.withAlphaComponent(0.28).setStroke()
+        path.lineWidth = 0.7
+        path.stroke()
+        (label as NSString).draw(in: rect.insetBy(dx: 5, dy: 3), withAttributes: subtaskMetaAttributes)
+    }
+
+    private static func drawOverflowChip(count: Int, rect: NSRect) {
+        let path = NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5)
+        NSColor(hex: "#263248").withAlphaComponent(0.72).setFill()
+        path.fill()
+        NSColor(hex: "#4f607e").withAlphaComponent(0.52).setStroke()
+        path.lineWidth = 0.7
+        path.stroke()
+        ("+\(count) more" as NSString).draw(in: rect.insetBy(dx: 6, dy: 3), withAttributes: subtaskMetaAttributes)
+    }
+
+    private static func drawSubtask(
+        _ subtask: MarkdownTaskEmbedSubtaskRenderInfo,
+        checkboxRect: NSRect,
+        textRect: NSRect
+    ) {
+        let checkboxPath = NSBezierPath(ovalIn: checkboxRect)
+        if subtask.isDone {
+            MarkdownStylist.greenColor.withAlphaComponent(0.88).setFill()
+            checkboxPath.fill()
+            MarkdownStylist.greenColor.withAlphaComponent(0.9).setStroke()
+        } else {
+            NSColor(hex: "#101620").withAlphaComponent(0.84).setFill()
+            checkboxPath.fill()
+            MarkdownStylist.dimColor.withAlphaComponent(0.62).setStroke()
+        }
+        checkboxPath.lineWidth = 1
+        checkboxPath.stroke()
+
+        if subtask.isDone {
+            NSColor(hex: "#0f1117").setStroke()
+            let check = NSBezierPath()
+            check.lineWidth = 1.35
+            check.lineCapStyle = .round
+            check.lineJoinStyle = .round
+            check.move(to: NSPoint(x: checkboxRect.minX + 2.4, y: checkboxRect.midY + 0.4))
+            check.line(to: NSPoint(x: checkboxRect.minX + 4.7, y: checkboxRect.maxY - 3))
+            check.line(to: NSPoint(x: checkboxRect.maxX - 2.2, y: checkboxRect.minY + 3))
+            check.stroke()
+        }
+
+        let title = subtask.title.isEmpty ? "Untitled subtask" : subtask.title
+        (title as NSString).draw(in: textRect, withAttributes: subtaskAttributes(done: subtask.isDone))
+    }
+
     private static let chipAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
         .foregroundColor: MarkdownStylist.dimColor
     ]
+
+    private static let subtaskMetaAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 9, weight: .semibold),
+        .foregroundColor: MarkdownStylist.dimColor
+    ]
+
+    private static func subtaskAttributes(done: Bool) -> [NSAttributedString.Key: Any] {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        var attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 10, weight: .medium),
+            .foregroundColor: done ? MarkdownStylist.dimColor.withAlphaComponent(0.72) : MarkdownStylist.textColor.withAlphaComponent(0.86),
+            .paragraphStyle: paragraph
+        ]
+        if done {
+            attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+        }
+        return attrs
+    }
 
     private static func priorityColor(_ raw: String, fallback: String) -> NSColor {
         switch TaskPriority(rawValue: raw) ?? .none {
@@ -514,6 +731,49 @@ private enum MarkdownTaskEmbedDrawing {
         case .none:
             return NSColor(hex: fallback)
         }
+    }
+
+    private static func statusLabel(_ raw: String) -> String {
+        switch TaskStatus(rawValue: raw) ?? .todo {
+        case .todo:
+            return "Todo"
+        case .inProgress:
+            return "In progress"
+        case .done:
+            return "Done"
+        case .cancelled:
+            return "Cancelled"
+        }
+    }
+
+    private static func priorityLabel(_ raw: String) -> String {
+        let priority = TaskPriority(rawValue: raw) ?? .none
+        return priority == .none ? "No priority" : priority.label
+    }
+
+    private static func scheduledLabel(for task: MarkdownTaskEmbedRenderInfo) -> String {
+        guard !task.scheduledDate.isEmpty else { return "No do date" }
+        let date = DateFormatters.relativeDate(from: task.scheduledDate)
+        guard task.scheduledStartMin >= 0 else { return "Do \(date)" }
+        return "\(date) \(TimeFormatters.timeString(from: task.scheduledStartMin))"
+    }
+
+    private static func dueLabel(for task: MarkdownTaskEmbedRenderInfo) -> String {
+        task.dueDate.isEmpty ? "No due date" : "Due \(DateFormatters.relativeDate(from: task.dueDate))"
+    }
+
+    private static func estimateLabel(for task: MarkdownTaskEmbedRenderInfo) -> String {
+        if task.actualMinutes > 0 {
+            return TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes)
+        }
+        return task.estimatedMinutes > 0 ? durationLabel(task.estimatedMinutes) : "No estimate"
+    }
+
+    private static func durationLabel(_ minutes: Int) -> String {
+        guard minutes > 0 else { return "-" }
+        if minutes < 60 { return "\(minutes)m" }
+        if minutes % 60 == 0 { return "\(minutes / 60)h" }
+        return String(format: "%.1fh", Double(minutes) / 60.0)
     }
 }
 
@@ -540,18 +800,26 @@ final class CadenceTextView: NSTextView {
     var markdownImageRects: [UUID: NSRect] = [:]
     var markdownTaskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:]
     var markdownTaskEmbedRects: [UUID: MarkdownTaskEmbedHitRects] = [:]
+    var hoveredMarkdownTaskEmbedID: UUID?
     var selectedMarkdownImageID: UUID?
     var referenceSuggestions: [MarkdownReferenceSuggestion] = []
     var onOpenMarkdownReference: ((MarkdownReferenceTarget) -> Void)?
     var onCreateEmbeddedMarkdownTask: ((String) -> MarkdownReferenceSuggestion?)?
     var onToggleEmbeddedMarkdownTask: ((UUID) -> Void)?
+    var onToggleEmbeddedMarkdownSubtask: ((UUID, UUID) -> Void)?
     var onOpenEmbeddedMarkdownTask: ((UUID) -> Void)?
+    var onEditEmbeddedMarkdownTask: ((UUID, MarkdownTaskEmbedField) -> Void)?
+    var onHoverEmbeddedMarkdownTask: ((UUID, Bool) -> Void)?
     var onCreateMarkdownImages: (([NSImage], [URL]) -> [MarkdownImageAsset])?
     var onResizeMarkdownImage: ((UUID, CGFloat) -> Void)?
 
     private var resizingImageID: UUID?
     private var resizeStartX: CGFloat = 0
     private var resizeStartWidth: CGFloat = 0
+    private var trackingAreaForHover: NSTrackingArea?
+    private var pendingTaskEmbedMouseDown: (id: UUID, target: TaskEmbedHitTarget, point: NSPoint, event: NSEvent)?
+    private var draggingTaskEmbedID: UUID?
+    private let taskEmbedDragThreshold: CGFloat = 4
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if MarkdownKeyboardShortcutSupport.handle(event, in: self) {
@@ -573,6 +841,31 @@ final class CadenceTextView: NSTextView {
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         hasImagePayload(sender.draggingPasteboard) ? .copy : super.draggingEntered(sender)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingAreaForHover {
+            removeTrackingArea(trackingAreaForHover)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingAreaForHover = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateHoveredTaskEmbed(at: convert(event.locationInWindow, from: nil))
+        super.mouseMoved(with: event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        clearHoveredTaskEmbed()
+        super.mouseExited(with: event)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -602,11 +895,7 @@ final class CadenceTextView: NSTextView {
         selectedMarkdownImageID = nil
 
         if let taskHit = taskEmbedHit(at: viewPoint) {
-            if taskHit.checkbox {
-                onToggleEmbeddedMarkdownTask?(taskHit.id)
-            } else {
-                onOpenEmbeddedMarkdownTask?(taskHit.id)
-            }
+            pendingTaskEmbedMouseDown = (taskHit.id, taskHit.target, viewPoint, event)
             return
         }
 
@@ -633,6 +922,16 @@ final class CadenceTextView: NSTextView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let pendingTaskEmbedMouseDown {
+            let point = convert(event.locationInWindow, from: nil)
+            let distance = hypot(point.x - pendingTaskEmbedMouseDown.point.x, point.y - pendingTaskEmbedMouseDown.point.y)
+            if distance >= taskEmbedDragThreshold,
+               beginTaskEmbedDrag(id: pendingTaskEmbedMouseDown.id, event: pendingTaskEmbedMouseDown.event) {
+                self.pendingTaskEmbedMouseDown = nil
+            }
+            return
+        }
+
         guard let resizingImageID else {
             super.mouseDragged(with: event)
             return
@@ -669,7 +968,20 @@ final class CadenceTextView: NSTextView {
             resizingImageID = nil
             return
         }
+        if let pendingTaskEmbedMouseDown {
+            performTaskEmbedClick(pendingTaskEmbedMouseDown)
+            self.pendingTaskEmbedMouseDown = nil
+            return
+        }
         super.mouseUp(with: event)
+    }
+
+    override func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        .move
+    }
+
+    override func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        draggingTaskEmbedID = nil
     }
 
     func snapCaretAwayFromHiddenMarkdown(preferringForward: Bool) {
@@ -683,6 +995,37 @@ final class CadenceTextView: NSTextView {
         if snapped != selection.location {
             setSelectedRange(NSRange(location: snapped, length: 0))
         }
+    }
+
+    func replaceEmbeddedTaskReferenceTitle(id: UUID, title: String) {
+        guard let textStorage else { return }
+        let sanitized = title
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "|", with: "-")
+            .replacingOccurrences(of: "[", with: "(")
+            .replacingOccurrences(of: "]", with: ")")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayTitle = sanitized.isEmpty ? MarkdownTaskEmbedRenderInfo.untitledTaskTitle : sanitized
+        let escapedID = NSRegularExpression.escapedPattern(for: id.uuidString)
+        guard let regex = try? NSRegularExpression(pattern: #"\[\[task:\#(escapedID)\|([^\]\n]+)\]\]"#) else { return }
+
+        let current = string as NSString
+        let matches = regex.matches(in: string, range: NSRange(location: 0, length: current.length))
+        guard !matches.isEmpty else { return }
+        var didReplace = false
+        for match in matches.reversed() where match.numberOfRanges > 1 {
+            let titleRange = match.range(at: 1)
+            guard titleRange.location != NSNotFound,
+                  current.substring(with: titleRange) != displayTitle,
+                  shouldChangeText(in: titleRange, replacementString: displayTitle) else { continue }
+            textStorage.replaceCharacters(in: titleRange, with: displayTitle)
+            didReplace = true
+        }
+        guard didReplace else { return }
+        didChangeText()
+        MarkdownStylist.apply(to: self)
+        needsDisplay = true
     }
 
     func deleteMarkdownImageForCommand(backward: Bool) -> Bool {
@@ -783,9 +1126,89 @@ final class CadenceTextView: NSTextView {
         return nil
     }
 
-    private func taskEmbedHit(at point: NSPoint) -> (id: UUID, checkbox: Bool)? {
+    private func performTaskEmbedClick(_ pending: (id: UUID, target: TaskEmbedHitTarget, point: NSPoint, event: NSEvent)) {
+        switch pending.target {
+        case .checkbox:
+            onToggleEmbeddedMarkdownTask?(pending.id)
+        case .subtaskCheckbox(let subtaskID):
+            onToggleEmbeddedMarkdownSubtask?(pending.id, subtaskID)
+        case .subtaskText:
+            onOpenEmbeddedMarkdownTask?(pending.id)
+        case .field(let field):
+            onEditEmbeddedMarkdownTask?(pending.id, field)
+        case .card:
+            onOpenEmbeddedMarkdownTask?(pending.id)
+        }
+    }
+
+    private func updateHoveredTaskEmbed(at point: NSPoint) {
+        let nextID = taskEmbedHit(at: point)?.id
+        guard nextID != hoveredMarkdownTaskEmbedID else { return }
+        if let hoveredMarkdownTaskEmbedID {
+            onHoverEmbeddedMarkdownTask?(hoveredMarkdownTaskEmbedID, false)
+        }
+        hoveredMarkdownTaskEmbedID = nextID
+        if let nextID {
+            onHoverEmbeddedMarkdownTask?(nextID, true)
+            NSCursor.pointingHand.set()
+        } else {
+            NSCursor.iBeam.set()
+        }
+        needsDisplay = true
+    }
+
+    private func clearHoveredTaskEmbed() {
+        guard let hoveredMarkdownTaskEmbedID else { return }
+        onHoverEmbeddedMarkdownTask?(hoveredMarkdownTaskEmbedID, false)
+        self.hoveredMarkdownTaskEmbedID = nil
+        pendingTaskEmbedMouseDown = nil
+        NSCursor.iBeam.set()
+        needsDisplay = true
+    }
+
+    private func beginTaskEmbedDrag(id: UUID, event: NSEvent) -> Bool {
+        guard let rects = markdownTaskEmbedRects[id] else { return false }
+        draggingTaskEmbedID = id
+        let item = NSPasteboardItem()
+        item.setString(TaskDragPayload.string(for: id), forType: .string)
+
+        let draggingItem = NSDraggingItem(pasteboardWriter: item)
+        draggingItem.setDraggingFrame(rects.card, contents: taskEmbedDragPreview(for: id, rect: rects.card))
+        beginDraggingSession(with: [draggingItem], event: event, source: self)
+        return true
+    }
+
+    private func taskEmbedDragPreview(for id: UUID, rect: NSRect) -> NSImage {
+        let image = NSImage(size: rect.size)
+        image.lockFocus()
+        NSColor(hex: "#182236").withAlphaComponent(0.96).setFill()
+        NSBezierPath(roundedRect: NSRect(origin: .zero, size: rect.size), xRadius: 11, yRadius: 11).fill()
+        MarkdownStylist.blueColor.withAlphaComponent(0.48).setStroke()
+        let border = NSBezierPath(roundedRect: NSRect(origin: .zero, size: rect.size).insetBy(dx: 0.5, dy: 0.5), xRadius: 11, yRadius: 11)
+        border.lineWidth = 1
+        border.stroke()
+
+        let title = markdownTaskEmbeds[id]?.title ?? "Task"
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: MarkdownStylist.textColor
+        ]
+        (title as NSString).draw(in: NSRect(x: 16, y: 10, width: max(20, rect.width - 32), height: 20), withAttributes: attrs)
+        image.unlockFocus()
+        return image
+    }
+
+    private enum TaskEmbedHitTarget {
+        case checkbox
+        case subtaskCheckbox(UUID)
+        case subtaskText
+        case field(MarkdownTaskEmbedField)
+        case card
+    }
+
+    private func taskEmbedHit(at point: NSPoint) -> (id: UUID, target: TaskEmbedHitTarget)? {
         guard let layoutManager, let textContainer, let textStorage else { return nil }
-        var result: (id: UUID, checkbox: Bool)?
+        var result: (id: UUID, target: TaskEmbedHitTarget)?
         textStorage.enumerateAttribute(.cadenceMarkdownTaskEmbed, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, stop in
             guard let embed = value as? MarkdownTaskEmbedLayoutInfo,
                   range.location < textStorage.length else { return }
@@ -794,13 +1217,28 @@ final class CadenceTextView: NSTextView {
             guard glyphIndex < layoutManager.numberOfGlyphs else { return }
             let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
                 .offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y)
-            let cardRect = MarkdownTaskEmbedDrawing.cardRect(forLineRect: lineRect, textContainerWidth: textContainer.containerSize.width)
+            let cardRect = MarkdownTaskEmbedDrawing.cardRect(
+                forLineRect: lineRect,
+                textContainerWidth: textContainer.containerSize.width,
+                task: embed.task
+            )
             let checkboxRect = MarkdownTaskEmbedDrawing.checkboxRect(in: cardRect).insetBy(dx: -6, dy: -6)
             if checkboxRect.contains(point) {
-                result = (embed.task.id, true)
+                result = (embed.task.id, .checkbox)
+                stop.pointee = true
+            } else if let subtaskHit = MarkdownTaskEmbedDrawing.subtaskHit(at: point, task: embed.task, cardRect: cardRect) {
+                switch subtaskHit {
+                case .checkbox(let subtaskID):
+                    result = (embed.task.id, .subtaskCheckbox(subtaskID))
+                case .openInspector:
+                    result = (embed.task.id, .subtaskText)
+                }
+                stop.pointee = true
+            } else if let field = MarkdownTaskEmbedDrawing.fieldHit(at: point, task: embed.task, cardRect: cardRect) {
+                result = (embed.task.id, .field(field))
                 stop.pointee = true
             } else if cardRect.contains(point) {
-                result = (embed.task.id, false)
+                result = (embed.task.id, .card)
                 stop.pointee = true
             }
         }
@@ -1748,9 +2186,39 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
             }
         }
 
+        if cursor >= 4 {
+            let range = NSRange(location: cursor - 4, length: 4)
+            let snippet = nsText.substring(with: range)
+            if snippet == "[ ] ", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
+                replaceText(in: textView, range: range, with: "○ ")
+                textView.setSelectedRange(NSRange(location: range.location + 2, length: 0))
+                return
+            }
+            if snippet.lowercased() == "[x] ", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
+                replaceText(in: textView, range: range, with: "● ")
+                textView.setSelectedRange(NSRange(location: range.location + 2, length: 0))
+                return
+            }
+            if snippet == "( ) ",
+               MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil,
+               createUntitledEmbeddedTask(fromTriggerRange: range, in: textView) {
+                return
+            }
+        }
+
         if cursor >= 3 {
             let range = NSRange(location: cursor - 3, length: 3)
             let snippet = nsText.substring(with: range)
+            if snippet == "[] ", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
+                replaceText(in: textView, range: range, with: "○ ")
+                textView.setSelectedRange(NSRange(location: range.location + 2, length: 0))
+                return
+            }
+            if snippet == "() ",
+               MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil,
+               createUntitledEmbeddedTask(fromTriggerRange: range, in: textView) {
+                return
+            }
             if snippet == "1. ", let indentation = MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) {
                 let marker = MarkdownListSupport.orderedMarker(forIndentation: indentation)
                 replaceText(in: textView, range: range, with: marker + " ")
@@ -1775,6 +2243,29 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
             textView.setSelectedRange(NSRange(location: caretLocation, length: 0))
             return
         }
+    }
+
+    private func createUntitledEmbeddedTask(fromTriggerRange range: NSRange, in textView: NSTextView) -> Bool {
+        guard let cadenceTextView = textView as? CadenceTextView,
+              let suggestion = cadenceTextView.onCreateEmbeddedMarkdownTask?(MarkdownTaskEmbedRenderInfo.untitledTaskTitle),
+              suggestion.kind == .task,
+              MarkdownTaskEmbedParser.standaloneTaskReference(in: suggestion.markdown) != nil else {
+            return false
+        }
+
+        guard textView.shouldChangeText(in: range, replacementString: suggestion.markdown) else {
+            return true
+        }
+        textView.textStorage?.replaceCharacters(in: range, with: suggestion.markdown)
+        if let titleRange = MarkdownTaskEmbedParser.referenceTitleRange(in: suggestion.markdown, lineStart: range.location) {
+            textView.setSelectedRange(titleRange)
+        } else {
+            textView.setSelectedRange(NSRange(location: range.location + (suggestion.markdown as NSString).length, length: 0))
+        }
+        textView.typingAttributes = MarkdownStylist.baseAttributes
+        textView.didChangeText()
+        cadenceTextView.onEditEmbeddedMarkdownTask?(suggestion.targetID, .title)
+        return true
     }
 
     private func createEmbeddedTaskIfNeeded(in textView: NSTextView, lineRange: NSRange, line: String) -> Bool {

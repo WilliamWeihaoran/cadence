@@ -48,24 +48,6 @@ struct MacTaskRow: View {
                 .strikethrough(task.isDone || task.isCancelled, color: Theme.dim)
                 .lineLimit(1)
 
-            if let goal = task.goal {
-                HStack(spacing: 4) {
-                    Image(systemName: "target")
-                        .font(.system(size: 9, weight: .semibold))
-                    Text(goal.title)
-                        .font(.system(size: 10, weight: .semibold))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: 92, alignment: .leading)
-                }
-                .foregroundStyle(Color(hex: goal.colorHex))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color(hex: goal.colorHex).opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .padding(.leading, 7)
-            }
-
             if task.isCancelled {
                 Text("Cancelled")
                     .font(.system(size: 10, weight: .semibold))
@@ -115,10 +97,13 @@ struct MacTaskRow: View {
         .background(TaskRowBackground(task: task, isHovered: isHovered, urgencyTint: urgencyBackgroundTint))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isHovered ? Theme.blue.opacity(0.44) : .white.opacity(0.04), lineWidth: isHovered ? 1.2 : 1)
+                .stroke(
+                    isHovered ? Theme.blue.opacity(0.34) : Color.clear,
+                    lineWidth: 1
+                )
         }
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.borderSubtle.opacity(0.5)).frame(height: 0.5)
+            Rectangle().fill(Theme.borderSubtle.opacity(0.22)).frame(height: 0.5)
         }
         .animation(nil, value: isHovered)
         .animation(nil, value: isDoDateHovered)
@@ -424,7 +409,7 @@ private struct TaskRowBackground: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: 8)
-            .fill(isHovered ? Theme.surfaceElevated.opacity(1.0) : Theme.surface)
+            .fill(isHovered ? Theme.surfaceElevated.opacity(0.72) : Color.clear)
             .overlay {
                 if urgencyTint != .clear {
                     RoundedRectangle(cornerRadius: 8).fill(urgencyTint)

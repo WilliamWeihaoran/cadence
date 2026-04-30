@@ -126,7 +126,7 @@ enum GlobalSearchIndexSupport {
             }
 
         return Array(rankedResults(base.compactMap { task in
-            let container = task.project?.name ?? task.area?.name ?? (task.goal?.title ?? "Inbox")
+            let container = task.project?.name ?? task.area?.name ?? "Inbox"
             let contextName = task.context?.name ?? ""
             let notesSnippet = task.notes.isEmpty ? "" : task.notes
             let statusAliases = [

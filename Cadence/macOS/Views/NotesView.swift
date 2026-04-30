@@ -502,8 +502,11 @@ struct NoteEditorPane: View {
     var headerDetail: String?
     var headerAccessory: AnyView?
     @Environment(\.modelContext) private var modelContext
+    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
+    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @State private var editorTextView: CadenceTextView?
     @State private var linkedTaskForPopover: AppTask?
+    @State private var embeddedTaskEditRequest: TaskEmbedFieldEditRequest?
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
 
     private var titleBinding: Binding<String> {
@@ -610,7 +613,10 @@ struct NoteEditorPane: View {
                     onOpenTaskReference: openTaskReference,
                     onCreateEmbeddedTask: createEmbeddedTask,
                     onToggleEmbeddedTask: toggleEmbeddedTask,
+                    onToggleEmbeddedSubtask: toggleEmbeddedSubtask,
                     onOpenEmbeddedTask: openEmbeddedTask,
+                    onEditEmbeddedTask: editEmbeddedTask,
+                    onHoverEmbeddedTask: hoverEmbeddedTask,
                     onTextViewChanged: { editorTextView = $0 }
                 )
                 .frame(minWidth: 360)
@@ -632,6 +638,18 @@ struct NoteEditorPane: View {
         .popover(item: $linkedTaskForPopover) { task in
             TaskDetailPopover(task: task)
                 .frame(width: 380)
+        }
+        .popover(item: $embeddedTaskEditRequest) { request in
+            if let task = embeddedTask(id: request.taskID) {
+                TaskEmbedFieldEditorPopover(task: task, initialField: request.field) {
+                    refreshEmbeddedTask(task)
+                }
+            } else {
+                Text("Task no longer exists")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.dim)
+                    .padding()
+            }
         }
     }
 
@@ -732,9 +750,49 @@ struct NoteEditorPane: View {
         }
     }
 
+    private func toggleEmbeddedSubtask(taskID: UUID, subtaskID: UUID) {
+        guard let task = embeddedTask(id: taskID),
+              let subtask = (task.subtasks ?? []).first(where: { $0.id == subtaskID }) else { return }
+        subtask.isDone.toggle()
+        try? modelContext.save()
+        refreshEmbeddedTask(task)
+    }
+
     private func openEmbeddedTask(id: UUID) {
         guard let task = embeddedTask(id: id) else { return }
         linkedTaskForPopover = task
+    }
+
+    private func editEmbeddedTask(id: UUID, field: MarkdownTaskEmbedField) {
+        guard embeddedTask(id: id) != nil else { return }
+        embeddedTaskEditRequest = TaskEmbedFieldEditRequest(taskID: id, field: field)
+    }
+
+    private func hoverEmbeddedTask(id: UUID, hovering: Bool) {
+        guard let task = embeddedTask(id: id) else { return }
+        if hovering {
+            hoveredTaskManager.beginHovering(task, source: .note)
+            hoveredEditableManager.beginHovering(id: embeddedTaskHoverID(id)) {
+                openEmbeddedTask(id: id)
+            }
+        } else {
+            hoveredTaskManager.endHovering(task)
+            hoveredEditableManager.endHovering(id: embeddedTaskHoverID(id))
+            refreshEmbeddedTask(task)
+        }
+    }
+
+    private func embeddedTaskHoverID(_ id: UUID) -> String {
+        "note-embed-task-\(id.uuidString)"
+    }
+
+    private func refreshEmbeddedTask(_ task: AppTask) {
+        editorTextView?.markdownTaskEmbeds[task.id] = MarkdownTaskEmbedRenderInfo.task(task)
+        editorTextView?.replaceEmbeddedTaskReferenceTitle(id: task.id, title: task.title)
+        if let editorTextView {
+            MarkdownStylist.apply(to: editorTextView)
+            editorTextView.needsDisplay = true
+        }
     }
 
     private func embeddedTask(id: UUID) -> AppTask? {

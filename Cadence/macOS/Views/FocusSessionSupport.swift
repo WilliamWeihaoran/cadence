@@ -49,9 +49,6 @@ enum FocusSessionSupport {
         let totalMinutes = hours * 60 + minutes
         if totalMinutes > 0 {
             task.actualMinutes += totalMinutes
-            if let goal = task.goal, goal.progressType == .hours {
-                goal.loggedHours += Double(totalMinutes) / 60.0
-            }
             if let project = task.project {
                 project.loggedMinutes += totalMinutes
             } else if let area = task.area {

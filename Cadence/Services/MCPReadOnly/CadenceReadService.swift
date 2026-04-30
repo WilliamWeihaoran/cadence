@@ -87,7 +87,7 @@ final class CadenceReadService {
             .map { taskSummary($0, allTasks: tasks) }
 
         let inbox = activeTasks
-            .filter { $0.area == nil && $0.project == nil && $0.goal == nil }
+            .filter { $0.area == nil && $0.project == nil }
             .sorted(by: taskSort)
             .prefix(50)
             .map { taskSummary($0, allTasks: tasks) }
@@ -144,7 +144,6 @@ final class CadenceReadService {
                         task.notes,
                         task.project?.name ?? "",
                         task.area?.name ?? "",
-                        task.goal?.title ?? "",
                         task.context?.name ?? "",
                         task.resolvedSectionName,
                     ]
@@ -299,13 +298,13 @@ final class CadenceReadService {
         if selectedScopes.contains("tasks") {
             let tasks = try fetchTasks()
             hits += tasks.compactMap { task in
-                let fields = [task.title, task.notes, task.area?.name ?? "", task.project?.name ?? "", task.goal?.title ?? "", task.context?.name ?? ""]
+                let fields = [task.title, task.notes, task.area?.name ?? "", task.project?.name ?? "", task.context?.name ?? ""]
                 guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: fields) else { return nil }
                 return CadenceSearchHit(
                     entityType: "task",
                     entityId: task.id.uuidString,
                     title: resolvedTitle(task.title, fallback: "Untitled Task"),
-                    subtitle: [task.project?.name ?? task.area?.name ?? task.goal?.title ?? "Inbox", task.statusRaw].joined(separator: " - "),
+                    subtitle: [task.project?.name ?? task.area?.name ?? "Inbox", task.statusRaw].joined(separator: " - "),
                     excerpt: excerpt(task.notes.isEmpty ? task.title : task.notes),
                     score: score
                 )
@@ -397,7 +396,7 @@ final class CadenceReadService {
             scheduledStartMin: task.scheduledStartMin,
             estimatedMinutes: task.estimatedMinutes,
             container: taskContainer(task),
-            goal: task.goal.map(goalRef),
+            goal: nil,
             sectionName: task.resolvedSectionName,
             isDone: task.isDone,
             isCancelled: task.isCancelled

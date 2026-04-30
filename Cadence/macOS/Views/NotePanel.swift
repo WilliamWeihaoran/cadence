@@ -5,6 +5,8 @@ import SwiftData
 struct NotePanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
+    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     var useStandardHeaderHeight = false
 
@@ -21,6 +23,7 @@ struct NotePanel: View {
     @State private var notesContext: ModelContext?
     @State private var activeTextView: CadenceTextView?
     @State private var linkedTaskForPopover: AppTask?
+    @State private var embeddedTaskEditRequest: TaskEmbedFieldEditRequest?
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
 
     var body: some View {
@@ -81,6 +84,18 @@ struct NotePanel: View {
             TaskDetailPopover(task: task)
                 .frame(width: 380)
         }
+        .popover(item: $embeddedTaskEditRequest) { request in
+            if let task = embeddedTask(id: request.taskID) {
+                TaskEmbedFieldEditorPopover(task: task, initialField: request.field) {
+                    refreshEmbeddedTask(task)
+                }
+            } else {
+                Text("Task no longer exists")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.dim)
+                    .padding()
+            }
+        }
         .onAppear { loadOrCreate() }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
@@ -118,7 +133,10 @@ struct NotePanel: View {
             onOpenTaskReference: openTaskReference,
             onCreateEmbeddedTask: createEmbeddedTask,
             onToggleEmbeddedTask: toggleEmbeddedTask,
+            onToggleEmbeddedSubtask: toggleEmbeddedSubtask,
             onOpenEmbeddedTask: openEmbeddedTask,
+            onEditEmbeddedTask: editEmbeddedTask,
+            onHoverEmbeddedTask: hoverEmbeddedTask,
             onTextViewChanged: { activeTextView = $0 }
         )
     }
@@ -189,9 +207,49 @@ struct NotePanel: View {
         }
     }
 
+    private func toggleEmbeddedSubtask(taskID: UUID, subtaskID: UUID) {
+        guard let task = embeddedTask(id: taskID),
+              let subtask = (task.subtasks ?? []).first(where: { $0.id == subtaskID }) else { return }
+        subtask.isDone.toggle()
+        try? modelContext.save()
+        refreshEmbeddedTask(task)
+    }
+
     private func openEmbeddedTask(id: UUID) {
         guard let task = embeddedTask(id: id) else { return }
         linkedTaskForPopover = task
+    }
+
+    private func editEmbeddedTask(id: UUID, field: MarkdownTaskEmbedField) {
+        guard embeddedTask(id: id) != nil else { return }
+        embeddedTaskEditRequest = TaskEmbedFieldEditRequest(taskID: id, field: field)
+    }
+
+    private func hoverEmbeddedTask(id: UUID, hovering: Bool) {
+        guard let task = embeddedTask(id: id) else { return }
+        if hovering {
+            hoveredTaskManager.beginHovering(task, source: .note)
+            hoveredEditableManager.beginHovering(id: embeddedTaskHoverID(id)) {
+                openEmbeddedTask(id: id)
+            }
+        } else {
+            hoveredTaskManager.endHovering(task)
+            hoveredEditableManager.endHovering(id: embeddedTaskHoverID(id))
+            refreshEmbeddedTask(task)
+        }
+    }
+
+    private func embeddedTaskHoverID(_ id: UUID) -> String {
+        "note-embed-task-\(id.uuidString)"
+    }
+
+    private func refreshEmbeddedTask(_ task: AppTask) {
+        activeTextView?.markdownTaskEmbeds[task.id] = MarkdownTaskEmbedRenderInfo.task(task)
+        activeTextView?.replaceEmbeddedTaskReferenceTitle(id: task.id, title: task.title)
+        if let activeTextView {
+            MarkdownStylist.apply(to: activeTextView)
+            activeTextView.needsDisplay = true
+        }
     }
 
     private func openTaskReference(id: UUID?, title: String) {
@@ -231,15 +289,14 @@ private struct NotePanelTabButton: View {
     var body: some View {
         Button(action: action) {
             Text(tab.rawValue)
-                .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
                 .foregroundStyle(isSelected ? Theme.blue : Theme.dim)
-                .frame(minWidth: 78, minHeight: 32)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
+                .frame(minWidth: 78, minHeight: 30)
+                .padding(.horizontal, 8)
                 .contentShape(Rectangle())
                 .overlay(alignment: .bottom) {
                     if isSelected {
-                        Rectangle().fill(Theme.blue).frame(height: 2)
+                        Rectangle().fill(Theme.blue.opacity(0.8)).frame(height: 1)
                     }
                 }
         }

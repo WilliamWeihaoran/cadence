@@ -5,7 +5,7 @@ import Testing
 
 @MainActor
 struct GoalContributionResolverTests {
-    @Test func contributionSummaryDedupesDirectTasksAndLinkedLists() throws {
+    @Test func contributionSummaryUsesLinkedListsAndIgnoresDirectTaskLinks() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
 
@@ -26,6 +26,11 @@ struct GoalContributionResolverTests {
         let cancelledDirect = AppTask(title: "Cancelled")
         cancelledDirect.goal = goal
         cancelledDirect.status = .cancelled
+
+        let directOnly = AppTask(title: "Direct only ignored")
+        directOnly.goal = goal
+        directOnly.status = .done
+        directOnly.actualMinutes = 999
 
         let areaOpen = AppTask(title: "Area open")
         areaOpen.area = area
@@ -50,6 +55,7 @@ struct GoalContributionResolverTests {
         modelContext.insert(goal)
         modelContext.insert(directDone)
         modelContext.insert(cancelledDirect)
+        modelContext.insert(directOnly)
         modelContext.insert(areaOpen)
         modelContext.insert(areaDone)
         modelContext.insert(unrelatedProjectTask)
@@ -60,7 +66,7 @@ struct GoalContributionResolverTests {
 
         #expect(summary.totalTasks == 3)
         #expect(summary.completedTasks == 2)
-        #expect(summary.directTaskCount == 1)
+        #expect(summary.directTaskCount == 0)
         #expect(summary.linkedListCount == 1)
         #expect(summary.focusMinutes == 120)
         #expect(summary.overdueTaskCount == 1)
@@ -125,5 +131,15 @@ struct GoalContributionResolverTests {
         #expect(summary.thisWeekCount == 2)
         #expect(summary.last7DayCount == 2)
         #expect(goal.progress == 0)
+    }
+
+    @Test func monthlyHabitDueDateClampsToLastDayOfShortMonth() {
+        let habit = Habit(title: "Month end review")
+        habit.frequencyType = .monthly
+        habit.frequencyDays = [31]
+
+        #expect(habit.isDue(on: DateFormatters.date(from: "2026-04-30") ?? Date()) == true)
+        #expect(habit.isDue(on: DateFormatters.date(from: "2026-04-29") ?? Date()) == false)
+        #expect(habit.isDue(on: DateFormatters.date(from: "2026-05-31") ?? Date()) == true)
     }
 }

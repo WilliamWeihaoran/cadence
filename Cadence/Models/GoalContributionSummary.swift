@@ -52,9 +52,8 @@ struct GoalHabitMomentumSummary {
 
 enum GoalContributionResolver {
     static func contributingTasks(for goal: Goal) -> [AppTask] {
-        let directTasks = goal.tasks ?? []
         let listTasks = (goal.listLinks ?? []).flatMap(\.tasks)
-        return dedupe(directTasks + listTasks).filter { !$0.isCancelled }
+        return dedupe(listTasks).filter { !$0.isCancelled }
     }
 
     static func summary(for goal: Goal, now: Date = Date()) -> GoalContributionSummary {
@@ -65,7 +64,20 @@ enum GoalContributionResolver {
         let openTasks = tasks.filter { !$0.isDone }
 
         let nextAction = openTasks
-            .sorted(by: taskSort)
+            .sorted { lhs, rhs in
+                if lhs.priority != rhs.priority {
+                    return priorityRank(lhs.priority) > priorityRank(rhs.priority)
+                }
+                let lhsDue = lhs.dueDate.isEmpty ? "9999-12-31" : lhs.dueDate
+                let rhsDue = rhs.dueDate.isEmpty ? "9999-12-31" : rhs.dueDate
+                if lhsDue != rhsDue { return lhsDue < rhsDue }
+                if lhs.scheduledDate != rhs.scheduledDate {
+                    let lhsDo = lhs.scheduledDate.isEmpty ? "9999-12-31" : lhs.scheduledDate
+                    let rhsDo = rhs.scheduledDate.isEmpty ? "9999-12-31" : rhs.scheduledDate
+                    return lhsDo < rhsDo
+                }
+                return lhs.order < rhs.order
+            }
             .first?
             .title
 
@@ -82,7 +94,7 @@ enum GoalContributionResolver {
         return GoalContributionSummary(
             totalTasks: tasks.count,
             completedTasks: tasks.filter(\.isDone).count,
-            directTaskCount: (goal.tasks ?? []).filter { !$0.isCancelled }.count,
+            directTaskCount: 0,
             linkedListCount: (goal.listLinks ?? []).filter { $0.area != nil || $0.project != nil }.count,
             focusMinutes: tasks.reduce(Int(goal.loggedHours * 60)) { $0 + max(0, $1.actualMinutes) },
             overdueTaskCount: overdueCount,
@@ -94,21 +106,6 @@ enum GoalContributionResolver {
     private static func dedupe(_ tasks: [AppTask]) -> [AppTask] {
         var seen = Set<UUID>()
         return tasks.filter { seen.insert($0.id).inserted }
-    }
-
-    private static func taskSort(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
-        if lhs.priority != rhs.priority {
-            return priorityRank(lhs.priority) > priorityRank(rhs.priority)
-        }
-        let lhsDue = lhs.dueDate.isEmpty ? "9999-12-31" : lhs.dueDate
-        let rhsDue = rhs.dueDate.isEmpty ? "9999-12-31" : rhs.dueDate
-        if lhsDue != rhsDue { return lhsDue < rhsDue }
-        if lhs.scheduledDate != rhs.scheduledDate {
-            let lhsDo = lhs.scheduledDate.isEmpty ? "9999-12-31" : lhs.scheduledDate
-            let rhsDo = rhs.scheduledDate.isEmpty ? "9999-12-31" : rhs.scheduledDate
-            return lhsDo < rhsDo
-        }
-        return lhs.order < rhs.order
     }
 
     private static func priorityRank(_ priority: TaskPriority) -> Int {
@@ -172,15 +169,15 @@ enum GoalHabitMomentumResolver {
         case .daily:
             return true
         case .daysOfWeek:
-            let weekday = calendar.component(.weekday, from: date)
-            let normalized = weekday == 1 ? 7 : weekday - 1
-            return habit.frequencyDays.contains(normalized)
+            return habit.frequencyDays.contains(Habit.weekdayIndex(for: date, calendar: calendar))
         case .timesPerWeek:
             return true
         case .monthly:
             let day = calendar.component(.day, from: date)
             let target = habit.frequencyDays.first ?? 1
-            return day == target
+            let range = calendar.range(of: .day, in: .month, for: date)
+            let lastDay = range?.upperBound.advanced(by: -1) ?? 31
+            return day == min(max(1, target), lastDay)
         }
     }
 }

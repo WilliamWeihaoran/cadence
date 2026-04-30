@@ -50,4 +50,9 @@ import Foundation
         self.context = context
         self.goal = goal
     }
+
+    static func weekdayIndex(for date: Date, calendar: Calendar = .current) -> Int {
+        let weekday = calendar.component(.weekday, from: date)
+        return weekday == 1 ? 7 : weekday - 1
+    }
 }

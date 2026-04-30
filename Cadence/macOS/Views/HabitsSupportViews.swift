@@ -112,6 +112,44 @@ struct HabitInlineMetric: View {
     }
 }
 
+struct HabitNextUpBanner: View {
+    let habit: Habit
+    let todayKey: String
+    let onSelect: () -> Void
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            HabitIconTile(habit: habit, size: 32, iconSize: 14)
+            Button(action: onSelect) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Next up")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.dim)
+                    Text(habit.title)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.cadencePlain)
+
+            Button(action: onToggle) {
+                Image(systemName: habit.isDone(on: todayKey) ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(habit.isDone(on: todayKey) ? Theme.green : Color(hex: habit.colorHex))
+            }
+            .buttonStyle(.cadencePlain)
+        }
+        .padding(11)
+        .background(Color(hex: habit.colorHex).opacity(0.09))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: habit.colorHex).opacity(0.22), lineWidth: 1))
+    }
+}
+
 struct HabitGoalSectionView: View {
     let group: HabitGoalGroup
     let todayKey: String
@@ -125,10 +163,19 @@ struct HabitGoalSectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 9) {
-                Text(group.title.uppercased())
+            HStack(spacing: 8) {
+                Image(systemName: group.icon)
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.dim)
+                    .foregroundStyle(Color(hex: group.colorHex))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(group.title.uppercased())
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.dim)
+                    Text(group.subtitle)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.dim.opacity(0.72))
+                        .lineLimit(1)
+                }
                 Spacer()
                 Text("\(doneCount)/\(group.habits.count)")
                     .font(.system(size: 10, weight: .bold))
@@ -710,15 +757,15 @@ extension Habit {
         case .daily:
             return true
         case .daysOfWeek:
-            let weekday = cal.component(.weekday, from: date)
-            let normalized = weekday == 1 ? 7 : weekday - 1
-            return frequencyDays.contains(normalized)
+            return frequencyDays.contains(Self.weekdayIndex(for: date, calendar: cal))
         case .timesPerWeek:
             return true
         case .monthly:
             let day = cal.component(.day, from: date)
             let target = frequencyDays.first ?? 1
-            return day == target
+            let range = cal.range(of: .day, in: .month, for: date)
+            let lastDay = range?.upperBound.advanced(by: -1) ?? 31
+            return day == min(max(1, target), lastDay)
         }
     }
 

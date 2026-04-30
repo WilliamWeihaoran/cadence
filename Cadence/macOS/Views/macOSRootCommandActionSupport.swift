@@ -116,8 +116,6 @@ enum RootCommandActionSupport {
             } else if let area = task.area {
                 context.listNavigationManager.open(areaID: area.id, page: .tasks)
                 context.setSelection(.area(area.id))
-            } else if task.goal != nil {
-                context.setSelection(.allTasks)
             } else {
                 context.setSelection(.inbox)
             }

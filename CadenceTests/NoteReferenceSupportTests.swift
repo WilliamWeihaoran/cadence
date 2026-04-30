@@ -1,5 +1,8 @@
 import Foundation
 import Testing
+#if os(macOS)
+import AppKit
+#endif
 @testable import Cadence
 
 @MainActor
@@ -48,9 +51,12 @@ struct NoteReferenceSupportTests {
     }
 
     @Test func embeddedTaskDraftTitlesParseChecklistInputs() {
-        #expect(MarkdownTaskEmbedParser.draftTitle(in: "[ ] Draft note task") == "Draft note task")
-        #expect(MarkdownTaskEmbedParser.draftTitle(in: "- [ ] Draft bullet task") == "Draft bullet task")
-        #expect(MarkdownTaskEmbedParser.draftTitle(in: "    ○ Draft legacy task") == "Draft legacy task")
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "() Draft note task") == "Draft note task")
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "( ) Draft note task") == "Draft note task")
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "    () Draft indented task") == "Draft indented task")
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "[ ] Draft markdown task") == nil)
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "[] Draft markdown task") == nil)
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "○ Draft legacy task") == nil)
         #expect(MarkdownTaskEmbedParser.draftTitle(in: "[ ]   ") == nil)
         #expect(MarkdownTaskEmbedParser.draftTitle(in: "[x] Already done") == nil)
     }
@@ -85,6 +91,48 @@ struct NoteReferenceSupportTests {
         #expect(missing.id == taskID)
         #expect(missing.title == "Deleted task")
         #expect(missing.isMissing)
+    }
+
+    @Test func taskEmbedRenderInfoSortsAndCountsSubtasks() throws {
+        let task = AppTask(title: "Parent")
+        let first = Subtask(title: "First")
+        first.id = try #require(UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))
+        first.order = 1
+        first.isDone = true
+        let second = Subtask(title: "Second")
+        second.id = try #require(UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"))
+        second.order = 2
+        let third = Subtask(title: "Third")
+        third.id = try #require(UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc"))
+        third.order = 3
+        third.isDone = true
+        let fourth = Subtask(title: "Fourth")
+        fourth.id = try #require(UUID(uuidString: "dddddddd-dddd-dddd-dddd-dddddddddddd"))
+        fourth.order = 4
+        task.subtasks = [third, first, fourth, second]
+
+        let info = MarkdownTaskEmbedRenderInfo.task(task)
+
+        #expect(info.subtasks.map(\.title) == ["First", "Second", "Third", "Fourth"])
+        #expect(info.completedSubtaskCount == 2)
+        #expect(info.subtaskTotalCount == 4)
+        #expect(info.visibleSubtasks.map(\.title) == ["First", "Second", "Third"])
+        #expect(info.hiddenSubtaskCount == 1)
+        #expect(info.cardHeight > MarkdownTaskEmbedRenderInfo.compactCardHeight)
+    }
+
+    @Test func taskEmbedSubtaskHitHelperSeparatesCheckboxTextAndWhitespace() throws {
+        let subtaskID = try #require(UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))
+        let rect = MarkdownTaskEmbedSubtaskHitRect.subtask(
+            id: subtaskID,
+            checkbox: NSRect(x: 10, y: 10, width: 10, height: 10),
+            text: NSRect(x: 28, y: 8, width: 80, height: 16),
+            full: NSRect(x: 8, y: 8, width: 104, height: 18)
+        )
+
+        #expect(MarkdownTaskEmbedSubtaskHitTesting.hit(at: NSPoint(x: 12, y: 12), in: [rect]) == .checkbox(subtaskID))
+        #expect(MarkdownTaskEmbedSubtaskHitTesting.hit(at: NSPoint(x: 36, y: 12), in: [rect]) == .openInspector)
+        #expect(MarkdownTaskEmbedSubtaskHitTesting.hit(at: NSPoint(x: 112, y: 12), in: [rect]) == nil)
     }
 
     @Test func checklistMarkerHelperAcceptsOnlyMarkerCharacter() {

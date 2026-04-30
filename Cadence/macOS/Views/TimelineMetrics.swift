@@ -68,10 +68,10 @@ struct TimelineBlockStyle {
 }
 
 enum CalendarVisualStyle {
-    static let majorGridOpacity: Double = 0.11
-    static let minorGridOpacity: Double = 0.075
-    static let majorGridLineWidth: CGFloat = 1.45
-    static let minorGridLineWidth: CGFloat = 1.05
+    static let majorGridOpacity: Double = 0.24
+    static let minorGridOpacity: Double = 0.16
+    static let majorGridLineWidth: CGFloat = 1.8
+    static let minorGridLineWidth: CGFloat = 1.35
     static let dividerOpacity: Double = 0.18
     static let columnGridOpacity: Double = 0.09
     static let chipRadius: CGFloat = 6

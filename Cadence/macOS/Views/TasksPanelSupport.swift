@@ -183,14 +183,11 @@ enum TasksPanelSupport {
     }
 
     static func taskDragPayload(for task: AppTask) -> String {
-        "listTask:\(task.id.uuidString)"
+        TaskDragPayload.string(for: task.id)
     }
 
     static func taskID(from payload: String) -> UUID? {
-        if payload.hasPrefix("listTask:") {
-            return UUID(uuidString: String(payload.dropFirst(9)))
-        }
-        return UUID(uuidString: payload)
+        TaskDragPayload.taskID(from: payload)
     }
 
     static func openOverdueListSummary(_ summary: TodayOverdueListSummary, listNavigationManager: ListNavigationManager) {

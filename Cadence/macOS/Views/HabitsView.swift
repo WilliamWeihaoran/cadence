@@ -180,6 +180,22 @@ struct HabitsView: View {
                     goalCoverage: goalCoverageLabel
                 )
 
+                if let nextOpenHabit {
+                    HabitNextUpBanner(
+                        habit: nextOpenHabit,
+                        todayKey: todayKey,
+                        onSelect: { selectedHabitID = nextOpenHabit.id },
+                        onToggle: { toggleHabit(nextOpenHabit) }
+                    )
+                }
+
+                HabitSignalStrip(
+                    streakingCount: activeStreakCount,
+                    averageLast30Completion: averageLast30Completion,
+                    linkedCount: goalLinkedHabitCount,
+                    totalCount: habits.count
+                )
+
                 HStack(spacing: 10) {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
@@ -254,9 +270,11 @@ struct HabitsView: View {
     }
 
     private func toggleHabit(_ habit: Habit) {
-        let completions = habit.completions ?? []
-        if let existing = completions.first(where: { $0.date == todayKey }) {
-            modelContext.delete(existing)
+        let existing = (habit.completions ?? []).filter { $0.date == todayKey }
+        if !existing.isEmpty {
+            for completion in existing {
+                modelContext.delete(completion)
+            }
         } else {
             let c = HabitCompletion(date: todayKey, habit: habit)
             modelContext.insert(c)
@@ -439,8 +457,9 @@ struct CreateHabitSheet: View {
             habit.frequencyDays = []
             habit.targetCount = 1
         case .daysOfWeek:
-            habit.frequencyDays = selectedDays.sorted()
-            habit.targetCount = max(1, selectedDays.count)
+            let resolvedDays = selectedDays.isEmpty ? [Habit.weekdayIndex(for: Date())] : selectedDays.sorted()
+            habit.frequencyDays = resolvedDays
+            habit.targetCount = resolvedDays.count
         case .timesPerWeek:
             habit.frequencyDays = [timesPerWeek]
             habit.targetCount = timesPerWeek

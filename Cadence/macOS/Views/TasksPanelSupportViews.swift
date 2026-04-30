@@ -18,15 +18,7 @@ struct TasksPanelHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("TASKS")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .kerning(0.8)
-                    Text(title)
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                }
+                PanelHeader(eyebrow: "Tasks", title: title)
                 Spacer()
                 Button {
                     switch mode {
@@ -45,11 +37,10 @@ struct TasksPanelHeader: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.cadencePlain)
+                .padding(.top, 15)
+                .padding(.trailing, 16)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 20)
-        .padding(.bottom, 12)
     }
 }
 
@@ -660,11 +651,11 @@ struct CollapsibleTaskGroupHeader: View {
             .padding(.vertical, 9)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Theme.surface.opacity(0.5))
+                    .fill(Theme.surface.opacity(0.35))
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.75))
+                    .strokeBorder(Theme.borderSubtle.opacity(0.55))
             }
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }

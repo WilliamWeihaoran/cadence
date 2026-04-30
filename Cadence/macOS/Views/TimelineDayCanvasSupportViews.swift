@@ -176,10 +176,7 @@ struct TimelineDropDelegate: DropDelegate {
     }
 
     private func taskID(from payload: String) -> UUID? {
-        if payload.hasPrefix("listTask:") {
-            return UUID(uuidString: String(payload.dropFirst(9)))
-        }
-        return UUID(uuidString: payload)
+        TaskDragPayload.taskID(from: payload)
     }
 }
 #endif

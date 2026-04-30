@@ -71,34 +71,100 @@ struct MarkdownImageLayoutInfo {
     }
 }
 
+struct MarkdownTaskEmbedSubtaskRenderInfo: Hashable {
+    let id: UUID
+    let title: String
+    let isDone: Bool
+    let order: Int
+}
+
 struct MarkdownTaskEmbedRenderInfo: Hashable {
+    static let untitledTaskTitle = "Untitled Task"
+    static let compactCardHeight: CGFloat = 68
+    static let subtaskCardHeight: CGFloat = 96
+    static let lineHeightPadding: CGFloat = 12
+
     let id: UUID
     let title: String
     let statusRaw: String
     let priorityRaw: String
+    let sectionName: String
     let containerName: String
     let containerColorHex: String
     let dueDate: String
     let scheduledDate: String
     let scheduledStartMin: Int
+    let estimatedMinutes: Int
+    let actualMinutes: Int
+    let recurrenceRaw: String
     let isDone: Bool
     let isCancelled: Bool
     let isMissing: Bool
+    let subtasks: [MarkdownTaskEmbedSubtaskRenderInfo]
+
+    var subtaskTotalCount: Int {
+        subtasks.count
+    }
+
+    var completedSubtaskCount: Int {
+        subtasks.filter(\.isDone).count
+    }
+
+    var visibleSubtasks: [MarkdownTaskEmbedSubtaskRenderInfo] {
+        Array(subtasks.prefix(3))
+    }
+
+    var hiddenSubtaskCount: Int {
+        max(0, subtasks.count - visibleSubtasks.count)
+    }
+
+    var hasSubtasks: Bool {
+        !subtasks.isEmpty
+    }
+
+    var cardHeight: CGFloat {
+        hasSubtasks ? Self.subtaskCardHeight : Self.compactCardHeight
+    }
+
+    var paragraphLineHeight: CGFloat {
+        cardHeight + Self.lineHeightPadding
+    }
 
     static func task(_ task: AppTask) -> MarkdownTaskEmbedRenderInfo {
-        MarkdownTaskEmbedRenderInfo(
+        let subtaskInfos = (task.subtasks ?? [])
+            .sorted {
+                if $0.order == $1.order {
+                    return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                }
+                return $0.order < $1.order
+            }
+            .map {
+                MarkdownTaskEmbedSubtaskRenderInfo(
+                    id: $0.id,
+                    title: $0.title.trimmingCharacters(in: .whitespacesAndNewlines),
+                    isDone: $0.isDone,
+                    order: $0.order
+                )
+            }
+
+        return MarkdownTaskEmbedRenderInfo(
             id: task.id,
-            title: task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Task" : task.title,
+            title: task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? untitledTaskTitle : task.title,
             statusRaw: task.statusRaw,
             priorityRaw: task.priorityRaw,
+            sectionName: task.resolvedSectionName,
             containerName: task.containerName,
             containerColorHex: task.containerColor,
             dueDate: task.dueDate,
             scheduledDate: task.scheduledDate,
             scheduledStartMin: task.scheduledStartMin,
+            estimatedMinutes: task.estimatedMinutes,
+            actualMinutes: task.actualMinutes,
+            recurrenceRaw: task.recurrenceRaw,
             isDone: task.isDone,
             isCancelled: task.isCancelled,
-            isMissing: false
+            isMissing: false,
+            subtasks: subtaskInfos
         )
     }
 
@@ -109,14 +175,19 @@ struct MarkdownTaskEmbedRenderInfo: Hashable {
             title: title.isEmpty ? "Missing Task" : title,
             statusRaw: TaskStatus.cancelled.rawValue,
             priorityRaw: TaskPriority.none.rawValue,
+            sectionName: "",
             containerName: "",
             containerColorHex: TaskSectionDefaults.defaultColorHex,
             dueDate: "",
             scheduledDate: "",
             scheduledStartMin: -1,
+            estimatedMinutes: 0,
+            actualMinutes: 0,
+            recurrenceRaw: TaskRecurrenceRule.none.rawValue,
             isDone: false,
             isCancelled: false,
-            isMissing: true
+            isMissing: true,
+            subtasks: []
         )
     }
 }
@@ -125,9 +196,63 @@ struct MarkdownTaskEmbedLayoutInfo: Hashable {
     let task: MarkdownTaskEmbedRenderInfo
 }
 
+enum MarkdownTaskEmbedField: Hashable {
+    case title
+    case status
+    case priority
+    case container
+    case section
+    case scheduledDate
+    case dueDate
+    case estimate
+    case recurrence
+}
+
 struct MarkdownTaskEmbedHitRects {
     let card: NSRect
     let checkbox: NSRect
+}
+
+struct MarkdownTaskEmbedSubtaskHitRect: Hashable {
+    let subtaskID: UUID?
+    let checkbox: NSRect?
+    let text: NSRect
+    let full: NSRect
+
+    static func subtask(id: UUID, checkbox: NSRect, text: NSRect, full: NSRect) -> MarkdownTaskEmbedSubtaskHitRect {
+        MarkdownTaskEmbedSubtaskHitRect(subtaskID: id, checkbox: checkbox, text: text, full: full)
+    }
+
+    static func overflow(text: NSRect, full: NSRect) -> MarkdownTaskEmbedSubtaskHitRect {
+        MarkdownTaskEmbedSubtaskHitRect(subtaskID: nil, checkbox: nil, text: text, full: full)
+    }
+}
+
+enum MarkdownTaskEmbedSubtaskHitTarget: Hashable {
+    case checkbox(UUID)
+    case openInspector
+}
+
+enum MarkdownTaskEmbedSubtaskHitTesting {
+    static func hit(
+        at point: NSPoint,
+        in rects: [MarkdownTaskEmbedSubtaskHitRect],
+        checkboxPadding: CGFloat = 4
+    ) -> MarkdownTaskEmbedSubtaskHitTarget? {
+        for rect in rects {
+            if let subtaskID = rect.subtaskID,
+               let checkbox = rect.checkbox,
+               checkbox.insetBy(dx: -checkboxPadding, dy: -checkboxPadding).contains(point) {
+                return .checkbox(subtaskID)
+            }
+
+            if rect.text.insetBy(dx: -3, dy: -3).contains(point) {
+                return .openInspector
+            }
+        }
+
+        return nil
+    }
 }
 
 struct MarkdownTaskEmbedReference: Hashable {
@@ -141,8 +266,7 @@ enum MarkdownTaskEmbedParser {
         let nsLine = line as NSString
         let fullRange = NSRange(location: 0, length: nsLine.length)
         let patterns = [
-            #"^\s*(?:[-*+]\s+)?\[\s\]\s+(.+)$"#,
-            #"^\s*○\s+(.+)$"#
+            #"^\s*\(\s*\)\s+(.+)$"#
         ]
 
         for pattern in patterns {
@@ -177,6 +301,18 @@ enum MarkdownTaskEmbedParser {
             title: title,
             range: NSRange(location: lineStart + match.range.location, length: match.range.length)
         )
+    }
+
+    nonisolated static func referenceTitleRange(in markdown: String, lineStart: Int = 0) -> NSRange? {
+        guard let regex = try? NSRegularExpression(pattern: #"^\s*\[\[task:[0-9A-Fa-f-]{36}\|([^\]\n]+)\]\]\s*$"#) else {
+            return nil
+        }
+        let nsMarkdown = markdown as NSString
+        let match = regex.firstMatch(in: markdown, range: NSRange(location: 0, length: nsMarkdown.length))
+        guard let match, match.numberOfRanges > 1, match.range(at: 1).location != NSNotFound else {
+            return nil
+        }
+        return NSRange(location: lineStart + match.range(at: 1).location, length: match.range(at: 1).length)
     }
 
     nonisolated static func legacyChecklistMarkerRange(in line: String, lineStart: Int = 0) -> NSRange? {
@@ -713,8 +849,8 @@ enum MarkdownStylist {
         guard lineRange.length > 0 else { return }
 
         let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = 58
-        paragraph.maximumLineHeight = 58
+        paragraph.minimumLineHeight = embed.task.paragraphLineHeight
+        paragraph.maximumLineHeight = embed.task.paragraphLineHeight
         paragraph.lineBreakMode = .byClipping
         paragraph.paragraphSpacingBefore = 4
         paragraph.paragraphSpacing = 4

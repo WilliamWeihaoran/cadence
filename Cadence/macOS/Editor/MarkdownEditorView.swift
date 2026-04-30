@@ -19,7 +19,10 @@ struct MarkdownEditor: View {
     var onOpenTaskReference: (UUID?, String) -> Void = { _, _ in }
     var onCreateEmbeddedTask: (String) -> MarkdownReferenceSuggestion? = { _ in nil }
     var onToggleEmbeddedTask: (UUID) -> Void = { _ in }
+    var onToggleEmbeddedSubtask: (UUID, UUID) -> Void = { _, _ in }
     var onOpenEmbeddedTask: (UUID) -> Void = { _ in }
+    var onEditEmbeddedTask: (UUID, MarkdownTaskEmbedField) -> Void = { _, _ in }
+    var onHoverEmbeddedTask: (UUID, Bool) -> Void = { _, _ in }
     var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
@@ -68,7 +71,10 @@ struct MarkdownEditor: View {
                 onOpenReference: openReference,
                 onCreateEmbeddedTask: onCreateEmbeddedTask,
                 onToggleEmbeddedTask: onToggleEmbeddedTask,
+                onToggleEmbeddedSubtask: onToggleEmbeddedSubtask,
                 onOpenEmbeddedTask: onOpenEmbeddedTask,
+                onEditEmbeddedTask: onEditEmbeddedTask,
+                onHoverEmbeddedTask: onHoverEmbeddedTask,
                 onTextViewChanged: {
                     textView = $0
                     onTextViewChanged($0)
@@ -314,7 +320,10 @@ struct MarkdownEditorView: NSViewRepresentable {
     var onOpenReference: (MarkdownReferenceTarget) -> Void = { _ in }
     var onCreateEmbeddedTask: (String) -> MarkdownReferenceSuggestion? = { _ in nil }
     var onToggleEmbeddedTask: (UUID) -> Void = { _ in }
+    var onToggleEmbeddedSubtask: (UUID, UUID) -> Void = { _, _ in }
     var onOpenEmbeddedTask: (UUID) -> Void = { _ in }
+    var onEditEmbeddedTask: (UUID, MarkdownTaskEmbedField) -> Void = { _, _ in }
+    var onHoverEmbeddedTask: (UUID, Bool) -> Void = { _, _ in }
     var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
 
     func makeNSView(context: NSViewRepresentableContext<MarkdownEditorView>) -> NSScrollView {
@@ -408,7 +417,10 @@ struct MarkdownEditorView: NSViewRepresentable {
         textView.onOpenMarkdownReference = onOpenReference
         textView.onCreateEmbeddedMarkdownTask = onCreateEmbeddedTask
         textView.onToggleEmbeddedMarkdownTask = onToggleEmbeddedTask
+        textView.onToggleEmbeddedMarkdownSubtask = onToggleEmbeddedSubtask
         textView.onOpenEmbeddedMarkdownTask = onOpenEmbeddedTask
+        textView.onEditEmbeddedMarkdownTask = onEditEmbeddedTask
+        textView.onHoverEmbeddedMarkdownTask = onHoverEmbeddedTask
         textView.onCreateMarkdownImages = onCreateImages
         textView.onResizeMarkdownImage = onResizeImage
         textView.registerForDraggedTypes([.fileURL, .tiff, .png])

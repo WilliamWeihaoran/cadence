@@ -7,7 +7,6 @@ struct GoalsView: View {
     @Query(sort: \Context.order) private var allContexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    @Query(sort: \AppTask.createdAt) private var tasks: [AppTask]
 
     @Environment(\.modelContext) private var modelContext
     @State private var selectedGoalID: UUID?
@@ -87,10 +86,8 @@ struct GoalsView: View {
             if let goal = selectedGoal {
                 GoalInspectorView(
                     goal: goal,
-                    tasks: tasks,
                     onAttachWork: { showAttachWork = true },
-                    onDetachList: detachList,
-                    onDetachTask: detachTask
+                    onDetachList: detachList
                 )
                 .frame(minWidth: 360, idealWidth: 430)
             } else {
@@ -108,8 +105,7 @@ struct GoalsView: View {
                     goal: goal,
                     contexts: allContexts,
                     areas: areas,
-                    projects: projects,
-                    tasks: tasks
+                    projects: projects
                 )
             }
         }
@@ -222,10 +218,6 @@ struct GoalsView: View {
 
     private func detachList(_ link: GoalListLink) {
         modelContext.delete(link)
-    }
-
-    private func detachTask(_ task: AppTask) {
-        task.goal = nil
     }
 }
 

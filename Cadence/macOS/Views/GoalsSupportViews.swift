@@ -188,10 +188,8 @@ struct GoalMissionCard: View {
 
 struct GoalInspectorView: View {
     let goal: Goal
-    let tasks: [AppTask]
     let onAttachWork: () -> Void
     let onDetachList: (GoalListLink) -> Void
-    let onDetachTask: (AppTask) -> Void
 
     private var summary: GoalContributionSummary {
         GoalContributionResolver.summary(for: goal)
@@ -199,12 +197,6 @@ struct GoalInspectorView: View {
 
     private var habitMomentum: GoalHabitMomentumSummary {
         GoalHabitMomentumResolver.summary(for: goal)
-    }
-
-    private var directTasks: [AppTask] {
-        (goal.tasks ?? [])
-            .filter { !$0.isCancelled }
-            .sorted { $0.createdAt < $1.createdAt }
     }
 
     private var linkedLists: [GoalListLink] {
@@ -223,7 +215,6 @@ struct GoalInspectorView: View {
                 inspectorHeader
                 signalGrid
                 contributorLists
-                directTaskSection
                 allWorkSection
             }
             .padding(20)
@@ -251,7 +242,7 @@ struct GoalInspectorView: View {
 
             HStack(spacing: 8) {
                 CadenceActionButton(
-                    title: "Attach Work",
+                    title: "Attach List",
                     systemImage: "plus",
                     role: .primary,
                     size: .compact,
@@ -287,26 +278,11 @@ struct GoalInspectorView: View {
         }
     }
 
-    private var directTaskSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            GoalSectionHeading(title: "Direct Tasks", count: directTasks.count)
-            if directTasks.isEmpty {
-                GoalInlineEmpty(text: "Attach individual tasks when only specific work contributes.")
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(directTasks) { task in
-                        GoalTaskContributorRow(task: task, onDetach: { onDetachTask(task) })
-                    }
-                }
-            }
-        }
-    }
-
     private var allWorkSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            GoalSectionHeading(title: "All Contributing Work", count: contributingTasks.count)
+            GoalSectionHeading(title: "Contributing Work", count: contributingTasks.count)
             if contributingTasks.isEmpty {
-                GoalInlineEmpty(text: "No contributing tasks yet.")
+                GoalInlineEmpty(text: "Attach a list to pull in its active tasks.")
             } else {
                 VStack(spacing: 8) {
                     ForEach(contributingTasks.prefix(8)) { task in
@@ -323,7 +299,6 @@ struct AttachWorkSheet: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
-    let tasks: [AppTask]
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -353,23 +328,11 @@ struct AttachWorkSheet: View {
         return result
     }
 
-    private var filteredTasks: [AppTask] {
-        tasks
-            .filter { !$0.isCancelled }
-            .filter { task in
-                query.isEmpty
-                    || task.title.lowercased().contains(query)
-                    || task.containerName.lowercased().contains(query)
-                    || (task.goal?.title.lowercased().contains(query) ?? false)
-            }
-            .sorted { $0.createdAt > $1.createdAt }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Attach Work")
+                    Text("Attach Lists")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(Theme.text)
                     Text(goal.title)
@@ -390,7 +353,7 @@ struct AttachWorkSheet: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.dim)
-                TextField("Search lists or tasks", text: $searchText)
+                TextField("Search lists", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.text)
@@ -405,7 +368,6 @@ struct AttachWorkSheet: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 18) {
                     attachListsSection
-                    attachTasksSection
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 18)
@@ -453,26 +415,6 @@ struct AttachWorkSheet: View {
         }
     }
 
-    private var attachTasksSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            GoalSectionHeading(title: "Tasks", count: filteredTasks.count)
-            if filteredTasks.isEmpty {
-                GoalInlineEmpty(text: "No matching tasks.")
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(filteredTasks.prefix(50)) { task in
-                        AttachTaskCandidateRow(
-                            task: task,
-                            isAttached: task.goal?.id == goal.id,
-                            isReplacingGoal: task.goal != nil && task.goal?.id != goal.id,
-                            onToggle: { toggle(task: task) }
-                        )
-                    }
-                }
-            }
-        }
-    }
-
     private func matches(_ text: String) -> Bool {
         query.isEmpty || text.lowercased().contains(query)
     }
@@ -501,16 +443,6 @@ struct AttachWorkSheet: View {
         }
     }
 
-    private func toggle(task: AppTask) {
-        if task.goal?.id == goal.id {
-            task.goal = nil
-        } else {
-            task.goal = goal
-            if task.context == nil {
-                task.context = task.area?.context ?? task.project?.context ?? goal.context
-            }
-        }
-    }
 }
 
 struct GoalProgressOrb: View {
@@ -721,41 +653,6 @@ struct AttachListCandidateRow: View {
                 }
                 Spacer()
                 Label(isAttached ? "Attached" : "Attach", systemImage: isAttached ? "checkmark.circle.fill" : "plus.circle")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isAttached ? Theme.green : Theme.blue)
-            }
-            .padding(10)
-            .background(isAttached ? Theme.green.opacity(0.08) : Theme.surfaceElevated.opacity(0.58))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(isAttached ? Theme.green.opacity(0.22) : Theme.borderSubtle, lineWidth: 1))
-        }
-        .buttonStyle(.cadencePlain)
-    }
-}
-
-struct AttachTaskCandidateRow: View {
-    let task: AppTask
-    let isAttached: Bool
-    let isReplacingGoal: Bool
-    let onToggle: () -> Void
-
-    var body: some View {
-        Button(action: onToggle) {
-            HStack(spacing: 10) {
-                Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(task.isDone ? Theme.green : Theme.dim)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(task.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                    Text(task.containerName.isEmpty ? "Inbox" : task.containerName)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.dim)
-                }
-                Spacer()
-                Text(isAttached ? "Attached" : (isReplacingGoal ? "Replace" : "Attach"))
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(isAttached ? Theme.green : Theme.blue)
             }
