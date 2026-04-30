@@ -313,7 +313,16 @@ struct CalendarEventEditPopover: View {
     }
 
     private var linkedEventNote: Note? {
-        EventNoteSupport.note(for: item.id, in: eventNotes)
+        let metadata = EventNoteSupport.eventDateMetadata(from: item.ekEvent)
+        return EventNoteSupport.note(
+            for: item.id,
+            eventTitle: item.title,
+            calendarID: item.ekEvent.calendar.calendarIdentifier,
+            eventDateKey: metadata.dateKey,
+            eventStartMin: metadata.startMin,
+            eventEndMin: metadata.endMin,
+            in: eventNotes
+        )
     }
 
     private var durationLabel: String {

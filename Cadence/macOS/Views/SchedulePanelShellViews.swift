@@ -2,28 +2,62 @@
 import SwiftUI
 
 struct SchedulePanelHeader: View {
+    var presentation: SchedulePanelPresentation = .standard
     @Binding var zoomLevel: Int
     let onExport: () -> Void
 
     var body: some View {
+        switch presentation {
+        case .standard:
+            standardHeader
+        case .compact:
+            compactHeader
+        }
+    }
+
+    private var standardHeader: some View {
         HStack(spacing: 0) {
             PanelHeader(eyebrow: "Schedule", title: "Timeline")
             Spacer()
-            Button {
-                onExport()
-            } label: {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 28, height: 28)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.cadencePlain)
-            .padding(.trailing, 8)
+            exportButton
+                .padding(.trailing, 8)
             TimelineZoomControl(zoomLevel: $zoomLevel, range: 1...3)
                 .padding(.trailing, 12)
         }
+    }
+
+    private var compactHeader: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Today")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .textCase(.uppercase)
+                Text("Timeline")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+            }
+            Spacer(minLength: 8)
+            exportButton
+            TimelineZoomControl(zoomLevel: $zoomLevel, range: 1...3)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    private var exportButton: some View {
+        Button {
+            onExport()
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .frame(width: 28, height: 28)
+                .background(Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.cadencePlain)
+        .help("Export schedule")
     }
 }
 

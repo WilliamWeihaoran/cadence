@@ -9,9 +9,14 @@ extension ModelContext {
         let contextTasks = Array(context.tasks ?? [])
         let goals = Array(context.goals ?? [])
         let habits = Array(context.habits ?? [])
-
         let areaProjects = areas.flatMap { Array($0.projects ?? []) }
         let projects = uniqueProjects(from: areaProjects + contextProjects)
+        let goalLinks = uniqueGoalListLinks(from:
+            goals.flatMap { Array($0.listLinks ?? []) } +
+            areas.flatMap { Array($0.goalLinks ?? []) } +
+            projects.flatMap { Array($0.goalLinks ?? []) }
+        )
+
         let tasks = uniqueTasks(from:
             areas.flatMap { Array($0.tasks ?? []) } +
             projects.flatMap { Array($0.tasks ?? []) } +
@@ -19,15 +24,12 @@ extension ModelContext {
             goals.flatMap { Array($0.tasks ?? []) }
         )
         let subtasks = uniqueSubtasks(from: tasks.flatMap { Array($0.subtasks ?? []) })
-        let documents = uniqueDocuments(from:
-            areas.flatMap { Array($0.documents ?? []) } +
-            projects.flatMap { Array($0.documents ?? []) }
-        )
         let notes = uniqueNotes(from:
             areas.flatMap { Array($0.notes ?? []) } +
             projects.flatMap { Array($0.notes ?? []) }
         )
         .filter { $0.kind == .list }
+        let deletedNoteIDs = Set(notes.map(\.id))
         let links = uniqueLinks(from:
             areas.flatMap { Array($0.links ?? []) } +
             projects.flatMap { Array($0.links ?? []) }
@@ -36,10 +38,11 @@ extension ModelContext {
 
         delete(subtasks)
         delete(tasks)
-        delete(documents)
         delete(notes)
+        deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
         delete(links)
         delete(completions)
+        delete(goalLinks)
         delete(goals)
         delete(habits)
         delete(projects)
@@ -49,10 +52,13 @@ extension ModelContext {
 
     func deleteProject(_ project: Project) {
         let tasks = Array(project.tasks ?? [])
+        let notes = uniqueNotes(from: Array(project.notes ?? [])).filter { $0.kind == .list }
+        let deletedNoteIDs = Set(notes.map(\.id))
+        delete(uniqueGoalListLinks(from: Array(project.goalLinks ?? [])))
         delete(uniqueSubtasks(from: tasks.flatMap { Array($0.subtasks ?? []) }))
         delete(uniqueTasks(from: tasks))
-        delete(uniqueDocuments(from: Array(project.documents ?? [])))
-        delete(uniqueNotes(from: Array(project.notes ?? [])).filter { $0.kind == .list })
+        delete(notes)
+        deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
         delete(uniqueLinks(from: Array(project.links ?? [])))
         delete(project)
     }
@@ -60,13 +66,16 @@ extension ModelContext {
     func deleteArea(_ area: Area) {
         let tasks = Array(area.tasks ?? [])
         let projects = uniqueProjects(from: Array(area.projects ?? []))
+        let notes = uniqueNotes(from: Array(area.notes ?? [])).filter { $0.kind == .list }
+        let deletedNoteIDs = Set(notes.map(\.id))
+        delete(uniqueGoalListLinks(from: Array(area.goalLinks ?? [])))
         delete(uniqueSubtasks(from: tasks.flatMap { Array($0.subtasks ?? []) }))
         delete(uniqueTasks(from: tasks))
         for project in projects {
             deleteProject(project)
         }
-        delete(uniqueDocuments(from: Array(area.documents ?? [])))
-        delete(uniqueNotes(from: Array(area.notes ?? [])).filter { $0.kind == .list })
+        delete(notes)
+        deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
         delete(uniqueLinks(from: Array(area.links ?? [])))
         delete(area)
     }
@@ -89,10 +98,6 @@ extension ModelContext {
         dedupe(projects, by: \Project.id)
     }
 
-    private func uniqueDocuments(from documents: [Document]) -> [Document] {
-        dedupe(documents, by: \Document.id)
-    }
-
     private func uniqueNotes(from notes: [Note]) -> [Note] {
         dedupe(notes, by: \Note.id)
     }
@@ -103,6 +108,22 @@ extension ModelContext {
 
     private func uniqueHabitCompletions(from completions: [HabitCompletion]) -> [HabitCompletion] {
         dedupe(completions, by: \HabitCompletion.id)
+    }
+
+    private func uniqueGoalListLinks(from links: [GoalListLink]) -> [GoalListLink] {
+        dedupe(links, by: \GoalListLink.id)
+    }
+
+    func deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: Set<UUID> = []) {
+        guard let assets = try? fetch(FetchDescriptor<MarkdownImageAsset>()), !assets.isEmpty else { return }
+        let remainingMarkdown = ((try? fetch(FetchDescriptor<Note>())) ?? [])
+            .filter { !excludingNoteIDs.contains($0.id) }
+            .map(\.content)
+        let unreferenced = MarkdownImageAssetService.unreferencedAssets(
+            allAssets: assets,
+            markdownTexts: remainingMarkdown
+        )
+        delete(unreferenced)
     }
 
     private func dedupe<T>(_ models: [T], by id: KeyPath<T, UUID>) -> [T] {

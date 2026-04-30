@@ -16,6 +16,7 @@ enum CadenceSchema {
         EventNote.self,
         MarkdownImageAsset.self,
         Goal.self,
+        GoalListLink.self,
         Habit.self,
         HabitCompletion.self,
     ])

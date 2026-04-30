@@ -114,4 +114,39 @@ struct NoteMigrationServiceTests {
         #expect(NoteMigrationService.lastReport()?.source == "duplicate-diagnostic-test")
         #expect(NoteMigrationService.lastReport()?.canonicalDuplicateCount == 1)
     }
+
+    @Test func healthCheckReportsLegacyGapsAndBadRelationships() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let area = Area(name: "Area")
+        let project = Project(name: "Project")
+        let orphanedListNote = Note(kind: .list, title: "Orphan")
+        let doubleOwnedListNote = Note(kind: .list, title: "Double owned", area: area, project: project)
+        let firstDaily = Note(kind: .daily, title: "Daily A", dateKey: "2026-04-29")
+        let secondDaily = Note(kind: .daily, title: "Daily B", dateKey: "2026-04-29")
+        let missingEventID = Note(kind: .meeting, title: "Meeting", calendarID: "calendar-1")
+        let missingCalendarID = Note(kind: .meeting, title: "Meeting", calendarEventID: "event-1")
+        let unmigratedLegacy = WeeklyNote(weekKey: "2026-W18")
+
+        context.insert(area)
+        context.insert(project)
+        context.insert(orphanedListNote)
+        context.insert(doubleOwnedListNote)
+        context.insert(firstDaily)
+        context.insert(secondDaily)
+        context.insert(missingEventID)
+        context.insert(missingCalendarID)
+        context.insert(unmigratedLegacy)
+        try context.save()
+
+        let health = try NoteMigrationService.healthCheck(in: context)
+
+        #expect(health.canonicalDuplicateCount == 1)
+        #expect(health.legacyWithoutCanonicalCount == 1)
+        #expect(health.orphanedListNoteCount == 1)
+        #expect(health.listNoteWithMultipleOwnersCount == 1)
+        #expect(health.meetingNoteMissingEventIDCount == 1)
+        #expect(health.meetingNoteMissingCalendarIDCount == 1)
+        #expect(health.issueCount == 5)
+    }
 }

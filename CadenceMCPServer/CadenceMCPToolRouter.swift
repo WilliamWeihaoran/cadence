@@ -32,7 +32,11 @@ struct CadenceMCPToolRouter {
     private func callTool(name: String, arguments: [String: Value]) throws -> String {
         switch name {
         case "mcp_diagnostics":
-            return try encode(CadenceMCPToolDefinitions.diagnostics(auditLogPath: try? CadenceModelContainerFactory.auditLogURL().path))
+            let health = try? readService.noteMigrationHealth()
+            return try encode(CadenceMCPToolDefinitions.diagnostics(
+                auditLogPath: try? CadenceModelContainerFactory.auditLogURL().path,
+                noteMigrationHealthReport: health
+            ))
 
         case "get_today_brief":
             return try encode(readService.todayBrief(dateKey: try arguments.dateKey("date")))

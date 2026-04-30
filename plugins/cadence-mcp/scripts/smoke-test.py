@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import os
 import select
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,7 +16,6 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 PLUGIN_DIR = SCRIPT_DIR.parent
 LAUNCHER = SCRIPT_DIR / "run-cadence-mcp.sh"
-REAL_STORE = Path.home() / "Library/Containers/com.haoranwei.Cadence/Data/Library/Application Support/default.store"
 EXPECTED_TOOLS = {
     "mcp_diagnostics",
     "get_today_brief",
@@ -41,27 +39,16 @@ EXPECTED_TOOLS = {
 }
 
 
-def prepare_store_copy() -> tempfile.TemporaryDirectory:
-    temp_dir = tempfile.TemporaryDirectory(prefix="cadence-mcp-smoke-")
-    source = REAL_STORE if REAL_STORE.exists() else Path.home() / "Library/Application Support/default.store"
-    if not source.exists():
-        temp_dir.cleanup()
-        raise FileNotFoundError(f"Could not find Cadence store at {REAL_STORE} or fallback Application Support path")
-
-    destination = Path(temp_dir.name) / "default.store"
-    shutil.copy2(source, destination)
-    for suffix in ("-shm", "-wal"):
-        sidecar = Path(str(source) + suffix)
-        if sidecar.exists():
-            shutil.copy2(sidecar, Path(str(destination) + suffix))
-    return temp_dir
+def prepare_fixture_store() -> tempfile.TemporaryDirectory:
+    return tempfile.TemporaryDirectory(prefix="cadence-mcp-smoke-")
 
 
 def main() -> int:
     date_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    temp_store = prepare_store_copy()
+    temp_store = prepare_fixture_store()
     env = os.environ.copy()
     env["CADENCE_MCP_STORE_URL"] = str(Path(temp_store.name) / "default.store")
+    env["CADENCE_MCP_CREATE_STORE_IF_MISSING"] = "1"
     process = subprocess.Popen(
         [str(LAUNCHER)],
         cwd=PLUGIN_DIR,
@@ -131,11 +118,13 @@ def main() -> int:
         diagnostics = json.loads(diagnostics_response["result"]["content"][0]["text"])
         if diagnostics["mode"] != "read-write":
             raise AssertionError(f"expected read-write diagnostics, got {diagnostics}")
+        if diagnostics.get("noteMigrationHealthIssues") != "0":
+            raise AssertionError(f"expected clean note migration health, got {diagnostics}")
         audit_log = Path(temp_store.name) / "mcp-audit.log"
         if diagnostics.get("auditLogPath") != str(audit_log):
             raise AssertionError(f"expected audit log path {audit_log}, got {diagnostics.get('auditLogPath')}")
 
-        arguments = {"date": date_arg} if date_arg else {}
+        arguments = {"date": date_arg or "2026-04-28"}
         send(
             {
                 "jsonrpc": "2.0",
@@ -183,6 +172,115 @@ def main() -> int:
         invalid_note_kind = read_response(7)
         if not invalid_note_kind["result"].get("isError", False):
             raise AssertionError("append_core_note with invalid kind should return an MCP tool error")
+
+        note_date = date_arg or "2026-04-28"
+        core_note_marker = f"MCP smoke core note {int(time.time() * 1000)}"
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 16,
+                "method": "tools/call",
+                "params": {
+                    "name": "append_core_note",
+                    "arguments": {
+                        "kind": "daily",
+                        "date": note_date,
+                        "content": core_note_marker,
+                        "separator": "\n",
+                    },
+                },
+            }
+        )
+        append_core_note = read_response(16)
+        if append_core_note["result"].get("isError", False):
+            raise AssertionError(append_core_note["result"]["content"][0]["text"])
+        appended_notes = json.loads(append_core_note["result"]["content"][0]["text"])
+        daily_note = appended_notes.get("dailyNote")
+        if not daily_note or core_note_marker not in daily_note["content"]:
+            raise AssertionError(f"expected appended daily note content, got {appended_notes}")
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 17,
+                "method": "tools/call",
+                "params": {"name": "get_core_notes", "arguments": {"date": note_date}},
+            }
+        )
+        get_core_notes = read_response(17)
+        if get_core_notes["result"].get("isError", False):
+            raise AssertionError(get_core_notes["result"]["content"][0]["text"])
+        core_notes = json.loads(get_core_notes["result"]["content"][0]["text"])
+        if core_note_marker not in (core_notes.get("dailyNote") or {}).get("content", ""):
+            raise AssertionError(f"expected get_core_notes to return appended marker, got {core_notes}")
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 18,
+                "method": "tools/call",
+                "params": {"name": "search_cadence", "arguments": {"query": core_note_marker, "scopes": ["core_notes"]}},
+            }
+        )
+        core_search_response = read_response(18)
+        if core_search_response["result"].get("isError", False):
+            raise AssertionError(core_search_response["result"]["content"][0]["text"])
+        core_search_hits = json.loads(core_search_response["result"]["content"][0]["text"])
+        if not any(hit["entityType"] == "daily_note" and hit["entityId"] == daily_note["id"] for hit in core_search_hits):
+            raise AssertionError(f"expected core_notes search to find daily note, got {core_search_hits}")
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 19,
+                "method": "tools/call",
+                "params": {"name": "search_cadence", "arguments": {"query": core_note_marker}},
+            }
+        )
+        default_search_response = read_response(19)
+        if default_search_response["result"].get("isError", False):
+            raise AssertionError(default_search_response["result"]["content"][0]["text"])
+        default_search_hits = json.loads(default_search_response["result"]["content"][0]["text"])
+        if not any(hit["entityType"] == "daily_note" and hit["entityId"] == daily_note["id"] for hit in default_search_hits):
+            raise AssertionError(f"expected default search to include core notes, got {default_search_hits}")
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 20,
+                "method": "tools/call",
+                "params": {"name": "list_documents", "arguments": {"limit": 3}},
+            }
+        )
+        list_documents_response = read_response(20)
+        if list_documents_response["result"].get("isError", False):
+            raise AssertionError(list_documents_response["result"]["content"][0]["text"])
+        json.loads(list_documents_response["result"]["content"][0]["text"])
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 21,
+                "method": "tools/call",
+                "params": {"name": "get_document", "arguments": {"documentId": "00000000-0000-0000-0000-000000000000"}},
+            }
+        )
+        missing_document_response = read_response(21)
+        if not missing_document_response["result"].get("isError", False):
+            raise AssertionError("get_document with a missing documentId should return an MCP tool error")
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 22,
+                "method": "tools/call",
+                "params": {"name": "search_cadence", "arguments": {"query": "unlikely-meeting-note-marker", "scopes": ["event_notes"]}},
+            }
+        )
+        event_note_search_response = read_response(22)
+        if event_note_search_response["result"].get("isError", False):
+            raise AssertionError(event_note_search_response["result"]["content"][0]["text"])
+        json.loads(event_note_search_response["result"]["content"][0]["text"])
 
         send(
             {
@@ -328,6 +426,8 @@ def main() -> int:
         print(f"OK tools/list {len(tool_names)} tools")
         print(f"OK diagnostics mode={diagnostics['mode']}")
         print(f"OK get_today_brief dateKey={brief['dateKey']}")
+        print("OK core note append/read/search")
+        print("OK document/event-note read paths")
         print("OK string scheduledStartMin")
         print("OK natural date/duration")
         print("OK word duration")

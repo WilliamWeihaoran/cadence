@@ -71,7 +71,42 @@ struct EventNoteEditorSheet: View {
 
 enum EventNoteSupport {
     static func note(for calendarEventID: String, in notes: [Note]) -> Note? {
-        notes.first { $0.kind == .meeting && $0.calendarEventID == calendarEventID }
+        guard !calendarEventID.isEmpty else { return nil }
+        return notes.first { $0.kind == .meeting && $0.calendarEventID == calendarEventID }
+    }
+
+    static func note(
+        for calendarEventID: String,
+        eventTitle: String,
+        calendarID: String,
+        eventDateKey: String,
+        eventStartMin: Int,
+        eventEndMin: Int,
+        in notes: [Note]
+    ) -> Note? {
+        if let exact = note(for: calendarEventID, in: notes) {
+            return exact
+        }
+
+        let normalizedTitle = normalizedEventTitle(eventTitle)
+        guard !calendarID.isEmpty,
+              !eventDateKey.isEmpty,
+              eventStartMin >= 0,
+              eventEndMin >= 0,
+              !normalizedTitle.isEmpty else {
+            return nil
+        }
+
+        return notes.first { note in
+            guard note.kind == .meeting,
+                  note.calendarID == calendarID,
+                  note.eventDateKey == eventDateKey,
+                  note.eventStartMin == eventStartMin,
+                  note.eventEndMin == eventEndMin else {
+                return false
+            }
+            return normalizedEventTitle(note.title) == normalizedTitle
+        }
     }
 
     @discardableResult
@@ -86,9 +121,20 @@ enum EventNoteSupport {
         insert: (Note) -> Void
     ) -> Note? {
         guard !calendarEventID.isEmpty else { return nil }
-        if let existing = note(for: calendarEventID, in: notes) {
+        if let existing = note(
+            for: calendarEventID,
+            eventTitle: eventTitle,
+            calendarID: calendarID,
+            eventDateKey: eventDateKey,
+            eventStartMin: eventStartMin,
+            eventEndMin: eventEndMin,
+            in: notes
+        ) {
             if existing.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 existing.title = eventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Event Note" : eventTitle
+            }
+            if existing.calendarEventID.isEmpty || existing.calendarEventID != calendarEventID {
+                existing.calendarEventID = calendarEventID
             }
             updateMetadata(
                 existing,
@@ -167,6 +213,24 @@ enum EventNoteSupport {
         if changed {
             note.updatedAt = Date()
         }
+    }
+
+    static func meetingNotes(forLinkedCalendarID calendarID: String, in notes: [Note]) -> [Note] {
+        let trimmed = calendarID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        return notes
+            .filter { $0.kind == .meeting && $0.calendarID == trimmed }
+            .sorted {
+                if $0.eventDateKey != $1.eventDateKey { return $0.eventDateKey > $1.eventDateKey }
+                if $0.eventStartMin != $1.eventStartMin { return $0.eventStartMin > $1.eventStartMin }
+                return $0.updatedAt > $1.updatedAt
+            }
+    }
+
+    private static func normalizedEventTitle(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .lowercased()
     }
 }
 #endif

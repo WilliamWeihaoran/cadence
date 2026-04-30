@@ -32,6 +32,24 @@ struct NoteMigrationReport: Codable, Equatable {
     }
 }
 
+struct NoteMigrationHealthReport: Codable, Equatable {
+    var noteCount: Int = 0
+    var canonicalDuplicateCount: Int = 0
+    var legacyWithoutCanonicalCount: Int = 0
+    var orphanedListNoteCount: Int = 0
+    var listNoteWithMultipleOwnersCount: Int = 0
+    var meetingNoteMissingEventIDCount: Int = 0
+    var meetingNoteMissingCalendarIDCount: Int = 0
+
+    var issueCount: Int {
+        canonicalDuplicateCount +
+            legacyWithoutCanonicalCount +
+            orphanedListNoteCount +
+            listNoteWithMultipleOwnersCount +
+            meetingNoteMissingEventIDCount
+    }
+}
+
 enum NoteMigrationService {
     enum LegacyKind: String {
         case daily
@@ -80,6 +98,61 @@ enum NoteMigrationService {
     static func lastReport() -> NoteMigrationReport? {
         guard let data = UserDefaults.standard.data(forKey: lastReportKey) else { return nil }
         return try? JSONDecoder().decode(NoteMigrationReport.self, from: data)
+    }
+
+    static func healthCheck(in context: ModelContext) throws -> NoteMigrationHealthReport {
+        let notes = try context.fetch(FetchDescriptor<Note>())
+        var report = NoteMigrationHealthReport()
+        report.noteCount = notes.count
+        report.canonicalDuplicateCount = canonicalDuplicateCount(in: notes)
+
+        let canonicalKeys = Set(notes.map(canonicalKey(for:)))
+        for legacy in try context.fetch(FetchDescriptor<DailyNote>()) {
+            if !canonicalKeys.contains("daily:\(legacy.date)") {
+                report.legacyWithoutCanonicalCount += 1
+            }
+        }
+        for legacy in try context.fetch(FetchDescriptor<WeeklyNote>()) {
+            if !canonicalKeys.contains("weekly:\(legacy.weekKey)") {
+                report.legacyWithoutCanonicalCount += 1
+            }
+        }
+        for _ in try context.fetch(FetchDescriptor<PermNote>()) where !canonicalKeys.contains("permanent") {
+            report.legacyWithoutCanonicalCount += 1
+        }
+        for legacy in try context.fetch(FetchDescriptor<Document>()) {
+            if !canonicalKeys.contains("list:\(legacy.id.uuidString)") {
+                report.legacyWithoutCanonicalCount += 1
+            }
+        }
+        for legacy in try context.fetch(FetchDescriptor<EventNote>()) {
+            let key = legacy.calendarEventID.isEmpty ? sourceKey(kind: .eventNote, id: legacy.id) : "meeting:\(legacy.calendarEventID)"
+            if !canonicalKeys.contains(key) {
+                report.legacyWithoutCanonicalCount += 1
+            }
+        }
+
+        for note in notes {
+            switch note.kind {
+            case .list:
+                let ownerCount = (note.area == nil ? 0 : 1) + (note.project == nil ? 0 : 1)
+                if ownerCount == 0 {
+                    report.orphanedListNoteCount += 1
+                } else if ownerCount > 1 {
+                    report.listNoteWithMultipleOwnersCount += 1
+                }
+            case .meeting:
+                if note.calendarEventID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    report.meetingNoteMissingEventIDCount += 1
+                }
+                if note.calendarID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    report.meetingNoteMissingCalendarIDCount += 1
+                }
+            default:
+                break
+            }
+        }
+        return report
     }
 
     private static func migrate(in context: ModelContext, report: inout NoteMigrationReport) throws -> NoteMigrationReport {
@@ -258,16 +331,16 @@ enum NoteMigrationService {
         return note
     }
 
-    private static func sourceKey(for note: Note) -> String? {
+    private nonisolated static func sourceKey(for note: Note) -> String? {
         guard !note.legacySourceKindRaw.isEmpty, !note.legacySourceID.isEmpty else { return nil }
         return "\(note.legacySourceKindRaw):\(note.legacySourceID)"
     }
 
-    private static func sourceKey(kind: LegacyKind, id: UUID) -> String {
+    private nonisolated static func sourceKey(kind: LegacyKind, id: UUID) -> String {
         "\(kind.rawValue):\(id.uuidString)"
     }
 
-    private static func canonicalKey(for note: Note) -> String {
+    private nonisolated static func canonicalKey(for note: Note) -> String {
         switch note.kind {
         case .daily:
             return "daily:\(note.dateKey)"

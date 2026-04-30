@@ -95,7 +95,11 @@ enum CadenceMCPToolDefinitions {
         ]
     }
 
-    static func diagnostics(auditLogPath: String?, noteMigrationReport: NoteMigrationReport? = NoteMigrationService.lastReport()) -> [String: String] {
+    static func diagnostics(
+        auditLogPath: String?,
+        noteMigrationReport: NoteMigrationReport? = NoteMigrationService.lastReport(),
+        noteMigrationHealthReport: NoteMigrationHealthReport? = nil
+    ) -> [String: String] {
         var payload = [
             "name": "cadence-mcp",
             "version": serverVersion,
@@ -116,6 +120,12 @@ enum CadenceMCPToolDefinitions {
             if let errorMessage = noteMigrationReport.errorMessage {
                 payload["noteMigrationError"] = errorMessage
             }
+        }
+        if let noteMigrationHealthReport {
+            payload["noteMigrationHealthIssues"] = "\(noteMigrationHealthReport.issueCount)"
+            payload["noteMigrationHealthLegacyWithoutCanonical"] = "\(noteMigrationHealthReport.legacyWithoutCanonicalCount)"
+            payload["noteMigrationHealthOrphanedListNotes"] = "\(noteMigrationHealthReport.orphanedListNoteCount)"
+            payload["noteMigrationHealthMeetingNotesMissingCalendar"] = "\(noteMigrationHealthReport.meetingNoteMissingCalendarIDCount)"
         }
         return payload
     }

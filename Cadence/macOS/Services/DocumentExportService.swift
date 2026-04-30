@@ -3,22 +3,10 @@ import AppKit
 import UniformTypeIdentifiers
 
 enum DocumentExportService {
-    static func exportMarkdown(_ doc: Document) {
-        let title = doc.title
-        let content = doc.content
-        exportMarkdown(title: title, content: content)
-    }
-
     static func exportMarkdown(_ note: Note) {
         let title = note.displayTitle
         let content = note.content
         exportMarkdown(title: title, content: content)
-    }
-
-    static func exportPDF(_ doc: Document, imageAssets: [MarkdownImageAsset] = []) {
-        let title = doc.title
-        let content = doc.content
-        exportPDF(title: title, content: content, imageAssets: imageAssets)
     }
 
     static func exportPDF(_ note: Note, imageAssets: [MarkdownImageAsset] = []) {
@@ -75,7 +63,7 @@ enum DocumentExportService {
     }
 
     @MainActor
-    private static func renderedPDFData(content: String, imageAssets: [MarkdownImageAsset]) -> Data? {
+    static func renderedPDFData(content: String, imageAssets: [MarkdownImageAsset]) -> Data? {
         let pageWidth: CGFloat = 612
         let horizontalInset: CGFloat = 42
         let verticalInset: CGFloat = 42

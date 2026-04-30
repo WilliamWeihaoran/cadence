@@ -3,6 +3,7 @@ import SwiftData
 
 enum CadenceModelContainerFactory {
     static let storeURLEnvironmentKey = "CADENCE_MCP_STORE_URL"
+    static let createStoreIfMissingEnvironmentKey = "CADENCE_MCP_CREATE_STORE_IF_MISSING"
     static let appContainerIdentifier = "com.haoranwei.Cadence"
 
     static func makeReadOnlyContainer() throws -> ModelContainer {
@@ -44,10 +45,11 @@ enum CadenceModelContainerFactory {
         if let override = ProcessInfo.processInfo.environment[storeURLEnvironmentKey],
            !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let overrideURL = URL(fileURLWithPath: NSString(string: override).expandingTildeInPath)
-            guard FileManager.default.fileExists(atPath: overrideURL.path) else {
+            if FileManager.default.fileExists(atPath: overrideURL.path) || shouldCreateMissingOverrideStore {
+                return overrideURL
+            } else {
                 throw CadenceReadError.storeNotFound([overrideURL.path])
             }
-            return overrideURL
         }
 
         let home = userHomeDirectory
@@ -103,5 +105,10 @@ enum CadenceModelContainerFactory {
         #else
         FileManager.default.homeDirectoryForCurrentUser
         #endif
+    }
+
+    private static var shouldCreateMissingOverrideStore: Bool {
+        let raw = ProcessInfo.processInfo.environment[createStoreIfMissingEnvironmentKey] ?? ""
+        return ["1", "true", "yes"].contains(raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
     }
 }

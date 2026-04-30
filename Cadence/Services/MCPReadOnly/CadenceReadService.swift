@@ -58,10 +58,12 @@ final class CadenceReadService {
 
     init(container: ModelContainer) {
         context = ModelContext(container)
+        NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-read-service-container")
     }
 
     init(context: ModelContext) {
         self.context = context
+        NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-read-service-context")
     }
 
     func todayBrief(dateKey: String? = nil) throws -> CadenceTodayBrief {
@@ -223,18 +225,13 @@ final class CadenceReadService {
         let noteDocuments = try notesForContainer(kind: kind, id: uuid)
             .sorted { $0.order < $1.order }
             .map(documentSummary)
-        let migratedIDs = Set(try fetchNotes().filter { $0.kind == .list }.map(\.id))
-        let legacyDocuments = try legacyDocumentsForContainer(kind: kind, id: uuid)
-            .filter { !migratedIDs.contains($0.id) }
-            .sorted { $0.order < $1.order }
-            .map(documentSummary)
 
         return CadenceContainerSummary(
             container: try containerRef(kind: kind, id: uuid),
             activeTaskCount: active.count,
             completedTaskCount: containerTasks.filter(\.isDone).count,
             overdueTaskCount: overdue.count,
-            documents: noteDocuments + legacyDocuments
+            documents: noteDocuments
         )
     }
 
@@ -250,27 +247,21 @@ final class CadenceReadService {
         return CadenceCoreNotesSnapshot(
             dateKey: resolvedDateKey,
             weekKey: resolvedWeekKey,
-            dailyNote: daily.map { notePayload($0, key: resolvedDateKey) } ?? legacyDailyPayload(dateKey: resolvedDateKey),
-            weeklyNote: weekly.map { notePayload($0, key: resolvedWeekKey) } ?? legacyWeeklyPayload(weekKey: resolvedWeekKey),
-            permanentNote: permanent.map { notePayload($0, key: nil) } ?? legacyPermanentPayload()
+            dailyNote: daily.map { notePayload($0, key: resolvedDateKey) },
+            weeklyNote: weekly.map { notePayload($0, key: resolvedWeekKey) },
+            permanentNote: permanent.map { notePayload($0, key: nil) }
         )
     }
 
     func listDocuments(containerKind: String? = nil, containerID: String? = nil, query: String? = nil, limit: Int = 50) throws -> [CadenceDocumentSummary] {
         var docs = try fetchNotes().filter { $0.kind == .list }
-        var legacyDocs = try legacyUnmigratedDocuments(excluding: docs)
 
         if let containerFilter = try resolvedContainerFilter(kind: containerKind, id: containerID) {
             docs = try notesForContainer(kind: containerFilter.kind, id: containerFilter.id)
-            legacyDocs = try legacyDocumentsForContainer(kind: containerFilter.kind, id: containerFilter.id)
-                .filter { legacy in !docs.contains { $0.id == legacy.id } }
         }
 
         if let query = query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
             docs = docs.filter { doc in
-                CadenceSearchMatcher.matchScore(query: query, fields: [doc.title, doc.content, doc.area?.name ?? "", doc.project?.name ?? ""]) != nil
-            }
-            legacyDocs = legacyDocs.filter { doc in
                 CadenceSearchMatcher.matchScore(query: query, fields: [doc.title, doc.content, doc.area?.name ?? "", doc.project?.name ?? ""]) != nil
             }
         }
@@ -278,10 +269,7 @@ final class CadenceReadService {
         let noteSummaries = docs
             .sorted { $0.updatedAt > $1.updatedAt }
             .map(documentSummary)
-        let legacySummaries = legacyDocs
-            .sorted { $0.updatedAt > $1.updatedAt }
-            .map(documentSummary)
-        return Array((noteSummaries + legacySummaries).prefix(cappedLimit(limit)))
+        return Array(noteSummaries.prefix(cappedLimit(limit)))
     }
 
     func getDocument(documentID: String) throws -> CadenceDocumentDetail {
@@ -298,18 +286,7 @@ final class CadenceReadService {
             )
         }
 
-        guard let doc = try fetchDocuments().first(where: { $0.id == id }) else {
-            throw CadenceReadError.documentNotFound(documentID)
-        }
-        return CadenceDocumentDetail(
-            id: doc.id.uuidString,
-            title: resolvedTitle(doc.title, fallback: "Untitled"),
-            container: documentContainer(doc),
-            content: doc.content,
-            order: doc.order,
-            createdAt: format(doc.createdAt),
-            updatedAt: format(doc.updatedAt)
-        )
+        throw CadenceReadError.documentNotFound(documentID)
     }
 
     func search(query: String, scopes: [String]? = nil, limit: Int = 50) throws -> [CadenceSearchHit] {
@@ -352,10 +329,6 @@ final class CadenceReadService {
                 guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [doc.title, doc.content, doc.area?.name ?? "", doc.project?.name ?? ""]) else { return nil }
                 return CadenceSearchHit(entityType: "document", entityId: doc.id.uuidString, title: doc.displayTitle, subtitle: documentContainer(doc)?.name ?? "No container", excerpt: excerpt(doc.content), score: score)
             }
-            hits += try legacyUnmigratedDocuments(excluding: noteDocs).compactMap { doc in
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [doc.title, doc.content, doc.area?.name ?? "", doc.project?.name ?? ""]) else { return nil }
-                return CadenceSearchHit(entityType: "document", entityId: doc.id.uuidString, title: resolvedTitle(doc.title, fallback: "Untitled"), subtitle: documentContainer(doc)?.name ?? "No container", excerpt: excerpt(doc.content), score: score)
-            }
         }
 
         if selectedScopes.contains("core_notes") {
@@ -381,13 +354,6 @@ final class CadenceReadService {
                     score: score
                 )
             }
-            let migratedIDs = Set(meetingNotes.map(\.id))
-            hits += try fetchEventNotes().filter { !migratedIDs.contains($0.id) }.compactMap { note in
-                let title = resolvedTitle(note.title, fallback: "Event Note")
-                let fields = [title, note.content, note.eventDateKey]
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: fields) else { return nil }
-                return CadenceSearchHit(entityType: "event_note", entityId: note.id.uuidString, title: title, subtitle: "Meeting note", excerpt: excerpt(note.content), score: score)
-            }
         }
 
         return Array(CadenceSearchMatcher.rank(hits, query: trimmed).prefix(cappedLimit(limit)))
@@ -398,6 +364,10 @@ final class CadenceReadService {
             limit: limit,
             logURL: CadenceModelContainerFactory.auditLogURL()
         )
+    }
+
+    func noteMigrationHealth() throws -> NoteMigrationHealthReport {
+        try NoteMigrationService.healthCheck(in: context)
     }
 
     private func fetchTasks() throws -> [AppTask] {
@@ -414,26 +384,6 @@ final class CadenceReadService {
 
     private func fetchNotes() throws -> [Note] {
         try context.fetch(FetchDescriptor<Note>())
-    }
-
-    private func fetchDocuments() throws -> [Document] {
-        try context.fetch(FetchDescriptor<Document>())
-    }
-
-    private func fetchDailyNotes() throws -> [DailyNote] {
-        try context.fetch(FetchDescriptor<DailyNote>())
-    }
-
-    private func fetchWeeklyNotes() throws -> [WeeklyNote] {
-        try context.fetch(FetchDescriptor<WeeklyNote>())
-    }
-
-    private func fetchPermNotes() throws -> [PermNote] {
-        try context.fetch(FetchDescriptor<PermNote>())
-    }
-
-    private func fetchEventNotes() throws -> [EventNote] {
-        try context.fetch(FetchDescriptor<EventNote>())
     }
 
     private func taskSummary(_ task: AppTask, allTasks: [AppTask]) -> CadenceTaskSummary {
@@ -465,16 +415,6 @@ final class CadenceReadService {
     }
 
     private func documentContainer(_ doc: Note) -> CadenceContainerRef? {
-        if let area = doc.area {
-            return containerRef(area)
-        }
-        if let project = doc.project {
-            return containerRef(project)
-        }
-        return nil
-    }
-
-    private func documentContainer(_ doc: Document) -> CadenceContainerRef? {
         if let area = doc.area {
             return containerRef(area)
         }
@@ -546,33 +486,8 @@ final class CadenceReadService {
         )
     }
 
-    private func documentSummary(_ doc: Document) -> CadenceDocumentSummary {
-        CadenceDocumentSummary(
-            id: doc.id.uuidString,
-            title: resolvedTitle(doc.title, fallback: "Untitled"),
-            container: documentContainer(doc),
-            updatedAt: format(doc.updatedAt),
-            excerpt: excerpt(doc.content)
-        )
-    }
-
     private func notePayload(_ note: Note, key: String?) -> CadenceNotePayload {
         CadenceNotePayload(id: note.id.uuidString, kind: note.kind.rawValue, key: key, content: note.content, updatedAt: format(note.updatedAt), excerpt: excerpt(note.content))
-    }
-
-    private func legacyDailyPayload(dateKey: String) -> CadenceNotePayload? {
-        guard let note = try? fetchDailyNotes().first(where: { $0.date == dateKey }) else { return nil }
-        return CadenceNotePayload(id: note.id.uuidString, kind: "daily", key: note.date, content: note.content, updatedAt: format(note.updatedAt), excerpt: excerpt(note.content))
-    }
-
-    private func legacyWeeklyPayload(weekKey: String) -> CadenceNotePayload? {
-        guard let note = try? fetchWeeklyNotes().first(where: { $0.weekKey == weekKey }) else { return nil }
-        return CadenceNotePayload(id: note.id.uuidString, kind: "weekly", key: note.weekKey, content: note.content, updatedAt: format(note.updatedAt), excerpt: excerpt(note.content))
-    }
-
-    private func legacyPermanentPayload() -> CadenceNotePayload? {
-        guard let note = try? fetchPermNotes().first else { return nil }
-        return CadenceNotePayload(id: note.id.uuidString, kind: "permanent", key: nil, content: note.content, updatedAt: format(note.updatedAt), excerpt: excerpt(note.content))
     }
 
     private func notesForContainer(kind: String, id: UUID) throws -> [Note] {
@@ -584,22 +499,6 @@ final class CadenceReadService {
         default:
             throw CadenceReadError.invalidContainerKind(kind)
         }
-    }
-
-    private func legacyDocumentsForContainer(kind: String, id: UUID) throws -> [Document] {
-        switch try normalizeContainerKind(kind) {
-        case "area":
-            return try fetchDocuments().filter { $0.area?.id == id }
-        case "project":
-            return try fetchDocuments().filter { $0.project?.id == id }
-        default:
-            throw CadenceReadError.invalidContainerKind(kind)
-        }
-    }
-
-    private func legacyUnmigratedDocuments(excluding noteDocs: [Note]) throws -> [Document] {
-        let migratedIDs = Set(noteDocs.map(\.id))
-        return try fetchDocuments().filter { !migratedIDs.contains($0.id) }
     }
 
     private func noteEntityType(_ note: Note) -> String {

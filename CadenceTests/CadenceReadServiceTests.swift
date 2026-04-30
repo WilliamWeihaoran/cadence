@@ -52,7 +52,7 @@ struct CadenceReadServiceTests {
         let complete = AppTask(title: "Complete")
         complete.project = fixture.project
         complete.status = .done
-        let doc = Document(title: "Spec")
+        let doc = Note(kind: .list, title: "Spec")
         doc.project = fixture.project
 
         fixture.modelContext.insert(active)
@@ -67,11 +67,37 @@ struct CadenceReadServiceTests {
         #expect(summary.documents.map(\.title) == ["Spec"])
     }
 
+    @Test func readServiceMigratesLegacyListDocumentsOnInit() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let context = Context(name: "Work")
+        let project = Project(name: "Launch", context: context)
+        let legacyDoc = Document(title: "Launch Plan")
+        legacyDoc.content = "Canonical content after migration"
+        legacyDoc.project = project
+
+        modelContext.insert(context)
+        modelContext.insert(project)
+        modelContext.insert(legacyDoc)
+        try modelContext.save()
+
+        let service = CadenceReadService(container: container)
+        let documents = try service.listDocuments(containerKind: "project", containerID: project.id.uuidString)
+        let detail = try service.getDocument(documentID: legacyDoc.id.uuidString)
+        let searchHits = try service.search(query: "Canonical", scopes: ["documents"])
+
+        #expect(documents.map(\.id) == [legacyDoc.id.uuidString])
+        #expect(documents.map(\.title) == ["Launch Plan"])
+        #expect(detail.id == legacyDoc.id.uuidString)
+        #expect(detail.content == "Canonical content after migration")
+        #expect(searchHits.map(\.entityId).contains(legacyDoc.id.uuidString))
+    }
+
     @Test func searchHonorsScopes() throws {
         let fixture = try Fixture()
         let task = AppTask(title: "Deep work block")
-        let doc = Document(title: "Deep research notes")
-        let eventNote = EventNote(calendarEventID: "event-1", eventTitle: "Deep meeting")
+        let doc = Note(kind: .list, title: "Deep research notes")
+        let eventNote = Note(kind: .meeting, title: "Deep meeting", calendarEventID: "event-1")
         eventNote.content = "Decisions about launch planning"
         doc.content = "Long-form thinking about MCP"
         fixture.modelContext.insert(task)

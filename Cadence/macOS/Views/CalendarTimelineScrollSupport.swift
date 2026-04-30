@@ -3,7 +3,7 @@ import SwiftUI
 
 enum CalendarTimelineScrollSupport {
     static func clampedDayIndex(offsetX: CGFloat, colWidth: CGFloat) -> Int {
-        let rawDay = Int(round(offsetX / max(colWidth, 1)))
+        let rawDay = Int(floor(max(offsetX, 0) / max(colWidth, 1)))
         return min(max(rawDay, 0), calRenderDays - 1)
     }
 

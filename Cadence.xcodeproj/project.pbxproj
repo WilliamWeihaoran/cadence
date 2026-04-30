@@ -39,6 +39,8 @@
 		A10000002FCE00000000021E /* Cadence/Models/MarkdownImageAsset.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000011D /* Cadence/Models/MarkdownImageAsset.swift */; };
 		A10000002FCE00000000021F /* Cadence/Models/Note.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000011E /* Cadence/Models/Note.swift */; };
 		A10000002FCE000000000220 /* Cadence/Services/NoteMigrationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000011F /* Cadence/Services/NoteMigrationService.swift */; };
+		A10000002FCE000000000221 /* Cadence/Models/GoalListLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000120 /* Cadence/Models/GoalListLink.swift */; };
+		A10000002FCE000000000222 /* Cadence/Models/GoalContributionSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000121 /* Cadence/Models/GoalContributionSummary.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -94,6 +96,8 @@
 		A10000002FCE00000000011D /* Cadence/Models/MarkdownImageAsset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/MarkdownImageAsset.swift; sourceTree = "<group>"; };
 		A10000002FCE00000000011E /* Cadence/Models/Note.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Note.swift; sourceTree = "<group>"; };
 		A10000002FCE00000000011F /* Cadence/Services/NoteMigrationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/NoteMigrationService.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000120 /* Cadence/Models/GoalListLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/GoalListLink.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000121 /* Cadence/Models/GoalContributionSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/GoalContributionSummary.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -168,6 +172,8 @@
 				A10000002FCE000000000105 /* Cadence/Models/Area.swift */,
 				A10000002FCE000000000106 /* Cadence/Models/Project.swift */,
 				A10000002FCE000000000107 /* Cadence/Models/Goal.swift */,
+				A10000002FCE000000000120 /* Cadence/Models/GoalListLink.swift */,
+				A10000002FCE000000000121 /* Cadence/Models/GoalContributionSummary.swift */,
 				A10000002FCE000000000108 /* Cadence/Models/AppTask.swift */,
 				A10000002FCE000000000109 /* Cadence/Models/Subtask.swift */,
 				A10000002FCE00000000010A /* Cadence/Models/Habit.swift */,
@@ -424,6 +430,8 @@
 				A10000002FCE000000000205 /* Cadence/Models/Area.swift in Sources */,
 				A10000002FCE000000000206 /* Cadence/Models/Project.swift in Sources */,
 				A10000002FCE000000000207 /* Cadence/Models/Goal.swift in Sources */,
+				A10000002FCE000000000221 /* Cadence/Models/GoalListLink.swift in Sources */,
+				A10000002FCE000000000222 /* Cadence/Models/GoalContributionSummary.swift in Sources */,
 				A10000002FCE000000000208 /* Cadence/Models/AppTask.swift in Sources */,
 				A10000002FCE000000000209 /* Cadence/Models/Subtask.swift in Sources */,
 				A10000002FCE00000000020A /* Cadence/Models/Habit.swift in Sources */,
@@ -476,7 +484,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Cadence/Cadence.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = SM6Y3D2D55;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -524,7 +532,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Cadence/Cadence.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = SM6Y3D2D55;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;

@@ -7,14 +7,15 @@ struct CreateGoalSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Goal.order) private var allGoals: [Goal]
     @Query(sort: \Context.order) private var allContexts: [Context]
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
 
     @State private var title = ""
     @State private var desc = ""
     @State private var selectedContextID: UUID? = nil
     @State private var startDate: Date = Date()
     @State private var endDate: Date = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()
-    @State private var progressType: GoalProgressType = .subtasks
-    @State private var targetHours: Double = 10
+    @State private var initialListTag = "none"
     @State private var selectedColor = "#4a9eff"
 
     var body: some View {
@@ -32,7 +33,7 @@ struct CreateGoalSheet: View {
                 VStack(alignment: .leading, spacing: 20) {
                     // Title
                     fieldLabel("Title")
-                    TextField("e.g. Run a 5K, Ship v1.0", text: $title)
+                    TextField("e.g. Ship Cadence goals, Finish ASA", text: $title)
                         .textFieldStyle(.plain)
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.text)
@@ -43,7 +44,7 @@ struct CreateGoalSheet: View {
 
                     // Outcome / desc
                     fieldLabel("Outcome")
-                    TextField("Definitive outcome — what does done look like?", text: $desc)
+                    TextField("What does done look like?", text: $desc)
                         .textFieldStyle(.plain)
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.text)
@@ -58,6 +59,39 @@ struct CreateGoalSheet: View {
                         Text("None").tag(Optional<UUID>.none)
                         ForEach(allContexts) { ctx in
                             Label(ctx.name, systemImage: ctx.icon).tag(Optional(ctx.id))
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .foregroundStyle(Theme.text)
+                    .padding(8)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
+
+                    fieldLabel("Initial Linked List")
+                    Picker("", selection: $initialListTag) {
+                        Text("None").tag("none")
+                        ForEach(allContexts) { ctx in
+                            Section(ctx.name) {
+                                ForEach(areas.filter { $0.context?.id == ctx.id }) { area in
+                                    Label(area.name, systemImage: area.icon).tag("area:\(area.id.uuidString)")
+                                }
+                                ForEach(projects.filter { $0.context?.id == ctx.id }) { project in
+                                    Label(project.name, systemImage: project.icon).tag("project:\(project.id.uuidString)")
+                                }
+                            }
+                        }
+                        let looseAreas = areas.filter { $0.context == nil }
+                        let looseProjects = projects.filter { $0.context == nil }
+                        if !looseAreas.isEmpty || !looseProjects.isEmpty {
+                            Section("No Context") {
+                                ForEach(looseAreas) { area in
+                                    Label(area.name, systemImage: area.icon).tag("area:\(area.id.uuidString)")
+                                }
+                                ForEach(looseProjects) { project in
+                                    Label(project.name, systemImage: project.icon).tag("project:\(project.id.uuidString)")
+                                }
+                            }
                         }
                     }
                     .pickerStyle(.menu)
@@ -82,31 +116,6 @@ struct CreateGoalSheet: View {
                                 .labelsHidden()
                                 .datePickerStyle(.compact)
                                 .foregroundStyle(Theme.text)
-                        }
-                    }
-
-                    // Progress type
-                    fieldLabel("Track Progress By")
-                    Picker("", selection: $progressType) {
-                        Text("Subtasks").tag(GoalProgressType.subtasks)
-                        Text("Hours").tag(GoalProgressType.hours)
-                    }
-                    .pickerStyle(.segmented)
-
-                    // Target hours (only when "hours")
-                    if progressType == .hours {
-                        HStack(spacing: 12) {
-                            fieldLabel("Target Hours")
-                            Spacer()
-                            Stepper(
-                                value: $targetHours,
-                                in: 1...1000,
-                                step: 5
-                            ) {
-                                Text("\(Int(targetHours)) hrs")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Theme.text)
-                            }
                         }
                     }
 
@@ -160,8 +169,8 @@ struct CreateGoalSheet: View {
         goal.desc = desc.trimmingCharacters(in: .whitespaces)
         goal.startDate = DateFormatters.dateKey(from: startDate)
         goal.endDate = DateFormatters.dateKey(from: endDate)
-        goal.progressType = progressType
-        goal.targetHours = progressType == .hours ? targetHours : 0
+        goal.progressType = .subtasks
+        goal.targetHours = 0
         goal.colorHex = selectedColor
         goal.order = allGoals.count
 
@@ -171,7 +180,20 @@ struct CreateGoalSheet: View {
         }
 
         modelContext.insert(goal)
+        attachInitialList(to: goal)
         dismiss()
+    }
+
+    private func attachInitialList(to goal: Goal) {
+        if initialListTag.hasPrefix("area:"),
+           let id = UUID(uuidString: String(initialListTag.dropFirst(5))),
+           let area = areas.first(where: { $0.id == id }) {
+            modelContext.insert(GoalListLink(goal: goal, area: area))
+        } else if initialListTag.hasPrefix("project:"),
+                  let id = UUID(uuidString: String(initialListTag.dropFirst(8))),
+                  let project = projects.first(where: { $0.id == id }) {
+            modelContext.insert(GoalListLink(goal: goal, project: project))
+        }
     }
 }
 #endif

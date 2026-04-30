@@ -40,8 +40,7 @@ struct DocumentsView: View {
     }
 
     private var meetingNotes: [Note] {
-        guard !linkedCalendarID.isEmpty else { return [] }
-        return allNotes.filter { $0.kind == .meeting && $0.calendarID == linkedCalendarID }
+        EventNoteSupport.meetingNotes(forLinkedCalendarID: linkedCalendarID, in: allNotes)
     }
 
     private var selectedEventNote: Note? {
@@ -238,6 +237,7 @@ struct DocumentsView: View {
                 selectedNoteID = docs.first { $0.id != doc.id }?.id
             }
             modelContext.delete(doc)
+            modelContext.deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: [doc.id])
         }
     }
 

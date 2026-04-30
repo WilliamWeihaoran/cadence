@@ -3,6 +3,9 @@ import SwiftUI
 import Foundation
 
 func agentDebugLogMonthGrid(runId: String, hypothesisId: String, location: String, message: String, data: [String: Any]) {
+    guard let endpoint = ProcessInfo.processInfo.environment["CADENCE_MONTH_GRID_DEBUG_URL"],
+          let url = URL(string: endpoint) else { return }
+
     func sanitize(_ value: Any) -> Any {
         switch value {
         case let v as CGFloat: return Double(v)
@@ -32,7 +35,7 @@ func agentDebugLogMonthGrid(runId: String, hypothesisId: String, location: Strin
         payload["id"] = "log_\(UUID().uuidString)"
     }
     guard let json = try? JSONSerialization.data(withJSONObject: payload),
-          let url = URL(string: "http://127.0.0.1:7275/ingest/924ba59d-9d09-412e-a58b-19119790b9ed") else { return }
+          !json.isEmpty else { return }
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -53,8 +56,11 @@ func monthIndex(for date: Date, currentMonthStart: Date, todayMonthIdx: Int, cal
 }
 
 func monthIndexForOffset(y: CGFloat, offsets: [CGFloat], totalMonths: Int) -> Int {
+    let monthCount = min(offsets.count, max(totalMonths, 0))
+    guard monthCount > 0 else { return 0 }
+
     var lo = 0
-    var hi = max(totalMonths - 1, 0)
+    var hi = monthCount - 1
     while lo < hi {
         let mid = (lo + hi + 1) / 2
         if offsets[mid] <= y { lo = mid } else { hi = mid - 1 }

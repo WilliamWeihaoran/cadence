@@ -113,11 +113,11 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
     }
 
     var containerName: String {
-        goal?.title ?? area?.name ?? project?.name ?? ""
+        area?.name ?? project?.name ?? ""
     }
 
     var containerColor: String {
-        goal?.colorHex ?? area?.colorHex ?? project?.colorHex ?? "#6b7a99"
+        area?.colorHex ?? project?.colorHex ?? "#6b7a99"
     }
 
     var resolvedSectionName: String {

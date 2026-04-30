@@ -50,158 +50,76 @@ struct FocusView: View {
     @ViewBuilder
     private func activeLayout(task: AppTask) -> some View {
         VStack(spacing: 0) {
-            // ── Header ───────────────────────────────────────────────────
-            VStack(spacing: 0) {
-                // Meta row
-                HStack(spacing: 6) {
-                    if !task.containerName.isEmpty {
-                        HStack(spacing: 5) {
-                            Circle()
-                                .fill(Color(hex: task.containerColor))
-                                .frame(width: 6, height: 6)
-                            Text(task.containerName)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(Theme.dim)
-                        }
-                        metaDot
-                    }
-                    if task.priority != .none {
-                        HStack(spacing: 3) {
-                            Circle()
-                                .fill(Theme.priorityColor(task.priority))
-                                .frame(width: 5, height: 5)
-                            Text(task.priority.label)
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.dim)
-                        }
-                        metaDot
-                    }
-                    if !task.dueDate.isEmpty {
-                        Text("Due \(DateFormatters.relativeDate(from: task.dueDate))")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.dim)
-                        metaDot
-                    }
-                    let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes)
-                    if label != "-/-" {
-                        Text(label)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.dim)
-                    }
-                    Spacer()
-                    Button { focusManager.activeTask = nil } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Theme.dim)
-                            .frame(width: 24, height: 24)
-                            .background(Theme.surfaceElevated)
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.cadencePlain)
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 20)
-                .padding(.bottom, 12)
-
-                // Title + clock (centered) with controls on the right
-                HStack(alignment: .center, spacing: 0) {
-                    // Invisible mirror of the controls column keeps the clock truly centered
-                    controlsColumn(task: task)
-                        .opacity(0)
-                        .allowsHitTesting(false)
-
-                    // Center: title + clock
-                    VStack(spacing: 6) {
-                        Text(task.title)
-                            .font(.system(size: 26, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .padding(.horizontal, 8)
-
-                        Text(clockDisplay)
-                            .font(.system(size: 84, weight: .ultraLight, design: .monospaced))
-                            .foregroundStyle(focusManager.isRunning ? Theme.text : Theme.muted)
-                            .monospacedDigit()
-                            .contentTransition(.numericText())
-                            .shadow(
-                                color: Color(hex: task.containerColor).opacity(focusManager.isRunning ? 0.4 : 0),
-                                radius: 28
-                            )
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    // Right: controls
-                    controlsColumn(task: task)
-                        .padding(.trailing, 28)
-                }
-                .padding(.vertical, 20)
-            }
-            .background(Theme.surface)
-
-            Divider().background(Theme.borderSubtle)
-
-            FocusContextStrip(
+            FocusSessionHeader(
                 task: task,
-                nextTasks: Array(readyTasks.filter { $0.id != task.id }.prefix(3))
+                estimateLabel: durationLabel(for: task),
+                onClose: { focusManager.activeTask = nil }
             )
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
 
-            Divider().background(Theme.borderSubtle)
-
-            // ── Notes + Schedule ──────────────────────────────────────────
             HSplitView {
-                MarkdownEditor(text: Binding(
-                    get: { task.notes },
-                    set: { task.notes = $0 }
-                ))
-                    .frame(minWidth: 280)
+                VStack(spacing: 14) {
+                    FocusTimerPanel(
+                        clockDisplay: clockDisplay,
+                        isRunning: focusManager.isRunning,
+                        accent: Color(hex: task.containerColor),
+                        controls: { timerControls(task: task) }
+                    )
+                    .frame(height: 218)
 
-                SchedulePanel()
-                    .frame(minWidth: 240, idealWidth: 280, maxWidth: 340)
+                    FocusNotesPanel(task: task)
+                        .frame(minHeight: 280)
+                }
+                .padding(18)
+                .frame(minWidth: 520, idealWidth: 720)
+                .background(Theme.bg)
+
+                FocusSidebar(
+                    task: task,
+                    nextTasks: Array(readyTasks.filter { $0.id != task.id }.prefix(4)),
+                    onSelectTask: { focusManager.startFocus(task: $0) }
+                )
+                .frame(minWidth: 320, idealWidth: 360, maxWidth: 430)
             }
         }
+        .padding(.top, 34)
+        .background(Theme.bg)
     }
 
     @ViewBuilder
-    private func controlsColumn(task: AppTask) -> some View {
-        VStack(spacing: 16) {
-            Button { focusManager.reset() } label: {
-                Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.muted)
-                    .frame(width: 38, height: 38)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.cadencePlain)
+    private func timerControls(task: AppTask) -> some View {
+        HStack(spacing: 12) {
+            FocusIconButton(
+                systemName: "arrow.counterclockwise",
+                foreground: Theme.muted,
+                background: Theme.surfaceElevated,
+                size: 38,
+                help: "Reset session",
+                action: { focusManager.reset() }
+            )
 
-            Button { focusManager.isRunning.toggle() } label: {
-                Image(systemName: focusManager.isRunning ? "pause.fill" : "play.fill")
-                    .font(.system(size: 18))
-                    .foregroundStyle(.white)
-                    .frame(width: 52, height: 52)
-                    .background(Color(hex: task.containerColor))
-                    .clipShape(Circle())
-                    .shadow(color: Color(hex: task.containerColor).opacity(0.5), radius: 10)
-            }
-            .buttonStyle(.cadencePlain)
+            FocusIconButton(
+                systemName: focusManager.isRunning ? "pause.fill" : "play.fill",
+                foreground: .white,
+                background: Color(hex: task.containerColor),
+                size: 52,
+                shadowColor: Color(hex: task.containerColor).opacity(0.45),
+                shadowRadius: 11,
+                help: focusManager.isRunning ? "Pause session" : "Start session",
+                action: { focusManager.isRunning.toggle() }
+            )
 
-            Button {
-                focusManager.isRunning = false
-                showLogSheet = true
-            } label: {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 14))
-                    .foregroundStyle(focusManager.elapsed > 0 ? Theme.green : Theme.muted)
-                    .frame(width: 38, height: 38)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.cadencePlain)
-            .help("Log session")
-            .popover(isPresented: $showLogSheet, arrowEdge: .leading) {
+            FocusIconButton(
+                systemName: "checkmark",
+                foreground: focusManager.elapsed > 0 ? Theme.green : Theme.muted,
+                background: Theme.surfaceElevated,
+                size: 38,
+                help: "Log session",
+                action: {
+                    focusManager.isRunning = false
+                    showLogSheet = true
+                }
+            )
+            .popover(isPresented: $showLogSheet, arrowEdge: .bottom) {
                 LogSessionPopover(
                     task: task,
                     elapsedSeconds: focusManager.elapsed,
@@ -215,46 +133,37 @@ struct FocusView: View {
                 )
             }
         }
-        .frame(width: 72)
     }
 
     // MARK: - Idle layout
 
     private var idleLayout: some View {
-        VStack(spacing: 24) {
-            Spacer(minLength: 20)
+        HSplitView {
+            VStack(alignment: .leading, spacing: 18) {
+                FocusIdleHero(
+                    clockDisplay: clockDisplay,
+                    onPickTask: { showTaskPicker = true }
+                )
+                .frame(height: 220)
 
-            Text(clockDisplay)
-                .font(.system(size: 84, weight: .ultraLight, design: .monospaced))
-                .foregroundStyle(Theme.muted)
-                .monospacedDigit()
-
-            Button { showTaskPicker = true } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus.circle")
-                        .font(.system(size: 14))
-                    Text("Pick a task to focus on")
-                        .font(.system(size: 14))
-                }
-                .foregroundStyle(Theme.dim)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.borderSubtle))
+                FocusTaskBucketCard(
+                    title: "Up next",
+                    subtitle: "Best next tasks",
+                    accent: Theme.blue,
+                    tasks: Array(readyTasks.prefix(8)),
+                    onSelect: { focusManager.startFocus(task: $0) }
+                )
+                .frame(maxHeight: .infinity, alignment: .top)
             }
-            .buttonStyle(.cadencePlain)
+            .padding(18)
+            .frame(minWidth: 520, idealWidth: 720)
+            .background(Theme.bg)
 
-            FocusTaskBucketCard(
-                title: "Ready",
-                subtitle: "Best next tasks",
-                accent: Theme.blue,
-                tasks: Array(readyTasks.prefix(6)),
-                onSelect: { focusManager.startFocus(task: $0) }
-            )
-            .padding(.horizontal, 24)
-
-            Spacer()
+            VStack(spacing: 0) {
+                SchedulePanel(presentation: .compact)
+            }
+            .frame(minWidth: 320, idealWidth: 360, maxWidth: 430)
+            .background(Theme.surface)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -285,12 +194,6 @@ struct FocusView: View {
 
     // MARK: - Helpers
 
-    private var metaDot: some View {
-        Text("·")
-            .font(.system(size: 11))
-            .foregroundStyle(Theme.dim.opacity(0.45))
-    }
-
     private var clockDisplay: String {
         let secs = focusManager.elapsed
         let h = secs / 3600
@@ -298,6 +201,11 @@ struct FocusView: View {
         let s = secs % 60
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
         return String(format: "%02d:%02d", m, s)
+    }
+
+    private func durationLabel(for task: AppTask) -> String? {
+        let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes)
+        return label == "-/-" ? nil : label
     }
 
     private func focusRanking(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
@@ -320,6 +228,388 @@ struct FocusView: View {
         }
         if task.actualMinutes == 0 { score += 1 }
         return score
+    }
+}
+
+// MARK: - Active Focus Surface
+
+private struct FocusSessionHeader: View {
+    let task: AppTask
+    let estimateLabel: String?
+    let onClose: () -> Void
+
+    var body: some View {
+        let hasContainer = !task.containerName.isEmpty
+        let hasPriority = task.priority != .none
+        let hasDueDate = !task.dueDate.isEmpty
+        let hasEstimate = estimateLabel != nil
+
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Focus Session")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .textCase(.uppercase)
+
+                Text(task.title.isEmpty ? "Untitled Task" : task.title)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.82)
+
+                HStack(spacing: 7) {
+                    if hasContainer {
+                        Label {
+                            Text(task.containerName)
+                        } icon: {
+                            Circle()
+                                .fill(Color(hex: task.containerColor))
+                                .frame(width: 6, height: 6)
+                        }
+                        if hasPriority || hasDueDate || hasEstimate { metaSeparator }
+                    }
+
+                    if hasPriority {
+                        Label {
+                            Text(task.priority.label)
+                        } icon: {
+                            Circle()
+                                .fill(Theme.priorityColor(task.priority))
+                                .frame(width: 6, height: 6)
+                        }
+                        if hasDueDate || hasEstimate { metaSeparator }
+                    }
+
+                    if hasDueDate {
+                        Text("Due \(DateFormatters.relativeDate(from: task.dueDate))")
+                        if hasEstimate { metaSeparator }
+                    }
+
+                    if let estimateLabel {
+                        Text(estimateLabel)
+                    }
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
+            }
+
+            Spacer(minLength: 16)
+
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 30, height: 30)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.cadencePlain)
+            .help("Close focus session")
+        }
+        .padding(.leading, 28)
+        .padding(.trailing, 18)
+        .padding(.top, 22)
+        .padding(.bottom, 18)
+        .background(Theme.surface)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(height: 1)
+        }
+    }
+
+    private var metaSeparator: some View {
+        Text("/")
+            .foregroundStyle(Theme.dim.opacity(0.42))
+    }
+}
+
+private struct FocusTimerPanel<Controls: View>: View {
+    let clockDisplay: String
+    let isRunning: Bool
+    let accent: Color
+    @ViewBuilder let controls: () -> Controls
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Label(isRunning ? "Running" : "Paused", systemImage: isRunning ? "timer" : "pause.circle")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(isRunning ? accent : Theme.dim)
+                Spacer()
+            }
+
+            Spacer(minLength: 0)
+
+            Text(clockDisplay)
+                .font(.system(size: 82, weight: .ultraLight, design: .monospaced))
+                .foregroundStyle(isRunning ? Theme.text : Theme.muted)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
+                .contentTransition(.numericText())
+                .shadow(color: accent.opacity(isRunning ? 0.34 : 0), radius: 24)
+
+            controls()
+
+            Spacer(minLength: 0)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity)
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
+        }
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(accent.opacity(isRunning ? 0.72 : 0.24))
+                .frame(height: 2)
+        }
+    }
+}
+
+private struct FocusIconButton: View {
+    let systemName: String
+    let foreground: Color
+    let background: Color
+    let size: CGFloat
+    var shadowColor: Color = .clear
+    var shadowRadius: CGFloat = 0
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: size > 44 ? 18 : 14, weight: .semibold))
+                .foregroundStyle(foreground)
+                .frame(width: size, height: size)
+                .background(background)
+                .clipShape(Circle())
+                .shadow(color: shadowColor, radius: shadowRadius)
+        }
+        .buttonStyle(.cadencePlain)
+        .help(help)
+    }
+}
+
+private struct FocusNotesPanel: View {
+    let task: AppTask
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Task notes")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text("Capture the details you need while working.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+
+            Divider().background(Theme.borderSubtle)
+
+            MarkdownEditor(text: Binding(
+                get: { task.notes },
+                set: { task.notes = $0 }
+            ))
+        }
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
+        }
+    }
+}
+
+private struct FocusSidebar: View {
+    let task: AppTask
+    let nextTasks: [AppTask]
+    let onSelectTask: (AppTask) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 8) {
+                    sidebarLabel("Session")
+                    HStack(spacing: 8) {
+                        statusChip(title: "Ready", color: Theme.green, icon: "checkmark.circle.fill")
+                        if task.isRecurring {
+                            statusChip(title: task.recurrenceRule.shortLabel, color: Theme.blue, icon: "arrow.clockwise")
+                        }
+                    }
+                }
+
+                Divider().background(Theme.borderSubtle)
+
+                VStack(alignment: .leading, spacing: 9) {
+                    sidebarLabel("Next up")
+                    if nextTasks.isEmpty {
+                        Text("No other ready tasks")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 4)
+                    } else {
+                        VStack(spacing: 7) {
+                            ForEach(nextTasks) { nextTask in
+                                FocusSidebarTaskRow(task: nextTask) {
+                                    onSelectTask(nextTask)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(14)
+
+            Divider().background(Theme.borderSubtle)
+
+            SchedulePanel(presentation: .compact)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Theme.surface)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(width: 1)
+        }
+    }
+
+    private func sidebarLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Theme.dim)
+            .textCase(.uppercase)
+    }
+
+    private func statusChip(title: String, color: Color, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(color.opacity(0.12))
+        .clipShape(Capsule())
+    }
+}
+
+private struct FocusSidebarTaskRow: View {
+    let task: AppTask
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Circle()
+                    .fill(Color(hex: task.containerColor))
+                    .frame(width: 7, height: 7)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(task.title.isEmpty ? "Untitled" : task.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+
+                    Text(detail)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "play.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+                    .frame(width: 24, height: 24)
+                    .background(Theme.blue.opacity(0.11))
+                    .clipShape(Circle())
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Theme.surfaceElevated.opacity(0.82))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.cadencePlain)
+        .help("Focus this task")
+    }
+
+    private var detail: String {
+        if task.scheduledDate == DateFormatters.todayKey() { return "Scheduled today" }
+        if task.dueDate == DateFormatters.todayKey() { return "Due today" }
+        if !task.containerName.isEmpty { return task.containerName }
+        return "Ready"
+    }
+}
+
+// MARK: - Idle Focus Surface
+
+private struct FocusIdleHero: View {
+    let clockDisplay: String
+    let onPickTask: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Ready to focus")
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text("Choose a task and start a clean session.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim)
+                }
+                Spacer()
+            }
+
+            Spacer(minLength: 0)
+
+            Text(clockDisplay)
+                .font(.system(size: 78, weight: .ultraLight, design: .monospaced))
+                .foregroundStyle(Theme.muted)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
+
+            Button(action: onPickTask) {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Pick a task")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Theme.blue)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.cadencePlain)
+            .help("Pick a task to focus on")
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
+        }
     }
 }
 
@@ -507,69 +797,6 @@ private struct FocusTaskPicker: View {
     }
 }
 
-private struct FocusContextStrip: View {
-    let task: AppTask
-    let nextTasks: [AppTask]
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Session context")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                HStack(spacing: 8) {
-                    if task.isRecurring {
-                        statusChip(title: task.recurrenceRule.shortLabel, color: Theme.blue, icon: "arrow.clockwise")
-                    }
-                    statusChip(title: "Ready", color: Theme.green, icon: "checkmark.circle.fill")
-                }
-            }
-
-            Divider().frame(height: 42)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Next up")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                if nextTasks.isEmpty {
-                    Text("No other ready tasks")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                } else {
-                    HStack(spacing: 8) {
-                        ForEach(nextTasks) { task in
-                            Text(task.title.isEmpty ? "Untitled" : task.title)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(Theme.text)
-                                .lineLimit(1)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(Theme.surfaceElevated)
-                                .clipShape(Capsule())
-                        }
-                    }
-                }
-            }
-
-            Spacer()
-        }
-    }
-
-    private func statusChip(title: String, color: Color, icon: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 10, weight: .semibold))
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(color.opacity(0.12))
-        .clipShape(Capsule())
-    }
-}
-
 private struct FocusTaskBucketCard: View {
     let title: String
     let subtitle: String
@@ -579,48 +806,63 @@ private struct FocusTaskBucketCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                }
+                Spacer()
             }
 
-            VStack(spacing: 8) {
-                if tasks.isEmpty {
-                    Text("Nothing here right now")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 6)
-                } else {
-                    ForEach(tasks) { task in
-                        Button {
-                            onSelect(task)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(Color(hex: task.containerColor))
-                                    .frame(width: 7, height: 7)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(task.title.isEmpty ? "Untitled" : task.title)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Theme.text)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                    Text(detail(for: task))
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(Theme.dim)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+            ScrollView {
+                VStack(spacing: 8) {
+                    if tasks.isEmpty {
+                        Text("Nothing here right now")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 6)
+                    } else {
+                        ForEach(tasks) { task in
+                            Button {
+                                onSelect(task)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Circle()
+                                        .fill(Color(hex: task.containerColor))
+                                        .frame(width: 7, height: 7)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(task.title.isEmpty ? "Untitled" : task.title)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(Theme.text)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .lineLimit(1)
+                                        Text(detail(for: task))
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Theme.dim)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .lineLimit(1)
+                                    }
+
+                                    Image(systemName: "play.fill")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(Theme.blue)
+                                        .frame(width: 28, height: 28)
+                                        .background(Theme.blue.opacity(0.11))
+                                        .clipShape(Circle())
                                 }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 9)
+                                .background(Theme.surfaceElevated.opacity(0.9))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 9)
-                            .background(Theme.surfaceElevated.opacity(0.9))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .buttonStyle(.cadencePlain)
+                            .help("Focus this task")
                         }
-                        .buttonStyle(.cadencePlain)
                     }
                 }
             }
@@ -628,11 +870,11 @@ private struct FocusTaskBucketCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(Theme.surface)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 8)
                 .stroke(accent.opacity(0.18), lineWidth: 1)
         )
     }

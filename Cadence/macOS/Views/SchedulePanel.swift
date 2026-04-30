@@ -34,10 +34,16 @@ let timeLabelWidth: CGFloat = 36
 let timeLabelPad:   CGFloat = 6
 let blockInset:     CGFloat = timeLabelWidth + timeLabelPad  // 42
 
+enum SchedulePanelPresentation {
+    case standard
+    case compact
+}
+
 struct SchedulePanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(TodayTimelineFocusManager.self) private var todayTimelineFocusManager
+    var presentation: SchedulePanelPresentation = .standard
     var useStandardHeaderHeight = false
     @Query private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
@@ -68,8 +74,12 @@ struct SchedulePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SchedulePanelHeader(zoomLevel: $zoomLevel, onExport: exportTodayPlan)
-                .frame(height: useStandardHeaderHeight ? todayPanelHeaderHeight : nil, alignment: .top)
+            SchedulePanelHeader(
+                presentation: presentation,
+                zoomLevel: $zoomLevel,
+                onExport: exportTodayPlan
+            )
+            .frame(height: headerHeight, alignment: .top)
 
             Divider().background(Theme.borderSubtle)
 
@@ -150,6 +160,11 @@ struct SchedulePanel: View {
                 modelContext: modelContext
             )
         }
+    }
+
+    private var headerHeight: CGFloat? {
+        if presentation == .compact { return 58 }
+        return useStandardHeaderHeight ? todayPanelHeaderHeight : nil
     }
 
     private func focusTimeline(using proxy: ScrollViewProxy) {

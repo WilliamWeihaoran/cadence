@@ -48,6 +48,24 @@ struct MacTaskRow: View {
                 .strikethrough(task.isDone || task.isCancelled, color: Theme.dim)
                 .lineLimit(1)
 
+            if let goal = task.goal {
+                HStack(spacing: 4) {
+                    Image(systemName: "target")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text(goal.title)
+                        .font(.system(size: 10, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 92, alignment: .leading)
+                }
+                .foregroundStyle(Color(hex: goal.colorHex))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color(hex: goal.colorHex).opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .padding(.leading, 7)
+            }
+
             if task.isCancelled {
                 Text("Cancelled")
                     .font(.system(size: 10, weight: .semibold))
