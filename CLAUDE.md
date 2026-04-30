@@ -88,7 +88,7 @@ Cadence/
     │   ├── KanbanView.swift       # Section-based kanban orchestration for lists and All Tasks
     │   ├── KanbanCardView.swift   # Shared kanban task card; hover/edit/action state stays here
     │   ├── KanbanBoardSectionView.swift # Shared board wrapper used by kanban views
-    │   ├── DocumentsView.swift    # Notes/documents list + markdown editor; H1 heading in content auto-syncs to document.title; exports Markdown + rendered PDF; each doc gets its own NSTextView via .id(doc.id) to isolate undo stacks
+    │   ├── ListNotesView.swift    # Area/project notes list + shared note editor; H1 heading in content auto-syncs to note.title; each note gets its own NSTextView via .id(note.id) to isolate undo stacks
     │   ├── EventNoteSupportViews.swift # Linked note sheet/editor for calendar events
     │   ├── LinksView.swift        # Saved link list + add UI
     │   ├── GlobalSearchView.swift # Spotlight-style overlay; ranking/index/state split into support files
@@ -332,12 +332,12 @@ The same shared sheet is used for:
 - While dragging out a new time range, the ghost preview shows **start**, **end**, and **duration**
 
 ## Notes / Markdown
-- The user-facing name is now **Notes**, though the underlying model/type names still use `Document` / `DocumentsView` for stability
+- The user-facing and active UI/service names are **Notes**; the legacy `Document` model remains only for migration compatibility
 - Notes support both Markdown export and rendered PDF export
 - The notes export flow avoids direct blocking `NSSavePanel.runModal()` usage
 - Notes can surface linked notes, backlinks, and embedded task references above the editor
 - Wiki-style note links are supported with `[[Note Title]]`
-- Task references are supported with `[[task:Task Title]]`
+- Task references support both `[[task:Task Title]]` and ID-backed `[[task:UUID|Task Title]]`
 - Typing `/` in the editor opens a compact live slash-command picker at the insertion caret
 - Slash commands cover common transforms like headings, todo/done, quote, rule, link, and task inserts
 - Hidden markdown markers are skipped by caret traversal instead of behaving like visible cursor stops

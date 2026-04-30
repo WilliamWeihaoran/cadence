@@ -1,6 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import SwiftData
+import AppKit
 
 private enum AIReviewPayload: Identifiable {
     case summary(String)
@@ -16,27 +17,70 @@ private enum AIReviewPayload: Identifiable {
     }
 }
 
-struct NoteAIActionMenu: View {
+enum NoteActionSupport {
+    static func appendSummary(_ summary: String, to note: Note, modelContext: ModelContext?) {
+        let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSummary.isEmpty else { return }
+        let separator = note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
+        note.content = "\(note.content)\(separator)## AI Summary\n\n\(trimmedSummary)"
+        note.updatedAt = Date()
+        try? modelContext?.save()
+    }
+
+    static func copyMarkdownLink(to note: Note) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString("[[\(note.displayTitle)]]", forType: .string)
+    }
+}
+
+struct NoteActionMenu: View {
     let note: Note
     var area: Area?
     var project: Project?
-    var onAppendSummary: (String) -> Void
+    var onAppendSummary: ((String) -> Void)?
+    var onDelete: (() -> Void)?
 
     @Environment(AISettingsManager.self) private var aiSettingsManager
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
+    @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
     @State private var payload: AIReviewPayload?
     @State private var errorMessage: String?
     @State private var isRunning = false
 
     var body: some View {
         Menu {
-            Button("Summarize Note") {
-                runSummary()
+            Section {
+                Button("Export Markdown") {
+                    NoteExportService.export(note, as: .markdown)
+                }
+                Button("Export PDF") {
+                    NoteExportService.export(note, as: .pdf, imageAssets: imageAssets)
+                }
+                Button("Copy Note Link") {
+                    NoteActionSupport.copyMarkdownLink(to: note)
+                }
             }
-            Button("Extract Tasks") {
-                runTaskExtraction()
+            Section {
+                Button("Summarize Note") {
+                    runSummary()
+                }
+                .disabled(!aiSettingsManager.hasAPIKey || isRunning)
+                Button("Extract Tasks") {
+                    runTaskExtraction()
+                }
+                .disabled(!aiSettingsManager.hasAPIKey || isRunning)
+            }
+            if let onDelete {
+                Section {
+                    Button(role: .destructive) {
+                        onDelete()
+                    } label: {
+                        Text("Delete Note")
+                    }
+                }
             }
         } label: {
             HStack(spacing: 6) {
@@ -45,27 +89,30 @@ struct NoteAIActionMenu: View {
                         .controlSize(.small)
                         .scaleEffect(0.65)
                 } else {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 11, weight: .semibold))
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 12, weight: .semibold))
                 }
-                Text("AI")
+                Text("Actions")
                     .font(.system(size: 12, weight: .semibold))
             }
-            .foregroundStyle(aiSettingsManager.hasAPIKey ? Theme.blue : Theme.dim)
+            .foregroundStyle(Theme.blue)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background((aiSettingsManager.hasAPIKey ? Theme.blue : Theme.dim).opacity(0.12))
+            .background(Theme.blue.opacity(0.12))
             .clipShape(Capsule())
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .disabled(!aiSettingsManager.hasAPIKey || isRunning)
-        .help(aiSettingsManager.hasAPIKey ? "Use AI on this note" : "Add an OpenAI API key in Settings → AI")
+        .help("Note actions")
         .sheet(item: $payload) { payload in
             switch payload {
             case .summary(let markdown):
                 AISummaryReviewSheet(markdown: markdown) {
-                    onAppendSummary(markdown)
+                    if let onAppendSummary {
+                        onAppendSummary(markdown)
+                    } else {
+                        NoteActionSupport.appendSummary(markdown, to: note, modelContext: modelContext)
+                    }
                     self.payload = nil
                 }
             case .taskDrafts(let drafts):

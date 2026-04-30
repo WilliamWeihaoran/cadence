@@ -6,6 +6,8 @@ extension NSAttributedString.Key {
     static let cadenceMarkdownDivider = NSAttributedString.Key("CadenceMarkdownDivider")
     static let cadenceMarkdownQuoteDepth = NSAttributedString.Key("CadenceMarkdownQuoteDepth")
     static let cadenceMarkdownImage = NSAttributedString.Key("CadenceMarkdownImage")
+    static let cadenceMarkdownInlineCode = NSAttributedString.Key("CadenceMarkdownInlineCode")
+    static let cadenceMarkdownCodeBlock = NSAttributedString.Key("CadenceMarkdownCodeBlock")
 }
 
 struct MarkdownImageLayoutInfo {
@@ -264,6 +266,7 @@ enum MarkdownStylist {
     static let textColor      = NSColor(hex: "#e2e8f0")
     static let dimColor       = NSColor(hex: "#6b7a99")
     static let codeBackground = NSColor(hex: "#1f2235")
+    static let codeBorder     = NSColor(hex: "#39405f")
     static let blueColor      = NSColor(hex: "#4a9eff")
     static let greenColor     = NSColor(hex: "#4ecb71")
 
@@ -471,6 +474,7 @@ enum MarkdownStylist {
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = imageSize.height + 18
         paragraph.maximumLineHeight = imageSize.height + 18
+        paragraph.lineBreakMode = .byClipping
         paragraph.paragraphSpacingBefore = 8
         paragraph.paragraphSpacing = 2
 
@@ -626,8 +630,8 @@ enum MarkdownStylist {
             let close = NSRange(location: full.location + full.length - 1, length: 1)
             let content = NSRange(location: full.location + 1, length: full.length - 2)
             storage.addAttribute(.font, value: monoFont, range: content)
-            storage.addAttribute(.backgroundColor, value: codeBackground, range: content)
             storage.addAttribute(.foregroundColor, value: greenColor, range: content)
+            storage.addAttribute(.cadenceMarkdownInlineCode, value: true, range: content)
             hide(storage, open)
             hide(storage, close)
         }
@@ -698,8 +702,8 @@ enum MarkdownStylist {
             storage.addAttributes([
                 .font: monoFont,
                 .foregroundColor: greenColor,
-                .backgroundColor: codeBackground,
-                .paragraphStyle: paragraph
+                .paragraphStyle: paragraph,
+                .cadenceMarkdownCodeBlock: true
             ], range: codeRange)
 
             if languageRange.location != NSNotFound, languageRange.length > 0 {

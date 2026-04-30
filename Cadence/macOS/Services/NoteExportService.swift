@@ -2,32 +2,79 @@
 import AppKit
 import UniformTypeIdentifiers
 
-enum DocumentExportService {
-    static func exportMarkdown(_ note: Note) {
-        let title = note.displayTitle
-        let content = note.content
-        exportMarkdown(title: title, content: content)
+enum NoteExportFormat {
+    case markdown
+    case pdf
+
+    var pathExtension: String {
+        switch self {
+        case .markdown: return "md"
+        case .pdf: return "pdf"
+        }
     }
 
-    static func exportPDF(_ note: Note, imageAssets: [MarkdownImageAsset] = []) {
+    var contentType: UTType {
+        switch self {
+        case .markdown: return .plainText
+        case .pdf: return .pdf
+        }
+    }
+}
+
+struct NotePDFRenderOptions {
+    var pageWidth: CGFloat = 612
+    var horizontalInset: CGFloat = 42
+    var verticalInset: CGFloat = 42
+    var minimumHeight: CGFloat = 240
+
+    nonisolated init(
+        pageWidth: CGFloat = 612,
+        horizontalInset: CGFloat = 42,
+        verticalInset: CGFloat = 42,
+        minimumHeight: CGFloat = 240
+    ) {
+        self.pageWidth = pageWidth
+        self.horizontalInset = horizontalInset
+        self.verticalInset = verticalInset
+        self.minimumHeight = minimumHeight
+    }
+}
+
+enum NoteExportService {
+    static func export(_ note: Note, as format: NoteExportFormat, imageAssets: [MarkdownImageAsset] = []) {
         let title = note.displayTitle
         let content = note.content
-        exportPDF(title: title, content: content, imageAssets: imageAssets)
-    }
-
-    private static func exportMarkdown(title: String, content: String) {
-        Task { @MainActor in
-            presentSavePanel(suggestedName: suggestedName(title: title, pathExtension: "md"), contentType: .plainText) { url in
+        presentSavePanelOnMainQueue(
+            suggestedName: suggestedName(title: title, pathExtension: format.pathExtension),
+            contentType: format.contentType
+        ) { url in
+            switch format {
+            case .markdown:
                 try? content.write(to: url, atomically: true, encoding: .utf8)
+            case .pdf:
+                guard let pdfData = renderedPDFData(content: content, imageAssets: imageAssets) else { return }
+                try? pdfData.write(to: url)
             }
         }
     }
 
-    private static func exportPDF(title: String, content: String, imageAssets: [MarkdownImageAsset]) {
-        Task { @MainActor in
-            presentSavePanel(suggestedName: suggestedName(title: title, pathExtension: "pdf"), contentType: .pdf) { url in
-                guard let pdfData = renderedPDFData(content: content, imageAssets: imageAssets) else { return }
-                try? pdfData.write(to: url)
+    static func exportMarkdown(_ note: Note) {
+        export(note, as: .markdown)
+    }
+
+    static func exportPDF(_ note: Note, imageAssets: [MarkdownImageAsset] = []) {
+        export(note, as: .pdf, imageAssets: imageAssets)
+    }
+
+    @MainActor
+    private static func presentSavePanelOnMainQueue(
+        suggestedName: String,
+        contentType: UTType,
+        onSave: @MainActor @escaping (URL) -> Void
+    ) {
+        DispatchQueue.main.async {
+            presentSavePanel(suggestedName: suggestedName, contentType: contentType) { url in
+                onSave(url)
             }
         }
     }
@@ -63,11 +110,12 @@ enum DocumentExportService {
     }
 
     @MainActor
-    static func renderedPDFData(content: String, imageAssets: [MarkdownImageAsset]) -> Data? {
-        let pageWidth: CGFloat = 612
-        let horizontalInset: CGFloat = 42
-        let verticalInset: CGFloat = 42
-        let contentWidth = pageWidth - (horizontalInset * 2)
+    static func renderedPDFData(
+        content: String,
+        imageAssets: [MarkdownImageAsset],
+        options: NotePDFRenderOptions = NotePDFRenderOptions()
+    ) -> Data? {
+        let contentWidth = options.pageWidth - (options.horizontalInset * 2)
         let renderedContent = MarkdownListSupport.normalizedMarkdownListPrefixes(in: content)
 
         let textStorage = NSTextStorage(string: renderedContent)
@@ -86,7 +134,7 @@ enum DocumentExportService {
         textView.isSelectable = false
         textView.drawsBackground = true
         textView.backgroundColor = NSColor(hex: "#0f1117")
-        textView.textContainerInset = NSSize(width: horizontalInset, height: verticalInset)
+        textView.textContainerInset = NSSize(width: options.horizontalInset, height: options.verticalInset)
         textView.textContainer?.widthTracksTextView = false
         textView.textContainer?.containerSize = NSSize(width: contentWidth, height: CGFloat.greatestFiniteMagnitude)
         textView.string = renderedContent
@@ -94,8 +142,8 @@ enum DocumentExportService {
 
         layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
-        let documentHeight = max(ceil(usedRect.height + (verticalInset * 2)), 240)
-        textView.frame = NSRect(x: 0, y: 0, width: pageWidth, height: documentHeight)
+        let documentHeight = max(ceil(usedRect.height + (options.verticalInset * 2)), options.minimumHeight)
+        textView.frame = NSRect(x: 0, y: 0, width: options.pageWidth, height: documentHeight)
 
         return textView.dataWithPDF(inside: textView.bounds)
     }

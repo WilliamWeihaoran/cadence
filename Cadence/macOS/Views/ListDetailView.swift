@@ -195,7 +195,7 @@ private struct ListDetailView: View {
                 case .planning:
                     ListPlanningView(tasks: tasks, area: area, project: project)
                 case .documents:
-                    DocumentsView(area: area, project: project, requestedEventNoteID: $requestedEventNoteID)
+                    ListNotesView(area: area, project: project, requestedEventNoteID: $requestedEventNoteID)
                 case .links:
                     LinksView(area: area, project: project)
                 case .completed:

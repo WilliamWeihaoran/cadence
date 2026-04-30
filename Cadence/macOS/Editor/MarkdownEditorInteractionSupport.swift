@@ -11,12 +11,85 @@ final class CadenceLayoutManager: NSLayoutManager {
     }
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        drawCodeBackgrounds(forGlyphRange: glyphsToShow, at: origin)
         for visibleRange in visibleGlyphRanges(in: glyphsToShow) {
             super.drawBackground(forGlyphRange: visibleRange, at: origin)
         }
         drawQuoteBlocks(forGlyphRange: glyphsToShow, at: origin)
         drawDividerRules(forGlyphRange: glyphsToShow, at: origin)
         drawMarkdownImages(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    private func drawCodeBackgrounds(forGlyphRange glyphRange: NSRange, at origin: NSPoint) {
+        guard let textStorage, let textContainer = textContainers.first else { return }
+        let characterRange = self.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        guard characterRange.length > 0 else { return }
+
+        textStorage.enumerateAttribute(.cadenceMarkdownCodeBlock, in: characterRange) { value, range, _ in
+            guard (value as? Bool) == true else { return }
+            let blockCharacterRange = NSIntersectionRange(range, characterRange)
+            guard blockCharacterRange.length > 0 else { return }
+            let blockGlyphRange = self.glyphRange(forCharacterRange: blockCharacterRange, actualCharacterRange: nil)
+            guard blockGlyphRange.length > 0 else { return }
+            drawRoundedCodeBlock(forGlyphRange: blockGlyphRange, in: textContainer, at: origin)
+        }
+
+        textStorage.enumerateAttribute(.cadenceMarkdownInlineCode, in: characterRange) { value, range, _ in
+            guard (value as? Bool) == true else { return }
+            let inlineCharacterRange = NSIntersectionRange(range, characterRange)
+            guard inlineCharacterRange.length > 0 else { return }
+            let inlineGlyphRange = self.glyphRange(forCharacterRange: inlineCharacterRange, actualCharacterRange: nil)
+            guard inlineGlyphRange.length > 0 else { return }
+            drawRoundedInlineCode(forGlyphRange: inlineGlyphRange, in: textContainer, at: origin)
+        }
+    }
+
+    private func drawRoundedInlineCode(forGlyphRange glyphRange: NSRange, in textContainer: NSTextContainer, at origin: NSPoint) {
+        let selectedRange = NSRange(location: NSNotFound, length: 0)
+        enumerateEnclosingRects(forGlyphRange: glyphRange, withinSelectedGlyphRange: selectedRange, in: textContainer) { rect, _ in
+            let chipRect = rect
+                .offsetBy(dx: origin.x, dy: origin.y)
+                .insetBy(dx: -5, dy: -2)
+            guard chipRect.width > 0, chipRect.height > 0 else { return }
+
+            let radius = min(7, chipRect.height / 2)
+            let path = NSBezierPath(roundedRect: chipRect, xRadius: radius, yRadius: radius)
+            MarkdownStylist.codeBackground.withAlphaComponent(0.94).setFill()
+            path.fill()
+
+            MarkdownStylist.codeBorder.withAlphaComponent(0.55).setStroke()
+            path.lineWidth = 0.7
+            path.stroke()
+        }
+    }
+
+    private func drawRoundedCodeBlock(forGlyphRange glyphRange: NSRange, in textContainer: NSTextContainer, at origin: NSPoint) {
+        let firstGlyph = glyphRange.location
+        let lastGlyph = max(glyphRange.location, NSMaxRange(glyphRange) - 1)
+        guard firstGlyph < numberOfGlyphs else { return }
+
+        var firstLineRange = NSRange(location: 0, length: 0)
+        var lastLineRange = NSRange(location: 0, length: 0)
+        let firstLine = lineFragmentRect(forGlyphAt: firstGlyph, effectiveRange: &firstLineRange)
+        let lastLine = lineFragmentRect(forGlyphAt: min(lastGlyph, numberOfGlyphs - 1), effectiveRange: &lastLineRange)
+        guard firstLine.width > 0, lastLine.width > 0 else { return }
+
+        let minY = min(firstLine.minY, lastLine.minY)
+        let maxY = max(firstLine.maxY, lastLine.maxY)
+        let blockRect = NSRect(
+            x: firstLine.minX + origin.x + 8,
+            y: minY + origin.y + 2,
+            width: max(80, textContainer.containerSize.width - 16),
+            height: max(18, maxY - minY - 4)
+        )
+
+        let path = NSBezierPath(roundedRect: blockRect, xRadius: 10, yRadius: 10)
+        MarkdownStylist.codeBackground.withAlphaComponent(0.94).setFill()
+        path.fill()
+
+        MarkdownStylist.codeBorder.withAlphaComponent(0.5).setStroke()
+        path.lineWidth = 0.8
+        path.stroke()
     }
 
     private func drawQuoteBlocks(forGlyphRange glyphRange: NSRange, at origin: NSPoint) {

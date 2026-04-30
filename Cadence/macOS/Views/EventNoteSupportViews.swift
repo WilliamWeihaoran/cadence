@@ -31,39 +31,21 @@ struct EventNoteEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
-                    TextField("Event note title", text: $note.title)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                    Text(eventTitle.isEmpty ? "Linked event note" : eventTitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
+        NoteEditorPane(
+            note: note,
+            headerDetail: eventTitle.isEmpty ? "Linked event note" : eventTitle,
+            headerAccessory: AnyView(
+                HStack(spacing: 10) {
+                    NoteActionMenu(note: note)
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .buttonStyle(.cadencePlain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
                 }
-                Spacer()
-                Button("Done") {
-                    dismiss()
-                }
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.blue)
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 14)
-
-            Divider().background(Theme.borderSubtle)
-
-            MarkdownEditor(text: Binding(
-                get: { note.content },
-                set: {
-                    note.content = $0
-                    note.updatedAt = Date()
-                }
-            ))
-        }
+            )
+        )
         .frame(minWidth: 760, minHeight: 560)
         .background(Theme.bg)
     }

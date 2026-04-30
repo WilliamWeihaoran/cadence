@@ -26,9 +26,9 @@ struct NotePanel: View {
                     PanelHeader(eyebrow: "Notes", title: headerTitle)
                     Spacer()
                     if let activeNote {
-                        NoteAIActionMenu(note: activeNote) { summary in
+                        NoteActionMenu(note: activeNote, onAppendSummary: { summary in
                             appendSummary(summary, to: activeNote)
-                        }
+                        })
                         .padding(.top, 12)
                         .padding(.trailing, 12)
                     }

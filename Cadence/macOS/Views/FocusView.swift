@@ -40,9 +40,7 @@ struct FocusView: View {
     }
 
     private var readyTasks: [AppTask] {
-        allTasks
-            .filter { !$0.isDone && !$0.isCancelled }
-            .sorted(by: focusRanking)
+        FocusSessionSupport.readyTasks(from: allTasks, todayKey: todayKey)
     }
 
     // MARK: - Active layout
@@ -124,7 +122,15 @@ struct FocusView: View {
                     task: task,
                     elapsedSeconds: focusManager.elapsed,
                     onLog: { hours, minutes, complete in
-                        logSession(hours: hours, minutes: minutes, complete: complete, task: task)
+                        FocusSessionSupport.logSession(
+                            hours: hours,
+                            minutes: minutes,
+                            complete: complete,
+                            task: task,
+                            modelContext: modelContext,
+                            focusManager: focusManager
+                        )
+                        showLogSheet = false
                     },
                     onDiscard: {
                         focusManager.reset()
@@ -167,67 +173,14 @@ struct FocusView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-
-    // MARK: - Log session action
-
-    private func logSession(hours: Int, minutes: Int, complete: Bool, task: AppTask) {
-        let totalMinutes = hours * 60 + minutes
-        if totalMinutes > 0 {
-            task.actualMinutes += totalMinutes
-            // Propagate to goal logged hours
-            if let goal = task.goal, goal.progressType == .hours {
-                goal.loggedHours += Double(totalMinutes) / 60.0
-            }
-            // Propagate to project or area
-            if let project = task.project {
-                project.loggedMinutes += totalMinutes
-            } else if let area = task.area {
-                area.loggedMinutes += totalMinutes
-            }
-        }
-        if complete {
-            TaskWorkflowService.markDone(task, in: modelContext)
-        }
-        focusManager.reset()
-        showLogSheet = false
-    }
-
     // MARK: - Helpers
 
     private var clockDisplay: String {
-        let secs = focusManager.elapsed
-        let h = secs / 3600
-        let m = (secs % 3600) / 60
-        let s = secs % 60
-        if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
-        return String(format: "%02d:%02d", m, s)
+        FocusSessionSupport.clockDisplay(elapsedSeconds: focusManager.elapsed)
     }
 
     private func durationLabel(for task: AppTask) -> String? {
-        let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes)
-        return label == "-/-" ? nil : label
-    }
-
-    private func focusRanking(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
-        let lhsScore = focusScore(for: lhs)
-        let rhsScore = focusScore(for: rhs)
-        if lhsScore != rhsScore { return lhsScore > rhsScore }
-        return lhs.createdAt > rhs.createdAt
-    }
-
-    private func focusScore(for task: AppTask) -> Int {
-        var score = 0
-        if task.scheduledDate == todayKey { score += 4 }
-        if task.dueDate == todayKey { score += 3 }
-        if !task.dueDate.isEmpty && task.dueDate < todayKey { score += 5 }
-        switch task.priority {
-        case .high: score += 3
-        case .medium: score += 2
-        case .low: score += 1
-        case .none: break
-        }
-        if task.actualMinutes == 0 { score += 1 }
-        return score
+        FocusSessionSupport.durationLabel(for: task)
     }
 }
 
@@ -550,10 +503,7 @@ private struct FocusSidebarTaskRow: View {
     }
 
     private var detail: String {
-        if task.scheduledDate == DateFormatters.todayKey() { return "Scheduled today" }
-        if task.dueDate == DateFormatters.todayKey() { return "Due today" }
-        if !task.containerName.isEmpty { return task.containerName }
-        return "Ready"
+        FocusSessionSupport.sidebarDetail(for: task, todayKey: DateFormatters.todayKey(), fallback: "Ready")
     }
 }
 
@@ -880,16 +830,7 @@ private struct FocusTaskBucketCard: View {
     }
 
     private func detail(for task: AppTask) -> String {
-        if task.scheduledDate == DateFormatters.todayKey() {
-            return "Scheduled today"
-        }
-        if task.dueDate == DateFormatters.todayKey() {
-            return "Due today"
-        }
-        if !task.containerName.isEmpty {
-            return task.containerName
-        }
-        return "Ready to focus"
+        FocusSessionSupport.sidebarDetail(for: task, todayKey: DateFormatters.todayKey(), fallback: "Ready to focus")
     }
 }
 #endif

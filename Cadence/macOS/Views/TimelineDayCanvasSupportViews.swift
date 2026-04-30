@@ -20,13 +20,13 @@ struct TimelineCreateRow: View {
             .overlay(alignment: .top) {
                 Rectangle()
                     .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.majorGridOpacity))
-                    .frame(height: 0.5)
+                    .frame(height: CalendarVisualStyle.majorGridLineWidth)
             }
             .overlay(alignment: .top) {
                 if showHalfHourMark {
                     Rectangle()
                         .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.minorGridOpacity))
-                        .frame(height: 0.5)
+                        .frame(height: CalendarVisualStyle.minorGridLineWidth)
                         .offset(y: metrics.hourHeight / 2)
                         .allowsHitTesting(false)
                 }

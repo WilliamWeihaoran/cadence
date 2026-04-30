@@ -85,7 +85,7 @@ struct MarkdownImageAssetServiceTests {
         #expect(asset.pixelHeight == 960)
     }
 
-    @Test func documentPDFExportRendersMarkdownImages() throws {
+    @Test func notePDFExportRendersMarkdownImages() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
         let image = testImage(size: CGSize(width: 320, height: 180))
@@ -98,7 +98,7 @@ struct MarkdownImageAssetServiceTests {
         After image.
         """
 
-        let data = try #require(DocumentExportService.renderedPDFData(content: content, imageAssets: [asset]))
+        let data = try #require(NoteExportService.renderedPDFData(content: content, imageAssets: [asset]))
 
         #expect(data.starts(with: Data("%PDF".utf8)))
         #expect(data.count > 1_000)
