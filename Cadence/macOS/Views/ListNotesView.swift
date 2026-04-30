@@ -18,6 +18,7 @@ struct ListNotesView: View {
     @Environment(CalendarManager.self) private var calendarManager
     @State private var selectedNoteID: UUID?
     @State private var selectedEventNoteID: UUID?
+    @State private var searchText = ""
     @Query(sort: \Note.order) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
 
@@ -42,6 +43,18 @@ struct ListNotesView: View {
         EventNoteSupport.meetingNotes(forLinkedCalendarID: linkedCalendarID, in: allNotes)
     }
 
+    private var filteredListNotes: [Note] {
+        filteredNotes(listNotes)
+    }
+
+    private var filteredMeetingNotes: [Note] {
+        filteredNotes(meetingNotes)
+    }
+
+    private var relatedNotes: [Note] {
+        listNotes + meetingNotes
+    }
+
     private var selectedEventNote: Note? {
         meetingNotes.first { $0.id == selectedEventNoteID }
     }
@@ -62,16 +75,21 @@ struct ListNotesView: View {
                 .background(Theme.surface)
 
             if let eventNote = selectedEventNote {
-                NoteEditorPane(note: eventNote)
+                NoteEditorPane(
+                    note: eventNote,
+                    relatedNotes: relatedNotes,
+                    relatedTasks: tasks,
+                    onOpenNote: openNote
+                )
                     .id(eventNote.id)
             } else if let note = selectedListNote {
                 NoteEditorPane(
                     note: note,
                     area: area,
                     project: project,
-                    relatedNotes: listNotes,
+                    relatedNotes: relatedNotes,
                     relatedTasks: tasks,
-                    onOpenNote: openListNote,
+                    onOpenNote: openNote,
                     onDelete: { deleteNote(note) }
                 )
                 .id(note.id)
@@ -114,13 +132,33 @@ struct ListNotesView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
 
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                TextField("Search notes", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.text)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Theme.bg.opacity(0.45))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Theme.borderSubtle.opacity(0.8), lineWidth: 1)
+            )
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
+
             Divider().background(Theme.borderSubtle)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    if !meetingNotes.isEmpty {
+                    if !filteredMeetingNotes.isEmpty {
                         noteSection("Meeting Notes") {
-                            ForEach(meetingNotes) { note in
+                            ForEach(filteredMeetingNotes) { note in
                                 MeetingNoteListRow(note: note, isSelected: selectedEventNoteID == note.id)
                                     .onTapGesture {
                                         selectedEventNoteID = note.id
@@ -131,8 +169,8 @@ struct ListNotesView: View {
                         }
                     }
 
-                    noteSection(meetingNotes.isEmpty ? nil : "Notes") {
-                        ForEach(listNotes) { note in
+                    noteSection(filteredMeetingNotes.isEmpty ? nil : "Notes") {
+                        ForEach(filteredListNotes) { note in
                             ListNoteRow(note: note, isSelected: selectedNoteID == note.id)
                                 .onTapGesture {
                                     openListNote(note)
@@ -159,6 +197,14 @@ struct ListNotesView: View {
                     message: "No notes",
                     subtitle: "Tap + to create one",
                     icon: "doc.text"
+                )
+                Spacer()
+            } else if filteredListNotes.isEmpty && filteredMeetingNotes.isEmpty {
+                Spacer()
+                EmptyStateView(
+                    message: "No matches",
+                    subtitle: "Try a different search",
+                    icon: "magnifyingglass"
                 )
                 Spacer()
             }
@@ -208,6 +254,15 @@ struct ListNotesView: View {
         selectedEventNoteID = nil
     }
 
+    private func openNote(_ note: Note) {
+        if note.kind == .meeting {
+            selectedEventNoteID = note.id
+            selectedNoteID = nil
+        } else {
+            openListNote(note)
+        }
+    }
+
     private func deleteNote(_ note: Note) {
         deleteConfirmationManager.present(
             title: "Delete Note?",
@@ -225,6 +280,15 @@ struct ListNotesView: View {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let headingTitle = trimmed.isEmpty ? "Untitled" : trimmed
         return "# \(headingTitle)\n\n"
+    }
+
+    private func filteredNotes(_ notes: [Note]) -> [Note] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return notes }
+        return notes.filter { note in
+            note.displayTitle.localizedCaseInsensitiveContains(query) ||
+                note.content.localizedCaseInsensitiveContains(query)
+        }
     }
 
     private func applyRequestedEventNoteSelection() {

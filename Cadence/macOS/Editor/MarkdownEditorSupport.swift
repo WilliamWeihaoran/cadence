@@ -8,6 +8,51 @@ extension NSAttributedString.Key {
     static let cadenceMarkdownImage = NSAttributedString.Key("CadenceMarkdownImage")
     static let cadenceMarkdownInlineCode = NSAttributedString.Key("CadenceMarkdownInlineCode")
     static let cadenceMarkdownCodeBlock = NSAttributedString.Key("CadenceMarkdownCodeBlock")
+    static let cadenceMarkdownReference = NSAttributedString.Key("CadenceMarkdownReference")
+    static let cadenceMarkdownTableRow = NSAttributedString.Key("CadenceMarkdownTableRow")
+}
+
+enum MarkdownReferenceKind: Hashable {
+    case note
+    case task
+}
+
+struct MarkdownReferenceTarget: Hashable {
+    let kind: MarkdownReferenceKind
+    let id: UUID?
+    let title: String
+}
+
+struct MarkdownReferenceSuggestion: Identifiable, Hashable {
+    let kind: MarkdownReferenceKind
+    let targetID: UUID
+    let title: String
+    let subtitle: String
+    let markdown: String
+
+    var id: String {
+        "\(kind)-\(targetID.uuidString)"
+    }
+
+    static func note(_ note: Note) -> MarkdownReferenceSuggestion {
+        MarkdownReferenceSuggestion(
+            kind: .note,
+            targetID: note.id,
+            title: note.displayTitle,
+            subtitle: note.kind.rawValue.capitalized,
+            markdown: NoteReferenceParser.noteReferenceMarkdown(for: note)
+        )
+    }
+
+    static func task(_ task: AppTask) -> MarkdownReferenceSuggestion {
+        MarkdownReferenceSuggestion(
+            kind: .task,
+            targetID: task.id,
+            title: task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Task" : task.title,
+            subtitle: task.containerName.isEmpty ? task.status.rawValue.capitalized : task.containerName,
+            markdown: NoteReferenceParser.taskReferenceMarkdown(for: task)
+        )
+    }
 }
 
 struct MarkdownImageLayoutInfo {
@@ -287,6 +332,7 @@ enum MarkdownStylist {
         let text = textView.string
         let nsText = text as NSString
         let fullRange = NSRange(location: 0, length: storage.length)
+        let tableStyles = MarkdownTableParser.rowStyles(in: text)
 
         storage.beginEditing()
 
@@ -297,13 +343,14 @@ enum MarkdownStylist {
         ], range: fullRange)
 
         var pos = 0
-        for line in text.components(separatedBy: "\n") {
+        for (lineIndex, line) in text.components(separatedBy: "\n").enumerated() {
             let len = (line as NSString).length
             applyLine(
                 storage: storage,
                 line: line,
                 lineRange: NSRange(location: pos, length: len),
                 lineStart: pos,
+                tableRowStyle: tableStyles[lineIndex],
                 imageAssets: imageAssets,
                 textView: textView
             )
@@ -354,6 +401,7 @@ enum MarkdownStylist {
         line: String,
         lineRange: NSRange,
         lineStart: Int,
+        tableRowStyle: MarkdownTableRowStyle?,
         imageAssets: [UUID: MarkdownImageRenderAsset],
         textView: NSTextView
     ) {
@@ -362,7 +410,9 @@ enum MarkdownStylist {
             return
         }
 
-        if line.hasPrefix("###### ") {
+        if let tableRowStyle {
+            applyTableRow(storage: storage, line: line, lineRange: lineRange, lineStart: lineStart, style: tableRowStyle)
+        } else if line.hasPrefix("###### ") {
             heading(storage, lineRange, lineStart, prefixLen: 7, size: 15)
         } else if line.hasPrefix("##### ") {
             heading(storage, lineRange, lineStart, prefixLen: 6, size: 17)
@@ -436,6 +486,37 @@ enum MarkdownStylist {
             storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
             storage.addAttribute(.cadenceMarkdownDivider, value: true, range: lineRange)
             storage.addAttribute(.foregroundColor, value: NSColor.clear, range: lineRange)
+        }
+    }
+
+    private static func applyTableRow(
+        storage: NSTextStorage,
+        line: String,
+        lineRange: NSRange,
+        lineStart: Int,
+        style: MarkdownTableRowStyle
+    ) {
+        guard lineRange.length > 0 else { return }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.firstLineHeadIndent = 14
+        paragraph.headIndent = 14
+        paragraph.lineSpacing = 2
+        paragraph.paragraphSpacingBefore = style.isHeader ? 8 : 0
+        paragraph.paragraphSpacing = style.isDelimiter ? 2 : 0
+
+        storage.addAttributes([
+            .paragraphStyle: paragraph,
+            .cadenceMarkdownTableRow: style,
+            .font: style.isHeader ? NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold) : monoFont,
+            .foregroundColor: style.isDelimiter ? dimColor : textColor
+        ], range: lineRange)
+
+        let nsLine = line as NSString
+        let fullRange = NSRange(location: 0, length: nsLine.length)
+        guard let regex = try? NSRegularExpression(pattern: #"\|"#) else { return }
+        regex.enumerateMatches(in: line, range: fullRange) { match, _, _ in
+            guard let match else { return }
+            storage.addAttribute(.foregroundColor, value: blueColor.withAlphaComponent(0.72), range: NSRange(location: lineStart + match.range.location, length: match.range.length))
         }
     }
 
@@ -670,17 +751,73 @@ enum MarkdownStylist {
             guard labelRange.location != NSNotFound else { return }
 
             let label = text.substring(with: labelRange).trimmingCharacters(in: .whitespacesAndNewlines)
-            let isTaskReference = label.lowercased().hasPrefix("task:")
+            let kind = wikiLinkKind(for: label)
+            let displayRange = wikiLinkDisplayRange(label: text.substring(with: labelRange), labelRange: labelRange)
 
-            storage.addAttribute(.foregroundColor, value: isTaskReference ? greenColor : blueColor, range: labelRange)
-            storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: labelRange)
-            if isTaskReference {
-                storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .semibold), range: labelRange)
+            storage.addAttribute(.foregroundColor, value: kind == .task ? greenColor : blueColor, range: displayRange)
+            storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: displayRange)
+            storage.addAttribute(.cadenceMarkdownReference, value: wikiLinkTarget(for: label), range: displayRange)
+            if kind == .task {
+                storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .semibold), range: displayRange)
             }
 
             hide(storage, NSRange(location: fullRange.location, length: 2))
             hide(storage, NSRange(location: fullRange.location + fullRange.length - 2, length: 2))
+            if displayRange.location > labelRange.location {
+                hide(storage, NSRange(location: labelRange.location, length: displayRange.location - labelRange.location))
+            }
         }
+    }
+
+    private enum WikiLinkKind {
+        case note
+        case task
+    }
+
+    private static func wikiLinkKind(for label: String) -> WikiLinkKind {
+        label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("task:") ? .task : .note
+    }
+
+    private static func wikiLinkDisplayRange(label: String, labelRange: NSRange) -> NSRange {
+        let nsLabel = label as NSString
+        let fullRange = NSRange(location: 0, length: nsLabel.length)
+        guard let regex = try? NSRegularExpression(pattern: #"^\s*(?:task|note):(?:[^\|\]]*\|)?"#, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: label, range: fullRange) else {
+            return labelRange
+        }
+
+        let displayLocation = labelRange.location + match.range.length
+        let displayLength = max(0, labelRange.length - match.range.length)
+        guard displayLength > 0 else { return labelRange }
+        return NSRange(location: displayLocation, length: displayLength)
+    }
+
+    private static func wikiLinkTarget(for label: String) -> MarkdownReferenceTarget {
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowercased = trimmed.lowercased()
+        if lowercased.hasPrefix("task:") {
+            let payload = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let parts = payload.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+            if parts.count == 2 {
+                let idText = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let title = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+                return MarkdownReferenceTarget(kind: .task, id: UUID(uuidString: idText), title: title)
+            }
+            return MarkdownReferenceTarget(kind: .task, id: UUID(uuidString: payload), title: payload)
+        }
+
+        if lowercased.hasPrefix("note:") {
+            let payload = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let parts = payload.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+            if parts.count == 2 {
+                let idText = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let title = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+                return MarkdownReferenceTarget(kind: .note, id: UUID(uuidString: idText), title: title)
+            }
+            return MarkdownReferenceTarget(kind: .note, id: UUID(uuidString: payload), title: payload)
+        }
+
+        return MarkdownReferenceTarget(kind: .note, id: UUID(uuidString: trimmed), title: trimmed)
     }
 
     private static func applyCodeFences(_ storage: NSTextStorage, text: NSString) {

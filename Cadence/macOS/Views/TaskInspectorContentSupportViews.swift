@@ -1,6 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import SwiftData
+import AppKit
 
 struct TaskDetailNotesSection: View {
     @Bindable var task: AppTask
@@ -104,7 +105,26 @@ struct TaskDetailActionsSection: View {
                 }
                 .buttonStyle(.cadencePlain)
             }
+
+            Button {
+                copyTaskReference()
+            } label: {
+                Label("Copy Ref", systemImage: "link")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.cadencePlain)
         }
+    }
+
+    private func copyTaskReference() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(NoteReferenceParser.taskReferenceMarkdown(for: task), forType: .string)
     }
 }
 #endif

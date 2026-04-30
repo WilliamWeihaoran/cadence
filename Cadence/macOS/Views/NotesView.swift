@@ -68,6 +68,7 @@ struct NotesView: View {
 
 private struct DailyNotesPage: View {
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
 
     @State private var selectedNoteID: UUID? = nil
@@ -121,7 +122,12 @@ private struct DailyNotesPage: View {
 
             // Right: editor
             if let note = selectedNote {
-                NoteEditorPane(note: note)
+                NoteEditorPane(
+                    note: note,
+                    relatedNotes: notes,
+                    relatedTasks: allTasks,
+                    onOpenNote: { selectedNoteID = $0.id }
+                )
             } else {
                 noteEditorPlaceholder
             }
@@ -155,6 +161,7 @@ private struct DailyNotesPage: View {
 
 private struct WeeklyNotesPage: View {
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
 
     @State private var selectedNoteID: UUID? = nil
@@ -208,7 +215,12 @@ private struct WeeklyNotesPage: View {
 
             // Right: editor
             if let note = selectedNote {
-                NoteEditorPane(note: note)
+                NoteEditorPane(
+                    note: note,
+                    relatedNotes: notes,
+                    relatedTasks: allTasks,
+                    onOpenNote: { selectedNoteID = $0.id }
+                )
             } else {
                 ZStack {
                     Theme.bg
@@ -240,6 +252,7 @@ private struct MeetingNotesPage: View {
     @Binding var requestedNoteID: UUID?
 
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
 
@@ -295,7 +308,12 @@ private struct MeetingNotesPage: View {
             .background(Theme.surface)
 
             if let note = selectedNote {
-                NoteEditorPane(note: note)
+                NoteEditorPane(
+                    note: note,
+                    relatedNotes: notes,
+                    relatedTasks: allTasks,
+                    onOpenNote: { selectedNoteID = $0.id }
+                )
             } else {
                 noteEditorPlaceholder
             }
@@ -484,6 +502,8 @@ struct NoteEditorPane: View {
     var headerDetail: String?
     var headerAccessory: AnyView?
     @Environment(\.modelContext) private var modelContext
+    @State private var editorTextView: CadenceTextView?
+    @State private var linkedTaskForPopover: AppTask?
 
     private var titleBinding: Binding<String> {
         Binding(
@@ -532,6 +552,14 @@ struct NoteEditorPane: View {
         }
     }
 
+    private var referenceNotes: [Note] {
+        relatedNotes.filter { $0.id != note.id }
+    }
+
+    private var unlinkedMentions: [Note] {
+        NoteUnlinkedMentionResolver.unlinkedMentions(for: note, in: referenceNotes)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
@@ -572,9 +600,35 @@ struct NoteEditorPane: View {
                 tasks: relatedTasks,
                 onOpenNote: onOpenNote
             )
-            MarkdownEditor(text: contentBinding)
+            HSplitView {
+                MarkdownEditor(
+                    text: contentBinding,
+                    referenceNotes: referenceNotes,
+                    referenceTasks: relatedTasks,
+                    onOpenNoteReference: openNoteReference,
+                    onOpenTaskReference: openTaskReference,
+                    onTextViewChanged: { editorTextView = $0 }
+                )
+                .frame(minWidth: 360)
+
+                NoteMarkdownSidePanel(
+                    content: note.content,
+                    noteTitle: note.displayTitle,
+                    noteKind: note.kind,
+                    unlinkedMentions: unlinkedMentions,
+                    onJumpToOutline: jumpToOutline,
+                    onInsertFrontmatter: insertFrontmatter,
+                    onApplyTemplate: applyTemplate,
+                    onLinkMention: linkMention
+                )
+                .frame(minWidth: 220, idealWidth: 240, maxWidth: 290)
+            }
         }
         .background(Theme.surface)
+        .popover(item: $linkedTaskForPopover) { task in
+            TaskDetailPopover(task: task)
+                .frame(width: 380)
+        }
     }
 
     private func syncTitleFromH1IfNeeded() {
@@ -584,7 +638,259 @@ struct NoteEditorPane: View {
         let h1Text = String(firstLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
         guard !h1Text.isEmpty, h1Text != note.title else { return }
         note.title = h1Text
-        try? modelContext.save()
+            try? modelContext.save()
+    }
+
+    private func openNoteReference(id: UUID?, title: String) {
+        if let id, let note = referenceNotes.first(where: { $0.id == id }) {
+            onOpenNote(note)
+            return
+        }
+
+        let targetTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !targetTitle.isEmpty,
+              let note = referenceNotes.first(where: {
+                  $0.displayTitle.caseInsensitiveCompare(targetTitle) == .orderedSame
+              }) else { return }
+        onOpenNote(note)
+    }
+
+    private func openTaskReference(id: UUID?, title: String) {
+        if let id, let task = relatedTasks.first(where: { $0.id == id }) {
+            linkedTaskForPopover = task
+            return
+        }
+
+        let targetTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !targetTitle.isEmpty,
+              let task = relatedTasks.first(where: {
+                  $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                      .caseInsensitiveCompare(targetTitle) == .orderedSame
+              }) else { return }
+        linkedTaskForPopover = task
+    }
+
+    private func jumpToOutline(_ item: MarkdownOutlineItem) {
+        guard let editorTextView else { return }
+        let safeLocation = min(max(item.location, 0), (editorTextView.string as NSString).length)
+        editorTextView.window?.makeFirstResponder(editorTextView)
+        editorTextView.setSelectedRange(NSRange(location: safeLocation, length: 0))
+        editorTextView.scrollRangeToVisible(NSRange(location: safeLocation, length: 0))
+    }
+
+    private func insertFrontmatter() {
+        let metadata = MarkdownMetadataParser.metadata(in: note.content)
+        guard metadata.frontmatter.range == nil else { return }
+        note.content = MarkdownMetadataParser.frontmatterInsertion(title: note.displayTitle) + note.content
+        note.updatedAt = Date()
+    }
+
+    private func applyTemplate(_ template: NoteTemplate) {
+        let trimmed = note.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == "# \(note.displayTitle)" {
+            note.content = template.body
+        } else {
+            note.content = note.content.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n" + template.body
+        }
+        note.updatedAt = Date()
+        syncTitleFromH1IfNeeded()
+    }
+
+    private func linkMention(_ mentionedNote: Note) {
+        let markdown = NoteReferenceParser.noteReferenceMarkdown(for: mentionedNote)
+        let title = mentionedNote.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let range = firstLoosePhraseRange(title, in: note.content) {
+            let nsContent = note.content as NSString
+            note.content = nsContent.replacingCharacters(in: range, with: markdown)
+        } else {
+            let separator = note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
+            note.content += "\(separator)\(markdown)"
+        }
+        note.updatedAt = Date()
+    }
+
+    private func firstLoosePhraseRange(_ phrase: String, in content: String) -> NSRange? {
+        guard !phrase.isEmpty else { return nil }
+        let escaped = NSRegularExpression.escapedPattern(for: phrase)
+        let pattern = #"(?i)(?<![\p{L}\p{N}_])"# + escaped + #"(?![\p{L}\p{N}_])"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        return regex.firstMatch(in: content, range: NSRange(location: 0, length: (content as NSString).length))?.range
+    }
+}
+
+private struct NoteMarkdownSidePanel: View {
+    let content: String
+    let noteTitle: String
+    let noteKind: NoteKind
+    let unlinkedMentions: [Note]
+    let onJumpToOutline: (MarkdownOutlineItem) -> Void
+    let onInsertFrontmatter: () -> Void
+    let onApplyTemplate: (NoteTemplate) -> Void
+    let onLinkMention: (Note) -> Void
+
+    private var outline: [MarkdownOutlineItem] {
+        MarkdownOutlineParser.items(in: content)
+    }
+
+    private var metadata: MarkdownNoteMetadata {
+        MarkdownMetadataParser.metadata(in: content)
+    }
+
+    private var templates: [NoteTemplate] {
+        NoteTemplateLibrary.templates(for: noteKind)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                sidebarSection("Outline") {
+                    if outline.isEmpty {
+                        sidebarEmpty("No headings")
+                    } else {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(outline) { item in
+                                Button {
+                                    onJumpToOutline(item)
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Text(String(repeating: "  ", count: max(0, item.level - 1)) + item.title)
+                                            .font(.system(size: 11, weight: item.level <= 2 ? .semibold : .regular))
+                                            .foregroundStyle(item.level <= 2 ? Theme.muted : Theme.dim)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 0)
+                                    }
+                                    .padding(.vertical, 3)
+                                }
+                                .buttonStyle(.cadencePlain)
+                            }
+                        }
+                    }
+                }
+
+                sidebarSection("Properties") {
+                    if metadata.frontmatter.properties.isEmpty && metadata.tags.isEmpty {
+                        Button {
+                            onInsertFrontmatter()
+                        } label: {
+                            Label("Add frontmatter", systemImage: "tag")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Theme.blue)
+                        }
+                        .buttonStyle(.cadencePlain)
+                    } else {
+                        if !metadata.frontmatter.properties.isEmpty {
+                            VStack(alignment: .leading, spacing: 5) {
+                                ForEach(metadata.frontmatter.properties.keys.sorted(), id: \.self) { key in
+                                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                        Text(key)
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(Theme.dim)
+                                            .frame(width: 58, alignment: .leading)
+                                        Text(metadata.frontmatter.properties[key] ?? "")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(Theme.muted)
+                                            .lineLimit(1)
+                                    }
+                                }
+                            }
+                        }
+                        if !metadata.tags.isEmpty {
+                            FlowTags(tags: metadata.tags)
+                        }
+                    }
+                }
+
+                sidebarSection("Templates") {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(templates) { template in
+                            Button {
+                                onApplyTemplate(template)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(template.title)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(Theme.muted)
+                                    Text(template.subtitle)
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Theme.dim)
+                                        .lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.cadencePlain)
+                        }
+                    }
+                }
+
+                sidebarSection("Unlinked") {
+                    if unlinkedMentions.isEmpty {
+                        sidebarEmpty("No mentions")
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(unlinkedMentions, id: \.id) { note in
+                                HStack(spacing: 6) {
+                                    Text(note.displayTitle)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(Theme.muted)
+                                        .lineLimit(1)
+                                    Spacer(minLength: 0)
+                                    Button {
+                                        onLinkMention(note)
+                                    } label: {
+                                        Image(systemName: "link")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(Theme.blue)
+                                    }
+                                    .buttonStyle(.cadencePlain)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(14)
+        }
+        .background(Theme.bg.opacity(0.34))
+        .overlay(alignment: .leading) {
+            Rectangle().fill(Theme.borderSubtle).frame(width: 1)
+        }
+    }
+
+    private func sidebarSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .kerning(0.8)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func sidebarEmpty(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(Theme.dim)
+    }
+}
+
+private struct FlowTags: View {
+    let tags: [String]
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 6)], alignment: .leading, spacing: 6) {
+            ForEach(tags, id: \.self) { tag in
+                Text("#\(tag)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.blue.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+        }
     }
 }
 

@@ -12,39 +12,54 @@ enum MarkdownEditorMetrics {
 
 struct MarkdownEditor: View {
     @Binding var text: String
+    var referenceNotes: [Note] = []
+    var referenceTasks: [AppTask] = []
+    var onOpenNoteReference: (UUID?, String) -> Void = { _, _ in }
+    var onOpenTaskReference: (UUID?, String) -> Void = { _, _ in }
+    var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
     @State private var textView: CadenceTextView?
 
+    @MainActor private var noteSuggestions: [MarkdownReferenceSuggestion] {
+        referenceNotes
+            .sorted { $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending }
+            .map(MarkdownReferenceSuggestion.note)
+    }
+
+    @MainActor private var taskSuggestions: [MarkdownReferenceSuggestion] {
+        referenceTasks
+            .filter { !$0.isCancelled }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            .map(MarkdownReferenceSuggestion.task)
+    }
+
+    @MainActor private var referenceSuggestions: [MarkdownReferenceSuggestion] {
+        noteSuggestions + taskSuggestions
+    }
+
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        VStack(spacing: 0) {
+            MarkdownEditorToolbar(
+                textView: textView,
+                noteSuggestions: noteSuggestions,
+                taskSuggestions: taskSuggestions,
+                onChooseImages: chooseImages
+            )
+
             MarkdownEditorView(
                 text: $text,
                 imageAssets: imageAssets,
                 onCreateImages: createAssets,
                 onResizeImage: resizeImage,
                 onChooseImages: chooseImages,
-                onTextViewChanged: { textView = $0 }
+                referenceSuggestions: referenceSuggestions,
+                onOpenReference: openReference,
+                onTextViewChanged: {
+                    textView = $0
+                    onTextViewChanged($0)
+                }
             )
-
-            Button {
-                chooseImages()
-            } label: {
-                Image(systemName: "photo")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 28, height: 28)
-                    .background(Theme.surfaceElevated.opacity(0.92))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Theme.borderSubtle.opacity(0.85), lineWidth: 1)
-                    )
-            }
-            .buttonStyle(.cadencePlain)
-            .padding(.top, 10)
-            .padding(.trailing, 10)
-            .help("Insert image")
         }
     }
 
@@ -90,6 +105,188 @@ struct MarkdownEditor: View {
             text += text.hasSuffix("\n") || text.isEmpty ? markdown + "\n" : "\n\n\(markdown)\n"
         }
     }
+
+    private func openReference(_ target: MarkdownReferenceTarget) {
+        switch target.kind {
+        case .note:
+            onOpenNoteReference(target.id, target.title)
+        case .task:
+            onOpenTaskReference(target.id, target.title)
+        }
+    }
+}
+
+private struct MarkdownEditorToolbar: View {
+    let textView: CadenceTextView?
+    let noteSuggestions: [MarkdownReferenceSuggestion]
+    let taskSuggestions: [MarkdownReferenceSuggestion]
+    let onChooseImages: () -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                MarkdownToolbarTextButton(title: "H1", help: "Heading 1") {
+                    textView?.performMarkdownFormatCommand(.heading(1))
+                }
+                MarkdownToolbarTextButton(title: "H2", help: "Heading 2") {
+                    textView?.performMarkdownFormatCommand(.heading(2))
+                }
+                toolbarDivider
+                MarkdownToolbarButton(systemName: "bold", help: "Bold") {
+                    textView?.performMarkdownFormatCommand(.bold)
+                }
+                MarkdownToolbarButton(systemName: "italic", help: "Italic") {
+                    textView?.performMarkdownFormatCommand(.italic)
+                }
+                MarkdownToolbarButton(systemName: "strikethrough", help: "Strikethrough") {
+                    textView?.performMarkdownFormatCommand(.strikethrough)
+                }
+                MarkdownToolbarButton(systemName: "highlighter", help: "Highlight") {
+                    textView?.performMarkdownFormatCommand(.highlight)
+                }
+                MarkdownToolbarButton(systemName: "chevron.left.forwardslash.chevron.right", help: "Inline code") {
+                    textView?.performMarkdownFormatCommand(.inlineCode)
+                }
+                toolbarDivider
+                MarkdownToolbarButton(systemName: "link", help: "Link") {
+                    textView?.performMarkdownFormatCommand(.link)
+                }
+                MarkdownReferenceMenuButton(
+                    systemName: "text.badge.plus",
+                    help: "Note link",
+                    emptyTitle: "Blank Note Link",
+                    suggestions: noteSuggestions,
+                    blankAction: { textView?.performMarkdownFormatCommand(.noteLink) },
+                    selectAction: { textView?.insertMarkdownReference($0.markdown) }
+                )
+                MarkdownReferenceMenuButton(
+                    systemName: "checkmark.circle",
+                    help: "Task reference",
+                    emptyTitle: "Blank Task Reference",
+                    suggestions: taskSuggestions,
+                    blankAction: { textView?.performMarkdownFormatCommand(.taskReference) },
+                    selectAction: { textView?.insertMarkdownReference($0.markdown) }
+                )
+                toolbarDivider
+                MarkdownToolbarButton(systemName: "list.bullet", help: "Bulleted list") {
+                    textView?.performMarkdownFormatCommand(.unorderedList)
+                }
+                MarkdownToolbarButton(systemName: "list.number", help: "Numbered list") {
+                    textView?.performMarkdownFormatCommand(.orderedList)
+                }
+                MarkdownToolbarButton(systemName: "checklist", help: "Checklist") {
+                    textView?.performMarkdownFormatCommand(.todoList)
+                }
+                MarkdownToolbarButton(systemName: "text.quote", help: "Quote") {
+                    textView?.performMarkdownFormatCommand(.quote)
+                }
+                toolbarDivider
+                MarkdownToolbarButton(systemName: "curlybraces.square", help: "Code block") {
+                    textView?.performMarkdownFormatCommand(.codeBlock)
+                }
+                MarkdownToolbarButton(systemName: "minus", help: "Divider") {
+                    textView?.performMarkdownFormatCommand(.divider)
+                }
+                MarkdownToolbarButton(systemName: "photo", help: "Image") {
+                    onChooseImages()
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+        }
+        .background(Theme.surfaceElevated)
+        .overlay(alignment: .bottom) {
+            Divider().background(Theme.borderSubtle)
+        }
+    }
+
+    private var toolbarDivider: some View {
+        Rectangle()
+            .fill(Theme.borderSubtle)
+            .frame(width: 1, height: 18)
+            .padding(.horizontal, 3)
+    }
+}
+
+private struct MarkdownReferenceMenuButton: View {
+    let systemName: String
+    let help: String
+    let emptyTitle: String
+    let suggestions: [MarkdownReferenceSuggestion]
+    let blankAction: () -> Void
+    let selectAction: (MarkdownReferenceSuggestion) -> Void
+
+    var body: some View {
+        Menu {
+            if suggestions.isEmpty {
+                Button(emptyTitle, action: blankAction)
+            } else {
+                Button(emptyTitle, action: blankAction)
+                Divider()
+                ForEach(suggestions.prefix(12)) { suggestion in
+                    Button {
+                        selectAction(suggestion)
+                    } label: {
+                        Text(suggestion.title)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: systemName)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.muted)
+                .frame(width: 28, height: 26)
+                .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .menuStyle(.borderlessButton)
+        .buttonStyle(.cadencePlain)
+        .background(Theme.bg.opacity(0.001))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .cadenceHoverHighlight(cornerRadius: 7, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
+        .help(help)
+    }
+}
+
+private struct MarkdownToolbarButton: View {
+    let systemName: String
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.muted)
+                .frame(width: 28, height: 26)
+                .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.cadencePlain)
+        .background(Theme.bg.opacity(0.001))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .cadenceHoverHighlight(cornerRadius: 7, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
+        .help(help)
+    }
+}
+
+private struct MarkdownToolbarTextButton: View {
+    let title: String
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Theme.muted)
+                .frame(width: 30, height: 26)
+                .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.cadencePlain)
+        .background(Theme.bg.opacity(0.001))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .cadenceHoverHighlight(cornerRadius: 7, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
+        .help(help)
+    }
 }
 
 struct MarkdownEditorView: NSViewRepresentable {
@@ -98,6 +295,8 @@ struct MarkdownEditorView: NSViewRepresentable {
     var onCreateImages: ([NSImage], [URL]) -> [MarkdownImageAsset] = { _, _ in [] }
     var onResizeImage: (UUID, CGFloat) -> Void = { _, _ in }
     var onChooseImages: () -> Void = {}
+    var referenceSuggestions: [MarkdownReferenceSuggestion] = []
+    var onOpenReference: (MarkdownReferenceTarget) -> Void = { _ in }
     var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
 
     func makeNSView(context: NSViewRepresentableContext<MarkdownEditorView>) -> NSScrollView {
@@ -183,6 +382,8 @@ struct MarkdownEditorView: NSViewRepresentable {
                 MarkdownImageAssetService.renderAsset(for: asset.id, in: imageAssets).map { (asset.id, $0) }
             }
         )
+        textView.referenceSuggestions = referenceSuggestions
+        textView.onOpenMarkdownReference = onOpenReference
         textView.onCreateMarkdownImages = onCreateImages
         textView.onResizeMarkdownImage = onResizeImage
         textView.registerForDraggedTypes([.fileURL, .tiff, .png])

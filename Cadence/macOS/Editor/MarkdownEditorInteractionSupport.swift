@@ -12,12 +12,53 @@ final class CadenceLayoutManager: NSLayoutManager {
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         drawCodeBackgrounds(forGlyphRange: glyphsToShow, at: origin)
+        drawTableRows(forGlyphRange: glyphsToShow, at: origin)
         for visibleRange in visibleGlyphRanges(in: glyphsToShow) {
             super.drawBackground(forGlyphRange: visibleRange, at: origin)
         }
         drawQuoteBlocks(forGlyphRange: glyphsToShow, at: origin)
         drawDividerRules(forGlyphRange: glyphsToShow, at: origin)
         drawMarkdownImages(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    private func drawTableRows(forGlyphRange glyphRange: NSRange, at origin: NSPoint) {
+        guard let textStorage, let textContainer = textContainers.first else { return }
+        let characterRange = self.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        guard characterRange.length > 0 else { return }
+
+        textStorage.enumerateAttribute(.cadenceMarkdownTableRow, in: characterRange) { value, range, _ in
+            guard let style = value as? MarkdownTableRowStyle else { return }
+            let rowGlyphRange = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            guard rowGlyphRange.length > 0 else { return }
+
+            let lineRect = self.boundingRect(forGlyphRange: rowGlyphRange, in: textContainer)
+                .offsetBy(dx: origin.x, dy: origin.y)
+            let rowRect = NSRect(
+                x: origin.x + 8,
+                y: lineRect.minY - 1,
+                width: max(120, textContainer.containerSize.width - 16),
+                height: max(12, lineRect.height + 3)
+            )
+
+            let fillColor: NSColor
+            if style.isHeader {
+                fillColor = NSColor(hex: "#24304a").withAlphaComponent(0.78)
+            } else if style.isDelimiter {
+                fillColor = NSColor(hex: "#38405c").withAlphaComponent(0.58)
+            } else {
+                fillColor = (style.lineIndex % 2 == 0 ? NSColor(hex: "#171d2a") : NSColor(hex: "#141923")).withAlphaComponent(0.72)
+            }
+
+            fillColor.setFill()
+            NSBezierPath(roundedRect: rowRect, xRadius: style.isHeader ? 9 : 6, yRadius: style.isHeader ? 9 : 6).fill()
+
+            NSColor(hex: "#3b4668").withAlphaComponent(style.isHeader ? 0.75 : 0.45).setStroke()
+            let border = NSBezierPath()
+            border.lineWidth = 0.7
+            border.move(to: NSPoint(x: rowRect.minX + 8, y: rowRect.maxY))
+            border.line(to: NSPoint(x: rowRect.maxX - 8, y: rowRect.maxY))
+            border.stroke()
+        }
     }
 
     private func drawCodeBackgrounds(forGlyphRange glyphRange: NSRange, at origin: NSPoint) {
@@ -255,10 +296,30 @@ final class CadenceLayoutManager: NSLayoutManager {
     }
 }
 
+enum MarkdownFormatCommand: Hashable {
+    case bold
+    case italic
+    case inlineCode
+    case strikethrough
+    case highlight
+    case link
+    case heading(Int)
+    case orderedList
+    case unorderedList
+    case todoList
+    case quote
+    case codeBlock
+    case divider
+    case noteLink
+    case taskReference
+}
+
 final class CadenceTextView: NSTextView {
     var markdownImageAssets: [UUID: MarkdownImageRenderAsset] = [:]
     var markdownImageRects: [UUID: NSRect] = [:]
     var selectedMarkdownImageID: UUID?
+    var referenceSuggestions: [MarkdownReferenceSuggestion] = []
+    var onOpenMarkdownReference: ((MarkdownReferenceTarget) -> Void)?
     var onCreateMarkdownImages: (([NSImage], [URL]) -> [MarkdownImageAsset])?
     var onResizeMarkdownImage: ((UUID, CGFloat) -> Void)?
 
@@ -271,6 +332,10 @@ final class CadenceTextView: NSTextView {
             return true
         }
         return super.performKeyEquivalent(with: event)
+    }
+
+    func performMarkdownFormatCommand(_ command: MarkdownFormatCommand) {
+        _ = MarkdownKeyboardShortcutSupport.apply(command, in: self)
     }
 
     override func paste(_ sender: Any?) {
@@ -339,6 +404,11 @@ final class CadenceTextView: NSTextView {
                     }
                 }
             }
+        }
+
+        if let reference = markdownReferenceHit(at: viewPoint) {
+            onOpenMarkdownReference?(reference)
+            return
         }
 
         super.mouseDown(with: event)
@@ -435,6 +505,17 @@ final class CadenceTextView: NSTextView {
         didChangeText()
     }
 
+    func insertMarkdownReference(_ markdown: String) {
+        let insertion = inlinePaddedInsertion(markdown)
+        let selection = selectedRange()
+        guard shouldChangeText(in: selection, replacementString: insertion) else { return }
+        textStorage?.replaceCharacters(in: selection, with: insertion)
+        let location = selection.location + (insertion as NSString).length
+        setSelectedRange(NSRange(location: location, length: 0))
+        typingAttributes = MarkdownStylist.baseAttributes
+        didChangeText()
+    }
+
     func chooseMarkdownImages() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
@@ -504,6 +585,19 @@ final class CadenceTextView: NSTextView {
         return nil
     }
 
+    private func markdownReferenceHit(at point: NSPoint) -> MarkdownReferenceTarget? {
+        guard let layoutManager, let textContainer, let textStorage else { return nil }
+        let containerPoint = NSPoint(
+            x: point.x - textContainerInset.width,
+            y: point.y - textContainerInset.height
+        )
+        let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer, fractionOfDistanceThroughGlyph: nil)
+        guard glyphIndex < layoutManager.numberOfGlyphs else { return nil }
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        guard characterIndex < textStorage.length else { return nil }
+        return textStorage.attribute(.cadenceMarkdownReference, at: characterIndex, effectiveRange: nil) as? MarkdownReferenceTarget
+    }
+
     private func expandedMarkdownImageDeletionRange(from range: NSRange) -> NSRange {
         let nsText = string as NSString
         var deletionRange = NSIntersectionRange(range, NSRange(location: 0, length: nsText.length))
@@ -569,9 +663,66 @@ final class CadenceTextView: NSTextView {
 
         return (needsLeadingBreak ? "\n\n" : "") + markdown + (needsTrailingBreak ? "\n\n" : "\n")
     }
+
+    private func inlinePaddedInsertion(_ markdown: String) -> String {
+        let nsText = string as NSString
+        let selection = selectedRange()
+        let needsLeadingSpace: Bool
+        if selection.location == 0 {
+            needsLeadingSpace = false
+        } else {
+            let previous = nsText.substring(with: NSRange(location: max(0, selection.location - 1), length: 1))
+            needsLeadingSpace = !previous.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        let needsTrailingSpace: Bool
+        if NSMaxRange(selection) >= nsText.length {
+            needsTrailingSpace = false
+        } else {
+            let next = nsText.substring(with: NSRange(location: NSMaxRange(selection), length: 1))
+            needsTrailingSpace = !next.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        return (needsLeadingSpace ? " " : "") + markdown + (needsTrailingSpace ? " " : "")
+    }
 }
 
 private enum MarkdownKeyboardShortcutSupport {
+    static func apply(_ command: MarkdownFormatCommand, in textView: NSTextView) -> Bool {
+        switch command {
+        case .bold:
+            return toggleInlineMarker("**", in: textView)
+        case .italic:
+            return toggleInlineMarker("*", in: textView)
+        case .inlineCode:
+            return toggleInlineMarker("`", in: textView)
+        case .strikethrough:
+            return toggleInlineMarker("~~", in: textView)
+        case .highlight:
+            return toggleInlineMarker("==", in: textView)
+        case .link:
+            return insertLink(in: textView)
+        case .heading(let level):
+            return toggleHeading(level: level, in: textView)
+        case .orderedList:
+            return toggleOrderedList(in: textView)
+        case .unorderedList:
+            return toggleUnorderedList(in: textView)
+        case .todoList:
+            return toggleTodoList(in: textView)
+        case .quote:
+            return toggleQuote(in: textView)
+        case .codeBlock:
+            return insertCodeBlock(in: textView)
+        case .divider:
+            return insertBlock("---", in: textView)
+        case .noteLink:
+            return insertSnippet("[[]]", caretOffset: 2, in: textView)
+        case .taskReference:
+            return insertSnippet("[[task:]]", caretOffset: 7, in: textView)
+        }
+    }
+
     static func handle(_ event: NSEvent, in textView: NSTextView) -> Bool {
         guard let characters = event.charactersIgnoringModifiers?.lowercased(),
               characters.count == 1 else { return false }
@@ -581,15 +732,15 @@ private enum MarkdownKeyboardShortcutSupport {
 
         switch (characters, flags) {
         case ("b", [.command]):
-            return toggleInlineMarker("**", in: textView)
+            return apply(.bold, in: textView)
         case ("i", [.command]):
-            return toggleInlineMarker("*", in: textView)
+            return apply(.italic, in: textView)
         case ("e", [.command]):
-            return toggleInlineMarker("`", in: textView)
+            return apply(.inlineCode, in: textView)
         case ("k", [.command]):
-            return insertLink(in: textView)
+            return apply(.link, in: textView)
         case ("x", [.command, .shift]):
-            return toggleInlineMarker("~~", in: textView)
+            return apply(.strikethrough, in: textView)
         case ("0", [.command, .option]):
             return rewriteSelectedLines(in: textView) { line, _ in
                 removeHeadingPrefix(from: line)
@@ -601,13 +752,13 @@ private enum MarkdownKeyboardShortcutSupport {
              ("5", [.command, .option]),
              ("6", [.command, .option]):
             guard let level = Int(characters) else { return false }
-            return toggleHeading(level: level, in: textView)
+            return apply(.heading(level), in: textView)
         case ("7", [.command, .shift]):
-            return toggleOrderedList(in: textView)
+            return apply(.orderedList, in: textView)
         case ("8", [.command, .shift]):
-            return toggleUnorderedList(in: textView)
+            return apply(.unorderedList, in: textView)
         case ("9", [.command, .shift]):
-            return toggleQuote(in: textView)
+            return apply(.quote, in: textView)
         default:
             return false
         }
@@ -776,6 +927,25 @@ private enum MarkdownKeyboardShortcutSupport {
         }
     }
 
+    private static func toggleTodoList(in textView: NSTextView) -> Bool {
+        rewriteSelectedLines(in: textView) { line, _ in
+            guard !line.isEmpty else { return "○ " }
+            if let match = MarkdownListSupport.listPrefixMatch(in: line) {
+                switch match.kind {
+                case .todo, .done:
+                    return String(line.dropFirst(match.prefix.count))
+                case .ordered, .bullet, .dash, .plus:
+                    let content = String(line.dropFirst(match.prefix.count))
+                    return match.indentation + "○ " + content
+                }
+            }
+
+            let indentation = leadingWhitespace(in: line)
+            let content = String(line.dropFirst(indentation.count))
+            return indentation + "○ " + content
+        }
+    }
+
     private static func toggleQuote(in textView: NSTextView) -> Bool {
         rewriteSelectedLines(in: textView) { line, _ in
             let indentation = leadingWhitespace(in: line)
@@ -788,6 +958,49 @@ private enum MarkdownKeyboardShortcutSupport {
             }
             return indentation + "> " + content
         }
+    }
+
+    private static func insertCodeBlock(in textView: NSTextView) -> Bool {
+        let selection = textView.selectedRange()
+        let nsText = textView.string as NSString
+        if selection.length > 0 {
+            let selectedText = nsText.substring(with: selection).trimmingCharacters(in: .newlines)
+            let replacement = "```\n\(selectedText)\n```"
+            return replaceText(
+                in: textView,
+                range: selection,
+                with: replacement,
+                selection: NSRange(location: selection.location + 4, length: (selectedText as NSString).length)
+            )
+        }
+        return insertSnippet("```\n\n```", caretOffset: 4, in: textView)
+    }
+
+    private static func insertBlock(_ block: String, in textView: NSTextView) -> Bool {
+        let selection = textView.selectedRange()
+        let nsText = textView.string as NSString
+        let needsLeadingBreak = selection.location > 0 &&
+            nsText.substring(with: NSRange(location: max(0, selection.location - 1), length: 1)) != "\n"
+        let needsTrailingBreak = NSMaxRange(selection) < nsText.length &&
+            nsText.substring(with: NSRange(location: NSMaxRange(selection), length: 1)) != "\n"
+        let replacement = (needsLeadingBreak ? "\n\n" : "") + block + (needsTrailingBreak ? "\n\n" : "\n")
+        let caret = selection.location + (replacement as NSString).length
+        return replaceText(
+            in: textView,
+            range: selection,
+            with: replacement,
+            selection: NSRange(location: caret, length: 0)
+        )
+    }
+
+    private static func insertSnippet(_ snippet: String, caretOffset: Int, in textView: NSTextView) -> Bool {
+        let selection = textView.selectedRange()
+        return replaceText(
+            in: textView,
+            range: selection,
+            with: snippet,
+            selection: NSRange(location: selection.location + caretOffset, length: 0)
+        )
     }
 
     private static func rewriteSelectedLines(
@@ -913,8 +1126,11 @@ private enum MarkdownKeyboardShortcutSupport {
 final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
     private var parent: MarkdownEditorView
     private let slashCommandPicker = MarkdownSlashCommandPickerController()
+    private let referencePicker = MarkdownReferencePickerController()
     private weak var pendingSlashCommandTextView: NSTextView?
+    private weak var pendingReferenceTextView: NSTextView?
     private var slashCommandUpdateIsScheduled = false
+    private var referenceUpdateIsScheduled = false
 
     init(parent: MarkdownEditorView) {
         self.parent = parent
@@ -946,9 +1162,30 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         }
         textView.typingAttributes = MarkdownStylist.baseAttributes
         scheduleSlashCommandPickerUpdate(for: textView)
+        scheduleReferencePickerUpdate(for: textView)
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if referencePicker.isShown {
+            if commandSelector == #selector(NSResponder.moveUp(_:)) {
+                referencePicker.moveSelection(delta: -1)
+                return true
+            }
+            if commandSelector == #selector(NSResponder.moveDown(_:)) {
+                referencePicker.moveSelection(delta: 1)
+                return true
+            }
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                referencePicker.close()
+                return true
+            }
+            if commandSelector == #selector(NSResponder.insertTab(_:)) || commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                return referencePicker.applyHighlighted { [weak self] suggestion, context in
+                    self?.applyReferenceSuggestion(suggestion, context: context, in: textView)
+                }
+            }
+        }
+
         if slashCommandPicker.isShown {
             if commandSelector == #selector(NSResponder.moveUp(_:)) {
                 slashCommandPicker.moveSelection(delta: -1)
@@ -1242,6 +1479,36 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         }
     }
 
+    private func updateReferencePicker(for textView: NSTextView) {
+        let context = currentReferenceCompletionContext(in: textView)
+        if context != nil {
+            slashCommandPicker.close()
+        }
+        referencePicker.update(
+            for: textView,
+            context: context,
+            suggestions: parent.referenceSuggestions
+        ) { [weak self] suggestion, context in
+            self?.applyReferenceSuggestion(suggestion, context: context, in: textView)
+        }
+    }
+
+    private func scheduleReferencePickerUpdate(for textView: NSTextView) {
+        pendingReferenceTextView = textView
+        guard !referenceUpdateIsScheduled else { return }
+        referenceUpdateIsScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            referenceUpdateIsScheduled = false
+            guard let textView = pendingReferenceTextView else {
+                referencePicker.close()
+                return
+            }
+            pendingReferenceTextView = nil
+            updateReferencePicker(for: textView)
+        }
+    }
+
     private func currentSlashCommandContext(in textView: NSTextView) -> MarkdownSlashCommandContext? {
         let selection = textView.selectedRange()
         guard selection.length == 0 else { return nil }
@@ -1287,6 +1554,60 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
             }
         }
         slashCommandPicker.close()
+    }
+
+    private func currentReferenceCompletionContext(in textView: NSTextView) -> MarkdownReferenceCompletionContext? {
+        let selection = textView.selectedRange()
+        guard selection.length == 0 else { return nil }
+        let nsText = textView.string as NSString
+        let safeCursor = min(max(selection.location, 0), nsText.length)
+        let lineRange = nsText.lineRange(for: NSRange(location: max(0, safeCursor - 1), length: 0))
+        guard safeCursor >= lineRange.location else { return nil }
+
+        let prefixRange = NSRange(location: lineRange.location, length: safeCursor - lineRange.location)
+        let prefix = nsText.substring(with: prefixRange)
+        let nsPrefix = prefix as NSString
+        let openRange = nsPrefix.range(of: "[[", options: .backwards)
+        guard openRange.location != NSNotFound else { return nil }
+
+        let tokenStart = NSMaxRange(openRange)
+        let token = nsPrefix.substring(with: NSRange(location: tokenStart, length: max(0, nsPrefix.length - tokenStart)))
+        guard token.count <= 80,
+              !token.contains("["),
+              !token.contains("]"),
+              !token.contains("\n") else { return nil }
+
+        let kind: MarkdownReferenceKind
+        let query: String
+        if token.lowercased().hasPrefix("task:") {
+            kind = .task
+            query = String(token.dropFirst(5))
+        } else if token.lowercased().hasPrefix("note:") {
+            kind = .note
+            query = String(token.dropFirst(5))
+        } else {
+            kind = .note
+            query = token
+        }
+
+        return MarkdownReferenceCompletionContext(
+            range: NSRange(location: lineRange.location + openRange.location, length: safeCursor - lineRange.location - openRange.location),
+            kind: kind,
+            query: query,
+            cursorLocation: safeCursor
+        )
+    }
+
+    private func applyReferenceSuggestion(_ suggestion: MarkdownReferenceSuggestion, context: MarkdownReferenceCompletionContext, in textView: NSTextView) {
+        guard textView.shouldChangeText(in: context.range, replacementString: suggestion.markdown) else {
+            referencePicker.close()
+            return
+        }
+        textView.textStorage?.replaceCharacters(in: context.range, with: suggestion.markdown)
+        textView.setSelectedRange(NSRange(location: context.range.location + (suggestion.markdown as NSString).length, length: 0))
+        textView.typingAttributes = MarkdownStylist.baseAttributes
+        textView.didChangeText()
+        referencePicker.close()
     }
 
     private func moveCaret(in textView: NSTextView, forward: Bool, extendSelection: Bool) -> Bool {

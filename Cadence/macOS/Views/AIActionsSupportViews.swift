@@ -30,7 +30,21 @@ enum NoteActionSupport {
     static func copyMarkdownLink(to note: Note) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString("[[\(note.displayTitle)]]", forType: .string)
+        pasteboard.setString(NoteReferenceParser.noteReferenceMarkdown(for: note), forType: .string)
+    }
+
+    static func move(_ note: Note, toArea area: Area?, modelContext: ModelContext?) {
+        note.area = area
+        note.project = nil
+        note.updatedAt = Date()
+        try? modelContext?.save()
+    }
+
+    static func move(_ note: Note, toProject project: Project?, modelContext: ModelContext?) {
+        note.area = nil
+        note.project = project
+        note.updatedAt = Date()
+        try? modelContext?.save()
     }
 }
 
@@ -61,6 +75,36 @@ struct NoteActionMenu: View {
                 }
                 Button("Copy Note Link") {
                     NoteActionSupport.copyMarkdownLink(to: note)
+                }
+            }
+            if note.kind == .list, !areas.isEmpty || !projects.isEmpty {
+                Section("Move To") {
+                    Button("No List") {
+                        NoteActionSupport.move(note, toArea: nil, modelContext: modelContext)
+                    }
+                    .disabled(note.area == nil && note.project == nil)
+
+                    if !areas.isEmpty {
+                        Menu("Areas") {
+                            ForEach(areas) { area in
+                                Button(area.name) {
+                                    NoteActionSupport.move(note, toArea: area, modelContext: modelContext)
+                                }
+                                .disabled(note.area?.id == area.id)
+                            }
+                        }
+                    }
+
+                    if !projects.isEmpty {
+                        Menu("Projects") {
+                            ForEach(projects) { project in
+                                Button(project.name) {
+                                    NoteActionSupport.move(note, toProject: project, modelContext: modelContext)
+                                }
+                                .disabled(note.project?.id == project.id)
+                            }
+                        }
+                    }
                 }
             }
             Section {
