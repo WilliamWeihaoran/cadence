@@ -35,7 +35,7 @@ struct MarkdownSlashCommand: Identifiable {
         .init(id: "h1", title: "Heading 1", subtitle: "Large section heading", replacement: (indentation: "", text: "# ", caretOffset: 2)),
         .init(id: "h2", title: "Heading 2", subtitle: "Medium section heading", replacement: (indentation: "", text: "## ", caretOffset: 3)),
         .init(id: "h3", title: "Heading 3", subtitle: "Small section heading", replacement: (indentation: "", text: "### ", caretOffset: 4)),
-        .init(id: "todo", title: "To-do", subtitle: "Unchecked task item", replacement: (indentation: "", text: "○ ", caretOffset: 2)),
+        .init(id: "todo", title: "To-do", subtitle: "Unchecked task item", replacement: (indentation: "", text: "[ ] ", caretOffset: 4)),
         .init(id: "done", title: "Done", subtitle: "Checked task item", replacement: (indentation: "", text: "● ", caretOffset: 2)),
         .init(id: "bullet", title: "Bullet List", subtitle: "Bulleted list item", replacement: (indentation: "", text: "• ", caretOffset: 2)),
         .init(id: "number", title: "Numbered List", subtitle: "Ordered list item", replacement: (indentation: "", text: "1. ", caretOffset: 3)),

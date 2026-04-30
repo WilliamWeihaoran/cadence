@@ -47,6 +47,56 @@ struct NoteReferenceSupportTests {
         #expect(references[1].fallbackTitle == "Renamed task")
     }
 
+    @Test func embeddedTaskDraftTitlesParseChecklistInputs() {
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "[ ] Draft note task") == "Draft note task")
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "- [ ] Draft bullet task") == "Draft bullet task")
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "    ○ Draft legacy task") == "Draft legacy task")
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "[ ]   ") == nil)
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "[x] Already done") == nil)
+    }
+
+    @Test func standaloneTaskReferencesParseAsEmbeds() throws {
+        let taskID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        let reference = MarkdownTaskEmbedParser.standaloneTaskReference(
+            in: "[[task:\(taskID.uuidString)|Draft task]]",
+            lineStart: 12
+        )
+
+        #expect(reference?.id == taskID)
+        #expect(reference?.title == "Draft task")
+        #expect(reference?.range.location == 12)
+    }
+
+    @Test func inlineTaskReferencesStayInlineLinks() throws {
+        let taskID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        let inline = "See [[task:\(taskID.uuidString)|Draft task]] after standup."
+
+        #expect(MarkdownTaskEmbedParser.standaloneTaskReference(in: inline) == nil)
+    }
+
+    @Test func missingTaskEmbedRenderInfoKeepsReferenceTitle() throws {
+        let taskID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        let reference = try #require(MarkdownTaskEmbedParser.standaloneTaskReference(
+            in: "[[task:\(taskID.uuidString)|Deleted task]]"
+        ))
+
+        let missing = MarkdownTaskEmbedRenderInfo.missing(reference: reference)
+
+        #expect(missing.id == taskID)
+        #expect(missing.title == "Deleted task")
+        #expect(missing.isMissing)
+    }
+
+    @Test func checklistMarkerHelperAcceptsOnlyMarkerCharacter() {
+        let line = "    ○ Draft task"
+        let markerRange = MarkdownTaskEmbedParser.legacyChecklistMarkerRange(in: line, lineStart: 20)
+
+        #expect(markerRange == NSRange(location: 24, length: 1))
+        #expect(MarkdownTaskEmbedParser.isLegacyChecklistMarkerCharacter(24, in: line, lineStart: 20))
+        #expect(!MarkdownTaskEmbedParser.isLegacyChecklistMarkerCharacter(25, in: line, lineStart: 20))
+        #expect(!MarkdownTaskEmbedParser.isLegacyChecklistMarkerCharacter(31, in: line, lineStart: 20))
+    }
+
     @Test func linkedTasksPreferStableIDOverTitleFallback() throws {
         let taskID = try #require(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
         let currentTask = AppTask(title: "Current task title")

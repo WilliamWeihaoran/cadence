@@ -504,6 +504,7 @@ struct NoteEditorPane: View {
     @Environment(\.modelContext) private var modelContext
     @State private var editorTextView: CadenceTextView?
     @State private var linkedTaskForPopover: AppTask?
+    @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
 
     private var titleBinding: Binding<String> {
         Binding(
@@ -607,6 +608,9 @@ struct NoteEditorPane: View {
                     referenceTasks: relatedTasks,
                     onOpenNoteReference: openNoteReference,
                     onOpenTaskReference: openTaskReference,
+                    onCreateEmbeddedTask: createEmbeddedTask,
+                    onToggleEmbeddedTask: toggleEmbeddedTask,
+                    onOpenEmbeddedTask: openEmbeddedTask,
                     onTextViewChanged: { editorTextView = $0 }
                 )
                 .frame(minWidth: 360)
@@ -668,6 +672,73 @@ struct NoteEditorPane: View {
                       .caseInsensitiveCompare(targetTitle) == .orderedSame
               }) else { return }
         linkedTaskForPopover = task
+    }
+
+    private func createEmbeddedTask(title: String) -> MarkdownReferenceSuggestion? {
+        let ownerArea = note.kind == .list ? (area ?? note.area) : nil
+        let ownerProject = note.kind == .list ? (project ?? note.project) : nil
+        let container: TaskContainerSelection
+        let areas: [Area]
+        let projects: [Project]
+
+        if let ownerArea {
+            container = .area(ownerArea.id)
+            areas = [ownerArea]
+            projects = []
+        } else if let ownerProject {
+            container = .project(ownerProject.id)
+            areas = []
+            projects = [ownerProject]
+        } else {
+            container = .inbox
+            areas = []
+            projects = []
+        }
+
+        let draft = TaskCreationDraft(
+            title: title,
+            notes: "",
+            priority: .none,
+            container: container,
+            sectionName: TaskSectionDefaults.defaultName,
+            dueDateKey: "",
+            scheduledDateKey: "",
+            subtaskTitles: []
+        )
+
+        guard let task = TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: modelContext) else {
+            return nil
+        }
+
+        note.updatedAt = Date()
+        try? modelContext.save()
+        recentEmbeddedTasks[task.id] = task
+        editorTextView?.markdownTaskEmbeds[task.id] = MarkdownTaskEmbedRenderInfo.task(task)
+        return .task(task)
+    }
+
+    private func toggleEmbeddedTask(id: UUID) {
+        guard let task = embeddedTask(id: id) else { return }
+        if task.isDone {
+            TaskWorkflowService.markTodo(task)
+        } else {
+            TaskWorkflowService.markDone(task, in: modelContext)
+        }
+        try? modelContext.save()
+        editorTextView?.markdownTaskEmbeds[id] = MarkdownTaskEmbedRenderInfo.task(task)
+        if let editorTextView {
+            MarkdownStylist.apply(to: editorTextView)
+            editorTextView.needsDisplay = true
+        }
+    }
+
+    private func openEmbeddedTask(id: UUID) {
+        guard let task = embeddedTask(id: id) else { return }
+        linkedTaskForPopover = task
+    }
+
+    private func embeddedTask(id: UUID) -> AppTask? {
+        relatedTasks.first(where: { $0.id == id }) ?? recentEmbeddedTasks[id]
     }
 
     private func jumpToOutline(_ item: MarkdownOutlineItem) {

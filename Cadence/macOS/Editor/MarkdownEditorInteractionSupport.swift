@@ -12,13 +12,45 @@ final class CadenceLayoutManager: NSLayoutManager {
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         drawCodeBackgrounds(forGlyphRange: glyphsToShow, at: origin)
+        drawHighlightBackgrounds(forGlyphRange: glyphsToShow, at: origin)
         drawTableRows(forGlyphRange: glyphsToShow, at: origin)
+        drawTaskEmbeds(forGlyphRange: glyphsToShow, at: origin)
         for visibleRange in visibleGlyphRanges(in: glyphsToShow) {
             super.drawBackground(forGlyphRange: visibleRange, at: origin)
         }
         drawQuoteBlocks(forGlyphRange: glyphsToShow, at: origin)
         drawDividerRules(forGlyphRange: glyphsToShow, at: origin)
         drawMarkdownImages(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    private func drawHighlightBackgrounds(forGlyphRange glyphRange: NSRange, at origin: NSPoint) {
+        guard let textStorage, let textContainer = textContainers.first else { return }
+        let characterRange = self.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        guard characterRange.length > 0 else { return }
+
+        textStorage.enumerateAttribute(.cadenceMarkdownHighlight, in: characterRange) { value, range, _ in
+            guard (value as? Bool) == true else { return }
+            let highlightedRange = NSIntersectionRange(range, characterRange)
+            guard highlightedRange.length > 0 else { return }
+            let highlightedGlyphRange = self.glyphRange(forCharacterRange: highlightedRange, actualCharacterRange: nil)
+            guard highlightedGlyphRange.length > 0 else { return }
+
+            let selectedRange = NSRange(location: NSNotFound, length: 0)
+            self.enumerateEnclosingRects(forGlyphRange: highlightedGlyphRange, withinSelectedGlyphRange: selectedRange, in: textContainer) { rect, _ in
+                let highlightRect = rect
+                    .offsetBy(dx: origin.x, dy: origin.y)
+                    .insetBy(dx: -5, dy: -3)
+                guard highlightRect.width > 0, highlightRect.height > 0 else { return }
+
+                let radius = min(8, highlightRect.height / 2)
+                let path = NSBezierPath(roundedRect: highlightRect, xRadius: radius, yRadius: radius)
+                MarkdownStylist.highlightFillColor.withAlphaComponent(0.38).setFill()
+                path.fill()
+                MarkdownStylist.highlightBorderColor.withAlphaComponent(0.62).setStroke()
+                path.lineWidth = 0.8
+                path.stroke()
+            }
+        }
     }
 
     private func drawTableRows(forGlyphRange glyphRange: NSRange, at origin: NSPoint) {
@@ -254,6 +286,33 @@ final class CadenceLayoutManager: NSLayoutManager {
         }
     }
 
+    private func drawTaskEmbeds(forGlyphRange glyphRange: NSRange, at origin: NSPoint) {
+        guard let textStorage,
+              let textContainer = textContainers.first,
+              let textView = textContainer.textView as? CadenceTextView
+        else { return }
+
+        let characterRange = self.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        guard characterRange.length > 0 else { return }
+
+        textStorage.enumerateAttribute(.cadenceMarkdownTaskEmbed, in: characterRange) { value, range, _ in
+            guard let embed = value as? MarkdownTaskEmbedLayoutInfo,
+                  range.location < textStorage.length else { return }
+
+            let glyphIndex = self.glyphIndexForCharacter(at: range.location)
+            guard glyphIndex < self.numberOfGlyphs else { return }
+
+            let lineRect = self.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil).offsetBy(dx: origin.x, dy: origin.y)
+            let cardRect = MarkdownTaskEmbedDrawing.cardRect(forLineRect: lineRect, textContainerWidth: textContainer.containerSize.width)
+            let checkboxRect = MarkdownTaskEmbedDrawing.checkboxRect(in: cardRect)
+            textView.markdownTaskEmbedRects[embed.task.id] = MarkdownTaskEmbedHitRects(
+                card: cardRect,
+                checkbox: checkboxRect.insetBy(dx: -6, dy: -6)
+            )
+            MarkdownTaskEmbedDrawing.drawCard(task: embed.task, cardRect: cardRect, checkboxRect: checkboxRect)
+        }
+    }
+
     private func visibleGlyphRanges(in glyphRange: NSRange) -> [NSRange] {
         guard let textStorage, glyphRange.length > 0 else { return [glyphRange] }
 
@@ -296,6 +355,168 @@ final class CadenceLayoutManager: NSLayoutManager {
     }
 }
 
+private enum MarkdownTaskEmbedDrawing {
+    static func cardRect(forLineRect lineRect: NSRect, textContainerWidth: CGFloat) -> NSRect {
+        NSRect(
+            x: lineRect.minX + 8,
+            y: lineRect.minY + 6,
+            width: max(160, textContainerWidth - 16),
+            height: 46
+        )
+    }
+
+    static func checkboxRect(in cardRect: NSRect) -> NSRect {
+        NSRect(x: cardRect.minX + 14, y: cardRect.midY - 8, width: 16, height: 16)
+    }
+
+    static func drawCard(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect, checkboxRect: NSRect) {
+        let radius: CGFloat = 12
+        let cardPath = NSBezierPath(roundedRect: cardRect, xRadius: radius, yRadius: radius)
+        NSColor(hex: "#151b24").withAlphaComponent(0.96).setFill()
+        cardPath.fill()
+
+        NSColor(hex: "#33405b").withAlphaComponent(0.82).setStroke()
+        cardPath.lineWidth = 0.9
+        cardPath.stroke()
+
+        let stripRect = NSRect(x: cardRect.minX, y: cardRect.minY + 5, width: 4, height: cardRect.height - 10)
+        let stripColor = task.isMissing ? MarkdownStylist.dimColor : priorityColor(task.priorityRaw, fallback: task.containerColorHex)
+        stripColor.withAlphaComponent(task.isMissing ? 0.48 : 0.9).setFill()
+        NSBezierPath(roundedRect: stripRect, xRadius: 2, yRadius: 2).fill()
+
+        drawCheckbox(task: task, rect: checkboxRect)
+
+        let titleOriginX = checkboxRect.maxX + 10
+        let chipStartX = drawChips(task: task, cardRect: cardRect, minX: titleOriginX)
+        let titleRect = NSRect(
+            x: titleOriginX,
+            y: cardRect.minY + 9,
+            width: max(40, chipStartX - titleOriginX - 8),
+            height: 22
+        )
+        drawTitle(task: task, in: titleRect)
+    }
+
+    private static func drawCheckbox(task: MarkdownTaskEmbedRenderInfo, rect: NSRect) {
+        let path = NSBezierPath(ovalIn: rect)
+        let done = task.isDone
+        if task.isMissing {
+            NSColor(hex: "#101620").withAlphaComponent(0.76).setFill()
+            path.fill()
+            MarkdownStylist.dimColor.withAlphaComponent(0.38).setStroke()
+        } else if done {
+            MarkdownStylist.greenColor.withAlphaComponent(0.95).setFill()
+            path.fill()
+            MarkdownStylist.greenColor.setStroke()
+        } else {
+            NSColor(hex: "#101620").withAlphaComponent(0.94).setFill()
+            path.fill()
+            MarkdownStylist.dimColor.withAlphaComponent(0.75).setStroke()
+        }
+        path.lineWidth = 1.4
+        path.stroke()
+
+        guard done else { return }
+        NSColor(hex: "#0f1117").setStroke()
+        let check = NSBezierPath()
+        check.lineWidth = 1.9
+        check.lineCapStyle = .round
+        check.lineJoinStyle = .round
+        check.move(to: NSPoint(x: rect.minX + 4, y: rect.midY))
+        check.line(to: NSPoint(x: rect.minX + 7, y: rect.minY + 4.8))
+        check.line(to: NSPoint(x: rect.maxX - 3.5, y: rect.maxY - 4.3))
+        check.stroke()
+    }
+
+    private static func drawTitle(task: MarkdownTaskEmbedRenderInfo, in rect: NSRect) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        let titleColor: NSColor = task.isDone || task.isCancelled || task.isMissing ? MarkdownStylist.dimColor : MarkdownStylist.textColor
+        var attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: titleColor,
+            .paragraphStyle: paragraph
+        ]
+        if task.isDone || task.isCancelled {
+            attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+        }
+        (task.title as NSString).draw(in: rect, withAttributes: attrs)
+    }
+
+    private static func drawChips(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect, minX: CGFloat) -> CGFloat {
+        var chips: [(String, NSColor)] = []
+        if task.isMissing {
+            chips.append(("Missing", NSColor(hex: "#ff6b6b")))
+        } else if task.isCancelled {
+            chips.append(("Cancelled", MarkdownStylist.dimColor))
+        } else if task.isDone {
+            chips.append(("Done", MarkdownStylist.greenColor))
+        }
+        if !task.containerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            chips.append((task.containerName, NSColor(hex: task.containerColorHex)))
+        }
+        if !task.scheduledDate.isEmpty {
+            let label: String
+            if task.scheduledStartMin >= 0 {
+                label = DateFormatters.relativeDate(from: task.scheduledDate)
+            } else {
+                label = "Do " + DateFormatters.relativeDate(from: task.scheduledDate)
+            }
+            chips.append((label, MarkdownStylist.highlightFillColor))
+        }
+        if !task.dueDate.isEmpty {
+            chips.append(("Due " + DateFormatters.relativeDate(from: task.dueDate), NSColor(hex: "#ff6b6b")))
+        }
+
+        guard !chips.isEmpty else { return cardRect.maxX - 12 }
+
+        var x = cardRect.maxX - 12
+        let y = cardRect.minY + 13
+        for chip in chips.reversed() {
+            let width = min(max(28, chip.0.size(withAttributes: chipAttributes).width + 14), 112)
+            let rect = NSRect(x: x - width, y: y, width: width, height: 20)
+            guard rect.minX > minX + 52 else { break }
+            drawChip(label: chip.0, color: chip.1, rect: rect)
+            x = rect.minX - 6
+        }
+        return x
+    }
+
+    private static func drawChip(label: String, color: NSColor, rect: NSRect) {
+        let path = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
+        color.withAlphaComponent(0.13).setFill()
+        path.fill()
+        color.withAlphaComponent(0.38).setStroke()
+        path.lineWidth = 0.7
+        path.stroke()
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byTruncatingTail
+        var attrs = chipAttributes
+        attrs[.paragraphStyle] = paragraph
+        (label as NSString).draw(in: rect.insetBy(dx: 6, dy: 3), withAttributes: attrs)
+    }
+
+    private static let chipAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+        .foregroundColor: MarkdownStylist.dimColor
+    ]
+
+    private static func priorityColor(_ raw: String, fallback: String) -> NSColor {
+        switch TaskPriority(rawValue: raw) ?? .none {
+        case .high:
+            return NSColor(hex: "#ff6b6b")
+        case .medium:
+            return MarkdownStylist.highlightFillColor
+        case .low:
+            return MarkdownStylist.blueColor
+        case .none:
+            return NSColor(hex: fallback)
+        }
+    }
+}
+
 enum MarkdownFormatCommand: Hashable {
     case bold
     case italic
@@ -317,9 +538,14 @@ enum MarkdownFormatCommand: Hashable {
 final class CadenceTextView: NSTextView {
     var markdownImageAssets: [UUID: MarkdownImageRenderAsset] = [:]
     var markdownImageRects: [UUID: NSRect] = [:]
+    var markdownTaskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:]
+    var markdownTaskEmbedRects: [UUID: MarkdownTaskEmbedHitRects] = [:]
     var selectedMarkdownImageID: UUID?
     var referenceSuggestions: [MarkdownReferenceSuggestion] = []
     var onOpenMarkdownReference: ((MarkdownReferenceTarget) -> Void)?
+    var onCreateEmbeddedMarkdownTask: ((String) -> MarkdownReferenceSuggestion?)?
+    var onToggleEmbeddedMarkdownTask: ((UUID) -> Void)?
+    var onOpenEmbeddedMarkdownTask: ((UUID) -> Void)?
     var onCreateMarkdownImages: (([NSImage], [URL]) -> [MarkdownImageAsset])?
     var onResizeMarkdownImage: ((UUID, CGFloat) -> Void)?
 
@@ -375,34 +601,25 @@ final class CadenceTextView: NSTextView {
         }
         selectedMarkdownImageID = nil
 
-        let containerPoint = NSPoint(
-            x: viewPoint.x - textContainerInset.width,
-            y: viewPoint.y - textContainerInset.height
-        )
+        if let taskHit = taskEmbedHit(at: viewPoint) {
+            if taskHit.checkbox {
+                onToggleEmbeddedMarkdownTask?(taskHit.id)
+            } else {
+                onOpenEmbeddedMarkdownTask?(taskHit.id)
+            }
+            return
+        }
 
-        if let layoutManager, let textContainer {
-            let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer, fractionOfDistanceThroughGlyph: nil)
-            if glyphIndex < layoutManager.numberOfGlyphs {
-                let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
-                let nsString = string as NSString
-                let lineRange = nsString.lineRange(for: NSRange(location: characterIndex, length: 0))
-                let lineStartCharacter = lineRange.length > 0 ? nsString.character(at: lineRange.location) : 0
-                let clickedCharacter = characterIndex < nsString.length ? nsString.character(at: characterIndex) : 0
-                let isCircle: (unichar) -> Bool = { character in
-                    character == 0x25CB || character == 0x25CF
-                }
-
-                if isCircle(clickedCharacter) || (isCircle(lineStartCharacter) && characterIndex <= lineRange.location + 2) {
-                    let targetIndex = isCircle(clickedCharacter) ? characterIndex : lineRange.location
-                    let targetCharacter = nsString.character(at: targetIndex)
-                    let replacement = targetCharacter == 0x25CB ? "●" : "○"
-                    let range = NSRange(location: targetIndex, length: 1)
-                    if shouldChangeText(in: range, replacementString: replacement) {
-                        textStorage?.replaceCharacters(in: range, with: replacement)
-                        didChangeText()
-                        return
-                    }
-                }
+        if let targetIndex = legacyChecklistMarkerHit(at: viewPoint) {
+            let nsString = string as NSString
+            guard targetIndex < nsString.length else { return }
+            let targetCharacter = nsString.character(at: targetIndex)
+            let replacement = targetCharacter == 0x25CB ? "●" : "○"
+            let range = NSRange(location: targetIndex, length: 1)
+            if shouldChangeText(in: range, replacementString: replacement) {
+                textStorage?.replaceCharacters(in: range, with: replacement)
+                didChangeText()
+                return
             }
         }
 
@@ -489,6 +706,21 @@ final class CadenceTextView: NSTextView {
         return true
     }
 
+    func deleteEmbeddedMarkdownTaskForCommand(backward: Bool) -> Bool {
+        let selection = selectedRange()
+        if selection.length > 0,
+           let range = markdownTaskEmbedRange(intersecting: selection) {
+            deleteEmbeddedMarkdownTask(in: NSUnionRange(selection, range))
+            return true
+        }
+
+        guard selection.length == 0 else { return false }
+        let probeLocation = backward ? selection.location - 1 : selection.location
+        guard let range = markdownTaskEmbedRange(containingOrAdjacentTo: probeLocation) else { return false }
+        deleteEmbeddedMarkdownTask(in: range)
+        return true
+    }
+
     func resizeHandleRect(for imageRect: NSRect) -> NSRect {
         NSRect(x: imageRect.maxX - 22, y: imageRect.maxY - 22, width: 18, height: 18)
     }
@@ -551,6 +783,57 @@ final class CadenceTextView: NSTextView {
         return nil
     }
 
+    private func taskEmbedHit(at point: NSPoint) -> (id: UUID, checkbox: Bool)? {
+        guard let layoutManager, let textContainer, let textStorage else { return nil }
+        var result: (id: UUID, checkbox: Bool)?
+        textStorage.enumerateAttribute(.cadenceMarkdownTaskEmbed, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, stop in
+            guard let embed = value as? MarkdownTaskEmbedLayoutInfo,
+                  range.location < textStorage.length else { return }
+
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: range.location)
+            guard glyphIndex < layoutManager.numberOfGlyphs else { return }
+            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+                .offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y)
+            let cardRect = MarkdownTaskEmbedDrawing.cardRect(forLineRect: lineRect, textContainerWidth: textContainer.containerSize.width)
+            let checkboxRect = MarkdownTaskEmbedDrawing.checkboxRect(in: cardRect).insetBy(dx: -6, dy: -6)
+            if checkboxRect.contains(point) {
+                result = (embed.task.id, true)
+                stop.pointee = true
+            } else if cardRect.contains(point) {
+                result = (embed.task.id, false)
+                stop.pointee = true
+            }
+        }
+        return result
+    }
+
+    private func legacyChecklistMarkerHit(at point: NSPoint) -> Int? {
+        guard let layoutManager, let textContainer else { return nil }
+        let containerPoint = NSPoint(
+            x: point.x - textContainerOrigin.x,
+            y: point.y - textContainerOrigin.y
+        )
+        let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer, fractionOfDistanceThroughGlyph: nil)
+        guard glyphIndex < layoutManager.numberOfGlyphs else { return nil }
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        let nsString = string as NSString
+        guard characterIndex < nsString.length else { return nil }
+
+        let lineRange = nsString.lineRange(for: NSRange(location: characterIndex, length: 0))
+        let line = nsString.substring(with: NSRange(location: lineRange.location, length: min(lineRange.length, nsString.length - lineRange.location)))
+            .trimmingCharacters(in: .newlines)
+        guard let markerRange = MarkdownTaskEmbedParser.legacyChecklistMarkerRange(in: line, lineStart: lineRange.location) else {
+            return nil
+        }
+
+        let markerGlyphRange = layoutManager.glyphRange(forCharacterRange: markerRange, actualCharacterRange: nil)
+        guard markerGlyphRange.length > 0 else { return nil }
+        let markerRect = layoutManager.boundingRect(forGlyphRange: markerGlyphRange, in: textContainer)
+            .offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y)
+            .insetBy(dx: -6, dy: -5)
+        return markerRect.contains(point) ? markerRange.location : nil
+    }
+
     private func markdownImageRange(for id: UUID) -> NSRange? {
         guard let textStorage else { return nil }
         var result: NSRange?
@@ -585,6 +868,32 @@ final class CadenceTextView: NSTextView {
         return nil
     }
 
+    private func markdownTaskEmbedRange(intersecting selection: NSRange) -> NSRange? {
+        guard let textStorage else { return nil }
+        var result: NSRange?
+        textStorage.enumerateAttribute(.cadenceMarkdownTaskEmbed, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, stop in
+            guard value is MarkdownTaskEmbedLayoutInfo,
+                  NSIntersectionRange(range, selection).length > 0 else { return }
+            result = expandedMarkdownTaskEmbedDeletionRange(from: range)
+            stop.pointee = true
+        }
+        return result
+    }
+
+    private func markdownTaskEmbedRange(containingOrAdjacentTo location: Int) -> NSRange? {
+        guard let textStorage, textStorage.length > 0 else { return nil }
+        let candidates = [location, location - 1, location + 1]
+        for candidate in candidates {
+            guard candidate >= 0, candidate < textStorage.length else { continue }
+            var effectiveRange = NSRange(location: NSNotFound, length: 0)
+            if textStorage.attribute(.cadenceMarkdownTaskEmbed, at: candidate, effectiveRange: &effectiveRange) is MarkdownTaskEmbedLayoutInfo,
+               effectiveRange.location != NSNotFound {
+                return expandedMarkdownTaskEmbedDeletionRange(from: effectiveRange)
+            }
+        }
+        return nil
+    }
+
     private func markdownReferenceHit(at point: NSPoint) -> MarkdownReferenceTarget? {
         guard let layoutManager, let textContainer, let textStorage else { return nil }
         let containerPoint = NSPoint(
@@ -615,11 +924,39 @@ final class CadenceTextView: NSTextView {
         return deletionRange
     }
 
+    private func expandedMarkdownTaskEmbedDeletionRange(from range: NSRange) -> NSRange {
+        let nsText = string as NSString
+        var deletionRange = NSIntersectionRange(range, NSRange(location: 0, length: nsText.length))
+        guard deletionRange.length > 0 else { return deletionRange }
+
+        let after = NSMaxRange(deletionRange)
+        if after < nsText.length, nsText.substring(with: NSRange(location: after, length: 1)) == "\n" {
+            deletionRange.length += 1
+        } else if deletionRange.location > 0,
+                  nsText.substring(with: NSRange(location: deletionRange.location - 1, length: 1)) == "\n" {
+            deletionRange.location -= 1
+            deletionRange.length += 1
+        }
+
+        return deletionRange
+    }
+
     private func deleteMarkdownImage(in rawRange: NSRange) {
         let range = NSIntersectionRange(rawRange, NSRange(location: 0, length: (string as NSString).length))
         guard range.length > 0,
               shouldChangeText(in: range, replacementString: "") else { return }
         selectedMarkdownImageID = nil
+        textStorage?.replaceCharacters(in: range, with: "")
+        setSelectedRange(NSRange(location: range.location, length: 0))
+        typingAttributes = MarkdownStylist.baseAttributes
+        didChangeText()
+    }
+
+    private func deleteEmbeddedMarkdownTask(in rawRange: NSRange) {
+        let range = NSIntersectionRange(rawRange, NSRange(location: 0, length: (string as NSString).length))
+        guard range.length > 0,
+              shouldChangeText(in: range, replacementString: "") else { return }
+        markdownTaskEmbedRects.removeAll()
         textStorage?.replaceCharacters(in: range, with: "")
         setSelectedRange(NSRange(location: range.location, length: 0))
         typingAttributes = MarkdownStylist.baseAttributes
@@ -929,20 +1266,20 @@ private enum MarkdownKeyboardShortcutSupport {
 
     private static func toggleTodoList(in textView: NSTextView) -> Bool {
         rewriteSelectedLines(in: textView) { line, _ in
-            guard !line.isEmpty else { return "○ " }
+            guard !line.isEmpty else { return "[ ] " }
             if let match = MarkdownListSupport.listPrefixMatch(in: line) {
                 switch match.kind {
                 case .todo, .done:
                     return String(line.dropFirst(match.prefix.count))
                 case .ordered, .bullet, .dash, .plus:
                     let content = String(line.dropFirst(match.prefix.count))
-                    return match.indentation + "○ " + content
+                    return match.indentation + "[ ] " + content
                 }
             }
 
             let indentation = leadingWhitespace(in: line)
             let content = String(line.dropFirst(indentation.count))
-            return indentation + "○ " + content
+            return indentation + "[ ] " + content
         }
     }
 
@@ -1238,6 +1575,10 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
                cadenceTextView.deleteMarkdownImageForCommand(backward: true) {
                 return true
             }
+            if let cadenceTextView = textView as? CadenceTextView,
+               cadenceTextView.deleteEmbeddedMarkdownTaskForCommand(backward: true) {
+                return true
+            }
             if deleteBackwardToPlainTextListItem(in: textView) {
                 return true
             }
@@ -1247,6 +1588,10 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         if commandSelector == #selector(NSResponder.deleteForward(_:)) {
             if let cadenceTextView = textView as? CadenceTextView,
                cadenceTextView.deleteMarkdownImageForCommand(backward: false) {
+                return true
+            }
+            if let cadenceTextView = textView as? CadenceTextView,
+               cadenceTextView.deleteEmbeddedMarkdownTaskForCommand(backward: false) {
                 return true
             }
             return false
@@ -1259,6 +1604,10 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         let rawLine = nsText.substring(with: NSRange(location: lineRange.location,
                                                      length: min(lineRange.length, nsText.length - lineRange.location)))
         let line = rawLine.trimmingCharacters(in: .newlines)
+
+        if createEmbeddedTaskIfNeeded(in: textView, lineRange: lineRange, line: line) {
+            return true
+        }
 
         guard let prefixMatch = MarkdownListSupport.listPrefixMatch(in: line) else { return false }
 
@@ -1402,16 +1751,6 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         if cursor >= 3 {
             let range = NSRange(location: cursor - 3, length: 3)
             let snippet = nsText.substring(with: range)
-            if snippet == "[ ]", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
-                replaceText(in: textView, range: range, with: "○ ")
-                textView.setSelectedRange(NSRange(location: range.location + 2, length: 0))
-                return
-            }
-            if snippet == "[x]", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
-                replaceText(in: textView, range: range, with: "● ")
-                textView.setSelectedRange(NSRange(location: range.location + 2, length: 0))
-                return
-            }
             if snippet == "1. ", let indentation = MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) {
                 let marker = MarkdownListSupport.orderedMarker(forIndentation: indentation)
                 replaceText(in: textView, range: range, with: marker + " ")
@@ -1436,6 +1775,28 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
             textView.setSelectedRange(NSRange(location: caretLocation, length: 0))
             return
         }
+    }
+
+    private func createEmbeddedTaskIfNeeded(in textView: NSTextView, lineRange: NSRange, line: String) -> Bool {
+        let selection = textView.selectedRange()
+        guard selection.length == 0,
+              selection.location >= lineRange.location + (line as NSString).length,
+              let cadenceTextView = textView as? CadenceTextView,
+              let title = MarkdownTaskEmbedParser.draftTitle(in: line),
+              let suggestion = cadenceTextView.onCreateEmbeddedMarkdownTask?(title),
+              suggestion.kind == .task,
+              MarkdownTaskEmbedParser.standaloneTaskReference(in: suggestion.markdown) != nil else {
+            return false
+        }
+
+        let contentRange = NSRange(location: lineRange.location, length: (line as NSString).length)
+        let replacement = suggestion.markdown + "\n"
+        guard textView.shouldChangeText(in: contentRange, replacementString: replacement) else { return true }
+        textView.textStorage?.replaceCharacters(in: contentRange, with: replacement)
+        textView.setSelectedRange(NSRange(location: contentRange.location + (replacement as NSString).length, length: 0))
+        textView.typingAttributes = MarkdownStylist.baseAttributes
+        textView.didChangeText()
+        return true
     }
 
     private func replaceText(in textView: NSTextView, range: NSRange, with replacement: String) {

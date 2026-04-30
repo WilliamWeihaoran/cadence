@@ -10,6 +10,8 @@ extension NSAttributedString.Key {
     static let cadenceMarkdownCodeBlock = NSAttributedString.Key("CadenceMarkdownCodeBlock")
     static let cadenceMarkdownReference = NSAttributedString.Key("CadenceMarkdownReference")
     static let cadenceMarkdownTableRow = NSAttributedString.Key("CadenceMarkdownTableRow")
+    static let cadenceMarkdownHighlight = NSAttributedString.Key("CadenceMarkdownHighlight")
+    static let cadenceMarkdownTaskEmbed = NSAttributedString.Key("CadenceMarkdownTaskEmbed")
 }
 
 enum MarkdownReferenceKind: Hashable {
@@ -66,6 +68,136 @@ struct MarkdownImageLayoutInfo {
         let width = min(max(1, displayWidth), max(1, maxWidth))
         let aspect = pixelSize.height / max(pixelSize.width, 1)
         return CGSize(width: width, height: max(60, width * aspect))
+    }
+}
+
+struct MarkdownTaskEmbedRenderInfo: Hashable {
+    let id: UUID
+    let title: String
+    let statusRaw: String
+    let priorityRaw: String
+    let containerName: String
+    let containerColorHex: String
+    let dueDate: String
+    let scheduledDate: String
+    let scheduledStartMin: Int
+    let isDone: Bool
+    let isCancelled: Bool
+    let isMissing: Bool
+
+    static func task(_ task: AppTask) -> MarkdownTaskEmbedRenderInfo {
+        MarkdownTaskEmbedRenderInfo(
+            id: task.id,
+            title: task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Task" : task.title,
+            statusRaw: task.statusRaw,
+            priorityRaw: task.priorityRaw,
+            containerName: task.containerName,
+            containerColorHex: task.containerColor,
+            dueDate: task.dueDate,
+            scheduledDate: task.scheduledDate,
+            scheduledStartMin: task.scheduledStartMin,
+            isDone: task.isDone,
+            isCancelled: task.isCancelled,
+            isMissing: false
+        )
+    }
+
+    static func missing(reference: MarkdownTaskEmbedReference) -> MarkdownTaskEmbedRenderInfo {
+        let title = reference.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return MarkdownTaskEmbedRenderInfo(
+            id: reference.id,
+            title: title.isEmpty ? "Missing Task" : title,
+            statusRaw: TaskStatus.cancelled.rawValue,
+            priorityRaw: TaskPriority.none.rawValue,
+            containerName: "",
+            containerColorHex: TaskSectionDefaults.defaultColorHex,
+            dueDate: "",
+            scheduledDate: "",
+            scheduledStartMin: -1,
+            isDone: false,
+            isCancelled: false,
+            isMissing: true
+        )
+    }
+}
+
+struct MarkdownTaskEmbedLayoutInfo: Hashable {
+    let task: MarkdownTaskEmbedRenderInfo
+}
+
+struct MarkdownTaskEmbedHitRects {
+    let card: NSRect
+    let checkbox: NSRect
+}
+
+struct MarkdownTaskEmbedReference: Hashable {
+    let id: UUID
+    let title: String
+    let range: NSRange
+}
+
+enum MarkdownTaskEmbedParser {
+    nonisolated static func draftTitle(in line: String) -> String? {
+        let nsLine = line as NSString
+        let fullRange = NSRange(location: 0, length: nsLine.length)
+        let patterns = [
+            #"^\s*(?:[-*+]\s+)?\[\s\]\s+(.+)$"#,
+            #"^\s*○\s+(.+)$"#
+        ]
+
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: line, range: fullRange),
+                  match.numberOfRanges > 1,
+                  match.range(at: 1).location != NSNotFound else { continue }
+
+            let title = nsLine.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty { return title }
+        }
+        return nil
+    }
+
+    nonisolated static func standaloneTaskReference(in line: String, lineStart: Int = 0) -> MarkdownTaskEmbedReference? {
+        guard let regex = try? NSRegularExpression(pattern: #"^\s*\[\[task:([0-9A-Fa-f-]{36})\|([^\]\n]+)\]\]\s*$"#) else {
+            return nil
+        }
+        let nsLine = line as NSString
+        let fullRange = NSRange(location: 0, length: nsLine.length)
+        guard let match = regex.firstMatch(in: line, range: fullRange),
+              match.numberOfRanges >= 3,
+              match.range(at: 1).location != NSNotFound,
+              match.range(at: 2).location != NSNotFound,
+              let id = UUID(uuidString: nsLine.substring(with: match.range(at: 1))) else {
+            return nil
+        }
+
+        let title = nsLine.substring(with: match.range(at: 2)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return MarkdownTaskEmbedReference(
+            id: id,
+            title: title,
+            range: NSRange(location: lineStart + match.range.location, length: match.range.length)
+        )
+    }
+
+    nonisolated static func legacyChecklistMarkerRange(in line: String, lineStart: Int = 0) -> NSRange? {
+        let nsLine = line as NSString
+        guard nsLine.length > 0,
+              let regex = try? NSRegularExpression(pattern: #"^[ \t]*[○●]\s+"#),
+              let match = regex.firstMatch(in: line, range: NSRange(location: 0, length: nsLine.length)) else {
+            return nil
+        }
+
+        let prefix = nsLine.substring(with: match.range)
+        guard let markerOffset = prefix.firstIndex(where: { $0 == "○" || $0 == "●" }) else {
+            return nil
+        }
+        let distance = prefix.distance(from: prefix.startIndex, to: markerOffset)
+        return NSRange(location: lineStart + distance, length: 1)
+    }
+
+    nonisolated static func isLegacyChecklistMarkerCharacter(_ characterIndex: Int, in line: String, lineStart: Int = 0) -> Bool {
+        guard let markerRange = legacyChecklistMarkerRange(in: line, lineStart: lineStart) else { return false }
+        return NSLocationInRange(characterIndex, markerRange)
     }
 }
 
@@ -314,6 +446,8 @@ enum MarkdownStylist {
     static let codeBorder     = NSColor(hex: "#39405f")
     static let blueColor      = NSColor(hex: "#4a9eff")
     static let greenColor     = NSColor(hex: "#4ecb71")
+    static let highlightFillColor = NSColor(hex: "#f6c343")
+    static let highlightBorderColor = NSColor(hex: "#ffd66b")
 
     static let baseFont   = NSFont.systemFont(ofSize: 14)
     static let monoFont   = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -323,11 +457,18 @@ enum MarkdownStylist {
     ]
 
     static func apply(to textView: NSTextView) {
-        let imageAssets = (textView as? CadenceTextView)?.markdownImageAssets ?? [:]
-        apply(to: textView, imageAssets: imageAssets)
+        let cadenceTextView = textView as? CadenceTextView
+        let imageAssets = cadenceTextView?.markdownImageAssets ?? [:]
+        let taskEmbeds = cadenceTextView?.markdownTaskEmbeds ?? [:]
+        cadenceTextView?.markdownTaskEmbedRects.removeAll()
+        apply(to: textView, imageAssets: imageAssets, taskEmbeds: taskEmbeds)
     }
 
-    static func apply(to textView: NSTextView, imageAssets: [UUID: MarkdownImageRenderAsset]) {
+    static func apply(
+        to textView: NSTextView,
+        imageAssets: [UUID: MarkdownImageRenderAsset],
+        taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:]
+    ) {
         guard let storage = textView.textStorage else { return }
         let text = textView.string
         let nsText = text as NSString
@@ -352,6 +493,7 @@ enum MarkdownStylist {
                 lineStart: pos,
                 tableRowStyle: tableStyles[lineIndex],
                 imageAssets: imageAssets,
+                taskEmbeds: taskEmbeds,
                 textView: textView
             )
             pos += len + 1
@@ -387,7 +529,10 @@ enum MarkdownStylist {
         applyInline(storage: storage, text: nsText,
                     pattern: "==(.+?)==", markerLen: 2,
                     contentStyle: { range, s in
-                        s.addAttribute(.backgroundColor, value: blueColor.withAlphaComponent(0.18), range: range)
+                        s.addAttributes([
+                            .cadenceMarkdownHighlight: true,
+                            .foregroundColor: NSColor(hex: "#fff4c2")
+                        ], range: range)
                     })
         applyLinks(storage, text: nsText)
         applyWikiLinks(storage, text: nsText)
@@ -403,8 +548,14 @@ enum MarkdownStylist {
         lineStart: Int,
         tableRowStyle: MarkdownTableRowStyle?,
         imageAssets: [UUID: MarkdownImageRenderAsset],
+        taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo],
         textView: NSTextView
     ) {
+        if let embed = standaloneTaskEmbed(in: line, taskEmbeds: taskEmbeds) {
+            applyTaskEmbedBlock(storage: storage, lineRange: lineRange, embed: embed)
+            return
+        }
+
         if let image = standaloneImage(in: line, imageAssets: imageAssets) {
             applyImageBlock(storage: storage, lineRange: lineRange, image: image, textView: textView)
             return
@@ -541,6 +692,36 @@ enum MarkdownStylist {
             displayWidth: asset?.displayWidth ?? MarkdownImageAssetService.defaultDisplayWidth,
             pixelSize: asset?.pixelSize ?? CGSize(width: 640, height: 360)
         )
+    }
+
+    private static func standaloneTaskEmbed(
+        in line: String,
+        taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo]
+    ) -> MarkdownTaskEmbedLayoutInfo? {
+        guard let reference = MarkdownTaskEmbedParser.standaloneTaskReference(in: line) else {
+            return nil
+        }
+        let task = taskEmbeds[reference.id] ?? MarkdownTaskEmbedRenderInfo.missing(reference: reference)
+        return MarkdownTaskEmbedLayoutInfo(task: task)
+    }
+
+    private static func applyTaskEmbedBlock(
+        storage: NSTextStorage,
+        lineRange: NSRange,
+        embed: MarkdownTaskEmbedLayoutInfo
+    ) {
+        guard lineRange.length > 0 else { return }
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = 58
+        paragraph.maximumLineHeight = 58
+        paragraph.lineBreakMode = .byClipping
+        paragraph.paragraphSpacingBefore = 4
+        paragraph.paragraphSpacing = 4
+
+        storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
+        storage.addAttribute(.cadenceMarkdownTaskEmbed, value: embed, range: lineRange)
+        hide(storage, lineRange)
     }
 
     private static func applyImageBlock(
@@ -749,6 +930,9 @@ enum MarkdownStylist {
             let fullRange = match.range(at: 0)
             let labelRange = match.range(at: 1)
             guard labelRange.location != NSNotFound else { return }
+            if storage.attribute(.cadenceMarkdownTaskEmbed, at: fullRange.location, effectiveRange: nil) is MarkdownTaskEmbedLayoutInfo {
+                return
+            }
 
             let label = text.substring(with: labelRange).trimmingCharacters(in: .whitespacesAndNewlines)
             let kind = wikiLinkKind(for: label)

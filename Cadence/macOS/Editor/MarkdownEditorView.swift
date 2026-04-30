@@ -12,10 +12,14 @@ enum MarkdownEditorMetrics {
 
 struct MarkdownEditor: View {
     @Binding var text: String
+    var showsToolbar = true
     var referenceNotes: [Note] = []
     var referenceTasks: [AppTask] = []
     var onOpenNoteReference: (UUID?, String) -> Void = { _, _ in }
     var onOpenTaskReference: (UUID?, String) -> Void = { _, _ in }
+    var onCreateEmbeddedTask: (String) -> MarkdownReferenceSuggestion? = { _ in nil }
+    var onToggleEmbeddedTask: (UUID) -> Void = { _ in }
+    var onOpenEmbeddedTask: (UUID) -> Void = { _ in }
     var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
@@ -38,14 +42,20 @@ struct MarkdownEditor: View {
         noteSuggestions + taskSuggestions
     }
 
+    @MainActor private var taskEmbedInfos: [UUID: MarkdownTaskEmbedRenderInfo] {
+        Dictionary(uniqueKeysWithValues: referenceTasks.map { ($0.id, MarkdownTaskEmbedRenderInfo.task($0)) })
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            MarkdownEditorToolbar(
-                textView: textView,
-                noteSuggestions: noteSuggestions,
-                taskSuggestions: taskSuggestions,
-                onChooseImages: chooseImages
-            )
+            if showsToolbar {
+                MarkdownEditorToolbar(
+                    textView: textView,
+                    noteSuggestions: noteSuggestions,
+                    taskSuggestions: taskSuggestions,
+                    onChooseImages: chooseImages
+                )
+            }
 
             MarkdownEditorView(
                 text: $text,
@@ -54,7 +64,11 @@ struct MarkdownEditor: View {
                 onResizeImage: resizeImage,
                 onChooseImages: chooseImages,
                 referenceSuggestions: referenceSuggestions,
+                taskEmbedInfos: taskEmbedInfos,
                 onOpenReference: openReference,
+                onCreateEmbeddedTask: onCreateEmbeddedTask,
+                onToggleEmbeddedTask: onToggleEmbeddedTask,
+                onOpenEmbeddedTask: onOpenEmbeddedTask,
                 onTextViewChanged: {
                     textView = $0
                     onTextViewChanged($0)
@@ -296,7 +310,11 @@ struct MarkdownEditorView: NSViewRepresentable {
     var onResizeImage: (UUID, CGFloat) -> Void = { _, _ in }
     var onChooseImages: () -> Void = {}
     var referenceSuggestions: [MarkdownReferenceSuggestion] = []
+    var taskEmbedInfos: [UUID: MarkdownTaskEmbedRenderInfo] = [:]
     var onOpenReference: (MarkdownReferenceTarget) -> Void = { _ in }
+    var onCreateEmbeddedTask: (String) -> MarkdownReferenceSuggestion? = { _ in nil }
+    var onToggleEmbeddedTask: (UUID) -> Void = { _ in }
+    var onOpenEmbeddedTask: (UUID) -> Void = { _ in }
     var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
 
     func makeNSView(context: NSViewRepresentableContext<MarkdownEditorView>) -> NSScrollView {
@@ -382,8 +400,15 @@ struct MarkdownEditorView: NSViewRepresentable {
                 MarkdownImageAssetService.renderAsset(for: asset.id, in: imageAssets).map { (asset.id, $0) }
             }
         )
+        if textView.markdownTaskEmbeds != taskEmbedInfos {
+            textView.markdownTaskEmbedRects.removeAll()
+            textView.markdownTaskEmbeds = taskEmbedInfos
+        }
         textView.referenceSuggestions = referenceSuggestions
         textView.onOpenMarkdownReference = onOpenReference
+        textView.onCreateEmbeddedMarkdownTask = onCreateEmbeddedTask
+        textView.onToggleEmbeddedMarkdownTask = onToggleEmbeddedTask
+        textView.onOpenEmbeddedMarkdownTask = onOpenEmbeddedTask
         textView.onCreateMarkdownImages = onCreateImages
         textView.onResizeMarkdownImage = onResizeImage
         textView.registerForDraggedTypes([.fileURL, .tiff, .png])

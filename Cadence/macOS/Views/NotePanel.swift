@@ -5,6 +5,7 @@ import SwiftData
 struct NotePanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     var useStandardHeaderHeight = false
 
     enum NoteTab: String, CaseIterable {
@@ -18,6 +19,9 @@ struct NotePanel: View {
     @State private var weekNote:   Note?
     @State private var permNote:   Note?
     @State private var notesContext: ModelContext?
+    @State private var activeTextView: CadenceTextView?
+    @State private var linkedTaskForPopover: AppTask?
+    @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -53,28 +57,19 @@ struct NotePanel: View {
                 switch activeTab {
                 case .today:
                     if let note = todayNote {
-                        MarkdownEditor(text: Binding(
-                            get: { note.content },
-                            set: { update(note: note, content: $0) }
-                        ))
+                        noteEditor(for: note)
                     } else {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 case .week:
                     if let note = weekNote {
-                        MarkdownEditor(text: Binding(
-                            get: { note.content },
-                            set: { update(note: note, content: $0) }
-                        ))
+                        noteEditor(for: note)
                     } else {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 case .notepad:
                     if let note = permNote {
-                        MarkdownEditor(text: Binding(
-                            get: { note.content },
-                            set: { update(note: note, content: $0) }
-                        ))
+                        noteEditor(for: note)
                     } else {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
@@ -82,6 +77,10 @@ struct NotePanel: View {
             }
         }
         .background(Theme.surface)
+        .popover(item: $linkedTaskForPopover) { task in
+            TaskDetailPopover(task: task)
+                .frame(width: 380)
+        }
         .onAppear { loadOrCreate() }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
@@ -106,6 +105,22 @@ struct NotePanel: View {
         case .week: return weekNote
         case .notepad: return permNote
         }
+    }
+
+    @ViewBuilder
+    private func noteEditor(for note: Note) -> some View {
+        MarkdownEditor(
+            text: Binding(
+                get: { note.content },
+                set: { update(note: note, content: $0) }
+            ),
+            referenceTasks: allTasks,
+            onOpenTaskReference: openTaskReference,
+            onCreateEmbeddedTask: createEmbeddedTask,
+            onToggleEmbeddedTask: toggleEmbeddedTask,
+            onOpenEmbeddedTask: openEmbeddedTask,
+            onTextViewChanged: { activeTextView = $0 }
+        )
     }
 
     private func loadOrCreate() {
@@ -137,6 +152,65 @@ struct NotePanel: View {
         note.content = content
         note.updatedAt = Date()
         try? notesContext?.save()
+    }
+
+    private func createEmbeddedTask(title: String) -> MarkdownReferenceSuggestion? {
+        let draft = TaskCreationDraft(
+            title: title,
+            notes: "",
+            priority: .none,
+            container: .inbox,
+            sectionName: TaskSectionDefaults.defaultName,
+            dueDateKey: "",
+            scheduledDateKey: "",
+            subtaskTitles: []
+        )
+        guard let task = TaskCreationService(areas: [], projects: []).insertTask(from: draft, into: modelContext) else {
+            return nil
+        }
+        try? modelContext.save()
+        recentEmbeddedTasks[task.id] = task
+        activeTextView?.markdownTaskEmbeds[task.id] = MarkdownTaskEmbedRenderInfo.task(task)
+        return .task(task)
+    }
+
+    private func toggleEmbeddedTask(id: UUID) {
+        guard let task = embeddedTask(id: id) else { return }
+        if task.isDone {
+            TaskWorkflowService.markTodo(task)
+        } else {
+            TaskWorkflowService.markDone(task, in: modelContext)
+        }
+        try? modelContext.save()
+        activeTextView?.markdownTaskEmbeds[id] = MarkdownTaskEmbedRenderInfo.task(task)
+        if let activeTextView {
+            MarkdownStylist.apply(to: activeTextView)
+            activeTextView.needsDisplay = true
+        }
+    }
+
+    private func openEmbeddedTask(id: UUID) {
+        guard let task = embeddedTask(id: id) else { return }
+        linkedTaskForPopover = task
+    }
+
+    private func openTaskReference(id: UUID?, title: String) {
+        if let id, let task = embeddedTask(id: id) {
+            linkedTaskForPopover = task
+            return
+        }
+
+        let targetTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !targetTitle.isEmpty,
+              let task = allTasks.first(where: {
+                  $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                      .caseInsensitiveCompare(targetTitle) == .orderedSame
+              }) else { return }
+        linkedTaskForPopover = task
+    }
+
+    private func embeddedTask(id: UUID) -> AppTask? {
+        allTasks.first(where: { $0.id == id }) ?? recentEmbeddedTasks[id]
     }
 
     private func appendSummary(_ summary: String, to note: Note) {

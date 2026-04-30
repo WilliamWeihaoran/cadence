@@ -12,7 +12,7 @@ struct TaskDetailNotesSection: View {
                 MarkdownEditor(text: Binding(
                     get: { task.notes },
                     set: { task.notes = $0 }
-                ))
+                ), showsToolbar: false)
                 .frame(minHeight: 120)
                 .background(Theme.surface.opacity(0.45))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
