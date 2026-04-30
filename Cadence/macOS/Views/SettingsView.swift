@@ -122,6 +122,8 @@ struct SettingsView: View {
                 SettingsStatusBadge(title: calendarManager.isAuthorized ? "Connected" : "Not connected", isActive: calendarManager.isAuthorized)
             case .account:
                 SettingsStatusBadge(title: appleAccountManager.isSignedIn ? "Signed in" : "Signed out", isActive: appleAccountManager.isSignedIn)
+            case .dataSafety:
+                SettingsStatusBadge(title: "\(StoreBackupManager.listBackups().count) backups", isActive: !StoreBackupManager.listBackups().isEmpty)
             case .ai:
                 SettingsStatusBadge(title: aiSettingsManager.hasAPIKey ? "Key saved" : "No key", isActive: aiSettingsManager.hasAPIKey)
             default:
@@ -140,6 +142,8 @@ struct SettingsView: View {
             )
         case .account:
             SettingsAccountSection(appleAccountManager: appleAccountManager)
+        case .dataSafety:
+            SettingsDataSafetySection()
         case .navigation:
             SettingsNavigationSection(listDetailDefaultPage: $listDetailDefaultPage)
         case .sidebar:

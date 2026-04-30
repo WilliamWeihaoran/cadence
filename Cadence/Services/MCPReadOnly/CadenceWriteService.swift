@@ -102,6 +102,7 @@ final class CadenceWriteService {
     init(container: ModelContainer, notifiesExternalWrites: Bool = false, auditLogger: CadenceMCPAuditLogger? = nil) {
         let context = ModelContext(container)
         NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-write-service")
+        DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "mcp-write-service")
         self.context = context
         self.readService = CadenceReadService(context: context)
         self.notifiesExternalWrites = notifiesExternalWrites
@@ -110,6 +111,7 @@ final class CadenceWriteService {
 
     init(context: ModelContext, notifiesExternalWrites: Bool = false, auditLogger: CadenceMCPAuditLogger? = nil) {
         NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-write-service-context")
+        DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "mcp-write-service-context")
         self.context = context
         self.readService = CadenceReadService(context: context)
         self.notifiesExternalWrites = notifiesExternalWrites

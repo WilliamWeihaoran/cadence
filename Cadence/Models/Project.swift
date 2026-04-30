@@ -26,6 +26,7 @@ import Foundation
     var context: Context? = nil
     var area: Area? = nil
     @Relationship(inverse: \AppTask.project) var tasks: [AppTask]? = nil
+    @Relationship(inverse: \Document.project) var documents: [Document]? = nil
     @Relationship(inverse: \Note.project) var notes: [Note]? = nil
     @Relationship(inverse: \SavedLink.project) var links: [SavedLink]? = nil
     @Relationship(inverse: \GoalListLink.project) var goalLinks: [GoalListLink]? = nil

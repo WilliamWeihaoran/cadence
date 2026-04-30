@@ -28,7 +28,9 @@ enum CadenceModelContainerFactory {
             cloudKitDatabase: .none
         )
         let container = try ModelContainer(for: CadenceSchema.schema, configurations: [configuration])
-        NoteMigrationService.migrateAndRecordFailure(in: ModelContext(container), source: "mcp-container")
+        let context = ModelContext(container)
+        NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-container")
+        DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "mcp-container")
         return container
     }
 

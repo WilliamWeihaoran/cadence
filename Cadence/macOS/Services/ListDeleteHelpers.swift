@@ -29,6 +29,10 @@ extension ModelContext {
             projects.flatMap { Array($0.notes ?? []) }
         )
         .filter { $0.kind == .list }
+        let documents = uniqueDocuments(from:
+            areas.flatMap { Array($0.documents ?? []) } +
+            projects.flatMap { Array($0.documents ?? []) }
+        )
         let deletedNoteIDs = Set(notes.map(\.id))
         let links = uniqueLinks(from:
             areas.flatMap { Array($0.links ?? []) } +
@@ -39,6 +43,7 @@ extension ModelContext {
         delete(subtasks)
         delete(tasks)
         delete(notes)
+        delete(documents)
         deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
         delete(links)
         delete(completions)
@@ -53,11 +58,13 @@ extension ModelContext {
     func deleteProject(_ project: Project) {
         let tasks = Array(project.tasks ?? [])
         let notes = uniqueNotes(from: Array(project.notes ?? [])).filter { $0.kind == .list }
+        let documents = uniqueDocuments(from: Array(project.documents ?? []))
         let deletedNoteIDs = Set(notes.map(\.id))
         delete(uniqueGoalListLinks(from: Array(project.goalLinks ?? [])))
         delete(uniqueSubtasks(from: tasks.flatMap { Array($0.subtasks ?? []) }))
         delete(uniqueTasks(from: tasks))
         delete(notes)
+        delete(documents)
         deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
         delete(uniqueLinks(from: Array(project.links ?? [])))
         delete(project)
@@ -67,6 +74,7 @@ extension ModelContext {
         let tasks = Array(area.tasks ?? [])
         let projects = uniqueProjects(from: Array(area.projects ?? []))
         let notes = uniqueNotes(from: Array(area.notes ?? [])).filter { $0.kind == .list }
+        let documents = uniqueDocuments(from: Array(area.documents ?? []))
         let deletedNoteIDs = Set(notes.map(\.id))
         delete(uniqueGoalListLinks(from: Array(area.goalLinks ?? [])))
         delete(uniqueSubtasks(from: tasks.flatMap { Array($0.subtasks ?? []) }))
@@ -75,6 +83,7 @@ extension ModelContext {
             deleteProject(project)
         }
         delete(notes)
+        delete(documents)
         deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
         delete(uniqueLinks(from: Array(area.links ?? [])))
         delete(area)
@@ -100,6 +109,10 @@ extension ModelContext {
 
     private func uniqueNotes(from notes: [Note]) -> [Note] {
         dedupe(notes, by: \Note.id)
+    }
+
+    private func uniqueDocuments(from documents: [Document]) -> [Document] {
+        dedupe(documents, by: \Document.id)
     }
 
     private func uniqueLinks(from links: [SavedLink]) -> [SavedLink] {

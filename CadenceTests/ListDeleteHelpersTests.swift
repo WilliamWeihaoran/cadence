@@ -36,6 +36,10 @@ struct ListDeleteHelpersTests {
         areaNote.area = area
         let projectNote = Note(kind: .list, title: "Project doc")
         projectNote.project = project
+        let areaDocument = Document(title: "Area legacy document")
+        areaDocument.area = area
+        let projectDocument = Document(title: "Project legacy document")
+        projectDocument.project = project
         let noteAsset = MarkdownImageAsset(
             data: Data([1, 2, 3]),
             mimeType: "image/png",
@@ -63,6 +67,8 @@ struct ListDeleteHelpersTests {
         modelContext.insert(subtask)
         modelContext.insert(areaNote)
         modelContext.insert(projectNote)
+        modelContext.insert(areaDocument)
+        modelContext.insert(projectDocument)
         modelContext.insert(noteAsset)
         modelContext.insert(areaLink)
         modelContext.insert(projectLink)
@@ -81,6 +87,7 @@ struct ListDeleteHelpersTests {
         #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).isEmpty)
         #expect(try modelContext.fetch(FetchDescriptor<Subtask>()).isEmpty)
         #expect(try modelContext.fetch(FetchDescriptor<Note>()).isEmpty)
+        #expect(try modelContext.fetch(FetchDescriptor<Document>()).isEmpty)
         #expect(try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).isEmpty)
         #expect(try modelContext.fetch(FetchDescriptor<SavedLink>()).isEmpty)
     }

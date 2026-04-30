@@ -4,6 +4,7 @@ import SwiftUI
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case appearance
     case account
+    case dataSafety
     case navigation
     case sidebar
     case contexts
@@ -17,6 +18,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: return "Appearance"
         case .account: return "Account"
+        case .dataSafety: return "Data Safety"
         case .navigation: return "Navigation"
         case .sidebar: return "Sidebar"
         case .contexts: return "Contexts"
@@ -32,6 +34,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             return "Themes and overall visual mood."
         case .account:
             return "Apple account identity."
+        case .dataSafety:
+            return "Backups and restore points."
         case .navigation:
             return "How lists open and behave by default."
         case .sidebar:
@@ -53,6 +57,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             return "Pick the dark palette that best fits your workspace. Changes apply across the app immediately."
         case .account:
             return "Connect an Apple account for local identity. Cadence still works signed out."
+        case .dataSafety:
+            return "Cadence snapshots its store before startup migrations and lets you create or stage restore points manually."
         case .navigation:
             return "Choose which page new lists open on by default. Once you visit a specific list, Cadence still remembers that list's most recently opened page."
         case .sidebar:
@@ -72,6 +78,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: return "paintpalette.fill"
         case .account: return "person.crop.circle.fill"
+        case .dataSafety: return "externaldrive.fill.badge.timemachine"
         case .navigation: return "rectangle.stack.fill"
         case .sidebar: return "sidebar.left"
         case .contexts: return "square.stack.3d.up.fill"
@@ -85,6 +92,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: return Theme.blue
         case .account: return Theme.green
+        case .dataSafety: return Theme.amber
         case .navigation: return Theme.green
         case .sidebar: return Theme.amber
         case .contexts: return Theme.red
