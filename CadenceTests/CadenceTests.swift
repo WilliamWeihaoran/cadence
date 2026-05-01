@@ -79,6 +79,74 @@ struct CadenceTests {
         #expect(missing.title == "Missing")
     }
 
+    @Test func automaticBackupRetentionThinsStartupAndPreRestoreSnapshots() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        let now = try #require(calendar.date(from: DateComponents(year: 2026, month: 5, day: 1, hour: 12)))
+
+        func date(daysAgo: Int, hour: Int, minute: Int = 0) throws -> Date {
+            let day = try #require(calendar.date(byAdding: .day, value: -daysAgo, to: now))
+            let components = calendar.dateComponents([.year, .month, .day], from: day)
+            return try #require(calendar.date(from: DateComponents(
+                timeZone: calendar.timeZone,
+                year: components.year,
+                month: components.month,
+                day: components.day,
+                hour: hour,
+                minute: minute
+            )))
+        }
+
+        func snapshot(_ id: String, reason: StoreBackupReason, createdAt: Date) -> StoreBackupSnapshot {
+            StoreBackupSnapshot(
+                id: id,
+                url: URL(fileURLWithPath: "/tmp/\(id)", isDirectory: true),
+                createdAt: createdAt,
+                reason: reason.displayName,
+                sizeBytes: 1
+            )
+        }
+
+        var snapshots: [StoreBackupSnapshot] = []
+        for index in 0..<14 {
+            snapshots.append(snapshot("startup-today-\(index)", reason: .startup, createdAt: try date(daysAgo: 0, hour: 12, minute: 59 - index)))
+        }
+        snapshots.append(snapshot("startup-day1-new", reason: .startup, createdAt: try date(daysAgo: 1, hour: 12)))
+        snapshots.append(snapshot("startup-day1-old", reason: .startup, createdAt: try date(daysAgo: 1, hour: 9)))
+        snapshots.append(snapshot("startup-day2-new", reason: .startup, createdAt: try date(daysAgo: 2, hour: 12)))
+        snapshots.append(snapshot("startup-day2-old", reason: .startup, createdAt: try date(daysAgo: 2, hour: 9)))
+        snapshots.append(snapshot("startup-old", reason: .startup, createdAt: try date(daysAgo: 40, hour: 12)))
+        for index in 0..<7 {
+            snapshots.append(snapshot("pre-restore-\(index)", reason: .preRestore, createdAt: try date(daysAgo: index, hour: 8)))
+        }
+        snapshots.append(snapshot("manual-old", reason: .manual, createdAt: try date(daysAgo: 90, hour: 12)))
+
+        let removableIDs = Set(StoreBackupManager
+            .automaticBackupSnapshotsToRemove(snapshots, now: now, calendar: calendar)
+            .map(\.id))
+
+        #expect(removableIDs.isSuperset(of: [
+            "startup-today-5",
+            "startup-today-6",
+            "startup-today-7",
+            "startup-today-8",
+            "startup-today-9",
+            "startup-today-10",
+            "startup-today-11",
+            "startup-today-12",
+            "startup-today-13"
+        ]))
+        #expect(removableIDs.contains("startup-day1-new") == false)
+        #expect(removableIDs.contains("startup-day1-old"))
+        #expect(removableIDs.contains("startup-day2-new") == false)
+        #expect(removableIDs.contains("startup-day2-old"))
+        #expect(removableIDs.contains("startup-old"))
+        #expect(removableIDs.contains("pre-restore-4") == false)
+        #expect(removableIDs.contains("pre-restore-5"))
+        #expect(removableIDs.contains("pre-restore-6"))
+        #expect(removableIDs.contains("manual-old") == false)
+    }
+
     @Test func calendarHeaderVisibleRangeClampsOverscroll() {
         let range = calendarTimelineHeaderVisibleRange(
             headerOffset: -3_700,

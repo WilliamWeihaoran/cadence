@@ -349,7 +349,7 @@ struct SettingsDataSafetySection: View {
                             Text("Store Snapshots")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
-                            Text("Cadence copies the full SwiftData store, WAL, CloudKit assets, and external storage before startup migration work.")
+                            Text("Cadence copies the full SwiftData store, WAL, CloudKit assets, and external storage before startup migration work. Automatic snapshots are thinned over time.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -374,6 +374,19 @@ struct SettingsDataSafetySection: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                             .background(Theme.blue)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                            Button {
+                                cleanUpAutomaticBackups()
+                            } label: {
+                                Label("Clean Up", systemImage: "wand.and.sparkles")
+                            }
+                            .buttonStyle(.cadencePlain)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.amber)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Theme.amber.opacity(0.12))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
 
                             Button {
@@ -458,6 +471,18 @@ struct SettingsDataSafetySection: View {
             refreshBackups()
         } catch {
             statusMessage = "Backup failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func cleanUpAutomaticBackups() {
+        do {
+            let removedCount = try StoreBackupManager.cleanUpAutomaticBackups()
+            statusMessage = removedCount == 0
+                ? "Automatic backups are already thinned."
+                : "Removed \(removedCount) older automatic backup\(removedCount == 1 ? "" : "s")."
+            refreshBackups()
+        } catch {
+            statusMessage = "Cleanup failed: \(error.localizedDescription)"
         }
     }
 

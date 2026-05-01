@@ -92,7 +92,10 @@ enum StoreBackupManager {
     private static let backupDirectoryName = "Cadence Store Backups"
     private static let manifestName = "manifest.json"
     private static let pendingRestoreDefaultsKey = "cadence.pendingStoreRestoreURL"
-    private static let maxAutomaticBackups = 80
+    private static let denseStartupBackupCount = 5
+    private static let dailyStartupRetentionDays = 7
+    private static let weeklyStartupRetentionWeeks = 4
+    private static let maxPreRestoreBackups = 5
 
     private static let copiedStoreItemNames = [
         "default.store",
@@ -152,8 +155,8 @@ enum StoreBackupManager {
             try manifestData.write(to: temporaryURL.appendingPathComponent(manifestName), options: .atomic)
 
             try fileManager.moveItem(at: temporaryURL, to: finalURL)
-            if reason == .startup {
-                try purgeOldStartupBackups()
+            if reason == .startup || reason == .preRestore {
+                try purgeAutomaticBackups()
             }
             return finalURL
         } catch {
@@ -187,6 +190,15 @@ enum StoreBackupManager {
             )
         }
         .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    @discardableResult
+    static func cleanUpAutomaticBackups() throws -> Int {
+        let removableBackups = automaticBackupSnapshotsToRemove(listBackups())
+        for snapshot in removableBackups {
+            try FileManager.default.removeItem(at: snapshot.url)
+        }
+        return removableBackups.count
     }
 
     static func scheduleRestore(from backupURL: URL) throws {
@@ -267,14 +279,94 @@ enum StoreBackupManager {
         return try? JSONDecoder.cadenceBackupDecoder.decode(StoreBackupManifest.self, from: data)
     }
 
-    private static func purgeOldStartupBackups() throws {
-        let startupBackups = listBackups().filter { snapshot in
-            manifest(at: snapshot.url)?.reason == .startup
+    private static func purgeAutomaticBackups() throws {
+        try cleanUpAutomaticBackups()
+    }
+
+    static func automaticBackupSnapshotsToRemove(
+        _ snapshots: [StoreBackupSnapshot],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [StoreBackupSnapshot] {
+        let startupDisplayName = StoreBackupReason.startup.displayName
+        let preRestoreDisplayName = StoreBackupReason.preRestore.displayName
+        let startupBackups = snapshots
+            .filter { $0.reason == startupDisplayName }
+            .sorted { $0.createdAt > $1.createdAt }
+        let preRestoreBackups = snapshots
+            .filter { $0.reason == preRestoreDisplayName }
+            .sorted { $0.createdAt > $1.createdAt }
+
+        var keptIDs = retainedStartupBackupIDs(
+            startupBackups,
+            now: now,
+            calendar: calendar
+        )
+        keptIDs.formUnion(preRestoreBackups.prefix(maxPreRestoreBackups).map(\.id))
+
+        return snapshots.filter { snapshot in
+            (snapshot.reason == startupDisplayName || snapshot.reason == preRestoreDisplayName)
+                && !keptIDs.contains(snapshot.id)
         }
-        guard startupBackups.count > maxAutomaticBackups else { return }
-        for snapshot in startupBackups.dropFirst(maxAutomaticBackups) {
-            try FileManager.default.removeItem(at: snapshot.url)
+    }
+
+    private static func retainedStartupBackupIDs(
+        _ backups: [StoreBackupSnapshot],
+        now: Date,
+        calendar inputCalendar: Calendar
+    ) -> Set<String> {
+        var calendar = inputCalendar
+        calendar.timeZone = inputCalendar.timeZone
+        let today = calendar.startOfDay(for: now)
+        var retained = Set<String>()
+        var retainedDayBuckets = Set<String>()
+        var retainedWeekBuckets = Set<String>()
+
+        func ageInDays(for date: Date) -> Int? {
+            calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: today).day
         }
+
+        func dayBucket(for date: Date) -> String {
+            let components = calendar.dateComponents([.year, .month, .day], from: date)
+            return "\(components.year ?? 0)-\(components.month ?? 0)-\(components.day ?? 0)"
+        }
+
+        func weekBucket(for date: Date) -> String {
+            let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+            return "\(components.yearForWeekOfYear ?? 0)-\(components.weekOfYear ?? 0)"
+        }
+
+        func rememberBuckets(for snapshot: StoreBackupSnapshot) {
+            guard let age = ageInDays(for: snapshot.createdAt), age >= 0 else { return }
+            if age < dailyStartupRetentionDays {
+                retainedDayBuckets.insert(dayBucket(for: snapshot.createdAt))
+            } else if age < dailyStartupRetentionDays + weeklyStartupRetentionWeeks * 7 {
+                retainedWeekBuckets.insert(weekBucket(for: snapshot.createdAt))
+            }
+        }
+
+        for snapshot in backups.prefix(denseStartupBackupCount) {
+            retained.insert(snapshot.id)
+            rememberBuckets(for: snapshot)
+        }
+
+        for snapshot in backups.dropFirst(denseStartupBackupCount) {
+            guard let age = ageInDays(for: snapshot.createdAt) else { continue }
+            if age < 0 {
+                retained.insert(snapshot.id)
+            } else if age < dailyStartupRetentionDays {
+                let bucket = dayBucket(for: snapshot.createdAt)
+                if retainedDayBuckets.insert(bucket).inserted {
+                    retained.insert(snapshot.id)
+                }
+            } else if age < dailyStartupRetentionDays + weeklyStartupRetentionWeeks * 7 {
+                let bucket = weekBucket(for: snapshot.createdAt)
+                if retainedWeekBuckets.insert(bucket).inserted {
+                    retained.insert(snapshot.id)
+                }
+            }
+        }
+        return retained
     }
 
     private static func directorySize(_ url: URL) -> Int64 {
