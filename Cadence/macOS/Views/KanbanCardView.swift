@@ -38,6 +38,8 @@ struct KanbanCard: View {
                     onCompletionTap: handleCompletionTap
                 )
 
+                CompactTagStrip(tags: task.sortedTags, limit: 3)
+
                 KanbanMetadataRows(
                     rows: metadataRows,
                     chipContent: { item in AnyView(metaChip(item)) }

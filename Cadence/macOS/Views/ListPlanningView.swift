@@ -554,6 +554,8 @@ private struct PlanningTaskCard: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                    CompactTagStrip(tags: task.sortedTags, limit: 3)
                 }
             }
             .padding(9)

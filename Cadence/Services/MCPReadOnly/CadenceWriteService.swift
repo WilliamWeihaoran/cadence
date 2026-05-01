@@ -48,6 +48,7 @@ struct CadenceCreateTaskOptions: Sendable {
     var containerId: String? = nil
     var sectionName: String? = nil
     var subtaskTitles: [String]? = nil
+    var tagNames: [String]? = nil
 }
 
 struct CadenceUpdateTaskOptions: Sendable {
@@ -62,6 +63,7 @@ struct CadenceUpdateTaskOptions: Sendable {
     var containerId: String? = nil
     var clearContainer: Bool = false
     var sectionName: String? = nil
+    var tagNames: [String]? = nil
 }
 
 struct CadenceScheduleTaskOptions: Sendable {
@@ -102,6 +104,8 @@ final class CadenceWriteService {
     init(container: ModelContainer, notifiesExternalWrites: Bool = false, auditLogger: CadenceMCPAuditLogger? = nil) {
         let context = ModelContext(container)
         NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-write-service")
+        TagSupport.seedDefaultTags(in: context)
+        TagSupport.syncAllNoteTagsFromMarkdown(in: context)
         DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "mcp-write-service")
         self.context = context
         self.readService = CadenceReadService(context: context)
@@ -111,6 +115,8 @@ final class CadenceWriteService {
 
     init(context: ModelContext, notifiesExternalWrites: Bool = false, auditLogger: CadenceMCPAuditLogger? = nil) {
         NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-write-service-context")
+        TagSupport.seedDefaultTags(in: context)
+        TagSupport.syncAllNoteTagsFromMarkdown(in: context)
         DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "mcp-write-service-context")
         self.context = context
         self.readService = CadenceReadService(context: context)
@@ -142,6 +148,7 @@ final class CadenceWriteService {
         task.estimatedMinutes = estimatedMinutes
         task.sectionName = sectionName
         apply(container: container, to: task)
+        TagSupport.setTags(named: options.tagNames ?? [], on: task, in: context)
 
         context.insert(task)
         for (index, subtaskTitle) in subtaskTitles.enumerated() {
@@ -181,7 +188,7 @@ final class CadenceWriteService {
         }
         let sectionName = options.sectionName.map { normalizedSectionName($0, container: finalContainer) }
 
-        guard title != nil || options.notes != nil || priority != nil || dueDate != nil || options.clearDueDate || estimatedMinutes != nil || container != nil || options.clearContainer || sectionName != nil else {
+        guard title != nil || options.notes != nil || priority != nil || dueDate != nil || options.clearDueDate || estimatedMinutes != nil || container != nil || options.clearContainer || sectionName != nil || options.tagNames != nil else {
             throw CadenceWriteError.noChanges
         }
 
@@ -203,6 +210,9 @@ final class CadenceWriteService {
             task.sectionName = sectionName
         } else if options.clearContainer {
             task.sectionName = TaskSectionDefaults.defaultName
+        }
+        if let tagNames = options.tagNames {
+            TagSupport.setTags(named: tagNames, on: task, in: context)
         }
 
         try saveNotifyAndAudit(.task(tool: "update_task", id: task.id, summary: "Updated task: \(task.title)"))
@@ -575,6 +585,7 @@ final class CadenceWriteService {
         nextTask.area = task.area
         nextTask.project = task.project
         nextTask.context = task.context
+        nextTask.tags = task.sortedTags
 
         if !task.dueDate.isEmpty {
             nextTask.dueDate = shiftedDateKey(task.dueDate, recurrence: task.recurrenceRule) ?? task.dueDate

@@ -19,8 +19,10 @@ struct ListNotesView: View {
     @State private var selectedNoteID: UUID?
     @State private var selectedEventNoteID: UUID?
     @State private var searchText = ""
+    @State private var selectedTagFilterSlugs: Set<String> = []
     @Query(sort: \Note.order) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Query(sort: \Tag.order) private var allTags: [Tag]
 
     private var listNotes: [Note] {
         if let area {
@@ -53,6 +55,11 @@ struct ListNotesView: View {
 
     private var relatedNotes: [Note] {
         listNotes + meetingNotes
+    }
+
+    private var filterableTags: [Tag] {
+        let slugs = Set(relatedNotes.flatMap { ($0.tags ?? []).map(\.slug) })
+        return allTags.filter { slugs.contains($0.slug) }
     }
 
     private var selectedEventNote: Note? {
@@ -111,6 +118,9 @@ struct ListNotesView: View {
             applyRequestedEventNoteSelection()
             selectFirstNoteIfNeeded()
         }
+        .onChange(of: filterableTags.map(\.slug)) { _, slugs in
+            selectedTagFilterSlugs.formIntersection(Set(slugs))
+        }
     }
 
     private var notesList: some View {
@@ -150,7 +160,9 @@ struct ListNotesView: View {
                     .stroke(Theme.borderSubtle.opacity(0.8), lineWidth: 1)
             )
             .padding(.horizontal, 10)
-            .padding(.bottom, 10)
+            .padding(.bottom, filterableTags.isEmpty ? 10 : 6)
+
+            TagFilterBar(tags: filterableTags, selectedSlugs: $selectedTagFilterSlugs)
 
             Divider().background(Theme.borderSubtle)
 
@@ -284,10 +296,18 @@ struct ListNotesView: View {
 
     private func filteredNotes(_ notes: [Note]) -> [Note] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return notes }
+        let requiredTagSlugs = selectedTagFilterSlugs
+        guard !query.isEmpty || !requiredTagSlugs.isEmpty else { return notes }
         return notes.filter { note in
-            note.displayTitle.localizedCaseInsensitiveContains(query) ||
-                note.content.localizedCaseInsensitiveContains(query)
+            let noteTagSlugs = Set((note.tags ?? []).map(\.slug))
+            guard requiredTagSlugs.isSubset(of: noteTagSlugs) else { return false }
+            guard !query.isEmpty else { return true }
+            return note.displayTitle.localizedCaseInsensitiveContains(query) ||
+                    note.content.localizedCaseInsensitiveContains(query) ||
+                    note.sortedTags.contains { tag in
+                        tag.name.localizedCaseInsensitiveContains(query) ||
+                            tag.slug.localizedCaseInsensitiveContains(TagSupport.slug(for: query))
+                    }
         }
     }
 
@@ -328,19 +348,22 @@ private struct ListNoteRow: View {
             Image(systemName: "doc.text")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
-            if isEditingTitle {
-                TextField("", text: $note.title)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.text)
-                    .focused($focused)
-                    .onSubmit { isEditingTitle = false }
-                    .onExitCommand { isEditingTitle = false }
-            } else {
-                Text(note.displayTitle)
-                    .font(.system(size: 13))
-                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
-                    .lineLimit(1)
+            VStack(alignment: .leading, spacing: 4) {
+                if isEditingTitle {
+                    TextField("", text: $note.title)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.text)
+                        .focused($focused)
+                        .onSubmit { isEditingTitle = false }
+                        .onExitCommand { isEditingTitle = false }
+                } else {
+                    Text(note.displayTitle)
+                        .font(.system(size: 13))
+                        .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                        .lineLimit(1)
+                }
+                CompactTagStrip(tags: note.sortedTags, limit: 2)
             }
             Spacer()
         }

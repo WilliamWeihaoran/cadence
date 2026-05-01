@@ -129,15 +129,18 @@ enum GlobalSearchIndexSupport {
             let container = task.project?.name ?? task.area?.name ?? "Inbox"
             let contextName = task.context?.name ?? ""
             let notesSnippet = task.notes.isEmpty ? "" : task.notes
+            let tagText = task.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
             let statusAliases = [
                 task.isDone ? "completed done" : "active todo",
                 task.priority.label,
-                task.resolvedSectionName
+                task.resolvedSectionName,
+                tagText
             ].joined(separator: " ")
             guard matches(query: query, fields: [task.title, container, contextName, notesSnippet, statusAliases]) else { return nil }
 
             let meta: [String] = [
                 container,
+                task.sortedTags.isEmpty ? nil : task.sortedTags.map(\.name).joined(separator: ", "),
                 task.scheduledDate.isEmpty ? nil : "Do \(DateFormatters.relativeDate(from: task.scheduledDate))",
                 task.dueDate.isEmpty ? nil : "Due \(DateFormatters.relativeDate(from: task.dueDate))",
                 task.isDone ? "Completed" : "Active"
@@ -231,7 +234,8 @@ enum GlobalSearchIndexSupport {
             } else {
                 dateLabel = "Meeting note"
             }
-            guard matches(query: query, fields: [title, note.content, dateLabel]) else { return nil }
+            let tagText = note.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
+            guard matches(query: query, fields: [title, note.content, dateLabel, tagText]) else { return nil }
             return GlobalSearchResult(
                 id: "event-note-\(note.id.uuidString)",
                 category: .meetingNotes,

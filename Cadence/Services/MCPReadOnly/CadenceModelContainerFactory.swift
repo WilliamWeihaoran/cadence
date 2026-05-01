@@ -30,6 +30,8 @@ enum CadenceModelContainerFactory {
         let container = try ModelContainer(for: CadenceSchema.schema, configurations: [configuration])
         let context = ModelContext(container)
         NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-container")
+        TagSupport.seedDefaultTags(in: context)
+        TagSupport.syncAllNoteTagsFromMarkdown(in: context)
         DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "mcp-container")
         return container
     }

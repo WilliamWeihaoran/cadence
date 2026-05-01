@@ -13,6 +13,7 @@ struct CreateTaskSheet: View {
     @Query(sort: \Context.order)  private var contexts:  [Context]
     @Query(sort: \Area.order)     private var areas:     [Area]
     @Query(sort: \Project.order)  private var projects:  [Project]
+    @Query(sort: \Tag.order)      private var tags:      [Tag]
 
     @State private var title:             String
     @State private var notes:             String
@@ -23,6 +24,7 @@ struct CreateTaskSheet: View {
     @State private var dueDate:           Date
     @State private var hasDoDate:         Bool
     @State private var doDate:            Date
+    @State private var selectedTags:      [Tag] = []
 
     @State private var showPriorityPicker = false
     @State private var showDoPicker  = false
@@ -239,6 +241,13 @@ struct CreateTaskSheet: View {
                     )
                 }
 
+                TagPickerControl(
+                    selectedTags: $selectedTags,
+                    allTags: tags,
+                    placeholder: "Tags",
+                    onCreateTag: createTag
+                )
+
                 Spacer(minLength: 0)
 
                 TaskDateChip(label: "Do Date",
@@ -414,7 +423,8 @@ struct CreateTaskSheet: View {
             sectionName: selectedSectionName,
             dueDateKey: hasDueDate ? DateFormatters.dateKey(from: dueDate) : "",
             scheduledDateKey: hasDoDate ? DateFormatters.dateKey(from: doDate) : "",
-            subtaskTitles: subtaskTitles
+            subtaskTitles: subtaskTitles,
+            tags: selectedTags
         )
         guard TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: modelContext) != nil else {
             return
@@ -499,6 +509,10 @@ struct CreateTaskSheet: View {
         if !validSections.contains(where: { $0.caseInsensitiveCompare(selectedSectionName) == .orderedSame }) {
             selectedSectionName = validSections.first ?? TaskSectionDefaults.defaultName
         }
+    }
+
+    private func createTag(_ name: String) -> Tag {
+        TagSupport.resolveTags(named: [name], in: modelContext).first ?? Tag(name: name)
     }
 
     // MARK: - Tilde popover views

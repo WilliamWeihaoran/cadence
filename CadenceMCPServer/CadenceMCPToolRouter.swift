@@ -51,6 +51,7 @@ struct CadenceMCPToolRouter {
                 containerKind: arguments.string("containerKind"),
                 containerId: arguments.string("containerId"),
                 textQuery: arguments.string("textQuery"),
+                tagSlugs: arguments.stringArray("tagSlugs"),
                 limit: arguments.int("limit") ?? 50
             )
             return try encode(readService.listTasks(options: options))
@@ -108,7 +109,8 @@ struct CadenceMCPToolRouter {
                 containerKind: arguments.string("containerKind"),
                 containerId: arguments.string("containerId"),
                 sectionName: arguments.string("sectionName"),
-                subtaskTitles: arguments.stringArray("subtaskTitles")
+                subtaskTitles: arguments.stringArray("subtaskTitles"),
+                tagNames: arguments.stringArray("tagNames")
             )))
 
         case "update_task":
@@ -123,7 +125,8 @@ struct CadenceMCPToolRouter {
                 containerKind: arguments.string("containerKind"),
                 containerId: arguments.string("containerId"),
                 clearContainer: arguments.bool("clearContainer") ?? false,
-                sectionName: arguments.string("sectionName")
+                sectionName: arguments.string("sectionName"),
+                tagNames: arguments.stringArray("tagNames")
             )))
 
         case "schedule_task":

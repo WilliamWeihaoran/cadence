@@ -20,6 +20,7 @@ struct MarkdownEditor: View {
     var onCreateEmbeddedTask: (String) -> MarkdownReferenceSuggestion? = { _ in nil }
     var onToggleEmbeddedTask: (UUID) -> Void = { _ in }
     var onToggleEmbeddedSubtask: (UUID, UUID) -> Void = { _, _ in }
+    var onRenameEmbeddedTask: (UUID, String) -> Void = { _, _ in }
     var onOpenEmbeddedTask: (UUID) -> Void = { _ in }
     var onEditEmbeddedTask: (UUID, MarkdownTaskEmbedField) -> Void = { _, _ in }
     var onHoverEmbeddedTask: (UUID, Bool) -> Void = { _, _ in }
@@ -72,6 +73,7 @@ struct MarkdownEditor: View {
                 onCreateEmbeddedTask: onCreateEmbeddedTask,
                 onToggleEmbeddedTask: onToggleEmbeddedTask,
                 onToggleEmbeddedSubtask: onToggleEmbeddedSubtask,
+                onRenameEmbeddedTask: onRenameEmbeddedTask,
                 onOpenEmbeddedTask: onOpenEmbeddedTask,
                 onEditEmbeddedTask: onEditEmbeddedTask,
                 onHoverEmbeddedTask: onHoverEmbeddedTask,
@@ -321,6 +323,7 @@ struct MarkdownEditorView: NSViewRepresentable {
     var onCreateEmbeddedTask: (String) -> MarkdownReferenceSuggestion? = { _ in nil }
     var onToggleEmbeddedTask: (UUID) -> Void = { _ in }
     var onToggleEmbeddedSubtask: (UUID, UUID) -> Void = { _, _ in }
+    var onRenameEmbeddedTask: (UUID, String) -> Void = { _, _ in }
     var onOpenEmbeddedTask: (UUID) -> Void = { _ in }
     var onEditEmbeddedTask: (UUID, MarkdownTaskEmbedField) -> Void = { _, _ in }
     var onHoverEmbeddedTask: (UUID, Bool) -> Void = { _, _ in }
@@ -338,8 +341,9 @@ struct MarkdownEditorView: NSViewRepresentable {
         let contentSize = scrollView.contentSize
         let textStorage = NSTextStorage()
         let layoutManager = CadenceLayoutManager()
+        let initialContainerWidth = max(1, contentSize.width - MarkdownEditorMetrics.textInset * 2)
         let textContainer = NSTextContainer(
-            containerSize: NSSize(width: contentSize.width, height: CGFloat.greatestFiniteMagnitude)
+            containerSize: NSSize(width: initialContainerWidth, height: CGFloat.greatestFiniteMagnitude)
         )
         textStorage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(textContainer)
@@ -351,7 +355,7 @@ struct MarkdownEditorView: NSViewRepresentable {
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: contentSize.width,
+        textView.textContainer?.containerSize = NSSize(width: initialContainerWidth,
                                                         height: CGFloat.greatestFiniteMagnitude)
 
         textView.delegate = context.coordinator
@@ -418,6 +422,7 @@ struct MarkdownEditorView: NSViewRepresentable {
         textView.onCreateEmbeddedMarkdownTask = onCreateEmbeddedTask
         textView.onToggleEmbeddedMarkdownTask = onToggleEmbeddedTask
         textView.onToggleEmbeddedMarkdownSubtask = onToggleEmbeddedSubtask
+        textView.onRenameEmbeddedMarkdownTask = onRenameEmbeddedTask
         textView.onOpenEmbeddedMarkdownTask = onOpenEmbeddedTask
         textView.onEditEmbeddedMarkdownTask = onEditEmbeddedTask
         textView.onHoverEmbeddedMarkdownTask = onHoverEmbeddedTask
@@ -458,6 +463,7 @@ enum MarkdownEditorScrollSupport {
 
         let contentSize = scrollView.contentSize
         let targetWidth = max(1, contentSize.width)
+        let targetContainerWidth = max(1, targetWidth - textView.textContainerInset.width * 2)
         let currentSize = textView.frame.size
 
         textView.minSize = NSSize(width: 0, height: contentSize.height)
@@ -468,7 +474,7 @@ enum MarkdownEditorScrollSupport {
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.textContainer?.widthTracksTextView = true
-        textContainer.containerSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
+        textContainer.containerSize = NSSize(width: targetContainerWidth, height: CGFloat.greatestFiniteMagnitude)
 
         if abs(currentSize.width - targetWidth) > 0.5 {
             textView.setFrameSize(NSSize(width: targetWidth, height: max(currentSize.height, contentSize.height)))

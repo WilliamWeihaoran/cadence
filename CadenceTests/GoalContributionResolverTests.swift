@@ -94,6 +94,64 @@ struct GoalContributionResolverTests {
         #expect(goalOnlyTask.containerColor == "#6b7a99")
     }
 
+    @Test func contributionSummaryRollsUpNestedSubGoals() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let context = Context(name: "Work")
+        let parentArea = Area(name: "Parent Area", context: context)
+        let childArea = Area(name: "Child Area", context: context)
+        let parent = Goal(title: "Launch", context: context)
+        parent.loggedHours = 1
+        let child = Goal(title: "Beta", context: context)
+        child.loggedHours = 0.5
+        child.parentGoal = parent
+
+        let parentTask = AppTask(title: "Parent task")
+        parentTask.area = parentArea
+        parentTask.context = context
+        parentTask.status = .done
+        parentTask.actualMinutes = 30
+
+        let childTask = AppTask(title: "Child task")
+        childTask.area = childArea
+        childTask.context = context
+        childTask.priority = .high
+        childTask.dueDate = "2026-04-01"
+
+        let cancelledChildTask = AppTask(title: "Cancelled child")
+        cancelledChildTask.area = childArea
+        cancelledChildTask.context = context
+        cancelledChildTask.status = .cancelled
+
+        let parentLink = GoalListLink(goal: parent, area: parentArea)
+        let childLink = GoalListLink(goal: child, area: childArea)
+
+        modelContext.insert(context)
+        modelContext.insert(parentArea)
+        modelContext.insert(childArea)
+        modelContext.insert(parent)
+        modelContext.insert(child)
+        modelContext.insert(parentTask)
+        modelContext.insert(childTask)
+        modelContext.insert(cancelledChildTask)
+        modelContext.insert(parentLink)
+        modelContext.insert(childLink)
+        try modelContext.save()
+
+        let summary = GoalContributionResolver.summary(for: parent, now: DateFormatters.date(from: "2026-04-30") ?? Date())
+
+        #expect(parent.subGoals?.map(\.id).contains(child.id) == true)
+        #expect(child.parentGoal?.id == parent.id)
+        #expect(summary.totalTasks == 2)
+        #expect(summary.completedTasks == 1)
+        #expect(summary.linkedListCount == 2)
+        #expect(summary.focusMinutes == 120)
+        #expect(summary.overdueTaskCount == 1)
+        #expect(summary.nextActionTitle == "Child task")
+        #expect(parent.progress == 0.5)
+    }
+
     @Test func habitMomentumSummarizesLinkedHabitsWithoutChangingProgress() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)

@@ -381,10 +381,12 @@ private enum MarkdownTaskEmbedDrawing {
         textContainerWidth: CGFloat,
         task: MarkdownTaskEmbedRenderInfo
     ) -> NSRect {
-        NSRect(
+        let maxWidth = max(160, textContainerWidth - 16)
+        let width = min(maxWidth, preferredCardWidth(for: task, maxWidth: maxWidth))
+        return NSRect(
             x: lineRect.minX + 8,
             y: lineRect.minY + 6,
-            width: max(160, textContainerWidth - 16),
+            width: width,
             height: task.cardHeight
         )
     }
@@ -399,6 +401,10 @@ private enum MarkdownTaskEmbedDrawing {
             return .title
         }
         return layout.chips.first(where: { $0.rect.insetBy(dx: -3, dy: -3).contains(point) })?.field
+    }
+
+    static func titleRect(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect) -> NSRect {
+        fieldRects(task: task, cardRect: cardRect).title
     }
 
     static func subtaskHit(
@@ -563,6 +569,22 @@ private enum MarkdownTaskEmbedDrawing {
         return chips
     }
 
+    private static func preferredCardWidth(for task: MarkdownTaskEmbedRenderInfo, maxWidth: CGFloat) -> CGFloat {
+        let checkboxAndPadding: CGFloat = 60
+        let titleWidth = min(
+            max(140, task.title.size(withAttributes: titleMeasureAttributes).width + 8),
+            240
+        )
+        let chipWidths = displayChips(for: task)
+            .prefix(task.hasSubtasks ? 4 : 5)
+            .map { min(max(42, $0.label.size(withAttributes: chipAttributes).width + 18), 128) }
+            .reduce(CGFloat(0), +)
+        let chipGaps = CGFloat(max(0, min(displayChips(for: task).count, task.hasSubtasks ? 4 : 5) - 1)) * 6
+        let subtaskAllowance: CGFloat = task.hasSubtasks ? 90 : 0
+        let preferred = checkboxAndPadding + max(titleWidth, chipWidths + chipGaps) + subtaskAllowance + 24
+        return min(max(320, preferred), min(maxWidth, MarkdownTaskEmbedRenderInfo.maxCardWidth))
+    }
+
     private static func drawChip(label: String, color: NSColor, rect: NSRect) {
         let path = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
         color.withAlphaComponent(0.13).setFill()
@@ -701,6 +723,10 @@ private enum MarkdownTaskEmbedDrawing {
         .foregroundColor: MarkdownStylist.dimColor
     ]
 
+    private static let titleMeasureAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 13, weight: .semibold)
+    ]
+
     private static let subtaskMetaAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: 9, weight: .semibold),
         .foregroundColor: MarkdownStylist.dimColor
@@ -795,7 +821,7 @@ enum MarkdownFormatCommand: Hashable {
     case taskReference
 }
 
-final class CadenceTextView: NSTextView {
+final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     var markdownImageAssets: [UUID: MarkdownImageRenderAsset] = [:]
     var markdownImageRects: [UUID: NSRect] = [:]
     var markdownTaskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:]
@@ -807,6 +833,7 @@ final class CadenceTextView: NSTextView {
     var onCreateEmbeddedMarkdownTask: ((String) -> MarkdownReferenceSuggestion?)?
     var onToggleEmbeddedMarkdownTask: ((UUID) -> Void)?
     var onToggleEmbeddedMarkdownSubtask: ((UUID, UUID) -> Void)?
+    var onRenameEmbeddedMarkdownTask: ((UUID, String) -> Void)?
     var onOpenEmbeddedMarkdownTask: ((UUID) -> Void)?
     var onEditEmbeddedMarkdownTask: ((UUID, MarkdownTaskEmbedField) -> Void)?
     var onHoverEmbeddedMarkdownTask: ((UUID, Bool) -> Void)?
@@ -819,6 +846,9 @@ final class CadenceTextView: NSTextView {
     private var trackingAreaForHover: NSTrackingArea?
     private var pendingTaskEmbedMouseDown: (id: UUID, target: TaskEmbedHitTarget, point: NSPoint, event: NSEvent)?
     private var draggingTaskEmbedID: UUID?
+    private var inlineTaskTitleEditor: NSTextField?
+    private var inlineTaskTitleTaskID: UUID?
+    private var isEndingInlineTaskTitleEdit = false
     private let taskEmbedDragThreshold: CGFloat = 4
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -877,6 +907,11 @@ final class CadenceTextView: NSTextView {
 
     override func mouseDown(with event: NSEvent) {
         let viewPoint = convert(event.locationInWindow, from: nil)
+        if let inlineTaskTitleEditor,
+           !inlineTaskTitleEditor.frame.insetBy(dx: -4, dy: -4).contains(viewPoint) {
+            endInlineTaskTitleEdit(commit: true)
+        }
+
         if let hit = imageResizeHit(at: viewPoint) {
             resizingImageID = hit.id
             selectedMarkdownImageID = nil
@@ -1135,10 +1170,84 @@ final class CadenceTextView: NSTextView {
         case .subtaskText:
             onOpenEmbeddedMarkdownTask?(pending.id)
         case .field(let field):
-            onEditEmbeddedMarkdownTask?(pending.id, field)
+            if field == .title {
+                beginInlineTaskTitleEdit(id: pending.id)
+            } else {
+                onEditEmbeddedMarkdownTask?(pending.id, field)
+            }
         case .card:
             onOpenEmbeddedMarkdownTask?(pending.id)
         }
+    }
+
+    fileprivate func beginInlineTaskTitleEdit(id: UUID) {
+        endInlineTaskTitleEdit(commit: true)
+        guard let task = markdownTaskEmbeds[id],
+              let titleRect = taskEmbedTitleRect(id: id, task: task) else { return }
+
+        let editorFrame = titleRect.insetBy(dx: -4, dy: -2)
+        let editor = NSTextField(frame: editorFrame)
+        editor.stringValue = task.title == MarkdownTaskEmbedRenderInfo.untitledTaskTitle ? "" : task.title
+        editor.placeholderString = MarkdownTaskEmbedRenderInfo.untitledTaskTitle
+        editor.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        editor.textColor = MarkdownStylist.textColor
+        editor.backgroundColor = NSColor(hex: "#182236")
+        editor.isBordered = false
+        editor.focusRingType = .none
+        editor.delegate = self
+        editor.target = self
+        editor.action = #selector(commitInlineTaskTitleEditor)
+        editor.lineBreakMode = .byTruncatingTail
+        editor.cell?.sendsActionOnEndEditing = false
+        addSubview(editor)
+        inlineTaskTitleEditor = editor
+        inlineTaskTitleTaskID = id
+        window?.makeFirstResponder(editor)
+        editor.selectText(nil)
+    }
+
+    @objc private func commitInlineTaskTitleEditor() {
+        endInlineTaskTitleEdit(commit: true)
+    }
+
+    private func endInlineTaskTitleEdit(commit: Bool) {
+        guard !isEndingInlineTaskTitleEdit,
+              let editor = inlineTaskTitleEditor,
+              let taskID = inlineTaskTitleTaskID else { return }
+        isEndingInlineTaskTitleEdit = true
+        let newTitle = editor.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        editor.delegate = nil
+        editor.removeFromSuperview()
+        inlineTaskTitleEditor = nil
+        inlineTaskTitleTaskID = nil
+        if commit {
+            onRenameEmbeddedMarkdownTask?(taskID, newTitle)
+            replaceEmbeddedTaskReferenceTitle(id: taskID, title: newTitle)
+        }
+        isEndingInlineTaskTitleEdit = false
+        needsDisplay = true
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField,
+              field === inlineTaskTitleEditor else { return }
+        endInlineTaskTitleEdit(commit: true)
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard let field = control as? NSTextField,
+              field === inlineTaskTitleEditor else { return false }
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            endInlineTaskTitleEdit(commit: true)
+            window?.makeFirstResponder(self)
+            return true
+        }
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            endInlineTaskTitleEdit(commit: false)
+            window?.makeFirstResponder(self)
+            return true
+        }
+        return false
     }
 
     private func updateHoveredTaskEmbed(at point: NSPoint) {
@@ -1241,6 +1350,28 @@ final class CadenceTextView: NSTextView {
                 result = (embed.task.id, .card)
                 stop.pointee = true
             }
+        }
+        return result
+    }
+
+    private func taskEmbedTitleRect(id: UUID, task: MarkdownTaskEmbedRenderInfo) -> NSRect? {
+        guard let layoutManager, let textContainer, let textStorage else { return nil }
+        var result: NSRect?
+        textStorage.enumerateAttribute(.cadenceMarkdownTaskEmbed, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, stop in
+            guard let embed = value as? MarkdownTaskEmbedLayoutInfo,
+                  embed.task.id == id,
+                  range.location < textStorage.length else { return }
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: range.location)
+            guard glyphIndex < layoutManager.numberOfGlyphs else { return }
+            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+                .offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y)
+            let cardRect = MarkdownTaskEmbedDrawing.cardRect(
+                forLineRect: lineRect,
+                textContainerWidth: textContainer.containerSize.width,
+                task: task
+            )
+            result = MarkdownTaskEmbedDrawing.titleRect(task: task, cardRect: cardRect)
+            stop.pointee = true
         }
         return result
     }
@@ -2264,7 +2395,7 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         }
         textView.typingAttributes = MarkdownStylist.baseAttributes
         textView.didChangeText()
-        cadenceTextView.onEditEmbeddedMarkdownTask?(suggestion.targetID, .title)
+        cadenceTextView.beginInlineTaskTitleEdit(id: suggestion.targetID)
         return true
     }
 

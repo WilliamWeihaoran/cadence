@@ -134,6 +134,7 @@ struct NotePanel: View {
             onCreateEmbeddedTask: createEmbeddedTask,
             onToggleEmbeddedTask: toggleEmbeddedTask,
             onToggleEmbeddedSubtask: toggleEmbeddedSubtask,
+            onRenameEmbeddedTask: renameEmbeddedTask,
             onOpenEmbeddedTask: openEmbeddedTask,
             onEditEmbeddedTask: editEmbeddedTask,
             onHoverEmbeddedTask: hoverEmbeddedTask,
@@ -169,6 +170,7 @@ struct NotePanel: View {
     private func update(note: Note, content: String) {
         note.content = content
         note.updatedAt = Date()
+        TagSupport.syncNoteTagsFromMarkdown(note, in: notesContext ?? modelContext)
         try? notesContext?.save()
     }
 
@@ -181,7 +183,8 @@ struct NotePanel: View {
             sectionName: TaskSectionDefaults.defaultName,
             dueDateKey: "",
             scheduledDateKey: "",
-            subtaskTitles: []
+            subtaskTitles: [],
+            tags: []
         )
         guard let task = TaskCreationService(areas: [], projects: []).insertTask(from: draft, into: modelContext) else {
             return nil
@@ -211,6 +214,13 @@ struct NotePanel: View {
         guard let task = embeddedTask(id: taskID),
               let subtask = (task.subtasks ?? []).first(where: { $0.id == subtaskID }) else { return }
         subtask.isDone.toggle()
+        try? modelContext.save()
+        refreshEmbeddedTask(task)
+    }
+
+    private func renameEmbeddedTask(id: UUID, title: String) {
+        guard let task = embeddedTask(id: id) else { return }
+        task.title = title
         try? modelContext.save()
         refreshEmbeddedTask(task)
     }

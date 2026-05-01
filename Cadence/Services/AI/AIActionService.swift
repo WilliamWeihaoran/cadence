@@ -115,7 +115,8 @@ enum AIActionService {
                 sectionName: draft.sectionName.isEmpty ? TaskSectionDefaults.defaultName : draft.sectionName,
                 dueDateKey: dueDate,
                 scheduledDateKey: scheduledDate,
-                subtaskTitles: draft.subtaskTitles
+                subtaskTitles: draft.subtaskTitles,
+                tags: []
             )
             guard let task = service.insertTask(from: taskDraft, into: modelContext) else { continue }
             if let scheduledStartMin = draft.scheduledStartMin {

@@ -19,7 +19,8 @@ struct CadenceWriteServiceTests {
             containerKind: "project",
             containerId: fixture.project.id.uuidString,
             sectionName: "Build",
-            subtaskTitles: [" DTOs ", "", "Router"]
+            subtaskTitles: [" DTOs ", "", "Router"],
+            tagNames: ["bug", "Feature"]
         ))
 
         #expect(detail.summary.title == "Ship write MCP")
@@ -30,6 +31,7 @@ struct CadenceWriteServiceTests {
         #expect(detail.summary.estimatedMinutes == 45)
         #expect(detail.summary.container?.id == fixture.project.id.uuidString)
         #expect(detail.summary.sectionName == "Build")
+        #expect(detail.summary.tags.map(\.slug) == ["bug", "feature"])
         #expect(detail.subtasks.map(\.title) == ["DTOs", "Router"])
     }
 

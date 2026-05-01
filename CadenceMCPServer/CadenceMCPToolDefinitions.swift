@@ -17,6 +17,7 @@ enum CadenceMCPToolDefinitions {
                 "containerKind": "Optional area or project.",
                 "containerId": "Optional area/project UUID.",
                 "textQuery": "Optional task text search.",
+                "tagSlugs": "Optional array of tag names/slugs. Tasks must have every requested tag.",
                 "limit": "Optional result limit, capped at 200.",
             ])),
             Tool(name: "get_task", description: "Get full read-only detail for one Cadence task.", inputSchema: schema(["taskId": "Task UUID."])),
@@ -58,6 +59,7 @@ enum CadenceMCPToolDefinitions {
                 "containerId": "Optional area/project UUID.",
                 "sectionName": "Optional container section name.",
                 "subtaskTitles": "Optional array of subtask titles.",
+                "tagNames": "Optional array of tag names/slugs to assign.",
             ])),
             Tool(name: "update_task", description: "Safely update editable fields on one Cadence task.", inputSchema: schema([
                 "taskId": "Task UUID.",
@@ -71,6 +73,7 @@ enum CadenceMCPToolDefinitions {
                 "containerId": "Optional area/project UUID.",
                 "clearContainer": "Set true to move task to inbox.",
                 "sectionName": "Optional container section name.",
+                "tagNames": "Optional replacement array of tag names/slugs. Pass an empty array to clear tags.",
             ])),
             Tool(name: "schedule_task", description: "Set or clear a Cadence task do-date/time without Calendar side effects.", inputSchema: schema([
                 "taskId": "Task UUID.",

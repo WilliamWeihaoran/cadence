@@ -25,6 +25,15 @@ struct CadenceSubtaskSummary: Codable, Sendable {
     let order: Int
 }
 
+struct CadenceTagSummary: Codable, Sendable {
+    let id: String
+    let slug: String
+    let name: String
+    let colorHex: String
+    let description: String
+    let isArchived: Bool
+}
+
 struct CadenceTaskSummary: Codable, Sendable {
     let id: String
     let title: String
@@ -37,6 +46,7 @@ struct CadenceTaskSummary: Codable, Sendable {
     let container: CadenceContainerRef?
     let goal: CadenceGoalRef?
     let sectionName: String
+    let tags: [CadenceTagSummary]
     let isDone: Bool
     let isCancelled: Bool
 }
@@ -56,6 +66,7 @@ struct CadenceDocumentSummary: Codable, Sendable {
     let container: CadenceContainerRef?
     let updatedAt: String
     let excerpt: String
+    let tags: [CadenceTagSummary]
 }
 
 struct CadenceNotePayload: Codable, Sendable {
@@ -65,6 +76,7 @@ struct CadenceNotePayload: Codable, Sendable {
     let content: String
     let updatedAt: String
     let excerpt: String
+    let tags: [CadenceTagSummary]
 }
 
 struct CadenceCoreNotesSnapshot: Codable, Sendable {
@@ -109,6 +121,7 @@ struct CadenceDocumentDetail: Codable, Sendable {
     let order: Int
     let createdAt: String
     let updatedAt: String
+    let tags: [CadenceTagSummary]
 }
 
 struct CadenceCompleteTaskResult: Codable, Sendable {

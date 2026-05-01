@@ -20,6 +20,8 @@ struct PersistenceController {
             container = c
             let startupContext = ModelContext(c)
             NoteMigrationService.migrateAndRecordFailure(in: startupContext, source: "app-startup")
+            TagSupport.seedDefaultTags(in: startupContext)
+            TagSupport.syncAllNoteTagsFromMarkdown(in: startupContext)
             DataIntegrityRepairService.repairAndRecordFailure(in: startupContext, source: "app-startup")
             return
         }

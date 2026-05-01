@@ -52,8 +52,35 @@ struct GoalHabitMomentumSummary {
 
 enum GoalContributionResolver {
     static func contributingTasks(for goal: Goal) -> [AppTask] {
+        contributingTasks(for: goal, visitedGoalIDs: [])
+    }
+
+    private static func contributingTasks(for goal: Goal, visitedGoalIDs: Set<UUID>) -> [AppTask] {
+        guard !visitedGoalIDs.contains(goal.id) else { return [] }
+        let nextVisited = visitedGoalIDs.union([goal.id])
         let listTasks = (goal.listLinks ?? []).flatMap(\.tasks)
-        return dedupe(listTasks).filter { !$0.isCancelled }
+        let subGoalTasks = (goal.subGoals ?? []).flatMap {
+            contributingTasks(for: $0, visitedGoalIDs: nextVisited)
+        }
+        return dedupe(listTasks + subGoalTasks).filter { !$0.isCancelled }
+    }
+
+    private static func linkedListCount(for goal: Goal, visitedGoalIDs: Set<UUID> = []) -> Int {
+        guard !visitedGoalIDs.contains(goal.id) else { return 0 }
+        let nextVisited = visitedGoalIDs.union([goal.id])
+        let ownCount = (goal.listLinks ?? []).filter { $0.area != nil || $0.project != nil }.count
+        return (goal.subGoals ?? []).reduce(ownCount) {
+            $0 + linkedListCount(for: $1, visitedGoalIDs: nextVisited)
+        }
+    }
+
+    private static func loggedMinutes(for goal: Goal, visitedGoalIDs: Set<UUID> = []) -> Int {
+        guard !visitedGoalIDs.contains(goal.id) else { return 0 }
+        let nextVisited = visitedGoalIDs.union([goal.id])
+        let ownMinutes = Int(goal.loggedHours * 60)
+        return (goal.subGoals ?? []).reduce(ownMinutes) {
+            $0 + loggedMinutes(for: $1, visitedGoalIDs: nextVisited)
+        }
     }
 
     static func summary(for goal: Goal, now: Date = Date()) -> GoalContributionSummary {
@@ -95,8 +122,8 @@ enum GoalContributionResolver {
             totalTasks: tasks.count,
             completedTasks: tasks.filter(\.isDone).count,
             directTaskCount: 0,
-            linkedListCount: (goal.listLinks ?? []).filter { $0.area != nil || $0.project != nil }.count,
-            focusMinutes: tasks.reduce(Int(goal.loggedHours * 60)) { $0 + max(0, $1.actualMinutes) },
+            linkedListCount: linkedListCount(for: goal),
+            focusMinutes: tasks.reduce(loggedMinutes(for: goal)) { $0 + max(0, $1.actualMinutes) },
             overdueTaskCount: overdueCount,
             recentCompletedCount: recentCompleted,
             nextActionTitle: nextAction

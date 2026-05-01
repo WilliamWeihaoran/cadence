@@ -48,6 +48,9 @@ struct MacTaskRow: View {
                 .strikethrough(task.isDone || task.isCancelled, color: Theme.dim)
                 .lineLimit(1)
 
+            CompactTagStrip(tags: task.sortedTags, limit: 2)
+                .padding(.leading, task.sortedTags.isEmpty ? 0 : 6)
+
             if task.isCancelled {
                 Text("Cancelled")
                     .font(.system(size: 10, weight: .semibold))

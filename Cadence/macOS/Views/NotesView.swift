@@ -389,6 +389,7 @@ struct DailyNoteListRow: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dim)
                 .lineLimit(1)
+            CompactTagStrip(tags: note.sortedTags, limit: 3)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -426,6 +427,7 @@ private struct WeeklyNoteListRow: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dim)
                 .lineLimit(1)
+            CompactTagStrip(tags: note.sortedTags, limit: 3)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -474,6 +476,7 @@ struct MeetingNoteListRow: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dim)
                 .lineLimit(1)
+            CompactTagStrip(tags: note.sortedTags, limit: 3)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -504,6 +507,7 @@ struct NoteEditorPane: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
+    @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var editorTextView: CadenceTextView?
     @State private var linkedTaskForPopover: AppTask?
     @State private var embeddedTaskEditRequest: TaskEmbedFieldEditRequest?
@@ -526,6 +530,19 @@ struct NoteEditorPane: View {
                 note.content = $0
                 note.updatedAt = Date()
                 syncTitleFromH1IfNeeded()
+                TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)
+            }
+        )
+    }
+
+    private var noteTagsBinding: Binding<[Tag]> {
+        Binding(
+            get: { note.tags ?? [] },
+            set: { newTags in
+                let names = newTags.map(\.name) + MarkdownMetadataParser.inlineTagNames(in: note.content)
+                note.tags = TagSupport.resolveTags(named: names, in: modelContext)
+                note.content = MarkdownMetadataParser.content(note.content, replacingFrontmatterTags: newTags.map(\.name))
+                note.updatedAt = Date()
             }
         )
     }
@@ -595,6 +612,12 @@ struct NoteEditorPane: View {
                         .foregroundStyle(Theme.dim)
                         .lineLimit(1)
                 }
+                TagPickerControl(
+                    selectedTags: noteTagsBinding,
+                    allTags: tags,
+                    placeholder: "Tags",
+                    onCreateTag: createTag
+                )
             }
             .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
             Divider().background(Theme.borderSubtle)
@@ -614,6 +637,7 @@ struct NoteEditorPane: View {
                     onCreateEmbeddedTask: createEmbeddedTask,
                     onToggleEmbeddedTask: toggleEmbeddedTask,
                     onToggleEmbeddedSubtask: toggleEmbeddedSubtask,
+                    onRenameEmbeddedTask: renameEmbeddedTask,
                     onOpenEmbeddedTask: openEmbeddedTask,
                     onEditEmbeddedTask: editEmbeddedTask,
                     onHoverEmbeddedTask: hoverEmbeddedTask,
@@ -651,6 +675,9 @@ struct NoteEditorPane: View {
                     .padding()
             }
         }
+        .onAppear {
+            TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)
+        }
     }
 
     private func syncTitleFromH1IfNeeded() {
@@ -661,6 +688,10 @@ struct NoteEditorPane: View {
         guard !h1Text.isEmpty, h1Text != note.title else { return }
         note.title = h1Text
             try? modelContext.save()
+    }
+
+    private func createTag(_ name: String) -> Tag {
+        TagSupport.resolveTags(named: [name], in: modelContext).first ?? Tag(name: name)
     }
 
     private func openNoteReference(id: UUID?, title: String) {
@@ -721,7 +752,8 @@ struct NoteEditorPane: View {
             sectionName: TaskSectionDefaults.defaultName,
             dueDateKey: "",
             scheduledDateKey: "",
-            subtaskTitles: []
+            subtaskTitles: [],
+            tags: []
         )
 
         guard let task = TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: modelContext) else {
@@ -754,6 +786,13 @@ struct NoteEditorPane: View {
         guard let task = embeddedTask(id: taskID),
               let subtask = (task.subtasks ?? []).first(where: { $0.id == subtaskID }) else { return }
         subtask.isDone.toggle()
+        try? modelContext.save()
+        refreshEmbeddedTask(task)
+    }
+
+    private func renameEmbeddedTask(id: UUID, title: String) {
+        guard let task = embeddedTask(id: id) else { return }
+        task.title = title
         try? modelContext.save()
         refreshEmbeddedTask(task)
     }

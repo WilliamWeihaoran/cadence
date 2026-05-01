@@ -55,6 +55,52 @@ enum MarkdownMetadataParser {
         return MarkdownNoteMetadata(frontmatter: frontmatter, tags: tags)
     }
 
+    nonisolated static func inlineTagNames(in content: String) -> [String] {
+        let frontmatter = parseFrontmatter(in: content)
+        return orderedUnique(inlineTags(in: content, excluding: frontmatter.range))
+    }
+
+    nonisolated static func content(_ content: String, replacingFrontmatterTags tags: [String]) -> String {
+        let frontmatter = parseFrontmatter(in: content)
+        let tagLine = "tags: [\(orderedUnique(tags).map { "\"\($0.replacingOccurrences(of: "\"", with: "'"))\"" }.joined(separator: ", "))]"
+
+        guard let range = frontmatter.range else {
+            return """
+            ---
+            \(tagLine)
+            ---
+
+            \(content)
+            """
+        }
+
+        let nsContent = content as NSString
+        let frontmatterText = nsContent.substring(with: range)
+        let lines = frontmatterText.components(separatedBy: "\n")
+        var replaced = false
+        let updatedLines = lines.map { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.lowercased().hasPrefix("tags:") || trimmed.lowercased().hasPrefix("tag:") {
+                replaced = true
+                return tagLine
+            }
+            return line
+        }
+
+        let updatedFrontmatter: String
+        if replaced {
+            updatedFrontmatter = updatedLines.joined(separator: "\n")
+        } else if let closingIndex = updatedLines.lastIndex(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines) == "---" }), closingIndex > 0 {
+            var inserted = updatedLines
+            inserted.insert(tagLine, at: closingIndex)
+            updatedFrontmatter = inserted.joined(separator: "\n")
+        } else {
+            updatedFrontmatter = frontmatterText
+        }
+
+        return nsContent.replacingCharacters(in: range, with: updatedFrontmatter)
+    }
+
     nonisolated static func frontmatterInsertion(title: String) -> String {
         let cleanedTitle = title
             .trimmingCharacters(in: .whitespacesAndNewlines)

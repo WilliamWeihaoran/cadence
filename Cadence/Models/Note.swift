@@ -32,6 +32,7 @@ enum NoteKind: String, CaseIterable {
 
     var area: Area? = nil
     var project: Project? = nil
+    var tags: [Tag]? = nil
 
     var kind: NoteKind {
         get { NoteKind(rawValue: kindRaw) ?? .list }
@@ -93,5 +94,9 @@ enum NoteKind: String, CaseIterable {
         case .meeting:
             return "Event Note"
         }
+    }
+
+    var sortedTags: [Tag] {
+        TagSupport.sorted(tags ?? [])
     }
 }

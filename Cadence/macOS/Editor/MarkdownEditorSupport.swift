@@ -83,6 +83,7 @@ struct MarkdownTaskEmbedRenderInfo: Hashable {
     static let compactCardHeight: CGFloat = 68
     static let subtaskCardHeight: CGFloat = 96
     static let lineHeightPadding: CGFloat = 12
+    static let maxCardWidth: CGFloat = 640
 
     let id: UUID
     let title: String

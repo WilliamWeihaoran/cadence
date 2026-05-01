@@ -94,6 +94,7 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
     var goal: Goal? = nil
     var context: Context? = nil         // denormalized for efficient queries
     var subtasks: [Subtask]? = nil
+    var tags: [Tag]? = nil
 
     // MARK: - Computed
 
@@ -137,6 +138,10 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
 
     var shouldShowDueDateField: Bool {
         !dueDate.isEmpty || !hidesEmptyDueDateInList
+    }
+
+    var sortedTags: [Tag] {
+        TagSupport.sorted(tags ?? [])
     }
 
     init(title: String) {

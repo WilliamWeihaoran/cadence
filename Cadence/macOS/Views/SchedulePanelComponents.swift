@@ -8,6 +8,7 @@ struct TaskDetailPopover: View {
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order)    private var areas:    [Area]
     @Query(sort: \Project.order) private var projects: [Project]
+    @Query(sort: \Tag.order)     private var tags:     [Tag]
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(TaskSubtaskEntryManager.self) private var taskSubtaskEntryManager
@@ -52,6 +53,13 @@ struct TaskDetailPopover: View {
         )
     }
 
+    private var taskTagsBinding: Binding<[Tag]> {
+        Binding(
+            get: { task.tags ?? [] },
+            set: { task.tags = TagSupport.sorted($0) }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
@@ -83,6 +91,12 @@ struct TaskDetailPopover: View {
                         title: "Notes",
                         subtitle: "Context and details."
                     ) {
+                        TagPickerControl(
+                            selectedTags: taskTagsBinding,
+                            allTags: tags,
+                            placeholder: "Tags",
+                            onCreateTag: createTag
+                        )
                         TaskDetailNotesSection(task: task)
                     }
                 } else {
@@ -172,6 +186,10 @@ struct TaskDetailPopover: View {
         if !validSections.contains(where: { $0.caseInsensitiveCompare(task.sectionName) == .orderedSame }) {
             task.sectionName = validSections.first ?? TaskSectionDefaults.defaultName
         }
+    }
+
+    private func createTag(_ name: String) -> Tag {
+        TagSupport.resolveTags(named: [name], in: modelContext).first ?? Tag(name: name)
     }
 }
 #endif

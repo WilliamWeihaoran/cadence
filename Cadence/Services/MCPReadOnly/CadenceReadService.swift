@@ -48,6 +48,7 @@ struct CadenceTaskListOptions: Sendable {
     var containerKind: String? = nil
     var containerId: String? = nil
     var textQuery: String? = nil
+    var tagSlugs: [String]? = nil
     var limit: Int = 50
 }
 
@@ -135,9 +136,17 @@ final class CadenceReadService {
             filtered = try filterTasks(filtered, containerKind: containerFilter.kind, containerID: containerFilter.id)
         }
 
+        if let tagSlugs = options.tagSlugs, !tagSlugs.isEmpty {
+            let required = Set(tagSlugs.map(TagSupport.slug(for:)))
+            filtered = filtered.filter { task in
+                required.isSubset(of: Set(task.sortedTags.map(\.slug)))
+            }
+        }
+
         if let query = options.textQuery?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
             filtered = filtered.filter { task in
-                CadenceSearchMatcher.matchScore(
+                let tagText = task.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
+                return CadenceSearchMatcher.matchScore(
                     query: query,
                     fields: [
                         task.title,
@@ -146,6 +155,7 @@ final class CadenceReadService {
                         task.area?.name ?? "",
                         task.context?.name ?? "",
                         task.resolvedSectionName,
+                        tagText,
                     ]
                 ) != nil
             }
@@ -261,7 +271,8 @@ final class CadenceReadService {
 
         if let query = query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
             docs = docs.filter { doc in
-                CadenceSearchMatcher.matchScore(query: query, fields: [doc.title, doc.content, doc.area?.name ?? "", doc.project?.name ?? ""]) != nil
+                let tagText = doc.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
+                return CadenceSearchMatcher.matchScore(query: query, fields: [doc.title, doc.content, doc.area?.name ?? "", doc.project?.name ?? "", tagText]) != nil
             }
         }
 
@@ -281,7 +292,8 @@ final class CadenceReadService {
                 content: doc.content,
                 order: doc.order,
                 createdAt: format(doc.createdAt),
-                updatedAt: format(doc.updatedAt)
+                updatedAt: format(doc.updatedAt),
+                tags: tagSummaries(doc.sortedTags)
             )
         }
 
@@ -298,7 +310,8 @@ final class CadenceReadService {
         if selectedScopes.contains("tasks") {
             let tasks = try fetchTasks()
             hits += tasks.compactMap { task in
-                let fields = [task.title, task.notes, task.area?.name ?? "", task.project?.name ?? "", task.context?.name ?? ""]
+                let tagText = task.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
+                let fields = [task.title, task.notes, task.area?.name ?? "", task.project?.name ?? "", task.context?.name ?? "", tagText]
                 guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: fields) else { return nil }
                 return CadenceSearchHit(
                     entityType: "task",
@@ -325,7 +338,8 @@ final class CadenceReadService {
         if selectedScopes.contains("documents") {
             let noteDocs = try fetchNotes().filter { $0.kind == .list }
             hits += noteDocs.compactMap { doc in
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [doc.title, doc.content, doc.area?.name ?? "", doc.project?.name ?? ""]) else { return nil }
+                let tagText = doc.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
+                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [doc.title, doc.content, doc.area?.name ?? "", doc.project?.name ?? "", tagText]) else { return nil }
                 return CadenceSearchHit(entityType: "document", entityId: doc.id.uuidString, title: doc.displayTitle, subtitle: documentContainer(doc)?.name ?? "No container", excerpt: excerpt(doc.content), score: score)
             }
         }
@@ -333,7 +347,8 @@ final class CadenceReadService {
         if selectedScopes.contains("core_notes") {
             hits += try fetchNotes().filter { [.daily, .weekly, .permanent].contains($0.kind) }.compactMap { note in
                 let key = note.kind == .daily ? note.dateKey : (note.kind == .weekly ? note.weekKey : "notepad permanent note")
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [key, note.title, note.content]) else { return nil }
+                let tagText = note.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
+                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [key, note.title, note.content, tagText]) else { return nil }
                 return CadenceSearchHit(entityType: noteEntityType(note), entityId: note.id.uuidString, title: note.displayTitle, subtitle: noteSubtitle(note), excerpt: excerpt(note.content), score: score)
             }
         }
@@ -342,7 +357,8 @@ final class CadenceReadService {
             let meetingNotes = try fetchNotes().filter { $0.kind == .meeting }
             hits += meetingNotes.compactMap { note in
                 let title = note.displayTitle
-                let fields = [title, note.content, note.eventDateKey]
+                let tagText = note.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
+                let fields = [title, note.content, note.eventDateKey, tagText]
                 guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: fields) else { return nil }
                 return CadenceSearchHit(
                     entityType: "event_note",
@@ -398,6 +414,7 @@ final class CadenceReadService {
             container: taskContainer(task),
             goal: nil,
             sectionName: task.resolvedSectionName,
+            tags: tagSummaries(task.sortedTags),
             isDone: task.isDone,
             isCancelled: task.isCancelled
         )
@@ -481,12 +498,26 @@ final class CadenceReadService {
             title: doc.displayTitle,
             container: documentContainer(doc),
             updatedAt: format(doc.updatedAt),
-            excerpt: excerpt(doc.content)
+            excerpt: excerpt(doc.content),
+            tags: tagSummaries(doc.sortedTags)
         )
     }
 
     private func notePayload(_ note: Note, key: String?) -> CadenceNotePayload {
-        CadenceNotePayload(id: note.id.uuidString, kind: note.kind.rawValue, key: key, content: note.content, updatedAt: format(note.updatedAt), excerpt: excerpt(note.content))
+        CadenceNotePayload(id: note.id.uuidString, kind: note.kind.rawValue, key: key, content: note.content, updatedAt: format(note.updatedAt), excerpt: excerpt(note.content), tags: tagSummaries(note.sortedTags))
+    }
+
+    private func tagSummaries(_ tags: [Tag]) -> [CadenceTagSummary] {
+        tags.map {
+            CadenceTagSummary(
+                id: $0.id.uuidString,
+                slug: $0.slug,
+                name: $0.name,
+                colorHex: $0.colorHex,
+                description: $0.desc,
+                isArchived: $0.isArchived
+            )
+        }
     }
 
     private func notesForContainer(kind: String, id: UUID) throws -> [Note] {

@@ -11,6 +11,7 @@ struct TaskCreationDraft {
     let dueDateKey: String
     let scheduledDateKey: String
     let subtaskTitles: [String]
+    let tags: [Tag]
 
     var trimmedTitle: String {
         title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -87,6 +88,7 @@ struct TaskCreationService {
         task.sectionName = containerResolver.normalizedSectionName(draft.sectionName, for: draft.container)
         task.dueDate = draft.dueDateKey
         task.scheduledDate = draft.scheduledDateKey
+        task.tags = TagSupport.sorted(draft.tags)
         containerResolver.applyContainer(draft.container, to: task)
 
         modelContext.insert(task)

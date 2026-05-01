@@ -22,6 +22,7 @@ struct CadenceReadServiceTests {
         let todayTask = AppTask(title: "Write MCP bridge")
         todayTask.project = fixture.project
         todayTask.context = fixture.context
+        todayTask.tags = TagSupport.resolveTags(named: ["enhancement"], in: fixture.modelContext)
         todayTask.scheduledDate = "2026-04-28"
         todayTask.scheduledStartMin = 600
         fixture.modelContext.insert(todayTask)
@@ -39,6 +40,7 @@ struct CadenceReadServiceTests {
             containerKind: "project",
             containerId: fixture.project.id.uuidString,
             textQuery: "bridge",
+            tagSlugs: ["enhancement"],
             limit: 50
         ))
 

@@ -27,11 +27,11 @@ import Foundation
     var dependsOnGoalIDsJSON: String = ""
 
     var context: Context? = nil
+    var parentGoal: Goal? = nil
+    @Relationship(deleteRule: .nullify, inverse: \Goal.parentGoal) var subGoals: [Goal]? = nil
     @Relationship(inverse: \AppTask.goal) var tasks: [AppTask]? = nil
     @Relationship(inverse: \GoalListLink.goal) var listLinks: [GoalListLink]? = nil
     @Relationship(inverse: \Habit.goal) var habits: [Habit]? = nil
-
-    // Future TODO: sub-goals (parent/children relationship)
 
     var progress: Double {
         GoalContributionResolver.summary(for: self).progress
