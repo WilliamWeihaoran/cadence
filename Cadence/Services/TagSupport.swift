@@ -8,6 +8,11 @@ struct TagSeedDefinition {
 }
 
 enum TagSupport {
+    static let colorOptions = [
+        "#ff6b6b", "#ff8a4c", "#ffb84d", "#4ecb71",
+        "#5aa2ff", "#9e8cff", "#e671b8", "#7b8492",
+    ]
+
     static let defaultTags: [TagSeedDefinition] = [
         .init(name: "bug", desc: "Something broken or incorrect.", colorHex: "#ff6b6b"),
         .init(name: "enhancement", desc: "Improvement to an existing flow.", colorHex: "#4ecb71"),
@@ -45,6 +50,15 @@ enum TagSupport {
             result.append(display)
         }
         return result
+    }
+
+    nonisolated static func normalizedColorHex(_ value: String, fallback: String = "#7b8492") -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefixed = trimmed.hasPrefix("#") ? trimmed : "#\(trimmed)"
+        guard prefixed.range(of: #"^#[0-9a-fA-F]{6}$"#, options: .regularExpression) != nil else {
+            return fallback
+        }
+        return prefixed.lowercased()
     }
 
     static func sorted(_ tags: [Tag]) -> [Tag] {

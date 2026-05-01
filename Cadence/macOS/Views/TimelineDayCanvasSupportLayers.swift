@@ -42,6 +42,7 @@ struct TimelineScheduledBlocksLayer: View {
     @Binding var activeDragTaskID: UUID?
     @Binding var activeDragBundleID: UUID?
     let onTaskDroppedOnBundle: (AppTask, TaskBundle) -> Void
+    let onCreateBundleFromTasks: (AppTask, AppTask) -> Void
     let onTaskSelected: () -> Void
     let onBundleSelected: () -> Void
 
@@ -79,6 +80,7 @@ struct TimelineScheduledBlocksLayer: View {
         ForEach(taskLayouts, id: \.task.id) { layout in
             TimelineTaskBlock(
                 task: layout.task,
+                allTasks: allTasks,
                 column: layout.column,
                 totalColumns: layout.totalColumns,
                 totalWidth: width,
@@ -86,6 +88,7 @@ struct TimelineScheduledBlocksLayer: View {
                 style: style,
                 selectedTaskID: $selectedTaskID,
                 activeDragTaskID: $activeDragTaskID,
+                onCreateBundleWithTask: onCreateBundleFromTasks,
                 onSelect: onTaskSelected
             )
             .zIndex(2)

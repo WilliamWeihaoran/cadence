@@ -244,26 +244,38 @@ struct TimelineEventBlock: View {
                 RoundedRectangle(cornerRadius: style.cornerRadius)
                     .fill(Theme.surfaceElevated)
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(item.calendarColor.opacity(isSelected ? 0.52 : 0.36))
+                    .fill(item.calendarColor.opacity(isSelected ? 0.52 : (isHovered ? 0.44 : 0.36)))
+                RoundedRectangle(cornerRadius: style.cornerRadius)
+                    .fill(TimelineHoverVisuals.hoverFill(tint: item.calendarColor, isHovered: isHovered && !isSelected, opacity: 0.08))
                 RoundedRectangle(cornerRadius: style.cornerRadius)
                     .fill(.white.opacity(isSelected ? 0.05 : 0.025))
             }
         )
         .overlay(
             RoundedRectangle(cornerRadius: style.cornerRadius)
-                .stroke(.white.opacity(isSelected ? 0.22 : 0.07), lineWidth: 1)
+                .stroke(
+                    TimelineHoverVisuals.borderColor(
+                        tint: item.calendarColor,
+                        isSelected: isSelected,
+                        isHovered: isHovered,
+                        selectedOpacity: 0.42,
+                        hoverOpacity: 0.32,
+                        idleOpacity: 0.07
+                    ),
+                    lineWidth: isHovered || isSelected ? 1.2 : 1
+                )
         )
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(.white.opacity(isSelected ? 0.55 : 0.18))
+                .fill((isSelected || isHovered ? item.calendarColor : .white).opacity(isSelected ? 0.55 : (isHovered ? 0.38 : 0.18)))
                 .frame(height: isSelected ? 2 : 1)
                 .padding(.horizontal, 8)
         }
         .shadow(
-            color: isSelected ? CalendarVisualStyle.selectedCardShadow : CalendarVisualStyle.cardShadow,
-            radius: isSelected ? 12 : 8,
+            color: TimelineHoverVisuals.shadowColor(isActive: isHovered || isSelected),
+            radius: TimelineHoverVisuals.shadowRadius(isActive: isHovered || isSelected, active: 12, idle: 8),
             x: 0,
-            y: isSelected ? 5 : 3
+            y: TimelineHoverVisuals.shadowY(isActive: isHovered || isSelected, active: 5, idle: 3)
         )
     }
 

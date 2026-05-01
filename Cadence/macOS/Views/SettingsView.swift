@@ -15,6 +15,7 @@ struct SettingsView: View {
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
+    @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var selectedCategory: SettingsCategory = .appearance
     @State private var pendingDeleteArea: Area?
     @State private var pendingDeleteProject: Project?
@@ -126,6 +127,8 @@ struct SettingsView: View {
                 SettingsStatusBadge(title: "\(StoreBackupManager.listBackups().count) backups", isActive: !StoreBackupManager.listBackups().isEmpty)
             case .ai:
                 SettingsStatusBadge(title: aiSettingsManager.hasAPIKey ? "Key saved" : "No key", isActive: aiSettingsManager.hasAPIKey)
+            case .tags:
+                SettingsStatusBadge(title: "\(tags.filter { !$0.isArchived }.count) active", isActive: !tags.isEmpty)
             default:
                 EmptyView()
             }
@@ -164,6 +167,8 @@ struct SettingsView: View {
                 onRestoreContext: { $0.isArchived = false },
                 onCreateContext: { showCreateContext = true }
             )
+        case .tags:
+            SettingsTagsSection(tags: tags)
         case .lists:
             SettingsListsSection(
                 completedAreas: areas.filter(\.isDone),

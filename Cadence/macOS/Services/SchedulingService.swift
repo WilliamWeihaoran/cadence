@@ -122,6 +122,24 @@ enum SchedulingActions {
         normalizeBundleOrder(bundle)
     }
 
+    @discardableResult
+    static func createBundle(from targetTask: AppTask, adding draggedTask: AppTask, in context: ModelContext) -> TaskBundle? {
+        guard targetTask.id != draggedTask.id,
+              !targetTask.scheduledDate.isEmpty,
+              targetTask.scheduledStartMin >= 0 else { return nil }
+
+        let bundle = TaskBundle(
+            title: "Task Bundle",
+            dateKey: targetTask.scheduledDate,
+            startMin: targetTask.scheduledStartMin,
+            durationMinutes: max(targetTask.estimatedMinutes, minimumBundleDuration)
+        )
+        context.insert(bundle)
+        addTask(targetTask, to: bundle)
+        addTask(draggedTask, to: bundle)
+        return bundle
+    }
+
     static func removeTaskFromBundle(_ task: AppTask, keepOnBundleDate: Bool = true) {
         guard let bundle = task.bundle else { return }
         if keepOnBundleDate {

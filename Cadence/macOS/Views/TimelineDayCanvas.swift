@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import SwiftData
 import UniformTypeIdentifiers
 
 struct TimelineDayCanvas: View {
@@ -42,6 +43,7 @@ struct TimelineDayCanvas: View {
     @State private var activeDragTaskID: UUID? = nil
     @State private var activeDragBundleID: UUID? = nil
     @State private var dragYOffset: CGFloat = 0
+    @Environment(\.modelContext) private var modelContext
 
     private func clearDraftCreation() {
         TimelineDayCanvasStateSupport.clearDraftCreation(
@@ -260,6 +262,9 @@ struct TimelineDayCanvas: View {
                 activeDragTaskID: $activeDragTaskID,
                 activeDragBundleID: $activeDragBundleID,
                 onTaskDroppedOnBundle: onDropTaskOnBundle,
+                onCreateBundleFromTasks: { targetTask, draggedTask in
+                    _ = SchedulingActions.createBundle(from: targetTask, adding: draggedTask, in: modelContext)
+                },
                 onTaskSelected: {
                     clearDraftCreation()
                     selectedEventID = nil

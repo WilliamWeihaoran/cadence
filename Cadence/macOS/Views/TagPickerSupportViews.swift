@@ -439,7 +439,7 @@ private struct TagPickerPopover: View {
         tag.name = name
         tag.slug = TagSupport.slug(for: name)
         tag.desc = editDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        tag.colorHex = normalizedColorHex(editColorHex)
+        tag.colorHex = TagSupport.normalizedColorHex(editColorHex)
         tag.updatedAt = Date()
         try? modelContext.save()
         editingTag = nil
@@ -452,14 +452,6 @@ private struct TagPickerPopover: View {
         editingTag = nil
     }
 
-    private func normalizedColorHex(_ value: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let prefixed = trimmed.hasPrefix("#") ? trimmed : "#\(trimmed)"
-        guard prefixed.range(of: #"^#[0-9a-fA-F]{6}$"#, options: .regularExpression) != nil else {
-            return "#7b8492"
-        }
-        return prefixed.lowercased()
-    }
 }
 
 private struct TagEditSheet: View {
@@ -471,11 +463,6 @@ private struct TagEditSheet: View {
     let onCancel: () -> Void
     let onSave: () -> Void
     let onArchive: () -> Void
-
-    private let colorOptions = [
-        "#ff6b6b", "#ff8a4c", "#ffb84d", "#4ecb71",
-        "#5aa2ff", "#9e8cff", "#e671b8", "#7b8492",
-    ]
 
     private var normalizedSlug: String {
         TagSupport.slug(for: name)
@@ -505,7 +492,7 @@ private struct TagEditSheet: View {
             }
 
             HStack(spacing: 8) {
-                ForEach(colorOptions, id: \.self) { option in
+                ForEach(TagSupport.colorOptions, id: \.self) { option in
                     Button {
                         colorHex = option
                     } label: {

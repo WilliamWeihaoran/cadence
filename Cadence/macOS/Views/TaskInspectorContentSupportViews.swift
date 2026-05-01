@@ -5,28 +5,104 @@ import AppKit
 
 struct TaskDetailNotesSection: View {
     @Bindable var task: AppTask
+    @Query(sort: \AppTask.order) private var referenceTasks: [AppTask]
+    @State private var showExpandedNotes = false
 
     var body: some View {
         TaskInspectorInfoCard {
-            ZStack(alignment: .topLeading) {
-                MarkdownEditor(text: Binding(
-                    get: { task.notes },
-                    set: { task.notes = $0 }
-                ), showsToolbar: false)
-                .frame(minHeight: 120)
-                .background(Theme.surface.opacity(0.45))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+            VStack(spacing: 6) {
+                HStack {
+                    Spacer()
+                    Button {
+                        showExpandedNotes = true
+                    } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                            .frame(width: 24, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.cadencePlain)
+                    .help("Open task notes")
+                }
 
-                if task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text("Add notes...")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.dim.opacity(0.6))
-                        .padding(.leading, MarkdownEditorMetrics.firstTextColumnInset)
-                        .padding(.top, MarkdownEditorMetrics.textInset)
-                        .allowsHitTesting(false)
+                ZStack(alignment: .topLeading) {
+                    MarkdownEditor(text: taskNotesBinding, showsToolbar: false, referenceTasks: referenceTasks)
+                        .frame(minHeight: 120)
+                        .background(Theme.surface.opacity(0.45))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    if task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("Add notes...")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.dim.opacity(0.6))
+                            .padding(.leading, MarkdownEditorMetrics.firstTextColumnInset)
+                            .padding(.top, MarkdownEditorMetrics.textInset)
+                            .allowsHitTesting(false)
+                    }
                 }
             }
         }
+        .sheet(isPresented: $showExpandedNotes) {
+            TaskNotesExpandedEditorSheet(task: task, referenceTasks: referenceTasks)
+        }
+    }
+
+    private var taskNotesBinding: Binding<String> {
+        Binding(
+            get: { task.notes },
+            set: { task.notes = $0 }
+        )
+    }
+}
+
+struct TaskNotesExpandedEditorSheet: View {
+    @Bindable var task: AppTask
+    var referenceNotes: [Note] = []
+    var referenceTasks: [AppTask] = []
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Task" : task.title)
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                    Text("Task notes")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                }
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .frame(width: 30, height: 30)
+                        .background(Theme.surfaceElevated.opacity(0.9))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.cadencePlain)
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+
+            Divider().background(Theme.borderSubtle)
+
+            MarkdownEditor(
+                text: Binding(
+                    get: { task.notes },
+                    set: { task.notes = $0 }
+                ),
+                referenceNotes: referenceNotes,
+                referenceTasks: referenceTasks
+            )
+        }
+        .frame(minWidth: 760, idealWidth: 900, minHeight: 560, idealHeight: 680)
+        .background(Theme.bg)
     }
 }
 

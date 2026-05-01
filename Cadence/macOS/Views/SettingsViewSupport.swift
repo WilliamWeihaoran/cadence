@@ -8,6 +8,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case navigation
     case sidebar
     case contexts
+    case tags
     case lists
     case ai
     case calendar
@@ -22,6 +23,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .navigation: return "Navigation"
         case .sidebar: return "Sidebar"
         case .contexts: return "Contexts"
+        case .tags: return "Tags"
         case .lists: return "Lists"
         case .ai: return "AI"
         case .calendar: return "Calendar"
@@ -42,6 +44,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             return "Choose which static destinations stay visible."
         case .contexts:
             return "Add, edit, archive, and reorder contexts."
+        case .tags:
+            return "Classification labels for tasks and notes."
         case .lists:
             return "Completed and archived areas and projects."
         case .ai:
@@ -65,6 +69,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             return "Choose which tabs appear in the sidebar. Hidden tabs are still accessible by re-enabling them here."
         case .contexts:
             return "Add, edit, archive, and drag to reorder contexts. Archived contexts are hidden from the sidebar but not deleted."
+        case .tags:
+            return "Manage the global tag catalog used by tasks and notes. Archived tags stay visible on historical items but disappear from pickers."
         case .lists:
             return "Completed and archived lists live here so you can restore, reopen, or permanently delete them."
         case .ai:
@@ -82,6 +88,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .navigation: return "rectangle.stack.fill"
         case .sidebar: return "sidebar.left"
         case .contexts: return "square.stack.3d.up.fill"
+        case .tags: return "tag.fill"
         case .lists: return "archivebox.fill"
         case .ai: return "sparkles"
         case .calendar: return "calendar"
@@ -96,6 +103,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .navigation: return Theme.green
         case .sidebar: return Theme.amber
         case .contexts: return Theme.red
+        case .tags: return Theme.green
         case .lists: return Theme.amber
         case .ai: return Theme.blue
         case .calendar: return Theme.purple

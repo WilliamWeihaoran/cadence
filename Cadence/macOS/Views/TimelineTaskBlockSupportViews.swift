@@ -232,7 +232,7 @@ func timelineBlockBody(
             }
             if showHover {
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(Theme.blue.opacity(0.05))
+                    .fill(TimelineHoverVisuals.hoverFill(tint: taskColor, isHovered: showHover, opacity: 0.08))
             }
             if isPendingCompletion {
                 GeometryReader { proxy in
@@ -256,17 +256,21 @@ func timelineBlockBody(
     .overlay(
         RoundedRectangle(cornerRadius: style.cornerRadius)
             .stroke(
-                showSelection
-                    ? taskColor.opacity(0.46)
-                    : (showHover ? taskColor.opacity(0.34) : .white.opacity(0.06)),
+                TimelineHoverVisuals.borderColor(
+                    tint: taskColor,
+                    isSelected: showSelection,
+                    isHovered: showHover,
+                    selectedOpacity: 0.46,
+                    hoverOpacity: 0.38
+                ),
                 lineWidth: showHover ? 1.2 : 1
             )
     )
     .shadow(
-        color: showHover || showSelection ? CalendarVisualStyle.selectedCardShadow : CalendarVisualStyle.cardShadow,
-        radius: showHover || showSelection ? 11 : 7,
+        color: TimelineHoverVisuals.shadowColor(isActive: showHover || showSelection),
+        radius: TimelineHoverVisuals.shadowRadius(isActive: showHover || showSelection),
         x: 0,
-        y: showHover || showSelection ? 4 : 2
+        y: TimelineHoverVisuals.shadowY(isActive: showHover || showSelection)
     )
 }
 

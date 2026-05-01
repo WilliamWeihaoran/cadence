@@ -29,6 +29,7 @@ enum NoteKind: String, CaseIterable {
 
     var legacySourceKindRaw: String = ""
     var legacySourceID: String = ""
+    var folderPath: String = ""
 
     var area: Area? = nil
     var project: Project? = nil
@@ -56,6 +57,7 @@ enum NoteKind: String, CaseIterable {
         eventEndMin: Int = -1,
         legacySourceKind: String = "",
         legacySourceID: String = "",
+        folderPath: String = "",
         area: Area? = nil,
         project: Project? = nil
     ) {
@@ -75,6 +77,7 @@ enum NoteKind: String, CaseIterable {
         self.eventEndMin = eventEndMin
         self.legacySourceKindRaw = legacySourceKind
         self.legacySourceID = legacySourceID
+        self.folderPath = folderPath
         self.area = area
         self.project = project
     }

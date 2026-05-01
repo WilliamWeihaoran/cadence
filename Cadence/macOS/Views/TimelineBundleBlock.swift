@@ -85,9 +85,13 @@ struct TimelineBundleBlock: View {
             ) {
                 TaskBundleDetailPopover(
                     bundle: bundle,
+                    allTasks: allTasks,
                     onFocus: {
                         focusManager.startFocus(bundle: bundle)
                         selectedBundleID = nil
+                    },
+                    onAddTask: { task in
+                        SchedulingActions.addTask(task, to: bundle)
                     },
                     onRemoveTask: { task in
                         SchedulingActions.removeTaskFromBundle(task)
@@ -154,21 +158,30 @@ struct TimelineBundleBlock: View {
                     RoundedRectangle(cornerRadius: style.cornerRadius).fill(Theme.amber.opacity(0.16))
                 }
                 if isHovered {
-                    RoundedRectangle(cornerRadius: style.cornerRadius).fill(Theme.blue.opacity(0.05))
+                    RoundedRectangle(cornerRadius: style.cornerRadius)
+                        .fill(TimelineHoverVisuals.hoverFill(tint: Theme.amber, isHovered: isHovered, opacity: 0.08))
                 }
             }
         )
         .overlay(
             RoundedRectangle(cornerRadius: style.cornerRadius)
                 .stroke(
-                    selectedBundleID == bundle.id || isDropTargeted ? Theme.amber.opacity(0.62) : .white.opacity(isHovered ? 0.14 : 0.06),
+                    selectedBundleID == bundle.id || isDropTargeted
+                        ? Theme.amber.opacity(0.62)
+                        : TimelineHoverVisuals.borderColor(
+                            tint: Theme.amber,
+                            isSelected: false,
+                            isHovered: isHovered,
+                            selectedOpacity: 0.62,
+                            hoverOpacity: 0.34
+                        ),
                     lineWidth: isHovered || isDropTargeted ? 1.2 : 1
                 )
         )
         .shadow(
-            color: isHovered || selectedBundleID == bundle.id ? CalendarVisualStyle.selectedCardShadow : CalendarVisualStyle.cardShadow,
-            radius: isHovered || selectedBundleID == bundle.id ? 11 : 7,
-            y: isHovered || selectedBundleID == bundle.id ? 4 : 2
+            color: TimelineHoverVisuals.shadowColor(isActive: isHovered || selectedBundleID == bundle.id),
+            radius: TimelineHoverVisuals.shadowRadius(isActive: isHovered || selectedBundleID == bundle.id),
+            y: TimelineHoverVisuals.shadowY(isActive: isHovered || selectedBundleID == bundle.id)
         )
     }
 
@@ -273,12 +286,16 @@ private struct TimelineBundleDropDelegate: DropDelegate {
 
 private struct TaskBundleDetailPopover: View {
     let bundle: TaskBundle
+    let allTasks: [AppTask]
     let onFocus: () -> Void
+    let onAddTask: (AppTask) -> Void
     let onRemoveTask: (AppTask) -> Void
     let onMoveTask: (AppTask, Int) -> Void
     let onDelete: () -> Void
 
     @State private var isConfirmingDelete = false
+    @State private var isAddingTasks = false
+    @State private var taskSearch = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -317,8 +334,33 @@ private struct TaskBundleDetailPopover: View {
 
             Divider().background(Theme.borderSubtle)
 
+            HStack {
+                Text("\(bundle.sortedTasks.count) task\(bundle.sortedTasks.count == 1 ? "" : "s")")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                Spacer()
+                Button {
+                    isAddingTasks.toggle()
+                    taskSearch = ""
+                } label: {
+                    Label(isAddingTasks ? "Done" : "Add", systemImage: isAddingTasks ? "checkmark" : "plus")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.cadencePlain)
+                .foregroundStyle(Theme.amber)
+            }
+
+            if isAddingTasks {
+                BundleTaskPickerPanel(
+                    bundle: bundle,
+                    allTasks: allTasks,
+                    searchText: $taskSearch,
+                    onAdd: onAddTask
+                )
+            }
+
             if bundle.sortedTasks.isEmpty {
-                Text("Drop tasks here to fill this block.")
+                Text(isAddingTasks ? "Choose tasks above or drop tasks here." : "Drop tasks here or add them from this popover.")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.dim)
             } else {
@@ -404,6 +446,143 @@ private struct BundleTaskPopoverRow: View {
         }
         .buttonStyle(.cadencePlain)
         .disabled(isDisabled)
+    }
+}
+
+private struct BundleTaskPickerPanel: View {
+    let bundle: TaskBundle
+    let allTasks: [AppTask]
+    @Binding var searchText: String
+    let onAdd: (AppTask) -> Void
+
+    private var candidates: [AppTask] {
+        let memberIDs = Set(bundle.sortedTasks.map(\.id))
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return allTasks
+            .filter { task in
+                guard !task.isCancelled, !memberIDs.contains(task.id) else { return false }
+                guard !query.isEmpty else { return true }
+                return task.title.lowercased().contains(query) ||
+                    task.containerName.lowercased().contains(query) ||
+                    task.notes.lowercased().contains(query)
+            }
+            .sorted { lhs, rhs in
+                let lhsScore = candidateSortScore(lhs)
+                let rhsScore = candidateSortScore(rhs)
+                if lhsScore != rhsScore { return lhsScore > rhsScore }
+                return lhs.createdAt > rhs.createdAt
+            }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+                TextField("Find tasks", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.text)
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.dim.opacity(0.55))
+                    }
+                    .buttonStyle(.cadencePlain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+
+            Divider().background(Theme.borderSubtle)
+
+            ScrollView {
+                VStack(spacing: 4) {
+                    if candidates.isEmpty {
+                        Text(searchText.isEmpty ? "No available tasks." : "No matching tasks.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                    } else {
+                        ForEach(candidates.prefix(8)) { task in
+                            Button {
+                                onAdd(task)
+                                searchText = ""
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: task.bundle == nil ? "plus.circle" : "arrow.triangle.branch")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(Theme.amber)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(task.title.isEmpty ? "Untitled" : task.title)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(Theme.text)
+                                            .lineLimit(1)
+                                        Text(candidateDetail(task))
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Theme.dim)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer(minLength: 8)
+                                    Text("\(max(task.estimatedMinutes, 5))m")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(Theme.dim)
+                                }
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 7)
+                                .background(Theme.surfaceElevated.opacity(0.58))
+                                .clipShape(RoundedRectangle(cornerRadius: 7))
+                            }
+                            .buttonStyle(.cadencePlain)
+                        }
+                    }
+                }
+                .padding(7)
+            }
+            .frame(maxHeight: 214)
+        }
+        .background(Theme.surfaceElevated.opacity(0.54))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
+        }
+    }
+
+    private func candidateSortScore(_ task: AppTask) -> Int {
+        var score = 0
+        if task.scheduledDate == bundle.dateKey { score += 8 }
+        if task.dueDate == bundle.dateKey { score += 5 }
+        if task.bundle != nil { score -= 3 }
+        if task.isDone { score -= 6 }
+        switch task.priority {
+        case .high: score += 3
+        case .medium: score += 2
+        case .low: score += 1
+        case .none: break
+        }
+        return score
+    }
+
+    private func candidateDetail(_ task: AppTask) -> String {
+        if let existingBundle = task.bundle {
+            return "In \(existingBundle.displayTitle)"
+        }
+        if task.scheduledDate == bundle.dateKey {
+            return task.scheduledStartMin >= 0 ? "Scheduled \(TimeFormatters.timeString(from: task.scheduledStartMin))" : "Planned this day"
+        }
+        if task.dueDate == bundle.dateKey {
+            return "Due this day"
+        }
+        if !task.containerName.isEmpty {
+            return task.containerName
+        }
+        return task.isDone ? "Done" : "Inbox"
     }
 }
 #endif

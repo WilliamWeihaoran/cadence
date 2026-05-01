@@ -127,6 +127,32 @@ struct TaskBundleTests {
         #expect(bundle.sortedTasks.map(\.bundleOrder) == [0, 1, 2])
     }
 
+    @Test func creatingBundleFromTwoTimedTasksUsesTargetSlotAndMembersLoseIndividualTimes() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let target = AppTask(title: "A")
+        target.scheduledDate = "2026-05-01"
+        target.scheduledStartMin = 600
+        target.estimatedMinutes = 25
+        let dragged = AppTask(title: "B")
+        dragged.scheduledDate = "2026-05-01"
+        dragged.scheduledStartMin = 630
+        dragged.estimatedMinutes = 10
+        context.insert(target)
+        context.insert(dragged)
+
+        let bundle = try #require(SchedulingActions.createBundle(from: target, adding: dragged, in: context))
+
+        #expect(bundle.dateKey == "2026-05-01")
+        #expect(bundle.startMin == 600)
+        #expect(bundle.durationMinutes == 25)
+        #expect(bundle.sortedTasks.map(\.title) == ["A", "B"])
+        #expect(target.scheduledDate == "2026-05-01")
+        #expect(target.scheduledStartMin == -1)
+        #expect(dragged.scheduledDate == "2026-05-01")
+        #expect(dragged.scheduledStartMin == -1)
+    }
+
     @Test func bundleTimesAreClampedInsideOneDay() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
