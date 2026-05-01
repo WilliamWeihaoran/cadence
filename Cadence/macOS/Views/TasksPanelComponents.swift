@@ -82,6 +82,10 @@ struct MacTaskRow: View {
                 dueDateBadgeList
             }
 
+            if let bundle = task.bundle {
+                taskBundleBadge(bundle)
+            }
+
             if showsListContextChip {
                 ContainerPickerBadge(
                     selection: taskContainerBinding,
@@ -243,6 +247,22 @@ struct MacTaskRow: View {
             }
         }
         .popover(isPresented: $showDueDatePicker) { dueDatePickerPopover }
+    }
+
+    private func taskBundleBadge(_ bundle: TaskBundle) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "tray.full")
+                .font(.system(size: 9, weight: .semibold))
+            Text(TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin))
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+        }
+        .foregroundStyle(Theme.amber)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Theme.amber.opacity(0.12))
+        .clipShape(Capsule())
+        .padding(.leading, 6)
     }
 
     private var dueDatePickerPopover: some View {

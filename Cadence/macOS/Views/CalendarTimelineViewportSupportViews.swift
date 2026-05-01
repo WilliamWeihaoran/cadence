@@ -24,9 +24,11 @@ struct CalendarTimelineTimeRail: View {
 struct CalendarTimelineDayScroller: View {
     let bufferStart: Date
     let allTasks: [AppTask]
+    let allBundles: [TaskBundle]
     let areas: [Area]
     let projects: [Project]
     let tasksByDate: [String: [AppTask]]
+    let bundlesByDate: [String: [TaskBundle]]
     let hourHeight: CGFloat
     let colWidth: CGFloat
     let showHalfHourMarks: Bool
@@ -57,7 +59,9 @@ struct CalendarTimelineDayScroller: View {
                         CalDayColumn(
                             date: date,
                             tasks: tasksByDate[key] ?? [],
+                            bundles: bundlesByDate[key] ?? [],
                             allTasks: allTasks,
+                            allBundles: allBundles,
                             areas: areas,
                             projects: projects,
                             eventCache: eventCache,

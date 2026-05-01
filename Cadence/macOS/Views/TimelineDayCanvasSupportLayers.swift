@@ -30,14 +30,20 @@ struct TimelineCreateGridLayer: View {
 
 struct TimelineScheduledBlocksLayer: View {
     let eventLayouts: [TimelineEventLayout]
+    let bundleLayouts: [TimelineBundleLayout]
     let taskLayouts: [TimelineBlockLayout]
+    let allTasks: [AppTask]
     let width: CGFloat
     let metrics: TimelineMetrics
     let style: TimelineBlockStyle
     @Binding var selectedTaskID: UUID?
+    @Binding var selectedBundleID: UUID?
     @Binding var selectedEventID: String?
     @Binding var activeDragTaskID: UUID?
+    @Binding var activeDragBundleID: UUID?
+    let onTaskDroppedOnBundle: (AppTask, TaskBundle) -> Void
     let onTaskSelected: () -> Void
+    let onBundleSelected: () -> Void
 
     var body: some View {
         ForEach(eventLayouts, id: \.item.id) { layout in
@@ -51,6 +57,23 @@ struct TimelineScheduledBlocksLayer: View {
                 selectedTaskID: $selectedTaskID
             )
             .zIndex(2)
+        }
+
+        ForEach(bundleLayouts, id: \.bundle.id) { layout in
+            TimelineBundleBlock(
+                bundle: layout.bundle,
+                allTasks: allTasks,
+                column: layout.column,
+                totalColumns: layout.totalColumns,
+                totalWidth: width,
+                metrics: metrics,
+                style: style,
+                selectedBundleID: $selectedBundleID,
+                activeDragBundleID: $activeDragBundleID,
+                onTaskDropped: onTaskDroppedOnBundle,
+                onSelect: onBundleSelected
+            )
+            .zIndex(3)
         }
 
         ForEach(taskLayouts, id: \.task.id) { layout in

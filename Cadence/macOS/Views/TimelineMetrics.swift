@@ -109,9 +109,10 @@ func computeTimelineBlockFrame(
 /// Computes column assignments for tasks and events together so they never visually overlap.
 func computeUnifiedLayouts(
     tasks: [AppTask],
+    bundles: [TaskBundle] = [],
     events: [CalendarEventItem]
-) -> (tasks: [TimelineBlockLayout], events: [TimelineEventLayout]) {
-    TimelineMetricsSupport.computeUnifiedLayouts(tasks: tasks, events: events)
+) -> (tasks: [TimelineBlockLayout], bundles: [TimelineBundleLayout], events: [TimelineEventLayout]) {
+    TimelineMetricsSupport.computeUnifiedLayouts(tasks: tasks, bundles: bundles, events: events)
 }
 
 func computeTimelineLayouts(_ tasks: [AppTask]) -> [TimelineBlockLayout] {

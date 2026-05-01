@@ -7,6 +7,7 @@ enum CadenceSchema {
         Project.self,
         Tag.self,
         AppTask.self,
+        TaskBundle.self,
         Subtask.self,
         DailyNote.self,
         WeeklyNote.self,

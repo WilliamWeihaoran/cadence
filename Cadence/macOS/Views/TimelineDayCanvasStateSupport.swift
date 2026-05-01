@@ -60,6 +60,8 @@ enum TimelineDayCanvasStateSupport {
         selectedTaskID: inout UUID?,
         selectedEventID: inout String?,
         activeDragTaskID: inout UUID?,
+        selectedBundleID: inout UUID?,
+        activeDragBundleID: inout UUID?,
         dragStartMin: inout Int?,
         dragEndMin: inout Int?,
         pendingStartMin: inout Int?,
@@ -76,6 +78,8 @@ enum TimelineDayCanvasStateSupport {
         )
         selectedTaskID = nil
         activeDragTaskID = nil
+        selectedBundleID = nil
+        activeDragBundleID = nil
     }
 }
 #endif

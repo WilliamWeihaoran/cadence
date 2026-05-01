@@ -5,6 +5,10 @@ import SwiftData
 // MARK: - Shared scheduling mutations
 
 enum SchedulingActions {
+    private static let dayStartMin = 0
+    private static let dayEndMin = 24 * 60
+    private static let minimumBundleDuration = 5
+
     /// Create and insert a new task scheduled to a specific date/time slot.
     static func createTask(title: String, dateKey: String, startMin: Int, endMin: Int, in context: ModelContext) {
         let task = AppTask(title: title)
@@ -13,6 +17,21 @@ enum SchedulingActions {
         task.estimatedMinutes = max(5, endMin - startMin)
         context.insert(task)
         // No calendar sync here — task has no area/project container yet when created from timeline drag
+    }
+
+    /// Create and insert a new scheduled task bundle.
+    @discardableResult
+    static func createBundle(title: String, dateKey: String, startMin: Int, endMin: Int, in context: ModelContext) -> TaskBundle {
+        let cleanedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let range = clampedRange(startMin: startMin, endMin: endMin)
+        let bundle = TaskBundle(
+            title: cleanedTitle.isEmpty ? "Task Bundle" : cleanedTitle,
+            dateKey: dateKey,
+            startMin: range.start,
+            durationMinutes: range.duration
+        )
+        context.insert(bundle)
+        return bundle
     }
 
     /// Create and insert a new scheduled task in a specific list/section.
@@ -63,9 +82,106 @@ enum SchedulingActions {
 
     /// Move an existing task to a new date/time. Assigns a 30-min default if the task has no estimate.
     static func dropTask(_ task: AppTask, to dateKey: String, startMin: Int) {
+        removeTaskFromBundle(task, keepOnBundleDate: false)
         task.scheduledDate = dateKey
-        task.scheduledStartMin = startMin
+        task.scheduledStartMin = clampedStartMin(startMin)
         if task.estimatedMinutes <= 0 { task.estimatedMinutes = 30 }
+    }
+
+    static func dropBundle(_ bundle: TaskBundle, to dateKey: String, startMin: Int) {
+        let duration = max(bundle.durationMinutes, minimumBundleDuration)
+        let clampedStart = min(max(dayStartMin, startMin), max(dayStartMin, dayEndMin - duration))
+        bundle.dateKey = dateKey
+        bundle.startMin = clampedStart
+        bundle.durationMinutes = min(duration, dayEndMin - clampedStart)
+        for task in memberTasks(in: bundle) {
+            task.scheduledDate = dateKey
+            task.scheduledStartMin = -1
+            task.calendarEventID = ""
+        }
+    }
+
+    static func addTask(_ task: AppTask, to bundle: TaskBundle) {
+        if task.bundle?.id == bundle.id {
+            task.scheduledDate = bundle.dateKey
+            task.scheduledStartMin = -1
+            task.calendarEventID = ""
+            ensureTask(task, isLinkedIn: bundle)
+            normalizeBundleOrder(bundle)
+            return
+        }
+
+        removeTaskFromBundle(task, keepOnBundleDate: false)
+        let nextOrder = (memberTasks(in: bundle).map(\.bundleOrder).max() ?? -1) + 1
+        task.bundle = bundle
+        task.bundleOrder = nextOrder
+        task.scheduledDate = bundle.dateKey
+        task.scheduledStartMin = -1
+        task.calendarEventID = ""
+        ensureTask(task, isLinkedIn: bundle)
+        normalizeBundleOrder(bundle)
+    }
+
+    static func removeTaskFromBundle(_ task: AppTask, keepOnBundleDate: Bool = true) {
+        guard let bundle = task.bundle else { return }
+        if keepOnBundleDate {
+            task.scheduledDate = bundle.dateKey
+            task.scheduledStartMin = -1
+        }
+        bundle.tasks?.removeAll { $0.id == task.id }
+        task.bundle = nil
+        task.bundleOrder = 0
+        normalizeBundleOrder(bundle)
+    }
+
+    static func moveTaskInBundle(_ task: AppTask, direction: Int) {
+        guard let bundle = task.bundle, direction != 0 else { return }
+        var tasks = bundle.sortedTasks
+        guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
+        let nextIndex = min(max(index + direction, 0), tasks.count - 1)
+        guard nextIndex != index else { return }
+        tasks.swapAt(index, nextIndex)
+        let hiddenMembers = orderedMemberTasks(in: bundle).filter { $0.isCancelled }
+        let ordered = tasks + hiddenMembers.filter { hidden in !tasks.contains(where: { $0.id == hidden.id }) }
+        for (offset, member) in ordered.enumerated() {
+            member.bundleOrder = offset
+        }
+        bundle.tasks = ordered
+    }
+
+    static func updateBundleTime(_ bundle: TaskBundle, startMin: Int, endMin: Int) {
+        let range = clampedRange(startMin: startMin, endMin: endMin)
+        bundle.startMin = range.start
+        bundle.durationMinutes = range.duration
+    }
+
+    private static func ensureTask(_ task: AppTask, isLinkedIn bundle: TaskBundle) {
+        if bundle.tasks == nil {
+            bundle.tasks = []
+        }
+        if bundle.tasks?.contains(where: { $0.id == task.id }) != true {
+            bundle.tasks?.append(task)
+        }
+    }
+
+    static func normalizeBundleOrder(_ bundle: TaskBundle) {
+        let ordered = orderedMemberTasks(in: bundle)
+        for (offset, task) in ordered.enumerated() {
+            task.bundleOrder = offset
+        }
+        bundle.tasks = ordered
+    }
+
+    static func deleteBundle(_ bundle: TaskBundle, in context: ModelContext) {
+        for task in memberTasks(in: bundle) {
+            task.bundle = nil
+            task.bundleOrder = 0
+            task.scheduledDate = bundle.dateKey
+            task.scheduledStartMin = -1
+            task.calendarEventID = ""
+        }
+        bundle.tasks = []
+        context.delete(bundle)
     }
 
     /// Detach any legacy calendar-event reference from a task without deleting the calendar event.
@@ -81,6 +197,31 @@ enum SchedulingActions {
         return resolved.first(where: { $0.caseInsensitiveCompare(sectionName) == .orderedSame })
             ?? resolved.first
             ?? TaskSectionDefaults.defaultName
+    }
+
+    private static func clampedStartMin(_ startMin: Int) -> Int {
+        min(max(dayStartMin, startMin), dayEndMin - minimumBundleDuration)
+    }
+
+    private static func memberTasks(in bundle: TaskBundle) -> [AppTask] {
+        (bundle.tasks ?? []).filter { $0.bundle?.id == bundle.id }
+    }
+
+    private static func orderedMemberTasks(in bundle: TaskBundle) -> [AppTask] {
+        memberTasks(in: bundle).sorted {
+            if $0.bundleOrder != $1.bundleOrder {
+                return $0.bundleOrder < $1.bundleOrder
+            }
+            return $0.createdAt < $1.createdAt
+        }
+    }
+
+    private static func clampedRange(startMin: Int, endMin: Int) -> (start: Int, duration: Int) {
+        let orderedStart = min(startMin, endMin)
+        let orderedEnd = max(startMin, endMin)
+        let start = clampedStartMin(orderedStart)
+        let end = min(max(start + minimumBundleDuration, orderedEnd), dayEndMin)
+        return (start, max(minimumBundleDuration, end - start))
     }
 }
 

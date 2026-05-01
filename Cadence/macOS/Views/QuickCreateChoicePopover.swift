@@ -5,11 +5,12 @@ import SwiftData
 
 struct QuickCreateChoicePopover: View {
     enum TildeMode { case none, list, section }
-    enum Mode { case timeBlock, calendarEvent }
+    enum Mode { case timeBlock, calendarEvent, bundle }
 
     let startMin: Int
     let endMin: Int
     let onCreateTask: (String, TaskContainerSelection, String) -> Void
+    let onCreateBundle: ((String) -> Void)?
     let onCreateEvent: ((String, String, String) -> Void)?
     let onCancel: () -> Void
 
@@ -33,6 +34,7 @@ struct QuickCreateChoicePopover: View {
         startMin: Int,
         endMin: Int,
         onCreateTask: @escaping (String, TaskContainerSelection, String) -> Void,
+        onCreateBundle: ((String) -> Void)? = nil,
         onCreateEvent: ((String, String, String) -> Void)?,
         onCancel: @escaping () -> Void,
         defaultsToCalendarEvent: Bool = false
@@ -40,6 +42,7 @@ struct QuickCreateChoicePopover: View {
         self.startMin = startMin
         self.endMin = endMin
         self.onCreateTask = onCreateTask
+        self.onCreateBundle = onCreateBundle
         self.onCreateEvent = onCreateEvent
         self.onCancel = onCancel
         let initialMode: Mode = defaultsToCalendarEvent && onCreateEvent != nil ? .calendarEvent : .timeBlock
@@ -52,10 +55,15 @@ struct QuickCreateChoicePopover: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dim)
 
-            if onCreateEvent != nil {
+            if onCreateEvent != nil || onCreateBundle != nil {
                 HStack(spacing: 4) {
                     modeButton("Time Block", for: .timeBlock)
-                    modeButton("Calendar Event", for: .calendarEvent)
+                    if onCreateBundle != nil {
+                        modeButton("Bundle", for: .bundle)
+                    }
+                    if onCreateEvent != nil {
+                        modeButton("Calendar Event", for: .calendarEvent)
+                    }
                 }
                 .padding(3)
                 .background(Theme.surfaceElevated)
@@ -63,7 +71,7 @@ struct QuickCreateChoicePopover: View {
             }
 
             ZStack(alignment: .leading) {
-                TextField(mode == .timeBlock ? "Task title" : "Event title", text: $title)
+                TextField(titlePlaceholder, text: $title)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.text)
@@ -147,6 +155,7 @@ struct QuickCreateChoicePopover: View {
                     title: "Create",
                     role: .secondary,
                     size: .compact,
+                    tint: mode == .bundle ? Theme.amber : Theme.blue,
                     isDisabled: mode == .calendarEvent && selectedCalendar == nil
                 ) {
                     create()
@@ -154,7 +163,7 @@ struct QuickCreateChoicePopover: View {
             }
         }
         .padding(14)
-        .frame(width: 240)
+        .frame(width: 286)
         .background(Theme.surface)
         .onAppear {
             focused = true
@@ -169,8 +178,18 @@ struct QuickCreateChoicePopover: View {
     private func create() {
         if mode == .timeBlock {
             onCreateTask(title, selectedContainer, selectedSectionName)
+        } else if mode == .bundle {
+            onCreateBundle?(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Task Bundle" : title)
         } else {
             onCreateEvent?(title, selectedCalendar?.calendarIdentifier ?? selectedCalendarID, notes)
+        }
+    }
+
+    private var titlePlaceholder: String {
+        switch mode {
+        case .timeBlock: return "Task title"
+        case .bundle: return "Bundle title"
+        case .calendarEvent: return "Event title"
         }
     }
 
@@ -360,6 +379,14 @@ struct QuickCreateChoicePopover: View {
     private func modeButton(_ label: String, for target: Mode) -> some View {
         Button(label) {
             mode = target
+            tildeMode = .none
+            if target == .bundle,
+               title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                title = "Task Bundle"
+            } else if target != .bundle,
+                      title.trimmingCharacters(in: .whitespacesAndNewlines) == "Task Bundle" {
+                title = ""
+            }
             if target == .calendarEvent,
                selectedCalendar == nil,
                let calendar = calendarManager.defaultWritableCalendar {

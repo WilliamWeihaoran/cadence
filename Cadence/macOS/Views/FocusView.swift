@@ -15,9 +15,12 @@ struct FocusView: View {
 
     var body: some View {
         Group {
-            if let task = focusManager.activeTask {
+            switch focusManager.activeSession {
+            case .task(let task):
                 activeLayout(task: task)
-            } else {
+            case .bundle(let bundle):
+                activeBundleLayout(bundle: bundle)
+            case nil:
                 idleLayout
             }
         }
@@ -139,6 +142,111 @@ struct FocusView: View {
                 )
             }
         }
+    }
+
+    @ViewBuilder
+    private func activeBundleLayout(bundle: TaskBundle) -> some View {
+        VStack(spacing: 0) {
+            FocusBundleHeader(
+                bundle: bundle,
+                selectedCount: selectedBundleTasks(bundle).count,
+                onClose: { focusManager.activeSession = nil }
+            )
+
+            HSplitView {
+                VStack(spacing: 14) {
+                    FocusTimerPanel(
+                        clockDisplay: clockDisplay,
+                        isRunning: focusManager.isRunning,
+                        accent: Theme.amber,
+                        controls: { bundleTimerControls(bundle: bundle) }
+                    )
+                    .frame(height: 218)
+
+                    FocusBundleTasksPanel(
+                        bundle: bundle,
+                        selectedTaskIDs: Binding(
+                            get: { focusManager.selectedBundleTaskIDs },
+                            set: { focusManager.selectedBundleTaskIDs = $0 }
+                        )
+                    )
+                    .frame(minHeight: 280)
+                }
+                .padding(18)
+                .frame(minWidth: 520, idealWidth: 720)
+                .background(Theme.bg)
+
+                FocusBundleSidebar(
+                    bundle: bundle,
+                    nextTasks: Array(readyTasks.filter { !bundle.sortedTasks.map(\.id).contains($0.id) }.prefix(4)),
+                    onSelectTask: { focusManager.startFocus(task: $0) }
+                )
+                .frame(minWidth: 320, idealWidth: 360, maxWidth: 430)
+            }
+        }
+        .padding(.top, 34)
+        .background(Theme.bg)
+    }
+
+    @ViewBuilder
+    private func bundleTimerControls(bundle: TaskBundle) -> some View {
+        HStack(spacing: 12) {
+            FocusIconButton(
+                systemName: "arrow.counterclockwise",
+                foreground: Theme.muted,
+                background: Theme.surfaceElevated,
+                size: 38,
+                help: "Reset session",
+                action: { focusManager.reset() }
+            )
+
+            FocusIconButton(
+                systemName: focusManager.isRunning ? "pause.fill" : "play.fill",
+                foreground: .white,
+                background: Theme.amber,
+                size: 52,
+                shadowColor: Theme.amber.opacity(0.45),
+                shadowRadius: 11,
+                help: focusManager.isRunning ? "Pause session" : "Start session",
+                action: { focusManager.isRunning.toggle() }
+            )
+
+            FocusIconButton(
+                systemName: "checkmark",
+                foreground: focusManager.elapsed > 0 ? Theme.green : Theme.muted,
+                background: Theme.surfaceElevated,
+                size: 38,
+                help: "Log session",
+                action: {
+                    focusManager.isRunning = false
+                    showLogSheet = true
+                }
+            )
+            .popover(isPresented: $showLogSheet, arrowEdge: .bottom) {
+                BundleLogSessionPopover(
+                    bundle: bundle,
+                    elapsedSeconds: focusManager.elapsed,
+                    selectedTasks: selectedBundleTasks(bundle),
+                    onLog: { hours, minutes in
+                        FocusSessionSupport.logBundleSession(
+                            hours: hours,
+                            minutes: minutes,
+                            tasks: selectedBundleTasks(bundle),
+                            focusManager: focusManager
+                        )
+                        showLogSheet = false
+                    },
+                    onDiscard: {
+                        focusManager.reset()
+                        showLogSheet = false
+                    }
+                )
+            }
+        }
+    }
+
+    private func selectedBundleTasks(_ bundle: TaskBundle) -> [AppTask] {
+        bundle.sortedTasks.filter { focusManager.selectedBundleTaskIDs.contains($0.id) }
     }
 
     // MARK: - Idle layout
@@ -275,6 +383,75 @@ private struct FocusSessionHeader: View {
     private var metaSeparator: some View {
         Text("/")
             .foregroundStyle(Theme.dim.opacity(0.42))
+    }
+}
+
+private struct FocusBundleHeader: View {
+    let bundle: TaskBundle
+    let selectedCount: Int
+    let onClose: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Bundle Focus")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .textCase(.uppercase)
+
+                Text(bundle.displayTitle)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.82)
+
+                HStack(spacing: 7) {
+                    Label {
+                        Text(TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin))
+                    } icon: {
+                        Image(systemName: "tray.full")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    Text("/")
+                        .foregroundStyle(Theme.dim.opacity(0.42))
+                    Text("\(selectedCount) selected")
+                    Text("/")
+                        .foregroundStyle(Theme.dim.opacity(0.42))
+                    Text("\(bundle.sortedTasks.count) total")
+                    if bundle.totalEstimatedMinutes > 0 {
+                        Text("/")
+                            .foregroundStyle(Theme.dim.opacity(0.42))
+                        Text("\(bundle.totalEstimatedMinutes)m estimated")
+                    }
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
+            }
+
+            Spacer(minLength: 16)
+
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 30, height: 30)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.cadencePlain)
+            .help("Close focus session")
+        }
+        .padding(.leading, 28)
+        .padding(.trailing, 18)
+        .padding(.top, 22)
+        .padding(.bottom, 18)
+        .background(Theme.surface)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(height: 1)
+        }
     }
 }
 
@@ -507,6 +684,215 @@ private struct FocusSidebarTaskRow: View {
     }
 }
 
+private struct FocusBundleTasksPanel: View {
+    let bundle: TaskBundle
+    @Binding var selectedTaskIDs: Set<UUID>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Bundle tasks")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text("Selected tasks receive logged time from this session.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+
+            Divider().background(Theme.borderSubtle)
+
+            ScrollView {
+                VStack(spacing: 8) {
+                    if bundle.sortedTasks.isEmpty {
+                        Text("This bundle is empty.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(14)
+                    } else {
+                        ForEach(Array(bundle.sortedTasks.enumerated()), id: \.element.id) { index, task in
+                            FocusBundleTaskRow(
+                                task: task,
+                                isSelected: selectedTaskIDs.contains(task.id),
+                                canMoveUp: index > 0,
+                                canMoveDown: index < bundle.sortedTasks.count - 1,
+                                onToggle: { toggle(task) },
+                                onMove: { SchedulingActions.moveTaskInBundle(task, direction: $0) },
+                                onRemove: {
+                                    selectedTaskIDs.remove(task.id)
+                                    SchedulingActions.removeTaskFromBundle(task)
+                                }
+                            )
+                        }
+                    }
+                }
+                .padding(12)
+            }
+        }
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
+        }
+    }
+
+    private func toggle(_ task: AppTask) {
+        if selectedTaskIDs.contains(task.id) {
+            selectedTaskIDs.remove(task.id)
+        } else {
+            selectedTaskIDs.insert(task.id)
+        }
+    }
+}
+
+private struct FocusBundleTaskRow: View {
+    let task: AppTask
+    let isSelected: Bool
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let onToggle: () -> Void
+    let onMove: (Int) -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: onToggle) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 14))
+                    .foregroundStyle(isSelected ? Theme.green : Theme.dim)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.cadencePlain)
+            .help(isSelected ? "Exclude from time log" : "Include in time log")
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title.isEmpty ? "Untitled" : task.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                    .lineLimit(1)
+                Text(TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes))
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            if task.isDone {
+                Text("Done")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.green)
+            }
+
+            focusRowIconButton("chevron.up", isDisabled: !canMoveUp) { onMove(-1) }
+            focusRowIconButton("chevron.down", isDisabled: !canMoveDown) { onMove(1) }
+            focusRowIconButton("xmark", isDisabled: false, action: onRemove)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Theme.surfaceElevated.opacity(isSelected ? 0.95 : 0.66))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isSelected ? Theme.amber.opacity(0.18) : Color.clear, lineWidth: 1)
+        }
+    }
+
+    private func focusRowIconButton(_ systemName: String, isDisabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(isDisabled ? Theme.dim.opacity(0.35) : Theme.dim)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.cadencePlain)
+        .disabled(isDisabled)
+    }
+}
+
+private struct FocusBundleSidebar: View {
+    let bundle: TaskBundle
+    let nextTasks: [AppTask]
+    let onSelectTask: (AppTask) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 8) {
+                    sidebarLabel("Session")
+                    HStack(spacing: 8) {
+                        statusChip(title: "Bundle", color: Theme.amber, icon: "tray.full")
+                        statusChip(title: "\(bundle.sortedTasks.count) tasks", color: Theme.blue, icon: "checklist")
+                    }
+                }
+
+                Divider().background(Theme.borderSubtle)
+
+                VStack(alignment: .leading, spacing: 9) {
+                    sidebarLabel("Next up")
+                    if nextTasks.isEmpty {
+                        Text("No other ready tasks")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 4)
+                    } else {
+                        VStack(spacing: 7) {
+                            ForEach(nextTasks) { nextTask in
+                                FocusSidebarTaskRow(task: nextTask) {
+                                    onSelectTask(nextTask)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(14)
+
+            Divider().background(Theme.borderSubtle)
+
+            SchedulePanel(presentation: .compact)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Theme.surface)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(width: 1)
+        }
+    }
+
+    private func sidebarLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Theme.dim)
+            .textCase(.uppercase)
+    }
+
+    private func statusChip(title: String, color: Color, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(color.opacity(0.12))
+        .clipShape(Capsule())
+    }
+}
+
 // MARK: - Idle Focus Surface
 
 private struct FocusIdleHero: View {
@@ -669,6 +1055,124 @@ private struct LogSessionPopover: View {
             .padding(.vertical, 12)
         }
         .frame(width: 260)
+        .background(Theme.surface)
+    }
+
+    @ViewBuilder
+    private func timeField(label: String, value: Binding<Int>) -> some View {
+        HStack(spacing: 4) {
+            TextField("0", value: value, format: .number)
+                .textFieldStyle(.plain)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Theme.text)
+                .frame(width: 44)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.borderSubtle))
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.dim)
+        }
+    }
+
+    private func formatTotal() -> String {
+        if logHours > 0 && logMinutes > 0 { return "\(logHours)h \(logMinutes)m" }
+        if logHours > 0 { return "\(logHours)h" }
+        return "\(logMinutes)m"
+    }
+}
+
+private struct BundleLogSessionPopover: View {
+    let bundle: TaskBundle
+    let selectedTasks: [AppTask]
+    let onLog: (Int, Int) -> Void
+    let onDiscard: () -> Void
+
+    @State private var logHours: Int
+    @State private var logMinutes: Int
+
+    init(
+        bundle: TaskBundle,
+        elapsedSeconds: Int,
+        selectedTasks: [AppTask],
+        onLog: @escaping (Int, Int) -> Void,
+        onDiscard: @escaping () -> Void
+    ) {
+        self.bundle = bundle
+        self.selectedTasks = selectedTasks
+        self.onLog = onLog
+        self.onDiscard = onDiscard
+        let totalMins = (elapsedSeconds + 59) / 60
+        _logHours = State(initialValue: totalMins / 60)
+        _logMinutes = State(initialValue: totalMins % 60)
+    }
+
+    private var totalMinutes: Int { logHours * 60 + logMinutes }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Log Bundle Session")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                Text("\(selectedTasks.count) selected tasks")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 12)
+
+            Divider().background(Theme.borderSubtle)
+
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Time to log")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                    HStack(spacing: 10) {
+                        timeField(label: "h", value: $logHours)
+                        timeField(label: "min", value: $logMinutes)
+                        Spacer()
+                    }
+                }
+
+                Text("Time is distributed by each task's estimate.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+            }
+            .padding(16)
+
+            Divider().background(Theme.borderSubtle)
+
+            HStack {
+                Button("Discard", action: onDiscard)
+                    .buttonStyle(.cadencePlain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                Spacer()
+                Button {
+                    onLog(logHours, logMinutes)
+                } label: {
+                    Text(totalMinutes > 0 ? "Log \(formatTotal())" : "Log")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.cadencePlain)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(selectedTasks.isEmpty ? Theme.dim.opacity(0.35) : Theme.blue)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .disabled(selectedTasks.isEmpty)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .frame(width: 270)
         .background(Theme.surface)
     }
 

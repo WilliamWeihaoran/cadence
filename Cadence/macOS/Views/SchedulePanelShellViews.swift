@@ -65,11 +65,16 @@ struct SchedulePanelTimelineViewport: View {
     let geoSize: CGSize
     let zoomLevel: Int
     let allTasks: [AppTask]
+    let allBundles: [TaskBundle]
     let scheduledTasks: [AppTask]
+    let bundles: [TaskBundle]
     let todayKey: String
     let externalEventItems: [CalendarEventItem]
     let onCreateTask: (String, Int, Int, TaskContainerSelection, String) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
+    let onCreateBundle: (String, Int, Int) -> Void
+    let onDropBundleAtMinute: (TaskBundle, Int) -> Void
+    let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
     let onCreateEvent: (String, Int, Int, String, String) -> Void
 
     var body: some View {
@@ -96,7 +101,9 @@ struct SchedulePanelTimelineViewport: View {
                 date: Date(),
                 dateKey: todayKey,
                 tasks: scheduledTasks,
+                bundles: bundles,
                 allTasks: allTasks,
+                allBundles: allBundles,
                 metrics: metrics,
                 width: canvasWidth,
                 style: .schedule,
@@ -104,7 +111,10 @@ struct SchedulePanelTimelineViewport: View {
                 showHalfHourMarks: zoomLevel == 3,
                 dropBehavior: .perHour,
                 onCreateTask: onCreateTask,
+                onCreateBundle: onCreateBundle,
                 onDropTaskAtMinute: onDropTaskAtMinute,
+                onDropBundleAtMinute: onDropBundleAtMinute,
+                onDropTaskOnBundle: onDropTaskOnBundle,
                 externalEvents: externalEventItems,
                 onCreateEvent: onCreateEvent
             )

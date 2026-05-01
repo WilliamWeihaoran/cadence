@@ -46,6 +46,7 @@ struct SchedulePanel: View {
     var presentation: SchedulePanelPresentation = .standard
     var useStandardHeaderHeight = false
     @Query private var allTasks: [AppTask]
+    @Query private var allBundles: [TaskBundle]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
 
@@ -61,6 +62,10 @@ struct SchedulePanel: View {
 
     private var scheduledTasks: [AppTask] {
         SchedulePanelDataSupport.scheduledTasks(from: allTasks, todayKey: todayKey)
+    }
+
+    private var todayBundles: [TaskBundle] {
+        allBundles.filter { $0.dateKey == todayKey }
     }
 
     /// iCal events for today. Raw tasks are never treated as event attachments.
@@ -90,7 +95,9 @@ struct SchedulePanel: View {
                             geoSize: geo.size,
                             zoomLevel: zoomLevel,
                             allTasks: allTasks,
+                            allBundles: allBundles,
                             scheduledTasks: scheduledTasks,
+                            bundles: todayBundles,
                             todayKey: todayKey,
                             externalEventItems: externalEventItems,
                             onCreateTask: { title, startMin, endMin, containerSelection, sectionName in
@@ -108,6 +115,15 @@ struct SchedulePanel: View {
                             },
                             onDropTaskAtMinute: { task, startMin in
                                 SchedulingActions.dropTask(task, to: todayKey, startMin: startMin)
+                            },
+                            onCreateBundle: { title, startMin, endMin in
+                                SchedulingActions.createBundle(title: title, dateKey: todayKey, startMin: startMin, endMin: endMin, in: modelContext)
+                            },
+                            onDropBundleAtMinute: { bundle, startMin in
+                                SchedulingActions.dropBundle(bundle, to: todayKey, startMin: startMin)
+                            },
+                            onDropTaskOnBundle: { task, bundle in
+                                SchedulingActions.addTask(task, to: bundle)
                             },
                             onCreateEvent: { title, startMin, endMin, calendarID, notes in
                                 calendarManager.createStandaloneEvent(title: title, startMin: startMin, durationMinutes: endMin - startMin, calendarID: calendarID, date: Date(), notes: notes)

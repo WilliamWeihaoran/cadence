@@ -6,6 +6,7 @@ import EventKit
 struct MonthDayCell: View {
     let date: Date
     let tasks: [AppTask]
+    let bundles: [TaskBundle]
     let allTasks: [AppTask]
     let displayMonth: Date
 
@@ -30,12 +31,13 @@ struct MonthDayCell: View {
         return calendarEvents
     }
 
-    private var taskChips: [AppTask] { Array(tasks.prefix(5)) }
+    private var bundleChips: [TaskBundle] { Array(bundles.prefix(5)) }
+    private var taskChips: [AppTask] { Array(tasks.prefix(max(0, 5 - bundleChips.count))) }
     private var eventChips: [CalendarEventItem] {
-        Array(visibleEvents.prefix(max(0, 5 - taskChips.count)))
+        Array(visibleEvents.prefix(max(0, 5 - bundleChips.count - taskChips.count)))
     }
     private var overflow: Int {
-        tasks.count + visibleEvents.count - taskChips.count - eventChips.count
+        bundles.count + tasks.count + visibleEvents.count - bundleChips.count - taskChips.count - eventChips.count
     }
 
     var body: some View {
@@ -53,6 +55,33 @@ struct MonthDayCell: View {
             .padding(.horizontal, 8)
 
             VStack(alignment: .leading, spacing: 2) {
+                ForEach(bundleChips) { bundle in
+                    HStack(spacing: 3) {
+                        Image(systemName: "tray.full")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(Theme.amber)
+                        Text(bundle.title.isEmpty ? "Task Bundle" : bundle.title)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                                .fill(Theme.surfaceElevated)
+                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                                .fill(Theme.amber.opacity(0.14))
+                        }
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                            .stroke(.white.opacity(0.045), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.06), radius: 3, y: 1)
+                }
                 ForEach(taskChips) { task in
                     HStack(spacing: 3) {
                         Circle()
@@ -257,7 +286,9 @@ struct AllDayEventChip: View {
 struct CalDayColumn: View {
     let date: Date
     let tasks: [AppTask]
+    let bundles: [TaskBundle]
     let allTasks: [AppTask]
+    let allBundles: [TaskBundle]
     let areas: [Area]
     let projects: [Project]
     let eventCache: CalendarEventDayCache
@@ -281,7 +312,9 @@ struct CalDayColumn: View {
             date: date,
             dateKey: dateKey,
             tasks: tasks,
+            bundles: bundles,
             allTasks: allTasks,
+            allBundles: allBundles,
             metrics: TimelineMetrics(startHour: calStartHour, endHour: calEndHour, hourHeight: hourHeight),
             width: colWidth,
             style: .calendar,
@@ -301,8 +334,17 @@ struct CalDayColumn: View {
                     in: modelContext
                 )
             },
+            onCreateBundle: { title, startMin, endMin in
+                SchedulingActions.createBundle(title: title, dateKey: dateKey, startMin: startMin, endMin: endMin, in: modelContext)
+            },
             onDropTaskAtMinute: { task, startMin in
                 SchedulingActions.dropTask(task, to: dateKey, startMin: startMin)
+            },
+            onDropBundleAtMinute: { bundle, startMin in
+                SchedulingActions.dropBundle(bundle, to: dateKey, startMin: startMin)
+            },
+            onDropTaskOnBundle: { task, bundle in
+                SchedulingActions.addTask(task, to: bundle)
             },
             externalEvents: externalEventItems,
             onCreateEvent: { title, startMin, endMin, calendarID, notes in

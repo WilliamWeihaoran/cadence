@@ -93,6 +93,8 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
     var project: Project? = nil
     var goal: Goal? = nil
     var context: Context? = nil         // denormalized for efficient queries
+    var bundle: TaskBundle? = nil
+    var bundleOrder: Int = 0
     var subtasks: [Subtask]? = nil
     var tags: [Tag]? = nil
 
@@ -146,5 +148,52 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
 
     init(title: String) {
         self.title = title
+    }
+}
+
+/// A scheduled container for small tasks that should share one calendar block.
+@Model final class TaskBundle {
+    var id: UUID = UUID()
+    var title: String = ""
+    var dateKey: String = ""
+    var startMin: Int = 0
+    var durationMinutes: Int = 30
+    var createdAt: Date = Date()
+    @Relationship(deleteRule: .nullify, inverse: \AppTask.bundle)
+    var tasks: [AppTask]? = nil
+
+    var displayTitle: String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Task Bundle" : trimmed
+    }
+
+    var endMin: Int {
+        startMin + max(durationMinutes, 5)
+    }
+
+    var sortedTasks: [AppTask] {
+        (tasks ?? [])
+            .filter { !$0.isCancelled && $0.bundle?.id == id }
+            .sorted {
+                if $0.bundleOrder != $1.bundleOrder {
+                    return $0.bundleOrder < $1.bundleOrder
+                }
+                return $0.createdAt < $1.createdAt
+            }
+    }
+
+    var activeTasks: [AppTask] {
+        sortedTasks.filter { !$0.isDone }
+    }
+
+    var totalEstimatedMinutes: Int {
+        sortedTasks.reduce(0) { $0 + max($1.estimatedMinutes, 5) }
+    }
+
+    init(title: String, dateKey: String, startMin: Int, durationMinutes: Int) {
+        self.title = title
+        self.dateKey = dateKey
+        self.startMin = startMin
+        self.durationMinutes = max(durationMinutes, 5)
     }
 }

@@ -12,7 +12,7 @@ enum CalendarPageDataSupport {
 
     static func tasksByScheduledDate(_ tasks: [AppTask]) -> [String: [AppTask]] {
         var dict: [String: [AppTask]] = [:]
-        for task in tasks where task.scheduledStartMin >= 0 && !task.isCancelled {
+        for task in tasks where task.bundle == nil && task.scheduledStartMin >= 0 && !task.isCancelled {
             dict[task.scheduledDate, default: []].append(task)
         }
         return dict
@@ -20,7 +20,7 @@ enum CalendarPageDataSupport {
 
     static func unscheduledTasksByDate(_ tasks: [AppTask]) -> [String: [AppTask]] {
         var dict: [String: [AppTask]] = [:]
-        for task in tasks where task.scheduledStartMin == -1 && !task.scheduledDate.isEmpty && !task.isCancelled && !task.isDone {
+        for task in tasks where task.bundle == nil && task.scheduledStartMin == -1 && !task.scheduledDate.isEmpty && !task.isCancelled && !task.isDone {
             dict[task.scheduledDate, default: []].append(task)
         }
         return dict
@@ -28,12 +28,20 @@ enum CalendarPageDataSupport {
 
     static func monthTasksByDate(_ tasks: [AppTask]) -> [String: [AppTask]] {
         var dict: [String: [AppTask]] = [:]
-        for task in tasks where !task.isCancelled {
+        for task in tasks where task.bundle == nil && !task.isCancelled {
             if !task.scheduledDate.isEmpty {
                 dict[task.scheduledDate, default: []].append(task)
             } else if !task.dueDate.isEmpty {
                 dict[task.dueDate, default: []].append(task)
             }
+        }
+        return dict
+    }
+
+    static func bundlesByDate(_ bundles: [TaskBundle]) -> [String: [TaskBundle]] {
+        var dict: [String: [TaskBundle]] = [:]
+        for bundle in bundles {
+            dict[bundle.dateKey, default: []].append(bundle)
         }
         return dict
     }

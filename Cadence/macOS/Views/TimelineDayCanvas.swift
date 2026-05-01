@@ -6,7 +6,9 @@ struct TimelineDayCanvas: View {
     let date: Date
     let dateKey: String
     let tasks: [AppTask]
+    let bundles: [TaskBundle]
     let allTasks: [AppTask]
+    let allBundles: [TaskBundle]
     let metrics: TimelineMetrics
     let width: CGFloat
     let style: TimelineBlockStyle
@@ -14,7 +16,10 @@ struct TimelineDayCanvas: View {
     var showHalfHourMarks: Bool = false
     let dropBehavior: TimelineDropBehavior
     let onCreateTask: (String, Int, Int, TaskContainerSelection, String) -> Void
+    let onCreateBundle: (String, Int, Int) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
+    let onDropBundleAtMinute: (TaskBundle, Int) -> Void
+    let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
     var externalEvents: [CalendarEventItem] = []
     /// Optional: if provided, the drag-to-create popover will offer a "Calendar Event" tab.
     var onCreateEvent: ((String, Int, Int, String, String) -> Void)? = nil
@@ -32,8 +37,10 @@ struct TimelineDayCanvas: View {
     @State private var dropPreviewTaskID: UUID? = nil
     @State private var dropPreviewStartMin: Int? = nil
     @State private var selectedTaskID: UUID? = nil
+    @State private var selectedBundleID: UUID? = nil
     @State private var selectedEventID: String? = nil
     @State private var activeDragTaskID: UUID? = nil
+    @State private var activeDragBundleID: UUID? = nil
     @State private var dragYOffset: CGFloat = 0
 
     private func clearDraftCreation() {
@@ -48,8 +55,9 @@ struct TimelineDayCanvas: View {
     }
 
     var body: some View {
-        let unified = computeUnifiedLayouts(tasks: tasks, events: externalEvents)
+        let unified = computeUnifiedLayouts(tasks: tasks, bundles: bundles, events: externalEvents)
         let layouts = unified.tasks
+        let bundleLayouts = unified.bundles
         let eventLayouts = unified.events
         let previewTask = TimelineDayCanvasOverlaySupport.previewTask(
             activeDragTaskID: activeDragTaskID,
@@ -72,13 +80,17 @@ struct TimelineDayCanvas: View {
                 dropDelegate: TimelineDropDelegate(
                     metrics: metrics,
                     allTasks: allTasks,
+                    allBundles: allBundles,
                     onDropTaskAtMinute: onDropTaskAtMinute,
+                    onDropBundleAtMinute: onDropBundleAtMinute,
                     onDropAllDayEventAtMinute: onDropAllDayEventAtMinute,
                     isTargeted: $isDropTargeted,
                     previewTaskID: $dropPreviewTaskID,
                     previewStartMin: $dropPreviewStartMin,
                     activeDragTaskID: $activeDragTaskID,
+                    activeDragBundleID: $activeDragBundleID,
                     selectedTaskID: $selectedTaskID,
+                    selectedBundleID: $selectedBundleID,
                     dragYOffset: $dragYOffset
                 ),
                 onTap: {
@@ -86,6 +98,8 @@ struct TimelineDayCanvas: View {
                         selectedTaskID: &selectedTaskID,
                         selectedEventID: &selectedEventID,
                         activeDragTaskID: &activeDragTaskID,
+                        selectedBundleID: &selectedBundleID,
+                        activeDragBundleID: &activeDragBundleID,
                         dragStartMin: &dragStartMin,
                         dragEndMin: &dragEndMin,
                         pendingStartMin: &pendingStartMin,
@@ -99,6 +113,16 @@ struct TimelineDayCanvas: View {
                 computeTimelineBlockFrame(
                     startMinute: layout.task.scheduledStartMin,
                     durationMinutes: layout.task.estimatedMinutes,
+                    column: layout.column,
+                    totalColumns: layout.totalColumns,
+                    totalWidth: width,
+                    metrics: metrics,
+                    style: style
+                )
+            } + bundleLayouts.map { layout in
+                computeTimelineBlockFrame(
+                    startMinute: layout.bundle.startMin,
+                    durationMinutes: layout.bundle.durationMinutes,
                     column: layout.column,
                     totalColumns: layout.totalColumns,
                     totalWidth: width,
@@ -125,9 +149,13 @@ struct TimelineDayCanvas: View {
                 onTapBackground: {
                     clearDraftCreation()
                     selectedTaskID = nil
+                    selectedBundleID = nil
                     activeDragTaskID = nil
+                    activeDragBundleID = nil
                 },
                 onDragChanged: { startMin, endMin in
+                    selectedBundleID = nil
+                    activeDragBundleID = nil
                     TimelineDayCanvasStateSupport.beginDraftSelection(
                         startMin: startMin,
                         endMin: endMin,
@@ -182,6 +210,14 @@ struct TimelineDayCanvas: View {
                             pendingStartMin = nil
                             pendingEndMin = nil
                         },
+                        onCreateBundle: { title in
+                            if let start = pendingStartMin, let end = pendingEndMin {
+                                onCreateBundle(title.isEmpty ? "Task Bundle" : title, start, end)
+                            }
+                            showNewTaskPopover = false
+                            pendingStartMin = nil
+                            pendingEndMin = nil
+                        },
                         onCreateEvent: onCreateEvent == nil ? nil : { title, calendarID, notes in
                             if let start = pendingStartMin, let end = pendingEndMin {
                                 onCreateEvent?(title.isEmpty ? "New Event" : title, start, end, calendarID, notes)
@@ -212,16 +248,27 @@ struct TimelineDayCanvas: View {
 
             TimelineScheduledBlocksLayer(
                 eventLayouts: eventLayouts,
+                bundleLayouts: bundleLayouts,
                 taskLayouts: layouts,
+                allTasks: allTasks,
                 width: width,
                 metrics: metrics,
                 style: style,
                 selectedTaskID: $selectedTaskID,
+                selectedBundleID: $selectedBundleID,
                 selectedEventID: $selectedEventID,
                 activeDragTaskID: $activeDragTaskID,
+                activeDragBundleID: $activeDragBundleID,
+                onTaskDroppedOnBundle: onDropTaskOnBundle,
                 onTaskSelected: {
                     clearDraftCreation()
                     selectedEventID = nil
+                    selectedBundleID = nil
+                },
+                onBundleSelected: {
+                    clearDraftCreation()
+                    selectedEventID = nil
+                    selectedTaskID = nil
                 }
             )
 

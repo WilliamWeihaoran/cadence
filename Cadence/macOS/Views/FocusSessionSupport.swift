@@ -63,6 +63,43 @@ enum FocusSessionSupport {
         focusManager.reset()
     }
 
+    static func logBundleSession(
+        hours: Int,
+        minutes: Int,
+        tasks: [AppTask],
+        focusManager: FocusManager
+    ) {
+        distributeBundleMinutes(hours * 60 + minutes, across: tasks)
+        focusManager.reset()
+    }
+
+    static func distributeBundleMinutes(_ totalMinutes: Int, across tasks: [AppTask]) {
+        guard totalMinutes > 0, !tasks.isEmpty else { return }
+        let weights = tasks.map { max($0.estimatedMinutes, 5) }
+        let totalWeight = max(weights.reduce(0, +), 1)
+        var remaining = totalMinutes
+
+        for (index, task) in tasks.enumerated() {
+            let minutes: Int
+            if index == tasks.count - 1 {
+                minutes = max(0, remaining)
+            } else {
+                minutes = min(
+                    remaining,
+                    max(0, Int((Double(totalMinutes) * Double(weights[index]) / Double(totalWeight)).rounded()))
+                )
+                remaining -= minutes
+            }
+            guard minutes > 0 else { continue }
+            task.actualMinutes += minutes
+            if let project = task.project {
+                project.loggedMinutes += minutes
+            } else if let area = task.area {
+                area.loggedMinutes += minutes
+            }
+        }
+    }
+
     private static func focusScore(for task: AppTask, todayKey: String) -> Int {
         var score = 0
         if task.scheduledDate == todayKey { score += 4 }

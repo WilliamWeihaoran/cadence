@@ -27,6 +27,7 @@ struct CalTimeRailLabel: View {
 struct MonthGridView: View {
     let allTasks: [AppTask]
     let tasksByDate: [String: [AppTask]]
+    let bundlesByDate: [String: [TaskBundle]]
     @Binding var visibleMonthIdx: Int
     let scrollToTodayTrigger: Bool
 
@@ -66,7 +67,7 @@ struct MonthGridView: View {
                     LazyVStack(spacing: 0) {
                         ForEach(0..<totalMonths, id: \.self) { idx in
                             let month = cal.date(byAdding: .month, value: idx - todayMonthIdx, to: currentMonthStart)!
-                            MonthWeeksView(month: month, tasksByDate: tasksByDate, allTasks: allTasks)
+                            MonthWeeksView(month: month, tasksByDate: tasksByDate, bundlesByDate: bundlesByDate, allTasks: allTasks)
                                 .id("month_\(idx)")
                         }
                     }
@@ -104,6 +105,7 @@ struct MonthGridView: View {
 struct MonthWeeksView: View {
     let month: Date
     let tasksByDate: [String: [AppTask]]
+    let bundlesByDate: [String: [TaskBundle]]
     let allTasks: [AppTask]
 
     private let cal = Calendar.current
@@ -115,7 +117,7 @@ struct MonthWeeksView: View {
                     ForEach(weeks[weekIdx].indices, id: \.self) { dayIdx in
                         if let date = weeks[weekIdx][dayIdx] {
                             let key = DateFormatters.dateKey(from: date)
-                            MonthDayCell(date: date, tasks: tasksByDate[key] ?? [], allTasks: allTasks, displayMonth: month)
+                            MonthDayCell(date: date, tasks: tasksByDate[key] ?? [], bundles: bundlesByDate[key] ?? [], allTasks: allTasks, displayMonth: month)
                         } else {
                             Color.clear
                                 .frame(maxWidth: .infinity, minHeight: 130)

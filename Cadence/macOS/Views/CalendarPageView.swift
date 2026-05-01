@@ -9,6 +9,7 @@ struct CalendarPageView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarNavigationManager.self) private var calendarNavigationManager
     @Query private var allTasks: [AppTask]
+    @Query private var allBundles: [TaskBundle]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
 
@@ -42,6 +43,9 @@ struct CalendarPageView: View {
     private var tasksByDate: [String: [AppTask]] {
         CalendarPageDataSupport.tasksByScheduledDate(allTasks)
     }
+    private var bundlesByDate: [String: [TaskBundle]] {
+        CalendarPageDataSupport.bundlesByDate(allBundles)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,6 +63,7 @@ struct CalendarPageView: View {
                 MonthGridView(
                     allTasks: allTasks,
                     tasksByDate: tasksByDateForMonth,
+                    bundlesByDate: bundlesByDate,
                     visibleMonthIdx: $visibleMonthIdx,
                     scrollToTodayTrigger: scrollToTodayTrigger
                 )
@@ -73,9 +78,11 @@ struct CalendarPageView: View {
                         rememberedDateKey: $rememberedDateKey,
                         bufferStart: bufferStart,
                         allTasks: allTasks,
+                        allBundles: allBundles,
                         areas: areas,
                         projects: projects,
                         tasksByDate: tasksByDate,
+                        bundlesByDate: bundlesByDate,
                         unscheduledTasksByDate: unscheduledTasksByDate,
                         todayDayIdx: todayDayIdx,
                         scrollToTodayTrigger: $scrollToTodayTrigger,
