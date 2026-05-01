@@ -73,6 +73,7 @@ struct CalendarTimelineDayScroller: View {
                         .id("day_\(dayIdx)")
                     }
                 }
+                .scrollTargetLayout()
                 .frame(width: totalDaysWidth, alignment: .leading)
             }
             .frame(width: timelineViewportWidth, alignment: .leading)

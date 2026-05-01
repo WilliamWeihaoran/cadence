@@ -63,117 +63,31 @@ struct TasksPanel: View {
 
     private var todayKey: String { DateFormatters.todayKey() }
 
-    private var overdue: [AppTask] {
-        allTasks.filter { !$0.isDone && !$0.isCancelled && !$0.dueDate.isEmpty && $0.dueDate < todayKey }
+    private var derivedState: TasksPanelDerivedState {
+        TasksPanelDerivedState(
+            allTasks: allTasks,
+            areas: areas,
+            projects: projects,
+            mode: mode,
+            todayKey: todayKey,
+            sortField: activeSortField,
+            sortDirection: activeSortDirection
+        )
     }
-    private var dueTodayTasks: [AppTask] {
-        allTasks.filter { !$0.isDone && !$0.isCancelled && $0.dueDate == todayKey }
-    }
-    private var doTodayTasks: [AppTask] {
-        let excluded = Set(overdue.map(\.id)).union(dueTodayTasks.map(\.id))
-        return allTasks.filter {
-            !$0.isDone && !$0.isCancelled && $0.scheduledDate == todayKey && !excluded.contains($0.id)
-        }
-    }
-    private var overdoTasks: [AppTask] {
-        let excluded = Set(overdue.map(\.id)).union(dueTodayTasks.map(\.id))
-        return allTasks.filter {
-            !$0.isDone &&
-            !$0.isCancelled &&
-            !$0.scheduledDate.isEmpty &&
-            $0.scheduledDate < todayKey &&
-            !excluded.contains($0.id)
-        }
-    }
-    private var todayGroupedTaskItems: [AppTask] {
-        var seen = Set<UUID>()
-        let ordered = shouldShowRolloverNotice ? (overdue + dueTodayTasks + doTodayTasks) : (overdue + overdoTasks + dueTodayTasks + doTodayTasks)
-        return ordered.filter { seen.insert($0.id).inserted }
-    }
-    private var todayEligibleTasks: [AppTask] {
-        var seen = Set<UUID>()
-        return (overdue + overdoTasks + dueTodayTasks + doTodayTasks).filter { seen.insert($0.id).inserted }
-    }
-    private var overdueListSummaries: [TodayOverdueListSummary] {
-        projects
-            .filter { $0.isActive && !$0.dueDate.isEmpty && $0.dueDate < todayKey }
-            .sorted { lhs, rhs in
-                if lhs.dueDate != rhs.dueDate { return lhs.dueDate < rhs.dueDate }
-                return lhs.order < rhs.order
-            }
-            .map { project in
-                TodayOverdueListSummary(
-                    id: "project-\(project.id.uuidString)",
-                    areaID: nil,
-                    projectID: project.id,
-                    title: project.name,
-                    icon: project.icon,
-                    color: Color(hex: project.colorHex),
-                    dueDateKey: project.dueDate,
-                    activeTaskCount: (project.tasks ?? []).filter { !$0.isDone && !$0.isCancelled }.count
-                )
-            }
-    }
-    private var overdueSectionSummaries: [TodayOverdueSectionSummary] {
-        let areaSummaries = areas
-            .filter(\.isActive)
-            .flatMap { area in
-                area.sectionConfigs.compactMap { config -> TodayOverdueSectionSummary? in
-                    guard !config.isArchived, !config.isCompleted, !config.dueDate.isEmpty, config.dueDate < todayKey else { return nil }
-                    let tasks = (area.tasks ?? []).filter { $0.resolvedSectionName.caseInsensitiveCompare(config.name) == .orderedSame }
-                    let openCount = tasks.filter { !$0.isDone && !$0.isCancelled }.count
-                    let doneCount = tasks.filter(\.isDone).count
-                    return TodayOverdueSectionSummary(
-                        id: "area-\(area.id.uuidString)-section-\(config.id.uuidString)",
-                        areaID: area.id,
-                        projectID: nil,
-                        sectionName: config.name,
-                        parentName: area.name,
-                        parentIcon: area.icon,
-                        parentColor: Color(hex: area.colorHex),
-                        dueDateKey: config.dueDate,
-                        openTaskCount: openCount,
-                        completedTaskCount: doneCount
-                    )
-                }
-            }
-        let projectSummaries = projects
-            .filter(\.isActive)
-            .flatMap { project in
-                project.sectionConfigs.compactMap { config -> TodayOverdueSectionSummary? in
-                    guard !config.isArchived, !config.isCompleted, !config.dueDate.isEmpty, config.dueDate < todayKey else { return nil }
-                    let tasks = (project.tasks ?? []).filter { $0.resolvedSectionName.caseInsensitiveCompare(config.name) == .orderedSame }
-                    let openCount = tasks.filter { !$0.isDone && !$0.isCancelled }.count
-                    let doneCount = tasks.filter(\.isDone).count
-                    return TodayOverdueSectionSummary(
-                        id: "project-\(project.id.uuidString)-section-\(config.id.uuidString)",
-                        areaID: nil,
-                        projectID: project.id,
-                        sectionName: config.name,
-                        parentName: project.name,
-                        parentIcon: project.icon,
-                        parentColor: Color(hex: project.colorHex),
-                        dueDateKey: config.dueDate,
-                        openTaskCount: openCount,
-                        completedTaskCount: doneCount
-                    )
-                }
-            }
-        return (areaSummaries + projectSummaries).sorted { lhs, rhs in
-            if lhs.dueDateKey != rhs.dueDateKey { return lhs.dueDateKey < rhs.dueDateKey }
-            if lhs.parentName != rhs.parentName { return lhs.parentName.localizedCaseInsensitiveCompare(rhs.parentName) == .orderedAscending }
-            return lhs.sectionName.localizedCaseInsensitiveCompare(rhs.sectionName) == .orderedAscending
-        }
-    }
+
+    private var overdue: [AppTask] { derivedState.overdue }
+    private var dueTodayTasks: [AppTask] { derivedState.dueTodayTasks }
+    private var doTodayTasks: [AppTask] { derivedState.doTodayTasks }
+    private var overdoTasks: [AppTask] { derivedState.overdoTasks }
+    private var todayGroupedTaskItems: [AppTask] { derivedState.todayGroupedTaskItems(showRolloverNotice: shouldShowRolloverNotice) }
+    private var todayEligibleTasks: [AppTask] { derivedState.todayEligibleTasks }
+    private var overdueListSummaries: [TodayOverdueListSummary] { derivedState.overdueListSummaries }
+    private var overdueSectionSummaries: [TodayOverdueSectionSummary] { derivedState.overdueSectionSummaries }
     private var shouldShowRolloverNotice: Bool {
         mode == .todayOverview && !overdoTasks.isEmpty && rolloverNoticeDismissedDate != todayKey
     }
-    private var byDoDateBaseTasks: [AppTask] {
-        allTasks.filter { !$0.isDone && !$0.isCancelled }
-    }
-    private var byDoDateBaseSortedTasks: [AppTask] {
-        byDoDateBaseTasks.taskSorted(by: activeSortField, direction: activeSortDirection)
-    }
+    private var byDoDateBaseTasks: [AppTask] { derivedState.byDoDateBaseTasks }
+    private var byDoDateBaseSortedTasks: [AppTask] { derivedState.byDoDateBaseSortedTasks }
     private func applyFreeze(_ sorted: [AppTask]) -> [AppTask] {
         applyFrozenTaskOrder(sorted, frozen: frozenTaskOrder)
     }
@@ -181,15 +95,31 @@ struct TasksPanel: View {
     private var byDoDateSortedTasks: [AppTask] {
         applyFreeze(byDoDateBaseSortedTasks)
     }
-    private var doneTasks: [AppTask] {
-        allTasks
-            .filter { task in
-                guard task.isDone || task.isCancelled else { return false }
-                guard mode == .todayOverview else { return true }
-                guard let completedAt = task.completedAt else { return false }
-                return DateFormatters.dateKey(from: completedAt) == todayKey
+    private var doneTasks: [AppTask] { derivedState.doneTasks }
+
+    private var dropCoordinator: TasksPanelDropCoordinator {
+        TasksPanelDropCoordinator(
+            allTasks: allTasks,
+            taskIDFromPayload: { TasksPanelSupport.taskID(from: $0) },
+            assignTask: { task, dropKey in
+                TasksPanelSupport.assignTask(
+                    task,
+                    for: dropKey,
+                    todayKey: todayKey,
+                    areas: areas,
+                    projects: projects,
+                    modelContext: modelContext
+                )
+            },
+            reorderTask: { droppedID, targetID, scopeTasks in
+                TasksPanelSupport.reorderTask(
+                    droppedID: droppedID,
+                    targetID: targetID,
+                    scopeTasks: scopeTasks,
+                    modelContext: modelContext
+                )
             }
-            .sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
+        )
     }
 
     private var resolvedFrozenListGroups: [TodayTaskGroup]? {
@@ -294,73 +224,17 @@ struct TasksPanel: View {
                             case .byPriority:
                                 if let frozenSections = resolvedFrozenFlatSections {
                                     ForEach(frozenSections, id: \.id) { section in
-                                        TasksPanelFlatSectionView(
-                                            label: section.title,
-                                            tasks: section.taskIDs.compactMap { tasksByID[$0] },
-                                            labelColor: section.labelColor,
-                                            contexts: contexts,
-                                            areas: areas,
-                                            projects: projects,
-                                            allTasks: allTasks,
-                                            isCollapsed: collapsedGroupIDs.contains("flat-\(section.title.lowercased().replacingOccurrences(of: " ", with: "-"))"),
-                                            overdueCount: overdueCount(in: section.taskIDs.compactMap { tasksByID[$0] }),
-                                            regularCount: regularCount(in: section.taskIDs.compactMap { tasksByID[$0] }),
-                                            dragOverTaskID: $dragOverTaskID,
-                                            onToggle: { toggleGroup("flat-\(section.title.lowercased().replacingOccurrences(of: " ", with: "-"))") },
-                                            taskDragPayload: taskDragPayload,
-                                            onDropOnSectionPayload: section.dropKey.map { key in
-                                                { payload in
-                                                    guard let droppedID = taskID(from: payload),
-                                                          let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                                                    assignTask(droppedTask, for: key)
-                                                    return true
-                                                }
-                                            },
-                                            onDropOnTaskPayload: { payload, targetTask in
-                                                guard let droppedID = taskID(from: payload),
-                                                      droppedID != targetTask.id,
-                                                      let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                                                if let key = section.dropKey {
-                                                    assignTask(droppedTask, for: key)
-                                                }
-                                                let sectionTasks = section.taskIDs.compactMap { tasksByID[$0] }
-                                                reorderTask(droppedID: droppedID, targetID: targetTask.id, scopeTasks: sectionTasks)
-                                                return true
-                                            }
-                                        )
+                                        sectionView(from: section, tasksByID: tasksByID)
                                     }
                                 } else {
                                     ForEach(TaskPriority.allCases.reversed(), id: \.self) { priority in
                                         let tasks = todayTasks.filter { $0.priority == priority }
                                         if !tasks.isEmpty {
-                                            TasksPanelFlatSectionView(
+                                            liveFlatSection(
                                                 label: priority.label,
                                                 tasks: tasks,
                                                 labelColor: Theme.priorityColor(priority),
-                                                contexts: contexts,
-                                                areas: areas,
-                                                projects: projects,
-                                                allTasks: allTasks,
-                                                isCollapsed: collapsedGroupIDs.contains("flat-\(priority.label.lowercased().replacingOccurrences(of: " ", with: "-"))"),
-                                                overdueCount: overdueCount(in: tasks),
-                                                regularCount: regularCount(in: tasks),
-                                                dragOverTaskID: $dragOverTaskID,
-                                                onToggle: { toggleGroup("flat-\(priority.label.lowercased().replacingOccurrences(of: " ", with: "-"))") },
-                                                taskDragPayload: taskDragPayload,
-                                                onDropOnSectionPayload: { payload in
-                                                    guard let droppedID = taskID(from: payload),
-                                                          let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                                                    assignTask(droppedTask, for: "priority:\(priority.rawValue)")
-                                                    return true
-                                                },
-                                                onDropOnTaskPayload: { payload, targetTask in
-                                                    guard let droppedID = taskID(from: payload),
-                                                          droppedID != targetTask.id,
-                                                          let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                                                    assignTask(droppedTask, for: "priority:\(priority.rawValue)")
-                                                    reorderTask(droppedID: droppedID, targetID: targetTask.id, scopeTasks: tasks)
-                                                    return true
-                                                }
+                                                dropKey: "priority:\(priority.rawValue)"
                                             )
                                         }
                                     }
@@ -411,18 +285,15 @@ struct TasksPanel: View {
                                     onToggle: { toggleGroup(group.id) },
                                     taskDragPayload: taskDragPayload,
                                     onDropOnGroupPayload: { payload in
-                                        guard let droppedID = taskID(from: payload),
-                                              let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                                        assignTask(droppedTask, for: "list:\(group.id)")
-                                        return true
+                                        dropCoordinator.handleSectionDrop(payload: payload, dropKey: "list:\(group.id)")
                                     },
                                     onDropOnTaskPayload: { payload, targetTask in
-                                        guard let droppedID = taskID(from: payload),
-                                              droppedID != targetTask.id,
-                                              let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                                        assignTask(droppedTask, for: "list:\(group.id)")
-                                        reorderTask(droppedID: droppedID, targetID: targetTask.id, scopeTasks: group.tasks)
-                                        return true
+                                        dropCoordinator.handleTaskDrop(
+                                            payload: payload,
+                                            targetTask: targetTask,
+                                            scopeTasks: group.tasks,
+                                            dropKey: "list:\(group.id)"
+                                        )
                                     }
                                 )
                             }
@@ -520,24 +391,8 @@ struct TasksPanel: View {
             dragOverTaskID: $dragOverTaskID,
             onToggle: { toggleGroup("flat-\(label.lowercased().replacingOccurrences(of: " ", with: "-"))") },
             taskDragPayload: taskDragPayload,
-            onDropOnSectionPayload: dropKey.map { key in
-                { payload in
-                    guard let droppedID = taskID(from: payload),
-                          let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                    assignTask(droppedTask, for: key)
-                    return true
-                }
-            },
-            onDropOnTaskPayload: { payload, targetTask in
-                guard let droppedID = taskID(from: payload),
-                      droppedID != targetTask.id,
-                      let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                if let dropKey {
-                    assignTask(droppedTask, for: dropKey)
-                }
-                reorderTask(droppedID: droppedID, targetID: targetTask.id, scopeTasks: tasks)
-                return true
-            }
+            onDropOnSectionPayload: dropCoordinator.sectionDropHandler(for: dropKey),
+            onDropOnTaskPayload: dropCoordinator.taskDropHandler(scopeTasks: tasks, dropKey: dropKey)
         )
     }
 
@@ -662,18 +517,15 @@ struct TasksPanel: View {
                 onToggleGroup: toggleGroup,
                 taskDragPayload: taskDragPayload,
                 onDropOnGroupPayload: { group, payload in
-                    guard let droppedID = taskID(from: payload),
-                          let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                    assignTask(droppedTask, for: "list:\(group.id)")
-                    return true
+                    dropCoordinator.handleSectionDrop(payload: payload, dropKey: "list:\(group.id)")
                 },
                 onDropOnTaskPayload: { group, payload, targetTask in
-                    guard let droppedID = taskID(from: payload),
-                          droppedID != targetTask.id,
-                          let droppedTask = allTasks.first(where: { $0.id == droppedID }) else { return false }
-                    assignTask(droppedTask, for: "list:\(group.id)")
-                    reorderTask(droppedID: droppedID, targetID: targetTask.id, scopeTasks: group.tasks)
-                    return true
+                    dropCoordinator.handleTaskDrop(
+                        payload: payload,
+                        targetTask: targetTask,
+                        scopeTasks: group.tasks,
+                        dropKey: "list:\(group.id)"
+                    )
                 }
             )
         }
@@ -803,16 +655,7 @@ struct TasksPanel: View {
     // MARK: - Section builders
 
     private var isEmptyState: Bool {
-        switch mode {
-        case .todayOverview:
-            return overdue.isEmpty &&
-            overdoTasks.isEmpty &&
-            dueTodayTasks.isEmpty &&
-            doTodayTasks.isEmpty &&
-            doneTasks.isEmpty
-        case .byDoDate:
-            return byDoDateBaseTasks.isEmpty && doneTasks.isEmpty
-        }
+        derivedState.isEmptyState(for: mode)
     }
 
     private func taskIsUnscheduled(_ task: AppTask) -> Bool {
@@ -846,30 +689,6 @@ struct TasksPanel: View {
 
     private func taskDragPayload(for task: AppTask) -> String {
         TasksPanelSupport.taskDragPayload(for: task)
-    }
-
-    private func taskID(from payload: String) -> UUID? {
-        TasksPanelSupport.taskID(from: payload)
-    }
-
-    private func reorderTask(droppedID: UUID, targetID: UUID, scopeTasks: [AppTask]) {
-        TasksPanelSupport.reorderTask(
-            droppedID: droppedID,
-            targetID: targetID,
-            scopeTasks: scopeTasks,
-            modelContext: modelContext
-        )
-    }
-
-    private func assignTask(_ task: AppTask, for dropKey: String) {
-        TasksPanelSupport.assignTask(
-            task,
-            for: dropKey,
-            todayKey: todayKey,
-            areas: areas,
-            projects: projects,
-            modelContext: modelContext
-        )
     }
 }
 

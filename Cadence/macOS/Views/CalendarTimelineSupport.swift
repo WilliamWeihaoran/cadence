@@ -51,8 +51,24 @@ struct DayBoundaryScrollTargetBehavior: ScrollTargetBehavior {
     func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
         let safeDayWidth = max(dayWidth, 1)
         let maxOffsetX = max(0, context.contentSize.width - context.containerSize.width)
-        let snappedX = (target.rect.minX / safeDayWidth).rounded(.toNearestOrAwayFromZero) * safeDayWidth
+        let rawDay = target.rect.minX / safeDayWidth
+        let baseDay = floor(rawDay)
+        let progress = rawDay - baseDay
+        let velocityX = context.velocity.dx
+        let velocityThreshold: CGFloat = 80
+        let snappedDay: CGFloat
+
+        if velocityX > velocityThreshold {
+            snappedDay = progress > 0.14 ? baseDay + 1 : baseDay
+        } else if velocityX < -velocityThreshold {
+            snappedDay = progress < 0.86 ? baseDay : baseDay + 1
+        } else {
+            snappedDay = rawDay.rounded(.toNearestOrAwayFromZero)
+        }
+
+        let snappedX = snappedDay * safeDayWidth
         target.rect.origin.x = min(max(snappedX, 0), maxOffsetX)
+        target.rect.size.width = context.containerSize.width
     }
 }
 
@@ -60,12 +76,12 @@ final class CalendarTimelineScrollState: ObservableObject {
     @Published private(set) var headerOffset: CGFloat = 0
 
     func setHeaderOffset(_ newValue: CGFloat) {
-        guard abs(headerOffset - newValue) >= 0.5 else { return }
+        guard abs(headerOffset - newValue) >= 0.1 else { return }
         headerOffset = newValue
     }
 
     func jumpHeaderOffset(to newValue: CGFloat) {
-        guard abs(headerOffset - newValue) >= 0.5 else { return }
+        guard abs(headerOffset - newValue) >= 0.1 else { return }
         headerOffset = newValue
     }
 }

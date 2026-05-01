@@ -55,23 +55,16 @@ enum MarkdownTaskEmbedDrawing {
     static func drawCard(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect, checkboxRect: NSRect, isHovered: Bool) {
         let radius: CGFloat = 11
         let cardPath = NSBezierPath(roundedRect: cardRect, xRadius: radius, yRadius: radius)
-        (isHovered ? NSColor(hex: "#182236") : NSColor(hex: "#141b26"))
+        (isHovered ? NSColor(hex: "#161f2d") : NSColor(hex: "#141b26"))
             .withAlphaComponent(0.98)
             .setFill()
         cardPath.fill()
 
-        (isHovered ? MarkdownStylist.blueColor : NSColor(hex: "#33435f"))
-            .withAlphaComponent(isHovered ? 0.58 : 0.82)
+        (isHovered ? NSColor(hex: "#465875") : NSColor(hex: "#33435f"))
+            .withAlphaComponent(isHovered ? 0.62 : 0.82)
             .setStroke()
-        cardPath.lineWidth = isHovered ? 1.35 : 0.9
+        cardPath.lineWidth = isHovered ? 1.0 : 0.9
         cardPath.stroke()
-
-        if isHovered {
-            let glowPath = NSBezierPath(roundedRect: cardRect.insetBy(dx: -1, dy: -1), xRadius: radius + 1, yRadius: radius + 1)
-            MarkdownStylist.blueColor.withAlphaComponent(0.13).setStroke()
-            glowPath.lineWidth = 3
-            glowPath.stroke()
-        }
 
         let stripRect = NSRect(x: cardRect.minX, y: cardRect.minY + 5, width: 4, height: cardRect.height - 10)
         let stripColor = task.isMissing ? MarkdownStylist.dimColor : priorityColor(task.priorityRaw, fallback: task.containerColorHex)
@@ -167,6 +160,7 @@ enum MarkdownTaskEmbedDrawing {
             return [Chip(label: "Missing", color: NSColor(hex: "#ff6b6b"), field: .status)]
         }
 
+        var chips: [Chip] = []
         let statusColor: NSColor
         switch TaskStatus(rawValue: task.statusRaw) ?? .todo {
         case .todo:
@@ -179,10 +173,16 @@ enum MarkdownTaskEmbedDrawing {
             statusColor = MarkdownStylist.dimColor
         }
 
-        var chips: [Chip] = [
-            Chip(label: statusLabel(task.statusRaw), color: statusColor, field: .status),
-            Chip(label: priorityLabel(task.priorityRaw), color: priorityColor(task.priorityRaw, fallback: task.containerColorHex), field: .priority)
-        ]
+        if (TaskStatus(rawValue: task.statusRaw) ?? .todo) != .todo {
+            chips.append(Chip(label: statusLabel(task.statusRaw), color: statusColor, field: .status))
+        }
+        if (TaskPriority(rawValue: task.priorityRaw) ?? .none) != .none {
+            chips.append(Chip(
+                label: priorityLabel(task.priorityRaw),
+                color: priorityColor(task.priorityRaw, fallback: task.containerColorHex),
+                field: .priority
+            ))
+        }
 
         let container = task.containerName.trimmingCharacters(in: .whitespacesAndNewlines)
         chips.append(Chip(

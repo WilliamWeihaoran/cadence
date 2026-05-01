@@ -126,18 +126,9 @@ struct HabitGoalSectionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: group.icon)
+                Text(group.title.uppercased())
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color(hex: group.colorHex))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(group.title.uppercased())
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Theme.dim)
-                    Text(group.subtitle)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.dim.opacity(0.72))
-                        .lineLimit(1)
-                }
+                    .foregroundStyle(Theme.dim)
                 Spacer()
                 Text("\(doneCount)/\(group.habits.count)")
                     .font(.system(size: 10, weight: .bold))
@@ -173,36 +164,13 @@ struct HabitListCard: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 12) {
-                HabitIconTile(habit: habit, size: 34, iconSize: 15)
+                HabitIconTile(habit: habit, size: 32, iconSize: 14)
 
                 VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 8) {
-                        Text(habit.title)
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(1)
-
-                        if let goal = habit.goal {
-                            Text(goal.title)
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(Color(hex: goal.colorHex))
-                                .lineLimit(1)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(Color(hex: goal.colorHex).opacity(0.13))
-                                .clipShape(Capsule())
-                        }
-
-                        if let ctx = habit.context {
-                            Text(ctx.name)
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(Color(hex: ctx.colorHex))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(Color(hex: ctx.colorHex).opacity(0.14))
-                                .clipShape(Capsule())
-                        }
-                    }
+                    Text(habit.title)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
 
                     HStack(spacing: 10) {
                         Text(habit.frequencySummary)
@@ -225,13 +193,13 @@ struct HabitListCard: View {
 
                 Button(action: onToggle) {
                     Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 24))
+                        .font(.system(size: 22))
                         .foregroundStyle(isDoneToday ? Color(hex: habit.colorHex) : Theme.dim.opacity(0.55))
                 }
                 .buttonStyle(.cadencePlain)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.vertical, 11)
             .background(
                 RoundedRectangle(cornerRadius: 14)
                     .fill(isSelected ? Theme.surfaceElevated : Theme.surface)
@@ -266,6 +234,7 @@ struct HabitDetailView: View {
     let habit: Habit
     let todayKey: String
     let onToggle: () -> Void
+    let onEdit: () -> Void
 
     private var totalCompletions: Int {
         (habit.completions ?? []).count
@@ -284,36 +253,7 @@ struct HabitDetailView: View {
                     HabitGoalSupportCard(habit: habit)
                 }
 
-                HStack(spacing: 12) {
-                    HabitDetailStatCard(
-                        title: "Current Streak",
-                        value: "\(habit.currentStreak)",
-                        subtitle: "now",
-                        color: Theme.amber,
-                        icon: "flame.fill"
-                    )
-                    HabitDetailStatCard(
-                        title: "Best Streak",
-                        value: "\(habit.bestStreak)",
-                        subtitle: "best run",
-                        color: Theme.purple,
-                        icon: "trophy.fill"
-                    )
-                    HabitDetailStatCard(
-                        title: "Last 30 Days",
-                        value: "\(habit.last30DayCompletionRate)%",
-                        subtitle: "consistency",
-                        color: Theme.blue,
-                        icon: "chart.line.uptrend.xyaxis"
-                    )
-                    HabitDetailStatCard(
-                        title: "Total Check-ins",
-                        value: "\(totalCompletions)",
-                        subtitle: "all time",
-                        color: Color(hex: habit.colorHex),
-                        icon: "checkmark.circle.fill"
-                    )
-                }
+                HabitQuietMetrics(habit: habit, totalCompletions: totalCompletions)
 
                 HabitInfoCard(title: "Activity") {
                     HabitHeatmap(habit: habit)
@@ -358,19 +298,62 @@ struct HabitDetailView: View {
 
             Spacer(minLength: 16)
 
-            CadenceActionButton(
-                title: isDoneToday ? "Undo" : "Check In Today",
-                systemImage: isDoneToday ? "arrow.uturn.backward" : "checkmark",
-                role: .primary,
-                size: .regular,
-                tint: isDoneToday ? Theme.green : Color(hex: habit.colorHex),
-                action: onToggle
-            )
+            HStack(spacing: 8) {
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                        .frame(width: 34, height: 34)
+                        .background(Theme.surfaceElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 9))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9)
+                                .stroke(Theme.borderSubtle, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.cadencePlain)
+                .help("Edit habit")
+
+                CadenceActionButton(
+                    title: isDoneToday ? "Undo" : "Check In Today",
+                    systemImage: isDoneToday ? "arrow.uturn.backward" : "checkmark",
+                    role: .primary,
+                    size: .regular,
+                    tint: isDoneToday ? Theme.green : Color(hex: habit.colorHex),
+                    action: onToggle
+                )
+            }
         }
         .padding(20)
         .background(Theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(hex: habit.colorHex).opacity(0.24), lineWidth: 1))
+    }
+}
+
+struct HabitQuietMetrics: View {
+    let habit: Habit
+    let totalCompletions: Int
+
+    var body: some View {
+        HStack(spacing: 18) {
+            quietMetric("Streak", "\(habit.currentStreak)d")
+            quietMetric("30 days", "\(habit.last30DayCompletionRate)%")
+            quietMetric("Total", "\(totalCompletions)")
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private func quietMetric(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 5) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+            Text(value)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.text)
+        }
     }
 }
 

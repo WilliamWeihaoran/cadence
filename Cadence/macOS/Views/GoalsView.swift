@@ -11,6 +11,7 @@ struct GoalsView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var selectedGoalID: UUID?
     @State private var showCreateGoal = false
+    @State private var showEditGoal = false
     @State private var showAttachWork = false
     @State private var searchText = ""
     @State private var statusFilter: GoalStatusFilter = .active
@@ -67,12 +68,6 @@ struct GoalsView: View {
         return filteredGoals.first ?? allGoals.first
     }
 
-    private var activeGoalsCount: Int { allGoals.filter { $0.status == .active }.count }
-    private var linkedListsCount: Int { allGoals.reduce(0) { $0 + (($1.listLinks ?? []).count) } }
-    private var contributingTasksCount: Int {
-        allGoals.reduce(0) { $0 + GoalContributionResolver.summary(for: $1).totalTasks }
-    }
-
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
@@ -86,18 +81,24 @@ struct GoalsView: View {
             if let goal = selectedGoal {
                 GoalInspectorView(
                     goal: goal,
+                    onEdit: { showEditGoal = true },
                     onAttachWork: { showAttachWork = true },
                     onDetachList: detachList
                 )
-                .frame(minWidth: 360, idealWidth: 430)
+                .frame(minWidth: 340, idealWidth: 400)
             } else {
                 GoalsEmptyDetail()
-                    .frame(minWidth: 360, idealWidth: 430)
+                    .frame(minWidth: 340, idealWidth: 400)
             }
         }
         .background(Theme.bg)
         .sheet(isPresented: $showCreateGoal) {
             CreateGoalSheet()
+        }
+        .sheet(isPresented: $showEditGoal) {
+            if let goal = selectedGoal {
+                CreateGoalSheet(goal: goal)
+            }
         }
         .sheet(isPresented: $showAttachWork) {
             if let goal = selectedGoal {
@@ -131,7 +132,7 @@ struct GoalsView: View {
                     Text("Goals")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(Theme.text)
-                    Text("Outcomes powered by the lists and tasks already moving.")
+                    Text("Outcomes powered by lists.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.muted)
                 }
@@ -147,18 +148,11 @@ struct GoalsView: View {
             }
 
             HStack(spacing: 12) {
-                GoalHeaderMetric(title: "Active", value: "\(activeGoalsCount)", icon: "target", color: Theme.green)
-                GoalHeaderMetric(title: "Linked Lists", value: "\(linkedListsCount)", icon: "folder.badge.gearshape", color: Theme.blue)
-                GoalHeaderMetric(title: "Contributors", value: "\(contributingTasksCount)", icon: "checklist", color: Theme.amber)
-                Spacer(minLength: 0)
-            }
-
-            HStack(spacing: 12) {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.dim)
-                    TextField("Search goals, outcomes, next actions", text: $searchText)
+                    TextField("Search goals", text: $searchText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.text)
@@ -174,7 +168,7 @@ struct GoalsView: View {
                         CadencePillButton(
                             title: filter.label,
                             isSelected: statusFilter == filter,
-                            minWidth: 54
+                            minWidth: 48
                         ) {
                             statusFilter = filter
                         }
@@ -195,7 +189,7 @@ struct GoalsView: View {
             if goalGroups.isEmpty {
                 EmptyStateView(
                     message: searchText.isEmpty ? "No goals yet" : "No matching goals",
-                    subtitle: searchText.isEmpty ? "Create a goal, then attach the lists or tasks that move it forward." : "Try a different search or status.",
+                    subtitle: searchText.isEmpty ? "Create a goal, then attach the lists that move it forward." : "Try a different search or status.",
                     icon: "target"
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

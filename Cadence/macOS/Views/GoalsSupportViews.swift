@@ -103,7 +103,7 @@ struct GoalMissionGroupView: View {
                 Spacer()
             }
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 315), spacing: 12)], spacing: 12) {
+            VStack(spacing: 10) {
                 ForEach(group.goals) { goal in
                     GoalMissionCard(
                         goal: goal,
@@ -128,58 +128,55 @@ struct GoalMissionCard: View {
     var body: some View {
         Button(action: onSelect) {
             VStack(alignment: .leading, spacing: 13) {
-                HStack(alignment: .top, spacing: 12) {
-                    GoalProgressOrb(goal: goal, summary: summary)
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {
                         HStack(spacing: 7) {
                             Text(goal.title)
-                                .font(.system(size: 15, weight: .bold))
+                                .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
                                 .lineLimit(1)
                             GoalStatusBadge(status: goal.status)
                         }
-                        Text(goal.desc.isEmpty ? "No outcome written yet." : goal.desc)
+                        Text(goal.desc.isEmpty ? "No outcome yet" : goal.desc)
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.muted)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(1)
                     }
                     Spacer(minLength: 0)
+                    Text(summary.percentLabel)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .monospacedDigit()
                 }
 
-                GoalProgressBar(progress: summary.progress, color: Color(hex: goal.colorHex))
+                GoalProgressBar(progress: summary.progress, color: Color(hex: goal.colorHex), height: 4)
 
-                HStack(spacing: 8) {
-                    GoalMetricChip(icon: "folder", label: "\(summary.linkedListCount) lists", color: Theme.blue)
-                    GoalMetricChip(icon: "checklist", label: "\(summary.taskCountLabel) tasks", color: Theme.green)
-                    GoalMetricChip(icon: "clock", label: summary.focusLabel, color: Theme.amber)
-                    Spacer(minLength: 0)
-                }
-
-                Divider().background(Theme.borderSubtle)
-
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.forward.circle")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                    Text(summary.nextActionTitle ?? "No next action")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(summary.nextActionTitle == nil ? Theme.dim : Theme.text)
-                        .lineLimit(1)
+                HStack(spacing: 12) {
+                    Label(summary.linkedListCount == 0 ? "No lists" : "\(summary.linkedListCount) lists", systemImage: "folder")
+                    Label(summary.totalTasks == 0 ? "No tasks" : summary.taskCountLabel, systemImage: "checklist")
                     Spacer(minLength: 0)
                     Text(goal.daysSummary)
-                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(goal.isOverdue ? Theme.red : Theme.dim)
+                }
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
+
+                if let nextAction = summary.nextActionTitle {
+                    Text(nextAction)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.text)
                         .lineLimit(1)
+                        .padding(.top, 1)
                 }
             }
             .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 184, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
             .background(Theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? Color(hex: goal.colorHex).opacity(0.85) : Theme.borderSubtle, lineWidth: isSelected ? 1.5 : 1)
+                    .stroke(isSelected ? Theme.blue.opacity(0.75) : Theme.borderSubtle, lineWidth: isSelected ? 1.5 : 1)
             )
         }
         .buttonStyle(.cadencePlain)
@@ -188,6 +185,7 @@ struct GoalMissionCard: View {
 
 struct GoalInspectorView: View {
     let goal: Goal
+    let onEdit: () -> Void
     let onAttachWork: () -> Void
     let onDetachList: (GoalListLink) -> Void
 
@@ -211,9 +209,8 @@ struct GoalInspectorView: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 inspectorHeader
-                signalGrid
                 contributorLists
                 allWorkSection
             }
@@ -224,31 +221,53 @@ struct GoalInspectorView: View {
 
     private var inspectorHeader: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                GoalProgressOrb(goal: goal, summary: summary, size: 58)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(goal.title)
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(2)
-                    Text(goal.desc.isEmpty ? "No outcome written yet." : goal.desc)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(goal.title)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(2)
+                GoalStatusBadge(status: goal.status)
+                Spacer(minLength: 0)
             }
 
-            GoalProgressBar(progress: summary.progress, color: Color(hex: goal.colorHex), height: 8)
+            Text(goal.desc.isEmpty ? "No outcome yet" : goal.desc)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 7) {
+                HStack {
+                    Text(summary.percentLabel)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .monospacedDigit()
+                    Text("complete")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                    Spacer()
+                    Text(goal.daysSummary)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(goal.isOverdue ? Theme.red : Theme.dim)
+                }
+                GoalProgressBar(progress: summary.progress, color: Color(hex: goal.colorHex), height: 5)
+            }
 
             HStack(spacing: 8) {
                 CadenceActionButton(
+                    title: "Edit",
+                    systemImage: "pencil",
+                    role: .secondary,
+                    size: .compact,
+                    action: onEdit
+                )
+                CadenceActionButton(
                     title: "Attach List",
                     systemImage: "plus",
-                    role: .primary,
+                    role: .secondary,
                     size: .compact,
-                    fullWidth: true,
                     action: onAttachWork
                 )
+                Spacer()
             }
         }
     }
@@ -267,7 +286,19 @@ struct GoalInspectorView: View {
         VStack(alignment: .leading, spacing: 10) {
             GoalSectionHeading(title: "Linked Lists", count: linkedLists.count)
             if linkedLists.isEmpty {
-                GoalInlineEmpty(text: "Attach a whole list to make its active tasks count here.")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No lists attached")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text("Attach one area or project. Its active tasks will count toward this goal.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Theme.surfaceElevated.opacity(0.38))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             } else {
                 VStack(spacing: 8) {
                     ForEach(linkedLists) { link in
@@ -278,12 +309,11 @@ struct GoalInspectorView: View {
         }
     }
 
+    @ViewBuilder
     private var allWorkSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            GoalSectionHeading(title: "Contributing Work", count: contributingTasks.count)
-            if contributingTasks.isEmpty {
-                GoalInlineEmpty(text: "Attach a list to pull in its active tasks.")
-            } else {
+        if !contributingTasks.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                GoalSectionHeading(title: "Contributing Work", count: contributingTasks.count)
                 VStack(spacing: 8) {
                     ForEach(contributingTasks.prefix(8)) { task in
                         GoalTaskContributorRow(task: task, onDetach: nil)
@@ -476,9 +506,11 @@ struct GoalProgressBar: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(Theme.borderSubtle.opacity(0.75))
-                Capsule()
-                    .fill(color)
-                    .frame(width: max(height, geo.size.width * progress))
+                if progress > 0 {
+                    Capsule()
+                        .fill(color)
+                        .frame(width: max(height, geo.size.width * progress))
+                }
             }
         }
         .frame(height: height)

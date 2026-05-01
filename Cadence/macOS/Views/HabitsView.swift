@@ -9,6 +9,7 @@ struct HabitsView: View {
 
     @State private var selectedHabitID: UUID? = nil
     @State private var showCreateHabit = false
+    @State private var editingHabit: Habit? = nil
     @State private var searchText = ""
     @State private var filter: HabitListFilter = .today
 
@@ -126,9 +127,12 @@ struct HabitsView: View {
                 .background(Theme.surface)
 
             if let habit = selectedHabit {
-                HabitDetailView(habit: habit, todayKey: todayKey, onToggle: {
-                    toggleHabit(habit)
-                })
+                HabitDetailView(
+                    habit: habit,
+                    todayKey: todayKey,
+                    onToggle: { toggleHabit(habit) },
+                    onEdit: { editingHabit = habit }
+                )
             } else {
                 HabitsEmptyDetail()
             }
@@ -136,6 +140,9 @@ struct HabitsView: View {
         .background(Theme.bg)
         .sheet(isPresented: $showCreateHabit) {
             CreateHabitSheet()
+        }
+        .sheet(item: $editingHabit) { habit in
+            EditHabitSheet(habit: habit)
         }
         .onAppear {
             if selectedHabitID == nil { selectedHabitID = habits.first?.id }
@@ -150,7 +157,7 @@ struct HabitsView: View {
 
     private var leftPane: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Habits")
@@ -172,29 +179,6 @@ struct HabitsView: View {
                         showCreateHabit = true
                     }
                 }
-
-                HabitTodayCockpit(
-                    dueCount: dueTodayCount,
-                    doneCount: doneTodayCount,
-                    openCount: openHabitsToday.count,
-                    goalCoverage: goalCoverageLabel
-                )
-
-                if let nextOpenHabit {
-                    HabitNextUpBanner(
-                        habit: nextOpenHabit,
-                        todayKey: todayKey,
-                        onSelect: { selectedHabitID = nextOpenHabit.id },
-                        onToggle: { toggleHabit(nextOpenHabit) }
-                    )
-                }
-
-                HabitSignalStrip(
-                    streakingCount: activeStreakCount,
-                    averageLast30Completion: averageLast30Completion,
-                    linkedCount: goalLinkedHabitCount,
-                    totalCount: habits.count
-                )
 
                 HStack(spacing: 10) {
                     HStack(spacing: 8) {
@@ -482,6 +466,236 @@ struct CreateHabitSheet: View {
         habit.goal = selectedGoal
 
         modelContext.insert(habit)
+        dismiss()
+    }
+}
+
+// MARK: - EditHabitSheet
+
+struct EditHabitSheet: View {
+    let habit: Habit
+
+    @Environment(\.dismiss) private var dismiss
+    @Query(sort: \Context.order) private var allContexts: [Context]
+    @Query(sort: \Goal.order) private var allGoals: [Goal]
+
+    @State private var title: String
+    @State private var selectedIcon: String
+    @State private var selectedColor: String
+    @State private var frequencyType: HabitFrequency
+    @State private var selectedDays: Set<Int>
+    @State private var timesPerWeek: Int
+    @State private var monthlyDay: Int
+    @State private var selectedContextID: UUID?
+    @State private var selectedGoalID: UUID?
+
+    private let dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+    init(habit: Habit) {
+        self.habit = habit
+        let frequency = habit.frequencyType
+        let storedDays = habit.frequencyDays
+
+        _title = State(initialValue: habit.title)
+        _selectedIcon = State(initialValue: habit.icon)
+        _selectedColor = State(initialValue: habit.colorHex)
+        _frequencyType = State(initialValue: frequency)
+        _selectedDays = State(initialValue: frequency == .daysOfWeek ? Set(storedDays) : [])
+        _timesPerWeek = State(initialValue: frequency == .timesPerWeek ? max(1, habit.targetCount) : 3)
+        _monthlyDay = State(initialValue: frequency == .monthly ? min(max(storedDays.first ?? 1, 1), 31) : 1)
+        _selectedContextID = State(initialValue: habit.context?.id)
+        _selectedGoalID = State(initialValue: habit.goal?.id)
+    }
+
+    private var goalChoices: [Goal] {
+        var choices = allGoals.filter { $0.status == .active }
+        if let current = habit.goal,
+           !choices.contains(where: { $0.id == current.id }) {
+            choices.insert(current, at: 0)
+        }
+        return choices
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Edit Habit")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
+                .padding(.bottom, 20)
+
+            Divider().background(Theme.borderSubtle)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    fieldLabel("Title")
+                    TextField("e.g. Morning Run, Read 30 min", text: $title)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.text)
+                        .padding(10)
+                        .background(Theme.surfaceElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
+
+                    if !allContexts.isEmpty {
+                        fieldLabel("Context")
+                        Picker("", selection: $selectedContextID) {
+                            Text("None").tag(Optional<UUID>.none)
+                            ForEach(allContexts) { ctx in
+                                Text(ctx.name).tag(Optional(ctx.id))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .foregroundStyle(Theme.text)
+                    }
+
+                    if !goalChoices.isEmpty {
+                        fieldLabel("Goal")
+                        Picker("", selection: $selectedGoalID) {
+                            Text("None").tag(Optional<UUID>.none)
+                            ForEach(goalChoices) { goal in
+                                Text(goal.title).tag(Optional(goal.id))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .foregroundStyle(Theme.text)
+                    }
+
+                    fieldLabel("Icon")
+                    IconGrid(selected: $selectedIcon)
+
+                    fieldLabel("Color")
+                    ColorGrid(selected: $selectedColor)
+
+                    fieldLabel("Frequency")
+                    Picker("", selection: $frequencyType) {
+                        ForEach(HabitFrequency.allCases, id: \.self) { f in
+                            Text(f.label).tag(f)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    switch frequencyType {
+                    case .daysOfWeek:
+                        HStack(spacing: 6) {
+                            ForEach(0..<7, id: \.self) { i in
+                                let dayVal = i + 1
+                                Button(dayNames[i]) {
+                                    if selectedDays.contains(dayVal) {
+                                        selectedDays.remove(dayVal)
+                                    } else {
+                                        selectedDays.insert(dayVal)
+                                    }
+                                }
+                                .buttonStyle(.cadencePlain)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(selectedDays.contains(dayVal) ? .white : Theme.dim)
+                                .frame(width: 36, height: 28)
+                                .background(selectedDays.contains(dayVal) ? Color(hex: selectedColor) : Theme.surfaceElevated)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                        }
+
+                    case .timesPerWeek:
+                        HStack {
+                            Text("Times per week:")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.muted)
+                            Stepper("\(timesPerWeek)", value: $timesPerWeek, in: 1...7)
+                                .foregroundStyle(Theme.text)
+                        }
+
+                    case .monthly:
+                        HStack {
+                            Text("Day of month:")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.muted)
+                            Stepper("\(monthlyDay)", value: $monthlyDay, in: 1...31)
+                                .foregroundStyle(Theme.text)
+                        }
+
+                    case .daily:
+                        EmptyView()
+                    }
+                }
+                .padding(24)
+            }
+
+            Divider().background(Theme.borderSubtle)
+
+            HStack {
+                Spacer()
+                CadenceActionButton(
+                    title: "Cancel",
+                    role: .ghost,
+                    size: .compact
+                ) {
+                    dismiss()
+                }
+                CadenceActionButton(
+                    title: "Save",
+                    role: .primary,
+                    size: .compact,
+                    tint: Color(hex: selectedColor),
+                    isDisabled: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ) {
+                    save()
+                }
+            }
+            .padding(16)
+        }
+        .frame(width: 460, height: 640)
+        .background(Theme.surface)
+    }
+
+    private func fieldLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Theme.dim)
+            .kerning(0.8)
+    }
+
+    private func save() {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        habit.title = trimmed
+        habit.icon = selectedIcon
+        habit.colorHex = selectedColor
+        habit.frequencyType = frequencyType
+
+        switch frequencyType {
+        case .daily:
+            habit.frequencyDays = []
+            habit.targetCount = 1
+        case .daysOfWeek:
+            let resolvedDays = selectedDays.isEmpty ? [Habit.weekdayIndex(for: Date())] : selectedDays.sorted()
+            habit.frequencyDays = resolvedDays
+            habit.targetCount = resolvedDays.count
+        case .timesPerWeek:
+            habit.frequencyDays = [timesPerWeek]
+            habit.targetCount = timesPerWeek
+        case .monthly:
+            habit.frequencyDays = [monthlyDay]
+            habit.targetCount = 1
+        }
+
+        let selectedGoal = selectedGoalID.flatMap { id in
+            allGoals.first { $0.id == id }
+        }
+
+        if let selectedContextID,
+           let context = allContexts.first(where: { $0.id == selectedContextID }) {
+            habit.context = context
+        } else if let selectedGoal {
+            habit.context = selectedGoal.context
+        } else {
+            habit.context = nil
+        }
+
+        habit.goal = selectedGoal
         dismiss()
     }
 }

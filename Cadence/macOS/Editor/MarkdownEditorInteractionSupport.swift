@@ -723,10 +723,16 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         }
     }
 
-    fileprivate func beginInlineTaskTitleEdit(id: UUID) {
+    fileprivate func beginInlineTaskTitleEdit(id: UUID, retryIfNeeded: Bool = true) {
         endInlineTaskTitleEdit(commit: true)
         guard let task = markdownTaskEmbeds[id],
-              let titleRect = taskEmbedTitleRect(id: id, task: task) else { return }
+              let titleRect = taskEmbedTitleRect(id: id, task: task) else {
+            guard retryIfNeeded else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.beginInlineTaskTitleEdit(id: id, retryIfNeeded: false)
+            }
+            return
+        }
 
         let editorFrame = titleRect.insetBy(dx: -4, dy: -2)
         let editor = NSTextField(frame: editorFrame)
@@ -899,6 +905,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
 
     private func taskEmbedTitleRect(id: UUID, task: MarkdownTaskEmbedRenderInfo) -> NSRect? {
         guard let layoutManager, let textContainer, let textStorage else { return nil }
+        layoutManager.ensureLayout(for: textContainer)
         var result: NSRect?
         textStorage.enumerateAttribute(.cadenceMarkdownTaskEmbed, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, stop in
             guard let embed = value as? MarkdownTaskEmbedLayoutInfo,
@@ -1502,7 +1509,9 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         }
         textView.typingAttributes = MarkdownStylist.baseAttributes
         textView.didChangeText()
-        cadenceTextView.beginInlineTaskTitleEdit(id: suggestion.targetID)
+        DispatchQueue.main.async { [weak cadenceTextView] in
+            cadenceTextView?.beginInlineTaskTitleEdit(id: suggestion.targetID)
+        }
         return true
     }
 
