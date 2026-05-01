@@ -9,6 +9,7 @@ struct SettingsAppearanceSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            SettingsSectionLabel(text: "Theme")
             LazyVGrid(
                 columns: [
                     GridItem(.adaptive(minimum: 220), spacing: 16, alignment: .top)
@@ -103,10 +104,10 @@ struct SettingsAccountSection: View {
                                     .font(.system(size: 11))
                                     .foregroundStyle(Theme.muted)
                             } else {
-                                Text("Sign in with Apple")
+                                Text("Apple Account")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(Theme.text)
-                                Text("Use your Apple account as your Cadence identity. This does not lock the app or change iCloud sync.")
+                                Text("Optional identity for Cadence. Local access and iCloud sync do not depend on signing in.")
                                     .font(.system(size: 12))
                                     .foregroundStyle(Theme.dim)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -159,7 +160,7 @@ struct SettingsAccountSection: View {
 
                     VStack(spacing: 8) {
                         accountDiagnosticRow(
-                            title: "Credential",
+                            title: "Credential Status",
                             value: appleAccountManager.credentialStatus.title,
                             color: appleAccountManager.credentialStatus == .authorized ? Theme.green : Theme.dim
                         )
@@ -222,10 +223,10 @@ struct SettingsAISection: View {
                             }
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("OpenAI BYOK")
+                            Text("OpenAI API Key")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
-                            Text("Cadence stores your API key in Keychain and sends only the note you choose to summarize or extract tasks from.")
+                            Text("Stored in Keychain. Cadence sends content only when you run an AI action.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -245,7 +246,7 @@ struct SettingsAISection: View {
                         SecureField(aiSettingsManager.hasAPIKey ? "Saved in Keychain" : "sk-...", text: $aiAPIKeyDraft)
                     }
 
-                    settingsField(title: "Model") {
+                    settingsField(title: "Model ID") {
                         TextField("gpt-5.4-mini", text: Binding(
                             get: { aiSettingsManager.model },
                             set: { aiSettingsManager.model = $0 }
@@ -253,7 +254,7 @@ struct SettingsAISection: View {
                     }
 
                     HStack(spacing: 10) {
-                        Button("Save Key") {
+                        Button("Save API Key") {
                             do {
                                 try aiSettingsManager.saveAPIKey(aiAPIKeyDraft)
                                 aiAPIKeyDraft = ""
@@ -282,7 +283,7 @@ struct SettingsAISection: View {
                         .disabled(!aiSettingsManager.hasAPIKey || aiSettingsManager.isTestingConnection)
 
                         if aiSettingsManager.hasAPIKey {
-                            Button("Remove Key") {
+                            Button("Delete Key") {
                                 do {
                                     try aiSettingsManager.removeAPIKey()
                                 } catch {
@@ -331,10 +332,14 @@ struct SettingsNavigationSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            SettingsSectionLabel(text: "List Opening")
             SettingsCard {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Default List Page")
+                    Text("Default Page")
                         .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                    Text("Used when a list does not have a saved page.")
+                        .font(.system(size: 11))
                         .foregroundStyle(Theme.dim)
 
                     HStack(spacing: 10) {
@@ -374,6 +379,7 @@ struct SettingsSidebarSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            SettingsSectionLabel(text: "Main Sidebar Tabs")
             SettingsCard {
                 VStack(spacing: 0) {
                     ForEach(Array(orderedSidebarTabs.enumerated()), id: \.element.id) { index, destination in

@@ -10,6 +10,8 @@ struct TimelineDayCanvas: View {
     let bundles: [TaskBundle]
     let allTasks: [AppTask]
     let allBundles: [TaskBundle]
+    let areas: [Area]
+    let projects: [Project]
     let metrics: TimelineMetrics
     let width: CGFloat
     let style: TimelineBlockStyle
@@ -17,7 +19,7 @@ struct TimelineDayCanvas: View {
     var showHalfHourMarks: Bool = false
     let dropBehavior: TimelineDropBehavior
     let onCreateTask: (String, Int, Int, TaskContainerSelection, String) -> Void
-    let onCreateBundle: (String, Int, Int) -> Void
+    let onCreateBundle: (String, Int, Int, [AppTask]) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
     let onDropBundleAtMinute: (TaskBundle, Int) -> Void
     let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
@@ -198,6 +200,7 @@ struct TimelineDayCanvas: View {
                     QuickCreateChoicePopover(
                         startMin: start,
                         endMin: end,
+                        dateKey: dateKey,
                         onCreateTask: { title, containerSelection, sectionName in
                             if let start = pendingStartMin, let end = pendingEndMin {
                                 onCreateTask(
@@ -212,9 +215,9 @@ struct TimelineDayCanvas: View {
                             pendingStartMin = nil
                             pendingEndMin = nil
                         },
-                        onCreateBundle: { title in
+                        onCreateBundle: { title, selectedTasks in
                             if let start = pendingStartMin, let end = pendingEndMin {
-                                onCreateBundle(title.isEmpty ? "Task Bundle" : title, start, end)
+                                onCreateBundle(title.isEmpty ? "Task Bundle" : title, start, end, selectedTasks)
                             }
                             showNewTaskPopover = false
                             pendingStartMin = nil
@@ -253,6 +256,8 @@ struct TimelineDayCanvas: View {
                 bundleLayouts: bundleLayouts,
                 taskLayouts: layouts,
                 allTasks: allTasks,
+                areas: areas,
+                projects: projects,
                 width: width,
                 metrics: metrics,
                 style: style,

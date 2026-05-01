@@ -96,6 +96,8 @@ struct SchedulePanel: View {
                             zoomLevel: zoomLevel,
                             allTasks: allTasks,
                             allBundles: allBundles,
+                            areas: areas,
+                            projects: projects,
                             scheduledTasks: scheduledTasks,
                             bundles: todayBundles,
                             todayKey: todayKey,
@@ -116,8 +118,9 @@ struct SchedulePanel: View {
                             onDropTaskAtMinute: { task, startMin in
                                 SchedulingActions.dropTask(task, to: todayKey, startMin: startMin)
                             },
-                            onCreateBundle: { title, startMin, endMin in
-                                SchedulingActions.createBundle(title: title, dateKey: todayKey, startMin: startMin, endMin: endMin, in: modelContext)
+                            onCreateBundle: { title, startMin, endMin, selectedTasks in
+                                let bundle = SchedulingActions.createBundle(title: title, dateKey: todayKey, startMin: startMin, endMin: endMin, in: modelContext)
+                                selectedTasks.forEach { SchedulingActions.addTask($0, to: bundle) }
                             },
                             onDropBundleAtMinute: { bundle, startMin in
                                 SchedulingActions.dropBundle(bundle, to: todayKey, startMin: startMin)

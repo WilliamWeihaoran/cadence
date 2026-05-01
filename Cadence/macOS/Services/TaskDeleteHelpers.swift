@@ -14,13 +14,7 @@ extension ModelContext {
             SchedulingActions.removeFromCalendar(taskToDelete)
         }
 
-        let subtasks = currentSubtasks(parentTaskID: taskID)
-        for subtask in subtasks {
-            subtask.parentTask = nil
-            delete(subtask)
-        }
-
-        delete(taskToDelete)
+        deleteTasks(withIDs: [taskID])
     }
 
     private func currentTask(withID taskID: UUID) -> AppTask? {
@@ -28,9 +22,20 @@ extension ModelContext {
         return (try? fetch(descriptor))?.first { $0.id == taskID }
     }
 
-    private func currentSubtasks(parentTaskID taskID: UUID) -> [Subtask] {
-        let descriptor = FetchDescriptor<Subtask>()
-        return ((try? fetch(descriptor)) ?? []).filter { $0.parentTask?.id == taskID }
+    func deleteTasks(withIDs taskIDs: Set<UUID>) {
+        guard !taskIDs.isEmpty else { return }
+
+        try? delete(model: Subtask.self, where: #Predicate<Subtask> { subtask in
+            if let parentTask = subtask.parentTask {
+                taskIDs.contains(parentTask.id)
+            } else {
+                false
+            }
+        })
+
+        try? delete(model: AppTask.self, where: #Predicate<AppTask> { task in
+            taskIDs.contains(task.id)
+        })
     }
 }
 #endif

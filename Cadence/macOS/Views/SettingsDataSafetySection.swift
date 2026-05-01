@@ -22,10 +22,10 @@ struct SettingsDataSafetySection: View {
                             }
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Store Snapshots")
+                            Text("Backups")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
-                            Text("Cadence copies the full SwiftData store, WAL, CloudKit assets, and external storage before startup migration work. Automatic snapshots are thinned over time.")
+                            Text("Cadence backs up the local store, CloudKit assets, and external files before migration work. Automatic backups are thinned over time.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -43,17 +43,17 @@ struct SettingsDataSafetySection: View {
                                 Label("Create Backup", systemImage: "plus.circle.fill")
                             }
                             SettingsActionButton(tone: .tinted(Theme.amber), action: cleanUpAutomaticBackups) {
-                                Label("Clean Up", systemImage: "wand.and.sparkles")
+                                Label("Clean Automatic", systemImage: "wand.and.sparkles")
                             }
                             SettingsActionButton(tone: .tinted(Theme.blue), action: revealBackupFolder) {
-                                Label("Reveal", systemImage: "folder.fill")
+                                Label("Show Folder", systemImage: "folder.fill")
                             }
                         }
                     }
                 }
             }
 
-            SettingsSectionLabel(text: "Restore Points")
+            SettingsSectionLabel(text: "Available Backups")
             SettingsCard {
                 VStack(spacing: 0) {
                     if backups.isEmpty {
@@ -61,7 +61,7 @@ struct SettingsDataSafetySection: View {
                             Image(systemName: "externaldrive")
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(Theme.dim)
-                            Text("No backups yet.")
+                            Text("No backups available.")
                                 .font(.system(size: 13))
                                 .foregroundStyle(Theme.dim)
                             Spacer()
@@ -100,7 +100,7 @@ struct SettingsDataSafetySection: View {
                 pendingRestore = nil
             }
         } message: {
-            Text("Cadence will restore this backup before SwiftData opens the store on the next app launch. Quit and reopen Cadence after staging.")
+            Text("Cadence will restore this backup before the store opens on the next launch. Quit and reopen Cadence after staging.")
         }
     }
 

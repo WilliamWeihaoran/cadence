@@ -186,7 +186,7 @@ enum MarkdownMetadataParser {
                 inCodeFence.toggle()
                 continue
             }
-            if inCodeFence || trimmed.hasPrefix("#") {
+            if inCodeFence || MarkdownMetadataParser.isMarkdownHeading(trimmed) {
                 continue
             }
 
@@ -212,6 +212,11 @@ enum MarkdownMetadataParser {
             }
         }
         return result
+    }
+
+    nonisolated private static func isMarkdownHeading(_ line: String) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: #"^#{1,6}\s+"#) else { return false }
+        return regex.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil
     }
 }
 

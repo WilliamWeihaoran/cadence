@@ -66,13 +66,15 @@ struct SchedulePanelTimelineViewport: View {
     let zoomLevel: Int
     let allTasks: [AppTask]
     let allBundles: [TaskBundle]
+    let areas: [Area]
+    let projects: [Project]
     let scheduledTasks: [AppTask]
     let bundles: [TaskBundle]
     let todayKey: String
     let externalEventItems: [CalendarEventItem]
     let onCreateTask: (String, Int, Int, TaskContainerSelection, String) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
-    let onCreateBundle: (String, Int, Int) -> Void
+    let onCreateBundle: (String, Int, Int, [AppTask]) -> Void
     let onDropBundleAtMinute: (TaskBundle, Int) -> Void
     let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
     let onCreateEvent: (String, Int, Int, String, String) -> Void
@@ -104,6 +106,8 @@ struct SchedulePanelTimelineViewport: View {
                 bundles: bundles,
                 allTasks: allTasks,
                 allBundles: allBundles,
+                areas: areas,
+                projects: projects,
                 metrics: metrics,
                 width: canvasWidth,
                 style: .schedule,

@@ -23,7 +23,6 @@ extension ModelContext {
             contextTasks +
             goals.flatMap { Array($0.tasks ?? []) }
         )
-        let subtasks = uniqueSubtasks(from: tasks.flatMap { Array($0.subtasks ?? []) })
         let notes = uniqueNotes(from:
             areas.flatMap { Array($0.notes ?? []) } +
             projects.flatMap { Array($0.notes ?? []) }
@@ -40,8 +39,7 @@ extension ModelContext {
         )
         let completions = uniqueHabitCompletions(from: habits.flatMap { Array($0.completions ?? []) })
 
-        delete(subtasks)
-        delete(tasks)
+        deleteTasks(withIDs: Set(tasks.map(\.id)))
         delete(notes)
         delete(documents)
         deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
@@ -61,8 +59,7 @@ extension ModelContext {
         let documents = uniqueDocuments(from: Array(project.documents ?? []))
         let deletedNoteIDs = Set(notes.map(\.id))
         delete(uniqueGoalListLinks(from: Array(project.goalLinks ?? [])))
-        delete(uniqueSubtasks(from: tasks.flatMap { Array($0.subtasks ?? []) }))
-        delete(uniqueTasks(from: tasks))
+        deleteTasks(withIDs: Set(uniqueTasks(from: tasks).map(\.id)))
         delete(notes)
         delete(documents)
         deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
@@ -77,8 +74,7 @@ extension ModelContext {
         let documents = uniqueDocuments(from: Array(area.documents ?? []))
         let deletedNoteIDs = Set(notes.map(\.id))
         delete(uniqueGoalListLinks(from: Array(area.goalLinks ?? [])))
-        delete(uniqueSubtasks(from: tasks.flatMap { Array($0.subtasks ?? []) }))
-        delete(uniqueTasks(from: tasks))
+        deleteTasks(withIDs: Set(uniqueTasks(from: tasks).map(\.id)))
         for project in projects {
             deleteProject(project)
         }
@@ -97,10 +93,6 @@ extension ModelContext {
 
     private func uniqueTasks(from tasks: [AppTask]) -> [AppTask] {
         dedupe(tasks, by: \AppTask.id)
-    }
-
-    private func uniqueSubtasks(from subtasks: [Subtask]) -> [Subtask] {
-        dedupe(subtasks, by: \Subtask.id)
     }
 
     private func uniqueProjects(from projects: [Project]) -> [Project] {

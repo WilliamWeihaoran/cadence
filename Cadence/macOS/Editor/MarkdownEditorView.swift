@@ -27,6 +27,7 @@ struct MarkdownEditor: View {
     var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
+    @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var textView: CadenceTextView?
 
     @MainActor private var noteSuggestions: [MarkdownReferenceSuggestion] {
@@ -44,6 +45,10 @@ struct MarkdownEditor: View {
 
     @MainActor private var referenceSuggestions: [MarkdownReferenceSuggestion] {
         noteSuggestions + taskSuggestions
+    }
+
+    @MainActor private var tagSuggestions: [MarkdownTagSuggestion] {
+        TagSupport.uniqueBySlug(tags).map(MarkdownTagSuggestion.tag)
     }
 
     @MainActor private var taskEmbedInfos: [UUID: MarkdownTaskEmbedRenderInfo] {
@@ -68,8 +73,10 @@ struct MarkdownEditor: View {
                 onResizeImage: resizeImage,
                 onChooseImages: chooseImages,
                 referenceSuggestions: referenceSuggestions,
+                tagSuggestions: tagSuggestions,
                 taskEmbedInfos: taskEmbedInfos,
                 onOpenReference: openReference,
+                onCreateTag: createInlineTag,
                 onCreateEmbeddedTask: onCreateEmbeddedTask,
                 onToggleEmbeddedTask: onToggleEmbeddedTask,
                 onToggleEmbeddedSubtask: onToggleEmbeddedSubtask,
@@ -135,6 +142,16 @@ struct MarkdownEditor: View {
         case .task:
             onOpenTaskReference(target.id, target.title)
         }
+    }
+
+    private func createInlineTag(_ name: String) -> MarkdownTagSuggestion? {
+        guard let tag = TagSupport.resolveTags(named: [name], in: modelContext).first else { return nil }
+        if tag.isArchived {
+            tag.isArchived = false
+        }
+        tag.updatedAt = Date()
+        try? modelContext.save()
+        return .tag(tag)
     }
 }
 
@@ -318,8 +335,10 @@ struct MarkdownEditorView: NSViewRepresentable {
     var onResizeImage: (UUID, CGFloat) -> Void = { _, _ in }
     var onChooseImages: () -> Void = {}
     var referenceSuggestions: [MarkdownReferenceSuggestion] = []
+    var tagSuggestions: [MarkdownTagSuggestion] = []
     var taskEmbedInfos: [UUID: MarkdownTaskEmbedRenderInfo] = [:]
     var onOpenReference: (MarkdownReferenceTarget) -> Void = { _ in }
+    var onCreateTag: (String) -> MarkdownTagSuggestion? = { _ in nil }
     var onCreateEmbeddedTask: (String) -> MarkdownReferenceSuggestion? = { _ in nil }
     var onToggleEmbeddedTask: (UUID) -> Void = { _ in }
     var onToggleEmbeddedSubtask: (UUID, UUID) -> Void = { _, _ in }
@@ -418,7 +437,9 @@ struct MarkdownEditorView: NSViewRepresentable {
             textView.markdownTaskEmbeds = taskEmbedInfos
         }
         textView.referenceSuggestions = referenceSuggestions
+        textView.tagSuggestions = tagSuggestions
         textView.onOpenMarkdownReference = onOpenReference
+        textView.onCreateMarkdownTag = onCreateTag
         textView.onCreateEmbeddedMarkdownTask = onCreateEmbeddedTask
         textView.onToggleEmbeddedMarkdownTask = onToggleEmbeddedTask
         textView.onToggleEmbeddedMarkdownSubtask = onToggleEmbeddedSubtask

@@ -11,6 +11,8 @@ struct TimelineBundleBlock: View {
 
     let bundle: TaskBundle
     let allTasks: [AppTask]
+    let areas: [Area]
+    let projects: [Project]
     let column: Int
     let totalColumns: Int
     let totalWidth: CGFloat
@@ -112,6 +114,8 @@ struct TimelineBundleBlock: View {
                 TaskBundleDetailPopover(
                     bundle: bundle,
                     allTasks: allTasks,
+                    areas: areas,
+                    projects: projects,
                     onFocus: {
                         focusManager.startFocus(bundle: bundle)
                         selectedBundleID = nil
@@ -313,6 +317,8 @@ private struct TimelineBundleDropDelegate: DropDelegate {
 private struct TaskBundleDetailPopover: View {
     let bundle: TaskBundle
     let allTasks: [AppTask]
+    let areas: [Area]
+    let projects: [Project]
     let onFocus: () -> Void
     let onAddTask: (AppTask) -> Void
     let onRemoveTask: (AppTask) -> Void
@@ -377,10 +383,14 @@ private struct TaskBundleDetailPopover: View {
             }
 
             if isAddingTasks {
-                BundleTaskPickerPanel(
-                    bundle: bundle,
+                TaskBundleTaskPickerPanel(
+                    bundleDateKey: bundle.dateKey,
                     allTasks: allTasks,
+                    areas: areas,
+                    projects: projects,
+                    excludedTaskIDs: Set(bundle.sortedTasks.map(\.id)),
                     searchText: $taskSearch,
+                    maxHeight: 214,
                     onAdd: onAddTask
                 )
             }
@@ -475,140 +485,4 @@ private struct BundleTaskPopoverRow: View {
     }
 }
 
-private struct BundleTaskPickerPanel: View {
-    let bundle: TaskBundle
-    let allTasks: [AppTask]
-    @Binding var searchText: String
-    let onAdd: (AppTask) -> Void
-
-    private var candidates: [AppTask] {
-        let memberIDs = Set(bundle.sortedTasks.map(\.id))
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return allTasks
-            .filter { task in
-                guard !task.isCancelled, !memberIDs.contains(task.id) else { return false }
-                guard !query.isEmpty else { return true }
-                return task.title.lowercased().contains(query) ||
-                    task.containerName.lowercased().contains(query) ||
-                    task.notes.lowercased().contains(query)
-            }
-            .sorted { lhs, rhs in
-                let lhsScore = candidateSortScore(lhs)
-                let rhsScore = candidateSortScore(rhs)
-                if lhsScore != rhsScore { return lhsScore > rhsScore }
-                return lhs.createdAt > rhs.createdAt
-            }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 7) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-                TextField("Find tasks", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.text)
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.dim.opacity(0.55))
-                    }
-                    .buttonStyle(.cadencePlain)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-
-            Divider().background(Theme.borderSubtle)
-
-            ScrollView {
-                VStack(spacing: 4) {
-                    if candidates.isEmpty {
-                        Text(searchText.isEmpty ? "No available tasks." : "No matching tasks.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.dim)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
-                    } else {
-                        ForEach(candidates.prefix(8)) { task in
-                            Button {
-                                onAdd(task)
-                                searchText = ""
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: task.bundle == nil ? "plus.circle" : "arrow.triangle.branch")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(Theme.amber)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(task.title.isEmpty ? "Untitled" : task.title)
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundStyle(Theme.text)
-                                            .lineLimit(1)
-                                        Text(candidateDetail(task))
-                                            .font(.system(size: 10))
-                                            .foregroundStyle(Theme.dim)
-                                            .lineLimit(1)
-                                    }
-                                    Spacer(minLength: 8)
-                                    Text("\(max(task.estimatedMinutes, 5))m")
-                                        .font(.system(size: 10, weight: .medium))
-                                        .foregroundStyle(Theme.dim)
-                                }
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 7)
-                                .background(Theme.surfaceElevated.opacity(0.58))
-                                .clipShape(RoundedRectangle(cornerRadius: 7))
-                            }
-                            .buttonStyle(.cadencePlain)
-                        }
-                    }
-                }
-                .padding(7)
-            }
-            .frame(maxHeight: 214)
-        }
-        .background(Theme.surfaceElevated.opacity(0.54))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
-        }
-    }
-
-    private func candidateSortScore(_ task: AppTask) -> Int {
-        var score = 0
-        if task.scheduledDate == bundle.dateKey { score += 8 }
-        if task.dueDate == bundle.dateKey { score += 5 }
-        if task.bundle != nil { score -= 3 }
-        if task.isDone { score -= 6 }
-        switch task.priority {
-        case .high: score += 3
-        case .medium: score += 2
-        case .low: score += 1
-        case .none: break
-        }
-        return score
-    }
-
-    private func candidateDetail(_ task: AppTask) -> String {
-        if let existingBundle = task.bundle {
-            return "In \(existingBundle.displayTitle)"
-        }
-        if task.scheduledDate == bundle.dateKey {
-            return task.scheduledStartMin >= 0 ? "Scheduled \(TimeFormatters.timeString(from: task.scheduledStartMin))" : "Planned this day"
-        }
-        if task.dueDate == bundle.dateKey {
-            return "Due this day"
-        }
-        if !task.containerName.isEmpty {
-            return task.containerName
-        }
-        return task.isDone ? "Done" : "Inbox"
-    }
-}
 #endif

@@ -315,6 +315,8 @@ struct CalDayColumn: View {
             bundles: bundles,
             allTasks: allTasks,
             allBundles: allBundles,
+            areas: areas,
+            projects: projects,
             metrics: TimelineMetrics(startHour: calStartHour, endHour: calEndHour, hourHeight: hourHeight),
             width: colWidth,
             style: .calendar,
@@ -334,8 +336,9 @@ struct CalDayColumn: View {
                     in: modelContext
                 )
             },
-            onCreateBundle: { title, startMin, endMin in
-                SchedulingActions.createBundle(title: title, dateKey: dateKey, startMin: startMin, endMin: endMin, in: modelContext)
+            onCreateBundle: { title, startMin, endMin, selectedTasks in
+                let bundle = SchedulingActions.createBundle(title: title, dateKey: dateKey, startMin: startMin, endMin: endMin, in: modelContext)
+                selectedTasks.forEach { SchedulingActions.addTask($0, to: bundle) }
             },
             onDropTaskAtMinute: { task, startMin in
                 SchedulingActions.dropTask(task, to: dateKey, startMin: startMin)

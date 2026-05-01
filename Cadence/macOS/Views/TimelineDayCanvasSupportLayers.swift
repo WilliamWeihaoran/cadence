@@ -33,6 +33,8 @@ struct TimelineScheduledBlocksLayer: View {
     let bundleLayouts: [TimelineBundleLayout]
     let taskLayouts: [TimelineBlockLayout]
     let allTasks: [AppTask]
+    let areas: [Area]
+    let projects: [Project]
     let width: CGFloat
     let metrics: TimelineMetrics
     let style: TimelineBlockStyle
@@ -64,6 +66,8 @@ struct TimelineScheduledBlocksLayer: View {
             TimelineBundleBlock(
                 bundle: layout.bundle,
                 allTasks: allTasks,
+                areas: areas,
+                projects: projects,
                 column: layout.column,
                 totalColumns: layout.totalColumns,
                 totalWidth: width,

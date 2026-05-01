@@ -9,12 +9,14 @@ struct QuickCreateChoicePopover: View {
 
     let startMin: Int
     let endMin: Int
+    let dateKey: String
     let onCreateTask: (String, TaskContainerSelection, String) -> Void
-    let onCreateBundle: ((String) -> Void)?
+    let onCreateBundle: ((String, [AppTask]) -> Void)?
     let onCreateEvent: ((String, String, String) -> Void)?
     let onCancel: () -> Void
 
     @Environment(CalendarManager.self) private var calendarManager
+    @Query(sort: \AppTask.createdAt, order: .reverse) private var allTasks: [AppTask]
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -27,6 +29,8 @@ struct QuickCreateChoicePopover: View {
     @State private var tildeMode: TildeMode = .none
     @State private var tildeSearchQuery = ""
     @State private var tildeHighlightIdx = 0
+    @State private var bundleTaskSearch = ""
+    @State private var selectedBundleTaskIDs: [UUID] = []
     @FocusState private var focused: Bool
     @FocusState private var isTildeSearchFocused: Bool
     private let modeFormMinHeight: CGFloat = 190
@@ -34,14 +38,16 @@ struct QuickCreateChoicePopover: View {
     init(
         startMin: Int,
         endMin: Int,
+        dateKey: String,
         onCreateTask: @escaping (String, TaskContainerSelection, String) -> Void,
-        onCreateBundle: ((String) -> Void)? = nil,
+        onCreateBundle: ((String, [AppTask]) -> Void)? = nil,
         onCreateEvent: ((String, String, String) -> Void)?,
         onCancel: @escaping () -> Void,
         defaultsToCalendarEvent: Bool = false
     ) {
         self.startMin = startMin
         self.endMin = endMin
+        self.dateKey = dateKey
         self.onCreateTask = onCreateTask
         self.onCreateBundle = onCreateBundle
         self.onCreateEvent = onCreateEvent
@@ -129,6 +135,8 @@ struct QuickCreateChoicePopover: View {
                             .background(Theme.surfaceElevated)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
+                } else if mode == .bundle {
+                    bundleTaskSelectionView
                 }
             }
             .frame(minHeight: modeFormMinHeight, alignment: .topLeading)
@@ -154,7 +162,7 @@ struct QuickCreateChoicePopover: View {
             }
         }
         .padding(14)
-        .frame(width: 286)
+        .frame(width: mode == .bundle ? 326 : 286)
         .background(Theme.surface)
         .onAppear {
             focused = true
@@ -170,7 +178,10 @@ struct QuickCreateChoicePopover: View {
         if mode == .timeBlock {
             onCreateTask(title, selectedContainer, selectedSectionName)
         } else if mode == .bundle {
-            onCreateBundle?(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Task Bundle" : title)
+            onCreateBundle?(
+                title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Task Bundle" : title,
+                selectedBundleTasks
+            )
         } else {
             onCreateEvent?(title, selectedCalendar?.calendarIdentifier ?? selectedCalendarID, notes)
         }
@@ -187,6 +198,16 @@ struct QuickCreateChoicePopover: View {
     private var selectedCalendar: EKCalendar? {
         calendarManager.writableCalendars.first { $0.calendarIdentifier == selectedCalendarID }
             ?? calendarManager.defaultWritableCalendar
+    }
+
+    private var selectedBundleTaskSet: Set<UUID> {
+        Set(selectedBundleTaskIDs)
+    }
+
+    private var selectedBundleTasks: [AppTask] {
+        selectedBundleTaskIDs.compactMap { id in
+            allTasks.first { $0.id == id }
+        }
     }
 
     private var availableSections: [String] {
@@ -364,6 +385,80 @@ struct QuickCreateChoicePopover: View {
                 DispatchQueue.main.async { focused = true }
             }
         )
+    }
+
+    private var bundleTaskSelectionView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(selectedBundleTaskIDs.isEmpty ? "Add tasks now" : "\(selectedBundleTaskIDs.count) selected")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                Spacer()
+                if !selectedBundleTaskIDs.isEmpty {
+                    Button("Clear") {
+                        selectedBundleTaskIDs.removeAll()
+                    }
+                    .buttonStyle(.cadencePlain)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                }
+            }
+
+            if !selectedBundleTasks.isEmpty {
+                VStack(spacing: 5) {
+                    ForEach(selectedBundleTasks) { task in
+                        selectedBundleTaskRow(task)
+                    }
+                }
+            }
+
+            TaskBundleTaskPickerPanel(
+                bundleDateKey: dateKey,
+                allTasks: allTasks,
+                areas: areas,
+                projects: projects,
+                excludedTaskIDs: selectedBundleTaskSet,
+                searchText: $bundleTaskSearch,
+                maxHeight: 188,
+                onAdd: addSelectedBundleTask
+            )
+        }
+    }
+
+    private func selectedBundleTaskRow(_ task: AppTask) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.amber)
+            Text(task.title.isEmpty ? "Untitled" : task.title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text("\(max(task.estimatedMinutes, 5))m")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.dim)
+            Button {
+                selectedBundleTaskIDs.removeAll { $0 == task.id }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.cadencePlain)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(Theme.surfaceElevated.opacity(0.62))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+
+    private func addSelectedBundleTask(_ task: AppTask) {
+        guard !selectedBundleTaskIDs.contains(task.id) else { return }
+        selectedBundleTaskIDs.append(task.id)
+        bundleTaskSearch = ""
     }
 
     @ViewBuilder

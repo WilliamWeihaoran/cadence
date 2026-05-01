@@ -57,6 +57,26 @@ struct MarkdownReferenceSuggestion: Identifiable, Hashable {
     }
 }
 
+struct MarkdownTagSuggestion: Identifiable, Hashable {
+    let name: String
+    let slug: String
+    let desc: String
+    let colorHex: String
+    let isArchived: Bool
+
+    var id: String { slug }
+
+    static func tag(_ tag: Tag) -> MarkdownTagSuggestion {
+        MarkdownTagSuggestion(
+            name: tag.name,
+            slug: tag.slug,
+            desc: tag.desc,
+            colorHex: tag.colorHex,
+            isArchived: tag.isArchived
+        )
+    }
+}
+
 struct MarkdownImageLayoutInfo {
     let id: UUID
     let altText: String
@@ -742,7 +762,7 @@ enum MarkdownStylist {
             let ps = listStyle(for: level, markerWidth: ordered.marker.count + 1)
             storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
             let markerRange = NSRange(location: lineStart + ordered.indentation.count, length: min(ordered.marker.count, lineRange.length))
-            storage.addAttribute(.foregroundColor, value: blueColor, range: markerRange)
+            storage.addAttribute(.foregroundColor, value: textColor, range: markerRange)
             storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .semibold), range: markerRange)
             addListMarkerSpacing(storage, markerRange: markerRange)
         } else if let bullet = unorderedListMatch(in: line) {
@@ -753,12 +773,12 @@ enum MarkdownStylist {
             switch bullet.marker {
             case "•", "*":
                 let bulletRange = NSRange(location: markerLocation, length: min(1, lineRange.length))
-                storage.addAttribute(.foregroundColor, value: blueColor, range: bulletRange)
+                storage.addAttribute(.foregroundColor, value: textColor, range: bulletRange)
                 storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 20), range: bulletRange)
                 addListMarkerSpacing(storage, markerRange: bulletRange)
             case "–", "-", "+":
                 let markerRange = NSRange(location: markerLocation, length: min(1, max(0, lineRange.length - bullet.indentation.count)))
-                storage.addAttribute(.foregroundColor, value: dimColor, range: markerRange)
+                storage.addAttribute(.foregroundColor, value: textColor, range: markerRange)
                 addListMarkerSpacing(storage, markerRange: markerRange)
             case "○", "●", "✓":
                 let checked = bullet.marker == "●" || bullet.marker == "✓"

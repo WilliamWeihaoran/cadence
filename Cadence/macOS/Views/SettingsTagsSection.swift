@@ -42,7 +42,7 @@ struct SettingsTagsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionLabel(text: "New Tag")
+            SettingsSectionLabel(text: "Create Tag")
             SettingsCard {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 12) {
@@ -55,17 +55,17 @@ struct SettingsTagsSection: View {
                             HStack(spacing: 10) {
                                 tagTextField("Name", text: $newTagName)
                                     .frame(minWidth: 180)
-                                tagTextField("Description", text: $newTagDescription)
+                                tagTextField("Optional description", text: $newTagDescription)
                             }
 
                             HStack(spacing: 8) {
                                 TagColorSwatches(selectedHex: $newTagColorHex)
                                 Spacer()
                                 SettingsActionButton(tone: .tinted(Theme.blue), action: restoreDefaults) {
-                                    Label("Restore Defaults", systemImage: "arrow.clockwise")
+                                    Label("Add Defaults", systemImage: "arrow.clockwise")
                                 }
                                 SettingsActionButton(tone: .filled(Theme.blue), action: createTag) {
-                                    Label("Add Tag", systemImage: "plus")
+                                    Label("Create Tag", systemImage: "plus")
                                 }
                                 .disabled(!canCreateTag)
                                 .opacity(canCreateTag ? 1 : 0.45)
@@ -76,7 +76,7 @@ struct SettingsTagsSection: View {
                     if let matchingArchivedTag {
                         TagNoticeRow(
                             icon: "archivebox.fill",
-                            text: "\"\(matchingArchivedTag.name)\" already exists in archived tags.",
+                            text: "\"\(matchingArchivedTag.name)\" is archived.",
                             actionTitle: "Restore"
                         ) {
                             restore(matchingArchivedTag)
@@ -96,14 +96,14 @@ struct SettingsTagsSection: View {
             SettingsSectionLabel(text: "Active Tags")
             SettingsCard {
                 if activeTags.isEmpty {
-                    EmptyTagCatalogRow(title: "No active tags yet.", subtitle: "Create a tag or restore the default set.")
+                    EmptyTagCatalogRow(title: "No active tags.", subtitle: "Create a tag or add the default set.")
                 } else {
                     tagList(activeTags, isArchivedList: false)
                 }
             }
 
             if !archivedTags.isEmpty {
-                SettingsSectionLabel(text: "Archived")
+                SettingsSectionLabel(text: "Archived Tags")
                 SettingsCard {
                     tagList(archivedTags, isArchivedList: true)
                 }
@@ -208,7 +208,7 @@ private struct SettingsTagRow: View {
     }
 
     private var usageText: String {
-        "\(taskCount) tasks | \(noteCount) notes"
+        "\(taskCount) task\(taskCount == 1 ? "" : "s"), \(noteCount) note\(noteCount == 1 ? "" : "s")"
     }
 
     private var draftSlug: String {

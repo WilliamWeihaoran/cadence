@@ -586,7 +586,7 @@ struct SidebarTabEditorSheet: View {
                     Text(destination.label)
                         .font(.system(size: 19, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                    Text("Customize how this tab appears in the sidebar.")
+                    Text("Set this tab's color and visibility.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                 }
@@ -603,8 +603,8 @@ struct SidebarTabEditorSheet: View {
             }
 
             settingsPanelRow(
-                title: "Show in Sidebar",
-                subtitle: "Hidden tabs can still be restored later from Settings."
+                title: "Visible in Sidebar",
+                subtitle: "Turn this off to hide the tab without losing its place."
             ) {
                 Toggle("", isOn: $isVisible)
                     .toggleStyle(.switch)

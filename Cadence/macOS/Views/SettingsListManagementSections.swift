@@ -11,12 +11,12 @@ struct SettingsCalendarSection: View {
         VStack(alignment: .leading, spacing: 16) {
             if calendarManager.isAuthorized {
                 if !activeAreas.isEmpty {
-                    SettingsSectionLabel(text: "Areas")
+                    SettingsSectionLabel(text: "Area Calendars")
                     linkCard(items: activeAreas)
                 }
 
                 if !activeProjects.isEmpty {
-                    SettingsSectionLabel(text: "Projects")
+                    SettingsSectionLabel(text: "Project Calendars")
                     linkCard(items: activeProjects)
                 }
             } else {
@@ -26,12 +26,12 @@ struct SettingsCalendarSection: View {
                             .foregroundStyle(Theme.amber)
                             .font(.system(size: 14))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(calendarManager.isDenied ? "Access denied" : "Calendar access required")
+                            Text(calendarManager.isDenied ? "Calendar access denied" : "Calendar access required")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(Theme.text)
                             Text(calendarManager.isDenied
-                                 ? "Open System Settings -> Privacy & Security -> Calendars to allow access."
-                                 : "Cadence needs permission to create and sync calendar events.")
+                                 ? "Allow Cadence from System Settings, Privacy & Security, Calendars."
+                                 : "Allow Cadence to create and sync calendar events.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -39,11 +39,11 @@ struct SettingsCalendarSection: View {
                         Spacer()
                         if calendarManager.isDenied {
                             SettingsActionButton(tone: .filled(Theme.dim), action: openCalendarPrivacySettings) {
-                                Text("Open Settings")
+                                Text("Open Calendar Settings")
                             }
                         } else {
                             SettingsActionButton(tone: .filled(Theme.blue), action: requestCalendarAccess) {
-                                Text("Grant Access")
+                                Text("Allow Access")
                             }
                         }
                     }
@@ -128,6 +128,7 @@ struct SettingsContextsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            SettingsSectionLabel(text: "Active Contexts")
             SettingsCard {
                 VStack(spacing: 0) {
                     if activeContexts.isEmpty {
@@ -135,7 +136,7 @@ struct SettingsContextsSection: View {
                             Image(systemName: "square.stack.3d.up")
                                 .font(.system(size: 14))
                                 .foregroundStyle(Theme.dim)
-                            Text("No contexts yet.")
+                            Text("No active contexts.")
                                 .font(.system(size: 13))
                                 .foregroundStyle(Theme.dim)
                             Spacer()
@@ -160,7 +161,7 @@ struct SettingsContextsSection: View {
                             Image(systemName: "plus.circle")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(Theme.blue)
-                            Text("Add Context")
+                            Text("New Context")
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(Theme.blue)
                             Spacer()
@@ -173,7 +174,7 @@ struct SettingsContextsSection: View {
             }
 
             if !archivedContexts.isEmpty {
-                SettingsSectionLabel(text: "Archived")
+                SettingsSectionLabel(text: "Archived Contexts")
                 SettingsCard {
                     VStack(spacing: 0) {
                         ForEach(Array(archivedContexts.enumerated()), id: \.element.id) { index, context in
@@ -211,7 +212,7 @@ struct SettingsListsSection: View {
                         Image(systemName: "archivebox")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(Theme.dim)
-                        Text("No completed or archived lists yet.")
+                        Text("No completed or archived lists.")
                             .font(.system(size: 13))
                             .foregroundStyle(Theme.dim)
                         Spacer()

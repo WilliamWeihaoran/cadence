@@ -51,6 +51,20 @@ struct TagSupportTests {
         #expect(metadata.tags == ["bug", "docs", "inline"])
     }
 
+    @Test func standaloneInlineTagsDoNotGetMistakenForHeadings() throws {
+        let content = """
+        # Heading
+        #bug
+
+        ## Details
+        #enhancement note
+        """
+
+        let metadata = MarkdownMetadataParser.metadata(in: content)
+
+        #expect(metadata.tags == ["bug", "enhancement"])
+    }
+
     @Test func noteMarkdownSyncCreatesTagsAndAssignments() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)

@@ -3,15 +3,15 @@ import SwiftUI
 
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case appearance
-    case account
-    case dataSafety
     case navigation
     case sidebar
     case contexts
-    case tags
     case lists
-    case ai
+    case tags
     case calendar
+    case ai
+    case dataSafety
+    case account
 
     var id: String { rawValue }
 
@@ -33,50 +33,50 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .appearance:
-            return "Themes and overall visual mood."
+            return "Theme and visual tone."
         case .account:
-            return "Apple account identity."
+            return "Apple identity status."
         case .dataSafety:
-            return "Backups and restore points."
+            return "Backups and restores."
         case .navigation:
-            return "How lists open and behave by default."
+            return "Default list behavior."
         case .sidebar:
-            return "Choose which static destinations stay visible."
+            return "Tabs, order, and visibility."
         case .contexts:
-            return "Add, edit, archive, and reorder contexts."
+            return "Active and archived contexts."
         case .tags:
-            return "Classification labels for tasks and notes."
+            return "Task and note labels."
         case .lists:
-            return "Completed and archived areas and projects."
+            return "Completed and archived lists."
         case .ai:
-            return "Bring your own OpenAI key for local AI actions."
+            return "OpenAI key and model."
         case .calendar:
-            return "Apple Calendar access and linked calendars."
+            return "Access and linked calendars."
         }
     }
 
     var detailDescription: String {
         switch self {
         case .appearance:
-            return "Pick the dark palette that best fits your workspace. Changes apply across the app immediately."
+            return "Choose the palette Cadence uses across the app."
         case .account:
-            return "Connect an Apple account for local identity. Cadence still works signed out."
+            return "Use Sign in with Apple for your Cadence identity. The app still works when signed out."
         case .dataSafety:
-            return "Cadence snapshots its store before startup migrations and lets you create or stage restore points manually."
+            return "Create backups, review restore points, and stage a restore for the next launch."
         case .navigation:
-            return "Choose which page new lists open on by default. Once you visit a specific list, Cadence still remembers that list's most recently opened page."
+            return "Choose the first page Cadence opens for lists without a saved page."
         case .sidebar:
-            return "Choose which tabs appear in the sidebar. Hidden tabs are still accessible by re-enabling them here."
+            return "Arrange the main sidebar tabs and decide which ones stay visible."
         case .contexts:
-            return "Add, edit, archive, and drag to reorder contexts. Archived contexts are hidden from the sidebar but not deleted."
+            return "Manage the top-level groups that organize your areas, projects, tasks, and habits."
         case .tags:
-            return "Manage the global tag catalog used by tasks and notes. Archived tags stay visible on historical items but disappear from pickers."
+            return "Create, edit, archive, and restore the tags used by tasks and notes."
         case .lists:
-            return "Completed and archived lists live here so you can restore, reopen, or permanently delete them."
+            return "Review lists that are no longer active and decide what to restore or remove."
         case .ai:
-            return "Use your own OpenAI API key for note summaries and task extraction. Cadence stores the key in Keychain."
+            return "Store your OpenAI API key in Keychain and choose the model for AI actions."
         case .calendar:
-            return "Scheduled tasks sync to Apple Calendar when their area or project has a linked calendar."
+            return "Connect Apple Calendar and choose which calendar each area or project uses."
         }
     }
 
@@ -170,7 +170,7 @@ struct SettingsRail: View {
                 Text("Settings")
                     .font(.system(size: 26, weight: .bold))
                     .foregroundStyle(Theme.text)
-                Text("Tune the app without digging through one giant page.")
+                Text("Preferences, organization, integrations, and safety.")
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.dim)
                     .fixedSize(horizontal: false, vertical: true)

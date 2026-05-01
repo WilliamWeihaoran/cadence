@@ -372,7 +372,9 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     var hoveredMarkdownTaskEmbedID: UUID?
     var selectedMarkdownImageID: UUID?
     var referenceSuggestions: [MarkdownReferenceSuggestion] = []
+    var tagSuggestions: [MarkdownTagSuggestion] = []
     var onOpenMarkdownReference: ((MarkdownReferenceTarget) -> Void)?
+    var onCreateMarkdownTag: ((String) -> MarkdownTagSuggestion?)?
     var onCreateEmbeddedMarkdownTask: ((String) -> MarkdownReferenceSuggestion?)?
     var onToggleEmbeddedMarkdownTask: ((UUID) -> Void)?
     var onToggleEmbeddedMarkdownSubtask: ((UUID, UUID) -> Void)?
@@ -1147,10 +1149,13 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
     private var parent: MarkdownEditorView
     private let slashCommandPicker = MarkdownSlashCommandPickerController()
     private let referencePicker = MarkdownReferencePickerController()
+    private let tagPicker = MarkdownTagPickerController()
     private weak var pendingSlashCommandTextView: NSTextView?
     private weak var pendingReferenceTextView: NSTextView?
+    private weak var pendingTagTextView: NSTextView?
     private var slashCommandUpdateIsScheduled = false
     private var referenceUpdateIsScheduled = false
+    private var tagUpdateIsScheduled = false
 
     init(parent: MarkdownEditorView) {
         self.parent = parent
@@ -1183,9 +1188,30 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         textView.typingAttributes = MarkdownStylist.baseAttributes
         scheduleSlashCommandPickerUpdate(for: textView)
         scheduleReferencePickerUpdate(for: textView)
+        scheduleTagPickerUpdate(for: textView)
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if tagPicker.isShown {
+            if commandSelector == #selector(NSResponder.moveUp(_:)) {
+                tagPicker.moveSelection(delta: -1)
+                return true
+            }
+            if commandSelector == #selector(NSResponder.moveDown(_:)) {
+                tagPicker.moveSelection(delta: 1)
+                return true
+            }
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                tagPicker.close()
+                return true
+            }
+            if commandSelector == #selector(NSResponder.insertTab(_:)) || commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                return tagPicker.applyHighlighted { [weak self] choice, context in
+                    self?.applyTagCompletion(choice, context: context, in: textView)
+                }
+            }
+        }
+
         if referencePicker.isShown {
             if commandSelector == #selector(NSResponder.moveUp(_:)) {
                 referencePicker.moveSelection(delta: -1)
@@ -1253,6 +1279,9 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
             if slashCommandPicker.isShown {
                 scheduleSlashCommandPickerUpdate(for: textView)
+            }
+            if tagPicker.isShown {
+                scheduleTagPickerUpdate(for: textView)
             }
             if let cadenceTextView = textView as? CadenceTextView,
                cadenceTextView.deleteMarkdownImageForCommand(backward: true) {
@@ -1582,6 +1611,7 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         let context = currentReferenceCompletionContext(in: textView)
         if context != nil {
             slashCommandPicker.close()
+            tagPicker.close()
         }
         referencePicker.update(
             for: textView,
@@ -1589,6 +1619,37 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
             suggestions: parent.referenceSuggestions
         ) { [weak self] suggestion, context in
             self?.applyReferenceSuggestion(suggestion, context: context, in: textView)
+        }
+    }
+
+    private func updateTagPicker(for textView: NSTextView) {
+        let context = currentTagCompletionContext(in: textView)
+        if context != nil {
+            slashCommandPicker.close()
+            referencePicker.close()
+        }
+        tagPicker.update(
+            for: textView,
+            context: context,
+            suggestions: parent.tagSuggestions
+        ) { [weak self] choice, context in
+            self?.applyTagCompletion(choice, context: context, in: textView)
+        }
+    }
+
+    private func scheduleTagPickerUpdate(for textView: NSTextView) {
+        pendingTagTextView = textView
+        guard !tagUpdateIsScheduled else { return }
+        tagUpdateIsScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            tagUpdateIsScheduled = false
+            guard let textView = pendingTagTextView else {
+                tagPicker.close()
+                return
+            }
+            pendingTagTextView = nil
+            updateTagPicker(for: textView)
         }
     }
 
@@ -1707,6 +1768,43 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         textView.typingAttributes = MarkdownStylist.baseAttributes
         textView.didChangeText()
         referencePicker.close()
+    }
+
+    private func currentTagCompletionContext(in textView: NSTextView) -> MarkdownTagCompletionContext? {
+        let selection = textView.selectedRange()
+        guard selection.length == 0 else { return nil }
+        let nsText = textView.string as NSString
+        let safeCursor = min(max(selection.location, 0), nsText.length)
+        return MarkdownTagCompletionTokenSupport.token(in: nsText, cursor: safeCursor)
+    }
+
+    private func applyTagCompletion(_ choice: MarkdownTagPickerChoice, context: MarkdownTagCompletionContext, in textView: NSTextView) {
+        let suggestion: MarkdownTagSuggestion
+        switch choice {
+        case .existing(let existing):
+            if existing.isArchived, let restored = parent.onCreateTag(existing.name) {
+                suggestion = restored
+            } else {
+                suggestion = existing
+            }
+        case .create(let name):
+            guard let created = parent.onCreateTag(name) else {
+                tagPicker.close()
+                return
+            }
+            suggestion = created
+        }
+
+        let replacement = "#\(suggestion.slug)"
+        guard textView.shouldChangeText(in: context.range, replacementString: replacement) else {
+            tagPicker.close()
+            return
+        }
+        textView.textStorage?.replaceCharacters(in: context.range, with: replacement)
+        textView.setSelectedRange(NSRange(location: context.range.location + (replacement as NSString).length, length: 0))
+        textView.typingAttributes = MarkdownStylist.baseAttributes
+        textView.didChangeText()
+        tagPicker.close()
     }
 
     private func moveCaret(in textView: NSTextView, forward: Bool, extendSelection: Bool) -> Bool {
