@@ -8,6 +8,12 @@ struct ListTasksGroup: Identifiable {
     let tasks: [AppTask]
 }
 
+enum TaskListDisplayMetrics {
+    static let headerHorizontalInset: CGFloat = 24
+    static let taskLeadingInset: CGFloat = 52
+    static let taskTrailingInset: CGFloat = 12
+}
+
 struct ListTasksGroupSectionView: View {
     let group: ListTasksGroup
     let isCollapsed: Bool
@@ -18,13 +24,9 @@ struct ListTasksGroupSectionView: View {
     let onToggle: () -> Void
     let onReorderTask: (UUID, UUID) -> Void
 
-    private let headerHorizontalInset: CGFloat = 24
-    private let taskLeadingInset: CGFloat = 52
-    private let taskTrailingInset: CGFloat = 12
-
     var body: some View {
         Group {
-            ListTasksGroupHeader(
+            TaskListGroupHeader(
                 title: group.title,
                 isCollapsed: isCollapsed,
                 overdueCount: overdueCount,
@@ -32,7 +34,7 @@ struct ListTasksGroupSectionView: View {
                 accent: group.accent,
                 onToggle: onToggle
             )
-            .padding(.horizontal, headerHorizontalInset)
+            .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
             .padding(.top, 16)
             .padding(.bottom, 8)
             .listRowBackground(Color.clear)
@@ -41,39 +43,19 @@ struct ListTasksGroupSectionView: View {
 
             if !isCollapsed {
                 ForEach(group.tasks) { task in
-                    MacTaskRow(task: task, style: .list)
-                        .padding(.leading, taskLeadingInset)
-                        .padding(.trailing, taskTrailingInset)
-                        .listRowInsets(.init())
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .transition(.asymmetric(
-                            insertion: .opacity,
-                            removal: .opacity.combined(with: .move(edge: .top))
-                        ))
-                        .overlay(alignment: .top) {
-                            if dragOverTaskID == task.id {
-                                Rectangle()
-                                    .fill(Theme.blue)
-                                    .frame(height: 2)
-                                    .padding(.leading, taskLeadingInset)
-                                    .padding(.trailing, taskTrailingInset)
-                                    .transition(.opacity)
-                            }
-                        }
-                        .animation(.easeInOut(duration: 0.15), value: dragOverTaskID)
-                        .draggable("listTask:\(task.id.uuidString)")
-                        .dropDestination(for: String.self) { items, _ in
-                            guard let payload = items.first,
-                                  payload.hasPrefix("listTask:"),
+                    TaskListInteractiveRow(
+                        task: task,
+                        style: .list,
+                        dragOverTaskID: $dragOverTaskID,
+                        taskDragPayload: { "listTask:\($0.id.uuidString)" },
+                        onDropOnTaskPayload: { payload, targetTask in
+                            guard payload.hasPrefix("listTask:"),
                                   let droppedID = UUID(uuidString: String(payload.dropFirst(9))),
-                                  droppedID != task.id else { return false }
-                            onReorderTask(droppedID, task.id)
+                                  droppedID != targetTask.id else { return false }
+                            onReorderTask(droppedID, targetTask.id)
                             return true
-                        } isTargeted: { isOver in
-                            if isOver { dragOverTaskID = task.id }
-                            else if dragOverTaskID == task.id { dragOverTaskID = nil }
                         }
+                    )
                 }
             }
         }
@@ -86,20 +68,16 @@ struct ListTasksCompletedSectionView: View {
     let isCollapsed: Bool
     let onToggle: () -> Void
 
-    private let headerHorizontalInset: CGFloat = 24
-    private let taskLeadingInset: CGFloat = 52
-    private let taskTrailingInset: CGFloat = 12
-
     var body: some View {
         Group {
-            ListTasksGroupHeader(
+            TaskListGroupHeader(
                 title: "Completed",
                 count: tasks.count,
                 isCollapsed: isCollapsed,
                 accent: Theme.green,
                 onToggle: onToggle
             )
-            .padding(.horizontal, headerHorizontalInset)
+            .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
             .padding(.top, 16)
             .padding(.bottom, 8)
             .listRowBackground(Color.clear)
@@ -108,29 +86,22 @@ struct ListTasksCompletedSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: .list)
-                        .padding(.leading, taskLeadingInset)
-                        .padding(.trailing, taskTrailingInset)
-                        .listRowInsets(.init())
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .transition(.asymmetric(
-                            insertion: .opacity,
-                            removal: .opacity.combined(with: .move(edge: .top))
-                        ))
+                    TaskListDisplayRow(task: task, style: .list)
                 }
             }
         }
     }
 }
 
-private struct ListTasksGroupHeader: View {
+struct TaskListGroupHeader<LeadingContent: View>: View {
     let title: String
     let isCollapsed: Bool
     let overdueCount: Int?
     let regularCount: Int
     var accent: Color = Theme.dim
+    var isToggleEnabled: Bool = true
     let onToggle: () -> Void
+    @ViewBuilder let leadingContent: () -> LeadingContent
 
     init(
         title: String,
@@ -138,14 +109,18 @@ private struct ListTasksGroupHeader: View {
         overdueCount: Int? = nil,
         regularCount: Int,
         accent: Color = Theme.dim,
-        onToggle: @escaping () -> Void
+        isToggleEnabled: Bool = true,
+        onToggle: @escaping () -> Void,
+        @ViewBuilder leadingContent: @escaping () -> LeadingContent
     ) {
         self.title = title
         self.isCollapsed = isCollapsed
         self.overdueCount = overdueCount
         self.regularCount = regularCount
         self.accent = accent
+        self.isToggleEnabled = isToggleEnabled
         self.onToggle = onToggle
+        self.leadingContent = leadingContent
     }
 
     init(
@@ -153,7 +128,9 @@ private struct ListTasksGroupHeader: View {
         count: Int,
         isCollapsed: Bool,
         accent: Color,
-        onToggle: @escaping () -> Void
+        isToggleEnabled: Bool = true,
+        onToggle: @escaping () -> Void,
+        @ViewBuilder leadingContent: @escaping () -> LeadingContent
     ) {
         self.init(
             title: title,
@@ -161,61 +138,206 @@ private struct ListTasksGroupHeader: View {
             overdueCount: nil,
             regularCount: count,
             accent: accent,
-            onToggle: onToggle
+            isToggleEnabled: isToggleEnabled,
+            onToggle: onToggle,
+            leadingContent: leadingContent
         )
     }
 
     var body: some View {
-        Button(action: onToggle) {
-            HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 2)
+        Button(action: { if isToggleEnabled { onToggle() } }) {
+            HStack(spacing: 11) {
+                Capsule()
                     .fill(accent)
-                    .frame(width: 3, height: 18)
+                    .frame(width: 4, height: 24)
+                    .shadow(color: accent.opacity(0.28), radius: 6, x: 0, y: 0)
 
-                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 12)
+                if isToggleEnabled {
+                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(isCollapsed ? Theme.dim : accent)
+                        .frame(width: 22, height: 22)
+                        .background(Theme.surfaceElevated.opacity(0.7))
+                        .clipShape(Circle())
+                        .overlay {
+                            Circle()
+                                .strokeBorder(Theme.borderSubtle.opacity(0.8), lineWidth: 1)
+                        }
+                } else {
+                    Color.clear.frame(width: 22, height: 22)
+                }
+
+                leadingContent()
 
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
 
                 Spacer(minLength: 12)
 
                 if let overdueCount, overdueCount > 0 {
-                    HStack(spacing: 3) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "flag.fill")
+                            .font(.system(size: 9, weight: .bold))
                         Text("\(overdueCount)")
-                            .foregroundStyle(Theme.red)
-                        Text("/")
-                            .foregroundStyle(Theme.dim.opacity(0.7))
+                            .font(.system(size: 11, weight: .bold))
                     }
-                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.red)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(Theme.red.opacity(0.12))
+                    .clipShape(Capsule())
                 }
 
-                Text("\(regularCount)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(accent)
-                    .frame(minWidth: 18, minHeight: 18)
-                    .padding(.horizontal, 4)
-                    .background(accent.opacity(0.16))
-                    .clipShape(Capsule())
+                HStack(spacing: 4) {
+                    Text("\(regularCount)")
+                        .font(.system(size: 11, weight: .bold))
+                    Text(regularCount == 1 ? "task" : "tasks")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                }
+                .foregroundStyle(accent)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(Theme.surfaceElevated.opacity(0.7))
+                .clipShape(Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(Theme.borderSubtle.opacity(0.75), lineWidth: 1)
+                }
             }
-            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
             .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Theme.surfaceElevated.opacity(0.62))
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(Theme.surface.opacity(0.24))
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.95))
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Theme.borderSubtle.opacity(0.72))
+                    .frame(height: 1)
+                    .padding(.leading, 42)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.cadencePlain)
-        .onTapGesture(count: 2, perform: onToggle)
+        .onTapGesture(count: 2) {
+            if isToggleEnabled { onToggle() }
+        }
+    }
+}
+
+extension TaskListGroupHeader where LeadingContent == EmptyView {
+    init(
+        title: String,
+        isCollapsed: Bool,
+        overdueCount: Int? = nil,
+        regularCount: Int,
+        accent: Color = Theme.dim,
+        isToggleEnabled: Bool = true,
+        onToggle: @escaping () -> Void
+    ) {
+        self.init(
+            title: title,
+            isCollapsed: isCollapsed,
+            overdueCount: overdueCount,
+            regularCount: regularCount,
+            accent: accent,
+            isToggleEnabled: isToggleEnabled,
+            onToggle: onToggle,
+            leadingContent: { EmptyView() }
+        )
+    }
+
+    init(
+        title: String,
+        count: Int,
+        isCollapsed: Bool,
+        accent: Color,
+        isToggleEnabled: Bool = true,
+        onToggle: @escaping () -> Void
+    ) {
+        self.init(
+            title: title,
+            count: count,
+            isCollapsed: isCollapsed,
+            accent: accent,
+            isToggleEnabled: isToggleEnabled,
+            onToggle: onToggle,
+            leadingContent: { EmptyView() }
+        )
+    }
+}
+
+struct TaskListDisplayRow: View {
+    let task: AppTask
+    var style: MacTaskRowStyle = .standard
+    var contexts: [Context] = []
+    var areas: [Area] = []
+    var projects: [Project] = []
+    var leadingInset: CGFloat = TaskListDisplayMetrics.taskLeadingInset
+    var trailingInset: CGFloat = TaskListDisplayMetrics.taskTrailingInset
+
+    var body: some View {
+        MacTaskRow(task: task, style: style, contexts: contexts, areas: areas, projects: projects)
+            .padding(.leading, leadingInset)
+            .padding(.trailing, trailingInset)
+            .listRowInsets(.init())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .transition(.asymmetric(
+                insertion: .opacity,
+                removal: .opacity.combined(with: .move(edge: .top))
+            ))
+    }
+}
+
+struct TaskListInteractiveRow: View {
+    let task: AppTask
+    var style: MacTaskRowStyle = .standard
+    var contexts: [Context] = []
+    var areas: [Area] = []
+    var projects: [Project] = []
+    var leadingInset: CGFloat = TaskListDisplayMetrics.taskLeadingInset
+    var trailingInset: CGFloat = TaskListDisplayMetrics.taskTrailingInset
+    @Binding var dragOverTaskID: UUID?
+    let taskDragPayload: (AppTask) -> String
+    let onDropOnTaskPayload: (String, AppTask) -> Bool
+
+    var body: some View {
+        TaskListDisplayRow(
+            task: task,
+            style: style,
+            contexts: contexts,
+            areas: areas,
+            projects: projects,
+            leadingInset: leadingInset,
+            trailingInset: trailingInset
+        )
+        .overlay(alignment: .top) {
+            if dragOverTaskID == task.id {
+                Rectangle()
+                    .fill(Theme.blue)
+                    .frame(height: 2)
+                    .padding(.leading, leadingInset)
+                    .padding(.trailing, trailingInset)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: dragOverTaskID)
+        .draggable(taskDragPayload(task))
+        .dropDestination(for: String.self) { items, _ in
+            guard let payload = items.first else { return false }
+            return onDropOnTaskPayload(payload, task)
+        } isTargeted: { isOver in
+            if isOver {
+                dragOverTaskID = task.id
+            } else if dragOverTaskID == task.id {
+                dragOverTaskID = nil
+            }
+        }
     }
 }
 

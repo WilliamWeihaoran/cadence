@@ -123,48 +123,39 @@ struct InboxTaskGroupSectionView: View {
 
     var body: some View {
         Group {
-            CollapsibleTaskGroupHeader(
+            TaskListGroupHeader(
                 title: group.title,
                 isCollapsed: false,
                 overdueCount: nil,
                 regularCount: group.tasks.count,
                 accent: group.color,
+                isToggleEnabled: false,
                 onToggle: { }
             )
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
+            .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(.init())
 
             ForEach(group.tasks) { task in
-                MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
-                    .listRowInsets(.init())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .transition(.asymmetric(
-                        insertion: .opacity,
-                        removal: .opacity.combined(with: .move(edge: .top))
-                    ))
-                    .overlay(alignment: .top) {
-                        if dragOverTaskID == task.id {
-                            Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
-                        }
-                    }
-                    .animation(.easeInOut(duration: 0.15), value: dragOverTaskID)
-                    .draggable("listTask:\(task.id.uuidString)")
-                    .dropDestination(for: String.self) { items, _ in
-                        guard let payload = items.first,
-                              payload.hasPrefix("listTask:"),
+                TaskListInteractiveRow(
+                    task: task,
+                    style: .standard,
+                    contexts: contexts,
+                    areas: areas,
+                    projects: projects,
+                    dragOverTaskID: $dragOverTaskID,
+                    taskDragPayload: { "listTask:\($0.id.uuidString)" },
+                    onDropOnTaskPayload: { payload, targetTask in
+                        guard payload.hasPrefix("listTask:"),
                               let droppedID = UUID(uuidString: String(payload.dropFirst(9))),
-                              droppedID != task.id else { return false }
-                        onReorderTask(droppedID, task.id)
+                              droppedID != targetTask.id else { return false }
+                        onReorderTask(droppedID, targetTask.id)
                         return true
-                    } isTargeted: { isOver in
-                        if isOver { dragOverTaskID = task.id }
-                        else if dragOverTaskID == task.id { dragOverTaskID = nil }
                     }
+                )
             }
         }
     }
@@ -181,28 +172,29 @@ struct InboxCompletedSectionView: View {
 
     var body: some View {
         Group {
-            CompletedSectionHeader(
+            TaskListGroupHeader(
+                title: "Completed",
                 count: tasks.count,
                 isCollapsed: isCollapsed,
+                accent: Theme.green,
                 onToggle: onToggle
             )
-            .padding(.horizontal, 16)
+            .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
             .padding(.top, 16)
-            .padding(.bottom, 6)
+            .padding(.bottom, 8)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(.init())
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
-                        .listRowInsets(.init())
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .transition(.asymmetric(
-                            insertion: .opacity,
-                            removal: .opacity.combined(with: .move(edge: .top))
-                        ))
+                    TaskListDisplayRow(
+                        task: task,
+                        style: .standard,
+                        contexts: contexts,
+                        areas: areas,
+                        projects: projects
+                    )
                 }
             }
         }

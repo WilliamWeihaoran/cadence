@@ -77,29 +77,15 @@ struct CreateGoalSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
 
-                    // Context
                     fieldLabel("Context")
-                    Picker("", selection: $selectedContextID) {
-                        Text("None").tag(Optional<UUID>.none)
-                        ForEach(allContexts) { ctx in
-                            Label(ctx.name, systemImage: ctx.icon).tag(Optional(ctx.id))
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .foregroundStyle(Theme.text)
-                    .padding(8)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
+                    CadenceContextPickerButton(
+                        contexts: allContexts,
+                        selectedID: $selectedContextID
+                    )
 
                     if isEditing {
                         fieldLabel("Status")
-                        Picker("", selection: $selectedStatus) {
-                            ForEach(GoalStatus.allCases, id: \.self) { status in
-                                Text(statusLabel(status)).tag(status)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+                        GoalStatusSection(selection: $selectedStatus)
                     } else {
                         fieldLabel("Initial Linked List")
                         Picker("", selection: $initialListTag) {
@@ -135,21 +121,14 @@ struct CreateGoalSheet: View {
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
                     }
 
-                    // Dates
                     HStack(spacing: 16) {
                         VStack(alignment: .leading, spacing: 6) {
                             fieldLabel("Start Date")
-                            DatePicker("", selection: $startDate, displayedComponents: .date)
-                                .labelsHidden()
-                                .datePickerStyle(.compact)
-                                .foregroundStyle(Theme.text)
+                            CadenceDatePicker(selection: $startDate)
                         }
                         VStack(alignment: .leading, spacing: 6) {
                             fieldLabel("End Date")
-                            DatePicker("", selection: $endDate, in: startDate..., displayedComponents: .date)
-                                .labelsHidden()
-                                .datePickerStyle(.compact)
-                                .foregroundStyle(Theme.text)
+                            CadenceDatePicker(selection: $endDate)
                         }
                     }
 
@@ -186,6 +165,11 @@ struct CreateGoalSheet: View {
         .frame(width: 420, height: 620)
         .background(Theme.surface)
         .onChange(of: startDate) {
+            if endDate < startDate {
+                endDate = startDate
+            }
+        }
+        .onChange(of: endDate) {
             if endDate < startDate {
                 endDate = startDate
             }
@@ -240,12 +224,91 @@ struct CreateGoalSheet: View {
             modelContext.insert(GoalListLink(goal: goal, project: project))
         }
     }
+}
 
-    private func statusLabel(_ status: GoalStatus) -> String {
+private struct GoalStatusSection: View {
+    @Binding var selection: GoalStatus
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(GoalStatus.allCases, id: \.self) { status in
+                statusButton(status)
+            }
+        }
+    }
+
+    private func statusButton(_ status: GoalStatus) -> some View {
+        let isSelected = selection == status
+        let tint = color(for: status)
+
+        return Button {
+            selection = status
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: icon(for: status))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isSelected ? .white : tint)
+                    .frame(width: 22, height: 22)
+                    .background(isSelected ? tint : tint.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title(for: status))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                        .lineLimit(1)
+
+                    Text(subtitle(for: status))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(isSelected ? tint.opacity(0.12) : Theme.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(isSelected ? tint.opacity(0.45) : Theme.borderSubtle, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 9))
+        }
+        .buttonStyle(.cadencePlain)
+    }
+
+    private func title(for status: GoalStatus) -> String {
         switch status {
         case .active: return "Active"
         case .paused: return "Paused"
         case .done: return "Done"
+        }
+    }
+
+    private func subtitle(for status: GoalStatus) -> String {
+        switch status {
+        case .active: return "In motion"
+        case .paused: return "Parked"
+        case .done: return "Complete"
+        }
+    }
+
+    private func icon(for status: GoalStatus) -> String {
+        switch status {
+        case .active: return "play.fill"
+        case .paused: return "pause.fill"
+        case .done: return "checkmark"
+        }
+    }
+
+    private func color(for status: GoalStatus) -> Color {
+        switch status {
+        case .active: return Theme.blue
+        case .paused: return Theme.amber
+        case .done: return Theme.green
         }
     }
 }

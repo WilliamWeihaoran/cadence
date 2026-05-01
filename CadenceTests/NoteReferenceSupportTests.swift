@@ -143,6 +143,9 @@ struct NoteReferenceSupportTests {
         #expect(MarkdownTaskEmbedParser.isLegacyChecklistMarkerCharacter(24, in: line, lineStart: 20))
         #expect(!MarkdownTaskEmbedParser.isLegacyChecklistMarkerCharacter(25, in: line, lineStart: 20))
         #expect(!MarkdownTaskEmbedParser.isLegacyChecklistMarkerCharacter(31, in: line, lineStart: 20))
+
+        let checkedLine = "    ✓ Draft task"
+        #expect(MarkdownTaskEmbedParser.legacyChecklistMarkerRange(in: checkedLine, lineStart: 20) == NSRange(location: 24, length: 1))
     }
 
     @Test func linkedTasksPreferStableIDOverTitleFallback() throws {

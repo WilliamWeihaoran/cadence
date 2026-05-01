@@ -59,6 +59,15 @@ struct CadenceMCPToolRouter {
         case "get_task":
             return try encode(readService.getTask(taskID: try arguments.requiredString("taskId")))
 
+        case "list_task_bundles":
+            return try encode(readService.listTaskBundles(options: CadenceTaskBundleListOptions(
+                dateKey: try arguments.dateKey("date"),
+                limit: arguments.int("limit") ?? 50
+            )))
+
+        case "get_task_bundle":
+            return try encode(readService.getTaskBundle(bundleID: try arguments.requiredString("bundleId")))
+
         case "list_containers":
             return try encode(readService.listContainers(
                 kind: arguments.string("kind"),
@@ -73,8 +82,28 @@ struct CadenceMCPToolRouter {
                 id: try arguments.requiredString("containerId")
             ))
 
+        case "list_tags":
+            return try encode(readService.listTags(
+                includeArchived: arguments.bool("includeArchived") ?? false,
+                query: arguments.string("query"),
+                limit: arguments.int("limit") ?? 50
+            ))
+
         case "get_core_notes":
             return try encode(readService.coreNotes(dateKey: try arguments.dateKey("date")))
+
+        case "list_notes":
+            return try encode(readService.listNotes(options: CadenceNoteListOptions(
+                kind: arguments.string("kind"),
+                containerKind: arguments.string("containerKind"),
+                containerId: arguments.string("containerId"),
+                query: arguments.string("query"),
+                tagSlugs: arguments.stringArray("tagSlugs"),
+                limit: arguments.int("limit") ?? 50
+            )))
+
+        case "get_note":
+            return try encode(readService.getNote(noteID: try arguments.requiredString("noteId")))
 
         case "list_documents":
             return try encode(readService.listDocuments(
@@ -86,6 +115,33 @@ struct CadenceMCPToolRouter {
 
         case "get_document":
             return try encode(readService.getDocument(documentID: try arguments.requiredString("documentId")))
+
+        case "list_goals":
+            return try encode(readService.listGoals(options: CadenceGoalListOptions(
+                status: arguments.string("status"),
+                contextId: arguments.string("contextId"),
+                query: arguments.string("query"),
+                limit: arguments.int("limit") ?? 50
+            )))
+
+        case "get_goal":
+            return try encode(readService.getGoal(goalID: try arguments.requiredString("goalId")))
+
+        case "list_habits":
+            return try encode(readService.listHabits(options: CadenceHabitListOptions(
+                contextId: arguments.string("contextId"),
+                goalId: arguments.string("goalId"),
+                query: arguments.string("query"),
+                limit: arguments.int("limit") ?? 50
+            )))
+
+        case "list_links":
+            return try encode(readService.listLinks(options: CadenceSavedLinkListOptions(
+                containerKind: arguments.string("containerKind"),
+                containerId: arguments.string("containerId"),
+                query: arguments.string("query"),
+                limit: arguments.int("limit") ?? 50
+            )))
 
         case "search_cadence":
             return try encode(readService.search(

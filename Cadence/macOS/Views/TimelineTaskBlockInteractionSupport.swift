@@ -61,6 +61,7 @@ enum TimelineTaskBlockInteractionSupport {
                 if activeDragTaskID.wrappedValue == task.id {
                     activeDragTaskID.wrappedValue = nil
                 }
+                hoveredEditableManager.endHovering(id: "timeline-task-\(task.id.uuidString)")
                 modelContext.deleteTask(task)
             }
         }

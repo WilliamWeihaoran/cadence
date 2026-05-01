@@ -319,13 +319,13 @@ enum MarkdownTaskEmbedParser {
     nonisolated static func legacyChecklistMarkerRange(in line: String, lineStart: Int = 0) -> NSRange? {
         let nsLine = line as NSString
         guard nsLine.length > 0,
-              let regex = try? NSRegularExpression(pattern: #"^[ \t]*[○●]\s+"#),
+              let regex = try? NSRegularExpression(pattern: #"^[ \t]*[○●✓]\s+"#),
               let match = regex.firstMatch(in: line, range: NSRange(location: 0, length: nsLine.length)) else {
             return nil
         }
 
         let prefix = nsLine.substring(with: match.range)
-        guard let markerOffset = prefix.firstIndex(where: { $0 == "○" || $0 == "●" }) else {
+        guard let markerOffset = prefix.firstIndex(where: { $0 == "○" || $0 == "●" || $0 == "✓" }) else {
             return nil
         }
         let distance = prefix.distance(from: prefix.startIndex, to: markerOffset)
@@ -436,6 +436,7 @@ enum MarkdownListSupport {
             ("– ", .dash, "– "),
             ("+ ", .plus, "+ "),
             ("○ ", .todo, "○ "),
+            ("✓ ", .done, "✓ "),
             ("● ", .done, "● ")
         ]
         for (prefix, kind, marker) in simplePrefixes where trimmed.hasPrefix(prefix) {
@@ -486,6 +487,9 @@ enum MarkdownListSupport {
         let indentation = rawIndentation(in: line)
         let trimmed = String(line.dropFirst(indentation.count))
         guard !isMarkdownDividerLine(trimmed) else { return nil }
+        if trimmed.hasPrefix("● ") {
+            return indentation + "✓ " + String(trimmed.dropFirst(2))
+        }
 
         guard let regex = try? NSRegularExpression(pattern: #"^([*+-])\s+(?:\[([ xX])\]\s+)?"#),
               let match = regex.firstMatch(in: trimmed, range: NSRange(location: 0, length: (trimmed as NSString).length)) else {
@@ -497,7 +501,7 @@ enum MarkdownListSupport {
         let checkboxRange = match.range(at: 2)
         if checkboxRange.location != NSNotFound {
             let state = (trimmed as NSString).substring(with: checkboxRange)
-            return indentation + (state.lowercased() == "x" ? "● " : "○ ") + rest
+            return indentation + (state.lowercased() == "x" ? "✓ " : "○ ") + rest
         }
 
         return indentation + "• " + rest
@@ -740,6 +744,7 @@ enum MarkdownStylist {
             let markerRange = NSRange(location: lineStart + ordered.indentation.count, length: min(ordered.marker.count, lineRange.length))
             storage.addAttribute(.foregroundColor, value: blueColor, range: markerRange)
             storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .semibold), range: markerRange)
+            addListMarkerSpacing(storage, markerRange: markerRange)
         } else if let bullet = unorderedListMatch(in: line) {
             let level = MarkdownListSupport.visualLevel(forIndentation: bullet.indentation)
             let ps = listStyle(for: level, markerWidth: 2)
@@ -750,14 +755,17 @@ enum MarkdownStylist {
                 let bulletRange = NSRange(location: markerLocation, length: min(1, lineRange.length))
                 storage.addAttribute(.foregroundColor, value: blueColor, range: bulletRange)
                 storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 20), range: bulletRange)
+                addListMarkerSpacing(storage, markerRange: bulletRange)
             case "–", "-", "+":
-                storage.addAttribute(.foregroundColor, value: dimColor,
-                                     range: NSRange(location: markerLocation, length: min(2, max(0, lineRange.length - bullet.indentation.count))))
-            case "○", "●":
-                let checked = bullet.marker == "●"
-                let circleRange = NSRange(location: markerLocation, length: min(1, lineRange.length))
-                storage.addAttribute(.foregroundColor, value: checked ? greenColor : dimColor, range: circleRange)
-                storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 19), range: circleRange)
+                let markerRange = NSRange(location: markerLocation, length: min(1, max(0, lineRange.length - bullet.indentation.count)))
+                storage.addAttribute(.foregroundColor, value: dimColor, range: markerRange)
+                addListMarkerSpacing(storage, markerRange: markerRange)
+            case "○", "●", "✓":
+                let checked = bullet.marker == "●" || bullet.marker == "✓"
+                let markerRange = NSRange(location: markerLocation, length: min(1, lineRange.length))
+                storage.addAttribute(.foregroundColor, value: checked ? greenColor : dimColor, range: markerRange)
+                storage.addAttribute(.font, value: NSFont.systemFont(ofSize: checked ? 16 : 18, weight: checked ? .bold : .regular), range: markerRange)
+                addListMarkerSpacing(storage, markerRange: markerRange)
                 if checked && lineRange.length > bullet.indentation.count + 2 {
                     let textRange = NSRange(location: markerLocation + 2, length: lineRange.length - bullet.indentation.count - 2)
                     storage.addAttribute(.foregroundColor, value: dimColor, range: textRange)
@@ -885,7 +893,7 @@ enum MarkdownStylist {
     private static func unorderedListMatch(in line: String) -> (indentation: String, marker: String)? {
         let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
         let trimmed = String(line.dropFirst(indentation.count))
-        let markers = ["• ", "* ", "- ", "– ", "+ ", "○ ", "● "]
+        let markers = ["• ", "* ", "- ", "– ", "+ ", "○ ", "✓ ", "● "]
         guard let prefix = markers.first(where: { trimmed.hasPrefix($0) }) else { return nil }
         return (indentation, String(prefix.prefix(1)))
     }
@@ -1197,12 +1205,18 @@ enum MarkdownStylist {
     private static func listStyle(for level: Int, markerWidth: Int) -> NSParagraphStyle {
         let unit: CGFloat = 12
         let markerInset: CGFloat = 8
+        let contentGap: CGFloat = 8
         let base = CGFloat(level) * unit
         let ps = NSMutableParagraphStyle()
         ps.firstLineHeadIndent = base + markerInset
-        ps.headIndent = base + markerInset + CGFloat(Double(markerWidth) * 5.5)
+        ps.headIndent = base + markerInset + CGFloat(Double(markerWidth) * 5.5) + contentGap
         ps.lineSpacing = 4
         return ps
+    }
+
+    private static func addListMarkerSpacing(_ storage: NSTextStorage, markerRange: NSRange) {
+        guard markerRange.length > 0 else { return }
+        storage.addAttribute(.kern, value: 4.0, range: markerRange)
     }
 }
 

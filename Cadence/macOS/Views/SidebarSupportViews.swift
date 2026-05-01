@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import SwiftUI
 
 struct SidebarRow: View {
@@ -136,6 +137,9 @@ struct SidebarListRow: View {
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
+        .overlay {
+            SidebarRightClickEditTrigger(action: onEdit)
+        }
         .onHover { hovering in
             isHovered = hovering
             if hovering {
@@ -192,6 +196,35 @@ struct SidebarListRow: View {
         comps.day = 1
         dueDateViewMonth = Calendar.current.date(from: comps) ?? resolved
         showDueDatePicker = true
+    }
+}
+
+private struct SidebarRightClickEditTrigger: NSViewRepresentable {
+    typealias NSViewType = RightClickEditView
+
+    let action: () -> Void
+
+    func makeNSView(context: NSViewRepresentableContext<SidebarRightClickEditTrigger>) -> RightClickEditView {
+        let view = RightClickEditView()
+        view.action = action
+        return view
+    }
+
+    func updateNSView(_ nsView: RightClickEditView, context: NSViewRepresentableContext<SidebarRightClickEditTrigger>) {
+        nsView.action = action
+    }
+
+    final class RightClickEditView: NSView {
+        var action: () -> Void = {}
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let event = window?.currentEvent ?? NSApp.currentEvent else { return nil }
+            return event.type == .rightMouseDown ? self : nil
+        }
+
+        override func rightMouseDown(with event: NSEvent) {
+            action()
+        }
     }
 }
 

@@ -22,7 +22,9 @@ struct TimelineBundleBlock: View {
     let onSelect: () -> Void
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(FocusManager.self) private var focusManager
+    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @State private var activeResizeEdge: ResizeEdge? = nil
     @State private var resizeOriginStartMin: Int? = nil
     @State private var resizeOriginEndMin: Int? = nil
@@ -49,7 +51,31 @@ struct TimelineBundleBlock: View {
         bundleBlockBody
             .frame(width: frame.width, height: frame.height)
             .contentShape(Rectangle())
-            .onHover { isHovered = $0 }
+            .onHover { hovering in
+                isHovered = hovering
+                if hovering {
+                    hoveredEditableManager.beginHovering(id: "timeline-bundle-\(bundle.id.uuidString)") {
+                        onSelect()
+                        activeDragBundleID = nil
+                        selectedBundleID = bundle.id
+                    } onDelete: {
+                        deleteConfirmationManager.present(
+                            title: "Delete Bundle?",
+                            message: "This will delete \"\(bundle.displayTitle)\" and keep its tasks on the same day."
+                        ) {
+                            if selectedBundleID == bundle.id {
+                                selectedBundleID = nil
+                            }
+                            if activeDragBundleID == bundle.id {
+                                activeDragBundleID = nil
+                            }
+                            SchedulingActions.deleteBundle(bundle, in: modelContext)
+                        }
+                    }
+                } else {
+                    hoveredEditableManager.endHovering(id: "timeline-bundle-\(bundle.id.uuidString)")
+                }
+            }
             .onTapGesture {
                 onSelect()
                 activeDragBundleID = nil

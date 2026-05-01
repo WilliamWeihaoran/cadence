@@ -106,36 +106,18 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
 struct KanbanSectionDueDatePickerPopover: View {
     let dueDateKey: String
     @Binding var selection: Date
+    @Binding var viewMonth: Date
+    @Binding var isPresented: Bool
     let onClear: () -> Void
-    let onDone: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            CadenceDatePicker(selection: $selection)
-                .padding(10)
-
-            Divider().background(Theme.borderSubtle)
-
-            HStack(spacing: 8) {
-                if !dueDateKey.isEmpty {
-                    Button("Clear date", action: onClear)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.red)
-                        .buttonStyle(.cadencePlain)
-                }
-
-                Spacer()
-
-                Button("Done", action: onDone)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-                    .buttonStyle(.cadencePlain)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-        }
-        .frame(width: 260)
-        .background(Theme.surface)
+        CadenceQuickDatePopover(
+            selection: $selection,
+            viewMonth: $viewMonth,
+            isOpen: $isPresented,
+            showsClear: !dueDateKey.isEmpty,
+            onClear: onClear
+        )
     }
 }
 

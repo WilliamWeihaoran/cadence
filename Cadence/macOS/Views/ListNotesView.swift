@@ -550,7 +550,6 @@ private struct TaskNoteEditorPane: View {
     @Bindable var task: AppTask
     let relatedNotes: [Note]
     let relatedTasks: [AppTask]
-    @State private var showExpandedNotes = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -569,7 +568,11 @@ private struct TaskNoteEditorPane: View {
                 }
                 Spacer()
                 Button {
-                    showExpandedNotes = true
+                    TaskNotesPanelController.shared.show(
+                        task: task,
+                        referenceNotes: relatedNotes,
+                        referenceTasks: relatedTasks
+                    )
                 } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 12, weight: .semibold))
@@ -596,13 +599,6 @@ private struct TaskNoteEditorPane: View {
             )
         }
         .background(Theme.bg)
-        .sheet(isPresented: $showExpandedNotes) {
-            TaskNotesExpandedEditorSheet(
-                task: task,
-                referenceNotes: relatedNotes,
-                referenceTasks: relatedTasks
-            )
-        }
     }
 }
 

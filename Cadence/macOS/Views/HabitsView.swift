@@ -541,26 +541,18 @@ struct EditHabitSheet: View {
 
                     if !allContexts.isEmpty {
                         fieldLabel("Context")
-                        Picker("", selection: $selectedContextID) {
-                            Text("None").tag(Optional<UUID>.none)
-                            ForEach(allContexts) { ctx in
-                                Text(ctx.name).tag(Optional(ctx.id))
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .foregroundStyle(Theme.text)
+                        CadenceContextPickerButton(
+                            contexts: allContexts,
+                            selectedID: $selectedContextID
+                        )
                     }
 
                     if !goalChoices.isEmpty {
                         fieldLabel("Goal")
-                        Picker("", selection: $selectedGoalID) {
-                            Text("None").tag(Optional<UUID>.none)
-                            ForEach(goalChoices) { goal in
-                                Text(goal.title).tag(Optional(goal.id))
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .foregroundStyle(Theme.text)
+                        HabitGoalPickerButton(
+                            goals: goalChoices,
+                            selectedID: $selectedGoalID
+                        )
                     }
 
                     fieldLabel("Icon")
@@ -570,54 +562,41 @@ struct EditHabitSheet: View {
                     ColorGrid(selected: $selectedColor)
 
                     fieldLabel("Frequency")
-                    Picker("", selection: $frequencyType) {
-                        ForEach(HabitFrequency.allCases, id: \.self) { f in
-                            Text(f.label).tag(f)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    HabitFrequencyPicker(selection: $frequencyType, tintHex: selectedColor)
 
                     switch frequencyType {
                     case .daysOfWeek:
-                        HStack(spacing: 6) {
-                            ForEach(0..<7, id: \.self) { i in
-                                let dayVal = i + 1
-                                Button(dayNames[i]) {
-                                    if selectedDays.contains(dayVal) {
-                                        selectedDays.remove(dayVal)
-                                    } else {
-                                        selectedDays.insert(dayVal)
-                                    }
-                                }
-                                .buttonStyle(.cadencePlain)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(selectedDays.contains(dayVal) ? .white : Theme.dim)
-                                .frame(width: 36, height: 28)
-                                .background(selectedDays.contains(dayVal) ? Color(hex: selectedColor) : Theme.surfaceElevated)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                            }
-                        }
+                        HabitWeekdayPicker(
+                            selectedDays: $selectedDays,
+                            dayNames: dayNames,
+                            tintHex: selectedColor
+                        )
 
                     case .timesPerWeek:
-                        HStack {
-                            Text("Times per week:")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Theme.muted)
-                            Stepper("\(timesPerWeek)", value: $timesPerWeek, in: 1...7)
-                                .foregroundStyle(Theme.text)
-                        }
+                        HabitNumberStepper(
+                            title: "Weekly target",
+                            detail: "check-ins per week",
+                            value: $timesPerWeek,
+                            range: 1...7,
+                            tintHex: selectedColor
+                        )
 
                     case .monthly:
-                        HStack {
-                            Text("Day of month:")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Theme.muted)
-                            Stepper("\(monthlyDay)", value: $monthlyDay, in: 1...31)
-                                .foregroundStyle(Theme.text)
-                        }
+                        HabitNumberStepper(
+                            title: "Monthly day",
+                            detail: "day of month",
+                            value: $monthlyDay,
+                            range: 1...31,
+                            tintHex: selectedColor
+                        )
 
                     case .daily:
-                        EmptyView()
+                        HabitFrequencyNote(
+                            icon: "sun.max.fill",
+                            title: "Every day",
+                            detail: "This habit is expected daily.",
+                            tintHex: selectedColor
+                        )
                     }
                 }
                 .padding(24)
@@ -697,6 +676,412 @@ struct EditHabitSheet: View {
 
         habit.goal = selectedGoal
         dismiss()
+    }
+}
+
+private struct HabitGoalPickerButton: View {
+    let goals: [Goal]
+    @Binding var selectedID: UUID?
+
+    @State private var showPicker = false
+
+    private var selectedGoal: Goal? {
+        selectedID.flatMap { id in goals.first { $0.id == id } }
+    }
+
+    var body: some View {
+        Button { showPicker.toggle() } label: {
+            HStack(spacing: 9) {
+                goalIcon
+
+                Text(selectedGoal?.title ?? "No linked goal")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(selectedGoal == nil ? Theme.dim : Theme.text)
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(minHeight: 34)
+            .contentShape(Rectangle())
+            .background(Theme.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
+        }
+        .buttonStyle(.cadencePlain)
+        .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+            HabitGoalPickerList(
+                goals: goals,
+                selectedID: $selectedID,
+                onPick: { showPicker = false }
+            )
+            .frame(width: 280)
+            .frame(maxHeight: 340)
+            .background(Theme.surface)
+        }
+    }
+
+    @ViewBuilder
+    private var goalIcon: some View {
+        if let selectedGoal {
+            Image(systemName: "target")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color(hex: selectedGoal.colorHex))
+                .frame(width: 22, height: 22)
+                .background(Color(hex: selectedGoal.colorHex).opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+        } else {
+            Image(systemName: "circle.dashed")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .frame(width: 22, height: 22)
+                .background(Theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+        }
+    }
+}
+
+private struct HabitGoalPickerList: View {
+    let goals: [Goal]
+    @Binding var selectedID: UUID?
+    let onPick: () -> Void
+
+    @State private var searchQuery = ""
+    @FocusState private var isSearchFocused: Bool
+
+    private var filteredGoals: [Goal] {
+        let sorted = goals.sorted {
+            if $0.order == $1.order {
+                return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
+            return $0.order < $1.order
+        }
+
+        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return sorted }
+        let needle = trimmed.localizedLowercase
+        return sorted.filter {
+            $0.title.localizedLowercase.contains(needle)
+                || $0.desc.localizedLowercase.contains(needle)
+                || ($0.context?.name.localizedLowercase.contains(needle) ?? false)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            searchField
+
+            Divider().background(Theme.borderSubtle).padding(.top, 6)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    row(id: nil, title: "No linked goal", subtitle: "Track independently", icon: "circle.dashed", colorHex: nil)
+
+                    if filteredGoals.isEmpty {
+                        Text("No matching goals")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        ForEach(filteredGoals) { goal in
+                            row(
+                                id: goal.id,
+                                title: goal.title,
+                                subtitle: goal.context?.name ?? goal.status.rawValue.capitalized,
+                                icon: "target",
+                                colorHex: goal.colorHex
+                            )
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .padding(.vertical, 4)
+        .onAppear { isSearchFocused = true }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.dim)
+
+            TextField("Search goals", text: $searchQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.text)
+                .focused($isSearchFocused)
+
+            if !searchQuery.isEmpty {
+                Button {
+                    searchQuery = ""
+                    isSearchFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim)
+                }
+                .buttonStyle(.cadencePlain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Theme.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 8)
+    }
+
+    @MainActor
+    @ViewBuilder
+    private func row(id: UUID?, title: String, subtitle: String, icon: String, colorHex: String?) -> some View {
+        let isSelected = selectedID == id
+        let tint = colorHex.map(Color.init(hex:)) ?? Theme.dim
+
+        Button {
+            selectedID = id
+            onPick()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 24, height: 24)
+                    .background(tint.opacity(colorHex == nil ? 0.06 : 0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                        .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.blue)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(minHeight: 38)
+            .background(isSelected ? Theme.blue.opacity(0.08) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.cadencePlain)
+        .padding(.horizontal, 4)
+    }
+}
+
+private struct HabitFrequencyPicker: View {
+    @Binding var selection: HabitFrequency
+    let tintHex: String
+
+    private var options: [HabitFrequencyOption] {
+        [
+            HabitFrequencyOption(type: .daily, title: "Daily", detail: "Every day", icon: "sun.max.fill"),
+            HabitFrequencyOption(type: .daysOfWeek, title: "Days", detail: "Specific weekdays", icon: "calendar"),
+            HabitFrequencyOption(type: .timesPerWeek, title: "Weekly", detail: "Target count", icon: "number"),
+            HabitFrequencyOption(type: .monthly, title: "Monthly", detail: "One day each month", icon: "calendar.badge.clock"),
+        ]
+    }
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+            ForEach(options) { option in
+                frequencyButton(option)
+            }
+        }
+    }
+
+    private func frequencyButton(_ option: HabitFrequencyOption) -> some View {
+        let isSelected = selection == option.type
+        let tint = Color(hex: tintHex)
+
+        return Button {
+            selection = option.type
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: option.icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isSelected ? tint : Theme.dim)
+                    .frame(width: 28, height: 28)
+                    .background((isSelected ? tint : Theme.dim).opacity(isSelected ? 0.14 : 0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(option.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                    Text(option.detail)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(minHeight: 54)
+            .background(isSelected ? tint.opacity(0.10) : Theme.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? tint.opacity(0.42) : Theme.borderSubtle, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.cadencePlain)
+    }
+}
+
+private struct HabitFrequencyOption: Identifiable {
+    let type: HabitFrequency
+    let title: String
+    let detail: String
+    let icon: String
+
+    var id: String { type.rawValue }
+}
+
+private struct HabitWeekdayPicker: View {
+    @Binding var selectedDays: Set<Int>
+    let dayNames: [String]
+    let tintHex: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<7, id: \.self) { index in
+                let dayValue = index + 1
+                let isSelected = selectedDays.contains(dayValue)
+                Button {
+                    if isSelected {
+                        selectedDays.remove(dayValue)
+                    } else {
+                        selectedDays.insert(dayValue)
+                    }
+                } label: {
+                    Text(dayNames[index])
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(isSelected ? .white : Theme.dim)
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                        .background(isSelected ? Color(hex: tintHex) : Theme.surfaceElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(isSelected ? Color.clear : Theme.borderSubtle, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.cadencePlain)
+            }
+        }
+    }
+}
+
+private struct HabitNumberStepper: View {
+    let title: String
+    let detail: String
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    let tintHex: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+            }
+
+            Spacer()
+
+            stepButton(systemImage: "minus", isDisabled: value <= range.lowerBound) {
+                value = max(range.lowerBound, value - 1)
+            }
+
+            Text("\(value)")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .frame(width: 42, height: 32)
+                .background(Color(hex: tintHex).opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color(hex: tintHex).opacity(0.24), lineWidth: 1)
+                )
+
+            stepButton(systemImage: "plus", isDisabled: value >= range.upperBound) {
+                value = min(range.upperBound, value + 1)
+            }
+        }
+        .padding(12)
+        .background(Theme.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+    }
+
+    private func stepButton(systemImage: String, isDisabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(isDisabled ? Theme.dim.opacity(0.45) : Color(hex: tintHex))
+                .frame(width: 30, height: 30)
+                .background(Theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle, lineWidth: 1))
+        }
+        .buttonStyle(.cadencePlain)
+        .disabled(isDisabled)
+    }
+}
+
+private struct HabitFrequencyNote: View {
+    let icon: String
+    let title: String
+    let detail: String
+    let tintHex: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color(hex: tintHex))
+                .frame(width: 28, height: 28)
+                .background(Color(hex: tintHex).opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+            }
+
+            Spacer()
+        }
+        .padding(12)
+        .background(Theme.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
     }
 }
 #endif

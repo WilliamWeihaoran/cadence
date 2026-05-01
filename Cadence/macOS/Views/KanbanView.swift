@@ -34,6 +34,7 @@ struct ListSectionKanbanColumn: View {
     @State private var editorHasDueDate = false
     @State private var showHeaderDueDatePicker = false
     @State private var headerDueDate = Date()
+    @State private var headerDueDateViewMonth = Date()
     @State private var isHovered = false
     private var unfrozenActiveTasks: [AppTask] {
         tasks.filter { !$0.isDone }
@@ -336,7 +337,11 @@ struct ListSectionKanbanColumn: View {
     }
 
     private func openHeaderDueDatePicker() {
-        headerDueDate = DateFormatters.date(from: section.dueDate) ?? Date()
+        let resolved = DateFormatters.date(from: section.dueDate) ?? Date()
+        headerDueDate = resolved
+        var comps = Calendar.current.dateComponents([.year, .month], from: resolved)
+        comps.day = 1
+        headerDueDateViewMonth = Calendar.current.date(from: comps) ?? resolved
         showHeaderDueDatePicker = true
     }
 
@@ -344,16 +349,20 @@ struct ListSectionKanbanColumn: View {
     private var sectionDueDatePickerPopover: some View {
         KanbanSectionDueDatePickerPopover(
             dueDateKey: section.dueDate,
-            selection: $headerDueDate,
+            selection: Binding(
+                get: { headerDueDate },
+                set: { newDate in
+                    headerDueDate = newDate
+                    updateSection { config in
+                        config.dueDate = DateFormatters.dateKey(from: newDate)
+                    }
+                }
+            ),
+            viewMonth: $headerDueDateViewMonth,
+            isPresented: $showHeaderDueDatePicker,
             onClear: {
                 updateSection { config in
                     config.dueDate = ""
-                }
-                showHeaderDueDatePicker = false
-            },
-            onDone: {
-                updateSection { config in
-                    config.dueDate = DateFormatters.dateKey(from: headerDueDate)
                 }
                 showHeaderDueDatePicker = false
             }

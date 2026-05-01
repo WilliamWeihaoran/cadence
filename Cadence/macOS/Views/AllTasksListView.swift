@@ -265,7 +265,7 @@ private struct AllTasksFlatSectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            CollapsibleTaskGroupHeader(
+            TaskListGroupHeader(
                 title: section.title,
                 isCollapsed: isCollapsed,
                 overdueCount: overdueCount,
@@ -273,9 +273,9 @@ private struct AllTasksFlatSectionView: View {
                 accent: section.accent,
                 onToggle: onToggle
             )
-            .padding(.horizontal, 16)
+            .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
             .padding(.top, 16)
-            .padding(.bottom, 5)
+            .padding(.bottom, 8)
             .dropDestination(for: String.self) { items, _ in
                 guard let payload = items.first else { return false }
                 return onDropOnSectionPayload(payload)
@@ -283,7 +283,7 @@ private struct AllTasksFlatSectionView: View {
 
             if !isCollapsed {
                 ForEach(section.tasks) { task in
-                    AllTasksRowHost(
+                    TaskListInteractiveRow(
                         task: task,
                         style: .standard,
                         contexts: contexts,
@@ -293,7 +293,6 @@ private struct AllTasksFlatSectionView: View {
                         taskDragPayload: taskDragPayload,
                         onDropOnTaskPayload: onDropOnTaskPayload
                     )
-                    .padding(.leading, 16)
                 }
             }
         }
@@ -316,12 +315,15 @@ private struct AllTasksListGroupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button(action: onToggle) {
-                HStack(spacing: 10) {
-                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-
+            TaskListGroupHeader(
+                title: group.listName,
+                isCollapsed: isCollapsed,
+                overdueCount: overdueCount,
+                regularCount: regularCount,
+                accent: group.listColor,
+                onToggle: onToggle
+            ) {
+                HStack(spacing: 8) {
                     if let contextIcon = group.contextIcon, let contextColor = group.contextColor {
                         Image(systemName: contextIcon)
                             .font(.system(size: 11, weight: .semibold))
@@ -334,37 +336,11 @@ private struct AllTasksListGroupView: View {
                     Image(systemName: group.listIcon)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(group.listColor)
-
-                    Text(group.listName)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(Theme.text)
-
-                    Spacer()
-
-                    if let overdueCount, overdueCount > 0 {
-                        Text("\(overdueCount)")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Theme.red)
-                        Text("/")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Theme.dim.opacity(0.8))
-                    }
-
-                    Text("\(regularCount)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Theme.surfaceElevated.opacity(0.75))
-                        .clipShape(Capsule())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.cadencePlain)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
             .padding(.top, 20)
-            .padding(.bottom, 6)
+            .padding(.bottom, 8)
             .dropDestination(for: String.self) { items, _ in
                 guard let payload = items.first else { return false }
                 return onDropOnGroupPayload(payload)
@@ -372,7 +348,7 @@ private struct AllTasksListGroupView: View {
 
             if !isCollapsed {
                 ForEach(group.tasks) { task in
-                    AllTasksRowHost(
+                    TaskListInteractiveRow(
                         task: task,
                         style: .todayGrouped,
                         contexts: contexts,
@@ -382,8 +358,6 @@ private struct AllTasksListGroupView: View {
                         taskDragPayload: taskDragPayload,
                         onDropOnTaskPayload: onDropOnTaskPayload
                     )
-                    .padding(.leading, 20)
-                    .padding(.trailing, 8)
                 }
             }
         }
@@ -402,57 +376,30 @@ private struct AllTasksCompletedSectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            CompletedSectionHeader(
+            TaskListGroupHeader(
+                title: "Completed",
                 count: count,
                 isCollapsed: isCollapsed,
+                accent: Theme.green,
                 onToggle: onToggle
             )
-            .padding(.horizontal, 16)
+            .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
             .padding(.top, 16)
-            .padding(.bottom, 6)
+            .padding(.bottom, 8)
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
+                    TaskListDisplayRow(
+                        task: task,
+                        style: .standard,
+                        contexts: contexts,
+                        areas: areas,
+                        projects: projects
+                    )
                         .draggable(taskDragPayload(task))
-                        .padding(.leading, 16)
                 }
             }
         }
-    }
-}
-
-private struct AllTasksRowHost: View {
-    let task: AppTask
-    let style: MacTaskRowStyle
-    let contexts: [Context]
-    let areas: [Area]
-    let projects: [Project]
-    @Binding var dragOverTaskID: UUID?
-    let taskDragPayload: (AppTask) -> String
-    let onDropOnTaskPayload: (String, AppTask) -> Bool
-
-    var body: some View {
-        MacTaskRow(task: task, style: style, contexts: contexts, areas: areas, projects: projects)
-            .draggable(taskDragPayload(task))
-            .dropDestination(for: String.self) { items, _ in
-                guard let payload = items.first else { return false }
-                return onDropOnTaskPayload(payload, task)
-            } isTargeted: { isOver in
-                if isOver {
-                    dragOverTaskID = task.id
-                } else if dragOverTaskID == task.id {
-                    dragOverTaskID = nil
-                }
-            }
-            .overlay(alignment: .top) {
-                if dragOverTaskID == task.id {
-                    Rectangle()
-                        .fill(Theme.blue)
-                        .frame(height: 2)
-                        .padding(.leading, 16)
-                }
-            }
     }
 }
 #endif

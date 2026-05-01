@@ -143,4 +143,27 @@ struct ListDeleteHelpersTests {
         #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).isEmpty)
         #expect(try modelContext.fetch(FetchDescriptor<Subtask>()).isEmpty)
     }
+
+    @Test func deleteTaskIgnoresStaleSubtaskRelationshipEntries() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let task = AppTask(title: "Hovered task")
+        let deletedSubtask = Subtask(title: "Already gone")
+        deletedSubtask.parentTask = task
+        let liveSubtask = Subtask(title: "Still here")
+        liveSubtask.parentTask = task
+
+        modelContext.insert(task)
+        modelContext.insert(deletedSubtask)
+        modelContext.insert(liveSubtask)
+        try modelContext.save()
+
+        modelContext.delete(deletedSubtask)
+        modelContext.deleteTask(task)
+        try modelContext.save()
+
+        #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).isEmpty)
+        #expect(try modelContext.fetch(FetchDescriptor<Subtask>()).isEmpty)
+    }
 }

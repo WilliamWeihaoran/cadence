@@ -1,21 +1,36 @@
 #if os(macOS)
 import SwiftData
+import Foundation
 
 extension ModelContext {
     func deleteTask(_ task: AppTask) {
-        TaskCompletionAnimationManager.shared.cancelPending(for: task.id)
-        TaskCompletionAnimationManager.shared.cancelCancelPending(for: task.id)
+        let taskID = task.id
+        TaskCompletionAnimationManager.shared.cancelPending(for: taskID)
+        TaskCompletionAnimationManager.shared.cancelCancelPending(for: taskID)
 
-        if !task.calendarEventID.isEmpty {
-            SchedulingActions.removeFromCalendar(task)
+        guard let taskToDelete = currentTask(withID: taskID) else { return }
+
+        if !taskToDelete.calendarEventID.isEmpty {
+            SchedulingActions.removeFromCalendar(taskToDelete)
         }
 
-        let subtasks = Array(task.subtasks ?? [])
+        let subtasks = currentSubtasks(parentTaskID: taskID)
         for subtask in subtasks {
+            subtask.parentTask = nil
             delete(subtask)
         }
 
-        delete(task)
+        delete(taskToDelete)
+    }
+
+    private func currentTask(withID taskID: UUID) -> AppTask? {
+        let descriptor = FetchDescriptor<AppTask>()
+        return (try? fetch(descriptor))?.first { $0.id == taskID }
+    }
+
+    private func currentSubtasks(parentTaskID taskID: UUID) -> [Subtask] {
+        let descriptor = FetchDescriptor<Subtask>()
+        return ((try? fetch(descriptor)) ?? []).filter { $0.parentTask?.id == taskID }
     }
 }
 #endif

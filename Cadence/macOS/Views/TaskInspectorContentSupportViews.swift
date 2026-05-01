@@ -6,7 +6,6 @@ import AppKit
 struct TaskDetailNotesSection: View {
     @Bindable var task: AppTask
     @Query(sort: \AppTask.order) private var referenceTasks: [AppTask]
-    @State private var showExpandedNotes = false
 
     var body: some View {
         TaskInspectorInfoCard {
@@ -14,7 +13,7 @@ struct TaskDetailNotesSection: View {
                 HStack {
                     Spacer()
                     Button {
-                        showExpandedNotes = true
+                        TaskNotesPanelController.shared.show(task: task, referenceTasks: referenceTasks)
                     } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 11, weight: .semibold))
@@ -43,9 +42,6 @@ struct TaskDetailNotesSection: View {
                 }
             }
         }
-        .sheet(isPresented: $showExpandedNotes) {
-            TaskNotesExpandedEditorSheet(task: task, referenceTasks: referenceTasks)
-        }
     }
 
     private var taskNotesBinding: Binding<String> {
@@ -60,6 +56,7 @@ struct TaskNotesExpandedEditorSheet: View {
     @Bindable var task: AppTask
     var referenceNotes: [Note] = []
     var referenceTasks: [AppTask] = []
+    var onClose: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -76,7 +73,11 @@ struct TaskNotesExpandedEditorSheet: View {
                 }
                 Spacer()
                 Button {
-                    dismiss()
+                    if let onClose {
+                        onClose()
+                    } else {
+                        dismiss()
+                    }
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .semibold))
@@ -104,6 +105,84 @@ struct TaskNotesExpandedEditorSheet: View {
         .frame(minWidth: 760, idealWidth: 900, minHeight: 560, idealHeight: 680)
         .background(Theme.bg)
     }
+}
+
+@MainActor
+final class TaskNotesPanelController: NSObject, NSWindowDelegate {
+    static let shared = TaskNotesPanelController()
+
+    private var panel: TaskNotesPanel?
+    private var hostingView: TaskNotesHostingView?
+
+    private override init() {}
+
+    func show(task: AppTask, referenceNotes: [Note] = [], referenceTasks: [AppTask] = []) {
+        let panel = ensurePanel()
+        let content = TaskNotesExpandedEditorSheet(
+            task: task,
+            referenceNotes: referenceNotes,
+            referenceTasks: referenceTasks,
+            onClose: { [weak self] in self?.close() }
+        )
+        .modelContainer(PersistenceController.shared.container)
+        .preferredColorScheme(.dark)
+
+        let hostingView = TaskNotesHostingView(rootView: AnyView(content))
+        panel.contentView = hostingView
+        self.hostingView = hostingView
+
+        if panel.frame.width < 100 || panel.frame.height < 100 {
+            panel.setFrame(NSRect(x: 0, y: 0, width: 900, height: 680), display: false)
+            panel.center()
+        }
+
+        panel.title = "Task notes"
+        panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func close() {
+        panel?.orderOut(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        hostingView = nil
+    }
+
+    private func ensurePanel() -> TaskNotesPanel {
+        if let panel { return panel }
+
+        let panel = TaskNotesPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 680),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .utilityWindow],
+            backing: .buffered,
+            defer: false
+        )
+        panel.delegate = self
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.isMovableByWindowBackground = true
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.collectionBehavior = [.fullScreenAuxiliary, .managed]
+        panel.hidesOnDeactivate = false
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.minSize = NSSize(width: 560, height: 360)
+        panel.animationBehavior = .utilityWindow
+        self.panel = panel
+        return panel
+    }
+}
+
+private final class TaskNotesPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
+private final class TaskNotesHostingView: NSHostingView<AnyView> {
+    override var mouseDownCanMoveWindow: Bool { true }
 }
 
 struct TaskDetailSubtasksSection: View {

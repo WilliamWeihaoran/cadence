@@ -29,6 +29,7 @@ struct QuickCreateChoicePopover: View {
     @State private var tildeHighlightIdx = 0
     @FocusState private var focused: Bool
     @FocusState private var isTildeSearchFocused: Bool
+    private let modeFormMinHeight: CGFloat = 190
 
     init(
         startMin: Int,
@@ -55,92 +56,82 @@ struct QuickCreateChoicePopover: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dim)
 
-            if onCreateEvent != nil || onCreateBundle != nil {
-                HStack(spacing: 4) {
-                    modeButton("Time Block", for: .timeBlock)
-                    if onCreateBundle != nil {
-                        modeButton("Bundle", for: .bundle)
-                    }
-                    if onCreateEvent != nil {
-                        modeButton("Calendar Event", for: .calendarEvent)
-                    }
-                }
-                .padding(3)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
+            modeSelector
 
-            ZStack(alignment: .leading) {
-                TextField(titlePlaceholder, text: $title)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .focused($focused)
-                    .onSubmit { create() }
-                    .onChange(of: title) { _, newValue in
-                        guard mode == .timeBlock, newValue.hasSuffix("~") else { return }
-                        let prefix = String(newValue.dropLast())
-                        if prefix.isEmpty || prefix.hasSuffix(" ") {
-                            title = prefix
-                            tildeSearchQuery = ""
-                            tildeHighlightIdx = 0
-                            tildeMode = .list
+            VStack(alignment: .leading, spacing: 12) {
+                ZStack(alignment: .leading) {
+                    TextField(titlePlaceholder, text: $title)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .focused($focused)
+                        .onSubmit { create() }
+                        .onChange(of: title) { _, newValue in
+                            guard mode == .timeBlock, newValue.hasSuffix("~") else { return }
+                            let prefix = String(newValue.dropLast())
+                            if prefix.isEmpty || prefix.hasSuffix(" ") {
+                                title = prefix
+                                tildeSearchQuery = ""
+                                tildeHighlightIdx = 0
+                                tildeMode = .list
+                            }
+                        }
+                        .opacity(tildeMode == .none ? 1 : 0)
+                        .allowsHitTesting(tildeMode == .none)
+
+                    if tildeMode != .none {
+                        HStack(spacing: 4) {
+                            if !title.isEmpty {
+                                Text(title)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(Theme.text)
+                                    .fixedSize()
+                            }
+                            Text("~")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Theme.blue)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                            Spacer(minLength: 0)
                         }
                     }
-                    .opacity(tildeMode == .none ? 1 : 0)
-                    .allowsHitTesting(tildeMode == .none)
+                }
 
                 if tildeMode != .none {
-                    HStack(spacing: 4) {
-                        if !title.isEmpty {
-                            Text(title)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Theme.text)
-                                .fixedSize()
-                        }
-                        Text("~")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Theme.blue)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                        Spacer(minLength: 0)
+                    tildeInlineSearchView
+                }
+
+                if mode == .calendarEvent {
+                    let _ = calendarManager.storeVersion
+                    let calendars = calendarManager.writableCalendars
+                    if !calendars.isEmpty {
+                        CadenceCalendarPickerButton(
+                            calendars: calendars,
+                            selectedID: $selectedCalendarID,
+                            allowNone: false,
+                            style: .compact
+                        )
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Notes")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+
+                        TextEditor(text: $notes)
+                            .scrollContentBackground(.hidden)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.text)
+                            .frame(minHeight: 84)
+                            .padding(8)
+                            .background(Theme.surfaceElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 }
             }
-
-            if tildeMode != .none {
-                tildeInlineSearchView
-            }
-
-            if mode == .calendarEvent {
-                let _ = calendarManager.storeVersion
-                let calendars = calendarManager.writableCalendars
-                if !calendars.isEmpty {
-                    CadenceCalendarPickerButton(
-                        calendars: calendars,
-                        selectedID: $selectedCalendarID,
-                        allowNone: false,
-                        style: .compact
-                    )
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Notes")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-
-                    TextEditor(text: $notes)
-                        .scrollContentBackground(.hidden)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.text)
-                        .frame(minHeight: 84)
-                        .padding(8)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-            }
+            .frame(minHeight: modeFormMinHeight, alignment: .topLeading)
 
             HStack(spacing: 8) {
                 CadenceActionButton(
@@ -376,30 +367,60 @@ struct QuickCreateChoicePopover: View {
     }
 
     @ViewBuilder
-    private func modeButton(_ label: String, for target: Mode) -> some View {
-        Button(label) {
-            mode = target
-            tildeMode = .none
-            if target == .bundle,
-               title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                title = "Task Bundle"
-            } else if target != .bundle,
-                      title.trimmingCharacters(in: .whitespacesAndNewlines) == "Task Bundle" {
-                title = ""
-            }
-            if target == .calendarEvent,
-               selectedCalendar == nil,
-               let calendar = calendarManager.defaultWritableCalendar {
-                selectedCalendarID = calendar.calendarIdentifier
+    private var modeSelector: some View {
+        if onCreateEvent != nil || onCreateBundle != nil {
+            HStack(spacing: 6) {
+                modeButton("Time Block", for: .timeBlock, tint: Theme.blue)
+                if onCreateEvent != nil {
+                    modeButton("Event", for: .calendarEvent, tint: Theme.purple)
+                }
+                if onCreateBundle != nil {
+                    modeButton("Bundle", for: .bundle, tint: Theme.amber)
+                }
             }
         }
-            .buttonStyle(.cadencePlain)
-            .font(.system(size: 11, weight: mode == target ? .semibold : .regular))
-            .foregroundStyle(mode == target ? Theme.text : Theme.dim)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(mode == target ? Theme.surface : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    @ViewBuilder
+    private func modeButton(_ label: String, for target: Mode, tint: Color) -> some View {
+        Button {
+            selectMode(target)
+        } label: {
+            let isSelected = mode == target
+            Text(label)
+                .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? tint : Theme.dim)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, minHeight: 28)
+                .padding(.horizontal, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isSelected ? tint.opacity(0.12) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(isSelected ? tint.opacity(0.24) : Theme.borderSubtle.opacity(0.38), lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.cadencePlain)
+    }
+
+    private func selectMode(_ target: Mode) {
+        mode = target
+        tildeMode = .none
+        if target == .bundle,
+           title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            title = "Task Bundle"
+        } else if target != .bundle,
+                  title.trimmingCharacters(in: .whitespacesAndNewlines) == "Task Bundle" {
+            title = ""
+        }
+        if target == .calendarEvent,
+           selectedCalendar == nil,
+           let calendar = calendarManager.defaultWritableCalendar {
+            selectedCalendarID = calendar.calendarIdentifier
+        }
     }
 }
 #endif

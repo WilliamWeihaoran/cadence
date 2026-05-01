@@ -481,7 +481,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
             let nsString = string as NSString
             guard targetIndex < nsString.length else { return }
             let targetCharacter = nsString.character(at: targetIndex)
-            let replacement = targetCharacter == 0x25CB ? "●" : "○"
+            let replacement = targetCharacter == 0x25CB ? "✓" : "○"
             let range = NSRange(location: targetIndex, length: 1)
             if shouldChangeText(in: range, replacementString: replacement) {
                 textStorage?.replaceCharacters(in: range, with: replacement)
@@ -1440,7 +1440,7 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
                 return
             }
             if snippet.lowercased() == "[x] ", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
-                replaceText(in: textView, range: range, with: "● ")
+                replaceText(in: textView, range: range, with: "✓ ")
                 textView.setSelectedRange(NSRange(location: range.location + 2, length: 0))
                 return
             }

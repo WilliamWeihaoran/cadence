@@ -164,20 +164,26 @@ struct CreateListSheet: View {
         switch listType {
         case .area:
             let area = Area(name: trimmed, context: context, colorHex: selectedColor, icon: selectedIcon)
-            area.order = (context.areas ?? []).count
+            area.order = nextListOrder
             area.hideDueDateIfEmpty = hideDueDateIfEmpty
             area.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
             modelContext.insert(area)
         case .project:
             let project = Project(name: trimmed, context: context, colorHex: selectedColor)
             project.icon = selectedIcon
-            project.order = (context.projects ?? []).count
+            project.order = nextListOrder
             project.hideDueDateIfEmpty = hideDueDateIfEmpty
             project.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
             if hasDueDate { project.dueDate = DateFormatters.dateKey(from: dueDate) }
             modelContext.insert(project)
         }
         dismiss()
+    }
+
+    private var nextListOrder: Int {
+        let areaOrders = (context.areas ?? []).map(\.order)
+        let projectOrders = (context.projects ?? []).map(\.order)
+        return ((areaOrders + projectOrders).max() ?? -1) + 1
     }
 }
 

@@ -21,11 +21,20 @@ EXPECTED_TOOLS = {
     "get_today_brief",
     "list_tasks",
     "get_task",
+    "list_task_bundles",
+    "get_task_bundle",
     "list_containers",
     "get_container_summary",
+    "list_tags",
     "get_core_notes",
+    "list_notes",
+    "get_note",
     "list_documents",
     "get_document",
+    "list_goals",
+    "get_goal",
+    "list_habits",
+    "list_links",
     "search_cadence",
     "get_recent_mcp_writes",
     "create_task",
@@ -217,6 +226,36 @@ def main() -> int:
         send(
             {
                 "jsonrpc": "2.0",
+                "id": 23,
+                "method": "tools/call",
+                "params": {"name": "list_notes", "arguments": {"kind": "daily", "query": core_note_marker}},
+            }
+        )
+        list_notes_response = read_response(23)
+        if list_notes_response["result"].get("isError", False):
+            raise AssertionError(list_notes_response["result"]["content"][0]["text"])
+        note_hits = json.loads(list_notes_response["result"]["content"][0]["text"])
+        if not any(note["id"] == daily_note["id"] for note in note_hits):
+            raise AssertionError(f"expected list_notes to include appended daily note, got {note_hits}")
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 24,
+                "method": "tools/call",
+                "params": {"name": "get_note", "arguments": {"noteId": daily_note["id"]}},
+            }
+        )
+        get_note_response = read_response(24)
+        if get_note_response["result"].get("isError", False):
+            raise AssertionError(get_note_response["result"]["content"][0]["text"])
+        note_detail = json.loads(get_note_response["result"]["content"][0]["text"])
+        if core_note_marker not in note_detail["content"]:
+            raise AssertionError(f"expected get_note content to include marker, got {note_detail}")
+
+        send(
+            {
+                "jsonrpc": "2.0",
                 "id": 18,
                 "method": "tools/call",
                 "params": {"name": "search_cadence", "arguments": {"query": core_note_marker, "scopes": ["core_notes"]}},
@@ -243,6 +282,20 @@ def main() -> int:
         default_search_hits = json.loads(default_search_response["result"]["content"][0]["text"])
         if not any(hit["entityType"] == "daily_note" and hit["entityId"] == daily_note["id"] for hit in default_search_hits):
             raise AssertionError(f"expected default search to include core notes, got {default_search_hits}")
+
+        for offset, tool_name in enumerate(["list_tags", "list_goals", "list_habits", "list_links", "list_task_bundles"], start=25):
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": offset,
+                    "method": "tools/call",
+                    "params": {"name": tool_name, "arguments": {"limit": 3}},
+                }
+            )
+            response = read_response(offset)
+            if response["result"].get("isError", False):
+                raise AssertionError(response["result"]["content"][0]["text"])
+            json.loads(response["result"]["content"][0]["text"])
 
         send(
             {
@@ -427,6 +480,8 @@ def main() -> int:
         print(f"OK diagnostics mode={diagnostics['mode']}")
         print(f"OK get_today_brief dateKey={brief['dateKey']}")
         print("OK core note append/read/search")
+        print("OK note list/detail paths")
+        print("OK tag/goal/habit/link/bundle list paths")
         print("OK document/event-note read paths")
         print("OK string scheduledStartMin")
         print("OK natural date/duration")

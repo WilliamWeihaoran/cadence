@@ -129,6 +129,7 @@ struct MacTaskRow: View {
                         if hoveredTaskManager.hoveredTask?.id == task.id {
                             hoveredTaskManager.hoveredTask = nil
                         }
+                        hoveredEditableManager.endHovering(id: "task-row-\(task.id.uuidString)")
                         modelContext.deleteTask(task)
                     }
                 }

@@ -8,9 +8,73 @@ import UniformTypeIdentifiers
 // SwiftUI view updates between onDrag and performDrop.
 private final class SidebarDragContext {
     static let shared = SidebarDragContext()
-    var draggedAreaID: UUID?
-    var draggedProjectID: UUID?
+    var draggedListItem: SidebarListDragItem?
     private init() {}
+}
+
+private enum SidebarListKind: String {
+    case area
+    case project
+}
+
+private struct SidebarListDragItem: Equatable {
+    let kind: SidebarListKind
+    let id: UUID
+
+    var providerText: NSString {
+        "\(kind.rawValue):\(id.uuidString)" as NSString
+    }
+}
+
+private enum SidebarListEntry: Identifiable {
+    case area(Area)
+    case project(Project)
+
+    var id: String {
+        switch self {
+        case .area(let area): return "area-\(area.id.uuidString)"
+        case .project(let project): return "project-\(project.id.uuidString)"
+        }
+    }
+
+    var order: Int {
+        switch self {
+        case .area(let area): return area.order
+        case .project(let project): return project.order
+        }
+    }
+
+    var kindRank: Int {
+        switch self {
+        case .area: return 0
+        case .project: return 1
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .area(let area): return area.name
+        case .project(let project): return project.name
+        }
+    }
+
+    var dragItem: SidebarListDragItem {
+        switch self {
+        case .area(let area): return SidebarListDragItem(kind: .area, id: area.id)
+        case .project(let project): return SidebarListDragItem(kind: .project, id: project.id)
+        }
+    }
+
+    func matches(_ item: SidebarListDragItem) -> Bool {
+        dragItem == item
+    }
+
+    func setOrder(_ value: Int) {
+        switch self {
+        case .area(let area): area.order = value
+        case .project(let project): project.order = value
+        }
+    }
 }
 
 struct ContextSection: View {
@@ -20,12 +84,23 @@ struct ContextSection: View {
     @Environment(\.modelContext) private var modelContext
     @State private var areaForEdit: Area? = nil
     @State private var projectForEdit: Project? = nil
-    @State private var dragOverAreaID: UUID? = nil
-    @State private var dragOverProjectID: UUID? = nil
+    @State private var dragOverListItem: SidebarListDragItem? = nil
 
     private var areas: [Area] { (context.areas ?? []).filter(\.isActive).sorted { $0.order < $1.order } }
     private var projects: [Project] { (context.projects ?? []).filter(\.isActive).sorted { $0.order < $1.order } }
     private var hasLists: Bool { !areas.isEmpty || !projects.isEmpty }
+    private var listEntries: [SidebarListEntry] {
+        let areaEntries = areas.map(SidebarListEntry.area)
+        let projectEntries = projects.map(SidebarListEntry.project)
+        let entries = areaEntries + projectEntries
+        let hasGlobalOrder = Set(entries.map(\.order)).count == entries.count
+        guard hasGlobalOrder else { return areaEntries + projectEntries }
+        return entries.sorted { lhs, rhs in
+            if lhs.order != rhs.order { return lhs.order < rhs.order }
+            if lhs.kindRank != rhs.kindRank { return lhs.kindRank < rhs.kindRank }
+            return lhs.label.localizedCaseInsensitiveCompare(rhs.label) == .orderedAscending
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -60,32 +135,24 @@ struct ContextSection: View {
 
                     VStack(alignment: .leading, spacing: 3) {
                         // Top drop zone — lets the user drag any item to the first position
-                        if let firstArea = areas.first {
+                        if let firstItem = listEntries.first?.dragItem {
                             Color.clear
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 4)
-                                .onDrop(of: [UTType.text], delegate: SidebarAreaDropDelegate(
-                                    targetID: firstArea.id,
-                                    dragOverID: $dragOverAreaID,
-                                    onDrop: reorderArea
-                                ))
-                        } else if let firstProject = projects.first {
-                            Color.clear
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 4)
-                                .onDrop(of: [UTType.text], delegate: SidebarProjectDropDelegate(
-                                    targetID: firstProject.id,
-                                    dragOverID: $dragOverProjectID,
-                                    onDrop: reorderProject
+                                .onDrop(of: [UTType.text], delegate: SidebarListDropDelegate(
+                                    target: firstItem,
+                                    dragOverItem: $dragOverListItem,
+                                    onDrop: reorderList
                                 ))
                         }
 
-                        ForEach(areas) { area in
-                            areaRow(area)
-                        }
-
-                        ForEach(projects) { project in
-                            projectRow(project)
+                        ForEach(listEntries) { entry in
+                            switch entry {
+                            case .area(let area):
+                                areaRow(area, target: entry.dragItem)
+                            case .project(let project):
+                                projectRow(project, target: entry.dragItem)
+                            }
                         }
                     }
                 }
@@ -119,35 +186,21 @@ struct ContextSection: View {
         }
     }
 
-    private func reorderArea(droppedID: UUID, targetID: UUID) {
-        var sorted = areas
-        guard let fromIndex = sorted.firstIndex(where: { $0.id == droppedID }),
-              let toIndex = sorted.firstIndex(where: { $0.id == targetID }) else { return }
+    private func reorderList(dropped: SidebarListDragItem, target: SidebarListDragItem) {
+        var sorted = listEntries
+        guard let fromIndex = sorted.firstIndex(where: { $0.matches(dropped) }),
+              let toIndex = sorted.firstIndex(where: { $0.matches(target) }) else { return }
         let element = sorted.remove(at: fromIndex)
         // Treat the row we drop on as the destination row itself. This avoids the
         // "no-op" feeling when dragging onto the next item down in the list.
         sorted.insert(element, at: min(toIndex, sorted.count))
         withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
-            for (i, a) in sorted.enumerated() { a.order = i }
+            for (i, entry) in sorted.enumerated() { entry.setOrder(i) }
         }
         try? modelContext.save()
     }
 
-    private func reorderProject(droppedID: UUID, targetID: UUID) {
-        var sorted = projects
-        guard let fromIndex = sorted.firstIndex(where: { $0.id == droppedID }),
-              let toIndex = sorted.firstIndex(where: { $0.id == targetID }) else { return }
-        let element = sorted.remove(at: fromIndex)
-        // Treat the row we drop on as the destination row itself. This avoids the
-        // "no-op" feeling when dragging onto the next item down in the list.
-        sorted.insert(element, at: min(toIndex, sorted.count))
-        withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
-            for (i, p) in sorted.enumerated() { p.order = i }
-        }
-        try? modelContext.save()
-    }
-
-    private func areaRow(_ area: Area) -> some View {
+    private func areaRow(_ area: Area, target: SidebarListDragItem) -> some View {
         SidebarListRow(
             item: .area(area.id),
             icon: area.icon,
@@ -160,23 +213,23 @@ struct ContextSection: View {
             onEdit: { areaForEdit = area }
         )
         .overlay(alignment: .top) {
-            if dragOverAreaID == area.id {
+            if dragOverListItem == target {
                 Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: dragOverAreaID)
+        .animation(.easeInOut(duration: 0.15), value: dragOverListItem)
         .onDrag {
-            SidebarDragContext.shared.draggedAreaID = area.id
-            return NSItemProvider(object: "area:\(area.id.uuidString)" as NSString)
+            SidebarDragContext.shared.draggedListItem = target
+            return NSItemProvider(object: target.providerText)
         }
-        .onDrop(of: [UTType.text], delegate: SidebarAreaDropDelegate(
-            targetID: area.id,
-            dragOverID: $dragOverAreaID,
-            onDrop: reorderArea
+        .onDrop(of: [UTType.text], delegate: SidebarListDropDelegate(
+            target: target,
+            dragOverItem: $dragOverListItem,
+            onDrop: reorderList
         ))
     }
 
-    private func projectRow(_ project: Project) -> some View {
+    private func projectRow(_ project: Project, target: SidebarListDragItem) -> some View {
         SidebarListRow(
             item: .project(project.id),
             icon: project.icon,
@@ -191,67 +244,44 @@ struct ContextSection: View {
             onEdit: { projectForEdit = project }
         )
         .overlay(alignment: .top) {
-            if dragOverProjectID == project.id {
+            if dragOverListItem == target {
                 Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: dragOverProjectID)
+        .animation(.easeInOut(duration: 0.15), value: dragOverListItem)
         .onDrag {
-            SidebarDragContext.shared.draggedProjectID = project.id
-            return NSItemProvider(object: "project:\(project.id.uuidString)" as NSString)
+            SidebarDragContext.shared.draggedListItem = target
+            return NSItemProvider(object: target.providerText)
         }
-        .onDrop(of: [UTType.text], delegate: SidebarProjectDropDelegate(
-            targetID: project.id,
-            dragOverID: $dragOverProjectID,
-            onDrop: reorderProject
+        .onDrop(of: [UTType.text], delegate: SidebarListDropDelegate(
+            target: target,
+            dragOverItem: $dragOverListItem,
+            onDrop: reorderList
         ))
     }
 }
 
 // MARK: - Drop Delegates
 
-private struct SidebarAreaDropDelegate: DropDelegate {
-    let targetID: UUID
-    @Binding var dragOverID: UUID?
-    let onDrop: (UUID, UUID) -> Void
+private struct SidebarListDropDelegate: DropDelegate {
+    let target: SidebarListDragItem
+    @Binding var dragOverItem: SidebarListDragItem?
+    let onDrop: (SidebarListDragItem, SidebarListDragItem) -> Void
 
     func validateDrop(info: DropInfo) -> Bool { true }
 
-    func dropEntered(info: DropInfo) { dragOverID = targetID }
+    func dropEntered(info: DropInfo) { dragOverItem = target }
 
     func dropExited(info: DropInfo) {
-        if dragOverID == targetID { dragOverID = nil }
+        if dragOverItem == target { dragOverItem = nil }
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        if dragOverID == targetID { dragOverID = nil }
-        guard let droppedID = SidebarDragContext.shared.draggedAreaID,
-              droppedID != targetID else { return false }
-        SidebarDragContext.shared.draggedAreaID = nil
-        onDrop(droppedID, targetID)
-        return true
-    }
-}
-
-private struct SidebarProjectDropDelegate: DropDelegate {
-    let targetID: UUID
-    @Binding var dragOverID: UUID?
-    let onDrop: (UUID, UUID) -> Void
-
-    func validateDrop(info: DropInfo) -> Bool { true }
-
-    func dropEntered(info: DropInfo) { dragOverID = targetID }
-
-    func dropExited(info: DropInfo) {
-        if dragOverID == targetID { dragOverID = nil }
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        if dragOverID == targetID { dragOverID = nil }
-        guard let droppedID = SidebarDragContext.shared.draggedProjectID,
-              droppedID != targetID else { return false }
-        SidebarDragContext.shared.draggedProjectID = nil
-        onDrop(droppedID, targetID)
+        if dragOverItem == target { dragOverItem = nil }
+        guard let dropped = SidebarDragContext.shared.draggedListItem,
+              dropped != target else { return false }
+        SidebarDragContext.shared.draggedListItem = nil
+        onDrop(dropped, target)
         return true
     }
 }

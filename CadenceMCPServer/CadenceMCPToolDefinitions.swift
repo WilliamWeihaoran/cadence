@@ -21,6 +21,11 @@ enum CadenceMCPToolDefinitions {
                 "limit": "Optional result limit, capped at 200.",
             ])),
             Tool(name: "get_task", description: "Get full read-only detail for one Cadence task.", inputSchema: schema(["taskId": "Task UUID."])),
+            Tool(name: "list_task_bundles", description: "List scheduled Cadence task bundles.", inputSchema: schema([
+                "date": "Optional bundle date, yyyy-MM-dd or natural day.",
+                "limit": "Optional result limit, capped at 200.",
+            ])),
+            Tool(name: "get_task_bundle", description: "Get read-only detail for one Cadence task bundle.", inputSchema: schema(["bundleId": "Task bundle UUID."])),
             Tool(name: "list_containers", description: "List Cadence areas and projects.", inputSchema: schema([
                 "kind": "Optional area or project.",
                 "status": "Optional raw status.",
@@ -31,7 +36,21 @@ enum CadenceMCPToolDefinitions {
                 "containerKind": "area or project.",
                 "containerId": "Area/project UUID.",
             ])),
+            Tool(name: "list_tags", description: "List Cadence tags with task and note counts.", inputSchema: schema([
+                "includeArchived": "Include archived tags.",
+                "query": "Optional tag search.",
+                "limit": "Optional result limit, capped at 200.",
+            ])),
             Tool(name: "get_core_notes", description: "Read daily, weekly, and permanent Cadence notes without creating missing notes.", inputSchema: schema(["date": "Optional yyyy-MM-dd date key or natural day. Defaults to today."])),
+            Tool(name: "list_notes", description: "List Cadence notes across daily, weekly, permanent, list, and meeting kinds.", inputSchema: schema([
+                "kind": "Optional note kind: daily, weekly, permanent, list, or meeting.",
+                "containerKind": "Optional area or project for list notes.",
+                "containerId": "Optional area/project UUID.",
+                "query": "Optional note search.",
+                "tagSlugs": "Optional array of tag names/slugs. Notes must have every requested tag.",
+                "limit": "Optional result limit, capped at 200.",
+            ])),
+            Tool(name: "get_note", description: "Get full Cadence note content plus note/task references and backlinks.", inputSchema: schema(["noteId": "Note UUID."])),
             Tool(name: "list_documents", description: "List Cadence markdown documents.", inputSchema: schema([
                 "containerKind": "Optional area or project.",
                 "containerId": "Optional area/project UUID.",
@@ -39,9 +58,28 @@ enum CadenceMCPToolDefinitions {
                 "limit": "Optional result limit, capped at 200.",
             ])),
             Tool(name: "get_document", description: "Get full markdown content for one Cadence document.", inputSchema: schema(["documentId": "Document UUID."])),
-            Tool(name: "search_cadence", description: "Search Cadence tasks, containers, documents, core notes, and event-linked meeting notes.", inputSchema: schema([
+            Tool(name: "list_goals", description: "List Cadence goals with progress and relationship counts.", inputSchema: schema([
+                "status": "Optional goal status: active, done, or paused.",
+                "contextId": "Optional context UUID.",
+                "query": "Optional goal search.",
+                "limit": "Optional result limit, capped at 200.",
+            ])),
+            Tool(name: "get_goal", description: "Get full read-only detail for one Cadence goal.", inputSchema: schema(["goalId": "Goal UUID."])),
+            Tool(name: "list_habits", description: "List Cadence habits with streak and goal metadata.", inputSchema: schema([
+                "contextId": "Optional context UUID.",
+                "goalId": "Optional goal UUID.",
+                "query": "Optional habit search.",
+                "limit": "Optional result limit, capped at 200.",
+            ])),
+            Tool(name: "list_links", description: "List saved links attached to Cadence areas or projects.", inputSchema: schema([
+                "containerKind": "Optional area or project.",
+                "containerId": "Optional area/project UUID.",
+                "query": "Optional link search.",
+                "limit": "Optional result limit, capped at 200.",
+            ])),
+            Tool(name: "search_cadence", description: "Search Cadence tasks, containers, documents, notes, goals, habits, links, and tags.", inputSchema: schema([
                 "query": "Search query.",
-                "scopes": "Optional scopes: tasks, containers, documents, core_notes, event_notes.",
+                "scopes": "Optional scopes: tasks, containers, documents, notes, core_notes, event_notes, goals, habits, links, tags.",
                 "limit": "Optional result limit, capped at 200.",
             ])),
             Tool(name: "get_recent_mcp_writes", description: "Read recent Cadence MCP write audit log entries.", inputSchema: schema([

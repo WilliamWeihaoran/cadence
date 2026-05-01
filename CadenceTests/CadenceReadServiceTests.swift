@@ -51,22 +51,95 @@ struct CadenceReadServiceTests {
         let fixture = try Fixture()
         let active = AppTask(title: "Active")
         active.project = fixture.project
+        active.sectionName = "Build"
         let complete = AppTask(title: "Complete")
         complete.project = fixture.project
         complete.status = .done
         let doc = Note(kind: .list, title: "Spec")
         doc.project = fixture.project
+        let link = SavedLink(title: "Roadmap", url: "https://example.com/roadmap")
+        link.project = fixture.project
 
         fixture.modelContext.insert(active)
         fixture.modelContext.insert(complete)
         fixture.modelContext.insert(doc)
+        fixture.modelContext.insert(link)
         try fixture.modelContext.save()
 
         let summary = try fixture.service.containerSummary(kind: "project", id: fixture.project.id.uuidString)
 
         #expect(summary.activeTaskCount == 1)
         #expect(summary.completedTaskCount == 1)
+        #expect(summary.sections.first { $0.name == "Build" }?.activeTaskCount == 1)
         #expect(summary.documents.map(\.title) == ["Spec"])
+        #expect(summary.links.map(\.title) == ["Roadmap"])
+    }
+
+    @Test func readServiceExposesNewMcpSurfaces() throws {
+        let fixture = try Fixture()
+        fixture.project.sectionNames = [TaskSectionDefaults.defaultName, "Build"]
+        let goal = Goal(title: "Ship Goals", context: fixture.context)
+        let task = AppTask(title: "Goal task")
+        task.project = fixture.project
+        task.context = fixture.context
+        task.goal = goal
+        task.sectionName = "Build"
+        task.tags = TagSupport.resolveTags(named: ["feature"], in: fixture.modelContext)
+
+        let bundle = TaskBundle(title: "Planning block", dateKey: "2026-05-01", startMin: 600, durationMinutes: 45)
+        task.bundle = bundle
+        task.bundleOrder = 0
+
+        let note = Note(
+            kind: .list,
+            title: "Design Note",
+            content: "[[task:\(task.id.uuidString)|Goal task]]"
+        )
+        note.project = fixture.project
+        note.tags = TagSupport.resolveTags(named: ["feature"], in: fixture.modelContext)
+        let backlink = Note(
+            kind: .permanent,
+            title: "Knowledge Hub",
+            content: "[[note:\(note.id.uuidString)|Design Note]]"
+        )
+        let habit = Habit(title: "Write daily", context: fixture.context, goal: goal)
+        let completion = HabitCompletion(date: DateFormatters.todayKey(), habit: habit)
+        let savedLink = SavedLink(title: "Goal Spec", url: "https://example.com/spec")
+        savedLink.project = fixture.project
+        let goalLink = GoalListLink(goal: goal, project: fixture.project)
+
+        fixture.modelContext.insert(goal)
+        fixture.modelContext.insert(task)
+        fixture.modelContext.insert(bundle)
+        fixture.modelContext.insert(note)
+        fixture.modelContext.insert(backlink)
+        fixture.modelContext.insert(habit)
+        fixture.modelContext.insert(completion)
+        fixture.modelContext.insert(savedLink)
+        fixture.modelContext.insert(goalLink)
+        try fixture.modelContext.save()
+
+        let taskDetail = try fixture.service.getTask(taskID: task.id.uuidString)
+        let noteDetail = try fixture.service.getNote(noteID: note.id.uuidString)
+        let goalDetail = try fixture.service.getGoal(goalID: goal.id.uuidString)
+        let bundleDetail = try fixture.service.getTaskBundle(bundleID: bundle.id.uuidString)
+
+        #expect(taskDetail.summary.goal?.id == goal.id.uuidString)
+        #expect(try fixture.service.listTags(query: "feature").first?.summary.slug == "feature")
+        #expect(try fixture.service.listNotes(options: .init(kind: "list", query: "Design")).map(\.id) == [note.id.uuidString])
+        #expect(noteDetail.linkedTasks.map(\.id) == [task.id.uuidString])
+        #expect(noteDetail.backlinks.map(\.id) == [backlink.id.uuidString])
+        #expect(try fixture.service.listGoals(options: .init(query: "Ship")).map(\.id) == [goal.id.uuidString])
+        #expect(goalDetail.linkedContainers.map(\.id) == [fixture.project.id.uuidString])
+        #expect(goalDetail.directTasks.map(\.id) == [task.id.uuidString])
+        #expect(try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString)).first?.completedToday == true)
+        #expect(try fixture.service.listLinks(options: .init(containerKind: "project", containerId: fixture.project.id.uuidString)).map(\.id) == [savedLink.id.uuidString])
+        #expect(try fixture.service.listTaskBundles(options: .init(dateKey: "2026-05-01")).map(\.id) == [bundle.id.uuidString])
+        #expect(bundleDetail.tasks.map(\.id) == [task.id.uuidString])
+        #expect(try fixture.service.search(query: "Goal Spec", scopes: ["links"]).first?.entityType == "saved_link")
+        #expect(try fixture.service.search(query: "Write daily", scopes: ["habits"]).first?.entityType == "habit")
+        #expect(try fixture.service.search(query: "Ship Goals", scopes: ["goals"]).first?.entityType == "goal")
+        #expect(try fixture.service.search(query: "feature", scopes: ["tags"]).first?.entityType == "tag")
     }
 
     @Test func readServiceMigratesLegacyListDocumentsOnInit() throws {
