@@ -7,6 +7,7 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
     case focus
     case inbox
     case calendar
+    case pursuits
     case goals
     case habits
 
@@ -19,6 +20,7 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .focus: return .focus
         case .inbox: return .inbox
         case .calendar: return .calendar
+        case .pursuits: return .pursuits
         case .goals: return .goals
         case .habits: return .habits
         }
@@ -31,6 +33,7 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .focus: return "timer"
         case .inbox: return "tray.fill"
         case .calendar: return "calendar"
+        case .pursuits: return "sparkles"
         case .goals: return "target"
         case .habits: return "flame.fill"
         }
@@ -43,6 +46,7 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .focus: return "Focus"
         case .inbox: return "Inbox"
         case .calendar: return "Calendar"
+        case .pursuits: return "Pursuits"
         case .goals: return "Goals"
         case .habits: return "Habits"
         }
@@ -59,6 +63,7 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .focus: return "#FF6B6B"
         case .inbox: return "#5AA2FF"
         case .calendar: return "#9E8CFF"
+        case .pursuits: return "#A78BFA"
         case .goals: return "#4ECB71"
         case .habits: return "#FFB84D"
         }
@@ -67,7 +72,7 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
 
 extension SidebarStaticDestination {
     static var defaultOrder: [SidebarStaticDestination] {
-        [.today, .allTasks, .focus, .inbox, .calendar, .goals, .habits]
+        [.today, .allTasks, .focus, .inbox, .calendar, .pursuits, .goals, .habits]
     }
 
     static func orderedDestinations(from raw: String) -> [SidebarStaticDestination] {

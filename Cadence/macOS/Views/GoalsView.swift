@@ -28,6 +28,7 @@ struct GoalsView: View {
                 || goal.desc.lowercased().contains(q)
                 || goal.rangeLabel.lowercased().contains(q)
                 || (goal.context?.name.lowercased().contains(q) ?? false)
+                || (goal.pursuit?.title.lowercased().contains(q) ?? false)
                 || ((summary.nextActionTitle ?? "").lowercased().contains(q))
         }
     }

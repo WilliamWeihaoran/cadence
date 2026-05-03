@@ -14,6 +14,7 @@ enum GlobalSearchIndexSupport {
         projects: [Project],
         tasks: [AppTask],
         notes: [Note],
+        pursuits: [Pursuit],
         goals: [Goal],
         habits: [Habit],
         eventResults: [GlobalSearchResult]
@@ -27,6 +28,7 @@ enum GlobalSearchIndexSupport {
         appendSection(.tasks, results: taskResults(tasks: tasks, query: query), into: &sections)
         appendSection(.events, results: eventResults, into: &sections)
         appendSection(.meetingNotes, results: eventNoteResults(notes: notes, query: query), into: &sections)
+        appendSection(.pursuits, results: pursuitResults(pursuits: pursuits, query: query), into: &sections)
         appendSection(.goals, results: goalResults(goals: goals, query: query), into: &sections)
         appendSection(.habits, results: habitResults(habits: habits, query: query), into: &sections)
 
@@ -158,15 +160,34 @@ enum GlobalSearchIndexSupport {
         }, query: query).prefix(query.isEmpty ? 10 : 14))
     }
 
+    static func pursuitResults(pursuits: [Pursuit], query: String) -> [GlobalSearchResult] {
+        Array(rankedResults(pursuits.compactMap { pursuit in
+            let contextName = pursuit.context?.name ?? "No context"
+            let goalCount = pursuit.goals?.count ?? 0
+            let habitCount = pursuit.habits?.count ?? 0
+            guard matches(query: query, fields: [pursuit.title, pursuit.desc, contextName, pursuit.status.label]) else { return nil }
+            return GlobalSearchResult(
+                id: "pursuit-\(pursuit.id.uuidString)",
+                category: .pursuits,
+                title: pursuit.title,
+                subtitle: "\(contextName) • \(goalCount) goals • \(habitCount) habits",
+                icon: pursuit.icon,
+                tintHex: pursuit.colorHex,
+                destination: .pursuits
+            )
+        }, query: query).prefix(query.isEmpty ? 6 : 10))
+    }
+
     static func goalResults(goals: [Goal], query: String) -> [GlobalSearchResult] {
         Array(rankedResults(goals.compactMap { goal in
             let contextName = goal.context?.name ?? "No context"
-            guard matches(query: query, fields: [goal.title, goal.desc, contextName]) else { return nil }
+            let pursuitName = goal.pursuit?.title ?? ""
+            guard matches(query: query, fields: [goal.title, goal.desc, contextName, pursuitName]) else { return nil }
             return GlobalSearchResult(
                 id: "goal-\(goal.id.uuidString)",
                 category: .goals,
                 title: goal.title,
-                subtitle: "\(contextName) • \(Int(goal.progress * 100))% complete",
+                subtitle: "\(pursuitName.isEmpty ? contextName : pursuitName) • \(Int(goal.progress * 100))% complete",
                 icon: "target",
                 tintHex: goal.colorHex,
                 destination: .goals
@@ -177,12 +198,13 @@ enum GlobalSearchIndexSupport {
     static func habitResults(habits: [Habit], query: String) -> [GlobalSearchResult] {
         Array(rankedResults(habits.compactMap { habit in
             let contextName = habit.context?.name ?? "No context"
-            guard matches(query: query, fields: [habit.title, contextName]) else { return nil }
+            let pursuitName = habit.pursuit?.title ?? ""
+            guard matches(query: query, fields: [habit.title, contextName, pursuitName]) else { return nil }
             return GlobalSearchResult(
                 id: "habit-\(habit.id.uuidString)",
                 category: .habits,
                 title: habit.title,
-                subtitle: "\(contextName) • \(habit.currentStreak) day streak",
+                subtitle: "\(pursuitName.isEmpty ? contextName : pursuitName) • \(habit.currentStreak) day streak",
                 icon: habit.icon,
                 tintHex: habit.colorHex,
                 destination: .habits

@@ -96,6 +96,20 @@ enum GoalStatus: String, Codable, CaseIterable, Hashable {
     case paused = "paused"
 }
 
+enum PursuitStatus: String, Codable, CaseIterable, Hashable {
+    case active = "active"
+    case done   = "done"
+    case paused = "paused"
+
+    var label: String {
+        switch self {
+        case .active: return "Active"
+        case .done: return "Done"
+        case .paused: return "Paused"
+        }
+    }
+}
+
 enum GoalProgressType: String, Codable, CaseIterable, Hashable {
     case subtasks = "subtasks"
     case hours    = "hours"

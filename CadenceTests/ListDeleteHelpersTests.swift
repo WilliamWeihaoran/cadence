@@ -12,9 +12,12 @@ struct ListDeleteHelpersTests {
         let context = Context(name: "Work")
         let area = Area(name: "Area", context: context)
         let project = Project(name: "Project", context: context, area: area)
+        let pursuit = Pursuit(title: "Pursuit", context: context)
         let goal = Goal(title: "Goal", context: context)
+        goal.pursuit = pursuit
         let goalListLink = GoalListLink(goal: goal, area: area)
         let habit = Habit(title: "Habit", context: context, goal: goal)
+        habit.pursuit = pursuit
         let habitCompletion = HabitCompletion(date: "2026-04-29", habit: habit)
 
         let contextTask = AppTask(title: "Context task")
@@ -56,6 +59,7 @@ struct ListDeleteHelpersTests {
         modelContext.insert(context)
         modelContext.insert(area)
         modelContext.insert(project)
+        modelContext.insert(pursuit)
         modelContext.insert(goal)
         modelContext.insert(goalListLink)
         modelContext.insert(habit)
@@ -80,6 +84,7 @@ struct ListDeleteHelpersTests {
         #expect(try modelContext.fetch(FetchDescriptor<Context>()).isEmpty)
         #expect(try modelContext.fetch(FetchDescriptor<Area>()).isEmpty)
         #expect(try modelContext.fetch(FetchDescriptor<Project>()).isEmpty)
+        #expect(try modelContext.fetch(FetchDescriptor<Pursuit>()).isEmpty)
         #expect(try modelContext.fetch(FetchDescriptor<Goal>()).isEmpty)
         #expect(try modelContext.fetch(FetchDescriptor<GoalListLink>()).isEmpty)
         #expect(try modelContext.fetch(FetchDescriptor<Habit>()).isEmpty)

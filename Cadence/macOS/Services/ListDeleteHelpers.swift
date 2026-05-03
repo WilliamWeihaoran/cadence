@@ -6,6 +6,7 @@ extension ModelContext {
     func deleteContext(_ context: Context) {
         let areas = Array(context.areas ?? [])
         let contextProjects = Array(context.projects ?? [])
+        let pursuits = Array(context.pursuits ?? [])
         let contextTasks = Array(context.tasks ?? [])
         let goals = Array(context.goals ?? [])
         let habits = Array(context.habits ?? [])
@@ -48,6 +49,7 @@ extension ModelContext {
         delete(goalLinks)
         delete(goals)
         delete(habits)
+        delete(pursuits)
         delete(projects)
         delete(areas)
         delete(context)

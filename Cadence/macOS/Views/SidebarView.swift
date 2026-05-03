@@ -7,6 +7,7 @@ struct SidebarView: View {
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query private var allTasks: [AppTask]
     @Query private var habits: [Habit]
+    @Query(filter: #Predicate<Pursuit> { $0.statusRaw == "active" }) private var activePursuits: [Pursuit]
     @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
     @AppStorage("sidebarHiddenTabs") private var sidebarHiddenTabsRaw = ""
     @AppStorage("sidebarTabOrder") private var sidebarTabOrderRaw = ""
@@ -27,6 +28,8 @@ struct SidebarView: View {
         case .inbox:
             let n = allTasks.filter { !$0.isDone && !$0.isCancelled && $0.area == nil && $0.project == nil }.count
             return n > 0 ? n : nil
+        case .pursuits:
+            return activePursuits.isEmpty ? nil : activePursuits.count
         case .goals:
             return activeGoals.isEmpty ? nil : activeGoals.count
         case .habits:

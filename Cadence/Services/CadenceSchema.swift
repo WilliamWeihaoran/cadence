@@ -5,6 +5,7 @@ enum CadenceSchema {
         Context.self,
         Area.self,
         Project.self,
+        Pursuit.self,
         Tag.self,
         AppTask.self,
         TaskBundle.self,

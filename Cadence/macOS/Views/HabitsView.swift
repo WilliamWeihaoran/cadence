@@ -4,7 +4,7 @@ import SwiftData
 
 struct HabitsView: View {
     @Query(sort: \Habit.order) private var habits: [Habit]
-    @Query(sort: \Goal.order) private var goals: [Goal]
+    @Query(sort: \Pursuit.order) private var pursuits: [Pursuit]
     @Environment(\.modelContext) private var modelContext
 
     @State private var selectedHabitID: UUID? = nil
@@ -29,6 +29,7 @@ struct HabitsView: View {
                 matchesSearch = habit.title.lowercased().contains(query)
                     || habit.frequencySummary.lowercased().contains(query)
                     || (habit.context?.name.lowercased().contains(query) ?? false)
+                    || (habit.pursuit?.title.lowercased().contains(query) ?? false)
                     || (habit.goal?.title.lowercased().contains(query) ?? false)
             }
 
@@ -36,8 +37,8 @@ struct HabitsView: View {
         }
     }
 
-    private var activeGoals: [Goal] {
-        goals.filter { $0.status == .active }
+    private var activePursuits: [Pursuit] {
+        pursuits.filter { $0.status == .active }
     }
 
     private var dueHabitsToday: [Habit] {
@@ -48,49 +49,49 @@ struct HabitsView: View {
         dueHabitsToday.filter { !$0.isDone(on: todayKey) }
     }
 
-    private var goalLinkedHabitCount: Int {
-        habits.filter { $0.goal != nil }.count
+    private var pursuitLinkedHabitCount: Int {
+        habits.filter { $0.pursuit != nil }.count
     }
 
-    private var goalCoverageLabel: String {
+    private var pursuitCoverageLabel: String {
         guard !habits.isEmpty else { return "No habits yet" }
-        return "\(goalLinkedHabitCount)/\(habits.count) linked"
+        return "\(pursuitLinkedHabitCount)/\(habits.count) in pursuits"
     }
 
     private var nextOpenHabit: Habit? {
         openHabitsToday.sorted { lhs, rhs in
-            if lhs.goal != nil && rhs.goal == nil { return true }
-            if lhs.goal == nil && rhs.goal != nil { return false }
+            if lhs.pursuit != nil && rhs.pursuit == nil { return true }
+            if lhs.pursuit == nil && rhs.pursuit != nil { return false }
             if lhs.currentStreak != rhs.currentStreak { return lhs.currentStreak > rhs.currentStreak }
             return lhs.order < rhs.order
         }.first
     }
 
     private var habitGroups: [HabitGoalGroup] {
-        var groups: [HabitGoalGroup] = activeGoals.compactMap { goal in
-            let linked = visibleHabits.filter { $0.goal?.id == goal.id }
+        var groups: [HabitGoalGroup] = activePursuits.compactMap { pursuit in
+            let linked = visibleHabits.filter { $0.pursuit?.id == pursuit.id }
             guard !linked.isEmpty else { return nil }
             return HabitGoalGroup(
-                id: goal.id.uuidString,
-                title: goal.title,
-                subtitle: GoalHabitMomentumResolver.summary(for: goal).dueTodayLabel,
-                icon: "target",
-                colorHex: goal.colorHex,
+                id: pursuit.id.uuidString,
+                title: pursuit.title,
+                subtitle: pursuit.context?.name ?? "Pursuit",
+                icon: pursuit.icon,
+                colorHex: pursuit.colorHex,
                 habits: linked
             )
         }
 
         let unlinked = visibleHabits.filter { habit in
-            guard let goal = habit.goal else { return true }
-            return goal.status != .active
+            guard let pursuit = habit.pursuit else { return true }
+            return pursuit.status != .active
         }
 
         if !unlinked.isEmpty {
             groups.append(
                 HabitGoalGroup(
                     id: "unlinked",
-                    title: "Unlinked Habits",
-                    subtitle: "Attach to goals when the habit supports an outcome",
+                    title: "No Pursuit",
+                    subtitle: "Attach to a pursuit when the habit supports a direction",
                     icon: "circle.dashed",
                     colorHex: "#6b7a99",
                     habits: unlinked
@@ -273,7 +274,7 @@ struct CreateHabitSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Habit.order) private var habits: [Habit]
     @Query(sort: \Context.order) private var allContexts: [Context]
-    @Query(sort: \Goal.order) private var allGoals: [Goal]
+    @Query(sort: \Pursuit.order) private var allPursuits: [Pursuit]
 
     @State private var title = ""
     @State private var selectedIcon = "star.fill"
@@ -283,8 +284,11 @@ struct CreateHabitSheet: View {
     @State private var timesPerWeek = 3
     @State private var monthlyDay = 1
     @State private var selectedContextID: UUID? = nil
-    @State private var selectedGoalID: UUID? = nil
-    private let dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    @State private var selectedPursuitID: UUID? = nil
+
+    private var pursuitChoices: [Pursuit] {
+        allPursuits.filter { $0.status == .active }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -298,98 +302,19 @@ struct CreateHabitSheet: View {
             Divider().background(Theme.borderSubtle)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    fieldLabel("Title")
-                    TextField("e.g. Morning Run, Read 30 min", text: $title)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.text)
-                        .padding(10)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
-
-                    if !allContexts.isEmpty {
-                        fieldLabel("Context")
-                        Picker("", selection: $selectedContextID) {
-                            Text("None").tag(Optional<UUID>.none)
-                            ForEach(allContexts) { ctx in
-                                Text(ctx.name).tag(Optional(ctx.id))
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .foregroundStyle(Theme.text)
-                    }
-
-                    if !allGoals.isEmpty {
-                        fieldLabel("Goal")
-                        Picker("", selection: $selectedGoalID) {
-                            Text("None").tag(Optional<UUID>.none)
-                            ForEach(allGoals.filter { $0.status == .active }) { goal in
-                                Text(goal.title).tag(Optional(goal.id))
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .foregroundStyle(Theme.text)
-                    }
-
-                    fieldLabel("Icon")
-                    IconGrid(selected: $selectedIcon)
-
-                    fieldLabel("Color")
-                    ColorGrid(selected: $selectedColor)
-
-                    fieldLabel("Frequency")
-                    Picker("", selection: $frequencyType) {
-                        ForEach(HabitFrequency.allCases, id: \.self) { f in
-                            Text(f.label).tag(f)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-
-                    switch frequencyType {
-                    case .daysOfWeek:
-                        HStack(spacing: 6) {
-                            ForEach(0..<7, id: \.self) { i in
-                                let dayVal = i + 1
-                                Button(dayNames[i]) {
-                                    if selectedDays.contains(dayVal) {
-                                        selectedDays.remove(dayVal)
-                                    } else {
-                                        selectedDays.insert(dayVal)
-                                    }
-                                }
-                                .buttonStyle(.cadencePlain)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(selectedDays.contains(dayVal) ? .white : Theme.dim)
-                                .frame(width: 36, height: 28)
-                                .background(selectedDays.contains(dayVal) ? Color(hex: selectedColor) : Theme.surfaceElevated)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                            }
-                        }
-
-                    case .timesPerWeek:
-                        HStack {
-                            Text("Times per week:")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Theme.muted)
-                            Stepper("\(timesPerWeek)", value: $timesPerWeek, in: 1...7)
-                                .foregroundStyle(Theme.text)
-                        }
-
-                    case .monthly:
-                        HStack {
-                            Text("Day of month:")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Theme.muted)
-                            Stepper("\(monthlyDay)", value: $monthlyDay, in: 1...31)
-                                .foregroundStyle(Theme.text)
-                        }
-
-                    case .daily:
-                        EmptyView()
-                    }
-                }
+                HabitFormFields(
+                    title: $title,
+                    selectedIcon: $selectedIcon,
+                    selectedColor: $selectedColor,
+                    frequencyType: $frequencyType,
+                    selectedDays: $selectedDays,
+                    timesPerWeek: $timesPerWeek,
+                    monthlyDay: $monthlyDay,
+                    selectedContextID: $selectedContextID,
+                    selectedPursuitID: $selectedPursuitID,
+                    contexts: allContexts,
+                    pursuits: pursuitChoices
+                )
                 .padding(24)
             }
 
@@ -419,13 +344,6 @@ struct CreateHabitSheet: View {
         .background(Theme.surface)
     }
 
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            .kerning(0.8)
-    }
-
     private func create() {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
@@ -452,18 +370,18 @@ struct CreateHabitSheet: View {
             habit.targetCount = 1
         }
 
-        let selectedGoal = selectedGoalID.flatMap { id in
-            allGoals.first { $0.id == id }
+        let selectedPursuit = selectedPursuitID.flatMap { id in
+            allPursuits.first { $0.id == id }
         }
 
         if let selectedContextID,
            let context = allContexts.first(where: { $0.id == selectedContextID }) {
             habit.context = context
-        } else if let selectedGoal {
-            habit.context = selectedGoal.context
+        } else if let selectedPursuit {
+            habit.context = selectedPursuit.context
         }
 
-        habit.goal = selectedGoal
+        habit.pursuit = selectedPursuit
 
         modelContext.insert(habit)
         dismiss()
@@ -477,7 +395,7 @@ struct EditHabitSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Context.order) private var allContexts: [Context]
-    @Query(sort: \Goal.order) private var allGoals: [Goal]
+    @Query(sort: \Pursuit.order) private var allPursuits: [Pursuit]
 
     @State private var title: String
     @State private var selectedIcon: String
@@ -487,9 +405,7 @@ struct EditHabitSheet: View {
     @State private var timesPerWeek: Int
     @State private var monthlyDay: Int
     @State private var selectedContextID: UUID?
-    @State private var selectedGoalID: UUID?
-
-    private let dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    @State private var selectedPursuitID: UUID?
 
     init(habit: Habit) {
         self.habit = habit
@@ -504,12 +420,12 @@ struct EditHabitSheet: View {
         _timesPerWeek = State(initialValue: frequency == .timesPerWeek ? max(1, habit.targetCount) : 3)
         _monthlyDay = State(initialValue: frequency == .monthly ? min(max(storedDays.first ?? 1, 1), 31) : 1)
         _selectedContextID = State(initialValue: habit.context?.id)
-        _selectedGoalID = State(initialValue: habit.goal?.id)
+        _selectedPursuitID = State(initialValue: habit.pursuit?.id)
     }
 
-    private var goalChoices: [Goal] {
-        var choices = allGoals.filter { $0.status == .active }
-        if let current = habit.goal,
+    private var pursuitChoices: [Pursuit] {
+        var choices = allPursuits.filter { $0.status == .active }
+        if let current = habit.pursuit,
            !choices.contains(where: { $0.id == current.id }) {
             choices.insert(current, at: 0)
         }
@@ -528,77 +444,19 @@ struct EditHabitSheet: View {
             Divider().background(Theme.borderSubtle)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    fieldLabel("Title")
-                    TextField("e.g. Morning Run, Read 30 min", text: $title)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.text)
-                        .padding(10)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
-
-                    if !allContexts.isEmpty {
-                        fieldLabel("Context")
-                        CadenceContextPickerButton(
-                            contexts: allContexts,
-                            selectedID: $selectedContextID
-                        )
-                    }
-
-                    if !goalChoices.isEmpty {
-                        fieldLabel("Goal")
-                        HabitGoalPickerButton(
-                            goals: goalChoices,
-                            selectedID: $selectedGoalID
-                        )
-                    }
-
-                    fieldLabel("Icon")
-                    IconGrid(selected: $selectedIcon)
-
-                    fieldLabel("Color")
-                    ColorGrid(selected: $selectedColor)
-
-                    fieldLabel("Frequency")
-                    HabitFrequencyPicker(selection: $frequencyType, tintHex: selectedColor)
-
-                    switch frequencyType {
-                    case .daysOfWeek:
-                        HabitWeekdayPicker(
-                            selectedDays: $selectedDays,
-                            dayNames: dayNames,
-                            tintHex: selectedColor
-                        )
-
-                    case .timesPerWeek:
-                        HabitNumberStepper(
-                            title: "Weekly target",
-                            detail: "check-ins per week",
-                            value: $timesPerWeek,
-                            range: 1...7,
-                            tintHex: selectedColor
-                        )
-
-                    case .monthly:
-                        HabitNumberStepper(
-                            title: "Monthly day",
-                            detail: "day of month",
-                            value: $monthlyDay,
-                            range: 1...31,
-                            tintHex: selectedColor
-                        )
-
-                    case .daily:
-                        HabitFrequencyNote(
-                            icon: "sun.max.fill",
-                            title: "Every day",
-                            detail: "This habit is expected daily.",
-                            tintHex: selectedColor
-                        )
-                    }
-                }
+                HabitFormFields(
+                    title: $title,
+                    selectedIcon: $selectedIcon,
+                    selectedColor: $selectedColor,
+                    frequencyType: $frequencyType,
+                    selectedDays: $selectedDays,
+                    timesPerWeek: $timesPerWeek,
+                    monthlyDay: $monthlyDay,
+                    selectedContextID: $selectedContextID,
+                    selectedPursuitID: $selectedPursuitID,
+                    contexts: allContexts,
+                    pursuits: pursuitChoices
+                )
                 .padding(24)
             }
 
@@ -629,13 +487,6 @@ struct EditHabitSheet: View {
         .background(Theme.surface)
     }
 
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            .kerning(0.8)
-    }
-
     private func save() {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -661,230 +512,129 @@ struct EditHabitSheet: View {
             habit.targetCount = 1
         }
 
-        let selectedGoal = selectedGoalID.flatMap { id in
-            allGoals.first { $0.id == id }
+        let selectedPursuit = selectedPursuitID.flatMap { id in
+            allPursuits.first { $0.id == id }
         }
 
         if let selectedContextID,
            let context = allContexts.first(where: { $0.id == selectedContextID }) {
             habit.context = context
-        } else if let selectedGoal {
-            habit.context = selectedGoal.context
+        } else if let selectedPursuit {
+            habit.context = selectedPursuit.context
         } else {
             habit.context = nil
         }
 
-        habit.goal = selectedGoal
+        habit.pursuit = selectedPursuit
         dismiss()
     }
 }
 
-private struct HabitGoalPickerButton: View {
-    let goals: [Goal]
-    @Binding var selectedID: UUID?
+private struct HabitFormFields: View {
+    @Binding var title: String
+    @Binding var selectedIcon: String
+    @Binding var selectedColor: String
+    @Binding var frequencyType: HabitFrequency
+    @Binding var selectedDays: Set<Int>
+    @Binding var timesPerWeek: Int
+    @Binding var monthlyDay: Int
+    @Binding var selectedContextID: UUID?
+    @Binding var selectedPursuitID: UUID?
 
-    @State private var showPicker = false
+    let contexts: [Context]
+    let pursuits: [Pursuit]
 
-    private var selectedGoal: Goal? {
-        selectedID.flatMap { id in goals.first { $0.id == id } }
-    }
+    private let dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
     var body: some View {
-        Button { showPicker.toggle() } label: {
-            HStack(spacing: 9) {
-                goalIcon
+        VStack(alignment: .leading, spacing: 20) {
+            HabitFormLabel("Title")
+            TextField("e.g. Morning Run, Read 30 min", text: $title)
+                .textFieldStyle(.plain)
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.text)
+                .padding(10)
+                .background(Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
 
-                Text(selectedGoal?.title ?? "No linked goal")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(selectedGoal == nil ? Theme.dim : Theme.text)
-                    .lineLimit(1)
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
+            if !contexts.isEmpty {
+                HabitFormLabel("Context")
+                CadenceContextPickerButton(
+                    contexts: contexts,
+                    selectedID: $selectedContextID
+                )
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(minHeight: 34)
-            .contentShape(Rectangle())
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
-        }
-        .buttonStyle(.cadencePlain)
-        .popover(isPresented: $showPicker, arrowEdge: .bottom) {
-            HabitGoalPickerList(
-                goals: goals,
-                selectedID: $selectedID,
-                onPick: { showPicker = false }
-            )
-            .frame(width: 280)
-            .frame(maxHeight: 340)
-            .background(Theme.surface)
+
+            if !pursuits.isEmpty {
+                HabitFormLabel("Pursuit")
+                CadencePursuitPickerButton(
+                    pursuits: pursuits,
+                    selectedID: $selectedPursuitID
+                )
+            }
+
+            HabitFormLabel("Icon")
+            IconGrid(selected: $selectedIcon)
+
+            HabitFormLabel("Color")
+            ColorGrid(selected: $selectedColor)
+
+            HabitFormLabel("Frequency")
+            HabitFrequencyPicker(selection: $frequencyType, tintHex: selectedColor)
+
+            frequencyDetails
         }
     }
 
     @ViewBuilder
-    private var goalIcon: some View {
-        if let selectedGoal {
-            Image(systemName: "target")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color(hex: selectedGoal.colorHex))
-                .frame(width: 22, height: 22)
-                .background(Color(hex: selectedGoal.colorHex).opacity(0.14))
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-        } else {
-            Image(systemName: "circle.dashed")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .frame(width: 22, height: 22)
-                .background(Theme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
+    private var frequencyDetails: some View {
+        switch frequencyType {
+        case .daysOfWeek:
+            HabitWeekdayPicker(
+                selectedDays: $selectedDays,
+                dayNames: dayNames,
+                tintHex: selectedColor
+            )
+        case .timesPerWeek:
+            HabitNumberStepper(
+                title: "Weekly target",
+                detail: "check-ins per week",
+                value: $timesPerWeek,
+                range: 1...7,
+                tintHex: selectedColor
+            )
+        case .monthly:
+            HabitNumberStepper(
+                title: "Monthly day",
+                detail: "day of month",
+                value: $monthlyDay,
+                range: 1...31,
+                tintHex: selectedColor
+            )
+        case .daily:
+            HabitFrequencyNote(
+                icon: "sun.max.fill",
+                title: "Every day",
+                detail: "This habit is expected daily.",
+                tintHex: selectedColor
+            )
         }
     }
 }
 
-private struct HabitGoalPickerList: View {
-    let goals: [Goal]
-    @Binding var selectedID: UUID?
-    let onPick: () -> Void
+private struct HabitFormLabel: View {
+    let text: String
 
-    @State private var searchQuery = ""
-    @FocusState private var isSearchFocused: Bool
-
-    private var filteredGoals: [Goal] {
-        let sorted = goals.sorted {
-            if $0.order == $1.order {
-                return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-            }
-            return $0.order < $1.order
-        }
-
-        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return sorted }
-        let needle = trimmed.localizedLowercase
-        return sorted.filter {
-            $0.title.localizedLowercase.contains(needle)
-                || $0.desc.localizedLowercase.contains(needle)
-                || ($0.context?.name.localizedLowercase.contains(needle) ?? false)
-        }
+    init(_ text: String) {
+        self.text = text
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            searchField
-
-            Divider().background(Theme.borderSubtle).padding(.top, 6)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    row(id: nil, title: "No linked goal", subtitle: "Track independently", icon: "circle.dashed", colorHex: nil)
-
-                    if filteredGoals.isEmpty {
-                        Text("No matching goals")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.dim)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 14)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        ForEach(filteredGoals) { goal in
-                            row(
-                                id: goal.id,
-                                title: goal.title,
-                                subtitle: goal.context?.name ?? goal.status.rawValue.capitalized,
-                                icon: "target",
-                                colorHex: goal.colorHex
-                            )
-                        }
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-        }
-        .padding(.vertical, 4)
-        .onAppear { isSearchFocused = true }
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.dim)
-
-            TextField("Search goals", text: $searchQuery)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.text)
-                .focused($isSearchFocused)
-
-            if !searchQuery.isEmpty {
-                Button {
-                    searchQuery = ""
-                    isSearchFocused = true
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                }
-                .buttonStyle(.cadencePlain)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Theme.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal, 8)
-    }
-
-    @MainActor
-    @ViewBuilder
-    private func row(id: UUID?, title: String, subtitle: String, icon: String, colorHex: String?) -> some View {
-        let isSelected = selectedID == id
-        let tint = colorHex.map(Color.init(hex:)) ?? Theme.dim
-
-        Button {
-            selectedID = id
-            onPick()
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 24, height: 24)
-                    .background(tint.opacity(colorHex == nil ? 0.06 : 0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? Theme.text : Theme.muted)
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.blue)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(minHeight: 38)
-            .background(isSelected ? Theme.blue.opacity(0.08) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .contentShape(RoundedRectangle(cornerRadius: 8))
-        }
-        .buttonStyle(.cadencePlain)
-        .padding(.horizontal, 4)
+        Text(text.uppercased())
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Theme.dim)
+            .kerning(0.8)
     }
 }
 

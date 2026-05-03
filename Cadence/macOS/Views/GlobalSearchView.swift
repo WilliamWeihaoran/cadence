@@ -15,6 +15,7 @@ struct GlobalSearchOverlay: View {
     @Query(sort: \Project.order) private var projects: [Project]
     @Query private var tasks: [AppTask]
     @Query(sort: \Note.updatedAt, order: .reverse) private var notes: [Note]
+    @Query(sort: \Pursuit.order) private var pursuits: [Pursuit]
     @Query(sort: \Goal.order) private var goals: [Goal]
     @Query(sort: \Habit.order) private var habits: [Habit]
 
@@ -40,6 +41,7 @@ struct GlobalSearchOverlay: View {
             projects: projects,
             tasks: tasks,
             notes: notes,
+            pursuits: pursuits,
             goals: goals,
             habits: habits,
             eventResults: eventResults

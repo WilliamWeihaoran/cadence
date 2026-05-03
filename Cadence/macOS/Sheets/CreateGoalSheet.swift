@@ -6,6 +6,7 @@ struct CreateGoalSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Goal.order) private var allGoals: [Goal]
+    @Query(sort: \Pursuit.order) private var allPursuits: [Pursuit]
     @Query(sort: \Context.order) private var allContexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -15,6 +16,7 @@ struct CreateGoalSheet: View {
     @State private var title = ""
     @State private var desc = ""
     @State private var selectedContextID: UUID? = nil
+    @State private var selectedPursuitID: UUID? = nil
     @State private var startDate: Date = Date()
     @State private var endDate: Date = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()
     @State private var initialListTag = "none"
@@ -32,6 +34,7 @@ struct CreateGoalSheet: View {
         _title = State(initialValue: goal?.title ?? "")
         _desc = State(initialValue: goal?.desc ?? "")
         _selectedContextID = State(initialValue: goal?.context?.id)
+        _selectedPursuitID = State(initialValue: goal?.pursuit?.id)
         _startDate = State(initialValue: initialStart)
         _endDate = State(initialValue: initialEnd)
         _selectedColor = State(initialValue: goal?.colorHex ?? "#4a9eff")
@@ -40,6 +43,15 @@ struct CreateGoalSheet: View {
 
     private var isEditing: Bool {
         editingGoal != nil
+    }
+
+    private var pursuitChoices: [Pursuit] {
+        var choices = allPursuits.filter { $0.status == .active }
+        if let current = editingGoal?.pursuit,
+           !choices.contains(where: { $0.id == current.id }) {
+            choices.insert(current, at: 0)
+        }
+        return choices
     }
 
     var body: some View {
@@ -82,6 +94,14 @@ struct CreateGoalSheet: View {
                         contexts: allContexts,
                         selectedID: $selectedContextID
                     )
+
+                    if !pursuitChoices.isEmpty {
+                        fieldLabel("Pursuit")
+                        CadencePursuitPickerButton(
+                            pursuits: pursuitChoices,
+                            selectedID: $selectedPursuitID
+                        )
+                    }
 
                     if isEditing {
                         fieldLabel("Status")
@@ -210,7 +230,13 @@ struct CreateGoalSheet: View {
         goal.endDate = DateFormatters.dateKey(from: max(endDate, startDate))
         goal.colorHex = selectedColor
         goal.status = selectedStatus
-        goal.context = selectedContextID.flatMap { id in allContexts.first { $0.id == id } }
+        let selectedPursuit = selectedPursuitID.flatMap { id in allPursuits.first { $0.id == id } }
+        goal.pursuit = selectedPursuit
+        if let selectedContextID {
+            goal.context = allContexts.first { $0.id == selectedContextID }
+        } else {
+            goal.context = selectedPursuit?.context
+        }
     }
 
     private func attachInitialList(to goal: Goal) {

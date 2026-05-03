@@ -9,6 +9,7 @@ enum SidebarItem: Hashable {
     case inbox
     case area(UUID)
     case project(UUID)
+    case pursuits
     case goals
     case habits
     case notes

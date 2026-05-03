@@ -27,6 +27,7 @@ import Foundation
     var dependsOnGoalIDsJSON: String = ""
 
     var context: Context? = nil
+    var pursuit: Pursuit? = nil
     var parentGoal: Goal? = nil
     @Relationship(deleteRule: .nullify, inverse: \Goal.parentGoal) var subGoals: [Goal]? = nil
     @Relationship(inverse: \AppTask.goal) var tasks: [AppTask]? = nil

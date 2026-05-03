@@ -103,6 +103,8 @@ enum RootCommandActionSupport {
             context.setSelection(.area(id))
         case .project(let id):
             context.setSelection(.project(id))
+        case .pursuits:
+            context.setSelection(.pursuits)
         case .goals:
             context.setSelection(.goals)
         case .habits:

@@ -1,7 +1,7 @@
 import SwiftData
 import Foundation
 
-/// Top-level life/work domain. Contains areas, projects, goals, habits.
+/// Top-level life/work domain. Contains areas, projects, pursuits, goals, habits.
 @Model final class Context {
     var id: UUID = UUID()
     var name: String = ""
@@ -12,6 +12,7 @@ import Foundation
 
     @Relationship(inverse: \Area.context) var areas: [Area]? = nil
     @Relationship(inverse: \Project.context) var projects: [Project]? = nil
+    @Relationship(inverse: \Pursuit.context) var pursuits: [Pursuit]? = nil
     @Relationship(inverse: \AppTask.context) var tasks: [AppTask]? = nil
     @Relationship(inverse: \Goal.context) var goals: [Goal]? = nil
     @Relationship(inverse: \Habit.context) var habits: [Habit]? = nil

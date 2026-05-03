@@ -19,6 +19,7 @@ import Foundation
     var createdAt: Date = Date()
 
     var context: Context? = nil
+    var pursuit: Pursuit? = nil
     var goal: Goal? = nil
     @Relationship(inverse: \HabitCompletion.habit) var completions: [HabitCompletion]? = nil
 
