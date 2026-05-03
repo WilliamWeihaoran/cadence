@@ -6,6 +6,7 @@ struct CadencePursuitPickerButton: View {
     @Binding var selectedID: UUID?
     var allowNone = true
     var style: CadencePursuitPickerStyle = .standard
+    var onCreate: (() -> Void)? = nil
 
     @State private var showPicker = false
 
@@ -13,12 +14,16 @@ struct CadencePursuitPickerButton: View {
         selectedID.flatMap { id in pursuits.first { $0.id == id } }
     }
 
+    private var placeholder: String {
+        allowNone ? "No pursuit" : "Choose pursuit"
+    }
+
     var body: some View {
         Button { showPicker.toggle() } label: {
             HStack(spacing: style.iconLabelSpacing) {
                 selectedIcon
 
-                Text(selectedPursuit?.title ?? "No pursuit")
+                Text(selectedPursuit?.title ?? placeholder)
                     .font(.system(size: style.fontSize, weight: .medium))
                     .foregroundStyle(selectedPursuit == nil ? Theme.dim : Theme.text)
                     .lineLimit(1)
@@ -43,7 +48,13 @@ struct CadencePursuitPickerButton: View {
                 pursuits: pursuits,
                 selectedID: $selectedID,
                 allowNone: allowNone,
-                onPick: { showPicker = false }
+                onPick: { showPicker = false },
+                onCreate: onCreate.map { create in
+                    {
+                        showPicker = false
+                        create()
+                    }
+                }
             )
             .frame(width: 280)
             .frame(maxHeight: 340)
@@ -76,6 +87,7 @@ struct CadencePursuitPickerList: View {
     @Binding var selectedID: UUID?
     var allowNone = true
     var onPick: (() -> Void)? = nil
+    var onCreate: (() -> Void)? = nil
 
     @State private var searchQuery = ""
     @State private var highlightIndex = 0
@@ -148,6 +160,31 @@ struct CadencePursuitPickerList: View {
                         colorHex: pursuit.colorHex
                     )
                 }
+            }
+
+            if let onCreate {
+                Divider().background(Theme.borderSubtle).padding(.top, 4)
+                Button(action: onCreate) {
+                    HStack(spacing: 9) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Theme.blue)
+                            .frame(width: 24, height: 24)
+                            .background(Theme.blue.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 7))
+
+                        Text("New Pursuit")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.cadencePlain)
+                .padding(.horizontal, 4)
+                .padding(.top, 2)
             }
         }
         .padding(.vertical, 4)
@@ -300,6 +337,18 @@ private struct PursuitPickerRowHover: ViewModifier {
                     .fill(isHovered ? Theme.blue.opacity(0.06) : Color.clear)
             )
             .onHover { isHovered = $0 }
+    }
+}
+
+struct CadencePursuitRequiredHint: View {
+    let hasSelection: Bool
+
+    var body: some View {
+        if !hasSelection {
+            Label("Choose or create a Pursuit before saving.", systemImage: "sparkles")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.amber)
+        }
     }
 }
 #endif

@@ -12,6 +12,7 @@ struct CreateGoalSheet: View {
     @Query(sort: \Project.order) private var projects: [Project]
 
     private let editingGoal: Goal?
+    private let initialPursuit: Pursuit?
 
     @State private var title = ""
     @State private var desc = ""
@@ -22,19 +23,22 @@ struct CreateGoalSheet: View {
     @State private var initialListTag = "none"
     @State private var selectedColor = "#4a9eff"
     @State private var selectedStatus: GoalStatus = .active
+    @State private var showCreatePursuit = false
 
-    init(goal: Goal? = nil) {
+    init(goal: Goal? = nil, pursuit: Pursuit? = nil) {
         editingGoal = goal
+        initialPursuit = pursuit
         let initialStart = goal.flatMap { DateFormatters.ymd.date(from: $0.startDate) } ?? Date()
         let proposedEnd = goal.flatMap { DateFormatters.ymd.date(from: $0.endDate) }
             ?? Calendar.current.date(byAdding: .month, value: 1, to: initialStart)
             ?? initialStart
         let initialEnd = proposedEnd < initialStart ? initialStart : proposedEnd
+        let resolvedPursuit = goal?.pursuit ?? pursuit
 
         _title = State(initialValue: goal?.title ?? "")
         _desc = State(initialValue: goal?.desc ?? "")
-        _selectedContextID = State(initialValue: goal?.context?.id)
-        _selectedPursuitID = State(initialValue: goal?.pursuit?.id)
+        _selectedContextID = State(initialValue: goal?.context?.id ?? resolvedPursuit?.context?.id)
+        _selectedPursuitID = State(initialValue: resolvedPursuit?.id)
         _startDate = State(initialValue: initialStart)
         _endDate = State(initialValue: initialEnd)
         _selectedColor = State(initialValue: goal?.colorHex ?? "#4a9eff")
@@ -51,7 +55,19 @@ struct CreateGoalSheet: View {
            !choices.contains(where: { $0.id == current.id }) {
             choices.insert(current, at: 0)
         }
+        if let initialPursuit,
+           !choices.contains(where: { $0.id == initialPursuit.id }) {
+            choices.insert(initialPursuit, at: 0)
+        }
         return choices
+    }
+
+    private var selectedContext: Context? {
+        selectedContextID.flatMap { id in allContexts.first { $0.id == id } }
+    }
+
+    private var canSave: Bool {
+        PursuitAssignmentRules.canSaveGoal(title: title, pursuitID: selectedPursuitID)
     }
 
     var body: some View {
@@ -95,13 +111,14 @@ struct CreateGoalSheet: View {
                         selectedID: $selectedContextID
                     )
 
-                    if !pursuitChoices.isEmpty {
-                        fieldLabel("Pursuit")
-                        CadencePursuitPickerButton(
-                            pursuits: pursuitChoices,
-                            selectedID: $selectedPursuitID
-                        )
-                    }
+                    fieldLabel("Pursuit")
+                    CadencePursuitPickerButton(
+                        pursuits: pursuitChoices,
+                        selectedID: $selectedPursuitID,
+                        allowNone: false,
+                        onCreate: { showCreatePursuit = true }
+                    )
+                    CadencePursuitRequiredHint(hasSelection: selectedPursuitID != nil)
 
                     if isEditing {
                         fieldLabel("Status")
@@ -175,7 +192,7 @@ struct CreateGoalSheet: View {
                     title: isEditing ? "Save" : "Create",
                     role: .primary,
                     size: .compact,
-                    isDisabled: title.trimmingCharacters(in: .whitespaces).isEmpty
+                    isDisabled: !canSave
                 ) {
                     save()
                 }
@@ -194,6 +211,14 @@ struct CreateGoalSheet: View {
                 endDate = startDate
             }
         }
+        .sheet(isPresented: $showCreatePursuit) {
+            CreatePursuitSheet(context: selectedContext) { pursuit in
+                selectedPursuitID = pursuit.id
+                if selectedContextID == nil {
+                    selectedContextID = pursuit.context?.id
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -206,7 +231,7 @@ struct CreateGoalSheet: View {
 
     private func save() {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty, selectedPursuitID != nil else { return }
 
         if let editingGoal {
             applyFields(to: editingGoal, title: trimmed)

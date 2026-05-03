@@ -38,7 +38,7 @@ struct HabitsView: View {
     }
 
     private var activePursuits: [Pursuit] {
-        pursuits.filter { $0.status == .active }
+        pursuits
     }
 
     private var dueHabitsToday: [Habit] {
@@ -82,16 +82,15 @@ struct HabitsView: View {
         }
 
         let unlinked = visibleHabits.filter { habit in
-            guard let pursuit = habit.pursuit else { return true }
-            return pursuit.status != .active
+            habit.pursuit == nil
         }
 
         if !unlinked.isEmpty {
             groups.append(
                 HabitGoalGroup(
                     id: "unlinked",
-                    title: "No Pursuit",
-                    subtitle: "Attach to a pursuit when the habit supports a direction",
+                    title: "Unassigned",
+                    subtitle: "Assign these habits to a pursuit",
                     icon: "circle.dashed",
                     colorHex: "#6b7a99",
                     habits: unlinked
@@ -164,7 +163,7 @@ struct HabitsView: View {
                         Text("Habits")
                             .font(.system(size: 30, weight: .bold))
                             .foregroundStyle(Theme.text)
-                        Text("Daily systems tied to real outcomes.")
+                        Text("Rhythms across pursuits.")
                             .font(.system(size: 13))
                             .foregroundStyle(Theme.muted)
                     }
@@ -231,7 +230,7 @@ struct HabitsView: View {
                 Spacer()
                 EmptyStateView(
                     message: searchText.isEmpty ? "No habits yet" : "No matching habits",
-                    subtitle: searchText.isEmpty ? "Create a habit to start building momentum." : "Try a different search or filter.",
+                    subtitle: searchText.isEmpty ? "Create a Pursuit first, then add a habit inside it." : "Try a different search or filter.",
                     icon: "flame.fill"
                 )
                 Spacer()
@@ -285,9 +284,31 @@ struct CreateHabitSheet: View {
     @State private var monthlyDay = 1
     @State private var selectedContextID: UUID? = nil
     @State private var selectedPursuitID: UUID? = nil
+    @State private var showCreatePursuit = false
+
+    private let initialPursuit: Pursuit?
+
+    init(pursuit: Pursuit? = nil) {
+        initialPursuit = pursuit
+        _selectedContextID = State(initialValue: pursuit?.context?.id)
+        _selectedPursuitID = State(initialValue: pursuit?.id)
+    }
 
     private var pursuitChoices: [Pursuit] {
-        allPursuits.filter { $0.status == .active }
+        var choices = allPursuits.filter { $0.status == .active }
+        if let initialPursuit,
+           !choices.contains(where: { $0.id == initialPursuit.id }) {
+            choices.insert(initialPursuit, at: 0)
+        }
+        return choices
+    }
+
+    private var selectedContext: Context? {
+        selectedContextID.flatMap { id in allContexts.first { $0.id == id } }
+    }
+
+    private var canSave: Bool {
+        PursuitAssignmentRules.canSaveHabit(title: title, pursuitID: selectedPursuitID)
     }
 
     var body: some View {
@@ -313,7 +334,8 @@ struct CreateHabitSheet: View {
                     selectedContextID: $selectedContextID,
                     selectedPursuitID: $selectedPursuitID,
                     contexts: allContexts,
-                    pursuits: pursuitChoices
+                    pursuits: pursuitChoices,
+                    onCreatePursuit: { showCreatePursuit = true }
                 )
                 .padding(24)
             }
@@ -333,7 +355,7 @@ struct CreateHabitSheet: View {
                     title: "Create",
                     role: .primary,
                     size: .compact,
-                    isDisabled: title.trimmingCharacters(in: .whitespaces).isEmpty
+                    isDisabled: !canSave
                 ) {
                     create()
                 }
@@ -342,11 +364,20 @@ struct CreateHabitSheet: View {
         }
         .frame(width: 460, height: 640)
         .background(Theme.surface)
+        .sheet(isPresented: $showCreatePursuit) {
+            CreatePursuitSheet(context: selectedContext) { pursuit in
+                selectedPursuitID = pursuit.id
+                if selectedContextID == nil {
+                    selectedContextID = pursuit.context?.id
+                }
+            }
+        }
     }
 
     private func create() {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
+        guard let selectedPursuit = selectedPursuitID.flatMap({ id in allPursuits.first { $0.id == id } }) else { return }
 
         let habit = Habit(title: trimmed)
         habit.icon = selectedIcon
@@ -370,14 +401,10 @@ struct CreateHabitSheet: View {
             habit.targetCount = 1
         }
 
-        let selectedPursuit = selectedPursuitID.flatMap { id in
-            allPursuits.first { $0.id == id }
-        }
-
         if let selectedContextID,
            let context = allContexts.first(where: { $0.id == selectedContextID }) {
             habit.context = context
-        } else if let selectedPursuit {
+        } else {
             habit.context = selectedPursuit.context
         }
 
@@ -406,6 +433,7 @@ struct EditHabitSheet: View {
     @State private var monthlyDay: Int
     @State private var selectedContextID: UUID?
     @State private var selectedPursuitID: UUID?
+    @State private var showCreatePursuit = false
 
     init(habit: Habit) {
         self.habit = habit
@@ -432,6 +460,14 @@ struct EditHabitSheet: View {
         return choices
     }
 
+    private var selectedContext: Context? {
+        selectedContextID.flatMap { id in allContexts.first { $0.id == id } }
+    }
+
+    private var canSave: Bool {
+        PursuitAssignmentRules.canSaveHabit(title: title, pursuitID: selectedPursuitID)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Edit Habit")
@@ -455,7 +491,8 @@ struct EditHabitSheet: View {
                     selectedContextID: $selectedContextID,
                     selectedPursuitID: $selectedPursuitID,
                     contexts: allContexts,
-                    pursuits: pursuitChoices
+                    pursuits: pursuitChoices,
+                    onCreatePursuit: { showCreatePursuit = true }
                 )
                 .padding(24)
             }
@@ -476,7 +513,7 @@ struct EditHabitSheet: View {
                     role: .primary,
                     size: .compact,
                     tint: Color(hex: selectedColor),
-                    isDisabled: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    isDisabled: !canSave
                 ) {
                     save()
                 }
@@ -485,11 +522,20 @@ struct EditHabitSheet: View {
         }
         .frame(width: 460, height: 640)
         .background(Theme.surface)
+        .sheet(isPresented: $showCreatePursuit) {
+            CreatePursuitSheet(context: selectedContext) { pursuit in
+                selectedPursuitID = pursuit.id
+                if selectedContextID == nil {
+                    selectedContextID = pursuit.context?.id
+                }
+            }
+        }
     }
 
     private func save() {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        guard let selectedPursuit = selectedPursuitID.flatMap({ id in allPursuits.first { $0.id == id } }) else { return }
 
         habit.title = trimmed
         habit.icon = selectedIcon
@@ -512,17 +558,11 @@ struct EditHabitSheet: View {
             habit.targetCount = 1
         }
 
-        let selectedPursuit = selectedPursuitID.flatMap { id in
-            allPursuits.first { $0.id == id }
-        }
-
         if let selectedContextID,
            let context = allContexts.first(where: { $0.id == selectedContextID }) {
             habit.context = context
-        } else if let selectedPursuit {
-            habit.context = selectedPursuit.context
         } else {
-            habit.context = nil
+            habit.context = selectedPursuit.context
         }
 
         habit.pursuit = selectedPursuit
@@ -543,6 +583,7 @@ private struct HabitFormFields: View {
 
     let contexts: [Context]
     let pursuits: [Pursuit]
+    let onCreatePursuit: () -> Void
 
     private let dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -566,13 +607,14 @@ private struct HabitFormFields: View {
                 )
             }
 
-            if !pursuits.isEmpty {
-                HabitFormLabel("Pursuit")
-                CadencePursuitPickerButton(
-                    pursuits: pursuits,
-                    selectedID: $selectedPursuitID
-                )
-            }
+            HabitFormLabel("Pursuit")
+            CadencePursuitPickerButton(
+                pursuits: pursuits,
+                selectedID: $selectedPursuitID,
+                allowNone: false,
+                onCreate: onCreatePursuit
+            )
+            CadencePursuitRequiredHint(hasSelection: selectedPursuitID != nil)
 
             HabitFormLabel("Icon")
             IconGrid(selected: $selectedIcon)

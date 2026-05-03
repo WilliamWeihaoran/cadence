@@ -4,6 +4,7 @@ import SwiftData
 
 struct GoalsView: View {
     @Query(sort: \Goal.order) private var allGoals: [Goal]
+    @Query(sort: \Pursuit.order) private var pursuits: [Pursuit]
     @Query(sort: \Context.order) private var allContexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -35,29 +36,29 @@ struct GoalsView: View {
 
     private var goalGroups: [GoalMissionGroup] {
         var groups: [GoalMissionGroup] = []
-        for context in allContexts {
-            let goals = filteredGoals.filter { $0.context?.id == context.id }
+        for pursuit in pursuits {
+            let goals = filteredGoals.filter { $0.pursuit?.id == pursuit.id }
             if !goals.isEmpty {
                 groups.append(
                     GoalMissionGroup(
-                        id: context.id.uuidString,
-                        title: context.name,
-                        icon: context.icon,
-                        colorHex: context.colorHex,
+                        id: pursuit.id.uuidString,
+                        title: pursuit.title,
+                        icon: pursuit.icon,
+                        colorHex: pursuit.colorHex,
                         goals: goals
                     )
                 )
             }
         }
-        let unfiled = filteredGoals.filter { $0.context == nil }
-        if !unfiled.isEmpty {
+        let unassigned = PursuitAssignmentRules.unassignedGoals(from: filteredGoals)
+        if !unassigned.isEmpty {
             groups.append(
                 GoalMissionGroup(
-                    id: "none",
-                    title: "No Context",
-                    icon: "circle.dashed",
+                    id: "unassigned",
+                    title: "Unassigned",
+                    icon: "tray.full.fill",
                     colorHex: "#6b7a99",
-                    goals: unfiled
+                    goals: unassigned
                 )
             )
         }
@@ -161,7 +162,7 @@ struct GoalsView: View {
                     Text("Goals")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(Theme.text)
-                    Text("Outcomes powered by lists.")
+                    Text("Finish lines across pursuits.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.muted)
                 }
@@ -219,7 +220,7 @@ struct GoalsView: View {
             if goalGroups.isEmpty {
                 EmptyStateView(
                     message: searchText.isEmpty ? "No goals yet" : "No matching goals",
-                    subtitle: searchText.isEmpty ? "Create a goal, then attach the lists that move it forward." : "Try a different search or status.",
+                    subtitle: searchText.isEmpty ? "Create a Pursuit first, then add a goal inside it." : "Try a different search or status.",
                     icon: "target"
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

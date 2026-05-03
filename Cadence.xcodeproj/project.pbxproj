@@ -14,7 +14,6 @@
 		A10000002FCE000000000205 /* Cadence/Models/Area.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000105 /* Cadence/Models/Area.swift */; };
 		A10000002FCE000000000206 /* Cadence/Models/Project.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000106 /* Cadence/Models/Project.swift */; };
 		A10000002FCE000000000207 /* Cadence/Models/Goal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000107 /* Cadence/Models/Goal.swift */; };
-		A10000002FCE000000000228 /* Cadence/Models/Pursuit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000128 /* Cadence/Models/Pursuit.swift */; };
 		A10000002FCE000000000208 /* Cadence/Models/AppTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000108 /* Cadence/Models/AppTask.swift */; };
 		A10000002FCE000000000209 /* Cadence/Models/Subtask.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000109 /* Cadence/Models/Subtask.swift */; };
 		A10000002FCE00000000020A /* Cadence/Models/Habit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010A /* Cadence/Models/Habit.swift */; };
@@ -47,6 +46,7 @@
 		A10000002FCE000000000225 /* Cadence/Services/MarkdownNoteSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000125 /* Cadence/Services/MarkdownNoteSupport.swift */; };
 		A10000002FCE000000000226 /* Cadence/Services/NoteReferenceSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000126 /* Cadence/Services/NoteReferenceSupport.swift */; };
 		A10000002FCE000000000227 /* Cadence/Services/DataIntegrityRepairService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000127 /* Cadence/Services/DataIntegrityRepairService.swift */; };
+		A10000002FCE000000000228 /* Cadence/Models/Pursuit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000128 /* Cadence/Models/Pursuit.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -78,7 +78,6 @@
 		A10000002FCE000000000105 /* Cadence/Models/Area.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Area.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000106 /* Cadence/Models/Project.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Project.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000107 /* Cadence/Models/Goal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Goal.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000128 /* Cadence/Models/Pursuit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Pursuit.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000108 /* Cadence/Models/AppTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/AppTask.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000109 /* Cadence/Models/Subtask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Subtask.swift; sourceTree = "<group>"; };
 		A10000002FCE00000000010A /* Cadence/Models/Habit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Habit.swift; sourceTree = "<group>"; };
@@ -110,6 +109,7 @@
 		A10000002FCE000000000125 /* Cadence/Services/MarkdownNoteSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MarkdownNoteSupport.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000126 /* Cadence/Services/NoteReferenceSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/NoteReferenceSupport.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000127 /* Cadence/Services/DataIntegrityRepairService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/DataIntegrityRepairService.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000128 /* Cadence/Models/Pursuit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Pursuit.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -508,7 +508,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Cadence/Cadence.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = SM6Y3D2D55;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -556,7 +556,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Cadence/Cadence.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = SM6Y3D2D55;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;

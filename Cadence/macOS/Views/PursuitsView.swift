@@ -5,6 +5,8 @@ import SwiftData
 struct PursuitsView: View {
     @Query(sort: \Pursuit.order) private var pursuits: [Pursuit]
     @Query(sort: \Context.order) private var contexts: [Context]
+    @Query(sort: \Goal.order) private var goals: [Goal]
+    @Query(sort: \Habit.order) private var habits: [Habit]
     @Environment(\.modelContext) private var modelContext
 
     @State private var selectedPursuitID: UUID?
@@ -55,6 +57,18 @@ struct PursuitsView: View {
             return pursuits.first { $0.id == selectedPursuitID }
         }
         return filteredPursuits.first ?? pursuits.first
+    }
+
+    private var unassignedGoals: [Goal] {
+        PursuitAssignmentRules.unassignedGoals(from: goals)
+    }
+
+    private var unassignedHabits: [Habit] {
+        PursuitAssignmentRules.unassignedHabits(from: habits)
+    }
+
+    private var hasUnassignedItems: Bool {
+        !unassignedGoals.isEmpty || !unassignedHabits.isEmpty
     }
 
     var body: some View {
@@ -148,7 +162,7 @@ struct PursuitsView: View {
 
     @ViewBuilder
     private var pursuitList: some View {
-        if pursuitGroups.isEmpty {
+        if pursuitGroups.isEmpty && !hasUnassignedItems {
             Spacer()
             EmptyStateView(
                 message: searchText.isEmpty ? "No pursuits yet" : "No matching pursuits",
@@ -159,6 +173,13 @@ struct PursuitsView: View {
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 16) {
+                    if hasUnassignedItems {
+                        PursuitUnassignedReviewCard(
+                            goalCount: unassignedGoals.count,
+                            habitCount: unassignedHabits.count
+                        )
+                    }
+
                     ForEach(pursuitGroups) { group in
                         PursuitContextGroupView(
                             group: group,
@@ -170,6 +191,41 @@ struct PursuitsView: View {
                 .padding(16)
             }
         }
+    }
+}
+
+private struct PursuitUnassignedReviewCard: View {
+    let goalCount: Int
+    let habitCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "tray.full.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.amber)
+                Text("UNASSIGNED")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.dim)
+                Spacer()
+            }
+
+            Text("Assign existing goals and habits to pursuits as you review them.")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Text("\(goalCount) goals")
+                Text("\(habitCount) habits")
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Theme.amber)
+        }
+        .padding(12)
+        .background(Theme.surfaceElevated.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.amber.opacity(0.22), lineWidth: 1))
     }
 }
 
@@ -265,6 +321,8 @@ private struct PursuitListCard: View {
 private struct PursuitDetailView: View {
     let pursuit: Pursuit
     let onEdit: () -> Void
+    @State private var showAddGoal = false
+    @State private var showAddHabit = false
 
     private var goals: [Goal] {
         (pursuit.goals ?? []).sorted { $0.order < $1.order }
@@ -295,12 +353,19 @@ private struct PursuitDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 hero
                 signalRow
+                commitmentActions
                 goalsSection
                 habitsSection
             }
             .padding(24)
         }
         .background(Theme.bg)
+        .sheet(isPresented: $showAddGoal) {
+            CreateGoalSheet(pursuit: pursuit)
+        }
+        .sheet(isPresented: $showAddHabit) {
+            CreateHabitSheet(pursuit: pursuit)
+        }
     }
 
     private var hero: some View {
@@ -355,6 +420,32 @@ private struct PursuitDetailView: View {
             PursuitSignalTile(title: "Active Goals", value: "\(activeGoalCount)", icon: "target", color: Theme.green)
             PursuitSignalTile(title: "Habits Today", value: dueHabitsToday.isEmpty ? "None due" : "\(doneHabitsToday)/\(dueHabitsToday.count)", icon: "flame.fill", color: Theme.amber)
             PursuitSignalTile(title: "Next Action", value: nextActionTitle ?? "None", icon: "checklist", color: Theme.blue)
+        }
+    }
+
+    private var commitmentActions: some View {
+        HStack(spacing: 10) {
+            CadenceActionButton(
+                title: "Add Goal",
+                systemImage: "target",
+                role: .secondary,
+                size: .compact,
+                tint: Theme.green,
+                fullWidth: true
+            ) {
+                showAddGoal = true
+            }
+
+            CadenceActionButton(
+                title: "Add Habit",
+                systemImage: "flame.fill",
+                role: .secondary,
+                size: .compact,
+                tint: Theme.amber,
+                fullWidth: true
+            ) {
+                showAddHabit = true
+            }
         }
     }
 
@@ -559,12 +650,13 @@ private struct PursuitStatusBadge: View {
     }
 }
 
-private struct CreatePursuitSheet: View {
+struct CreatePursuitSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Pursuit.order) private var allPursuits: [Pursuit]
     @Query(sort: \Context.order) private var allContexts: [Context]
 
     private let editingPursuit: Pursuit?
+    private let onSave: ((Pursuit) -> Void)?
 
     @State private var title = ""
     @State private var desc = ""
@@ -574,13 +666,14 @@ private struct CreatePursuitSheet: View {
     @State private var selectedStatus: PursuitStatus = .active
     @Environment(\.modelContext) private var modelContext
 
-    init(pursuit: Pursuit? = nil) {
+    init(pursuit: Pursuit? = nil, context: Context? = nil, onSave: ((Pursuit) -> Void)? = nil) {
         editingPursuit = pursuit
+        self.onSave = onSave
         _title = State(initialValue: pursuit?.title ?? "")
         _desc = State(initialValue: pursuit?.desc ?? "")
         _selectedIcon = State(initialValue: pursuit?.icon ?? "sparkles")
         _selectedColor = State(initialValue: pursuit?.colorHex ?? "#a78bfa")
-        _selectedContextID = State(initialValue: pursuit?.context?.id)
+        _selectedContextID = State(initialValue: pursuit?.context?.id ?? context?.id)
         _selectedStatus = State(initialValue: pursuit?.status ?? .active)
     }
 
@@ -688,6 +781,7 @@ private struct CreatePursuitSheet: View {
             modelContext.insert(pursuit)
         }
 
+        onSave?(pursuit)
         dismiss()
     }
 }
