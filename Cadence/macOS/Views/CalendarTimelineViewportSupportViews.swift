@@ -81,8 +81,8 @@ struct CalendarTimelineDayScroller: View {
             .scrollBounceBehavior(.basedOnSize, axes: [.horizontal])
             .transaction { $0.animation = nil }
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in
-                guard !isRestoringHorizontalScroll else { return }
                 timelineScrollState.setHeaderOffset(-x)
+                guard !isRestoringHorizontalScroll else { return }
                 let clampedDay = CalendarTimelineScrollSupport.clampedDayIndex(
                     offsetX: x,
                     colWidth: colWidth

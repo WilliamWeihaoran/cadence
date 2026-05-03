@@ -127,7 +127,6 @@ struct SettingsTagsSection: View {
                 if index < list.count - 1 {
                     Divider()
                         .background(Theme.borderSubtle)
-                        .padding(.leading, 42)
                 }
             }
         }
@@ -231,36 +230,37 @@ private struct SettingsTagRow: View {
                 displayContent
             }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 7)
         .animation(.easeInOut(duration: 0.15), value: isEditing)
     }
 
     private var displayContent: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Circle()
-                .fill(Color(hex: tag.colorHex))
-                .frame(width: 12, height: 12)
-                .padding(.top, 5)
-                .opacity(tag.isArchived ? 0.5 : 1)
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
+        HStack(alignment: tag.desc.isEmpty ? .center : .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 9) {
                     TagMiniChip(tag: tag)
-                    Text(tag.slug)
+                    Text(usageText)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(1)
+                    if tag.isArchived {
+                        Text("Archived")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Theme.surfaceElevated.opacity(0.72))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
                 }
 
                 if !tag.desc.isEmpty {
                     Text(tag.desc)
-                        .font(.system(size: 11))
+                        .font(.system(size: 10))
                         .foregroundStyle(Theme.dim)
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-
-                Text(usageText)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Theme.muted)
             }
 
             Spacer()
@@ -345,7 +345,7 @@ private struct SettingsTagRow: View {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(color)
-                .frame(width: 28, height: 28)
+                .frame(width: 26, height: 26)
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: 7))
         }

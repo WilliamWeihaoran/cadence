@@ -244,7 +244,6 @@ struct CreateTaskSheet: View {
                 TagPickerControl(
                     selectedTags: $selectedTags,
                     allTags: tags,
-                    placeholder: "Tags",
                     onCreateTag: createTag
                 )
 

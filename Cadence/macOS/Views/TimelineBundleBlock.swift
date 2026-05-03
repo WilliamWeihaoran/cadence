@@ -129,6 +129,14 @@ struct TimelineBundleBlock: View {
                     onMoveTask: { task, direction in
                         SchedulingActions.moveTaskInBundle(task, direction: direction)
                     },
+                    onComplete: {
+                        if focusManager.activeBundle?.id == bundle.id {
+                            focusManager.reset()
+                            focusManager.activeSession = nil
+                        }
+                        SchedulingActions.completeBundle(bundle, in: modelContext)
+                        selectedBundleID = nil
+                    },
                     onDelete: {
                         SchedulingActions.deleteBundle(bundle, in: modelContext)
                         selectedBundleID = nil
@@ -323,9 +331,11 @@ private struct TaskBundleDetailPopover: View {
     let onAddTask: (AppTask) -> Void
     let onRemoveTask: (AppTask) -> Void
     let onMoveTask: (AppTask, Int) -> Void
+    let onComplete: () -> Void
     let onDelete: () -> Void
 
     @State private var isConfirmingDelete = false
+    @State private var isConfirmingComplete = false
     @State private var isAddingTasks = false
     @State private var taskSearch = ""
 
@@ -413,25 +423,61 @@ private struct TaskBundleDetailPopover: View {
                 }
             }
 
+            if isConfirmingComplete {
+                Text("This will mark every active task in this bundle complete and remove the bundle block.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+                    .padding(9)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.green.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+            }
+
             HStack(spacing: 8) {
                 if isConfirmingDelete {
                     CadenceActionButton(title: "Cancel", role: .ghost, size: .compact) {
                         isConfirmingDelete = false
                     }
                     CadenceActionButton(title: "Delete", role: .destructive, size: .compact, action: onDelete)
+                } else if isConfirmingComplete {
+                    CadenceActionButton(title: "Cancel", role: .ghost, size: .compact) {
+                        isConfirmingComplete = false
+                    }
+                    CadenceActionButton(
+                        title: "Complete",
+                        systemImage: "checkmark.circle.fill",
+                        role: .secondary,
+                        size: .compact,
+                        tint: Theme.green,
+                        action: onComplete
+                    )
                 } else {
                     CadenceActionButton(title: "Delete", role: .ghost, size: .compact) {
+                        isConfirmingComplete = false
                         isConfirmingDelete = true
                     }
                 }
                 Spacer()
+                if !isConfirmingDelete && !isConfirmingComplete {
+                    CadenceActionButton(
+                        title: "Complete",
+                        systemImage: "checkmark.circle.fill",
+                        role: .ghost,
+                        size: .compact,
+                        tint: Theme.green,
+                        isDisabled: bundle.activeTasks.isEmpty
+                    ) {
+                        isConfirmingDelete = false
+                        isConfirmingComplete = true
+                    }
+                }
                 CadenceActionButton(
                     title: "Focus",
                     systemImage: "play.fill",
                     role: .secondary,
                     size: .compact,
                     tint: Theme.amber,
-                    isDisabled: bundle.sortedTasks.isEmpty,
+                    isDisabled: bundle.activeTasks.isEmpty,
                     action: onFocus
                 )
             }

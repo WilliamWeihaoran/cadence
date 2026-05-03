@@ -9,6 +9,8 @@ struct GoalsView: View {
     @Query(sort: \Project.order) private var projects: [Project]
 
     @Environment(\.modelContext) private var modelContext
+    @AppStorage("goalsViewMode") private var goalsViewModeRaw = GoalsViewMode.mission.rawValue
+    @AppStorage("goalsTimelineScale") private var timelineScaleRaw = TimeScale.quarter.rawValue
     @State private var selectedGoalID: UUID?
     @State private var showCreateGoal = false
     @State private var showEditGoal = false
@@ -69,6 +71,63 @@ struct GoalsView: View {
     }
 
     var body: some View {
+        content
+            .background(Theme.bg)
+            .sheet(isPresented: $showCreateGoal) {
+                CreateGoalSheet()
+            }
+            .sheet(isPresented: $showEditGoal) {
+                if let goal = selectedGoal {
+                    CreateGoalSheet(goal: goal)
+                }
+            }
+            .sheet(isPresented: $showAttachWork) {
+                if let goal = selectedGoal {
+                    AttachWorkSheet(
+                        goal: goal,
+                        contexts: allContexts,
+                        areas: areas,
+                        projects: projects
+                    )
+                }
+            }
+            .onAppear {
+                if selectedGoalID == nil {
+                    selectedGoalID = filteredGoals.first?.id ?? allGoals.first?.id
+                }
+            }
+            .onChange(of: filteredGoals.map(\.id)) {
+                guard let selectedGoalID,
+                      filteredGoals.contains(where: { $0.id == selectedGoalID }) || searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else {
+                    self.selectedGoalID = filteredGoals.first?.id ?? allGoals.first?.id
+                    return
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if goalsViewMode == .timeline {
+            GoalTimelineView(
+                groups: goalGroups,
+                selectedGoalID: $selectedGoalID,
+                viewMode: goalsViewModeBinding,
+                scale: timelineScaleBinding,
+                searchText: $searchText,
+                statusFilter: $statusFilter,
+                onCreateGoal: { showCreateGoal = true },
+                onEditGoal: { goal in
+                    selectedGoalID = goal.id
+                    showEditGoal = true
+                }
+            )
+        } else {
+            missionContent
+        }
+    }
+
+    private var missionContent: some View {
         HSplitView {
             VStack(spacing: 0) {
                 header
@@ -92,37 +151,6 @@ struct GoalsView: View {
             }
         }
         .background(Theme.bg)
-        .sheet(isPresented: $showCreateGoal) {
-            CreateGoalSheet()
-        }
-        .sheet(isPresented: $showEditGoal) {
-            if let goal = selectedGoal {
-                CreateGoalSheet(goal: goal)
-            }
-        }
-        .sheet(isPresented: $showAttachWork) {
-            if let goal = selectedGoal {
-                AttachWorkSheet(
-                    goal: goal,
-                    contexts: allContexts,
-                    areas: areas,
-                    projects: projects
-                )
-            }
-        }
-        .onAppear {
-            if selectedGoalID == nil {
-                selectedGoalID = filteredGoals.first?.id ?? allGoals.first?.id
-            }
-        }
-        .onChange(of: filteredGoals.map(\.id)) {
-            guard let selectedGoalID,
-                  filteredGoals.contains(where: { $0.id == selectedGoalID }) || searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            else {
-                self.selectedGoalID = filteredGoals.first?.id ?? allGoals.first?.id
-                return
-            }
-        }
     }
 
     private var header: some View {
@@ -137,6 +165,7 @@ struct GoalsView: View {
                         .foregroundStyle(Theme.muted)
                 }
                 Spacer(minLength: 20)
+                GoalsViewModeToggle(selection: goalsViewModeBinding)
                 CadenceActionButton(
                     title: "New Goal",
                     systemImage: "plus",
@@ -212,6 +241,33 @@ struct GoalsView: View {
 
     private func detachList(_ link: GoalListLink) {
         modelContext.delete(link)
+    }
+
+    private var goalsViewMode: GoalsViewMode {
+        get { GoalsViewMode(rawValue: goalsViewModeRaw) ?? .mission }
+        nonmutating set { goalsViewModeRaw = newValue.rawValue }
+    }
+
+    private var timelineScale: TimeScale {
+        get {
+            let restored = TimeScale(rawValue: timelineScaleRaw) ?? .quarter
+            return GoalTimelineDateMath.roadmapScales.contains(restored) ? restored : .quarter
+        }
+        nonmutating set { timelineScaleRaw = newValue.rawValue }
+    }
+
+    private var goalsViewModeBinding: Binding<GoalsViewMode> {
+        Binding(
+            get: { goalsViewMode },
+            set: { goalsViewMode = $0 }
+        )
+    }
+
+    private var timelineScaleBinding: Binding<TimeScale> {
+        Binding(
+            get: { timelineScale },
+            set: { timelineScale = $0 }
+        )
     }
 }
 

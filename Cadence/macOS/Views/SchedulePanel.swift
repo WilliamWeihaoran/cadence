@@ -65,7 +65,7 @@ struct SchedulePanel: View {
     }
 
     private var todayBundles: [TaskBundle] {
-        allBundles.filter { $0.dateKey == todayKey }
+        allBundles.filter { $0.dateKey == todayKey && !$0.isCompleted }
     }
 
     /// iCal events for today. Raw tasks are never treated as event attachments.

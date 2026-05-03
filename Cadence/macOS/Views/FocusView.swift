@@ -7,9 +7,10 @@ struct FocusView: View {
     @Environment(FocusManager.self) private var focusManager
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Query private var allBundles: [TaskBundle]
 
-    @State private var showTaskPicker = false
     @State private var showLogSheet = false
+    @State private var idleSearchText = ""
 
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -30,12 +31,6 @@ struct FocusView: View {
             guard focusManager.isRunning else { return }
             focusManager.elapsed += 1
         }
-        .popover(isPresented: $showTaskPicker) {
-            FocusTaskPicker(tasks: allTasks.filter { !$0.isDone && !$0.isCancelled }) { task in
-                focusManager.startFocus(task: task)
-                showTaskPicker = false
-            }
-        }
     }
 
     private var todayKey: String {
@@ -44,6 +39,15 @@ struct FocusView: View {
 
     private var readyTasks: [AppTask] {
         FocusSessionSupport.readyTasks(from: allTasks, todayKey: todayKey)
+    }
+
+    private var focusPickerItems: [FocusPickItem] {
+        FocusPickItem.filtered(
+            tasks: readyTasks,
+            bundles: allBundles,
+            query: idleSearchText,
+            todayKey: todayKey
+        )
     }
 
     // MARK: - Active layout
@@ -255,17 +259,17 @@ struct FocusView: View {
         HSplitView {
             VStack(alignment: .leading, spacing: 18) {
                 FocusIdleHero(
-                    clockDisplay: clockDisplay,
-                    onPickTask: { showTaskPicker = true }
+                    clockDisplay: clockDisplay
                 )
-                .frame(height: 220)
+                .frame(height: 178)
 
-                FocusTaskBucketCard(
-                    title: "Up next",
-                    subtitle: "Best next tasks",
-                    accent: Theme.blue,
-                    tasks: Array(readyTasks.prefix(8)),
-                    onSelect: { focusManager.startFocus(task: $0) }
+                FocusPickSessionCard(
+                    title: "Pick a task",
+                    subtitle: "Search tasks and bundles, or start from the best matches.",
+                    searchText: $idleSearchText,
+                    items: focusPickerItems,
+                    onSelectTask: { focusManager.startFocus(task: $0) },
+                    onSelectBundle: { focusManager.startFocus(bundle: $0) }
                 )
                 .frame(maxHeight: .infinity, alignment: .top)
             }

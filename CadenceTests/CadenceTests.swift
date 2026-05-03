@@ -190,6 +190,32 @@ struct CadenceTests {
         #expect(day == 2)
     }
 
+    @Test func monthToTimelineReturnUsesVisibleMonthInsteadOfStaleRememberedDate() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? calendar.timeZone
+
+        let today = try #require(calendar.date(from: DateComponents(year: 2026, month: 5, day: 1)))
+        let bufferStart = try #require(calendar.date(from: DateComponents(year: 2026, month: 1, day: 1)))
+
+        let currentMonthDay = CalendarPageStateSupport.timelineDayIndexForMonthViewReturn(
+            visibleMonthIdx: 60,
+            bufferStart: bufferStart,
+            todayDayIdx: 120,
+            calendar: calendar,
+            today: today
+        )
+        let previousMonthDay = CalendarPageStateSupport.timelineDayIndexForMonthViewReturn(
+            visibleMonthIdx: 59,
+            bufferStart: bufferStart,
+            todayDayIdx: 120,
+            calendar: calendar,
+            today: today
+        )
+
+        #expect(currentMonthDay == 120)
+        #expect(previousMonthDay == 90)
+    }
+
     @Test func calendarTitleUsesVisibleTimelineMonthAcrossBoundaries() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? calendar.timeZone

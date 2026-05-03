@@ -94,7 +94,6 @@ struct TaskDetailPopover: View {
                         TagPickerControl(
                             selectedTags: taskTagsBinding,
                             allTags: tags,
-                            placeholder: "Tags",
                             onCreateTag: createTag
                         )
                         TaskDetailNotesSection(task: task)

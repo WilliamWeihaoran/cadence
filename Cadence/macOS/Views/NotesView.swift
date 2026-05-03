@@ -615,7 +615,6 @@ struct NoteEditorPane: View {
                 TagPickerControl(
                     selectedTags: noteTagsBinding,
                     allTags: tags,
-                    placeholder: "Tags",
                     onCreateTag: createTag
                 )
             }

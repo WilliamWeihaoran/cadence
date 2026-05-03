@@ -186,6 +186,10 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
         sortedTasks.filter { !$0.isDone }
     }
 
+    var isCompleted: Bool {
+        !sortedTasks.isEmpty && activeTasks.isEmpty
+    }
+
     var totalEstimatedMinutes: Int {
         sortedTasks.reduce(0) { $0 + max($1.estimatedMinutes, 5) }
     }

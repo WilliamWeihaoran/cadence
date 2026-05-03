@@ -23,6 +23,28 @@ struct CalendarPageStateSupport {
         return min(max(day, 0), calRenderDays - 1)
     }
 
+    static func timelineDayIndexForMonthViewReturn(
+        visibleMonthIdx: Int,
+        todayMonthIdx: Int = 60,
+        bufferStart: Date,
+        todayDayIdx: Int,
+        calendar: Calendar,
+        today: Date = Date()
+    ) -> Int {
+        let targetDate: Date
+        if visibleMonthIdx == todayMonthIdx {
+            targetDate = calendar.startOfDay(for: today)
+        } else {
+            var currentMonthComponents = calendar.dateComponents([.year, .month], from: today)
+            currentMonthComponents.day = 1
+            let currentMonthStart = calendar.date(from: currentMonthComponents) ?? today
+            targetDate = calendar.date(byAdding: .month, value: visibleMonthIdx - todayMonthIdx, to: currentMonthStart) ?? today
+        }
+
+        let day = calendar.dateComponents([.day], from: bufferStart, to: calendar.startOfDay(for: targetDate)).day ?? todayDayIdx
+        return min(max(day, 0), calRenderDays - 1)
+    }
+
     static func restoreTimelineScrollIfNeeded(
         didRestoreTimelineScroll: inout Bool,
         rememberedScrollHour: Int,

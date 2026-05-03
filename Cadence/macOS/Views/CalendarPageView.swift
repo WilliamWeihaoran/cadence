@@ -120,12 +120,20 @@ struct CalendarPageView: View {
             guard let request = calendarNavigationManager.request else { return }
             applyExternalCalendarJump(request)
         }
-        .onChange(of: viewMode) { _, newMode in
+        .onChange(of: viewMode) { oldMode, newMode in
+            pendingDayPersistence?.cancel()
+            pendingDayPersistence = nil
             CalendarPageDataSupport.handleViewModeChange(
+                oldMode: oldMode,
                 newMode: newMode,
                 visibleMonthIdx: &visibleMonthIdx,
                 monthGridResetNonce: &monthGridResetNonce,
-                didRestoreTimelineScroll: &didRestoreTimelineScroll
+                didRestoreTimelineScroll: &didRestoreTimelineScroll,
+                visibleTimelineDayIndex: &visibleTimelineDayIndex,
+                rememberedDateKey: &rememberedDateKey,
+                bufferStart: bufferStart,
+                todayDayIdx: todayDayIdx,
+                calendar: cal
             )
         }
     }

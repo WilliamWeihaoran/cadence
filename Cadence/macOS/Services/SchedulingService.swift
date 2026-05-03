@@ -167,6 +167,35 @@ enum SchedulingActions {
         bundle.tasks = ordered
     }
 
+    static func rollOverTaskToToday(_ task: AppTask, todayKey: String, in context: ModelContext) {
+        if let bundle = task.bundle {
+            removeTaskFromBundle(task, keepOnBundleDate: false)
+            cleanupInactiveBundleIfNeeded(bundle, in: context)
+        }
+        if task.scheduledStartMin >= 0 {
+            removeFromCalendar(task)
+        }
+        task.scheduledDate = todayKey
+        task.scheduledStartMin = -1
+        task.calendarEventID = ""
+    }
+
+    static func completeBundle(_ bundle: TaskBundle, in context: ModelContext) {
+        let tasks = memberTasks(in: bundle)
+        for task in tasks {
+            if !task.isDone && !task.isCancelled {
+                TaskWorkflowService.markDone(task, in: context)
+            }
+            task.bundle = nil
+            task.bundleOrder = 0
+            task.scheduledDate = bundle.dateKey
+            task.scheduledStartMin = -1
+            task.calendarEventID = ""
+        }
+        bundle.tasks = []
+        context.delete(bundle)
+    }
+
     static func updateBundleTime(_ bundle: TaskBundle, startMin: Int, endMin: Int) {
         let range = clampedRange(startMin: startMin, endMin: endMin)
         bundle.startMin = range.start
@@ -205,6 +234,19 @@ enum SchedulingActions {
     /// Detach any legacy calendar-event reference from a task without deleting the calendar event.
     static func removeFromCalendar(_ task: AppTask) {
         task.calendarEventID = ""
+    }
+
+    private static func cleanupInactiveBundleIfNeeded(_ bundle: TaskBundle, in context: ModelContext) {
+        guard memberTasks(in: bundle).allSatisfy({ $0.isDone || $0.isCancelled }) else { return }
+        for task in memberTasks(in: bundle) {
+            task.bundle = nil
+            task.bundleOrder = 0
+            task.scheduledDate = bundle.dateKey
+            task.scheduledStartMin = -1
+            task.calendarEventID = ""
+        }
+        bundle.tasks = []
+        context.delete(bundle)
     }
 
     private static func normalizedSectionName(_ sectionName: String, availableSections: [String]) -> String {

@@ -290,6 +290,12 @@ struct TaskDetailHeaderSection: View {
         if !task.dueDate.isEmpty {
             return "Due \(DateFormatters.relativeDate(from: task.dueDate))"
         }
+        if !task.containerName.isEmpty {
+            if task.resolvedSectionName != TaskSectionDefaults.defaultName {
+                return "\(task.containerName) • \(task.resolvedSectionName)"
+            }
+            return task.containerName
+        }
         return "Inbox task"
     }
 }

@@ -35,6 +35,10 @@ struct SettingsAppearanceSection: View {
                         RoundedRectangle(cornerRadius: 6)
                             .fill(color)
                             .frame(height: 34)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Theme.borderSubtle.opacity(0.65), lineWidth: 1)
+                            }
                     }
                 }
 

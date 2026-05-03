@@ -5,7 +5,6 @@ import SwiftData
 struct TagPickerControl: View {
     @Binding var selectedTags: [Tag]
     let allTags: [Tag]
-    let placeholder: String
     let onCreateTag: (String) -> Tag
 
     @State private var isPresented = false
@@ -16,29 +15,9 @@ struct TagPickerControl: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            if visibleSelectedTags.isEmpty {
-                Text(placeholder)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Theme.surfaceElevated.opacity(0.75))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
-            } else {
-                ForEach(visibleSelectedTags.prefix(3)) { tag in
-                    TagChip(tag: tag) {
-                        selectedTags.removeAll { $0.id == tag.id }
-                    }
-                }
-                if visibleSelectedTags.count > 3 {
-                    Text("+\(visibleSelectedTags.count - 3)")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 5)
-                        .background(Theme.surfaceElevated.opacity(0.75))
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                        .help(visibleSelectedTags.dropFirst(3).map(\.name).joined(separator: ", "))
+            if !visibleSelectedTags.isEmpty {
+                AdaptiveSelectedTagStrip(tags: visibleSelectedTags) { tag in
+                    selectedTags.removeAll { $0.id == tag.id }
                 }
             }
 
@@ -62,6 +41,7 @@ struct TagPickerControl: View {
                 )
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -78,6 +58,8 @@ struct TagChip: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Theme.muted)
                 .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 118, alignment: .leading)
             if let onRemove {
                 Button(action: onRemove) {
                     Image(systemName: "xmark")
@@ -99,6 +81,34 @@ struct TagChip: View {
     }
 }
 
+private struct AdaptiveSelectedTagStrip: View {
+    let tags: [Tag]
+    let onRemove: (Tag) -> Void
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            selectedTagRow(limit: min(3, tags.count))
+            selectedTagRow(limit: min(2, tags.count))
+            selectedTagRow(limit: min(1, tags.count))
+            selectedTagRow(limit: 0)
+        }
+    }
+
+    private func selectedTagRow(limit: Int) -> some View {
+        HStack(spacing: 5) {
+            ForEach(tags.prefix(limit)) { tag in
+                TagChip(tag: tag) {
+                    onRemove(tag)
+                }
+            }
+            if tags.count > limit {
+                TagOverflowBadge(count: tags.count - limit, hiddenTags: tags.dropFirst(limit))
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
 struct CompactTagStrip: View {
     let tags: [Tag]
     var limit: Int = 2
@@ -111,23 +121,24 @@ struct CompactTagStrip: View {
 
     var body: some View {
         if !visibleTags.isEmpty {
-            HStack(spacing: 4) {
-                ForEach(visibleTags.prefix(limit)) { tag in
-                    TagMiniChip(tag: tag)
-                }
-                if visibleTags.count > limit {
-                    Text("+\(visibleTags.count - limit)")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 3)
-                        .background(Theme.surfaceElevated.opacity(0.65))
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                        .help(visibleTags.dropFirst(limit).map(\.name).joined(separator: ", "))
-                }
+            ViewThatFits(in: .horizontal) {
+                compactTagRow(limit: min(limit, visibleTags.count))
+                compactTagRow(limit: min(1, visibleTags.count))
+                compactTagRow(limit: 0)
             }
-            .fixedSize(horizontal: true, vertical: false)
         }
+    }
+
+    private func compactTagRow(limit: Int) -> some View {
+        HStack(spacing: 4) {
+            ForEach(visibleTags.prefix(limit)) { tag in
+                TagMiniChip(tag: tag)
+            }
+            if visibleTags.count > limit {
+                TagOverflowBadge(count: visibleTags.count - limit, hiddenTags: visibleTags.dropFirst(limit), size: .mini)
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -140,6 +151,7 @@ struct TagMiniChip: View {
             .foregroundStyle(tag.isArchived ? Theme.dim : Color(hex: tag.colorHex))
             .lineLimit(1)
             .truncationMode(.tail)
+            .frame(maxWidth: 88, alignment: .leading)
             .padding(.horizontal, 5)
             .padding(.vertical, 3)
             .background(Color(hex: tag.colorHex).opacity(tag.isArchived ? 0.08 : 0.13))
@@ -149,6 +161,56 @@ struct TagMiniChip: View {
                     .stroke(Color(hex: tag.colorHex).opacity(tag.isArchived ? 0.18 : 0.26), lineWidth: 1)
             )
             .help(tag.isArchived ? "\(tag.name) (archived)" : tag.name)
+    }
+}
+
+private struct TagOverflowBadge: View {
+    enum Size {
+        case regular
+        case mini
+
+        var fontSize: CGFloat {
+            switch self {
+            case .regular: return 11
+            case .mini: return 9
+            }
+        }
+
+        var horizontalPadding: CGFloat {
+            switch self {
+            case .regular: return 7
+            case .mini: return 5
+            }
+        }
+
+        var verticalPadding: CGFloat {
+            switch self {
+            case .regular: return 5
+            case .mini: return 3
+            }
+        }
+
+        var cornerRadius: CGFloat {
+            switch self {
+            case .regular: return 7
+            case .mini: return 5
+            }
+        }
+    }
+
+    let count: Int
+    let hiddenTags: ArraySlice<Tag>
+    var size: Size = .regular
+
+    var body: some View {
+        Text("+\(count)")
+            .font(.system(size: size.fontSize, weight: .semibold))
+            .foregroundStyle(Theme.dim)
+            .padding(.horizontal, size.horizontalPadding)
+            .padding(.vertical, size.verticalPadding)
+            .background(Theme.surfaceElevated.opacity(0.75))
+            .clipShape(RoundedRectangle(cornerRadius: size.cornerRadius))
+            .help(hiddenTags.map(\.name).joined(separator: ", "))
     }
 }
 

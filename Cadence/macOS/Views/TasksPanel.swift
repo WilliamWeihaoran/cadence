@@ -180,11 +180,7 @@ struct TasksPanel: View {
                             TasksPanelRolloverNoticeSectionView(tasks: overdoTasks) {
                                 withAnimation(.easeOut(duration: 0.2)) {
                                     for task in overdoTasks {
-                                        if task.scheduledStartMin >= 0 {
-                                            SchedulingActions.removeFromCalendar(task)
-                                        }
-                                        task.scheduledDate = todayKey
-                                        task.scheduledStartMin = -1
+                                        SchedulingActions.rollOverTaskToToday(task, todayKey: todayKey, in: modelContext)
                                     }
                                     rolloverNoticeDismissedDate = todayKey
                                     try? modelContext.save()

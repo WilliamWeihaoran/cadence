@@ -93,6 +93,66 @@ struct TaskBundleTests {
         #expect(task.scheduledStartMin == -1)
     }
 
+    @Test func completingBundleMarksMemberTasksDoneAndRemovesBundle() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let first = AppTask(title: "First")
+        let second = AppTask(title: "Second")
+        let bundle = TaskBundle(title: "Finish me", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
+        [first, second].forEach(context.insert)
+        context.insert(bundle)
+        [first, second].forEach { SchedulingActions.addTask($0, to: bundle) }
+
+        SchedulingActions.completeBundle(bundle, in: context)
+
+        #expect(first.isDone)
+        #expect(second.isDone)
+        #expect(first.completedAt != nil)
+        #expect(second.completedAt != nil)
+        #expect(first.bundle == nil)
+        #expect(second.bundle == nil)
+        #expect(first.scheduledDate == "2026-05-01")
+        #expect(first.scheduledStartMin == -1)
+        #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
+    }
+
+    @Test func rollingOverLastActiveBundledTaskDetachesItAndRemovesOldBundle() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Carry me")
+        let bundle = TaskBundle(title: "Yesterday", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
+        context.insert(task)
+        context.insert(bundle)
+        SchedulingActions.addTask(task, to: bundle)
+
+        SchedulingActions.rollOverTaskToToday(task, todayKey: "2026-05-02", in: context)
+
+        #expect(task.bundle == nil)
+        #expect(task.scheduledDate == "2026-05-02")
+        #expect(task.scheduledStartMin == -1)
+        #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
+    }
+
+    @Test func rollingOverOneBundledTaskKeepsBundleWhenOtherActiveTasksRemain() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let first = AppTask(title: "Carry me")
+        let second = AppTask(title: "Stay bundled")
+        let bundle = TaskBundle(title: "Yesterday", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
+        [first, second].forEach(context.insert)
+        context.insert(bundle)
+        [first, second].forEach { SchedulingActions.addTask($0, to: bundle) }
+
+        SchedulingActions.rollOverTaskToToday(first, todayKey: "2026-05-02", in: context)
+
+        #expect(first.bundle == nil)
+        #expect(first.scheduledDate == "2026-05-02")
+        #expect(first.scheduledStartMin == -1)
+        #expect(second.bundle?.id == bundle.id)
+        #expect(bundle.sortedTasks.map(\.id) == [second.id])
+        #expect(try context.fetch(FetchDescriptor<TaskBundle>()).map(\.id) == [bundle.id])
+    }
+
     @Test func removingTaskFromBundleKeepsItOnBundleDateWithoutCalendarSlot() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)

@@ -40,24 +40,44 @@ enum CalendarPageDataSupport {
 
     static func bundlesByDate(_ bundles: [TaskBundle]) -> [String: [TaskBundle]] {
         var dict: [String: [TaskBundle]] = [:]
-        for bundle in bundles {
+        for bundle in bundles where !bundle.isCompleted {
             dict[bundle.dateKey, default: []].append(bundle)
         }
         return dict
     }
 
     static func handleViewModeChange(
+        oldMode: CalViewMode,
         newMode: CalViewMode,
         visibleMonthIdx: inout Int,
         monthGridResetNonce: inout Int,
-        didRestoreTimelineScroll: inout Bool
+        didRestoreTimelineScroll: inout Bool,
+        visibleTimelineDayIndex: inout Int?,
+        rememberedDateKey: inout String,
+        bufferStart: Date,
+        todayDayIdx: Int,
+        calendar: Calendar
     ) {
         if newMode == .month {
             visibleMonthIdx = 60
             monthGridResetNonce += 1
-        } else {
-            didRestoreTimelineScroll = false
+            return
         }
+
+        if oldMode == .month {
+            let targetDay = CalendarPageStateSupport.timelineDayIndexForMonthViewReturn(
+                visibleMonthIdx: visibleMonthIdx,
+                bufferStart: bufferStart,
+                todayDayIdx: todayDayIdx,
+                calendar: calendar
+            )
+            visibleTimelineDayIndex = targetDay
+            if let targetDate = calendar.date(byAdding: .day, value: targetDay, to: bufferStart) {
+                rememberedDateKey = DateFormatters.dateKey(from: targetDate)
+            }
+        }
+
+        didRestoreTimelineScroll = false
     }
 }
 #endif
