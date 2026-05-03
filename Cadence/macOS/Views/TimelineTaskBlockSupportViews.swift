@@ -87,39 +87,46 @@ struct TimelineCurrentTimeOverlay: View {
     let style: TimelineBlockStyle
     let showDot: Bool
 
-    private var minutesFromMidnight: Int {
-        let calendar = Calendar.current
-        return calendar.component(.hour, from: Date()) * 60 + calendar.component(.minute, from: Date())
+    private func minutesFromMidnight(at date: Date, calendar: Calendar) -> CGFloat {
+        let components = calendar.dateComponents([.hour, .minute, .second], from: date)
+        let hour = components.hour ?? 0
+        let minute = components.minute ?? 0
+        let second = components.second ?? 0
+        return CGFloat(hour * 60 + minute) + CGFloat(second) / 60
     }
 
-    private var yOffset: CGFloat {
-        metrics.yOffset(for: minutesFromMidnight)
+    private func yOffset(for minute: CGFloat) -> CGFloat {
+        (minute - CGFloat(metrics.startHour * 60)) * metrics.hourHeight / 60
     }
 
     var body: some View {
-        let calendar = Calendar.current
-        let mins = minutesFromMidnight
+        TimelineView(.periodic(from: Date(), by: 15)) { context in
+            let calendar = Calendar.current
+            let mins = minutesFromMidnight(at: context.date, calendar: calendar)
 
-        if calendar.isDateInToday(date),
-           mins >= metrics.startHour * 60,
-           mins <= metrics.endHour * 60 {
-            ZStack(alignment: .topLeading) {
-                if showDot {
-                    Circle()
+            if calendar.isDate(date, inSameDayAs: context.date),
+               mins >= CGFloat(metrics.startHour * 60),
+               mins <= CGFloat(metrics.endHour * 60) {
+                let y = yOffset(for: mins)
+
+                ZStack(alignment: .topLeading) {
+                    if showDot {
+                        Circle()
+                            .fill(Theme.red)
+                            .frame(width: 8, height: 8)
+                            .offset(x: style.leadingInset - 4, y: y - 4)
+                    }
+
+                    Rectangle()
                         .fill(Theme.red)
-                        .frame(width: 8, height: 8)
-                        .offset(x: style.leadingInset - 4, y: yOffset - 4)
+                        .frame(
+                            width: max(0, totalWidth - style.leadingInset - style.trailingInset + (showDot ? 4 : 0)),
+                            height: 1
+                        )
+                        .offset(x: showDot ? style.leadingInset - 4 : style.leadingInset, y: y)
                 }
-
-                Rectangle()
-                    .fill(Theme.red)
-                    .frame(
-                        width: max(0, totalWidth - style.leadingInset - style.trailingInset + (showDot ? 4 : 0)),
-                        height: 1
-                    )
-                    .offset(x: showDot ? style.leadingInset - 4 : style.leadingInset, y: yOffset)
+                .allowsHitTesting(false)
             }
-            .allowsHitTesting(false)
         }
     }
 }

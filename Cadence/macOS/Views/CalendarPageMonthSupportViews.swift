@@ -323,7 +323,7 @@ struct CalDayColumn: View {
             showCurrentTimeDot: true,
             showHalfHourMarks: showHalfHourMarks,
             dropBehavior: .perHour,
-            onCreateTask: { title, startMin, endMin, containerSelection, sectionName in
+            onCreateTask: { title, startMin, endMin, containerSelection, sectionName, notes, subtaskTitles in
                 SchedulingActions.createTask(
                     title: title,
                     dateKey: dateKey,
@@ -331,6 +331,8 @@ struct CalDayColumn: View {
                     endMin: endMin,
                     containerSelection: containerSelection,
                     sectionName: sectionName,
+                    notes: notes,
+                    subtaskTitles: subtaskTitles,
                     areas: areas,
                     projects: projects,
                     in: modelContext

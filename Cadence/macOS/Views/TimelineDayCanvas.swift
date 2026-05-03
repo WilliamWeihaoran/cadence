@@ -18,7 +18,7 @@ struct TimelineDayCanvas: View {
     let showCurrentTimeDot: Bool
     var showHalfHourMarks: Bool = false
     let dropBehavior: TimelineDropBehavior
-    let onCreateTask: (String, Int, Int, TaskContainerSelection, String) -> Void
+    let onCreateTask: (String, Int, Int, TaskContainerSelection, String, String, [String]) -> Void
     let onCreateBundle: (String, Int, Int, [AppTask]) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
     let onDropBundleAtMinute: (TaskBundle, Int) -> Void
@@ -201,14 +201,16 @@ struct TimelineDayCanvas: View {
                         startMin: start,
                         endMin: end,
                         dateKey: dateKey,
-                        onCreateTask: { title, containerSelection, sectionName in
+                        onCreateTask: { title, containerSelection, sectionName, notes, subtaskTitles in
                             if let start = pendingStartMin, let end = pendingEndMin {
                                 onCreateTask(
                                     title.isEmpty ? "New Task" : title,
                                     start,
                                     end,
                                     containerSelection,
-                                    sectionName
+                                    sectionName,
+                                    notes,
+                                    subtaskTitles
                                 )
                             }
                             showNewTaskPopover = false

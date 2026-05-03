@@ -10,7 +10,7 @@ struct QuickCreateChoicePopover: View {
     let startMin: Int
     let endMin: Int
     let dateKey: String
-    let onCreateTask: (String, TaskContainerSelection, String) -> Void
+    let onCreateTask: (String, TaskContainerSelection, String, String, [String]) -> Void
     let onCreateBundle: ((String, [AppTask]) -> Void)?
     let onCreateEvent: ((String, String, String) -> Void)?
     let onCancel: () -> Void
@@ -24,6 +24,8 @@ struct QuickCreateChoicePopover: View {
     @State private var title = ""
     @State private var selectedCalendarID = ""
     @State private var notes = ""
+    @State private var subtaskDraft = ""
+    @State private var subtaskTitles: [String] = []
     @State private var selectedContainer: TaskContainerSelection = .inbox
     @State private var selectedSectionName: String = TaskSectionDefaults.defaultName
     @State private var tildeMode: TildeMode = .none
@@ -33,13 +35,13 @@ struct QuickCreateChoicePopover: View {
     @State private var selectedBundleTaskIDs: [UUID] = []
     @FocusState private var focused: Bool
     @FocusState private var isTildeSearchFocused: Bool
-    private let modeFormMinHeight: CGFloat = 190
+    private let modeFormMinHeight: CGFloat = 280
 
     init(
         startMin: Int,
         endMin: Int,
         dateKey: String,
-        onCreateTask: @escaping (String, TaskContainerSelection, String) -> Void,
+        onCreateTask: @escaping (String, TaskContainerSelection, String, String, [String]) -> Void,
         onCreateBundle: ((String, [AppTask]) -> Void)? = nil,
         onCreateEvent: ((String, String, String) -> Void)?,
         onCancel: @escaping () -> Void,
@@ -109,7 +111,9 @@ struct QuickCreateChoicePopover: View {
                     tildeInlineSearchView
                 }
 
-                if mode == .calendarEvent {
+                if mode == .timeBlock {
+                    taskDetailsView
+                } else if mode == .calendarEvent {
                     let _ = calendarManager.storeVersion
                     let calendars = calendarManager.writableCalendars
                     if !calendars.isEmpty {
@@ -162,7 +166,7 @@ struct QuickCreateChoicePopover: View {
             }
         }
         .padding(14)
-        .frame(width: mode == .bundle ? 326 : 286)
+        .frame(width: mode == .bundle ? 326 : 316)
         .background(Theme.surface)
         .onAppear {
             focused = true
@@ -176,7 +180,9 @@ struct QuickCreateChoicePopover: View {
 
     private func create() {
         if mode == .timeBlock {
-            onCreateTask(title, selectedContainer, selectedSectionName)
+            let pendingSubtask = subtaskDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedSubtasks = pendingSubtask.isEmpty ? subtaskTitles : subtaskTitles + [pendingSubtask]
+            onCreateTask(title, selectedContainer, selectedSectionName, notes, resolvedSubtasks)
         } else if mode == .bundle {
             onCreateBundle?(
                 title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Task Bundle" : title,
@@ -461,11 +467,135 @@ struct QuickCreateChoicePopover: View {
         bundleTaskSearch = ""
     }
 
+    private var taskDetailsView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 8) {
+                ContainerPickerBadge(
+                    selection: $selectedContainer,
+                    contexts: contexts,
+                    areas: areas,
+                    projects: projects
+                )
+                .onChange(of: selectedContainer) { normalizeSelectedSection() }
+
+                sectionPicker
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Notes")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+
+                TextEditor(text: $notes)
+                    .scrollContentBackground(.hidden)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.text)
+                    .frame(minHeight: 72)
+                    .padding(8)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Subtasks")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+
+                if !subtaskTitles.isEmpty {
+                    VStack(spacing: 5) {
+                        ForEach(Array(subtaskTitles.enumerated()), id: \.offset) { index, title in
+                            subtaskRow(title: title, index: index)
+                        }
+                    }
+                }
+
+                HStack(spacing: 7) {
+                    Image(systemName: "plus.circle")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                    TextField("Add subtask...", text: $subtaskDraft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.text)
+                        .onSubmit { commitSubtaskDraft() }
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 8)
+                .background(Theme.surfaceElevated.opacity(0.72))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
+
+    private var sectionPicker: some View {
+        Menu {
+            ForEach(availableSections, id: \.self) { section in
+                Button(section) {
+                    selectedSectionName = section
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "rectangle.split.2x1")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                Text(selectedSectionName)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
+                    .frame(maxWidth: 92, alignment: .leading)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(minHeight: 28)
+            .background(Theme.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.cadencePlain)
+    }
+
+    private func subtaskRow(title: String, index: Int) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: "circle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Button {
+                subtaskTitles.remove(at: index)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.cadencePlain)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(Theme.surfaceElevated.opacity(0.52))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+
+    private func commitSubtaskDraft() {
+        let trimmed = subtaskDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        subtaskTitles.append(trimmed)
+        subtaskDraft = ""
+    }
+
     @ViewBuilder
     private var modeSelector: some View {
         if onCreateEvent != nil || onCreateBundle != nil {
             HStack(spacing: 6) {
-                modeButton("Time Block", for: .timeBlock, tint: Theme.blue)
+                modeButton("Task", for: .timeBlock, tint: Theme.blue)
                 if onCreateEvent != nil {
                     modeButton("Event", for: .calendarEvent, tint: Theme.purple)
                 }

@@ -102,7 +102,7 @@ struct SchedulePanel: View {
                             bundles: todayBundles,
                             todayKey: todayKey,
                             externalEventItems: externalEventItems,
-                            onCreateTask: { title, startMin, endMin, containerSelection, sectionName in
+                            onCreateTask: { title, startMin, endMin, containerSelection, sectionName, notes, subtaskTitles in
                                 SchedulingActions.createTask(
                                     title: title,
                                     dateKey: todayKey,
@@ -110,6 +110,8 @@ struct SchedulePanel: View {
                                     endMin: endMin,
                                     containerSelection: containerSelection,
                                     sectionName: sectionName,
+                                    notes: notes,
+                                    subtaskTitles: subtaskTitles,
                                     areas: areas,
                                     projects: projects,
                                     in: modelContext

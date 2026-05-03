@@ -42,42 +42,30 @@ enum SchedulingActions {
         endMin: Int,
         containerSelection: TaskContainerSelection,
         sectionName: String,
+        notes: String = "",
+        subtaskTitles: [String] = [],
         areas: [Area],
         projects: [Project],
         in context: ModelContext
     ) {
-        let task = AppTask(title: title)
+        let draft = TaskCreationDraft(
+            title: title,
+            notes: notes,
+            priority: .none,
+            container: containerSelection,
+            sectionName: sectionName,
+            dueDateKey: "",
+            scheduledDateKey: dateKey,
+            subtaskTitles: subtaskTitles,
+            tags: []
+        )
+        guard let task = TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: context) else {
+            return
+        }
+
         task.scheduledDate = dateKey
         task.scheduledStartMin = startMin
         task.estimatedMinutes = max(5, endMin - startMin)
-
-        switch containerSelection {
-        case .inbox:
-            task.area = nil
-            task.project = nil
-            task.context = nil
-            task.sectionName = TaskSectionDefaults.defaultName
-        case .area(let areaID):
-            if let area = areas.first(where: { $0.id == areaID }) {
-                task.area = area
-                task.project = nil
-                task.context = area.context
-                task.sectionName = normalizedSectionName(sectionName, availableSections: area.sectionNames)
-            } else {
-                task.sectionName = TaskSectionDefaults.defaultName
-            }
-        case .project(let projectID):
-            if let project = projects.first(where: { $0.id == projectID }) {
-                task.project = project
-                task.area = nil
-                task.context = project.context
-                task.sectionName = normalizedSectionName(sectionName, availableSections: project.sectionNames)
-            } else {
-                task.sectionName = TaskSectionDefaults.defaultName
-            }
-        }
-
-        context.insert(task)
     }
 
     /// Move an existing task to a new date/time. Assigns a 30-min default if the task has no estimate.
@@ -247,16 +235,6 @@ enum SchedulingActions {
         }
         bundle.tasks = []
         context.delete(bundle)
-    }
-
-    private static func normalizedSectionName(_ sectionName: String, availableSections: [String]) -> String {
-        let cleaned = availableSections
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        let resolved = cleaned.isEmpty ? [TaskSectionDefaults.defaultName] : cleaned
-        return resolved.first(where: { $0.caseInsensitiveCompare(sectionName) == .orderedSame })
-            ?? resolved.first
-            ?? TaskSectionDefaults.defaultName
     }
 
     private static func clampedStartMin(_ startMin: Int) -> Int {
