@@ -427,9 +427,11 @@ struct MarkdownEditorView: NSViewRepresentable {
     }
 
     private func configure(_ textView: CadenceTextView, context: NSViewRepresentableContext<MarkdownEditorView>) {
+        let referencedImageIDs = MarkdownImageAssetService.referencedIDs(in: text)
         textView.markdownImageAssets = Dictionary(
             uniqueKeysWithValues: imageAssets.compactMap { asset in
-                MarkdownImageAssetService.renderAsset(for: asset.id, in: imageAssets).map { (asset.id, $0) }
+                guard referencedImageIDs.contains(asset.id) else { return nil }
+                return MarkdownImageAssetService.renderAsset(for: asset.id, in: imageAssets).map { (asset.id, $0) }
             }
         )
         if textView.markdownTaskEmbeds != taskEmbedInfos {

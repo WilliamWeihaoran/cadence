@@ -67,12 +67,12 @@ struct CreateGoalSheet: View {
     }
 
     private var canSave: Bool {
-        PursuitAssignmentRules.canSaveGoal(title: title, pursuitID: selectedPursuitID)
+        PursuitAssignmentRules.canSaveMilestone(title: title, pursuitID: selectedPursuitID)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(isEditing ? "Edit Goal" : "New Goal")
+            Text(isEditing ? "Edit Milestone" : "New Milestone")
                 .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(Theme.text)
                 .padding(.horizontal, 24)
@@ -85,7 +85,7 @@ struct CreateGoalSheet: View {
                 VStack(alignment: .leading, spacing: 20) {
                     // Title
                     fieldLabel("Title")
-                    TextField("e.g. Ship Cadence goals, Finish ASA", text: $title)
+                    TextField("e.g. Pass Exam P, Read 12 books", text: $title)
                         .textFieldStyle(.plain)
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.text)
@@ -94,8 +94,7 @@ struct CreateGoalSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
 
-                    // Outcome / desc
-                    fieldLabel("Outcome")
+                    fieldLabel("Definition of Done")
                     TextField("What does done look like?", text: $desc)
                         .textFieldStyle(.plain)
                         .font(.system(size: 14))

@@ -165,12 +165,12 @@ enum GlobalSearchIndexSupport {
             let contextName = pursuit.context?.name ?? "No context"
             let goalCount = pursuit.goals?.count ?? 0
             let habitCount = pursuit.habits?.count ?? 0
-            guard matches(query: query, fields: [pursuit.title, pursuit.desc, contextName, pursuit.status.label]) else { return nil }
+            guard matches(query: query, fields: [pursuit.title, pursuit.desc, contextName, pursuit.status.label, pursuit.kind.label]) else { return nil }
             return GlobalSearchResult(
                 id: "pursuit-\(pursuit.id.uuidString)",
                 category: .pursuits,
                 title: pursuit.title,
-                subtitle: "\(contextName) • \(goalCount) goals • \(habitCount) habits",
+                subtitle: "\(contextName) • \(pursuit.kind.label) • \(goalCount) milestones • \(habitCount) habits",
                 icon: pursuit.icon,
                 tintHex: pursuit.colorHex,
                 destination: .pursuits
@@ -188,7 +188,7 @@ enum GlobalSearchIndexSupport {
                 category: .goals,
                 title: goal.title,
                 subtitle: "\(pursuitName.isEmpty ? contextName : pursuitName) • \(Int(goal.progress * 100))% complete",
-                icon: "target",
+                icon: "flag.fill",
                 tintHex: goal.colorHex,
                 destination: .goals
             )

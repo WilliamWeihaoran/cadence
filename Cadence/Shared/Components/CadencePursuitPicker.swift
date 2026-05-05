@@ -114,6 +114,7 @@ struct CadencePursuitPickerList: View {
         return sortedPursuits.filter {
             $0.title.localizedLowercase.contains(needle)
                 || $0.desc.localizedLowercase.contains(needle)
+                || $0.kind.label.localizedLowercase.contains(needle)
                 || ($0.context?.name.localizedLowercase.contains(needle) ?? false)
         }
     }
@@ -155,7 +156,7 @@ struct CadencePursuitPickerList: View {
                     row(
                         id: pursuit.id,
                         title: pursuit.title,
-                        subtitle: pursuit.context?.name ?? pursuit.status.label,
+                        subtitle: "\(pursuit.kind.label) • \(pursuit.context?.name ?? pursuit.status.label)",
                         icon: pursuit.icon,
                         colorHex: pursuit.colorHex
                     )

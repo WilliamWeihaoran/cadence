@@ -18,7 +18,7 @@ struct CadenceGoalPickerButton: View {
             HStack(spacing: style.iconLabelSpacing) {
                 selectedIcon
 
-                Text(selectedGoal?.title ?? "No linked goal")
+                Text(selectedGoal?.title ?? "No linked milestone")
                     .font(.system(size: style.fontSize, weight: .medium))
                     .foregroundStyle(selectedGoal == nil ? Theme.dim : Theme.text)
                     .lineLimit(1)
@@ -54,7 +54,7 @@ struct CadenceGoalPickerButton: View {
     @ViewBuilder
     private var selectedIcon: some View {
         if let selectedGoal {
-            Image(systemName: "target")
+            Image(systemName: "flag.fill")
                 .font(.system(size: style.iconSize, weight: .semibold))
                 .foregroundStyle(Color(hex: selectedGoal.colorHex))
                 .frame(width: style.iconBoxSize, height: style.iconBoxSize)
@@ -109,7 +109,7 @@ struct CadenceGoalPickerList: View {
     private var flattenedItems: [PickerItem] {
         var items: [PickerItem] = []
         if allowNone {
-            items.append(PickerItem(id: nil, label: "No linked goal"))
+            items.append(PickerItem(id: nil, label: "No linked milestone"))
         }
         items.append(contentsOf: filteredGoals.map { PickerItem(id: $0.id, label: $0.title) })
         return items
@@ -123,11 +123,11 @@ struct CadenceGoalPickerList: View {
 
             if filteredGoals.isEmpty && !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 if allowNone {
-                    row(id: nil, title: "No linked goal", subtitle: "Track independently", icon: "circle.dashed", colorHex: nil)
+                    row(id: nil, title: "No linked milestone", subtitle: "Track independently", icon: "circle.dashed", colorHex: nil)
                     Divider().background(Theme.borderSubtle).padding(.vertical, 2)
                 }
 
-                Text("No matching goals")
+                Text("No matching milestones")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.dim)
                     .padding(.horizontal, 14)
@@ -135,7 +135,7 @@ struct CadenceGoalPickerList: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 if allowNone {
-                    row(id: nil, title: "No linked goal", subtitle: "Track independently", icon: "circle.dashed", colorHex: nil)
+                    row(id: nil, title: "No linked milestone", subtitle: "Track independently", icon: "circle.dashed", colorHex: nil)
                     Divider().background(Theme.borderSubtle).padding(.vertical, 2)
                 }
 
@@ -144,7 +144,7 @@ struct CadenceGoalPickerList: View {
                         id: goal.id,
                         title: goal.title,
                         subtitle: goal.context?.name ?? goal.status.rawValue.capitalized,
-                        icon: "target",
+                        icon: "flag.fill",
                         colorHex: goal.colorHex
                     )
                 }
@@ -177,7 +177,7 @@ struct CadenceGoalPickerList: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
 
-            TextField("Search goals", text: $searchQuery)
+            TextField("Search milestones", text: $searchQuery)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.text)

@@ -110,6 +110,36 @@ enum PursuitStatus: String, Codable, CaseIterable, Hashable {
     }
 }
 
+enum PursuitKind: String, Codable, CaseIterable, Hashable {
+    case ongoing = "ongoing"
+    case completable = "completable"
+    case maintenance = "maintenance"
+
+    var label: String {
+        switch self {
+        case .ongoing: return "Ongoing"
+        case .completable: return "Completable"
+        case .maintenance: return "Maintenance"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .ongoing: return "Long-running growth"
+        case .completable: return "Has a finish line"
+        case .maintenance: return "Keep steady"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .ongoing: return "infinity"
+        case .completable: return "flag.fill"
+        case .maintenance: return "repeat"
+        }
+    }
+}
+
 enum GoalProgressType: String, Codable, CaseIterable, Hashable {
     case subtasks = "subtasks"
     case hours    = "hours"

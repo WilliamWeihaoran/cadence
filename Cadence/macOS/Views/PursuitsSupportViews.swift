@@ -25,13 +25,13 @@ struct PursuitUnassignedReviewCard: View {
                 Spacer()
             }
 
-            Text("Assign existing goals and habits to pursuits as you review them.")
+            Text("Assign existing milestones and habits to pursuits as you review them.")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.muted)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
-                Text("\(goalCount) goals")
+                Text("\(goalCount) milestones")
                 Text("\(habitCount) habits")
             }
             .font(.system(size: 11, weight: .semibold))
@@ -103,8 +103,9 @@ struct PursuitListCard: View {
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
                     HStack(spacing: 10) {
-                        Text("\(activeGoals.count) goals")
+                        Text("\(activeGoals.count) milestones")
                         Text("\(habits.count) habits")
+                        Text(pursuit.kind.label)
                         Text(pursuit.status.label)
                     }
                     .font(.system(size: 11, weight: .medium))
@@ -191,6 +192,7 @@ struct PursuitDetailView: View {
                             .font(.system(size: 26, weight: .bold))
                             .foregroundStyle(Theme.text)
                             .lineLimit(2)
+                        PursuitKindBadge(kind: pursuit.kind)
                         PursuitStatusBadge(status: pursuit.status)
                     }
                     Text(pursuit.desc.isEmpty ? "No direction yet" : pursuit.desc)
@@ -224,7 +226,7 @@ struct PursuitDetailView: View {
 
     private var signalRow: some View {
         HStack(spacing: 12) {
-            PursuitSignalTile(title: "Active Goals", value: "\(activeGoalCount)", icon: "target", color: Theme.green)
+            PursuitSignalTile(title: "Active Milestones", value: "\(activeGoalCount)", icon: "flag.fill", color: Theme.green)
             PursuitSignalTile(title: "Habits Today", value: dueHabitsToday.isEmpty ? "None due" : "\(doneHabitsToday)/\(dueHabitsToday.count)", icon: "flame.fill", color: Theme.amber)
             PursuitSignalTile(title: "Next Action", value: nextActionTitle ?? "None", icon: "checklist", color: Theme.blue)
         }
@@ -233,8 +235,8 @@ struct PursuitDetailView: View {
     private var commitmentActions: some View {
         HStack(spacing: 10) {
             CadenceActionButton(
-                title: "Add Goal",
-                systemImage: "target",
+                title: "Add Milestone",
+                systemImage: "flag.fill",
                 role: .secondary,
                 size: .compact,
                 tint: Theme.green,
@@ -258,9 +260,9 @@ struct PursuitDetailView: View {
 
     @ViewBuilder
     private var goalsSection: some View {
-        PursuitSection(title: "Goals", count: goals.count) {
+        PursuitSection(title: "Milestones", count: goals.count) {
             if goals.isEmpty {
-                PursuitEmptySectionText("No goals in this pursuit yet.")
+                PursuitEmptySectionText("No milestones in this pursuit yet.")
             } else {
                 VStack(spacing: 8) {
                     ForEach(goals) { goal in
@@ -358,7 +360,7 @@ private struct PursuitGoalRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "target")
+            Image(systemName: "flag.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color(hex: goal.colorHex))
                 .frame(width: 28, height: 28)
@@ -369,7 +371,7 @@ private struct PursuitGoalRow: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
-                Text(goal.desc.isEmpty ? "No outcome yet" : goal.desc)
+                Text(goal.desc.isEmpty ? "No definition of done yet" : goal.desc)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
                     .lineLimit(1)
@@ -453,6 +455,32 @@ private struct PursuitStatusBadge: View {
         case .active: return Theme.green
         case .paused: return Theme.amber
         case .done: return Theme.blue
+        }
+    }
+}
+
+private struct PursuitKindBadge: View {
+    let kind: PursuitKind
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: kind.systemImage)
+                .font(.system(size: 9, weight: .bold))
+            Text(kind.label)
+                .font(.system(size: 10, weight: .bold))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.12))
+        .clipShape(Capsule())
+    }
+
+    private var color: Color {
+        switch kind {
+        case .ongoing: return Theme.purple
+        case .completable: return Theme.green
+        case .maintenance: return Theme.blue
         }
     }
 }

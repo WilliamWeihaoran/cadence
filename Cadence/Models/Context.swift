@@ -1,7 +1,7 @@
 import SwiftData
 import Foundation
 
-/// Top-level life/work domain. Contains areas, projects, pursuits, goals, habits.
+/// Top-level life/work domain. Contains areas, projects, pursuits, milestones, and habits.
 @Model final class Context {
     var id: UUID = UUID()
     var name: String = ""

@@ -24,9 +24,29 @@ struct PursuitModelTests {
 
         let savedPursuit = try #require(try modelContext.fetch(FetchDescriptor<Pursuit>()).first)
         #expect(savedPursuit.context?.id == context.id)
+        #expect(savedPursuit.kind == .ongoing)
         #expect(savedPursuit.goals?.map(\.id).contains(goal.id) == true)
         #expect(savedPursuit.habits?.map(\.id).contains(habit.id) == true)
         #expect(context.pursuits?.map(\.id).contains(pursuit.id) == true)
+    }
+
+    @Test func pursuitKindCanRepresentOngoingOrFinishableDirections() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let ongoing = Pursuit(title: "Become more knowledgeable")
+        let completable = Pursuit(title: "Become an ASA actuary", kind: .completable)
+        let maintenance = Pursuit(title: "Stay healthy", kind: .maintenance)
+
+        modelContext.insert(ongoing)
+        modelContext.insert(completable)
+        modelContext.insert(maintenance)
+        try modelContext.save()
+
+        let saved = try modelContext.fetch(FetchDescriptor<Pursuit>())
+        #expect(saved.first { $0.id == ongoing.id }?.kind == .ongoing)
+        #expect(saved.first { $0.id == completable.id }?.kind == .completable)
+        #expect(saved.first { $0.id == maintenance.id }?.kind == .maintenance)
     }
 
     @Test func pursuitDoesNotReplaceLegacyHabitGoalLinkOrGoalProgress() throws {
@@ -54,11 +74,11 @@ struct PursuitModelTests {
     @Test func pursuitRequiredRulesBlockOrphanGoalAndHabitSaves() {
         let pursuitID = UUID()
 
-        #expect(PursuitAssignmentRules.canSaveGoal(title: "Read 12 books", pursuitID: pursuitID))
+        #expect(PursuitAssignmentRules.canSaveMilestone(title: "Read 12 books", pursuitID: pursuitID))
         #expect(PursuitAssignmentRules.canSaveHabit(title: "Read daily", pursuitID: pursuitID))
-        #expect(!PursuitAssignmentRules.canSaveGoal(title: "Read 12 books", pursuitID: nil))
+        #expect(!PursuitAssignmentRules.canSaveMilestone(title: "Read 12 books", pursuitID: nil))
         #expect(!PursuitAssignmentRules.canSaveHabit(title: "Read daily", pursuitID: nil))
-        #expect(!PursuitAssignmentRules.canSaveGoal(title: "   ", pursuitID: pursuitID))
+        #expect(!PursuitAssignmentRules.canSaveMilestone(title: "   ", pursuitID: pursuitID))
         #expect(!PursuitAssignmentRules.canSaveHabit(title: "", pursuitID: pursuitID))
     }
 
@@ -96,14 +116,14 @@ struct PursuitModelTests {
 
         let progressBeforeAssignment = goal.progress
         let completionCountBeforeAssignment = habit.completions?.count ?? 0
-        #expect(PursuitAssignmentRules.unassignedGoals(from: [goal]).map(\.id) == [goal.id])
+        #expect(PursuitAssignmentRules.unassignedMilestones(from: [goal]).map(\.id) == [goal.id])
         #expect(PursuitAssignmentRules.unassignedHabits(from: [habit]).map(\.id) == [habit.id])
 
         goal.pursuit = pursuit
         habit.pursuit = pursuit
         try modelContext.save()
 
-        #expect(PursuitAssignmentRules.unassignedGoals(from: [goal]).isEmpty)
+        #expect(PursuitAssignmentRules.unassignedMilestones(from: [goal]).isEmpty)
         #expect(PursuitAssignmentRules.unassignedHabits(from: [habit]).isEmpty)
         #expect(goal.progress == progressBeforeAssignment)
         #expect(habit.completions?.count == completionCountBeforeAssignment)

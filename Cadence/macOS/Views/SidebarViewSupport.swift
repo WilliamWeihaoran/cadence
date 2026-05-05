@@ -34,7 +34,7 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .inbox: return "tray.fill"
         case .calendar: return "calendar"
         case .pursuits: return "sparkles"
-        case .goals: return "target"
+        case .goals: return "flag.fill"
         case .habits: return "flame.fill"
         }
     }
@@ -47,7 +47,7 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .inbox: return "Inbox"
         case .calendar: return "Calendar"
         case .pursuits: return "Pursuits"
-        case .goals: return "Goals"
+        case .goals: return "Milestones"
         case .habits: return "Habits"
         }
     }

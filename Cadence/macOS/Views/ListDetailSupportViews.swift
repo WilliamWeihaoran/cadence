@@ -415,23 +415,23 @@ struct TabButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: tab.icon).font(.system(size: 12))
+                Image(systemName: tab.icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 14)
                 Text(tab.rawValue)
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
             }
             .foregroundStyle(isSelected ? Theme.blue : Theme.dim)
-            .frame(minWidth: 78, minHeight: 34)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 11)
+            .frame(height: 32)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 9)
-                    .fill(isSelected ? Theme.blue.opacity(0.12) : Color.clear)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Theme.blue.opacity(0.16) : Color.clear)
             )
-            .overlay(alignment: .bottom) {
-                if isSelected {
-                    Rectangle().fill(Theme.blue).frame(height: 2)
-                }
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
             }
         }
         .buttonStyle(.cadencePlain)

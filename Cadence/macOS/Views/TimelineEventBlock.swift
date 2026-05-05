@@ -242,13 +242,11 @@ struct TimelineEventBlock: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(Theme.surfaceElevated)
+                    .fill(item.calendarColor.opacity(isSelected ? 0.94 : (isHovered ? 0.90 : 0.84)))
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(item.calendarColor.opacity(isSelected ? 0.52 : (isHovered ? 0.44 : 0.36)))
+                    .fill(TimelineHoverVisuals.hoverFill(tint: .white, isHovered: isHovered && !isSelected, opacity: 0.06))
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(TimelineHoverVisuals.hoverFill(tint: item.calendarColor, isHovered: isHovered && !isSelected, opacity: 0.08))
-                RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(.white.opacity(isSelected ? 0.05 : 0.025))
+                    .fill(.white.opacity(isSelected ? 0.08 : 0.035))
             }
         )
         .overlay(

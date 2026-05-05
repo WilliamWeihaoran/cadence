@@ -143,31 +143,39 @@ private struct ListDetailView: View {
 
             // Tab bar
             HStack(spacing: 0) {
-                ForEach(ListDetailPage.allCases, id: \.self) { t in
-                    TabButton(tab: t, isSelected: tab == t) { tab = t }
+                HStack(spacing: 4) {
+                    ForEach(ListDetailPage.allCases, id: \.self) { t in
+                        TabButton(tab: t, isSelected: tab == t) { tab = t }
+                    }
                 }
+                .padding(4)
+                .background(Theme.surfaceElevated.opacity(0.38))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
                 Spacer()
                 if tab == .kanban, allowsSectionEditing {
-                    CadenceEnumPickerBadge(title: "Sort", selection: $kanbanSortField)
-                    CadenceEnumPickerBadge(title: "Order", selection: $kanbanSortDirection)
-                    Button {
-                        showArchivedKanbanColumns.toggle()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: showArchivedKanbanColumns ? "archivebox.fill" : "archivebox")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text(showArchivedKanbanColumns ? "Archived" : "Show Archived")
-                                .font(.system(size: 12, weight: .semibold))
+                    HStack(spacing: 6) {
+                        CadenceEnumPickerBadge(title: "Sort", selection: $kanbanSortField)
+                        CadenceEnumPickerBadge(title: "Order", selection: $kanbanSortDirection)
+                        Button {
+                            showArchivedKanbanColumns.toggle()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: showArchivedKanbanColumns ? "archivebox.fill" : "archivebox")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .frame(width: 14)
+                                Text(showArchivedKanbanColumns ? "Archived" : "Show Archived")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .foregroundStyle(showArchivedKanbanColumns ? Theme.blue : Theme.dim)
+                            .padding(.horizontal, 12)
+                            .frame(height: 32)
+                            .contentShape(Rectangle())
+                            .background(showArchivedKanbanColumns ? Theme.blue.opacity(0.16) : Theme.surfaceElevated.opacity(0.92))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
-                        .foregroundStyle(showArchivedKanbanColumns ? Theme.blue : Theme.dim)
-                        .frame(minHeight: 32)
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 7)
-                        .contentShape(Rectangle())
-                        .background(showArchivedKanbanColumns ? Theme.blue.opacity(0.16) : Theme.surfaceElevated.opacity(0.92))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .buttonStyle(.cadencePlain)
                     }
-                    .buttonStyle(.cadencePlain)
                     .padding(.trailing, 4)
                 }
             }

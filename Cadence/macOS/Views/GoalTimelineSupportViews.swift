@@ -263,7 +263,7 @@ struct GoalTimelineFilterPopover: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.dim)
-                TextField("Search goals", text: $searchText)
+                TextField("Search milestones", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.text)

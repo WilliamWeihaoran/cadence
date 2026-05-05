@@ -119,15 +119,15 @@ struct MonthDayCell: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             ZStack {
-                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                .fill(Theme.surfaceElevated)
-                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                .fill(event.calendarColor.opacity(0.34))
+                                RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                                    .fill(event.calendarColor.opacity(0.78))
+                                RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                                    .fill(.white.opacity(0.04))
                             }
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                .stroke(.white.opacity(0.06), lineWidth: 1)
+                                .stroke(event.calendarColor.opacity(0.62), lineWidth: 1)
                         )
                         .shadow(color: Color.black.opacity(0.08), radius: 4, y: 1)
                 }
@@ -269,14 +269,14 @@ struct AllDayEventChip: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                    .fill(Theme.surfaceElevated)
+                    .fill(eventColor.opacity(0.78))
                 RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                    .fill(eventColor.opacity(0.34))
+                    .fill(.white.opacity(0.04))
             }
         )
         .overlay(
             RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                .stroke(.white.opacity(0.06), lineWidth: 1)
+                .stroke(eventColor.opacity(0.62), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.08), radius: 4, y: 1)
             .draggable("allDayEvent:\(event.eventIdentifier ?? "")")

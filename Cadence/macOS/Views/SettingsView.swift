@@ -91,7 +91,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { pendingDeleteContext = nil }
         } message: {
-            Text("This permanently deletes the context and all its areas, projects, tasks, goals, and habits.")
+            Text("This permanently deletes the context and all its areas, projects, tasks, milestones, and habits.")
         }
         .sheet(isPresented: $showCreateContext) {
             CreateContextSheet()

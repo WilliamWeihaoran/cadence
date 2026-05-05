@@ -87,9 +87,11 @@ final class CalendarTimelineScrollState: ObservableObject {
 }
 
 final class CalendarEventDayCache {
+    private let maxCachedDays = 42
     private var cachedStoreVersion: Int?
     private var timedEventsByDate: [String: [EKEvent]] = [:]
     private var allDayEventsByDate: [String: [EKEvent]] = [:]
+    private var recentlyAccessedDateKeys: [String] = []
 
     func timedEvents(for date: Date, calendarManager: CalendarManager) -> [EKEvent] {
         guard calendarManager.isAuthorized else {
@@ -98,9 +100,11 @@ final class CalendarEventDayCache {
         }
         refreshIfNeeded(storeVersion: calendarManager.storeVersion)
         let key = DateFormatters.dateKey(from: date)
+        touch(key)
         if let cached = timedEventsByDate[key] { return cached }
         let events = calendarManager.fetchEvents(for: date)
         timedEventsByDate[key] = events
+        pruneIfNeeded()
         return events
     }
 
@@ -111,9 +115,11 @@ final class CalendarEventDayCache {
         }
         refreshIfNeeded(storeVersion: calendarManager.storeVersion)
         let key = DateFormatters.dateKey(from: date)
+        touch(key)
         if let cached = allDayEventsByDate[key] { return cached }
         let events = calendarManager.fetchAllDayEvents(for: date)
         allDayEventsByDate[key] = events
+        pruneIfNeeded()
         return events
     }
 
@@ -122,12 +128,29 @@ final class CalendarEventDayCache {
         cachedStoreVersion = storeVersion
         timedEventsByDate.removeAll(keepingCapacity: true)
         allDayEventsByDate.removeAll(keepingCapacity: true)
+        recentlyAccessedDateKeys.removeAll(keepingCapacity: true)
     }
 
     private func clear() {
         cachedStoreVersion = nil
         timedEventsByDate.removeAll(keepingCapacity: true)
         allDayEventsByDate.removeAll(keepingCapacity: true)
+        recentlyAccessedDateKeys.removeAll(keepingCapacity: true)
+    }
+
+    private func touch(_ key: String) {
+        recentlyAccessedDateKeys.removeAll { $0 == key }
+        recentlyAccessedDateKeys.append(key)
+    }
+
+    private func pruneIfNeeded() {
+        guard recentlyAccessedDateKeys.count > maxCachedDays else { return }
+        let staleKeys = recentlyAccessedDateKeys.prefix(recentlyAccessedDateKeys.count - maxCachedDays)
+        for key in staleKeys {
+            timedEventsByDate.removeValue(forKey: key)
+            allDayEventsByDate.removeValue(forKey: key)
+        }
+        recentlyAccessedDateKeys.removeFirst(recentlyAccessedDateKeys.count - maxCachedDays)
     }
 }
 #endif

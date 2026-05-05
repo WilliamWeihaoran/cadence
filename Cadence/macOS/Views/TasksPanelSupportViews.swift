@@ -735,7 +735,7 @@ struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>
                     .foregroundStyle(Theme.dim)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .frame(height: 32)
             .background(Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: 7))
         }

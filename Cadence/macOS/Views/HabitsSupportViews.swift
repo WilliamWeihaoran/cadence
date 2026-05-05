@@ -19,7 +19,7 @@ struct HabitTodayCockpit: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(openCount == 0 ? Theme.green : Theme.amber)
             Spacer()
-            Label(goalCoverage, systemImage: "target")
+            Label(goalCoverage, systemImage: "sparkles")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.blue)
         }
@@ -41,7 +41,7 @@ struct HabitSignalStrip: View {
         HStack(spacing: 10) {
             HabitInlineMetric(icon: "flame.fill", value: "\(streakingCount)", label: "streaking", color: Theme.amber)
             HabitInlineMetric(icon: "chart.bar.fill", value: "\(averageLast30Completion)%", label: "30d avg", color: Theme.blue)
-            HabitInlineMetric(icon: "target", value: "\(linkedCount)/\(totalCount)", label: "linked", color: Theme.green)
+            HabitInlineMetric(icon: "sparkles", value: "\(linkedCount)/\(totalCount)", label: "linked", color: Theme.green)
         }
     }
 }

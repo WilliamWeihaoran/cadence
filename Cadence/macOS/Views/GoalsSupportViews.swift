@@ -137,7 +137,7 @@ struct GoalMissionCard: View {
                                 .lineLimit(1)
                             GoalStatusBadge(status: goal.status)
                         }
-                        Text(goal.desc.isEmpty ? "No outcome yet" : goal.desc)
+                        Text(goal.desc.isEmpty ? "No definition of done yet" : goal.desc)
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.muted)
                             .lineLimit(1)
@@ -230,7 +230,7 @@ struct GoalInspectorView: View {
                 Spacer(minLength: 0)
             }
 
-            Text(goal.desc.isEmpty ? "No outcome yet" : goal.desc)
+            Text(goal.desc.isEmpty ? "No definition of done yet" : goal.desc)
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.muted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -290,7 +290,7 @@ struct GoalInspectorView: View {
                     Text("No lists attached")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                    Text("Attach one area or project. Its active tasks will count toward this goal.")
+                    Text("Attach one area or project. Its active tasks will count toward this milestone.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
@@ -744,10 +744,10 @@ struct GoalInlineEmpty: View {
 struct GoalsEmptyDetail: View {
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: "target")
+            Image(systemName: "flag.fill")
                 .font(.system(size: 32))
                 .foregroundStyle(Theme.dim)
-            Text("Select a goal")
+            Text("Select a milestone")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.text)
             Text("The inspector shows contributors, next actions, and momentum.")
@@ -766,7 +766,7 @@ extension Goal {
     var endDateDate: Date? { DateFormatters.ymd.date(from: endDate) }
 
     var rangeLabel: String {
-        guard let s = startDateDate, let e = endDateDate else { return "No target range" }
+        guard let s = startDateDate, let e = endDateDate else { return "No milestone range" }
         return "\(DateFormatters.shortDate.string(from: s)) - \(DateFormatters.shortDate.string(from: e))"
     }
 
@@ -775,7 +775,7 @@ extension Goal {
     }
 
     var daysSummary: String {
-        guard let end = endDateDate else { return "No target date" }
+        guard let end = endDateDate else { return "No milestone date" }
         let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: Date()), to: end).day ?? 0
         if status == .done { return "Completed" }
         if days < 0 { return "\(-days)d late" }

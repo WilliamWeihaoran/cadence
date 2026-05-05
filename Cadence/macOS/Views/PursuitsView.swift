@@ -20,6 +20,7 @@ struct PursuitsView: View {
             guard !query.isEmpty else { return true }
             return pursuit.title.lowercased().contains(query)
                 || pursuit.desc.lowercased().contains(query)
+                || pursuit.kind.label.lowercased().contains(query)
                 || (pursuit.context?.name.lowercased().contains(query) ?? false)
         }
     }
@@ -60,7 +61,7 @@ struct PursuitsView: View {
     }
 
     private var unassignedGoals: [Goal] {
-        PursuitAssignmentRules.unassignedGoals(from: goals)
+        PursuitAssignmentRules.unassignedMilestones(from: goals)
     }
 
     private var unassignedHabits: [Habit] {
@@ -126,7 +127,7 @@ struct PursuitsView: View {
                     Text("Pursuits")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(Theme.text)
-                    Text("Directions powered by goals and habits.")
+                    Text("Directions powered by milestones and habits.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.muted)
                 }
@@ -166,7 +167,7 @@ struct PursuitsView: View {
             Spacer()
             EmptyStateView(
                 message: searchText.isEmpty ? "No pursuits yet" : "No matching pursuits",
-                subtitle: searchText.isEmpty ? "Use pursuits for ongoing directions, then add goals and habits inside them." : "Try a different search.",
+                subtitle: searchText.isEmpty ? "Use pursuits for ongoing directions, then add milestones and habits inside them." : "Try a different search.",
                 icon: "sparkles"
             )
             Spacer()

@@ -59,7 +59,6 @@ struct NoteActionMenu: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
     @State private var payload: AIReviewPayload?
     @State private var errorMessage: String?
     @State private var isRunning = false
@@ -71,7 +70,7 @@ struct NoteActionMenu: View {
                     NoteExportService.export(note, as: .markdown)
                 }
                 Button("Export PDF") {
-                    NoteExportService.export(note, as: .pdf, imageAssets: imageAssets)
+                    NoteExportService.export(note, as: .pdf, imageAssets: imageAssetsReferencedByNote())
                 }
                 Button("Copy Note Link") {
                     NoteActionSupport.copyMarkdownLink(to: note)
@@ -178,6 +177,13 @@ struct NoteActionMenu: View {
         } message: {
             Text(errorMessage ?? "")
         }
+    }
+
+    private func imageAssetsReferencedByNote() -> [MarkdownImageAsset] {
+        let referencedIDs = MarkdownImageAssetService.referencedIDs(in: note.content)
+        guard !referencedIDs.isEmpty else { return [] }
+        let descriptor = FetchDescriptor<MarkdownImageAsset>()
+        return ((try? modelContext.fetch(descriptor)) ?? []).filter { referencedIDs.contains($0.id) }
     }
 
     private func runSummary() {

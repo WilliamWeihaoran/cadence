@@ -15,6 +15,7 @@ struct CreatePursuitSheet: View {
     @State private var selectedIcon = "sparkles"
     @State private var selectedColor = "#a78bfa"
     @State private var selectedContextID: UUID?
+    @State private var selectedKind: PursuitKind = .ongoing
     @State private var selectedStatus: PursuitStatus = .active
     @Environment(\.modelContext) private var modelContext
 
@@ -26,6 +27,7 @@ struct CreatePursuitSheet: View {
         _selectedIcon = State(initialValue: pursuit?.icon ?? "sparkles")
         _selectedColor = State(initialValue: pursuit?.colorHex ?? "#a78bfa")
         _selectedContextID = State(initialValue: pursuit?.context?.id ?? context?.id)
+        _selectedKind = State(initialValue: pursuit?.kind ?? .ongoing)
         _selectedStatus = State(initialValue: pursuit?.status ?? .active)
     }
 
@@ -71,6 +73,9 @@ struct CreatePursuitSheet: View {
                         contexts: allContexts,
                         selectedID: $selectedContextID
                     )
+
+                    fieldLabel("Kind")
+                    PursuitKindSection(selection: $selectedKind)
 
                     if isEditing {
                         fieldLabel("Status")
@@ -125,6 +130,7 @@ struct CreatePursuitSheet: View {
         pursuit.desc = desc.trimmingCharacters(in: .whitespacesAndNewlines)
         pursuit.icon = selectedIcon
         pursuit.colorHex = selectedColor
+        pursuit.kind = selectedKind
         pursuit.status = selectedStatus
         pursuit.context = selectedContextID.flatMap { id in allContexts.first { $0.id == id } }
 
@@ -135,6 +141,68 @@ struct CreatePursuitSheet: View {
 
         onSave?(pursuit)
         dismiss()
+    }
+}
+
+private struct PursuitKindSection: View {
+    @Binding var selection: PursuitKind
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(PursuitKind.allCases, id: \.self) { kind in
+                kindButton(kind)
+            }
+        }
+    }
+
+    private func kindButton(_ kind: PursuitKind) -> some View {
+        let isSelected = selection == kind
+        let tint = color(for: kind)
+
+        return Button {
+            selection = kind
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: kind.systemImage)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isSelected ? .white : tint)
+                    .frame(width: 22, height: 22)
+                    .background(isSelected ? tint : tint.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(kind.label)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                        .lineLimit(1)
+                    Text(kind.detail)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(isSelected ? tint.opacity(0.12) : Theme.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(isSelected ? tint.opacity(0.45) : Theme.borderSubtle, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 9))
+        }
+        .buttonStyle(.cadencePlain)
+    }
+
+    private func color(for kind: PursuitKind) -> Color {
+        switch kind {
+        case .ongoing: return Theme.purple
+        case .completable: return Theme.green
+        case .maintenance: return Theme.blue
+        }
     }
 }
 

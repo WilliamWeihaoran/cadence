@@ -121,7 +121,7 @@ extension Habit {
 
     var thisWeekSummary: String {
         if frequencyType == .timesPerWeek {
-            return "Goal \(targetCount) times"
+            return "Target \(targetCount) times"
         }
         return "So far this week"
     }

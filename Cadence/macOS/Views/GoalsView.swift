@@ -50,7 +50,7 @@ struct GoalsView: View {
                 )
             }
         }
-        let unassigned = PursuitAssignmentRules.unassignedGoals(from: filteredGoals)
+        let unassigned = PursuitAssignmentRules.unassignedMilestones(from: filteredGoals)
         if !unassigned.isEmpty {
             groups.append(
                 GoalMissionGroup(
@@ -159,17 +159,17 @@ struct GoalsView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Goals")
+                    Text("Milestones")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(Theme.text)
-                    Text("Finish lines across pursuits.")
+                    Text("Finish lines and stages across pursuits.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.muted)
                 }
                 Spacer(minLength: 20)
                 GoalsViewModeToggle(selection: goalsViewModeBinding)
                 CadenceActionButton(
-                    title: "New Goal",
+                    title: "New Milestone",
                     systemImage: "plus",
                     role: .primary,
                     size: .regular
@@ -183,7 +183,7 @@ struct GoalsView: View {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.dim)
-                    TextField("Search goals", text: $searchText)
+                    TextField("Search milestones", text: $searchText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.text)
@@ -219,9 +219,9 @@ struct GoalsView: View {
         Group {
             if goalGroups.isEmpty {
                 EmptyStateView(
-                    message: searchText.isEmpty ? "No goals yet" : "No matching goals",
-                    subtitle: searchText.isEmpty ? "Create a Pursuit first, then add a goal inside it." : "Try a different search or status.",
-                    icon: "target"
+                    message: searchText.isEmpty ? "No milestones yet" : "No matching milestones",
+                    subtitle: searchText.isEmpty ? "Create a Pursuit first, then add a milestone inside it." : "Try a different search or status.",
+                    icon: "flag.fill"
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

@@ -185,7 +185,7 @@ struct HabitsView: View {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.dim)
-                        TextField("Search habits, goals, frequency, context", text: $searchText)
+                        TextField("Search habits, pursuits, frequency, context", text: $searchText)
                             .textFieldStyle(.plain)
                             .font(.system(size: 13))
                             .foregroundStyle(Theme.text)

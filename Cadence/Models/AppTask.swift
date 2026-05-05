@@ -56,7 +56,7 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
     }
 }
 
-/// A concrete action item. Lives inside an Area, Project, Goal, or as an inbox item.
+/// A concrete action item. Lives inside an Area, Project, Milestone, or as an inbox item.
 @Model final class AppTask {
     var id: UUID = UUID()
     var title: String = ""
