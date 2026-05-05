@@ -53,28 +53,43 @@ enum CalendarPageDataSupport {
         monthGridResetNonce: inout Int,
         didRestoreTimelineScroll: inout Bool,
         visibleTimelineDayIndex: inout Int?,
-        rememberedDateKey: inout String,
+        anchorDateKey: inout String,
         bufferStart: Date,
         todayDayIdx: Int,
-        calendar: Calendar
+        calendar: Calendar,
+        currentMonthStart: Date? = nil
     ) {
+        let resolvedCurrentMonthStart = currentMonthStart ?? CalendarMonthGridSupport.currentMonthStart(calendar: calendar)
+
+        if oldMode != .month,
+           let visibleTimelineDayIndex,
+           let visibleDate = calendar.date(byAdding: .day, value: visibleTimelineDayIndex, to: bufferStart) {
+            anchorDateKey = DateFormatters.dateKey(from: visibleDate)
+        }
+
         if newMode == .month {
-            visibleMonthIdx = 60
+            visibleMonthIdx = CalendarPageStateSupport.monthIndexForTimelineAnchor(
+                anchorDateKey: anchorDateKey,
+                currentMonthStart: resolvedCurrentMonthStart,
+                calendar: calendar
+            )
             monthGridResetNonce += 1
             return
         }
 
         if oldMode == .month {
-            let targetDay = CalendarPageStateSupport.timelineDayIndexForMonthViewReturn(
+            anchorDateKey = CalendarPageStateSupport.dateKeyForVisibleMonth(
                 visibleMonthIdx: visibleMonthIdx,
+                currentMonthStart: resolvedCurrentMonthStart,
+                calendar: calendar
+            )
+            let targetDay = CalendarPageStateSupport.timelineDayIndex(
+                anchorDateKey: anchorDateKey,
                 bufferStart: bufferStart,
                 todayDayIdx: todayDayIdx,
                 calendar: calendar
             )
             visibleTimelineDayIndex = targetDay
-            if let targetDate = calendar.date(byAdding: .day, value: targetDay, to: bufferStart) {
-                rememberedDateKey = DateFormatters.dateKey(from: targetDate)
-            }
         }
 
         didRestoreTimelineScroll = false

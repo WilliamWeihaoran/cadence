@@ -44,10 +44,10 @@ enum CalendarPageInteractionSupport {
         externalJumpDayIndex: inout Int?,
         externalJumpHour: inout Int?,
         externalJumpToken: inout UUID?,
-        rememberedDateKey: inout String,
+        anchorDateKey: inout String,
         clearRequest: () -> Void
     ) {
-        rememberedDateKey = request.dateKey
+        anchorDateKey = request.dateKey
         let target = CalendarPageStateSupport.timelineJumpTarget(
             request: request,
             bufferStart: bufferStart,

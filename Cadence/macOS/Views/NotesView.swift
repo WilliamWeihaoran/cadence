@@ -446,6 +446,7 @@ private struct WeeklyNoteListRow: View {
 struct MeetingNoteListRow: View {
     let note: Note
     let isSelected: Bool
+    var showsPreview: Bool = true
 
     private var preview: String {
         note.content.components(separatedBy: "\n")
@@ -472,10 +473,12 @@ struct MeetingNoteListRow: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.muted)
                 .lineLimit(1)
-            Text(preview)
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.dim)
-                .lineLimit(1)
+            if showsPreview {
+                Text(preview)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+            }
             CompactTagStrip(tags: note.sortedTags, limit: 3)
         }
         .padding(.horizontal, 12)

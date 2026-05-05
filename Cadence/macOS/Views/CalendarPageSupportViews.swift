@@ -39,39 +39,150 @@ struct CalendarPageToolbar: View {
                     .animation(.none, value: calendarTitleLabel)
             }
             Spacer()
-            Button("Today", action: scrollToToday)
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.blue)
-                .frame(minWidth: 70, minHeight: 30)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .contentShape(Rectangle())
-                .background(Theme.blue.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 5))
 
-            TimelineZoomControl(zoomLevel: $zoomLevel, range: 1...3)
+            CalendarViewModeControl(viewMode: viewMode, setViewMode: setViewMode)
 
-            HStack(spacing: 2) {
-                ForEach(CalViewMode.allCases, id: \.self) { mode in
-                    Button(mode.rawValue) { setViewMode(mode) }
-                        .buttonStyle(.cadencePlain)
-                        .font(.system(size: 11, weight: viewMode == mode ? .semibold : .regular))
-                        .foregroundStyle(viewMode == mode ? Theme.blue : Theme.dim)
-                        .frame(minWidth: 78, minHeight: 30)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .contentShape(Rectangle())
-                        .background(viewMode == mode ? Theme.blue.opacity(0.12) : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                }
+            if viewMode != .month {
+                CalendarToolbarZoomControl(zoomLevel: $zoomLevel, range: 1...3)
             }
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+
+            CalendarGhostButton(title: "Today", systemImage: "location.fill", action: scrollToToday)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.vertical, 12)
         .background(Theme.surface)
+    }
+}
+
+private struct CalendarViewModeControl: View {
+    let viewMode: CalViewMode
+    let setViewMode: (CalViewMode) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(CalViewMode.allCases, id: \.self) { mode in
+                Button { setViewMode(mode) } label: {
+                    Text(mode.rawValue)
+                        .font(.system(size: 11, weight: viewMode == mode ? .semibold : .medium))
+                        .foregroundStyle(viewMode == mode ? Theme.blue : Theme.dim)
+                        .frame(minWidth: 68, minHeight: 28)
+                        .padding(.horizontal, 8)
+                        .contentShape(Rectangle())
+                        .background(
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(viewMode == mode ? Theme.blue.opacity(0.10) : Color.clear)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7)
+                                .stroke(viewMode == mode ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.cadencePlain)
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9)
+                        .stroke(Theme.borderSubtle.opacity(0.18), lineWidth: 1)
+                )
+        )
+    }
+}
+
+private struct CalendarToolbarZoomControl: View {
+    @Binding var zoomLevel: Int
+    let range: ClosedRange<Int>
+
+    var body: some View {
+        HStack(spacing: 6) {
+            CalendarIconGhostButton(
+                systemImage: "minus",
+                isEnabled: zoomLevel > range.lowerBound
+            ) {
+                if zoomLevel > range.lowerBound { zoomLevel -= 1 }
+            }
+
+            Text("\(zoomLevel)x")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .frame(minWidth: 24)
+
+            CalendarIconGhostButton(
+                systemImage: "plus",
+                isEnabled: zoomLevel < range.upperBound
+            ) {
+                if zoomLevel < range.upperBound { zoomLevel += 1 }
+            }
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9)
+                        .stroke(Theme.borderSubtle.opacity(0.18), lineWidth: 1)
+                )
+        )
+    }
+}
+
+private struct CalendarGhostButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 10, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(Theme.blue)
+            .frame(minHeight: 28)
+            .padding(.horizontal, 12)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(Theme.blue.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 9)
+                    .stroke(Theme.blue.opacity(0.24), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.cadencePlain)
+    }
+}
+
+private struct CalendarIconGhostButton: View {
+    let systemImage: String
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(isEnabled ? Theme.dim : Theme.dim.opacity(0.32))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+                .background(
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7)
+                        .stroke(Theme.borderSubtle.opacity(isEnabled ? 0.18 : 0.08), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.cadencePlain)
+        .disabled(!isEnabled)
     }
 }
 
@@ -147,7 +258,7 @@ struct CalendarTimelineViewport: View {
     let viewMode: CalViewMode
     @Binding var zoomLevel: Int
     @Binding var rememberedScrollHour: Int
-    @Binding var rememberedDateKey: String
+    @Binding var anchorDateKey: String
     let bufferStart: Date
     let allTasks: [AppTask]
     let allBundles: [TaskBundle]
@@ -232,7 +343,7 @@ struct CalendarTimelineViewport: View {
                             totalDaysWidth: viewportMetrics.totalDaysWidth,
                             timelineViewportWidth: viewportMetrics.timelineViewportWidth,
                             todayDayIdx: todayDayIdx,
-                            rememberedDateKey: $rememberedDateKey,
+                            anchorDateKey: $anchorDateKey,
                             visibleTimelineDayIndex: $visibleTimelineDayIndex,
                             isRestoringHorizontalScroll: $isRestoringHorizontalScroll,
                             didRestoreTimelineScroll: $didRestoreTimelineScroll,

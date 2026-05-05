@@ -6,25 +6,17 @@ struct ListTasksView: View {
     let tasks: [AppTask]
     var area: Area?
     var project: Project?
-    @Environment(\.modelContext) private var modelContext
+    let sortField: TaskSortField
+    let sortDirection: TaskSortDirection
+    let groupingMode: TaskGroupingMode
+
+    @Environment(TaskCreationManager.self) private var taskCreationManager
     @Query(sort: \AppTask.createdAt, order: .reverse) private var allTasks: [AppTask]
-    @State private var newTitle = ""
-    @State private var selectedSectionName = TaskSectionDefaults.defaultName
-    @State private var groupingMode: TaskGroupingMode = .byDate
-    @State private var sortField: TaskSortField = .custom
-    @State private var sortDirection: TaskSortDirection = .ascending
     @State private var collapsedGroupIDs: Set<String> = []
     @State private var isCompletedCollapsed = true
     @State private var frozenTaskOrder: [AppTask]? = nil
     @State private var frozenGroupedTasks: [FrozenTaskGroupSnapshot]? = nil
     @State private var dragOverTaskID: UUID? = nil
-
-    private var udKeyPrefix: String {
-        if let a = area { return "list_\(a.id.uuidString)" }
-        if let p = project { return "list_\(p.id.uuidString)" }
-        return "list_generic"
-    }
-    @FocusState private var addFocused: Bool
 
     private var activeTasks: [AppTask] {
         let sorted = tasks.filter { !$0.isDone && !$0.isCancelled }.taskSorted(by: sortField, direction: sortDirection)
@@ -86,66 +78,63 @@ struct ListTasksView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "plus.circle.fill").foregroundStyle(Theme.blue).font(.system(size: 13))
-                TextField("Add a task…", text: $newTitle)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.text)
-                    .focused($addFocused)
-                    .onSubmit { addTask() }
-                TaskSectionPickerBadge(selection: $selectedSectionName, sections: sectionNames)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-            .background(Theme.surfaceElevated)
+        ZStack(alignment: .bottomTrailing) {
+            VStack(spacing: 0) {
+                List {
+                    if activeTasks.isEmpty && doneTasks.isEmpty {
+                        EmptyStateView(message: "No tasks", subtitle: "Create a task to get started", icon: "checkmark.circle")
+                            .padding(.top, 40)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
+                    ForEach(groupedActiveTasks) { group in
+                        ListTasksGroupSectionView(
+                            group: group,
+                            isCollapsed: collapsedGroupIDs.contains(group.id),
+                            overdueCount: overdueCount(in: group.tasks),
+                            regularCount: regularCount(in: group.tasks),
+                            allTasks: allTasks,
+                            dragOverTaskID: $dragOverTaskID,
+                            onToggle: { toggleGroup(group.id) },
+                            onReorderTask: reorderTask
+                        )
+                    }
 
-            HStack(spacing: 8) {
-                CadenceEnumPickerBadge(title: "Sort", selection: $sortField)
-                CadenceEnumPickerBadge(title: "Order", selection: $sortDirection)
-                CadenceEnumPickerBadge(title: "Group", selection: $groupingMode)
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-            .background(Theme.surface)
-
-            Divider().background(Theme.borderSubtle)
-
-            List {
-                if activeTasks.isEmpty && doneTasks.isEmpty {
-                    EmptyStateView(message: "No tasks", subtitle: "Add a task above", icon: "checkmark.circle")
-                        .padding(.top, 40)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
+                    if !doneTasks.isEmpty {
+                        ListTasksCompletedSectionView(
+                            tasks: doneTasks,
+                            allTasks: allTasks,
+                            isCollapsed: isCompletedCollapsed,
+                            onToggle: { isCompletedCollapsed.toggle() }
+                        )
+                    }
                 }
-                ForEach(groupedActiveTasks) { group in
-                    ListTasksGroupSectionView(
-                        group: group,
-                        isCollapsed: collapsedGroupIDs.contains(group.id),
-                        overdueCount: overdueCount(in: group.tasks),
-                        regularCount: regularCount(in: group.tasks),
-                        allTasks: allTasks,
-                        dragOverTaskID: $dragOverTaskID,
-                        onToggle: { toggleGroup(group.id) },
-                        onReorderTask: reorderTask
-                    )
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .safeAreaInset(edge: .bottom) {
+                    Color.clear.frame(height: 72)
                 }
-
-                if !doneTasks.isEmpty {
-                    ListTasksCompletedSectionView(
-                        tasks: doneTasks,
-                        allTasks: allTasks,
-                        isCollapsed: isCompletedCollapsed,
-                        onToggle: { isCompletedCollapsed.toggle() }
-                    )
-                }
+                .cadenceSoftPageBounce()
+                .animation(.easeOut(duration: 0.26), value: activeTasks.map(\.id))
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .cadenceSoftPageBounce()
-            .animation(.easeOut(duration: 0.26), value: activeTasks.map(\.id))
+
+            Button {
+                taskCreationManager.present(
+                    container: taskContainerSelection,
+                    sectionName: sectionNames.first ?? TaskSectionDefaults.defaultName
+                )
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 54, height: 54)
+                    .background(Theme.blue)
+                    .clipShape(Circle())
+                    .shadow(color: Theme.blue.opacity(0.32), radius: 18, x: 0, y: 8)
+            }
+            .buttonStyle(.cadencePlain)
+            .padding(.trailing, 24)
+            .padding(.bottom, 24)
         }
         .background(
             Color.clear
@@ -157,23 +146,13 @@ struct ListTasksView: View {
         .background(Theme.bg)
         .onAppear {
             isCompletedCollapsed = true
-            if !sectionNames.contains(where: { $0.caseInsensitiveCompare(selectedSectionName) == .orderedSame }) {
-                selectedSectionName = sectionNames.first ?? TaskSectionDefaults.defaultName
-            }
-            let ud = UserDefaults.standard
-            if let raw = ud.string(forKey: "\(udKeyPrefix)_sortField"), let v = TaskSortField(rawValue: raw) { sortField = v }
-            if let raw = ud.string(forKey: "\(udKeyPrefix)_sortDir"), let v = TaskSortDirection(rawValue: raw) { sortDirection = v }
-            if let raw = ud.string(forKey: "\(udKeyPrefix)_grouping"), let v = TaskGroupingMode(rawValue: raw) { groupingMode = v }
         }
-        .onChange(of: sortField) { _, v in UserDefaults.standard.set(v.rawValue, forKey: "\(udKeyPrefix)_sortField") }
-        .onChange(of: sortDirection) { _, v in UserDefaults.standard.set(v.rawValue, forKey: "\(udKeyPrefix)_sortDir") }
-        .onChange(of: groupingMode) { _, v in UserDefaults.standard.set(v.rawValue, forKey: "\(udKeyPrefix)_grouping") }
         .background {
             TaskGroupFreezeObserver(
                 frozenOrder: $frozenTaskOrder,
                 frozenGroups: $frozenGroupedTasks,
-                naturalTasks: tasks.filter { !$0.isDone && !$0.isCancelled }.taskSorted(by: sortField, direction: sortDirection)
-                ,groupSnapshot: groupedActiveTasks.map { group in
+                naturalTasks: tasks.filter { !$0.isDone && !$0.isCancelled }.taskSorted(by: sortField, direction: sortDirection),
+                groupSnapshot: groupedActiveTasks.map { group in
                     FrozenTaskGroupSnapshot(
                         id: group.id,
                         title: group.title,
@@ -185,17 +164,14 @@ struct ListTasksView: View {
         }
     }
 
-    private func addTask() {
-        let t = newTitle.trimmingCharacters(in: .whitespaces)
-        guard !t.isEmpty else { return }
-        let task = AppTask(title: t)
-        task.area = area
-        task.project = project
-        task.context = area?.context ?? project?.context
-        task.sectionName = selectedSectionName
-        task.order = tasks.count
-        modelContext.insert(task)
-        newTitle = ""
+    private var taskContainerSelection: TaskContainerSelection {
+        if let area {
+            return .area(area.id)
+        }
+        if let project {
+            return .project(project.id)
+        }
+        return .inbox
     }
 
     private func reorderTask(droppedID: UUID, targetID: UUID) {

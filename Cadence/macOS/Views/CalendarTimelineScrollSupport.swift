@@ -15,20 +15,20 @@ enum CalendarTimelineScrollSupport {
     static func applyTodayHorizontalJump(
         todayDayIdx: Int,
         colWidth: CGFloat,
-        rememberedDateKey: Binding<String>,
+        anchorDateKey: Binding<String>,
         visibleTimelineDayIndex: Binding<Int?>,
         isRestoringHorizontalScroll: Binding<Bool>,
         timelineScrollState: CalendarTimelineScrollState,
         hProxy: ScrollViewProxy
     ) {
-        rememberedDateKey.wrappedValue = DateFormatters.todayKey()
+        anchorDateKey.wrappedValue = DateFormatters.todayKey()
         visibleTimelineDayIndex.wrappedValue = todayDayIdx
         isRestoringHorizontalScroll.wrappedValue = true
         timelineScrollState.jumpHeaderOffset(to: -CGFloat(todayDayIdx) * colWidth)
         DispatchQueue.main.async {
             hProxy.scrollTo("day_\(todayDayIdx)", anchor: .leading)
             timelineScrollState.jumpHeaderOffset(to: -CGFloat(todayDayIdx) * colWidth)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 isRestoringHorizontalScroll.wrappedValue = false
             }
         }
@@ -51,6 +51,16 @@ enum CalendarTimelineScrollSupport {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
             isRestoringHorizontalScroll.wrappedValue = false
         }
+    }
+
+    static func shouldFinishHorizontalJump(
+        offsetX: CGFloat,
+        targetDay: Int?,
+        colWidth: CGFloat
+    ) -> Bool {
+        guard let targetDay else { return false }
+        let targetX = CGFloat(targetDay) * max(colWidth, 1)
+        return abs(offsetX - targetX) <= max(1, colWidth * 0.01)
     }
 
     static func applyTodayVerticalJump(

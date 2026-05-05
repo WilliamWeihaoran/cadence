@@ -2,14 +2,27 @@
 import SwiftUI
 
 struct CalendarPageStateSupport {
+    static let todayMonthIndex = 60
+
     static func visibleMonthLabel(visibleMonthIdx: Int, calendar: Calendar) -> String {
         let currentMonthStart: Date = {
             var comps = calendar.dateComponents([.year, .month], from: Date())
             comps.day = 1
             return calendar.date(from: comps) ?? Date()
         }()
-        let month = calendar.date(byAdding: .month, value: visibleMonthIdx - 60, to: currentMonthStart) ?? Date()
+        let month = calendar.date(byAdding: .month, value: visibleMonthIdx - todayMonthIndex, to: currentMonthStart) ?? Date()
         return DateFormatters.monthYear.string(from: month)
+    }
+
+    static func timelineDayIndex(
+        anchorDateKey: String,
+        bufferStart: Date,
+        todayDayIdx: Int,
+        calendar: Calendar
+    ) -> Int {
+        guard let anchorDate = DateFormatters.date(from: anchorDateKey) else { return todayDayIdx }
+        let day = calendar.dateComponents([.day], from: bufferStart, to: calendar.startOfDay(for: anchorDate)).day ?? todayDayIdx
+        return min(max(day, 0), calRenderDays - 1)
     }
 
     static func rememberedTimelineDayIndex(
@@ -18,29 +31,64 @@ struct CalendarPageStateSupport {
         todayDayIdx: Int,
         calendar: Calendar
     ) -> Int {
-        guard let rememberedDate = DateFormatters.date(from: rememberedDateKey) else { return todayDayIdx }
-        let day = calendar.dateComponents([.day], from: bufferStart, to: calendar.startOfDay(for: rememberedDate)).day ?? todayDayIdx
-        return min(max(day, 0), calRenderDays - 1)
+        timelineDayIndex(
+            anchorDateKey: rememberedDateKey,
+            bufferStart: bufferStart,
+            todayDayIdx: todayDayIdx,
+            calendar: calendar
+        )
+    }
+
+    static func monthIndexForTimelineAnchor(
+        anchorDateKey: String,
+        currentMonthStart: Date,
+        todayMonthIdx: Int = todayMonthIndex,
+        calendar: Calendar
+    ) -> Int {
+        guard let anchorDate = DateFormatters.date(from: anchorDateKey) else { return todayMonthIdx }
+        return monthIndex(
+            for: anchorDate,
+            currentMonthStart: currentMonthStart,
+            todayMonthIdx: todayMonthIdx,
+            calendar: calendar
+        )
+    }
+
+    static func dateKeyForVisibleMonth(
+        visibleMonthIdx: Int,
+        todayMonthIdx: Int = todayMonthIndex,
+        currentMonthStart: Date,
+        calendar: Calendar,
+        today: Date = Date()
+    ) -> String {
+        if visibleMonthIdx == todayMonthIdx {
+            return DateFormatters.dateKey(from: today)
+        }
+
+        let targetMonth = calendar.date(
+            byAdding: .month,
+            value: visibleMonthIdx - todayMonthIdx,
+            to: currentMonthStart
+        ) ?? currentMonthStart
+        return DateFormatters.dateKey(from: targetMonth)
     }
 
     static func timelineDayIndexForMonthViewReturn(
         visibleMonthIdx: Int,
-        todayMonthIdx: Int = 60,
+        todayMonthIdx: Int = todayMonthIndex,
         bufferStart: Date,
         todayDayIdx: Int,
         calendar: Calendar,
         today: Date = Date()
     ) -> Int {
-        let targetDate: Date
-        if visibleMonthIdx == todayMonthIdx {
-            targetDate = calendar.startOfDay(for: today)
-        } else {
-            var currentMonthComponents = calendar.dateComponents([.year, .month], from: today)
-            currentMonthComponents.day = 1
-            let currentMonthStart = calendar.date(from: currentMonthComponents) ?? today
-            targetDate = calendar.date(byAdding: .month, value: visibleMonthIdx - todayMonthIdx, to: currentMonthStart) ?? today
-        }
-
+        let currentMonthStart = monthStart(for: today, calendar: calendar)
+        let targetDate = visibleMonthIdx == todayMonthIdx
+            ? today
+            : (calendar.date(
+                byAdding: .month,
+                value: visibleMonthIdx - todayMonthIdx,
+                to: currentMonthStart
+            ) ?? currentMonthStart)
         let day = calendar.dateComponents([.day], from: bufferStart, to: calendar.startOfDay(for: targetDate)).day ?? todayDayIdx
         return min(max(day, 0), calRenderDays - 1)
     }
@@ -48,7 +96,7 @@ struct CalendarPageStateSupport {
     static func restoreTimelineScrollIfNeeded(
         didRestoreTimelineScroll: inout Bool,
         rememberedScrollHour: Int,
-        rememberedDateKey: String,
+        anchorDateKey: String,
         bufferStart: Date,
         todayDayIdx: Int,
         visibleTimelineDayIndex: inout Int?,
@@ -66,7 +114,7 @@ struct CalendarPageStateSupport {
         let fallbackHour = max(calStartHour, currentHour - 1)
         let scrollHour = rememberedScrollHour >= calStartHour ? rememberedScrollHour : fallbackHour
         let targetDay = rememberedTimelineDayIndex(
-            rememberedDateKey: rememberedDateKey,
+            rememberedDateKey: anchorDateKey,
             bufferStart: bufferStart,
             todayDayIdx: todayDayIdx,
             calendar: Calendar.current

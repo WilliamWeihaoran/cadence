@@ -225,13 +225,79 @@ struct CadenceTests {
             viewMode: .week,
             visibleMonthIdx: 60,
             visibleTimelineDayIndex: 12,
-            rememberedDateKey: "2026-04-20",
+            anchorDateKey: "2026-04-20",
             bufferStart: bufferStart,
             todayDayIdx: 0,
             calendar: calendar
         )
 
         #expect(label == "May 2026")
+    }
+
+    @Test func calendarMonthModeOpensMonthContainingTimelineAnchor() throws {
+        let calendar = Calendar.current
+
+        let today = try #require(calendar.date(from: DateComponents(year: 2026, month: 5, day: 5, hour: 12)))
+        let currentMonthStart = monthStart(for: today, calendar: calendar)
+
+        let juneIndex = CalendarPageStateSupport.monthIndexForTimelineAnchor(
+            anchorDateKey: "2026-06-18",
+            currentMonthStart: currentMonthStart,
+            calendar: calendar
+        )
+
+        #expect(juneIndex == 61)
+    }
+
+    @Test func calendarMonthReturnAnchorsVisibleMonth() throws {
+        let calendar = Calendar.current
+
+        let today = try #require(calendar.date(from: DateComponents(year: 2026, month: 5, day: 5, hour: 12)))
+        let currentMonthStart = monthStart(for: today, calendar: calendar)
+
+        let previousMonthKey = CalendarPageStateSupport.dateKeyForVisibleMonth(
+            visibleMonthIdx: 59,
+            currentMonthStart: currentMonthStart,
+            calendar: calendar,
+            today: today
+        )
+        let currentMonthKey = CalendarPageStateSupport.dateKeyForVisibleMonth(
+            visibleMonthIdx: 60,
+            currentMonthStart: currentMonthStart,
+            calendar: calendar,
+            today: today
+        )
+
+        #expect(previousMonthKey == "2026-04-01")
+        #expect(currentMonthKey == "2026-05-05")
+    }
+
+    @Test func calendarViewModeChangeCommitsVisibleTimelineDayBeforeOpeningMonth() throws {
+        let calendar = Calendar.current
+        let bufferStart = try #require(calendar.date(from: DateComponents(year: 2026, month: 5, day: 1)))
+        var visibleMonthIdx = 60
+        var monthGridResetNonce = 0
+        var didRestoreTimelineScroll = true
+        var visibleTimelineDayIndex: Int? = 48
+        var anchorDateKey = "2026-05-01"
+
+        CalendarPageDataSupport.handleViewModeChange(
+            oldMode: .week,
+            newMode: .month,
+            visibleMonthIdx: &visibleMonthIdx,
+            monthGridResetNonce: &monthGridResetNonce,
+            didRestoreTimelineScroll: &didRestoreTimelineScroll,
+            visibleTimelineDayIndex: &visibleTimelineDayIndex,
+            anchorDateKey: &anchorDateKey,
+            bufferStart: bufferStart,
+            todayDayIdx: 4,
+            calendar: calendar,
+            currentMonthStart: monthStart(for: bufferStart, calendar: calendar)
+        )
+
+        #expect(anchorDateKey == "2026-06-18")
+        #expect(visibleMonthIdx == 61)
+        #expect(monthGridResetNonce == 1)
     }
 
 #if os(macOS)

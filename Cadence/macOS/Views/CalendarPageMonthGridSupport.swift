@@ -2,48 +2,6 @@
 import SwiftUI
 import Foundation
 
-func agentDebugLogMonthGrid(runId: String, hypothesisId: String, location: String, message: String, data: [String: Any]) {
-    guard let endpoint = ProcessInfo.processInfo.environment["CADENCE_MONTH_GRID_DEBUG_URL"],
-          let url = URL(string: endpoint) else { return }
-
-    func sanitize(_ value: Any) -> Any {
-        switch value {
-        case let v as CGFloat: return Double(v)
-        case let v as Float: return Double(v)
-        case let v as Int: return v
-        case let v as Double: return v
-        case let v as Bool: return v
-        case let v as String: return v
-        case let v as [String: Any]:
-            return v.mapValues { sanitize($0) }
-        case let v as [Any]:
-            return v.map { sanitize($0) }
-        default:
-            return String(describing: value)
-        }
-    }
-    var payload: [String: Any] = [
-        "sessionId": "2fa876",
-        "runId": runId,
-        "hypothesisId": hypothesisId,
-        "location": location,
-        "message": message,
-        "data": sanitize(data),
-        "timestamp": Int(Date().timeIntervalSince1970 * 1000)
-    ]
-    if payload["id"] == nil {
-        payload["id"] = "log_\(UUID().uuidString)"
-    }
-    guard let json = try? JSONSerialization.data(withJSONObject: payload),
-          !json.isEmpty else { return }
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue("2fa876", forHTTPHeaderField: "X-Debug-Session-Id")
-    request.httpBody = json
-    URLSession.shared.dataTask(with: request).resume()
-}
-
 func monthStart(for date: Date, calendar: Calendar) -> Date {
     let comps = calendar.dateComponents([.year, .month], from: date)
     return calendar.date(from: comps) ?? date

@@ -17,7 +17,7 @@ struct CalendarPageView: View {
     @State private var scrollToTodayTrigger = false
     @AppStorage("calendarZoomLevel") private var zoomLevel: Int = 1
     @AppStorage("calendarRememberedTimelineHour") private var rememberedScrollHour: Int = -1
-    @AppStorage("calendarRememberedTimelineDateKey") private var rememberedDateKey: String = ""
+    @AppStorage("calendarRememberedTimelineDateKey") private var anchorDateKey: String = ""
     @State private var visibleMonthIdx: Int = 60  // index into MonthGridView's 120-month window
     @State private var monthGridResetNonce: Int = 0
     @State private var isRestoringVerticalScroll = true
@@ -75,7 +75,7 @@ struct CalendarPageView: View {
                         viewMode: viewMode,
                         zoomLevel: $zoomLevel,
                         rememberedScrollHour: $rememberedScrollHour,
-                        rememberedDateKey: $rememberedDateKey,
+                        anchorDateKey: $anchorDateKey,
                         bufferStart: bufferStart,
                         allTasks: allTasks,
                         allBundles: allBundles,
@@ -130,7 +130,7 @@ struct CalendarPageView: View {
                 monthGridResetNonce: &monthGridResetNonce,
                 didRestoreTimelineScroll: &didRestoreTimelineScroll,
                 visibleTimelineDayIndex: &visibleTimelineDayIndex,
-                rememberedDateKey: &rememberedDateKey,
+                anchorDateKey: &anchorDateKey,
                 bufferStart: bufferStart,
                 todayDayIdx: todayDayIdx,
                 calendar: cal
@@ -143,7 +143,7 @@ struct CalendarPageView: View {
             viewMode: viewMode,
             visibleMonthIdx: visibleMonthIdx,
             visibleTimelineDayIndex: visibleTimelineDayIndex,
-            rememberedDateKey: rememberedDateKey,
+            anchorDateKey: anchorDateKey,
             bufferStart: bufferStart,
             todayDayIdx: todayDayIdx,
             calendar: cal
@@ -154,7 +154,7 @@ struct CalendarPageView: View {
         CalendarPageLifecycleSupport.restoreTimelineScrollIfNeeded(
             didRestoreTimelineScroll: &didRestoreTimelineScroll,
             rememberedScrollHour: rememberedScrollHour,
-            rememberedDateKey: rememberedDateKey,
+            anchorDateKey: anchorDateKey,
             bufferStart: bufferStart,
             todayDayIdx: todayDayIdx,
             visibleTimelineDayIndex: &visibleTimelineDayIndex,
@@ -175,7 +175,7 @@ struct CalendarPageView: View {
             bufferStart: bufferStart,
             cancelPending: { pendingDayPersistence?.cancel() },
             storePending: { pendingDayPersistence = $0 },
-            persist: { rememberedDateKey = $0 }
+            persist: { anchorDateKey = $0 }
         )
     }
 
@@ -194,7 +194,7 @@ struct CalendarPageView: View {
         pendingHourPersistence?.cancel()
         pendingHourPersistence = nil
 
-        rememberedDateKey = DateFormatters.todayKey()
+        anchorDateKey = DateFormatters.todayKey()
         visibleTimelineDayIndex = todayDayIdx
         if viewMode == .month {
             visibleMonthIdx = 60
@@ -214,7 +214,7 @@ struct CalendarPageView: View {
             externalJumpDayIndex: &externalJumpDayIndex,
             externalJumpHour: &externalJumpHour,
             externalJumpToken: &externalJumpToken,
-            rememberedDateKey: &rememberedDateKey
+            anchorDateKey: &anchorDateKey
         ) {
             calendarNavigationManager.clear()
         }

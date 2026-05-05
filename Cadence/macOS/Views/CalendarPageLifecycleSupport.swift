@@ -6,7 +6,7 @@ enum CalendarPageLifecycleSupport {
         viewMode: CalViewMode,
         visibleMonthIdx: Int,
         visibleTimelineDayIndex: Int?,
-        rememberedDateKey: String,
+        anchorDateKey: String,
         bufferStart: Date,
         todayDayIdx: Int,
         calendar: Calendar
@@ -18,8 +18,8 @@ enum CalendarPageLifecycleSupport {
             )
         }
 
-        let dayIndex = visibleTimelineDayIndex ?? CalendarPageStateSupport.rememberedTimelineDayIndex(
-            rememberedDateKey: rememberedDateKey,
+        let dayIndex = visibleTimelineDayIndex ?? CalendarPageStateSupport.timelineDayIndex(
+            anchorDateKey: anchorDateKey,
             bufferStart: bufferStart,
             todayDayIdx: todayDayIdx,
             calendar: calendar
@@ -31,7 +31,7 @@ enum CalendarPageLifecycleSupport {
     static func restoreTimelineScrollIfNeeded(
         didRestoreTimelineScroll: inout Bool,
         rememberedScrollHour: Int,
-        rememberedDateKey: String,
+        anchorDateKey: String,
         bufferStart: Date,
         todayDayIdx: Int,
         visibleTimelineDayIndex: inout Int?,
@@ -46,7 +46,7 @@ enum CalendarPageLifecycleSupport {
         CalendarPageStateSupport.restoreTimelineScrollIfNeeded(
             didRestoreTimelineScroll: &didRestoreTimelineScroll,
             rememberedScrollHour: rememberedScrollHour,
-            rememberedDateKey: rememberedDateKey,
+            anchorDateKey: anchorDateKey,
             bufferStart: bufferStart,
             todayDayIdx: todayDayIdx,
             visibleTimelineDayIndex: &visibleTimelineDayIndex,

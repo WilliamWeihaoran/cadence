@@ -35,7 +35,7 @@ struct CalendarTimelineDayScroller: View {
     let totalDaysWidth: CGFloat
     let timelineViewportWidth: CGFloat
     let todayDayIdx: Int
-    @Binding var rememberedDateKey: String
+    @Binding var anchorDateKey: String
     @Binding var visibleTimelineDayIndex: Int?
     @Binding var isRestoringHorizontalScroll: Bool
     @Binding var didRestoreTimelineScroll: Bool
@@ -82,7 +82,18 @@ struct CalendarTimelineDayScroller: View {
             .transaction { $0.animation = nil }
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in
                 timelineScrollState.setHeaderOffset(-x)
-                guard !isRestoringHorizontalScroll else { return }
+                if isRestoringHorizontalScroll {
+                    if CalendarTimelineScrollSupport.shouldFinishHorizontalJump(
+                        offsetX: x,
+                        targetDay: visibleTimelineDayIndex,
+                        colWidth: colWidth
+                    ) {
+                        DispatchQueue.main.async {
+                            isRestoringHorizontalScroll = false
+                        }
+                    }
+                    return
+                }
                 let clampedDay = CalendarTimelineScrollSupport.clampedDayIndex(
                     offsetX: x,
                     colWidth: colWidth
@@ -107,7 +118,7 @@ struct CalendarTimelineDayScroller: View {
                 CalendarTimelineScrollSupport.applyTodayHorizontalJump(
                     todayDayIdx: todayDayIdx,
                     colWidth: colWidth,
-                    rememberedDateKey: $rememberedDateKey,
+                    anchorDateKey: $anchorDateKey,
                     visibleTimelineDayIndex: $visibleTimelineDayIndex,
                     isRestoringHorizontalScroll: $isRestoringHorizontalScroll,
                     timelineScrollState: timelineScrollState,

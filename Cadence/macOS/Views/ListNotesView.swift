@@ -22,6 +22,9 @@ struct ListNotesView: View {
     @State private var searchText = ""
     @State private var selectedTagFilterSlugs: Set<String> = []
     @State private var folderSheetRequest: NoteFolderSheetRequest?
+    @State private var isListNotesCollapsed = false
+    @State private var isEventNotesCollapsed = false
+    @State private var isTaskNotesCollapsed = false
     @Query(sort: \Note.order) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Tag.order) private var allTags: [Tag]
@@ -43,20 +46,21 @@ struct ListNotesView: View {
         area?.linkedCalendarID ?? project?.linkedCalendarID ?? ""
     }
 
-    private var meetingNotes: [Note] {
+    private var eventNotes: [Note] {
         EventNoteSupport.meetingNotes(forLinkedCalendarID: linkedCalendarID, in: allNotes)
+            .filter { !isPastEventNote($0) }
     }
 
     private var filteredListNotes: [Note] {
         filteredNotes(listNotes)
     }
 
-    private var filteredMeetingNotes: [Note] {
-        filteredNotes(meetingNotes)
+    private var filteredEventNotes: [Note] {
+        filteredNotes(eventNotes)
     }
 
     private var relatedNotes: [Note] {
-        listNotes + meetingNotes
+        listNotes + eventNotes
     }
 
     private var filterableTags: [Tag] {
@@ -67,11 +71,11 @@ struct ListNotesView: View {
     }
 
     private var selectedEventNote: Note? {
-        meetingNotes.first { $0.id == selectedEventNoteID }
+        eventNotes.first { $0.id == selectedEventNoteID }
     }
 
     private var selectedTaskNote: AppTask? {
-        tasks.first { $0.id == selectedTaskNoteID }
+        taskNotes.first { $0.id == selectedTaskNoteID }
     }
 
     private var tasks: [AppTask] {
@@ -84,7 +88,11 @@ struct ListNotesView: View {
     }
 
     private var taskNotes: [AppTask] {
-        tasks.filter { !$0.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        tasks.filter {
+            !$0.isDone &&
+            !$0.isCancelled &&
+            !$0.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 
     private var filteredTaskNotes: [AppTask] {
@@ -161,7 +169,7 @@ struct ListNotesView: View {
         .onAppear {
             backfillMeetingNoteMetadata()
             applyRequestedEventNoteSelection()
-            selectFirstNoteIfNeeded()
+            normalizeSelectionIfNeeded()
         }
         .onChange(of: requestedEventNoteID) { _, _ in
             applyRequestedEventNoteSelection()
@@ -169,7 +177,10 @@ struct ListNotesView: View {
         .onChange(of: allNotes.map(\.id)) { _, _ in
             backfillMeetingNoteMetadata()
             applyRequestedEventNoteSelection()
-            selectFirstNoteIfNeeded()
+            normalizeSelectionIfNeeded()
+        }
+        .onChange(of: allTasks.map { "\($0.id.uuidString)-\($0.statusRaw)" }) { _, _ in
+            normalizeSelectionIfNeeded()
         }
         .onChange(of: filterableTags.map(\.slug)) { _, slugs in
             selectedTagFilterSlugs.formIntersection(Set(slugs))
@@ -232,24 +243,64 @@ struct ListNotesView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    if !filteredTaskNotes.isEmpty {
-                        noteSection("Task Notes") {
-                            ForEach(filteredTaskNotes) { task in
-                                TaskNoteListRow(task: task, isSelected: selectedTaskNoteID == task.id)
-                                    .onTapGesture {
-                                        selectedTaskNoteID = task.id
-                                        selectedEventNoteID = nil
-                                        selectedNoteID = nil
-                                        requestedEventNoteID = nil
+                    if !filteredListNoteGroups.isEmpty {
+                        collapsibleNoteSection(
+                            title: "Notes",
+                            count: filteredListNotes.count,
+                            isCollapsed: $isListNotesCollapsed
+                        ) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(filteredListNoteGroups) { group in
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        if !group.folderPath.isEmpty {
+                                            Text(group.displayName)
+                                                .font(.system(size: 10, weight: .semibold))
+                                                .foregroundStyle(Theme.dim)
+                                                .padding(.horizontal, 12)
+                                        }
+                                        ForEach(group.notes) { note in
+                                            ListNoteRow(note: note, isSelected: selectedNoteID == note.id)
+                                                .onTapGesture {
+                                                    openListNote(note)
+                                                }
+                                                .contextMenu {
+                                                    Button("Copy Note Link") {
+                                                        NoteActionSupport.copyMarkdownLink(to: note)
+                                                    }
+                                                    Menu("Move to Folder") {
+                                                        Button("No Folder") {
+                                                            note.folderPath = ""
+                                                        }
+                                                        ForEach(listNoteFolderNames, id: \.self) { folder in
+                                                            Button(folder) {
+                                                                note.folderPath = folder
+                                                            }
+                                                        }
+                                                        Button("New Folder...") {
+                                                            folderSheetRequest = NoteFolderSheetRequest(mode: .moveNote(note.id))
+                                                        }
+                                                    }
+                                                    Button(role: .destructive) {
+                                                        deleteNote(note)
+                                                    } label: {
+                                                        Label("Delete", systemImage: "trash")
+                                                    }
+                                                }
+                                        }
                                     }
+                                }
                             }
                         }
                     }
 
-                    if !filteredMeetingNotes.isEmpty {
-                        noteSection("Meeting Notes") {
-                            ForEach(filteredMeetingNotes) { note in
-                                MeetingNoteListRow(note: note, isSelected: selectedEventNoteID == note.id)
+                    if !filteredEventNotes.isEmpty {
+                        collapsibleNoteSection(
+                            title: "Event Notes",
+                            count: filteredEventNotes.count,
+                            isCollapsed: $isEventNotesCollapsed
+                        ) {
+                            ForEach(filteredEventNotes) { note in
+                                MeetingNoteListRow(note: note, isSelected: selectedEventNoteID == note.id, showsPreview: false)
                                     .onTapGesture {
                                         selectedEventNoteID = note.id
                                         selectedNoteID = nil
@@ -260,35 +311,19 @@ struct ListNotesView: View {
                         }
                     }
 
-                    ForEach(filteredListNoteGroups) { group in
-                        noteSection(group.displayName) {
-                            ForEach(group.notes) { note in
-                                ListNoteRow(note: note, isSelected: selectedNoteID == note.id)
+                    if !filteredTaskNotes.isEmpty {
+                        collapsibleNoteSection(
+                            title: "Task Notes",
+                            count: filteredTaskNotes.count,
+                            isCollapsed: $isTaskNotesCollapsed
+                        ) {
+                            ForEach(filteredTaskNotes) { task in
+                                TaskNoteListRow(task: task, isSelected: selectedTaskNoteID == task.id)
                                     .onTapGesture {
-                                        openListNote(note)
-                                    }
-                                    .contextMenu {
-                                        Button("Copy Note Link") {
-                                            NoteActionSupport.copyMarkdownLink(to: note)
-                                        }
-                                        Menu("Move to Folder") {
-                                            Button("No Folder") {
-                                                note.folderPath = ""
-                                            }
-                                            ForEach(listNoteFolderNames, id: \.self) { folder in
-                                                Button(folder) {
-                                                    note.folderPath = folder
-                                                }
-                                            }
-                                            Button("New Folder...") {
-                                                folderSheetRequest = NoteFolderSheetRequest(mode: .moveNote(note.id))
-                                            }
-                                        }
-                                        Button(role: .destructive) {
-                                            deleteNote(note)
-                                        } label: {
-                                            Label("Delete", systemImage: "trash")
-                                        }
+                                        selectedTaskNoteID = task.id
+                                        requestedEventNoteID = nil
+                                        selectedEventNoteID = nil
+                                        selectedNoteID = nil
                                     }
                             }
                         }
@@ -297,7 +332,7 @@ struct ListNotesView: View {
                 .padding(8)
             }
 
-            if listNotes.isEmpty && meetingNotes.isEmpty && taskNotes.isEmpty {
+            if listNotes.isEmpty && eventNotes.isEmpty && taskNotes.isEmpty {
                 Spacer()
                 EmptyStateView(
                     message: "No notes",
@@ -305,7 +340,7 @@ struct ListNotesView: View {
                     icon: "doc.text"
                 )
                 Spacer()
-            } else if filteredListNotes.isEmpty && filteredMeetingNotes.isEmpty && filteredTaskNotes.isEmpty {
+            } else if filteredListNotes.isEmpty && filteredEventNotes.isEmpty && filteredTaskNotes.isEmpty {
                 Spacer()
                 EmptyStateView(
                     message: "No matches",
@@ -317,17 +352,48 @@ struct ListNotesView: View {
         }
     }
 
-    private func noteSection<Content: View>(_ title: String?, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if let title {
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .textCase(.uppercase)
-                    .padding(.horizontal, 12)
-                    .padding(.top, title == "Meeting Notes" ? 4 : 0)
+    private func collapsibleNoteSection<Content: View>(
+        title: String,
+        count: Int,
+        isCollapsed: Binding<Bool>,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                isCollapsed.wrappedValue.toggle()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: isCollapsed.wrappedValue ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .frame(width: 12)
+                    Text(title)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                        .textCase(.uppercase)
+                    Spacer()
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Theme.surfaceElevated.opacity(0.75))
+                        .clipShape(Capsule())
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
             }
-            content()
+            .buttonStyle(.cadencePlain)
+            .cadenceHoverHighlight(
+                cornerRadius: 7,
+                fillColor: Theme.surfaceElevated.opacity(0.55),
+                strokeColor: Theme.borderSubtle.opacity(0.8)
+            )
+
+            if !isCollapsed.wrappedValue {
+                content()
+            }
         }
     }
 
@@ -430,7 +496,7 @@ struct ListNotesView: View {
 
     private func applyRequestedEventNoteSelection() {
         guard let requestedEventNoteID else { return }
-        guard meetingNotes.contains(where: { $0.id == requestedEventNoteID }) else { return }
+        guard eventNotes.contains(where: { $0.id == requestedEventNoteID }) else { return }
         selectedEventNoteID = requestedEventNoteID
         selectedNoteID = nil
         selectedTaskNoteID = nil
@@ -448,10 +514,35 @@ struct ListNotesView: View {
 
     private func selectFirstNoteIfNeeded() {
         guard selectedNoteID == nil, selectedEventNoteID == nil, selectedTaskNoteID == nil else { return }
-        selectedEventNoteID = meetingNotes.first?.id
-        if selectedEventNoteID == nil {
-            selectedNoteID = listNotes.first?.id
+        selectedNoteID = filteredListNotes.first?.id
+        if selectedNoteID == nil {
+            selectedEventNoteID = filteredEventNotes.first?.id
         }
+    }
+
+    private func normalizeSelectionIfNeeded() {
+        if let selectedNoteID, !listNotes.contains(where: { $0.id == selectedNoteID }) {
+            self.selectedNoteID = nil
+        }
+        if let selectedEventNoteID, !eventNotes.contains(where: { $0.id == selectedEventNoteID }) {
+            self.selectedEventNoteID = nil
+        }
+        if let selectedTaskNoteID, !taskNotes.contains(where: { $0.id == selectedTaskNoteID }) {
+            self.selectedTaskNoteID = nil
+        }
+        selectFirstNoteIfNeeded()
+    }
+
+    private func isPastEventNote(_ note: Note) -> Bool {
+        guard !note.eventDateKey.isEmpty else { return false }
+        let todayKey = DateFormatters.todayKey()
+        if note.eventDateKey < todayKey { return true }
+        guard note.eventDateKey == todayKey else { return false }
+
+        let components = Calendar.current.dateComponents([.hour, .minute], from: Date())
+        let nowMinutes = ((components.hour ?? 0) * 60) + (components.minute ?? 0)
+        let comparisonMinutes = note.eventEndMin >= 0 ? note.eventEndMin : note.eventStartMin
+        return comparisonMinutes >= 0 && comparisonMinutes < nowMinutes
     }
 }
 

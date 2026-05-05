@@ -54,7 +54,6 @@ private struct ListDetailView: View {
     var area: Area?
     var project: Project?
 
-    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @Environment(ListNavigationManager.self) private var listNavigationManager
     @AppStorage("listDetailDefaultPage") private var defaultPageRawValue = ListDetailPage.tasks.rawValue
     @State private var tab: ListDetailPage = .tasks
@@ -63,6 +62,9 @@ private struct ListDetailView: View {
     @State private var showArchivedKanbanColumns = false
     @State private var kanbanSortField: TaskSortField = .custom
     @State private var kanbanSortDirection: TaskSortDirection = .ascending
+    @State private var taskGroupingMode: TaskGroupingMode = .byDate
+    @State private var taskSortField: TaskSortField = .custom
+    @State private var taskSortDirection: TaskSortDirection = .ascending
     @State private var highlightedKanbanSectionName: String?
     @State private var requestedEventNoteID: UUID?
 
@@ -72,13 +74,12 @@ private struct ListDetailView: View {
         return "kanban_generic"
     }
 
-    private var name: String     { area?.name     ?? project?.name     ?? "" }
-    private var colorHex: String { area?.colorHex ?? project?.colorHex ?? "#4a9eff" }
-    private var icon: String     { area?.icon     ?? project?.icon     ?? "folder.fill" }
-    private var tasks: [AppTask] { area?.tasks    ?? project?.tasks    ?? [] }
-    private var editableHoverID: String {
-        "list-detail-\(area?.id.uuidString ?? project?.id.uuidString ?? "unknown")"
+    private var taskUDKeyPrefix: String {
+        if let a = area { return "list_\(a.id.uuidString)" }
+        if let p = project { return "list_\(p.id.uuidString)" }
+        return "list_generic"
     }
+
     private var tabDefaultsKey: String {
         if let area {
             return "listDetailTab.area.\(area.id.uuidString)"
@@ -90,181 +91,44 @@ private struct ListDetailView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color(hex: colorHex))
-                Text(name)
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                Spacer()
-
-                // Due date badge (projects)
-                if let project = project, !project.dueDate.isEmpty {
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar").font(.system(size: 10))
-                        Text(DateFormatters.shortDateString(from: project.dueDate)).font(.system(size: 11))
-                    }
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
-
-                // Edit button
-                Button {
-                    showEdit = true
-                } label: {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.dim)
-                        .frame(width: 28, height: 28)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                }
-                .buttonStyle(.cadencePlain)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 14)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                if hovering {
-                    hoveredEditableManager.beginHovering(id: editableHoverID) {
-                        showEdit = true
-                    }
-                } else {
-                    hoveredEditableManager.endHovering(id: editableHoverID)
-                }
-            }
-
-            // Tab bar
-            HStack(spacing: 0) {
-                HStack(spacing: 4) {
-                    ForEach(ListDetailPage.allCases, id: \.self) { t in
-                        TabButton(tab: t, isSelected: tab == t) { tab = t }
-                    }
-                }
-                .padding(4)
-                .background(Theme.surfaceElevated.opacity(0.38))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                Spacer()
-                if tab == .kanban, allowsSectionEditing {
-                    HStack(spacing: 6) {
-                        CadenceEnumPickerBadge(title: "Sort", selection: $kanbanSortField)
-                        CadenceEnumPickerBadge(title: "Order", selection: $kanbanSortDirection)
-                        Button {
-                            showArchivedKanbanColumns.toggle()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: showArchivedKanbanColumns ? "archivebox.fill" : "archivebox")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .frame(width: 14)
-                                Text(showArchivedKanbanColumns ? "Archived" : "Show Archived")
-                                    .font(.system(size: 11, weight: .semibold))
-                            }
-                            .foregroundStyle(showArchivedKanbanColumns ? Theme.blue : Theme.dim)
-                            .padding(.horizontal, 12)
-                            .frame(height: 32)
-                            .contentShape(Rectangle())
-                            .background(showArchivedKanbanColumns ? Theme.blue.opacity(0.16) : Theme.surfaceElevated.opacity(0.92))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.cadencePlain)
-                    }
-                    .padding(.trailing, 4)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Theme.surface.opacity(0.82))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.85))
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 2)
-
-            Divider().background(Theme.borderSubtle)
-
-            Group {
-                switch tab {
-                case .tasks:
-                    ListTasksView(tasks: tasks, area: area, project: project)
-                case .kanban:
-                    kanbanBody
-                case .planning:
-                    ListPlanningView(tasks: tasks, area: area, project: project)
-                case .documents:
-                    ListNotesView(area: area, project: project, requestedEventNoteID: $requestedEventNoteID)
-                case .links:
-                    LinksView(area: area, project: project)
-                case .completed:
-                    ListLogView(tasks: tasks)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    clearAppEditingFocus()
-                }
-        )
-        .background(Theme.bg)
-        .sheet(isPresented: $showEdit) {
-            if let area = area {
-                EditAreaSheet(area: area)
-            } else if let project = project {
-                EditProjectSheet(project: project)
-            }
-        }
-        .onAppear {
-            restoreRememberedTab()
-            applyPendingNavigationIfNeeded()
-            installKeyMonitorIfNeeded()
-            let ud = UserDefaults.standard
-            if let raw = ud.string(forKey: "\(kanbanUDKey)_sortField"), let v = TaskSortField(rawValue: raw) { kanbanSortField = v }
-            if let raw = ud.string(forKey: "\(kanbanUDKey)_sortDir"), let v = TaskSortDirection(rawValue: raw) { kanbanSortDirection = v }
-        }
-        .onDisappear {
-            removeKeyMonitor()
-        }
-        .onChange(of: tab) { _, newValue in
-            UserDefaults.standard.set(newValue.rawValue, forKey: tabDefaultsKey)
-        }
-        .onChange(of: listNavigationManager.request?.token) { _, _ in
-            applyPendingNavigationIfNeeded()
-        }
-        .onChange(of: kanbanSortField) { _, v in UserDefaults.standard.set(v.rawValue, forKey: "\(kanbanUDKey)_sortField") }
-        .onChange(of: kanbanSortDirection) { _, v in UserDefaults.standard.set(v.rawValue, forKey: "\(kanbanUDKey)_sortDir") }
-    }
-
-    private var allowsSectionEditing: Bool {
-        area != nil || project != nil
-    }
-
-    @ViewBuilder
-    private var kanbanBody: some View {
-        ListSectionsKanbanView(
-            tasks: tasks,
-            universeTasks: tasks,
+        ListDetailChromeView(
             area: area,
             project: project,
-            showArchived: $showArchivedKanbanColumns,
-            sortField: kanbanSortField,
-            sortDirection: kanbanSortDirection,
-            highlightedSectionName: highlightedKanbanSectionName
+            tab: $tab,
+            showEdit: $showEdit,
+            showArchivedKanbanColumns: $showArchivedKanbanColumns,
+            kanbanSortField: $kanbanSortField,
+            kanbanSortDirection: $kanbanSortDirection,
+            taskSortField: $taskSortField,
+            taskSortDirection: $taskSortDirection,
+            taskGroupingMode: $taskGroupingMode,
+            highlightedKanbanSectionName: highlightedKanbanSectionName,
+            requestedEventNoteID: $requestedEventNoteID
         )
+            .modifier(ListDetailLifecycleModifier(
+                navigationToken: listNavigationManager.request?.token,
+                onAppearAction: {
+                    restoreRememberedTab()
+                    applyPendingNavigationIfNeeded()
+                    installKeyMonitorIfNeeded()
+                    restoreTaskAndKanbanControls()
+                },
+                onDisappearAction: removeKeyMonitor,
+                onNavigationChange: applyPendingNavigationIfNeeded
+            ))
+            .modifier(ListDetailTabAndKanbanPersistenceModifier(
+                tab: $tab,
+                kanbanSortField: $kanbanSortField,
+                kanbanSortDirection: $kanbanSortDirection,
+                tabDefaultsKey: tabDefaultsKey,
+                kanbanUDKey: kanbanUDKey
+            ))
+            .modifier(ListDetailTaskPreferencePersistenceModifier(
+                taskSortField: $taskSortField,
+                taskSortDirection: $taskSortDirection,
+                taskGroupingMode: $taskGroupingMode,
+                taskUDKeyPrefix: taskUDKeyPrefix
+            ))
     }
 
     private func restoreRememberedTab() {
@@ -286,6 +150,25 @@ private struct ListDetailView: View {
         tab = request.page
         highlightedKanbanSectionName = request.page == .kanban ? request.sectionName : nil
         requestedEventNoteID = request.page == .documents ? request.eventNoteID : nil
+    }
+
+    private func restoreTaskAndKanbanControls() {
+        let ud = UserDefaults.standard
+        if let raw = ud.string(forKey: "\(kanbanUDKey)_sortField"), let v = TaskSortField(rawValue: raw) {
+            kanbanSortField = v
+        }
+        if let raw = ud.string(forKey: "\(kanbanUDKey)_sortDir"), let v = TaskSortDirection(rawValue: raw) {
+            kanbanSortDirection = v
+        }
+        if let raw = ud.string(forKey: "\(taskUDKeyPrefix)_sortField"), let v = TaskSortField(rawValue: raw) {
+            taskSortField = v
+        }
+        if let raw = ud.string(forKey: "\(taskUDKeyPrefix)_sortDir"), let v = TaskSortDirection(rawValue: raw) {
+            taskSortDirection = v
+        }
+        if let raw = ud.string(forKey: "\(taskUDKeyPrefix)_grouping"), let v = TaskGroupingMode(rawValue: raw) {
+            taskGroupingMode = v
+        }
     }
 
     private func installKeyMonitorIfNeeded() {
@@ -317,6 +200,300 @@ private struct ListDetailView: View {
         guard let currentIndex = tabs.firstIndex(of: tab), !tabs.isEmpty else { return }
         let nextIndex = (currentIndex + delta + tabs.count) % tabs.count
         tab = tabs[nextIndex]
+    }
+}
+
+private struct ListDetailChromeView: View {
+    var area: Area?
+    var project: Project?
+    @Binding var tab: ListDetailPage
+    @Binding var showEdit: Bool
+    @Binding var showArchivedKanbanColumns: Bool
+    @Binding var kanbanSortField: TaskSortField
+    @Binding var kanbanSortDirection: TaskSortDirection
+    @Binding var taskSortField: TaskSortField
+    @Binding var taskSortDirection: TaskSortDirection
+    @Binding var taskGroupingMode: TaskGroupingMode
+    let highlightedKanbanSectionName: String?
+    @Binding var requestedEventNoteID: UUID?
+
+    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
+
+    private var name: String { area?.name ?? project?.name ?? "" }
+    private var colorHex: String { area?.colorHex ?? project?.colorHex ?? "#4a9eff" }
+    private var icon: String { area?.icon ?? project?.icon ?? "folder.fill" }
+    private var tasks: [AppTask] { area?.tasks ?? project?.tasks ?? [] }
+    private var allowsSectionEditing: Bool { area != nil || project != nil }
+    private var editableHoverID: String {
+        "list-detail-\(area?.id.uuidString ?? project?.id.uuidString ?? "unknown")"
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+
+            ListDetailTabBarView(
+                tab: $tab,
+                showArchivedKanbanColumns: $showArchivedKanbanColumns,
+                kanbanSortField: $kanbanSortField,
+                kanbanSortDirection: $kanbanSortDirection,
+                taskSortField: $taskSortField,
+                taskSortDirection: $taskSortDirection,
+                taskGroupingMode: $taskGroupingMode,
+                allowsSectionEditing: allowsSectionEditing
+            )
+
+            Divider().background(Theme.borderSubtle)
+
+            pageBody
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    clearAppEditingFocus()
+                }
+        )
+        .background(Theme.bg)
+        .sheet(isPresented: $showEdit) {
+            editSheetContent
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color(hex: colorHex))
+            Text(name)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(Theme.text)
+            Spacer()
+
+            if let project = project, !project.dueDate.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "calendar").font(.system(size: 10))
+                    Text(DateFormatters.shortDateString(from: project.dueDate)).font(.system(size: 11))
+                }
+                .foregroundStyle(Theme.dim)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+
+            Button {
+                showEdit = true
+            } label: {
+                Image(systemName: "pencil")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 28, height: 28)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+            }
+            .buttonStyle(.cadencePlain)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 20)
+        .padding(.bottom, 14)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            if hovering {
+                hoveredEditableManager.beginHovering(id: editableHoverID) {
+                    showEdit = true
+                }
+            } else {
+                hoveredEditableManager.endHovering(id: editableHoverID)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var editSheetContent: some View {
+        if let area {
+            EditAreaSheet(area: area)
+        } else if let project {
+            EditProjectSheet(project: project)
+        }
+    }
+
+    private var pageBody: AnyView {
+        switch tab {
+        case .tasks:
+            return AnyView(ListTasksView(
+                tasks: tasks,
+                area: area,
+                project: project,
+                sortField: taskSortField,
+                sortDirection: taskSortDirection,
+                groupingMode: taskGroupingMode
+            ))
+        case .kanban:
+            return AnyView(ListSectionsKanbanView(
+                tasks: tasks,
+                universeTasks: tasks,
+                area: area,
+                project: project,
+                showArchived: $showArchivedKanbanColumns,
+                sortField: kanbanSortField,
+                sortDirection: kanbanSortDirection,
+                highlightedSectionName: highlightedKanbanSectionName
+            ))
+        case .planning:
+            return AnyView(ListPlanningView(tasks: tasks, area: area, project: project))
+        case .documents:
+            return AnyView(ListNotesView(area: area, project: project, requestedEventNoteID: $requestedEventNoteID))
+        case .links:
+            return AnyView(LinksView(area: area, project: project))
+        case .completed:
+            return AnyView(ListLogView(tasks: tasks))
+        }
+    }
+}
+
+private struct ListDetailLifecycleModifier: ViewModifier {
+    let navigationToken: UUID?
+    let onAppearAction: () -> Void
+    let onDisappearAction: () -> Void
+    let onNavigationChange: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear(perform: onAppearAction)
+            .onDisappear(perform: onDisappearAction)
+            .onChange(of: navigationToken) { _, _ in
+                onNavigationChange()
+            }
+    }
+}
+
+private struct ListDetailTabAndKanbanPersistenceModifier: ViewModifier {
+    @Binding var tab: ListDetailPage
+    @Binding var kanbanSortField: TaskSortField
+    @Binding var kanbanSortDirection: TaskSortDirection
+
+    let tabDefaultsKey: String
+    let kanbanUDKey: String
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: tab) { _, newValue in
+                UserDefaults.standard.set(newValue.rawValue, forKey: tabDefaultsKey)
+            }
+            .onChange(of: kanbanSortField) { _, value in
+                UserDefaults.standard.set(value.rawValue, forKey: "\(kanbanUDKey)_sortField")
+            }
+            .onChange(of: kanbanSortDirection) { _, value in
+                UserDefaults.standard.set(value.rawValue, forKey: "\(kanbanUDKey)_sortDir")
+            }
+    }
+}
+
+private struct ListDetailTaskPreferencePersistenceModifier: ViewModifier {
+    @Binding var taskSortField: TaskSortField
+    @Binding var taskSortDirection: TaskSortDirection
+    @Binding var taskGroupingMode: TaskGroupingMode
+
+    let taskUDKeyPrefix: String
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: taskSortField) { _, value in
+                UserDefaults.standard.set(value.rawValue, forKey: "\(taskUDKeyPrefix)_sortField")
+            }
+            .onChange(of: taskSortDirection) { _, value in
+                UserDefaults.standard.set(value.rawValue, forKey: "\(taskUDKeyPrefix)_sortDir")
+            }
+            .onChange(of: taskGroupingMode) { _, value in
+                UserDefaults.standard.set(value.rawValue, forKey: "\(taskUDKeyPrefix)_grouping")
+            }
+    }
+}
+
+private struct ListDetailTabBarView: View {
+    @Binding var tab: ListDetailPage
+    @Binding var showArchivedKanbanColumns: Bool
+    @Binding var kanbanSortField: TaskSortField
+    @Binding var kanbanSortDirection: TaskSortDirection
+    @Binding var taskSortField: TaskSortField
+    @Binding var taskSortDirection: TaskSortDirection
+    @Binding var taskGroupingMode: TaskGroupingMode
+    let allowsSectionEditing: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            tabCluster
+            Spacer(minLength: 16)
+            trailingControls
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.surface.opacity(0.82))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Theme.borderSubtle.opacity(0.85))
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 2)
+    }
+
+    private var tabCluster: some View {
+        HStack(spacing: 4) {
+            ForEach(ListDetailPage.allCases, id: \.self) { page in
+                TabButton(tab: page, isSelected: tab == page) {
+                    tab = page
+                }
+            }
+        }
+        .padding(4)
+        .background(Theme.surfaceElevated.opacity(0.38))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    private var trailingControls: some View {
+        if tab == .tasks {
+            HStack(spacing: 6) {
+                CadenceEnumPickerBadge(title: "Sort", selection: $taskSortField)
+                CadenceEnumPickerBadge(title: "Order", selection: $taskSortDirection)
+                CadenceEnumPickerBadge(title: "Group", selection: $taskGroupingMode)
+            }
+            .padding(.trailing, 4)
+        } else if tab == .kanban, allowsSectionEditing {
+            HStack(spacing: 6) {
+                CadenceEnumPickerBadge(title: "Sort", selection: $kanbanSortField)
+                CadenceEnumPickerBadge(title: "Order", selection: $kanbanSortDirection)
+                archivedColumnsButton
+            }
+            .padding(.trailing, 4)
+        }
+    }
+
+    private var archivedColumnsButton: some View {
+        Button {
+            showArchivedKanbanColumns.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: showArchivedKanbanColumns ? "archivebox.fill" : "archivebox")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 14)
+                Text(showArchivedKanbanColumns ? "Archived" : "Show Archived")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(showArchivedKanbanColumns ? Theme.blue : Theme.dim)
+            .padding(.horizontal, 12)
+            .frame(height: 32)
+            .contentShape(Rectangle())
+            .background(showArchivedKanbanColumns ? Theme.blue.opacity(0.16) : Theme.surfaceElevated.opacity(0.92))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.cadencePlain)
     }
 }
 

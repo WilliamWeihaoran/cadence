@@ -410,56 +410,68 @@ struct AllTasksPageView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("All Tasks")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                    Text("Browse everything by do date or by list, then open the full task creator from here.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("All Tasks")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                        Text("Browse everything by do date or by list, then open the full task creator from here.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.dim)
+                    }
+                    Spacer()
+                    Button {
+                        taskCreationManager.present()
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("New Task")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .frame(height: 36)
+                        .contentShape(Rectangle())
+                        .background(Theme.blue)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.cadencePlain)
                 }
-                Spacer()
-                Button {
-                    taskCreationManager.present()
-                } label: {
+
+                HStack(spacing: 0) {
+                    HStack(spacing: 4) {
+                        ForEach(AllTasksViewMode.allCases, id: \.self) { viewMode in
+                            allTasksTabButton(viewMode)
+                        }
+                    }
+                    .padding(4)
+                    .background(Theme.surfaceElevated.opacity(0.38))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                    Spacer(minLength: 12)
+
                     HStack(spacing: 6) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 10, weight: .semibold))
-                        Text("New Task")
-                            .font(.system(size: 12, weight: .semibold))
+                        CadenceEnumPickerBadge(title: "Sort", selection: $sortField)
+                        CadenceEnumPickerBadge(title: "Order", selection: $sortDirection)
+                        if mode == .list {
+                            CadenceEnumPickerBadge(title: "Group", selection: $groupingMode)
+                        }
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .frame(minWidth: 140, minHeight: 44)
-                    .contentShape(RoundedRectangle(cornerRadius: 8))
-                    .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .padding(.trailing, 4)
                 }
-                .buttonStyle(.cadencePlain)
-                HStack(spacing: 4) {
-                    ForEach(AllTasksViewMode.allCases, id: \.self) { viewMode in
-                        allTasksTabButton(viewMode)
-                    }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Theme.surfaceElevated.opacity(0.32))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Theme.borderSubtle, lineWidth: 1)
                 }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
-            .background(Theme.surface)
-
-            Divider().background(Theme.borderSubtle)
-
-            HStack(spacing: 10) {
-                EnumFilterPickerBadge(title: "Sort", selection: $sortField)
-                EnumFilterPickerBadge(title: "Order", selection: $sortDirection)
-                if mode == .list {
-                    EnumFilterPickerBadge(title: "Group", selection: $groupingMode)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
             .background(Theme.surface)
 
             Divider().background(Theme.borderSubtle)
@@ -490,83 +502,25 @@ struct AllTasksPageView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: tab == .list ? "list.bullet" : "square.grid.3x2")
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 14)
                 Text(tab.rawValue)
-                    .font(.system(size: 14, weight: mode == tab ? .semibold : .regular))
+                    .font(.system(size: 13, weight: mode == tab ? .semibold : .medium))
             }
             .foregroundStyle(mode == tab ? Theme.blue : Theme.dim)
-            .frame(minWidth: 82, minHeight: 34)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 11)
+            .frame(height: 32)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 9)
-                    .fill(mode == tab ? Theme.blue.opacity(0.12) : Color.clear)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(mode == tab ? Theme.blue.opacity(0.16) : Color.clear)
             )
-            .overlay(alignment: .bottom) {
-                if mode == tab {
-                    Rectangle().fill(Theme.blue).frame(height: 2)
-                }
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(mode == tab ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
             }
         }
         .buttonStyle(.cadencePlain)
-    }
-}
-
-struct EnumFilterPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>: View where T.RawValue == String {
-    let title: String
-    @Binding var selection: T
-    @State private var showPicker = false
-
-    var body: some View {
-        Button { showPicker.toggle() } label: {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                Text(selection.rawValue)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.text)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
-        }
-        .buttonStyle(.cadencePlain)
-        .popover(isPresented: $showPicker) {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(T.allCases), id: \.id) { value in
-                    Button {
-                        selection = value
-                        showPicker = false
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(value.rawValue).font(.system(size: 13)).foregroundStyle(Theme.text)
-                            Spacer()
-                            if selection.id == value.id {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(Theme.blue)
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .background(selection.id == value.id ? Theme.blue.opacity(0.08) : .clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.cadencePlain)
-                }
-            }
-            .padding(.vertical, 6)
-            .frame(minWidth: 170)
-            .background(Theme.surfaceElevated)
-        }
     }
 }
 #endif
