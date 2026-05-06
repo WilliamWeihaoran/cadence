@@ -112,7 +112,18 @@ struct QuickCreateChoicePopover: View {
                 }
 
                 if mode == .timeBlock {
-                    taskDetailsView
+                    QuickCreateTaskDetailsView(
+                        selectedContainer: $selectedContainer,
+                        selectedSectionName: $selectedSectionName,
+                        notes: $notes,
+                        subtaskDraft: $subtaskDraft,
+                        subtaskTitles: $subtaskTitles,
+                        contexts: contexts,
+                        areas: areas,
+                        projects: projects,
+                        availableSections: availableSections,
+                        onContainerChanged: normalizeSelectedSection
+                    )
                 } else if mode == .calendarEvent {
                     let _ = calendarManager.storeVersion
                     let calendars = calendarManager.writableCalendars
@@ -140,7 +151,14 @@ struct QuickCreateChoicePopover: View {
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 } else if mode == .bundle {
-                    bundleTaskSelectionView
+                    QuickCreateBundleTaskSelectionView(
+                        bundleDateKey: dateKey,
+                        allTasks: allTasks,
+                        areas: areas,
+                        projects: projects,
+                        searchText: $bundleTaskSearch,
+                        selectedTaskIDs: $selectedBundleTaskIDs
+                    )
                 }
             }
             .frame(minHeight: modeFormMinHeight, alignment: .topLeading)
@@ -204,10 +222,6 @@ struct QuickCreateChoicePopover: View {
     private var selectedCalendar: EKCalendar? {
         calendarManager.writableCalendars.first { $0.calendarIdentifier == selectedCalendarID }
             ?? calendarManager.defaultWritableCalendar
-    }
-
-    private var selectedBundleTaskSet: Set<UUID> {
-        Set(selectedBundleTaskIDs)
     }
 
     private var selectedBundleTasks: [AppTask] {
@@ -391,204 +405,6 @@ struct QuickCreateChoicePopover: View {
                 DispatchQueue.main.async { focused = true }
             }
         )
-    }
-
-    private var bundleTaskSelectionView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(selectedBundleTaskIDs.isEmpty ? "Add tasks now" : "\(selectedBundleTaskIDs.count) selected")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                Spacer()
-                if !selectedBundleTaskIDs.isEmpty {
-                    Button("Clear") {
-                        selectedBundleTaskIDs.removeAll()
-                    }
-                    .buttonStyle(.cadencePlain)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                }
-            }
-
-            if !selectedBundleTasks.isEmpty {
-                VStack(spacing: 5) {
-                    ForEach(selectedBundleTasks) { task in
-                        selectedBundleTaskRow(task)
-                    }
-                }
-            }
-
-            TaskBundleTaskPickerPanel(
-                bundleDateKey: dateKey,
-                allTasks: allTasks,
-                areas: areas,
-                projects: projects,
-                excludedTaskIDs: selectedBundleTaskSet,
-                searchText: $bundleTaskSearch,
-                maxHeight: 188,
-                onAdd: addSelectedBundleTask
-            )
-        }
-    }
-
-    private func selectedBundleTaskRow(_ task: AppTask) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.amber)
-            Text(task.title.isEmpty ? "Untitled" : task.title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            Text("\(max(task.estimatedMinutes, 5))m")
-                .font(.system(size: 10))
-                .foregroundStyle(Theme.dim)
-            Button {
-                selectedBundleTaskIDs.removeAll { $0 == task.id }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 18, height: 18)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.cadencePlain)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(Theme.surfaceElevated.opacity(0.62))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-    }
-
-    private func addSelectedBundleTask(_ task: AppTask) {
-        guard !selectedBundleTaskIDs.contains(task.id) else { return }
-        selectedBundleTaskIDs.append(task.id)
-        bundleTaskSearch = ""
-    }
-
-    private var taskDetailsView: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 8) {
-                ContainerPickerBadge(
-                    selection: $selectedContainer,
-                    contexts: contexts,
-                    areas: areas,
-                    projects: projects
-                )
-                .onChange(of: selectedContainer) { normalizeSelectedSection() }
-
-                sectionPicker
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Notes")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-
-                TextEditor(text: $notes)
-                    .scrollContentBackground(.hidden)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.text)
-                    .frame(minHeight: 72)
-                    .padding(8)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Subtasks")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-
-                if !subtaskTitles.isEmpty {
-                    VStack(spacing: 5) {
-                        ForEach(Array(subtaskTitles.enumerated()), id: \.offset) { index, title in
-                            subtaskRow(title: title, index: index)
-                        }
-                    }
-                }
-
-                HStack(spacing: 7) {
-                    Image(systemName: "plus.circle")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                    TextField("Add subtask...", text: $subtaskDraft)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.text)
-                        .onSubmit { commitSubtaskDraft() }
-                }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 8)
-                .background(Theme.surfaceElevated.opacity(0.72))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-        }
-    }
-
-    private var sectionPicker: some View {
-        Menu {
-            ForEach(availableSections, id: \.self) { section in
-                Button(section) {
-                    selectedSectionName = section
-                }
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "rectangle.split.2x1")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                Text(selectedSectionName)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.muted)
-                    .lineLimit(1)
-                    .frame(maxWidth: 92, alignment: .leading)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .frame(minHeight: 28)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
-        }
-        .buttonStyle(.cadencePlain)
-    }
-
-    private func subtaskRow(title: String, index: Int) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: "circle")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-            Text(title)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            Button {
-                subtaskTitles.remove(at: index)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 18, height: 18)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.cadencePlain)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .background(Theme.surfaceElevated.opacity(0.52))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-    }
-
-    private func commitSubtaskDraft() {
-        let trimmed = subtaskDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        subtaskTitles.append(trimmed)
-        subtaskDraft = ""
     }
 
     @ViewBuilder
