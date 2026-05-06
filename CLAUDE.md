@@ -1,5 +1,8 @@
 # Cadence — SwiftUI Productivity App
 
+## Agent Docs
+Coding agents should read `AGENTS.md` first. It is the compact, actively maintained working map for repo structure, scoped guide files, build commands, risk hotspots, and refactor rules. This `CLAUDE.md` remains a longer product/feature reference.
+
 ## What This App Is
 Cadence is a personal productivity and life-management app for macOS (with iOS planned). It is a GTD-style system where users organize life into **Contexts** → **Areas/Projects**, set long-term **Goals**, track daily **Habits**, manage **Tasks** with scheduling, write daily **Notes**, and stay focused with a **Focus timer**. Tasks can be scheduled to a timeline and synced with Apple Calendar.
 
