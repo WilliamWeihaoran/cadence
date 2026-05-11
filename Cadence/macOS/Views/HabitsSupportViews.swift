@@ -125,15 +125,13 @@ struct HabitGoalSectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(group.title.uppercased())
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.dim)
-                Spacer()
-                Text("\(doneCount)/\(group.habits.count)")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color(hex: group.colorHex))
-            }
+            CommitmentGroupHeader(
+                title: group.title,
+                icon: group.icon,
+                color: Color(hex: group.colorHex),
+                trailingText: "\(doneCount)/\(group.habits.count)",
+                trailingTint: Color(hex: group.colorHex)
+            )
 
             VStack(spacing: 9) {
                 ForEach(group.habits) { habit in
@@ -406,22 +404,12 @@ struct HabitPursuitSupportCard: View {
 
 struct HabitsEmptyDetail: View {
     var body: some View {
-        ZStack {
-            Theme.bg
-            VStack(spacing: 10) {
-                Image(systemName: "flame.fill")
-                    .font(.system(size: 34))
-                    .foregroundStyle(Theme.dim)
-                Text("Select a habit")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                Text("Pick a habit on the left to inspect streaks, recent activity, and consistency.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 320)
-            }
-        }
+        CommitmentEmptyDetail(
+            icon: "flame.fill",
+            title: "Select a habit",
+            subtitle: "Pick a habit on the left to inspect streaks, recent activity, and consistency.",
+            background: Theme.bg
+        )
     }
 }
 
@@ -562,13 +550,7 @@ struct DetailMetaChip: View {
     let color: Color
 
     var body: some View {
-        Text(label)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(color.opacity(0.12))
-            .clipShape(Capsule())
+        CommitmentMetaChip(label: label, color: color)
     }
 }
 

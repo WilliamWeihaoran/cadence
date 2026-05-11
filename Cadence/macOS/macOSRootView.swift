@@ -23,6 +23,7 @@ struct macOSRootView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @Environment(\.scenePhase) private var scenePhase
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
     @Environment(FocusManager.self) private var focusManager
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(HoveredTaskDatePickerManager.self) private var hoveredTaskDatePickerManager
@@ -76,6 +77,9 @@ struct macOSRootView: View {
         }
         .modelContext(currentModelContext)
         .ignoresSafeArea(.container, edges: .top)
+        .onOpenURL { url in
+            CadenceDeepLinkManager.shared.handle(url)
+        }
         .onAppear {
             mcpRefreshCoordinator.start {
                 hasPendingExternalDataRefresh = true
@@ -95,10 +99,16 @@ struct macOSRootView: View {
             macOSRootStateSupport.clearCalendarLinkedTasks(modelContext: activeModelContext ?? modelContext)
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
+            guard phase == .active else {
+                CadenceWidgetRefreshCenter.reloadTodayWidgets()
+                return
+            }
             if hasPendingExternalDataRefresh || mcpRefreshCoordinator.shouldRefreshForCurrentMarker() {
                 scheduleAppDataRefreshIfPossible()
             }
+        }
+        .onChange(of: deepLinkManager.route?.token) { _, _ in
+            handleDeepLinkRoute()
         }
         .onChange(of: selection) { _, newValue in
             macOSRootLifecycleSupport.handleSelectionChange(
@@ -222,6 +232,14 @@ struct macOSRootView: View {
         }
         pendingAppDataRefresh = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
+    }
+
+    private func handleDeepLinkRoute() {
+        guard let route = deepLinkManager.route?.deepLink else { return }
+        switch route {
+        case .today, .task:
+            selection = .today
+        }
     }
 }
 

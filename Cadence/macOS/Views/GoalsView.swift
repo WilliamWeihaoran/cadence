@@ -179,36 +179,17 @@ struct GoalsView: View {
             }
 
             HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                    TextField("Search milestones", text: $searchText)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.text)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+                CommitmentSearchField(
+                    placeholder: "Search milestones",
+                    text: $searchText
+                )
 
-                HStack(spacing: 6) {
-                    ForEach(GoalStatusFilter.allCases, id: \.self) { filter in
-                        CadencePillButton(
-                            title: filter.label,
-                            isSelected: statusFilter == filter,
-                            minWidth: 48
-                        ) {
-                            statusFilter = filter
-                        }
-                    }
-                }
-                .padding(4)
-                .background(Theme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.borderSubtle, lineWidth: 1))
+                CommitmentFilterBar(
+                    items: GoalStatusFilter.allCases,
+                    selection: $statusFilter,
+                    minWidth: 48,
+                    label: \.label
+                )
             }
         }
         .padding(20)

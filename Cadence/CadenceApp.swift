@@ -10,6 +10,7 @@ struct CadenceApp: App {
 #if os(macOS)
             macOSRootView()
                 .environment(ThemeManager.shared)
+                .environment(CadenceDeepLinkManager.shared)
                 .environment(CalendarManager.shared)
                 .environment(AISettingsManager.shared)
                 .environment(AppleAccountManager.shared)
@@ -32,6 +33,7 @@ struct CadenceApp: App {
 #else
             iOSRootView()
                 .environment(ThemeManager.shared)
+                .environment(CadenceDeepLinkManager.shared)
 #endif
         }
         .modelContainer(sharedModelContainer)

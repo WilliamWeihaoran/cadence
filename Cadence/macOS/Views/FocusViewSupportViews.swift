@@ -539,41 +539,4 @@ struct FocusBundleSidebar: View {
     }
 }
 
-struct FocusIdleHero: View {
-    let clockDisplay: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Ready to focus")
-                        .font(.system(size: 26, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text("Search below and start a clean session.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                }
-                Spacer()
-            }
-
-            Spacer(minLength: 0)
-
-            Text(clockDisplay)
-                .font(.system(size: 64, weight: .ultraLight, design: .monospaced))
-                .foregroundStyle(Theme.muted)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.68)
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
-        }
-    }
-}
-
 #endif

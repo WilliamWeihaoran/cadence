@@ -181,42 +181,17 @@ struct HabitsView: View {
                 }
 
                 HStack(spacing: 10) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.dim)
-                        TextField("Search habits, pursuits, frequency, context", text: $searchText)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.text)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(Theme.borderSubtle, lineWidth: 1)
+                    CommitmentSearchField(
+                        placeholder: "Search habits, pursuits, frequency, context",
+                        text: $searchText
                     )
                 }
 
-                HStack(spacing: 8) {
-                    ForEach(HabitListFilter.allCases, id: \.self) { item in
-                        CadencePillButton(
-                            title: item.label,
-                            isSelected: filter == item,
-                            minWidth: 58
-                        ) {
-                            filter = item
-                        }
-                    }
-                }
-                .padding(4)
-                .background(Theme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Theme.borderSubtle, lineWidth: 1)
+                CommitmentFilterBar(
+                    items: HabitListFilter.allCases,
+                    selection: $filter,
+                    minWidth: 58,
+                    label: \.label
                 )
             }
             .padding(.horizontal, 20)

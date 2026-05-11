@@ -9,9 +9,31 @@ struct PersistenceController {
     static let schema = CadenceSchema.schema
 
     init() {
+        if Self.isRunningTests {
+            do {
+                container = try Self.makeContainer()
+                return
+            } catch {
+                fatalError("Could not create test ModelContainer: \(error.localizedDescription)")
+            }
+        }
+
         do {
-            try StoreBackupManager.performPendingRestoreIfNeeded()
-            try StoreBackupManager.createBackupIfStoreExists(reason: .startup)
+            let sharedStoreDirectoryURL = try CadenceStoreSupport.appGroupStoreDirectoryURL()
+            try StoreBackupManager.performPendingRestoreIfNeeded(storeDirectoryURL: sharedStoreDirectoryURL)
+            _ = try CadenceStoreSupport.migrateLegacyStoreIfNeeded(
+                appGroupDirectoryURL: sharedStoreDirectoryURL,
+                backupHandler: { legacyDirectoryURL in
+                    _ = try StoreBackupManager.createBackupIfStoreExists(
+                        reason: .startup,
+                        storeDirectoryURL: legacyDirectoryURL
+                    )
+                }
+            )
+            _ = try StoreBackupManager.createBackupIfStoreExists(
+                reason: .startup,
+                storeDirectoryURL: sharedStoreDirectoryURL
+            )
         } catch {
             fatalError("Cadence refused to open the store because the safety backup/restore preflight failed: \(error.localizedDescription)")
         }
@@ -29,28 +51,56 @@ struct PersistenceController {
     }
 
     private static func makeContainer() throws -> ModelContainer {
-        if ProcessInfo.processInfo.environment["CADENCE_LOCAL_STORE_ONLY"] == "1" {
-            let localConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, cloudKitDatabase: .none)
+        let storeURL = try resolvedStoreURL()
+        if shouldUseLocalStoreOnly {
+            let localConfig = ModelConfiguration(
+                "Cadence",
+                schema: schema,
+                url: storeURL,
+                cloudKitDatabase: .none
+            )
             return try ModelContainer(for: schema, configurations: [localConfig])
         }
 
         let cloudConfig = ModelConfiguration(
+            "Cadence",
             schema: schema,
-            isStoredInMemoryOnly: false,
+            url: storeURL,
             cloudKitDatabase: .private("iCloud.com.haoranwei.Cadence")
         )
         return try ModelContainer(for: schema, configurations: [cloudConfig])
     }
 
+    private static var shouldUseLocalStoreOnly: Bool {
+        isRunningTests || ProcessInfo.processInfo.environment["CADENCE_LOCAL_STORE_ONLY"] == "1"
+    }
+
+    private static var isRunningTests: Bool {
+        let environment = ProcessInfo.processInfo.environment
+        return environment["XCTestConfigurationFilePath"] != nil ||
+            environment["XCTestSessionIdentifier"] != nil
+    }
+
+    private static func resolvedStoreURL() throws -> URL {
+        if isRunningTests {
+            let testStoreDirectoryURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("CadenceTestsHostStore", isDirectory: true)
+            try FileManager.default.createDirectory(at: testStoreDirectoryURL, withIntermediateDirectories: true)
+            return testStoreDirectoryURL.appendingPathComponent("default.store")
+        }
+
+        return try CadenceStoreSupport.appGroupStoreURL()
+    }
+
     private static func deleteStoreFiles() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        if let files = try? FileManager.default.contentsOfDirectory(at: appSupport, includingPropertiesForKeys: nil) {
+        guard let sharedStoreDirectoryURL = try? CadenceStoreSupport.appGroupStoreDirectoryURL() else { return }
+        if let files = try? FileManager.default.contentsOfDirectory(at: sharedStoreDirectoryURL, includingPropertiesForKeys: nil) {
             for file in files where file.lastPathComponent.contains(".store") {
                 try? FileManager.default.removeItem(at: file)
             }
         }
         for name in ["default.store-wal", "default.store-shm"] {
-            try? FileManager.default.removeItem(at: appSupport.appendingPathComponent(name))
+            try? FileManager.default.removeItem(at: sharedStoreDirectoryURL.appendingPathComponent(name))
         }
     }
 }
@@ -112,24 +162,28 @@ enum StoreBackupManager {
         return formatter
     }()
 
-    static var applicationSupportURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-    }
-
     static var backupRootURL: URL {
-        applicationSupportURL.appendingPathComponent(backupDirectoryName, isDirectory: true)
+        (try? defaultStoreDirectoryURL().appendingPathComponent(backupDirectoryName, isDirectory: true))
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                .appendingPathComponent(backupDirectoryName, isDirectory: true)
     }
 
     @discardableResult
     static func createBackupIfStoreExists(reason: StoreBackupReason) throws -> URL? {
-        let sourceItems = existingStoreItems()
+        try createBackupIfStoreExists(reason: reason, storeDirectoryURL: defaultStoreDirectoryURL())
+    }
+
+    @discardableResult
+    static func createBackupIfStoreExists(reason: StoreBackupReason, storeDirectoryURL: URL) throws -> URL? {
+        let sourceItems = existingStoreItems(in: storeDirectoryURL)
         guard !sourceItems.isEmpty else { return nil }
 
         let fileManager = FileManager.default
+        let backupRootURL = backupRootURL(for: storeDirectoryURL)
         try fileManager.createDirectory(at: backupRootURL, withIntermediateDirectories: true)
 
         let now = Date()
-        let finalURL = uniqueBackupDirectory(for: now, reason: reason)
+        let finalURL = uniqueBackupDirectory(for: now, reason: reason, storeDirectoryURL: storeDirectoryURL)
         let temporaryURL = backupRootURL.appendingPathComponent(".\(finalURL.lastPathComponent).tmp", isDirectory: true)
 
         if fileManager.fileExists(atPath: temporaryURL.path) {
@@ -148,7 +202,7 @@ enum StoreBackupManager {
             let manifest = StoreBackupManifest(
                 createdAt: now,
                 reason: reason,
-                sourceStoreURL: applicationSupportURL.appendingPathComponent("default.store").path,
+                sourceStoreURL: storeDirectoryURL.appendingPathComponent("default.store").path,
                 items: copiedNames
             )
             let manifestData = try JSONEncoder.cadenceBackupEncoder.encode(manifest)
@@ -156,7 +210,7 @@ enum StoreBackupManager {
 
             try fileManager.moveItem(at: temporaryURL, to: finalURL)
             if reason == .startup || reason == .preRestore {
-                try purgeAutomaticBackups()
+                try purgeAutomaticBackups(storeDirectoryURL: storeDirectoryURL)
             }
             return finalURL
         } catch {
@@ -166,7 +220,13 @@ enum StoreBackupManager {
     }
 
     static func listBackups() -> [StoreBackupSnapshot] {
+        listBackups(storeDirectoryURL: try? defaultStoreDirectoryURL())
+    }
+
+    static func listBackups(storeDirectoryURL: URL?) -> [StoreBackupSnapshot] {
+        guard let storeDirectoryURL else { return [] }
         let fileManager = FileManager.default
+        let backupRootURL = backupRootURL(for: storeDirectoryURL)
         guard let contents = try? fileManager.contentsOfDirectory(
             at: backupRootURL,
             includingPropertiesForKeys: [.creationDateKey, .isDirectoryKey],
@@ -194,7 +254,12 @@ enum StoreBackupManager {
 
     @discardableResult
     static func cleanUpAutomaticBackups() throws -> Int {
-        let removableBackups = automaticBackupSnapshotsToRemove(listBackups())
+        try cleanUpAutomaticBackups(storeDirectoryURL: defaultStoreDirectoryURL())
+    }
+
+    @discardableResult
+    static func cleanUpAutomaticBackups(storeDirectoryURL: URL) throws -> Int {
+        let removableBackups = automaticBackupSnapshotsToRemove(listBackups(storeDirectoryURL: storeDirectoryURL))
         for snapshot in removableBackups {
             try FileManager.default.removeItem(at: snapshot.url)
         }
@@ -220,16 +285,22 @@ enum StoreBackupManager {
     }
 
     static func performPendingRestoreIfNeeded() throws {
+        try performPendingRestoreIfNeeded(storeDirectoryURL: defaultStoreDirectoryURL())
+    }
+
+    static func performPendingRestoreIfNeeded(storeDirectoryURL: URL) throws {
         guard let backupURL = pendingRestoreURL() else { return }
         guard isBackupDirectory(backupURL) else {
             clearPendingRestore()
             throw CocoaError(.fileReadNoSuchFile)
         }
 
-        _ = try createBackupIfStoreExists(reason: .preRestore)
+        _ = try createBackupIfStoreExists(reason: .preRestore, storeDirectoryURL: storeDirectoryURL)
 
         let fileManager = FileManager.default
-        for item in existingStoreItems() {
+        try fileManager.createDirectory(at: storeDirectoryURL, withIntermediateDirectories: true)
+
+        for item in existingStoreItems(in: storeDirectoryURL) {
             try fileManager.removeItem(at: item)
         }
 
@@ -239,7 +310,7 @@ enum StoreBackupManager {
             options: []
         )
         for source in backupContents where source.lastPathComponent != manifestName {
-            let destination = applicationSupportURL.appendingPathComponent(source.lastPathComponent)
+            let destination = storeDirectoryURL.appendingPathComponent(source.lastPathComponent)
             if fileManager.fileExists(atPath: destination.path) {
                 try fileManager.removeItem(at: destination)
             }
@@ -249,13 +320,20 @@ enum StoreBackupManager {
         clearPendingRestore()
     }
 
-    private static func existingStoreItems() -> [URL] {
-        copiedStoreItemNames
-            .map { applicationSupportURL.appendingPathComponent($0) }
-            .filter { FileManager.default.fileExists(atPath: $0.path) }
+    private static func defaultStoreDirectoryURL() throws -> URL {
+        try CadenceStoreSupport.appGroupStoreDirectoryURL()
     }
 
-    private static func uniqueBackupDirectory(for date: Date, reason: StoreBackupReason) -> URL {
+    private static func existingStoreItems(in storeDirectoryURL: URL) -> [URL] {
+        CadenceStoreSupport.storeItemURLs(in: storeDirectoryURL)
+    }
+
+    private static func backupRootURL(for storeDirectoryURL: URL) -> URL {
+        storeDirectoryURL.appendingPathComponent(backupDirectoryName, isDirectory: true)
+    }
+
+    private static func uniqueBackupDirectory(for date: Date, reason: StoreBackupReason, storeDirectoryURL: URL) -> URL {
+        let backupRootURL = backupRootURL(for: storeDirectoryURL)
         let baseName = "\(folderDateFormatter.string(from: date))-\(reason.rawValue)"
         var candidate = backupRootURL.appendingPathComponent(baseName, isDirectory: true)
         var suffix = 2
@@ -279,8 +357,8 @@ enum StoreBackupManager {
         return try? JSONDecoder.cadenceBackupDecoder.decode(StoreBackupManifest.self, from: data)
     }
 
-    private static func purgeAutomaticBackups() throws {
-        try cleanUpAutomaticBackups()
+    private static func purgeAutomaticBackups(storeDirectoryURL: URL) throws {
+        try cleanUpAutomaticBackups(storeDirectoryURL: storeDirectoryURL)
     }
 
     static func automaticBackupSnapshotsToRemove(

@@ -63,7 +63,12 @@ struct KanbanCard: View {
         .background(cardBackground)
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isHovered ? Theme.blue.opacity(0.56) : .white.opacity(0.06), lineWidth: isHovered ? 1.35 : 1)
+                .stroke(
+                    isHovered
+                        ? TaskHoverVisuals.borderColor(for: task, isHovered: isHovered, opacity: 0.56)
+                        : .white.opacity(0.06),
+                    lineWidth: isHovered ? 1.35 : 1
+                )
         }
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .contentShape(RoundedRectangle(cornerRadius: 8))

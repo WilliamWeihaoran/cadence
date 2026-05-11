@@ -366,7 +366,10 @@ struct TasksPanel: View {
                         : sortedByDoDate
                     return activeGroupingMode == .byList ? currentFrozenListGroupSnapshot(for: snapshotTasks) : []
                 }(),
-                flatSectionSnapshot: activeGroupingMode == .byList ? [] : currentFrozenFlatSectionSnapshot()
+                // Intentional: keep flat/date/priority section trees live while hovering.
+                // Capturing section snapshots swaps the row tree under the pointer and
+                // can create hover-enter/exit refresh jitter in grouped Today views.
+                flatSectionSnapshot: []
             )
         }
     }

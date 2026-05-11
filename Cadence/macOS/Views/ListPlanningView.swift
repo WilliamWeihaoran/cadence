@@ -510,7 +510,7 @@ private struct PlanningTaskCard: View {
 
     private var tint: Color {
         if isDueOnlyCard { return Theme.red }
-        return Theme.priorityColor(task.priority)
+        return TaskHoverVisuals.accentColor(for: task)
     }
 
     var body: some View {
@@ -560,7 +560,13 @@ private struct PlanningTaskCard: View {
             }
             .padding(9)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isHovered ? Theme.surfaceElevated.opacity(0.95) : Theme.surfaceElevated.opacity(0.72))
+            .background(Theme.surfaceElevated.opacity(0.72))
+            .overlay {
+                if isHovered {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(tint.opacity(0.08))
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)

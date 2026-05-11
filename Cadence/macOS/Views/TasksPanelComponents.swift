@@ -10,6 +10,7 @@ struct MacTaskRow: View {
     var areas: [Area] = []
     var projects: [Project] = []
     @Environment(\.modelContext) private var modelContext
+    @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(HoveredTaskManager.self)    private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
@@ -105,7 +106,7 @@ struct MacTaskRow: View {
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(
-                    isHovered ? Theme.blue.opacity(0.34) : Color.clear,
+                    TaskHoverVisuals.borderColor(for: task, isHovered: isHovered, opacity: 0.34),
                     lineWidth: 1
                 )
         }
@@ -142,6 +143,10 @@ struct MacTaskRow: View {
             TaskDetailPopover(task: task)
         }
         .opacity(task.isDone || task.isCancelled ? 0.5 : 1.0)
+        .onAppear(perform: handlePendingDeepLink)
+        .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
+            handlePendingDeepLink()
+        }
     }
 
     private var doDatePill: some View {
@@ -372,11 +377,19 @@ struct MacTaskRow: View {
     }
 
     private var urgencyBackgroundTint: Color {
-        guard !task.isDone else { return isHovered ? Theme.blue.opacity(0.05) : .clear }
-        if isOverdue {
-            return Theme.red.opacity(isHovered ? 0.2 : 0.15)
-        }
-        return isHovered ? Theme.blue.opacity(0.05) : .clear
+        TaskHoverVisuals.hoverFill(
+            for: task,
+            isHovered: isHovered,
+            isOverdue: isOverdue,
+            isOverdo: isOverdo,
+            normalOpacity: 0.07
+        )
+    }
+
+    private func handlePendingDeepLink() {
+        guard deepLinkManager.pendingTaskID == task.id else { return }
+        showTaskInspector = true
+        deepLinkManager.clearPendingTask(task.id)
     }
 
 }
@@ -433,7 +446,7 @@ private struct TaskRowBackground: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: 8)
-            .fill(isHovered ? Theme.surfaceElevated.opacity(0.72) : Color.clear)
+            .fill(Color.clear)
             .overlay {
                 if urgencyTint != .clear {
                     RoundedRectangle(cornerRadius: 8).fill(urgencyTint)

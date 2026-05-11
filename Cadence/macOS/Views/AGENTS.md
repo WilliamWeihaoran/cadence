@@ -28,6 +28,7 @@ Feature views in this folder are actively refactored into thin roots plus suppor
 - Pass explicit bindings, data, and callbacks into subviews. Do not pass entire managers unless the subview truly owns that behavior.
 - Keep row rendering stable; avoid `ForEach(indices, id: \.self)` for filtered/reordered data when row identity matters.
 - Preserve shared hover behavior. For task/event/bundle hover states, keep original colors and lift/brighten rather than graying them.
+- Preserve grouped task list identity during hover. In `TasksPanel`, do not freeze flat/date/priority section snapshots on hover; swapping those section trees can cause visible refresh jitter in views like Today grouped by priority. List-group snapshots are the intended hover-freeze path.
 - Avoid nested card-on-card visual structures unless the existing feature already uses that pattern.
 - When moving view types, keep names unchanged if other files reference them.
 

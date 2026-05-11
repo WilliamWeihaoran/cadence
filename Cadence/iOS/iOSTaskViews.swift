@@ -5,6 +5,7 @@ import SwiftUI
 struct iOSTaskRow: View {
     @Bindable var task: AppTask
     @Environment(\.modelContext) private var modelContext
+    @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
     @State private var showDetail = false
 
     var body: some View {
@@ -77,6 +78,10 @@ struct iOSTaskRow: View {
         .sheet(isPresented: $showDetail) {
             iOSTaskDetailSheet(task: task)
         }
+        .onAppear(perform: handlePendingDeepLink)
+        .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
+            handlePendingDeepLink()
+        }
     }
 
     private var priorityBadge: some View {
@@ -121,6 +126,12 @@ struct iOSTaskRow: View {
             task.completedAt = Date()
         }
         try? modelContext.save()
+    }
+
+    private func handlePendingDeepLink() {
+        guard deepLinkManager.pendingTaskID == task.id else { return }
+        showDetail = true
+        deepLinkManager.clearPendingTask(task.id)
     }
 }
 

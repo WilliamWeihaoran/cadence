@@ -86,22 +86,12 @@ struct GoalMissionGroupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: group.icon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color(hex: group.colorHex))
-                Text(group.title.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                Text("\(group.goals.count)")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.text.opacity(0.75))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(Capsule())
-                Spacer()
-            }
+            CommitmentGroupHeader(
+                title: group.title,
+                icon: group.icon,
+                color: Color(hex: group.colorHex),
+                trailingText: "\(group.goals.count)"
+            )
 
             VStack(spacing: 10) {
                 ForEach(group.goals) { goal in
@@ -701,13 +691,7 @@ struct GoalStatusBadge: View {
     let status: GoalStatus
 
     var body: some View {
-        Text(label)
-            .font(.system(size: 9, weight: .bold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.12))
-            .clipShape(Capsule())
+        CommitmentMetaChip(label: label, color: color)
     }
 
     private var label: String {
@@ -731,33 +715,17 @@ struct GoalInlineEmpty: View {
     let text: String
 
     var body: some View {
-        Text(text)
-            .font(.system(size: 12))
-            .foregroundStyle(Theme.dim)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(Theme.surfaceElevated.opacity(0.38))
-            .clipShape(RoundedRectangle(cornerRadius: 9))
+        CommitmentInlineEmpty(text: text)
     }
 }
 
 struct GoalsEmptyDetail: View {
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "flag.fill")
-                .font(.system(size: 32))
-                .foregroundStyle(Theme.dim)
-            Text("Select a milestone")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.text)
-            Text("The inspector shows contributors, next actions, and momentum.")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.dim)
-                .multilineTextAlignment(.center)
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.surface)
+        CommitmentEmptyDetail(
+            icon: "flag.fill",
+            title: "Select a milestone",
+            subtitle: "The inspector shows contributors, next actions, and momentum."
+        )
     }
 }
 

@@ -11,10 +11,13 @@ enum iOSSidebarItem: Hashable {
 
 struct iOSRootView: View {
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @State private var selection: iOSSidebarItem? = .today
+    @State private var compactTabSelection: iOSRootTab = .today
 
     var body: some View {
         let _ = themeManager.selectedTheme
@@ -27,13 +30,14 @@ struct iOSRootView: View {
                     detailView(for: selection ?? .today)
                 }
             } else {
-                TabView {
+                TabView(selection: $compactTabSelection) {
                     NavigationStack {
                         iPadTodayView()
                     }
                     .tabItem {
                         Label("Today", systemImage: "sun.max.fill")
                     }
+                    .tag(iOSRootTab.today)
 
                     NavigationStack {
                         iPadInboxView()
@@ -41,6 +45,7 @@ struct iOSRootView: View {
                     .tabItem {
                         Label("Inbox", systemImage: "tray.fill")
                     }
+                    .tag(iOSRootTab.inbox)
 
                     NavigationStack {
                         iOSListsView()
@@ -48,12 +53,24 @@ struct iOSRootView: View {
                     .tabItem {
                         Label("Lists", systemImage: "folder.fill")
                     }
+                    .tag(iOSRootTab.lists)
                 }
                 .tint(Theme.blue)
             }
         }
         .background(Theme.bg)
         .preferredColorScheme(.dark)
+        .onOpenURL { url in
+            CadenceDeepLinkManager.shared.handle(url)
+        }
+        .onChange(of: deepLinkManager.route?.token) { _, _ in
+            handleDeepLinkRoute()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active {
+                CadenceWidgetRefreshCenter.reloadTodayWidgets()
+            }
+        }
     }
 
     @ViewBuilder
@@ -168,6 +185,23 @@ struct iOSMissingListView: View {
             subtitle: "This list may have been archived, deleted, or changed on another device."
         )
         .background(Theme.bg.ignoresSafeArea())
+    }
+}
+
+private enum iOSRootTab: Hashable {
+    case today
+    case inbox
+    case lists
+}
+
+private extension iOSRootView {
+    func handleDeepLinkRoute() {
+        guard let route = deepLinkManager.route?.deepLink else { return }
+        switch route {
+        case .today, .task:
+            selection = .today
+            compactTabSelection = .today
+        }
     }
 }
 #endif

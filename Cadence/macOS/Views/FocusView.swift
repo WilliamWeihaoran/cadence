@@ -257,21 +257,17 @@ struct FocusView: View {
 
     private var idleLayout: some View {
         HSplitView {
-            VStack(alignment: .leading, spacing: 18) {
-                FocusIdleHero(
-                    clockDisplay: clockDisplay
-                )
-                .frame(height: 178)
-
+            VStack(alignment: .leading, spacing: 0) {
                 FocusPickSessionCard(
                     title: "Pick a task",
-                    subtitle: "Search tasks and bundles, or start from the best matches.",
+                    subtitle: "Search across tasks and bundles, then start the cleanest next session.",
+                    clockDisplay: clockDisplay,
                     searchText: $idleSearchText,
                     items: focusPickerItems,
                     onSelectTask: { focusManager.startFocus(task: $0) },
                     onSelectBundle: { focusManager.startFocus(bundle: $0) }
                 )
-                .frame(maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
             .padding(18)
             .frame(minWidth: 520, idealWidth: 720)

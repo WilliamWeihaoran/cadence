@@ -289,17 +289,12 @@ struct GoalTimelineFilterPopover: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Theme.dim)
 
-                HStack(spacing: 6) {
-                    ForEach(GoalStatusFilter.allCases, id: \.self) { filter in
-                        CadencePillButton(
-                            title: filter.label,
-                            isSelected: statusFilter == filter,
-                            minWidth: 48
-                        ) {
-                            statusFilter = filter
-                        }
-                    }
-                }
+                CommitmentFilterBar(
+                    items: GoalStatusFilter.allCases,
+                    selection: $statusFilter,
+                    minWidth: 48,
+                    label: \.label
+                )
             }
         }
         .padding(14)

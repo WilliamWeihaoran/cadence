@@ -5,6 +5,7 @@ enum CadenceModelContainerFactory {
     static let storeURLEnvironmentKey = "CADENCE_MCP_STORE_URL"
     static let createStoreIfMissingEnvironmentKey = "CADENCE_MCP_CREATE_STORE_IF_MISSING"
     static let appContainerIdentifier = "com.haoranwei.Cadence"
+    static let appGroupIdentifier = "group.com.haoranwei.Cadence"
 
     static func makeReadOnlyContainer() throws -> ModelContainer {
         let storeURL = try resolvedStoreURL()
@@ -57,6 +58,14 @@ enum CadenceModelContainerFactory {
         }
 
         let home = userHomeDirectory
+        let appGroupURL = home
+            .appendingPathComponent("Library/Group Containers")
+            .appendingPathComponent(appGroupIdentifier)
+            .appendingPathComponent("Library/Application Support/default.store")
+        if FileManager.default.fileExists(atPath: appGroupURL.path) {
+            return appGroupURL
+        }
+
         let appContainerURL = home
             .appendingPathComponent("Library/Containers")
             .appendingPathComponent(appContainerIdentifier)
@@ -72,6 +81,7 @@ enum CadenceModelContainerFactory {
         }
 
         throw CadenceReadError.storeNotFound([
+            appGroupURL.path,
             appContainerURL.path,
             unsandboxedURL.path,
         ])

@@ -60,14 +60,13 @@ enum KanbanCardComputedSupport {
     }
 
     static func urgencyBackgroundTint(task: AppTask, isHovered: Bool) -> Color {
-        guard !task.isDone else { return isHovered ? Theme.blue.opacity(0.075) : .clear }
-        if isOverdue(task: task) {
-            return Theme.red.opacity(isHovered ? 0.22 : 0.16)
-        }
-        if isOverdo(task: task) {
-            return Theme.amber.opacity(isHovered ? 0.26 : 0.2)
-        }
-        return isHovered ? Theme.blue.opacity(0.075) : .clear
+        TaskHoverVisuals.hoverFill(
+            for: task,
+            isHovered: isHovered,
+            isOverdue: isOverdue(task: task),
+            isOverdo: isOverdo(task: task),
+            normalOpacity: 0.08
+        )
     }
 }
 #endif
