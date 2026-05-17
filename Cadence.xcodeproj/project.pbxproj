@@ -177,21 +177,20 @@
 			membershipExceptions = (
 				AGENTS.md,
 				Info.plist,
-				Models/AGENTS.md,
-				Services/AGENTS.md,
-				Shared/AGENTS.md,
 				iOS/AGENTS.md,
 				macOS/AGENTS.md,
 				macOS/Editor/AGENTS.md,
 				macOS/Services/AGENTS.md,
 				macOS/Views/AGENTS.md,
+				Models/AGENTS.md,
+				Services/AGENTS.md,
+				Shared/AGENTS.md,
 			);
 			target = 8850FF1E2F75C94900A80F43 /* Cadence */;
 		};
 		B10000002FCE000000000107 /* Exceptions for "CadenceWidgets" folder in "CadenceWidgets" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				CadenceWidgets.entitlements,
 				Info.plist,
 			);
 			target = B10000002FCE00000000010D /* CadenceWidgets */;

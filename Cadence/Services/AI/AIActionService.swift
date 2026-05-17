@@ -30,7 +30,6 @@ enum AIActionError: LocalizedError, Equatable {
         }
     }
 }
-#endif
 
 struct AITaskDraftValidation: Equatable {
     var errors: [String]
@@ -141,3 +140,4 @@ enum AIActionService {
         return DateFormatters.date(from: trimmed) == nil ? "" : trimmed
     }
 }
+#endif

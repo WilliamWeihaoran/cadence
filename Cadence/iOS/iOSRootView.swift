@@ -5,6 +5,8 @@ import SwiftUI
 enum iOSSidebarItem: Hashable {
     case today
     case inbox
+    case search
+    case settings
     case area(UUID)
     case project(UUID)
 }
@@ -54,6 +56,22 @@ struct iOSRootView: View {
                         Label("Lists", systemImage: "folder.fill")
                     }
                     .tag(iOSRootTab.lists)
+
+                    NavigationStack {
+                        iOSSearchView()
+                    }
+                    .tabItem {
+                        Label("Search", systemImage: "magnifyingglass")
+                    }
+                    .tag(iOSRootTab.search)
+
+                    NavigationStack {
+                        iOSSettingsView()
+                    }
+                    .tabItem {
+                        Label("Settings", systemImage: "gearshape.fill")
+                    }
+                    .tag(iOSRootTab.settings)
                 }
                 .tint(Theme.blue)
             }
@@ -80,6 +98,14 @@ struct iOSRootView: View {
             iPadTodayView()
         case .inbox:
             iPadInboxView()
+        case .search:
+            NavigationStack {
+                iOSSearchView()
+            }
+        case .settings:
+            NavigationStack {
+                iOSSettingsView()
+            }
         case .area(let id):
             if let area = areas.first(where: { $0.id == id }) {
                 iOSListDetailView(area: area)
@@ -117,6 +143,12 @@ private struct iOSSidebar: View {
 
                 Label("Inbox", systemImage: "tray.fill")
                     .tag(iOSSidebarItem.inbox)
+
+                Label("Search", systemImage: "magnifyingglass")
+                    .tag(iOSSidebarItem.search)
+
+                Label("Settings", systemImage: "gearshape.fill")
+                    .tag(iOSSidebarItem.settings)
             }
 
             if !activeAreas.isEmpty {
@@ -192,6 +224,8 @@ private enum iOSRootTab: Hashable {
     case today
     case inbox
     case lists
+    case search
+    case settings
 }
 
 private extension iOSRootView {

@@ -7,6 +7,13 @@ struct iPadTodayView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var newTitle = ""
+    @AppStorage("ios.today.sortMode") private var sortModeRaw = iOSTaskSortMode.priority.rawValue
+    @AppStorage("ios.today.showCompleted") private var showCompleted = false
+
+    private var sortMode: iOSTaskSortMode {
+        get { iOSTaskSortMode(rawValue: sortModeRaw) ?? .priority }
+        set { sortModeRaw = newValue.rawValue }
+    }
 
     private var todayKey: String {
         DateFormatters.todayKey()
@@ -20,15 +27,29 @@ struct iPadTodayView: View {
                     task.dueDate == todayKey ||
                     (!task.dueDate.isEmpty && task.dueDate < todayKey)
             }
-            .sorted { lhs, rhs in
-                let leftRank = rank(lhs)
-                let rightRank = rank(rhs)
-                if leftRank != rightRank { return leftRank < rightRank }
-                if lhs.priority != rhs.priority {
-                    return priorityRank(lhs.priority) > priorityRank(rhs.priority)
+            .sorted(by: sortTasks)
+    }
+
+    private var completedTodayTasks: [AppTask] {
+        allTasks
+            .filter { task in
+                guard task.isDone && !task.isCancelled else { return false }
+                if task.scheduledDate == todayKey || task.dueDate == todayKey { return true }
+                if let completedAt = task.completedAt {
+                    return DateFormatters.dateKey(from: completedAt) == todayKey
                 }
-                return lhs.order < rhs.order
+                return false
             }
+            .sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
+    }
+
+    private var todayTaskGroups: [(title: String, color: Color, tasks: [AppTask])] {
+        [
+            ("Overdue", Theme.red, todayTasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey }),
+            ("Due Today", Theme.amber, todayTasks.filter { $0.dueDate == todayKey }),
+            ("Planned Today", Theme.blue, todayTasks.filter { $0.dueDate != todayKey && !(!$0.dueDate.isEmpty && $0.dueDate < todayKey) })
+        ]
+        .filter { !$0.tasks.isEmpty }
     }
 
     var body: some View {
@@ -77,24 +98,52 @@ struct iPadTodayView: View {
                 title: $newTitle,
                 action: captureTodayTask
             )
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
 
-            if todayTasks.isEmpty {
+            iOSTaskViewOptionsBar(
+                sortMode: Binding(
+                    get: { sortMode },
+                    set: { sortModeRaw = $0.rawValue }
+                ),
+                showCompleted: $showCompleted,
+                completedCount: completedTodayTasks.count
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
+
+            if todayTasks.isEmpty && (!showCompleted || completedTodayTasks.isEmpty) {
                 iOSEmptyPanel(
                     systemImage: "checkmark.circle",
                     title: "Nothing planned for today",
                     subtitle: "Add a task above or schedule one from Inbox."
                 )
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(todayTasks) { task in
-                            iOSTaskRow(task: task)
+                List {
+                    ForEach(todayTaskGroups, id: \.title) { group in
+                        Section {
+                            ForEach(group.tasks) { task in
+                                iOSTaskListRow(task: task)
+                            }
+                        } header: {
+                            iOSTaskSectionHeader(title: group.title, color: group.color)
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+
+                    if showCompleted && !completedTodayTasks.isEmpty {
+                        Section {
+                            ForEach(completedTodayTasks.prefix(12)) { task in
+                                iOSTaskListRow(task: task, opacity: 0.62)
+                            }
+                        } header: {
+                            iOSTaskSectionHeader(title: "Completed Today", color: Theme.green)
+                        }
+                    }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(Theme.surface)
             }
         }
         .background(Theme.surface)
@@ -122,6 +171,31 @@ struct iPadTodayView: View {
         if task.dueDate == todayKey { return 1 }
         if task.scheduledDate == todayKey { return 2 }
         return 3
+    }
+
+    private func sortTasks(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
+        let leftRank = rank(lhs)
+        let rightRank = rank(rhs)
+        if leftRank != rightRank { return leftRank < rightRank }
+
+        switch sortMode {
+        case .listOrder:
+            return lhs.order < rhs.order
+        case .priority:
+            if lhs.priority != rhs.priority {
+                return priorityRank(lhs.priority) > priorityRank(rhs.priority)
+            }
+            return lhs.order < rhs.order
+        case .dueDate:
+            if lhs.dueDate != rhs.dueDate {
+                if lhs.dueDate.isEmpty { return false }
+                if rhs.dueDate.isEmpty { return true }
+                return lhs.dueDate < rhs.dueDate
+            }
+            return lhs.order < rhs.order
+        case .newest:
+            return lhs.createdAt > rhs.createdAt
+        }
     }
 
     private func priorityRank(_ priority: TaskPriority) -> Int {

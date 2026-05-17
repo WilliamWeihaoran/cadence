@@ -2,11 +2,30 @@
 import SwiftData
 import SwiftUI
 
+enum iOSTaskSortMode: String, CaseIterable, Identifiable {
+    case listOrder = "listOrder"
+    case priority = "priority"
+    case dueDate = "dueDate"
+    case newest = "newest"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .listOrder: return "List Order"
+        case .priority: return "Priority"
+        case .dueDate: return "Due Date"
+        case .newest: return "Newest"
+        }
+    }
+}
+
 struct iOSTaskRow: View {
     @Bindable var task: AppTask
     @Environment(\.modelContext) private var modelContext
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
     @State private var showDetail = false
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         Button {
@@ -78,6 +97,91 @@ struct iOSTaskRow: View {
         .sheet(isPresented: $showDetail) {
             iOSTaskDetailSheet(task: task)
         }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button {
+                toggleCompletion()
+            } label: {
+                Label(task.isDone ? "Todo" : "Done",
+                      systemImage: task.isDone ? "circle" : "checkmark.circle.fill")
+            }
+            .tint(task.isDone ? Theme.blue : Theme.green)
+
+            Button(role: .destructive) {
+                showDeleteConfirmation = true
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            Button {
+                scheduleToday()
+            } label: {
+                Label("Today", systemImage: "sun.max.fill")
+            }
+            .tint(Theme.amber)
+
+            Button {
+                scheduleTomorrow()
+            } label: {
+                Label("Tomorrow", systemImage: "calendar")
+            }
+            .tint(Theme.blue)
+
+            if !task.scheduledDate.isEmpty {
+                Button {
+                    clearScheduledDate()
+                } label: {
+                    Label("Clear", systemImage: "xmark.circle")
+                }
+                .tint(Theme.dim)
+            }
+        }
+        .contextMenu {
+            Button {
+                showDetail = true
+            } label: {
+                Label("Edit", systemImage: "square.and.pencil")
+            }
+
+            Button {
+                toggleCompletion()
+            } label: {
+                Label(task.isDone ? "Mark Todo" : "Mark Done",
+                      systemImage: task.isDone ? "circle" : "checkmark.circle.fill")
+            }
+
+            Button {
+                scheduleToday()
+            } label: {
+                Label("Schedule Today", systemImage: "sun.max.fill")
+            }
+
+            Button {
+                scheduleTomorrow()
+            } label: {
+                Label("Schedule Tomorrow", systemImage: "calendar")
+            }
+
+            if !task.scheduledDate.isEmpty {
+                Button {
+                    clearScheduledDate()
+                } label: {
+                    Label("Clear Do Date", systemImage: "xmark.circle")
+                }
+            }
+
+            Button(role: .destructive) {
+                showDeleteConfirmation = true
+            } label: {
+                Label("Delete Task", systemImage: "trash")
+            }
+        }
+        .alert("Delete Task?", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive, action: deleteTask)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the task and its subtasks.")
+        }
         .onAppear(perform: handlePendingDeepLink)
         .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
             handlePendingDeepLink()
@@ -128,6 +232,27 @@ struct iOSTaskRow: View {
         try? modelContext.save()
     }
 
+    private func scheduleToday() {
+        task.scheduledDate = DateFormatters.todayKey()
+        try? modelContext.save()
+    }
+
+    private func scheduleTomorrow() {
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+        task.scheduledDate = DateFormatters.dateKey(from: tomorrow)
+        try? modelContext.save()
+    }
+
+    private func clearScheduledDate() {
+        task.scheduledDate = ""
+        task.scheduledStartMin = -1
+        try? modelContext.save()
+    }
+
+    private func deleteTask() {
+        modelContext.deleteTaskForiOS(task)
+    }
+
     private func handlePendingDeepLink() {
         guard deepLinkManager.pendingTaskID == task.id else { return }
         showDetail = true
@@ -148,6 +273,7 @@ struct iOSTaskDetailSheet: View {
     @State private var hasScheduledDate = false
     @State private var hasDueDate = false
     @State private var containerSelection = "inbox"
+    @State private var showDeleteConfirmation = false
 
     private var sortedSubtasks: [Subtask] {
         (task.subtasks ?? []).sorted { $0.order < $1.order }
@@ -272,9 +398,7 @@ struct iOSTaskDetailSheet: View {
                     }
 
                     Button(role: .destructive) {
-                        modelContext.delete(task)
-                        try? modelContext.save()
-                        dismiss()
+                        showDeleteConfirmation = true
                     } label: {
                         Label("Delete Task", systemImage: "trash")
                     }
@@ -315,6 +439,15 @@ struct iOSTaskDetailSheet: View {
             }
             .onChange(of: scheduledDate) { _, _ in applyDates() }
             .onChange(of: dueDate) { _, _ in applyDates() }
+            .alert("Delete Task?", isPresented: $showDeleteConfirmation) {
+                Button("Delete", role: .destructive) {
+                    modelContext.deleteTaskForiOS(task)
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes the task and its subtasks.")
+            }
         }
         .preferredColorScheme(.dark)
     }
@@ -446,6 +579,65 @@ struct iOSTaskDetailSheet: View {
     }
 }
 
+struct iOSTaskListRow: View {
+    @Bindable var task: AppTask
+    var opacity: Double = 1
+
+    var body: some View {
+        iOSTaskRow(task: task)
+            .opacity(opacity)
+            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+    }
+}
+
+struct iOSTaskSectionHeader: View {
+    let title: String
+    let color: Color
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(color)
+            .textCase(.uppercase)
+            .padding(.top, 8)
+    }
+}
+
+struct iOSTaskViewOptionsBar: View {
+    @Binding var sortMode: iOSTaskSortMode
+    @Binding var showCompleted: Bool
+    var completedCount: Int
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Menu {
+                Picker("Sort", selection: $sortMode) {
+                    ForEach(iOSTaskSortMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+            } label: {
+                Label(sortMode.title, systemImage: "arrow.up.arrow.down")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .buttonStyle(.bordered)
+
+            Spacer()
+
+            Toggle(isOn: $showCompleted) {
+                Text(completedCount > 0 ? "Completed \(completedCount)" : "Completed")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .toggleStyle(.button)
+            .disabled(completedCount == 0)
+            .opacity(completedCount == 0 ? 0.45 : 1)
+        }
+        .tint(Theme.blue)
+    }
+}
+
 private struct iOSSubtaskRow: View {
     @Bindable var subtask: Subtask
 
@@ -555,6 +747,21 @@ struct iOSEmptyPanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(32)
+    }
+}
+
+extension ModelContext {
+    func deleteTaskForiOS(_ task: AppTask) {
+        let subtasks = task.subtasks ?? []
+        task.subtasks = []
+        task.bundle?.tasks = (task.bundle?.tasks ?? []).filter { $0.id != task.id }
+
+        for subtask in subtasks {
+            delete(subtask)
+        }
+
+        delete(task)
+        try? save()
     }
 }
 #endif
