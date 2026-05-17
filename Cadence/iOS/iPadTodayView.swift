@@ -20,49 +20,40 @@ struct iPadTodayView: View {
     }
 
     private var todayTasks: [AppTask] {
-        allTasks
-            .filter { task in
-                guard !task.isDone && !task.isCancelled else { return false }
-                return task.scheduledDate == todayKey ||
-                    task.dueDate == todayKey ||
-                    (!task.dueDate.isEmpty && task.dueDate < todayKey)
-            }
-            .sorted(by: sortTasks)
+        CadenceTaskQuerySupport.activeTodayTasks(
+            from: allTasks,
+            todayKey: todayKey,
+            sortMode: sortMode.cadenceSortMode
+        )
     }
 
     private var completedTodayTasks: [AppTask] {
-        allTasks
-            .filter { task in
-                guard task.isDone && !task.isCancelled else { return false }
-                if task.scheduledDate == todayKey || task.dueDate == todayKey { return true }
-                if let completedAt = task.completedAt {
-                    return DateFormatters.dateKey(from: completedAt) == todayKey
-                }
-                return false
-            }
-            .sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
+        CadenceTaskQuerySupport.completedTodayTasks(from: allTasks, todayKey: todayKey)
     }
 
-    private var todayTaskGroups: [(title: String, color: Color, tasks: [AppTask])] {
-        [
-            ("Overdue", Theme.red, todayTasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey }),
-            ("Due Today", Theme.amber, todayTasks.filter { $0.dueDate == todayKey }),
-            ("Planned Today", Theme.blue, todayTasks.filter { $0.dueDate != todayKey && !(!$0.dueDate.isEmpty && $0.dueDate < todayKey) })
-        ]
-        .filter { !$0.tasks.isEmpty }
+    private var todayTaskGroups: [CadenceTodayTaskGroup] {
+        CadenceTaskQuerySupport.todayGroups(from: todayTasks, todayKey: todayKey)
     }
 
     var body: some View {
         Group {
             if horizontalSizeClass == .regular {
                 HStack(spacing: 0) {
-                    todayTaskColumn
-                        .frame(minWidth: 360, idealWidth: 430, maxWidth: 520)
+                    iOSNotesPanel(useStandardHeaderHeight: true)
+                        .frame(minWidth: 260, idealWidth: 340)
+                        .layoutPriority(0.34)
 
                     Divider().background(Theme.borderSubtle)
 
-                    iOSNotesPanel()
-                        .frame(maxWidth: .infinity)
+                    todayTaskColumn
+                        .frame(minWidth: 300, idealWidth: 380)
+                        .layoutPriority(0.38)
+
+                    Divider().background(Theme.borderSubtle)
+
+                    iOSSchedulePanel()
+                        .frame(minWidth: 230, idealWidth: 300)
+                        .layoutPriority(0.28)
                 }
             } else {
                 ScrollView {
@@ -127,7 +118,7 @@ struct iPadTodayView: View {
                                 iOSTaskListRow(task: task)
                             }
                         } header: {
-                            iOSTaskSectionHeader(title: group.title, color: group.color)
+                            iOSTaskSectionHeader(title: group.title, color: color(for: group.kind))
                         }
                     }
 
@@ -150,61 +141,160 @@ struct iPadTodayView: View {
     }
 
     private func captureTodayTask() {
-        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        let task = AppTask(title: trimmed)
-        task.scheduledDate = todayKey
-        task.estimatedMinutes = 30
-        task.order = nextTaskOrder()
+        guard let task = CadenceTaskQuerySupport.makeTask(
+            title: newTitle,
+            allTasks: allTasks,
+            scheduledDate: todayKey
+        ) else { return }
         modelContext.insert(task)
         try? modelContext.save()
         newTitle = ""
     }
 
-    private func nextTaskOrder() -> Int {
-        (allTasks.map(\.order).max() ?? -1) + 1
-    }
-
-    private func rank(_ task: AppTask) -> Int {
-        if !task.dueDate.isEmpty && task.dueDate < todayKey { return 0 }
-        if task.dueDate == todayKey { return 1 }
-        if task.scheduledDate == todayKey { return 2 }
-        return 3
-    }
-
-    private func sortTasks(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
-        let leftRank = rank(lhs)
-        let rightRank = rank(rhs)
-        if leftRank != rightRank { return leftRank < rightRank }
-
-        switch sortMode {
-        case .listOrder:
-            return lhs.order < rhs.order
-        case .priority:
-            if lhs.priority != rhs.priority {
-                return priorityRank(lhs.priority) > priorityRank(rhs.priority)
-            }
-            return lhs.order < rhs.order
-        case .dueDate:
-            if lhs.dueDate != rhs.dueDate {
-                if lhs.dueDate.isEmpty { return false }
-                if rhs.dueDate.isEmpty { return true }
-                return lhs.dueDate < rhs.dueDate
-            }
-            return lhs.order < rhs.order
-        case .newest:
-            return lhs.createdAt > rhs.createdAt
+    private func color(for groupKind: CadenceTodayTaskGroupKind) -> Color {
+        switch groupKind {
+        case .overdue: return Theme.red
+        case .dueToday: return Theme.amber
+        case .plannedToday: return Theme.blue
         }
     }
+}
 
-    private func priorityRank(_ priority: TaskPriority) -> Int {
-        switch priority {
-        case .high: return 3
-        case .medium: return 2
-        case .low: return 1
-        case .none: return 0
+private struct iOSSchedulePanel: View {
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Query private var allBundles: [TaskBundle]
+
+    private var todayKey: String {
+        DateFormatters.todayKey()
+    }
+
+    private var scheduledTasks: [AppTask] {
+        CadenceScheduleSupport.scheduledTasks(on: todayKey, from: allTasks)
+    }
+
+    private var todayBundles: [TaskBundle] {
+        CadenceScheduleSupport.bundles(on: todayKey, from: allBundles, includeCompleted: false)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                iOSPanelHeader(eyebrow: "Schedule", title: "Timeline")
+                Spacer()
+            }
+            .frame(height: iOSPanelHeaderHeight, alignment: .top)
+
+            Divider().background(Theme.borderSubtle)
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(6..<23, id: \.self) { hour in
+                        iOSScheduleHourRow(
+                            hour: hour,
+                            tasks: tasks(in: hour),
+                            bundles: bundles(in: hour)
+                        )
+                    }
+                }
+                .padding(.trailing, 8)
+            }
+            .scrollIndicators(.hidden)
         }
+        .background(Theme.bg)
+    }
+
+    private func tasks(in hour: Int) -> [AppTask] {
+        CadenceScheduleSupport.tasks(in: hour, from: scheduledTasks)
+    }
+
+    private func bundles(in hour: Int) -> [TaskBundle] {
+        CadenceScheduleSupport.bundles(in: hour, from: todayBundles)
+    }
+}
+
+private struct iOSScheduleHourRow: View {
+    let hour: Int
+    let tasks: [AppTask]
+    let bundles: [TaskBundle]
+
+    private var hasItems: Bool {
+        !tasks.isEmpty || !bundles.isEmpty
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Text(hourLabel)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Theme.dim.opacity(hour % 3 == 0 ? 0.9 : 0.45))
+                .frame(width: 42, alignment: .trailing)
+                .padding(.trailing, 7)
+                .padding(.top, -6)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Rectangle()
+                    .fill(Theme.borderSubtle.opacity(hour % 3 == 0 ? 0.55 : 0.25))
+                    .frame(height: 1)
+
+                if hasItems {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(bundles) { bundle in
+                            iOSScheduleBlock(
+                                title: bundle.displayTitle,
+                                subtitle: TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin),
+                                tint: Theme.purple
+                            )
+                        }
+
+                        ForEach(tasks) { task in
+                            iOSScheduleBlock(
+                                title: task.title.isEmpty ? "Untitled Task" : task.title,
+                                subtitle: TimeFormatters.timeRange(
+                                    startMin: task.scheduledStartMin,
+                                    endMin: task.scheduledEndMin
+                                ),
+                                tint: Color(hex: task.containerColor)
+                            )
+                        }
+                    }
+                    .padding(.top, 5)
+                }
+            }
+        }
+        .frame(minHeight: 48, alignment: .top)
+        .padding(.leading, 4)
+    }
+
+    private var hourLabel: String {
+        TimeFormatters.timeString(from: hour * 60)
+    }
+}
+
+private struct iOSScheduleBlock: View {
+    let title: String
+    let subtitle: String
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+            Text(subtitle)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.18))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 999, style: .continuous)
+                .fill(tint.opacity(0.9))
+                .frame(width: 3)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 }
 #endif

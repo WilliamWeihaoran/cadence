@@ -21,6 +21,14 @@ struct iOSListsView: View {
         projects.filter(\.isActive)
     }
 
+    private var archivedAreas: [Area] {
+        areas.filter(\.isArchived)
+    }
+
+    private var archivedProjects: [Project] {
+        projects.filter(\.isArchived)
+    }
+
     var body: some View {
         List {
             if !activeAreas.isEmpty {
@@ -95,11 +103,37 @@ struct iOSListsView: View {
                 }
             }
 
+            if !archivedAreas.isEmpty || !archivedProjects.isEmpty {
+                Section("Archived") {
+                    ForEach(archivedAreas) { area in
+                        iOSArchivedListRow(
+                            title: area.name,
+                            subtitle: area.context?.name,
+                            icon: area.icon,
+                            colorHex: area.colorHex
+                        ) {
+                            restore(area)
+                        }
+                    }
+
+                    ForEach(archivedProjects) { project in
+                        iOSArchivedListRow(
+                            title: project.name,
+                            subtitle: [project.context?.name, project.area?.name].compactMap { $0 }.joined(separator: " / "),
+                            icon: project.icon,
+                            colorHex: project.colorHex
+                        ) {
+                            restore(project)
+                        }
+                    }
+                }
+            }
+
             if activeAreas.isEmpty && activeProjects.isEmpty {
                 iOSEmptyPanel(
                     systemImage: "folder",
                     title: "No active lists",
-                    subtitle: "Areas and projects created on Mac will appear here."
+                    subtitle: "Create an area or project here, or restore one from Archived."
                 )
                 .listRowBackground(Color.clear)
             }
@@ -164,6 +198,16 @@ struct iOSListsView: View {
         project.status = .archived
         try? modelContext.save()
     }
+
+    private func restore(_ area: Area) {
+        area.status = .active
+        try? modelContext.save()
+    }
+
+    private func restore(_ project: Project) {
+        project.status = .active
+        try? modelContext.save()
+    }
 }
 
 struct iOSListDetailView: View {
@@ -218,9 +262,7 @@ struct iOSListDetailView: View {
     }
 
     private var completedTasks: [AppTask] {
-        filteredTasks
-            .filter { $0.isDone }
-            .sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
+        CadenceTaskQuerySupport.completedTasks(from: filteredTasks)
     }
 
     private var filteredTasks: [AppTask] {
@@ -409,7 +451,7 @@ struct iOSListDetailView: View {
             return lhs.order < rhs.order
         case .priority:
             if lhs.priority != rhs.priority {
-                return priorityRank(lhs.priority) > priorityRank(rhs.priority)
+                return CadenceTaskQuerySupport.priorityRank(lhs.priority) > CadenceTaskQuerySupport.priorityRank(rhs.priority)
             }
             return lhs.order < rhs.order
         case .dueDate:
@@ -421,15 +463,6 @@ struct iOSListDetailView: View {
             return lhs.order < rhs.order
         case .newest:
             return lhs.createdAt > rhs.createdAt
-        }
-    }
-
-    private func priorityRank(_ priority: TaskPriority) -> Int {
-        switch priority {
-        case .high: return 3
-        case .medium: return 2
-        case .low: return 1
-        case .none: return 0
         }
     }
 }
@@ -465,6 +498,8 @@ private struct iOSListEditorSheet: View {
     @State private var selectedAreaID = "none"
     @State private var sectionText = TaskSectionDefaults.defaultName
     @State private var hideEmptyDueDates = true
+    @State private var hasProjectDueDate = false
+    @State private var projectDueDate = Date()
     @State private var hasLoaded = false
 
     private var isProjectMode: Bool {
@@ -539,6 +574,13 @@ private struct iOSListEditorSheet: View {
                             }
                         }
                     }
+
+                    if isProjectMode {
+                        Toggle("Due date", isOn: $hasProjectDueDate)
+                        if hasProjectDueDate {
+                            DatePicker("Due", selection: $projectDueDate, displayedComponents: .date)
+                        }
+                    }
                 }
 
                 Section("Sections") {
@@ -579,11 +621,15 @@ private struct iOSListEditorSheet: View {
             details = ""
             icon = "folder.fill"
             colorHex = "#4a9eff"
+            hasProjectDueDate = false
+            projectDueDate = Date()
         case .newProject:
             name = ""
             details = ""
             icon = "checklist"
             colorHex = "#4ecb71"
+            hasProjectDueDate = false
+            projectDueDate = Date()
         case .editArea(let area):
             name = area.name
             details = area.desc
@@ -601,6 +647,13 @@ private struct iOSListEditorSheet: View {
             selectedAreaID = project.area?.id.uuidString ?? "none"
             sectionText = project.sectionNames.joined(separator: "\n")
             hideEmptyDueDates = project.hideDueDateIfEmpty
+            if let date = DateFormatters.date(from: project.dueDate) {
+                projectDueDate = date
+                hasProjectDueDate = true
+            } else {
+                projectDueDate = Date()
+                hasProjectDueDate = false
+            }
         }
     }
 
@@ -620,6 +673,7 @@ private struct iOSListEditorSheet: View {
             project.order = nextProjectOrder()
             project.sectionNames = normalizedSections
             project.hideDueDateIfEmpty = hideEmptyDueDates
+            project.dueDate = hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : ""
             modelContext.insert(project)
         case .editArea(let area):
             area.name = trimmedName
@@ -638,6 +692,7 @@ private struct iOSListEditorSheet: View {
             project.area = selectedArea
             project.sectionNames = normalizedSections
             project.hideDueDateIfEmpty = hideEmptyDueDates
+            project.dueDate = hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : ""
         }
 
         try? modelContext.save()
@@ -711,6 +766,39 @@ private struct iOSListPickerRow: View {
                 .background(Theme.surfaceElevated)
                 .clipShape(Capsule())
         }
+    }
+}
+
+private struct iOSArchivedListRow: View {
+    let title: String
+    let subtitle: String?
+    let icon: String
+    let colorHex: String
+    let restore: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color(hex: colorHex).opacity(0.58))
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title.isEmpty ? "Untitled" : title)
+                    .foregroundStyle(Theme.muted)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(Theme.dim)
+                }
+            }
+
+            Spacer()
+
+            Button("Restore", action: restore)
+                .font(.caption.weight(.semibold))
+        }
+        .padding(.vertical, 3)
     }
 }
 

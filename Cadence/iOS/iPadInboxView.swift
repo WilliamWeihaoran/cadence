@@ -15,15 +15,14 @@ struct iPadInboxView: View {
     }
 
     private var inboxTasks: [AppTask] {
-        allTasks
-            .filter { $0.area == nil && $0.project == nil && !$0.isDone && !$0.isCancelled }
-            .sorted(by: sortTasks)
+        CadenceTaskQuerySupport.activeInboxTasks(
+            from: allTasks,
+            sortMode: sortMode.cadenceSortMode
+        )
     }
 
     private var completedInboxTasks: [AppTask] {
-        allTasks
-            .filter { $0.area == nil && $0.project == nil && $0.isDone && !$0.isCancelled }
-            .sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
+        CadenceTaskQuerySupport.completedInboxTasks(from: allTasks)
     }
 
     var body: some View {
@@ -95,49 +94,12 @@ struct iPadInboxView: View {
     }
 
     private func captureInboxTask() {
-        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        let task = AppTask(title: trimmed)
-        task.estimatedMinutes = 30
-        task.order = nextTaskOrder()
+        guard let task = CadenceTaskQuerySupport.makeTask(title: newTitle, allTasks: allTasks) else {
+            return
+        }
         modelContext.insert(task)
         try? modelContext.save()
         newTitle = ""
-    }
-
-    private func nextTaskOrder() -> Int {
-        (allTasks.map(\.order).max() ?? -1) + 1
-    }
-
-    private func sortTasks(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
-        switch sortMode {
-        case .listOrder:
-            return lhs.order < rhs.order
-        case .priority:
-            if lhs.priority != rhs.priority {
-                return priorityRank(lhs.priority) > priorityRank(rhs.priority)
-            }
-            return lhs.order < rhs.order
-        case .dueDate:
-            if lhs.dueDate != rhs.dueDate {
-                if lhs.dueDate.isEmpty { return false }
-                if rhs.dueDate.isEmpty { return true }
-                return lhs.dueDate < rhs.dueDate
-            }
-            return lhs.order < rhs.order
-        case .newest:
-            return lhs.createdAt > rhs.createdAt
-        }
-    }
-
-    private func priorityRank(_ priority: TaskPriority) -> Int {
-        switch priority {
-        case .high: return 3
-        case .medium: return 2
-        case .low: return 1
-        case .none: return 0
-        }
     }
 }
 #endif

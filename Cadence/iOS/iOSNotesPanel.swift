@@ -7,52 +7,66 @@ struct iOSNotesPanel: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var activeTab: NoteTab = .today
     @State private var todayNote: Note?
+    @State private var weekNote: Note?
     @State private var permanentNote: Note?
+    @FocusState private var isEditorFocused: Bool
+    var useStandardHeaderHeight = false
 
     private enum NoteTab: String, CaseIterable {
         case today = "Today"
+        case week = "This Week"
         case notepad = "Notepad"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(
-                eyebrow: "Notes",
-                title: activeTab.rawValue
-            )
+            VStack(alignment: .leading, spacing: 0) {
+                iOSPanelHeader(
+                    eyebrow: "Notes",
+                    title: activeTab.rawValue
+                )
 
-            HStack(spacing: 8) {
-                ForEach(NoteTab.allCases, id: \.self) { tab in
-                    Button {
-                        activeTab = tab
-                    } label: {
-                        Text(tab.rawValue)
-                            .font(.system(size: 13, weight: activeTab == tab ? .semibold : .medium))
-                            .foregroundStyle(activeTab == tab ? .white : Theme.dim)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(activeTab == tab ? Theme.blue : Theme.surfaceElevated)
-                            .clipShape(Capsule())
+                HStack(spacing: 0) {
+                    ForEach(NoteTab.allCases, id: \.self) { tab in
+                        iOSNotePanelTabButton(
+                            title: tab.rawValue,
+                            isSelected: activeTab == tab
+                        ) {
+                            activeTab = tab
+                        }
                     }
-                    .buttonStyle(.plain)
+                    Spacer()
                 }
-                Spacer()
+                .padding(.horizontal, 12)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 14)
+            .frame(height: useStandardHeaderHeight ? iOSPanelHeaderHeight : nil, alignment: .top)
 
             Divider().background(Theme.borderSubtle)
 
             if let note = selectedNote {
-                TextEditor(text: Binding(
-                    get: { note.content },
-                    set: { update(note, content: $0) }
-                ))
-                .font(.system(size: 16))
-                .foregroundStyle(Theme.text)
-                .scrollContentBackground(.hidden)
+                ZStack(alignment: .topLeading) {
+                    if note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isEditorFocused {
+                        Text("Start writing...")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Theme.dim.opacity(0.6))
+                            .padding(.horizontal, 17)
+                            .padding(.vertical, 16)
+                    }
+
+                    TextEditor(text: Binding(
+                        get: { note.content },
+                        set: { update(note, content: $0) }
+                    ))
+                    .focused($isEditorFocused)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.text)
+                    .scrollContentBackground(.hidden)
+                    .scrollDismissesKeyboard(.interactively)
+                    .background(Color.clear)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                }
                 .background(Theme.surface)
-                .padding(12)
             } else {
                 ProgressView()
                     .tint(Theme.blue)
@@ -65,17 +79,30 @@ struct iOSNotesPanel: View {
             guard phase == .active else { return }
             loadNotes()
         }
+        .onChange(of: activeTab) { _, _ in
+            isEditorFocused = false
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    isEditorFocused = false
+                }
+            }
+        }
     }
 
     private var selectedNote: Note? {
         switch activeTab {
         case .today: return todayNote
+        case .week: return weekNote
         case .notepad: return permanentNote
         }
     }
 
     private func loadNotes() {
         todayNote = try? NoteMigrationService.dailyNote(for: DateFormatters.todayKey(), in: modelContext)
+        weekNote = try? NoteMigrationService.weeklyNote(for: DateFormatters.currentWeekKey(), in: modelContext)
         permanentNote = try? NoteMigrationService.permanentNote(in: modelContext)
     }
 
@@ -83,6 +110,31 @@ struct iOSNotesPanel: View {
         note.content = content
         note.updatedAt = Date()
         try? modelContext.save()
+    }
+}
+
+private struct iOSNotePanelTabButton: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? Theme.blue : Theme.dim)
+                .frame(minWidth: 78, minHeight: 30)
+                .padding(.horizontal, 8)
+                .contentShape(Rectangle())
+                .overlay(alignment: .bottom) {
+                    if isSelected {
+                        Rectangle()
+                            .fill(Theme.blue.opacity(0.8))
+                            .frame(height: 1)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
     }
 }
 #endif

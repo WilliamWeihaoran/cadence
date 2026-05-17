@@ -5,9 +5,12 @@ import SwiftData
 
 enum SchedulePanelDataSupport {
     static func scheduledTasks(from allTasks: [AppTask], todayKey: String) -> [AppTask] {
-        allTasks.filter {
-            $0.bundle == nil && $0.scheduledDate == todayKey && $0.scheduledStartMin >= 0 && !$0.isCancelled
-        }
+        CadenceScheduleSupport.scheduledTasks(
+            on: todayKey,
+            from: allTasks,
+            includeCompleted: true,
+            excludeBundled: true
+        )
     }
 
     static func externalEventItems(

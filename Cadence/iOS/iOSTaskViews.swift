@@ -20,6 +20,17 @@ enum iOSTaskSortMode: String, CaseIterable, Identifiable {
     }
 }
 
+extension iOSTaskSortMode {
+    var cadenceSortMode: CadenceTaskSortMode {
+        switch self {
+        case .listOrder: return .listOrder
+        case .priority: return .priority
+        case .dueDate: return .dueDate
+        case .newest: return .newest
+        }
+    }
+}
+
 struct iOSTaskRow: View {
     @Bindable var task: AppTask
     @Environment(\.modelContext) private var modelContext
@@ -31,26 +42,26 @@ struct iOSTaskRow: View {
         Button {
             showDetail = true
         } label: {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: 9) {
                 Button {
                     toggleCompletion()
                 } label: {
                     Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(task.isDone ? Theme.green : Theme.dim)
-                        .frame(width: 30, height: 30)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(task.isDone ? Theme.green : Theme.dim.opacity(0.68))
+                        .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.plain)
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(task.title.isEmpty ? "Untitled" : task.title)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                         .strikethrough(task.isDone, color: Theme.dim)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         priorityBadge
 
                         if !task.scheduledDate.isEmpty {
@@ -77,21 +88,42 @@ struct iOSTaskRow: View {
                             )
                         }
                     }
+
+                    if !task.sortedTags.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(task.sortedTags.prefix(4)) { tag in
+                                    iOSTagChip(tag: tag)
+                                }
+
+                                if task.sortedTags.count > 4 {
+                                    Text("+\(task.sortedTags.count - 4)")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(Theme.dim)
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 4)
+                                        .background(Theme.surfaceElevated)
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.dim.opacity(0.65))
-                    .padding(.top, 5)
+                    .padding(.top, 4)
             }
-            .padding(14)
-            .background(Theme.surfaceElevated.opacity(0.72))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 11)
+            .padding(.vertical, 10)
+            .background(Theme.surfaceElevated.opacity(0.52))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Theme.borderSubtle, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Theme.borderSubtle.opacity(0.8), lineWidth: 1)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $showDetail) {
@@ -211,12 +243,12 @@ struct iOSTaskRow: View {
             Image(systemName: systemImage)
                 .font(.system(size: 9, weight: .semibold))
             Text(text)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
                 .lineLimit(1)
         }
         .foregroundStyle(color)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
         .background(color.opacity(0.11))
         .clipShape(Capsule())
     }
@@ -267,7 +299,9 @@ struct iOSTaskDetailSheet: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
+    @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var newSubtaskTitle = ""
+    @State private var newTagName = ""
     @State private var scheduledDate = Date()
     @State private var dueDate = Date()
     @State private var hasScheduledDate = false
@@ -374,6 +408,12 @@ struct iOSTaskDetailSheet: View {
                     TextEditor(text: $task.notes)
                         .frame(minHeight: 140)
                 }
+
+                iOSTaskTagEditorSection(
+                    task: task,
+                    allTags: tags,
+                    newTagName: $newTagName
+                )
 
                 Section("Subtasks") {
                     ForEach(sortedSubtasks) { subtask in
@@ -586,7 +626,7 @@ struct iOSTaskListRow: View {
     var body: some View {
         iOSTaskRow(task: task)
             .opacity(opacity)
-            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
     }
@@ -598,10 +638,11 @@ struct iOSTaskSectionHeader: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 12, weight: .bold))
+            .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(color)
+            .kerning(0.8)
             .textCase(.uppercase)
-            .padding(.top, 8)
+            .padding(.top, 6)
     }
 }
 
@@ -620,17 +661,29 @@ struct iOSTaskViewOptionsBar: View {
                 }
             } label: {
                 Label(sortMode.title, systemImage: "arrow.up.arrow.down")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(Theme.blue.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
 
             Spacer()
 
-            Toggle(isOn: $showCompleted) {
+            Button {
+                showCompleted.toggle()
+            } label: {
                 Text(completedCount > 0 ? "Completed \(completedCount)" : "Completed")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(showCompleted ? Theme.text : Theme.dim)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(showCompleted ? Theme.surfaceElevated : Theme.surfaceElevated.opacity(0.45))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            .toggleStyle(.button)
+            .buttonStyle(.plain)
             .disabled(completedCount == 0)
             .opacity(completedCount == 0 ? 0.45 : 1)
         }
@@ -657,6 +710,137 @@ private struct iOSSubtaskRow: View {
     }
 }
 
+private struct iOSTaskTagEditorSection: View {
+    @Bindable var task: AppTask
+    let allTags: [Tag]
+    @Binding var newTagName: String
+    @Environment(\.modelContext) private var modelContext
+
+    private var selectedTags: [Tag] {
+        TagSupport.sorted(task.tags ?? [])
+    }
+
+    private var availableTags: [Tag] {
+        TagSupport.uniqueBySlug(allTags.filter { !$0.isArchived })
+    }
+
+    private var trimmedNewTagName: String {
+        TagSupport.displayName(for: newTagName)
+    }
+
+    var body: some View {
+        Section("Tags") {
+            if selectedTags.isEmpty {
+                Text("No tags")
+                    .foregroundStyle(Theme.dim)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(selectedTags) { tag in
+                            Button {
+                                remove(tag)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    iOSTagChip(tag: tag)
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(Theme.dim)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+
+            if availableTags.isEmpty {
+                Button {
+                    TagSupport.seedDefaultTags(in: modelContext)
+                } label: {
+                    Label("Add Default Tags", systemImage: "tag")
+                }
+            } else {
+                ForEach(availableTags) { tag in
+                    Button {
+                        toggle(tag)
+                    } label: {
+                        HStack {
+                            iOSTagChip(tag: tag)
+                            Spacer()
+                            if isSelected(tag) {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(Theme.green)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            HStack {
+                TextField("New tag", text: $newTagName)
+                    .textInputAutocapitalization(.never)
+                    .onSubmit(addTag)
+                Button("Add", action: addTag)
+                    .disabled(trimmedNewTagName.isEmpty)
+            }
+        }
+    }
+
+    private func isSelected(_ tag: Tag) -> Bool {
+        (task.tags ?? []).contains { $0.id == tag.id }
+    }
+
+    private func toggle(_ tag: Tag) {
+        if isSelected(tag) {
+            remove(tag)
+        } else {
+            task.tags = TagSupport.sorted((task.tags ?? []) + [tag])
+            try? modelContext.save()
+        }
+    }
+
+    private func remove(_ tag: Tag) {
+        task.tags = (task.tags ?? []).filter { $0.id != tag.id }
+        try? modelContext.save()
+    }
+
+    private func addTag() {
+        let name = trimmedNewTagName
+        guard !name.isEmpty else { return }
+
+        let resolved = TagSupport.resolveTags(named: [name], in: modelContext)
+        guard let tag = resolved.first else { return }
+        if !isSelected(tag) {
+            task.tags = TagSupport.sorted((task.tags ?? []) + [tag])
+        }
+        newTagName = ""
+        try? modelContext.save()
+    }
+}
+
+private struct iOSTagChip: View {
+    let tag: Tag
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(Color(hex: tag.colorHex))
+                .frame(width: 7, height: 7)
+            Text(tag.name.isEmpty ? tag.slug : tag.name)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(Color(hex: tag.colorHex))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(hex: tag.colorHex).opacity(0.13))
+        .clipShape(Capsule())
+    }
+}
+
 struct iOSTaskCaptureBar: View {
     let placeholder: String
     @Binding var title: String
@@ -666,32 +850,34 @@ struct iOSTaskCaptureBar: View {
         HStack(spacing: 10) {
             TextField(placeholder, text: $title)
                 .textFieldStyle(.plain)
-                .font(.system(size: 16))
+                .font(.system(size: 13))
                 .foregroundStyle(Theme.text)
                 .submitLabel(.done)
                 .onSubmit(action)
-                .padding(.horizontal, 12)
-                .frame(minHeight: 44)
+                .padding(.horizontal, 10)
+                .frame(minHeight: 36)
                 .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(Theme.borderSubtle, lineWidth: 1)
                 }
 
             Button(action: action) {
                 Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 36, height: 36)
                     .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .opacity(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
         }
     }
 }
+
+let iOSPanelHeaderHeight: CGFloat = 86
 
 struct iOSPanelHeader: View {
     let eyebrow: String
@@ -700,29 +886,33 @@ struct iOSPanelHeader: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(eyebrow)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .textCase(.uppercase)
+                    .kerning(0.8)
                 Text(title)
-                    .font(.system(size: 28, weight: .bold))
+                    .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(Theme.text)
+                    .lineLimit(1)
             }
 
             Spacer()
 
             if let count {
                 Text("\(count)")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(Theme.blue)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
                     .background(Theme.blue.opacity(0.13))
                     .clipShape(Capsule())
             }
         }
-        .padding(20)
+        .padding(.horizontal, 16)
+        .padding(.top, 15)
+        .padding(.bottom, 8)
     }
 }
 
@@ -734,19 +924,19 @@ struct iOSEmptyPanel: View {
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(.system(size: 36, weight: .semibold))
+                .font(.system(size: 30, weight: .semibold))
                 .foregroundStyle(Theme.dim)
             Text(title)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.text)
             Text(subtitle)
-                .font(.system(size: 14))
+                .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 280)
+                .frame(maxWidth: 240)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(32)
+        .padding(24)
     }
 }
 

@@ -190,4 +190,28 @@ struct WidgetSupportTests {
         #expect(active.completedAt != nil)
         #expect(done.completedAt == Date(timeIntervalSince1970: 100))
     }
+
+    @Test func captureTaskIntentCreatesInboxAndTodayTasks() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let existing = AppTask(title: "existing")
+        existing.order = 4
+        modelContext.insert(existing)
+        try modelContext.save()
+
+        try CaptureTaskIntent.captureTask(title: "inbox", planForToday: false, in: modelContext)
+        try CaptureTaskIntent.captureTask(title: "today", planForToday: true, in: modelContext)
+
+        let tasks = try modelContext.fetch(FetchDescriptor<AppTask>())
+        let inbox = tasks.first { $0.title == "inbox" }
+        let today = tasks.first { $0.title == "today" }
+
+        #expect(inbox?.scheduledDate == "")
+        #expect(inbox?.estimatedMinutes == 30)
+        #expect(inbox?.order == 5)
+        #expect(today?.scheduledDate == DateFormatters.todayKey())
+        #expect(today?.estimatedMinutes == 30)
+        #expect(today?.order == 6)
+    }
 }
