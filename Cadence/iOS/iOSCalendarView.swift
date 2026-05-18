@@ -8,6 +8,7 @@ struct iOSCalendarView: View {
     @AppStorage("ios.calendar.viewMode") private var viewModeRaw = CadenceCalendarViewMode.week.rawValue
     @AppStorage("ios.calendar.presentation") private var presentationRaw = iOSCalendarPresentation.timeline.rawValue
     @AppStorage("ios.calendar.zoomLevel") private var zoomLevel = 1
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var anchorDate = Calendar.current.startOfDay(for: Date())
 
@@ -71,6 +72,14 @@ struct iOSCalendarView: View {
         CadenceScheduleSupport.calendarTitle(for: anchorDate, mode: navigationMode, calendar: calendar)
     }
 
+    private var isCompact: Bool {
+        horizontalSizeClass == .compact
+    }
+
+    private var compactCalendarHeight: CGFloat {
+        presentation == .timeline && viewMode != .month ? 620 : 470
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             iOSCalendarToolbar(
@@ -85,48 +94,72 @@ struct iOSCalendarView: View {
 
             Divider().background(Theme.borderSubtle)
 
-            HStack(spacing: 0) {
-                Group {
-                    if presentation == .board {
-                        iOSCalendarBoardMonth(
-                            monthDate: anchorDate,
-                            selectedDate: $selectedDate,
-                            monthTasksByDate: monthTasksByDate,
-                            bundlesByDate: bundlesByDate
-                        )
-                    } else if viewMode == .month {
-                        iOSCalendarMonthGrid(
-                            monthDate: anchorDate,
-                            selectedDate: $selectedDate,
-                            monthTasksByDate: monthTasksByDate,
-                            bundlesByDate: bundlesByDate
-                        )
-                    } else {
-                        iOSCalendarTimelineGrid(
-                            dates: visibleDates,
-                            selectedDate: $selectedDate,
-                            scheduledTasksByDate: scheduledTasksByDate,
-                            unscheduledTasksByDate: unscheduledTasksByDate,
-                            bundlesByDate: bundlesByDate,
-                            zoomLevel: zoomLevel
-                        )
+            if isCompact {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        calendarContent
+                            .frame(maxWidth: .infinity)
+                            .frame(height: compactCalendarHeight)
+
+                        Divider().background(Theme.borderSubtle)
+
+                        dayInspector
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 390)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .scrollIndicators(.hidden)
+            } else {
+                HStack(spacing: 0) {
+                    calendarContent
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                Divider().background(Theme.borderSubtle)
+                    Divider().background(Theme.borderSubtle)
 
-                iOSCalendarDayInspector(
-                    date: selectedDate,
-                    tasks: selectedTasks,
-                    bundles: selectedBundles,
-                    unscheduledTasks: selectedUnscheduledTasks,
-                    dueOnlyTasks: selectedDueOnlyTasks
-                )
-                .frame(width: 330)
+                    dayInspector
+                        .frame(width: 360)
+                }
             }
         }
         .background(Theme.bg.ignoresSafeArea())
+    }
+
+    @ViewBuilder
+    private var calendarContent: some View {
+        if presentation == .board {
+            iOSCalendarBoardMonth(
+                monthDate: anchorDate,
+                selectedDate: $selectedDate,
+                monthTasksByDate: monthTasksByDate,
+                bundlesByDate: bundlesByDate
+            )
+        } else if viewMode == .month {
+            iOSCalendarMonthGrid(
+                monthDate: anchorDate,
+                selectedDate: $selectedDate,
+                monthTasksByDate: monthTasksByDate,
+                bundlesByDate: bundlesByDate
+            )
+        } else {
+            iOSCalendarTimelineGrid(
+                dates: visibleDates,
+                selectedDate: $selectedDate,
+                scheduledTasksByDate: scheduledTasksByDate,
+                unscheduledTasksByDate: unscheduledTasksByDate,
+                bundlesByDate: bundlesByDate,
+                zoomLevel: zoomLevel
+            )
+        }
+    }
+
+    private var dayInspector: some View {
+        iOSCalendarDayInspector(
+            date: selectedDate,
+            tasks: selectedTasks,
+            bundles: selectedBundles,
+            unscheduledTasks: selectedUnscheduledTasks,
+            dueOnlyTasks: selectedDueOnlyTasks
+        )
     }
 
     private func setViewMode(_ newMode: CadenceCalendarViewMode) {
@@ -173,98 +206,130 @@ private struct iOSCalendarToolbar: View {
     @Binding var viewMode: CadenceCalendarViewMode
     @Binding var presentation: iOSCalendarPresentation
     @Binding var zoomLevel: Int
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let previous: () -> Void
     let next: () -> Void
     let today: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                Text("Calendar")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Theme.dim)
-                Text("/")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.dim.opacity(0.42))
-                Text(title)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-            }
-            .layoutPriority(1)
-
-            Spacer(minLength: 16)
-
-            HStack(spacing: 4) {
-                ForEach(CadenceCalendarViewMode.allCases, id: \.self) { mode in
-                    Button {
-                        presentation = .timeline
-                        viewMode = mode
-                    } label: {
-                        Text(mode.rawValue)
-                            .font(.system(size: 11, weight: presentation == .timeline && viewMode == mode ? .semibold : .medium))
-                            .foregroundStyle(presentation == .timeline && viewMode == mode ? Theme.blue : Theme.dim)
-                            .frame(minWidth: 58, minHeight: 28)
-                            .padding(.horizontal, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .fill(presentation == .timeline && viewMode == mode ? Theme.blue.opacity(0.11) : Color.clear)
-                            )
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .strokeBorder(presentation == .timeline && viewMode == mode ? Theme.blue.opacity(0.28) : Color.clear, lineWidth: 1)
-                            }
+        Group {
+            if horizontalSizeClass == .compact {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        titleBlock
+                        Spacer(minLength: 10)
+                        navigationControls
                     }
-                    .buttonStyle(.plain)
-                }
 
-                Button {
-                    presentation = .board
-                } label: {
-                    Text("Board")
-                        .font(.system(size: 11, weight: presentation == .board ? .semibold : .medium))
-                        .foregroundStyle(presentation == .board ? Theme.blue : Theme.dim)
-                        .frame(minWidth: 58, minHeight: 28)
-                        .padding(.horizontal, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(presentation == .board ? Theme.blue.opacity(0.11) : Color.clear)
-                        )
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(presentation == .board ? Theme.blue.opacity(0.28) : Color.clear, lineWidth: 1)
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 8) {
+                            modePicker
+                            zoomControls
                         }
+                    }
+                    .scrollIndicators(.hidden)
+                }
+            } else {
+                HStack(spacing: 10) {
+                    titleBlock
+                    Spacer(minLength: 8)
+                    modePicker
+                    zoomControls
+                    navigationControls
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, horizontalSizeClass == .regular ? 14 : 10)
+        .background(Theme.surface)
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Calendar")
+                .font(.system(size: horizontalSizeClass == .regular ? 10 : 9, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .textCase(.uppercase)
+                .kerning(0.8)
+            Text(title)
+                .font(.system(size: horizontalSizeClass == .regular ? 22 : 17, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(minWidth: horizontalSizeClass == .regular ? 176 : 116, idealWidth: 210, maxWidth: 260, alignment: .leading)
+        .layoutPriority(1)
+    }
+
+    private var modePicker: some View {
+        HStack(spacing: 4) {
+            ForEach(CadenceCalendarViewMode.allCases, id: \.self) { mode in
+                Button {
+                    presentation = .timeline
+                    viewMode = mode
+                } label: {
+                    calendarModeLabel(
+                        title: mode.rawValue,
+                        isSelected: presentation == .timeline && viewMode == mode
+                    )
                 }
                 .buttonStyle(.plain)
             }
-            .padding(3)
-            .overlay {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.35), lineWidth: 1)
-            }
 
-            if presentation == .timeline && viewMode != .month {
-                HStack(spacing: 6) {
-                    iOSFeatureIconButton(systemImage: "minus") {
-                        zoomLevel = max(1, zoomLevel - 1)
-                    }
-                    Text("\(zoomLevel)x")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(minWidth: 24)
-                    iOSFeatureIconButton(systemImage: "plus") {
-                        zoomLevel = min(3, zoomLevel + 1)
-                    }
+            Button {
+                presentation = .board
+            } label: {
+                calendarModeLabel(title: "Board", isSelected: presentation == .board)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(3)
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Theme.borderSubtle.opacity(0.35), lineWidth: 1)
+        }
+    }
+
+    @ViewBuilder
+    private var zoomControls: some View {
+        if presentation == .timeline && viewMode != .month {
+            HStack(spacing: 6) {
+                iOSFeatureIconButton(systemImage: "minus") {
+                    zoomLevel = max(1, zoomLevel - 1)
+                }
+                Text("\(zoomLevel)x")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(minWidth: 24)
+                iOSFeatureIconButton(systemImage: "plus") {
+                    zoomLevel = min(3, zoomLevel + 1)
                 }
             }
+        }
+    }
 
+    private var navigationControls: some View {
+        HStack(spacing: 6) {
             iOSFeatureIconButton(systemImage: "chevron.left", action: previous)
             iOSFeatureIconButton(systemImage: "location.fill", action: today)
             iOSFeatureIconButton(systemImage: "chevron.right", action: next)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
-        .background(Theme.surface)
+    }
+
+    private func calendarModeLabel(title: String, isSelected: Bool) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+            .foregroundStyle(isSelected ? Theme.blue : Theme.dim)
+            .frame(minWidth: 48, minHeight: 28)
+            .padding(.horizontal, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isSelected ? Theme.blue.opacity(0.11) : Color.clear)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(isSelected ? Theme.blue.opacity(0.28) : Color.clear, lineWidth: 1)
+            }
     }
 }
 #endif

@@ -37,48 +37,7 @@ struct iOSRootView: View {
                     detailView(for: selection ?? .today)
                 }
             } else {
-                TabView(selection: $compactTabSelection) {
-                    NavigationStack {
-                        iPadTodayView()
-                    }
-                    .tabItem {
-                        Label("Today", systemImage: "sun.max.fill")
-                    }
-                    .tag(iOSRootTab.today)
-
-                    NavigationStack {
-                        iPadInboxView()
-                    }
-                    .tabItem {
-                        Label("Inbox", systemImage: "tray.fill")
-                    }
-                    .tag(iOSRootTab.inbox)
-
-                    NavigationStack {
-                        iOSListsView()
-                    }
-                    .tabItem {
-                        Label("Lists", systemImage: "folder.fill")
-                    }
-                    .tag(iOSRootTab.lists)
-
-                    NavigationStack {
-                        iOSSearchView()
-                    }
-                    .tabItem {
-                        Label("Search", systemImage: "magnifyingglass")
-                    }
-                    .tag(iOSRootTab.search)
-
-                    NavigationStack {
-                        iOSMoreView()
-                    }
-                    .tabItem {
-                        Label("More", systemImage: "ellipsis.circle.fill")
-                    }
-                    .tag(iOSRootTab.more)
-                }
-                .tint(Theme.blue)
+                iOSCompactRootShell(selection: $compactTabSelection)
             }
         }
         .background(Theme.bg)
@@ -125,9 +84,7 @@ struct iOSRootView: View {
                 iOSSearchView()
             }
         case .settings:
-            NavigationStack {
-                iOSSettingsView()
-            }
+            iOSSettingsView()
         case .area(let id):
             if let area = areas.first(where: { $0.id == id }) {
                 iOSListDetailView(area: area)
@@ -150,6 +107,126 @@ private enum iOSRootTab: Hashable {
     case lists
     case search
     case more
+
+    var title: String {
+        switch self {
+        case .today: return "Today"
+        case .inbox: return "Inbox"
+        case .lists: return "Lists"
+        case .search: return "Search"
+        case .more: return "More"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .today: return "sun.max.fill"
+        case .inbox: return "tray.fill"
+        case .lists: return "folder.fill"
+        case .search: return "magnifyingglass"
+        case .more: return "ellipsis"
+        }
+    }
+}
+
+private struct iOSCompactRootShell: View {
+    @Binding var selection: iOSRootTab
+
+    var body: some View {
+        activeTab
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+            iOSCompactTabBar(selection: $selection)
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
+                .padding(.bottom, 8)
+                .background(
+                    LinearGradient(
+                        colors: [Theme.bg.opacity(0.12), Theme.bg.opacity(0.94)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .ignoresSafeArea()
+                )
+            }
+            .background(Theme.bg.ignoresSafeArea())
+            .tint(Theme.blue)
+    }
+
+    @ViewBuilder
+    private var activeTab: some View {
+        switch selection {
+        case .today:
+            NavigationStack {
+                iPadTodayView()
+                    .toolbar(.hidden, for: .navigationBar)
+            }
+        case .inbox:
+            NavigationStack {
+                iPadInboxView()
+                    .toolbar(.hidden, for: .navigationBar)
+            }
+        case .lists:
+            NavigationStack {
+                iOSListsView()
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        case .search:
+            NavigationStack {
+                iOSSearchView()
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        case .more:
+            NavigationStack {
+                iOSMoreView()
+                    .toolbar(.hidden, for: .navigationBar)
+            }
+        }
+    }
+}
+
+private struct iOSCompactTabBar: View {
+    @Binding var selection: iOSRootTab
+
+    private let tabs: [iOSRootTab] = [.today, .inbox, .lists, .search, .more]
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(tabs, id: \.self) { tab in
+                Button {
+                    selection = tab
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: tab.systemImage)
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(tab.title)
+                            .font(.system(size: 8, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(selection == tab ? Theme.blue : Theme.text.opacity(0.72))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 40)
+                    .background {
+                        if selection == tab {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Theme.blue.opacity(0.13))
+                        }
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(.ultraThinMaterial)
+        .background(Theme.surface.opacity(0.86))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Theme.borderSubtle.opacity(0.62), lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.22), radius: 14, x: 0, y: 8)
+    }
 }
 
 private extension iOSRootView {

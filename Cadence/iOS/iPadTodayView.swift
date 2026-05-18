@@ -40,36 +40,50 @@ struct iPadTodayView: View {
             if horizontalSizeClass == .regular {
                 HStack(spacing: 0) {
                     iOSNotesPanel(useStandardHeaderHeight: true)
-                        .frame(minWidth: 260, idealWidth: 340)
+                        .frame(minWidth: 360, idealWidth: 430)
                         .layoutPriority(0.34)
 
                     Divider().background(Theme.borderSubtle)
 
                     todayTaskColumn
-                        .frame(minWidth: 300, idealWidth: 380)
-                        .layoutPriority(0.38)
+                        .frame(minWidth: 400, idealWidth: 470)
+                        .layoutPriority(0.43)
 
                     Divider().background(Theme.borderSubtle)
 
                     iOSSchedulePanel()
-                        .frame(minWidth: 230, idealWidth: 300)
-                        .layoutPriority(0.28)
+                        .frame(minWidth: 310, idealWidth: 350)
+                        .layoutPriority(0.23)
                 }
             } else {
                 ScrollView {
                     VStack(spacing: 16) {
+                        iOSCompactPageHeader(
+                            eyebrow: DateFormatters.longDate.string(from: Date()),
+                            title: "Today",
+                            subtitle: "Plan the day, capture notes, and glance at the schedule.",
+                            systemImage: "sun.max.fill",
+                            color: Theme.amber
+                        )
+
                         todayTaskColumn
                             .frame(maxWidth: .infinity)
-                            .frame(minHeight: 360, maxHeight: 520)
+                            .frame(minHeight: 320)
+                            .iOSCompactPanelCard()
 
                         iOSNotesPanel()
-                            .frame(minHeight: 430)
+                            .frame(minHeight: 360)
+                            .iOSCompactPanelCard()
 
                         iOSSchedulePanel()
-                            .frame(minHeight: 420)
+                            .frame(minHeight: 360)
+                            .iOSCompactPanelCard()
                     }
-                    .padding(14)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                    .padding(.bottom, 12)
                 }
+                .scrollIndicators(.hidden)
             }
         }
         .background(Theme.bg.ignoresSafeArea())
@@ -164,6 +178,7 @@ struct iPadTodayView: View {
 }
 
 private struct iOSSchedulePanel: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query private var allBundles: [TaskBundle]
 
@@ -195,11 +210,12 @@ private struct iOSSchedulePanel: View {
                         iOSScheduleHourRow(
                             hour: hour,
                             tasks: tasks(in: hour),
-                            bundles: bundles(in: hour)
+                            bundles: bundles(in: hour),
+                            rowHeight: horizontalSizeClass == .regular ? 58 : 48
                         )
                     }
                 }
-                .padding(.trailing, 8)
+                .padding(.trailing, horizontalSizeClass == .regular ? 12 : 8)
             }
             .scrollIndicators(.hidden)
         }
@@ -219,6 +235,7 @@ private struct iOSScheduleHourRow: View {
     let hour: Int
     let tasks: [AppTask]
     let bundles: [TaskBundle]
+    let rowHeight: CGFloat
 
     private var hasItems: Bool {
         !tasks.isEmpty || !bundles.isEmpty
@@ -227,10 +244,10 @@ private struct iOSScheduleHourRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             Text(hourLabel)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: rowHeight > 50 ? 11 : 10, weight: .medium))
                 .foregroundStyle(Theme.dim.opacity(hour % 3 == 0 ? 0.9 : 0.45))
-                .frame(width: 42, alignment: .trailing)
-                .padding(.trailing, 7)
+                .frame(width: rowHeight > 50 ? 50 : 42, alignment: .trailing)
+                .padding(.trailing, rowHeight > 50 ? 9 : 7)
                 .padding(.top, -6)
 
             VStack(alignment: .leading, spacing: 5) {
@@ -263,7 +280,7 @@ private struct iOSScheduleHourRow: View {
                 }
             }
         }
-        .frame(minHeight: 48, alignment: .top)
+        .frame(minHeight: rowHeight, alignment: .top)
         .padding(.leading, 4)
     }
 

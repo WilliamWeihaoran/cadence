@@ -34,28 +34,33 @@ extension iOSTaskSortMode {
 struct iOSTaskRow: View {
     @Bindable var task: AppTask
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
     @State private var showDetail = false
     @State private var showDeleteConfirmation = false
+
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
 
     var body: some View {
         Button {
             showDetail = true
         } label: {
-            HStack(alignment: .top, spacing: 9) {
+            HStack(alignment: .top, spacing: isRegularWidth ? 12 : 9) {
                 Button {
                     toggleCompletion()
                 } label: {
                     Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: isRegularWidth ? 19 : 16, weight: .semibold))
                         .foregroundStyle(task.isDone ? Theme.green : Theme.dim.opacity(0.68))
-                        .frame(width: 20, height: 20)
+                        .frame(width: isRegularWidth ? 24 : 20, height: isRegularWidth ? 24 : 20)
                 }
                 .buttonStyle(.plain)
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: isRegularWidth ? 8 : 6) {
                     Text(task.title.isEmpty ? "Untitled" : task.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: isRegularWidth ? 15 : 13, weight: .semibold))
                         .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                         .strikethrough(task.isDone, color: Theme.dim)
                         .lineLimit(2)
@@ -111,19 +116,19 @@ struct iOSTaskRow: View {
                 }
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: isRegularWidth ? 12 : 10, weight: .semibold))
                     .foregroundStyle(Theme.dim.opacity(0.65))
                     .padding(.top, 4)
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 9)
+            .padding(.horizontal, isRegularWidth ? 14 : 11)
+            .padding(.vertical, isRegularWidth ? 12 : 9)
             .background(Theme.surfaceElevated.opacity(0.34))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous)
                     .stroke(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $showDetail) {
@@ -320,9 +325,14 @@ struct iOSTaskSectionHeader: View {
 }
 
 struct iOSTaskViewOptionsBar: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Binding var sortMode: iOSTaskSortMode
     @Binding var showCompleted: Bool
     var completedCount: Int
+
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -334,14 +344,14 @@ struct iOSTaskViewOptionsBar: View {
                 }
             } label: {
                 Label(sortMode.title, systemImage: "arrow.up.arrow.down")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: isRegularWidth ? 13 : 12, weight: .semibold))
                     .foregroundStyle(Theme.blue)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, isRegularWidth ? 11 : 9)
+                    .padding(.vertical, isRegularWidth ? 7 : 5)
                     .background(Theme.blue.opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 9 : 7, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: isRegularWidth ? 9 : 7, style: .continuous)
                             .strokeBorder(Theme.blue.opacity(0.18), lineWidth: 1)
                     }
             }
@@ -353,14 +363,14 @@ struct iOSTaskViewOptionsBar: View {
                 showCompleted.toggle()
             } label: {
                 Text(completedCount > 0 ? "Completed \(completedCount)" : "Completed")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: isRegularWidth ? 13 : 12, weight: .semibold))
                     .foregroundStyle(showCompleted ? Theme.text : Theme.dim)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, isRegularWidth ? 11 : 9)
+                    .padding(.vertical, isRegularWidth ? 7 : 5)
                     .background(showCompleted ? Theme.surfaceElevated.opacity(0.72) : Theme.surfaceElevated.opacity(0.36))
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 9 : 7, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: isRegularWidth ? 9 : 7, style: .continuous)
                             .strokeBorder(Theme.borderSubtle.opacity(showCompleted ? 0.54 : 0.28), lineWidth: 1)
                     }
             }
@@ -373,34 +383,39 @@ struct iOSTaskViewOptionsBar: View {
 }
 
 struct iOSTaskCaptureBar: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let placeholder: String
     @Binding var title: String
     let action: () -> Void
+
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
 
     var body: some View {
         HStack(spacing: 10) {
             TextField(placeholder, text: $title)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.system(size: isRegularWidth ? 15 : 13))
                 .foregroundStyle(Theme.text)
                 .submitLabel(.done)
                 .onSubmit(action)
-                .padding(.horizontal, 10)
-                .frame(minHeight: 34)
+                .padding(.horizontal, isRegularWidth ? 13 : 10)
+                .frame(minHeight: isRegularWidth ? 44 : 34)
                 .background(Theme.surfaceElevated.opacity(0.72))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous)
                         .stroke(Theme.borderSubtle.opacity(0.7), lineWidth: 1)
                 }
 
             Button(action: action) {
                 Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: isRegularWidth ? 16 : 13, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
+                    .frame(width: isRegularWidth ? 44 : 34, height: isRegularWidth ? 44 : 34)
                     .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
             }
             .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .opacity(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
@@ -408,23 +423,28 @@ struct iOSTaskCaptureBar: View {
     }
 }
 
-let iOSPanelHeaderHeight: CGFloat = 78
+let iOSPanelHeaderHeight: CGFloat = 92
 
 struct iOSPanelHeader: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let eyebrow: String
     let title: String
     var count: Int? = nil
+
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(eyebrow)
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: isRegularWidth ? 10 : 9, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .textCase(.uppercase)
                     .kerning(0.8)
                 Text(title)
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.system(size: isRegularWidth ? 21 : 17, weight: .bold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
             }
@@ -433,17 +453,17 @@ struct iOSPanelHeader: View {
 
             if let count {
                 Text("\(count)")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: isRegularWidth ? 13 : 12, weight: .bold))
                     .foregroundStyle(Theme.blue)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, isRegularWidth ? 10 : 8)
+                    .padding(.vertical, isRegularWidth ? 6 : 4)
                     .background(Theme.blue.opacity(0.11))
                     .clipShape(Capsule())
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 13)
-        .padding(.bottom, 7)
+        .padding(.horizontal, isRegularWidth ? 20 : 16)
+        .padding(.top, isRegularWidth ? 16 : 13)
+        .padding(.bottom, isRegularWidth ? 11 : 7)
     }
 }
 

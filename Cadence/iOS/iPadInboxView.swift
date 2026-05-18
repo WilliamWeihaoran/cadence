@@ -4,6 +4,7 @@ import SwiftUI
 
 struct iPadInboxView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var newTitle = ""
     @AppStorage("ios.inbox.sortMode") private var sortModeRaw = iOSTaskSortMode.listOrder.rawValue
@@ -26,6 +27,37 @@ struct iPadInboxView: View {
     }
 
     var body: some View {
+        Group {
+            if horizontalSizeClass == .compact {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        iOSCompactPageHeader(
+                            eyebrow: "Capture",
+                            title: "Inbox",
+                            subtitle: "Fast capture before you decide where things belong.",
+                            systemImage: "tray.fill",
+                            color: Theme.blue
+                        )
+
+                        inboxColumn
+                            .frame(minHeight: 520)
+                            .iOSCompactPanelCard()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 18)
+                    .padding(.bottom, 18)
+                }
+                .scrollIndicators(.hidden)
+            } else {
+                inboxColumn
+            }
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle("Inbox")
+        .navigationBarTitleDisplayMode(.large)
+    }
+
+    private var inboxColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
             iOSPanelHeader(
                 eyebrow: "Capture",
@@ -88,9 +120,7 @@ struct iPadInboxView: View {
                 .background(Theme.bg)
             }
         }
-        .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle("Inbox")
-        .navigationBarTitleDisplayMode(.large)
+        .background(Theme.bg)
     }
 
     private func captureInboxTask() {

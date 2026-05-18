@@ -12,26 +12,38 @@ struct iOSMoreView: View {
     ]
 
     var body: some View {
-        List {
-            Section {
-                ForEach(featureRows) { row in
-                    NavigationLink(value: row.destination) {
-                        iOSFeatureSummaryRow(
-                            title: row.title,
-                            subtitle: row.subtitle,
-                            icon: row.icon,
-                            color: row.color
-                        )
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                iOSCompactPageHeader(
+                    eyebrow: "Cadence",
+                    title: "More",
+                    subtitle: "Focus, calendar, goals, habits, and workspace settings.",
+                    systemImage: "ellipsis",
+                    color: Theme.blue
+                )
+
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("Features")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .textCase(.uppercase)
+                        .kerning(0.8)
+
+                    VStack(spacing: 8) {
+                        ForEach(featureRows) { row in
+                            NavigationLink(value: row.destination) {
+                                iOSMoreFeatureNavigationRow(row: row)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 5, leading: 14, bottom: 5, trailing: 14))
                 }
-            } header: {
-                Text("Features")
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 18)
+            .padding(.bottom, 18)
         }
-        .navigationTitle("More")
+        .scrollIndicators(.hidden)
         .navigationDestination(for: iOSMoreDestination.self) { destination in
             switch destination {
             case .focus:
@@ -48,8 +60,7 @@ struct iOSMoreView: View {
                 iOSSettingsView()
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(Theme.bg)
+        .background(Theme.bg.ignoresSafeArea())
     }
 }
 
@@ -61,6 +72,46 @@ private struct iOSMoreFeatureRow: Identifiable {
     let destination: iOSMoreDestination
 
     var id: iOSMoreDestination { destination }
+}
+
+private struct iOSMoreFeatureNavigationRow: View {
+    let row: iOSMoreFeatureRow
+
+    var body: some View {
+        HStack(spacing: 11) {
+            Image(systemName: row.icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(row.color)
+                .frame(width: 32, height: 32)
+                .background(row.color.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                Text(row.subtitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.dim.opacity(0.72))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
+        }
+    }
 }
 
 private enum iOSMoreDestination: Hashable {

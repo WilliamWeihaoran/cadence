@@ -10,17 +10,21 @@ struct iOSCalendarTimelineGrid: View {
     let bundlesByDate: [String: [TaskBundle]]
     let zoomLevel: Int
 
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     private let calendar = Calendar.current
-    private var hourHeight: CGFloat { CGFloat(58 + ((zoomLevel - 1) * 16)) }
+    private var baseHourHeight: CGFloat { horizontalSizeClass == .regular ? 64 : 58 }
+    private var hourHeight: CGFloat { baseHourHeight + CGFloat((zoomLevel - 1) * 16) }
     private var timelineHeight: CGFloat {
         CGFloat(CadenceScheduleSupport.calendarEndHour - CadenceScheduleSupport.calendarStartHour) * hourHeight
     }
 
     var body: some View {
         GeometryReader { geo in
-            let railWidth: CGFloat = 48
+            let railWidth: CGFloat = horizontalSizeClass == .regular ? 58 : 48
             let availableWidth = max(geo.size.width - railWidth, 1)
-            let colWidth = max(dates.count <= 7 ? availableWidth / CGFloat(max(dates.count, 1)) : 126, 104)
+            let minColumnWidth: CGFloat = horizontalSizeClass == .regular ? 112 : 104
+            let colWidth = max(dates.count <= 7 ? availableWidth / CGFloat(max(dates.count, 1)) : 126, minColumnWidth)
             let contentWidth = colWidth * CGFloat(dates.count)
 
             ScrollView(.vertical) {
@@ -44,6 +48,7 @@ struct iOSCalendarTimelineGrid: View {
                                     .frame(width: colWidth)
                                 }
                             }
+                            .background(Theme.surface)
 
                             ZStack(alignment: .topLeading) {
                                 iOSCalendarTimelineGridLines(dates: dates, colWidth: colWidth, hourHeight: hourHeight)
@@ -95,22 +100,27 @@ private struct iOSCalendarTimelineDayHeader: View {
 
     private let calendar = Calendar.current
     private var isToday: Bool { calendar.isDateInToday(date) }
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var headerHeight: CGFloat {
+        horizontalSizeClass == .regular ? 112 : 101
+    }
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 0) {
                 VStack(spacing: 3) {
                     Text(DateFormatters.dayOfWeek.string(from: date).uppercased())
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: horizontalSizeClass == .regular ? 11 : 10, weight: .semibold))
                         .foregroundStyle(isToday ? Theme.blue : Theme.dim)
                     Text(DateFormatters.dayNumber.string(from: date))
-                        .font(.system(size: 18, weight: isToday || isSelected ? .bold : .regular))
+                        .font(.system(size: horizontalSizeClass == .regular ? 20 : 18, weight: isToday || isSelected ? .bold : .regular))
                         .foregroundStyle(isToday ? .white : Theme.text)
-                        .frame(width: 32, height: 32)
+                        .frame(width: horizontalSizeClass == .regular ? 36 : 32, height: horizontalSizeClass == .regular ? 36 : 32)
                         .background(isToday ? Theme.blue : isSelected ? Theme.blue.opacity(0.16) : Color.clear)
                         .clipShape(Circle())
                 }
-                .frame(height: 58)
+                .frame(height: horizontalSizeClass == .regular ? 66 : 58)
 
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach(unscheduledTasks.prefix(2)) { task in
@@ -136,9 +146,10 @@ private struct iOSCalendarTimelineDayHeader: View {
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: 42, alignment: .topLeading)
-                .padding(.horizontal, 5)
-                .padding(.bottom, 5)
+                .padding(.horizontal, horizontalSizeClass == .regular ? 7 : 5)
+                .padding(.bottom, horizontalSizeClass == .regular ? 7 : 5)
             }
+            .frame(height: headerHeight)
             .background(isSelected ? Theme.blue.opacity(0.055) : isToday ? Theme.blue.opacity(0.035) : Theme.surface)
             .overlay(alignment: .trailing) {
                 Rectangle()
@@ -157,17 +168,18 @@ private struct iOSCalendarTimelineDayHeader: View {
 
 private struct iOSCalendarTimeRail: View {
     let hourHeight: CGFloat
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         VStack(spacing: 0) {
-            Color.clear.frame(height: 101)
+            Color.clear.frame(height: horizontalSizeClass == .regular ? 112 : 101)
             ForEach(CadenceScheduleSupport.calendarStartHour..<CadenceScheduleSupport.calendarEndHour, id: \.self) { hour in
                 Text(hourLabel(hour))
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: horizontalSizeClass == .regular ? 11 : 10, weight: .medium))
                     .foregroundStyle(Theme.dim.opacity(hour % 3 == 0 ? 0.9 : 0.45))
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .frame(height: hourHeight, alignment: .top)
-                    .padding(.trailing, 8)
+                    .padding(.trailing, horizontalSizeClass == .regular ? 10 : 8)
             }
         }
         .background(Theme.bg)
@@ -195,14 +207,14 @@ struct iOSCalendarTimelineGridLines: View {
         ZStack(alignment: .topLeading) {
             ForEach(0...dates.count, id: \.self) { index in
                 Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.42))
+                    .fill(Theme.borderSubtle.opacity(0.34))
                     .frame(width: 0.5)
                     .offset(x: CGFloat(index) * colWidth)
             }
 
             ForEach(0...(CadenceScheduleSupport.calendarEndHour - CadenceScheduleSupport.calendarStartHour), id: \.self) { index in
                 Rectangle()
-                    .fill(Theme.borderSubtle.opacity(index % 3 == 0 ? 0.58 : 0.28))
+                    .fill(Theme.borderSubtle.opacity(index % 3 == 0 ? 0.46 : 0.20))
                     .frame(height: 0.5)
                     .offset(y: CGFloat(index) * hourHeight)
             }

@@ -119,14 +119,9 @@ struct SettingsCard<Content: View>: View {
     }
 
     var body: some View {
-        content
-            .padding(16)
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(Theme.borderSubtle, lineWidth: 1)
-            )
+        CadenceSettingsCard {
+            content
+        }
     }
 }
 
@@ -134,10 +129,7 @@ struct SettingsSectionLabel: View {
     let text: String
 
     var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            .kerning(0.8)
+        CadenceSettingsSectionLabel(text: text)
     }
 }
 
@@ -146,18 +138,7 @@ struct SettingsStatusBadge: View {
     let isActive: Bool
 
     var body: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(isActive ? Theme.green : Theme.dim)
-                .frame(width: 7, height: 7)
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isActive ? Theme.green : Theme.dim)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background((isActive ? Theme.green : Theme.dim).opacity(0.12))
-        .clipShape(Capsule())
+        CadenceSettingsStatusBadge(title: title, isActive: isActive)
     }
 }
 
@@ -250,30 +231,13 @@ struct SettingsDetailHeader<TrailingContent: View>: View {
     }
 
     var body: some View {
-        SettingsCard {
-            HStack(alignment: .top, spacing: 16) {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(category.tint.opacity(0.18))
-                    .frame(width: 48, height: 48)
-                    .overlay {
-                        Image(systemName: category.icon)
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(category.tint)
-                    }
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(category.title)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text(category.detailDescription)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer()
-                trailingContent
-            }
+        CadenceSettingsHeader(
+            title: category.title,
+            subtitle: category.detailDescription,
+            icon: category.icon,
+            tint: category.tint
+        ) {
+            trailingContent
         }
     }
 }

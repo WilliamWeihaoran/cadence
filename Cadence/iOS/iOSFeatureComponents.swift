@@ -33,6 +33,76 @@ struct iOSFeatureListPane<Content: View>: View {
     }
 }
 
+struct iOSCompactPageHeader: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    let eyebrow: String
+    let title: String
+    var subtitle: String? = nil
+    var systemImage: String? = nil
+    var color: Color = Theme.blue
+
+    private var isCompact: Bool {
+        horizontalSizeClass == .compact
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: isCompact ? 10 : 12) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: isCompact ? 15 : 16, weight: .semibold))
+                    .foregroundStyle(color)
+                    .frame(width: isCompact ? 32 : 36, height: isCompact ? 32 : 36)
+                    .background(color.opacity(0.13))
+                    .clipShape(RoundedRectangle(cornerRadius: isCompact ? 9 : 10, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: isCompact ? 9 : 10, style: .continuous)
+                            .strokeBorder(color.opacity(0.20), lineWidth: 1)
+                    }
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(eyebrow)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .textCase(.uppercase)
+                    .kerning(0.8)
+                Text(title)
+                    .font(.system(size: isCompact ? 26 : 30, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: isCompact ? 12 : 13, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct iOSCompactPanelCardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Theme.borderSubtle.opacity(0.52), lineWidth: 1)
+            }
+            .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 8)
+    }
+}
+
+extension View {
+    func iOSCompactPanelCard() -> some View {
+        modifier(iOSCompactPanelCardModifier())
+    }
+}
+
 struct iOSFeatureSummaryRow: View {
     let title: String
     let subtitle: String
@@ -58,7 +128,7 @@ struct iOSFeatureSummaryRow: View {
                 Text(subtitle.isEmpty ? "No context" : subtitle)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
 
             Spacer(minLength: 8)
@@ -135,6 +205,7 @@ struct iOSCalendarDayCell: View {
     let isCurrentMonth: Bool
     let isSelected: Bool
     let taskCount: Int
+    var minHeight: CGFloat = 58
     let action: () -> Void
 
     private var isToday: Bool {
@@ -157,7 +228,7 @@ struct iOSCalendarDayCell: View {
                 }
                 .frame(height: 5)
             }
-            .frame(maxWidth: .infinity, minHeight: 58)
+            .frame(maxWidth: .infinity, minHeight: minHeight)
             .background(isSelected ? Theme.blue : isToday ? Theme.blue.opacity(0.12) : Theme.surfaceElevated.opacity(0.35))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {

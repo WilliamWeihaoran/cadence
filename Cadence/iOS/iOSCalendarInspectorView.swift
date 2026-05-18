@@ -10,11 +10,15 @@ struct iOSCalendarDayInspector: View {
     let dueOnlyTasks: [AppTask]
 
     private var totalCount: Int {
-        tasks.count + bundles.count + unscheduledTasks.count + dueOnlyTasks.count
+        Set((tasks + unscheduledTasks + dueOnlyTasks).map(\.id)).count + bundles.count
     }
 
     private var timedTasks: [AppTask] {
         tasks.filter { $0.scheduledDate == DateFormatters.dateKey(from: date) && $0.scheduledStartMin >= 0 }
+    }
+
+    private var hasItems: Bool {
+        !bundles.isEmpty || !timedTasks.isEmpty || !unscheduledTasks.isEmpty || !dueOnlyTasks.isEmpty
     }
 
     var body: some View {
@@ -26,7 +30,7 @@ struct iOSCalendarDayInspector: View {
             )
             Divider().background(Theme.borderSubtle)
 
-            if tasks.isEmpty && bundles.isEmpty && unscheduledTasks.isEmpty && dueOnlyTasks.isEmpty {
+            if !hasItems {
                 iOSEmptyPanel(
                     systemImage: "calendar",
                     title: "Nothing scheduled",
