@@ -64,6 +64,9 @@ struct iPadTodayView: View {
 
                         iOSNotesPanel()
                             .frame(minHeight: 430)
+
+                        iOSSchedulePanel()
+                            .frame(minHeight: 420)
                     }
                     .padding(14)
                 }
