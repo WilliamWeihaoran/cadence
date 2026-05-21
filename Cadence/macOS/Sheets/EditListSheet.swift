@@ -126,6 +126,7 @@ struct EditAreaSheet: View {
         }
         .frame(width: 420, height: 600)
         .background(Theme.surface)
+        .accessibilityIdentifier("edit.area.sheet")
         .confirmationDialog(
             "Delete Area?",
             isPresented: $showDeleteConfirmation,

@@ -23,7 +23,7 @@ struct CompleteTaskIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let container = try CadenceStoreSupport.makeSharedContainer(
+        let container = try CadenceStoreSupport.makePrimaryContainer(
             allowsSave: true,
             cloudKitDatabase: .none
         )
@@ -84,7 +84,7 @@ struct CaptureTaskIntent: AppIntent {
             return .result(dialog: "Add a task title.")
         }
 
-        let container = try CadenceStoreSupport.makeSharedContainer(
+        let container = try CadenceStoreSupport.makePrimaryContainer(
             allowsSave: true,
             cloudKitDatabase: .none
         )

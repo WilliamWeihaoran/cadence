@@ -10,7 +10,7 @@ import XCTest
 final class CadenceUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
-        true
+        false
     }
 
     override func setUpWithError() throws {
@@ -20,10 +20,15 @@ final class CadenceUITestsLaunchTests: XCTestCase {
     @MainActor
     func testLaunch() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["CADENCE_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["CADENCE_LOCAL_STORE_ONLY"] = "1"
+        app.launchEnvironment["CADENCE_UI_TEST_STORE_ID"] = "launch-\(UUID().uuidString)"
+        app.launchEnvironment["CADENCE_RESET_STORE"] = "1"
+        app.launchEnvironment["CADENCE_RESET_USER_DEFAULTS"] = "1"
         app.launch()
 
-        // Insert steps here to perform after app launch but before taking a screenshot,
-        // such as logging into a test account or navigating somewhere in the app
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
+        XCTAssertTrue(app.buttons["sidebar.destination.today"].waitForExistence(timeout: 8))
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Launch Screen"

@@ -44,93 +44,94 @@ struct iOSTaskRow: View {
     }
 
     var body: some View {
-        Button {
-            showDetail = true
-        } label: {
-            HStack(alignment: .top, spacing: isRegularWidth ? 12 : 9) {
-                Button {
-                    toggleCompletion()
-                } label: {
-                    Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: isRegularWidth ? 19 : 16, weight: .semibold))
-                        .foregroundStyle(task.isDone ? Theme.green : Theme.dim.opacity(0.68))
-                        .frame(width: isRegularWidth ? 24 : 20, height: isRegularWidth ? 24 : 20)
-                }
-                .buttonStyle(.plain)
+        HStack(alignment: .top, spacing: isRegularWidth ? 12 : 9) {
+            Button {
+                toggleCompletion()
+            } label: {
+                Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: isRegularWidth ? 19 : 16, weight: .semibold))
+                    .foregroundStyle(task.isDone ? Theme.green : Theme.dim.opacity(0.68))
+                    .frame(width: isRegularWidth ? 24 : 20, height: isRegularWidth ? 24 : 20)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(task.isDone ? "Mark task todo" : "Complete task")
 
-                VStack(alignment: .leading, spacing: isRegularWidth ? 8 : 6) {
-                    Text(task.title.isEmpty ? "Untitled" : task.title)
-                        .font(.system(size: isRegularWidth ? 15 : 13, weight: .semibold))
-                        .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
-                        .strikethrough(task.isDone, color: Theme.dim)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: isRegularWidth ? 8 : 6) {
+                Text(task.title.isEmpty ? "Untitled" : task.title)
+                    .font(.system(size: isRegularWidth ? 15 : 13, weight: .semibold))
+                    .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                    .strikethrough(task.isDone, color: Theme.dim)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    HStack(spacing: 6) {
-                        priorityBadge
+                HStack(spacing: 6) {
+                    priorityBadge
 
-                        if !task.scheduledDate.isEmpty {
-                            taskBadge(
-                                systemImage: "sun.max.fill",
-                                text: DateFormatters.relativeDate(from: task.scheduledDate),
-                                color: task.scheduledDate == DateFormatters.todayKey() ? Theme.amber : Theme.dim
-                            )
-                        }
-
-                        if !task.dueDate.isEmpty {
-                            taskBadge(
-                                systemImage: "flag.fill",
-                                text: DateFormatters.relativeDate(from: task.dueDate),
-                                color: isOverdue ? Theme.red : Theme.dim
-                            )
-                        }
-
-                        if task.estimatedMinutes > 0 {
-                            taskBadge(
-                                systemImage: "clock",
-                                text: estimateLabel,
-                                color: Theme.dim
-                            )
-                        }
+                    if !task.scheduledDate.isEmpty {
+                        taskBadge(
+                            systemImage: "sun.max.fill",
+                            text: DateFormatters.relativeDate(from: task.scheduledDate),
+                            color: task.scheduledDate == DateFormatters.todayKey() ? Theme.amber : Theme.dim
+                        )
                     }
 
-                    if !task.sortedTags.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
-                                ForEach(task.sortedTags.prefix(4)) { tag in
-                                    iOSTagChip(tag: tag)
-                                }
+                    if !task.dueDate.isEmpty {
+                        taskBadge(
+                            systemImage: "flag.fill",
+                            text: DateFormatters.relativeDate(from: task.dueDate),
+                            color: isOverdue ? Theme.red : Theme.dim
+                        )
+                    }
 
-                                if task.sortedTags.count > 4 {
-                                    Text("+\(task.sortedTags.count - 4)")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundStyle(Theme.dim)
-                                        .padding(.horizontal, 7)
-                                        .padding(.vertical, 4)
-                                        .background(Theme.surfaceElevated)
-                                        .clipShape(Capsule())
-                                }
+                    if task.estimatedMinutes > 0 {
+                        taskBadge(
+                            systemImage: "clock",
+                            text: estimateLabel,
+                            color: Theme.dim
+                        )
+                    }
+                }
+
+                if !task.sortedTags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(task.sortedTags.prefix(4)) { tag in
+                                iOSTagChip(tag: tag)
+                            }
+
+                            if task.sortedTags.count > 4 {
+                                Text("+\(task.sortedTags.count - 4)")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(Theme.dim)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 4)
+                                    .background(Theme.surfaceElevated)
+                                    .clipShape(Capsule())
                             }
                         }
                     }
                 }
+            }
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: isRegularWidth ? 12 : 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim.opacity(0.65))
-                    .padding(.top, 4)
-            }
-            .padding(.horizontal, isRegularWidth ? 14 : 11)
-            .padding(.vertical, isRegularWidth ? 12 : 9)
-            .background(Theme.surfaceElevated.opacity(0.34))
-            .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous)
-                    .stroke(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
+            Image(systemName: "chevron.right")
+                .font(.system(size: isRegularWidth ? 12 : 10, weight: .semibold))
+                .foregroundStyle(Theme.dim.opacity(0.65))
+                .padding(.top, 4)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, isRegularWidth ? 14 : 11)
+        .padding(.vertical, isRegularWidth ? 12 : 9)
+        .background(Theme.surfaceElevated.opacity(0.34))
+        .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous)
+                .stroke(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
+        .onTapGesture {
+            showDetail = true
+        }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Opens task details")
         .sheet(isPresented: $showDetail) {
             iOSTaskDetailSheet(task: task)
         }

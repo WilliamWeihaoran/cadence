@@ -4,13 +4,11 @@
 <dict>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>nearby-interaction</string>
-	</array>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Cadence uses Calendar to sync your scheduled tasks as events.</string>
+	<string>Cadence uses Calendar to show events and create, update, or delete scheduled task events when you ask it to.</string>
 </dict>
 </plist>

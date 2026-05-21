@@ -138,6 +138,7 @@ struct CompactSidebarIconButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("sidebar.\(identifierFragment(for: item))")
         .onHover { isHovered = $0 }
     }
 
@@ -153,6 +154,23 @@ struct CompactSidebarIconButton: View {
 
     private var borderColor: Color {
         isSelected ? Theme.blue.opacity(0.34) : Theme.borderSubtle.opacity(isHovered ? 0.75 : 0.4)
+    }
+}
+
+private func identifierFragment(for item: SidebarItem) -> String {
+    switch item {
+    case .today: return "today"
+    case .allTasks: return "allTasks"
+    case .inbox: return "inbox"
+    case .area(let id): return "area.\(id.uuidString)"
+    case .project(let id): return "project.\(id.uuidString)"
+    case .pursuits: return "pursuits"
+    case .goals: return "goals"
+    case .habits: return "habits"
+    case .notes: return "notes"
+    case .calendar: return "calendar"
+    case .focus: return "focus"
+    case .settings: return "settings"
     }
 }
 
@@ -208,6 +226,7 @@ struct SidebarCardButton: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("sidebar.destination.\(destination.rawValue)")
         .onHover { isHovered = $0 }
     }
 }

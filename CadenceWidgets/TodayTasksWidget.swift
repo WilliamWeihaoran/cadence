@@ -68,16 +68,9 @@ struct TodayTasksWidgetProvider: AppIntentTimelineProvider {
     }
 
     private func currentSnapshot() -> CadenceTodayWidgetSnapshot {
-        do {
-            let container = try CadenceStoreSupport.makeSharedContainer(
-                allowsSave: false,
-                cloudKitDatabase: .none
-            )
-            let modelContext = ModelContext(container)
-            return try CadenceTodayWidgetSupport.snapshot(modelContext: modelContext, limit: 3)
-        } catch {
-            return CadenceTodayWidgetSupport.unavailableSnapshot()
-        }
+        CadenceTodayWidgetSupport.unavailableSnapshot(
+            message: "Open Cadence to view today's tasks."
+        )
     }
 }
 

@@ -22,46 +22,6 @@ struct WidgetSupportTests {
         #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now.addingTimeInterval(120), userDefaults: defaults).isEmpty)
     }
 
-    @Test func legacyStoreCandidateDirectoriesCoverSandboxedAndUnsandboxedLocations() {
-        let home = URL(fileURLWithPath: "/Users/tester", isDirectory: true)
-        let directories = CadenceStoreSupport.legacyStoreCandidateDirectories(homeDirectoryURL: home)
-
-        #expect(directories.count == 2)
-        #expect(directories[0].path == "/Users/tester/Library/Containers/com.haoranwei.Cadence/Data/Library/Application Support")
-        #expect(directories[1].path == "/Users/tester/Library/Application Support")
-    }
-
-    @Test func migrateLegacyStoreCopiesManagedItemsIntoAppGroupDirectory() throws {
-        let fileManager = FileManager.default
-        let tempRoot = fileManager.temporaryDirectory.appendingPathComponent("cadence-widget-tests-\(UUID().uuidString)", isDirectory: true)
-        let legacyDirectory = tempRoot.appendingPathComponent("legacy", isDirectory: true)
-        let appGroupDirectory = tempRoot.appendingPathComponent("group", isDirectory: true)
-
-        defer {
-            try? fileManager.removeItem(at: tempRoot)
-        }
-
-        try fileManager.createDirectory(at: legacyDirectory, withIntermediateDirectories: true)
-        try Data("store".utf8).write(to: legacyDirectory.appendingPathComponent("default.store"))
-        try Data("wal".utf8).write(to: legacyDirectory.appendingPathComponent("default.store-wal"))
-        try fileManager.createDirectory(at: legacyDirectory.appendingPathComponent(".default_SUPPORT"), withIntermediateDirectories: true)
-
-        var backedUpDirectory: URL?
-        let migratedFrom = try CadenceStoreSupport.migrateLegacyStoreIfNeeded(
-            appGroupDirectoryURL: appGroupDirectory,
-            candidateLegacyDirectories: [legacyDirectory],
-            backupHandler: { directory in
-                backedUpDirectory = directory
-            }
-        )
-
-        #expect(migratedFrom == legacyDirectory)
-        #expect(backedUpDirectory == legacyDirectory)
-        #expect(fileManager.fileExists(atPath: appGroupDirectory.appendingPathComponent("default.store").path))
-        #expect(fileManager.fileExists(atPath: appGroupDirectory.appendingPathComponent("default.store-wal").path))
-        #expect(fileManager.fileExists(atPath: appGroupDirectory.appendingPathComponent(".default_SUPPORT").path))
-    }
-
     @Test func todayWidgetSupportSortsTasksLikeTodayView() {
         let todayKey = "2026-05-11"
 

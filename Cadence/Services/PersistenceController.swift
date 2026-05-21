@@ -3,12 +3,17 @@ import Foundation
 
 struct PersistenceController {
     static let shared = PersistenceController()
+    private(set) static var startupIssue: String?
 
     let container: ModelContainer
 
     static let schema = CadenceSchema.schema
 
     init() {
+        if Self.shouldResetStoreOnLaunch {
+            Self.deleteResolvedStoreDirectory()
+        }
+
         if Self.isRunningTests {
             do {
                 container = try Self.makeContainer()
@@ -19,23 +24,17 @@ struct PersistenceController {
         }
 
         do {
-            let sharedStoreDirectoryURL = try CadenceStoreSupport.appGroupStoreDirectoryURL()
-            try StoreBackupManager.performPendingRestoreIfNeeded(storeDirectoryURL: sharedStoreDirectoryURL)
-            _ = try CadenceStoreSupport.migrateLegacyStoreIfNeeded(
-                appGroupDirectoryURL: sharedStoreDirectoryURL,
-                backupHandler: { legacyDirectoryURL in
-                    _ = try StoreBackupManager.createBackupIfStoreExists(
-                        reason: .startup,
-                        storeDirectoryURL: legacyDirectoryURL
-                    )
-                }
-            )
+            let storeDirectoryURL = try CadenceStoreSupport.primaryStoreDirectoryURL()
+            try StoreBackupManager.performPendingRestoreIfNeeded(storeDirectoryURL: storeDirectoryURL)
             _ = try StoreBackupManager.createBackupIfStoreExists(
                 reason: .startup,
-                storeDirectoryURL: sharedStoreDirectoryURL
+                storeDirectoryURL: storeDirectoryURL
             )
         } catch {
-            fatalError("Cadence refused to open the store because the safety backup/restore preflight failed: \(error.localizedDescription)")
+            container = Self.makeRecoveryContainer(
+                issue: "Cadence opened a recovery store because backup/restore preflight failed: \(error.localizedDescription)"
+            )
+            return
         }
 
         if let c = try? PersistenceController.makeContainer() {
@@ -47,7 +46,9 @@ struct PersistenceController {
             DataIntegrityRepairService.repairAndRecordFailure(in: startupContext, source: "app-startup")
             return
         }
-        fatalError("Could not create CloudKit ModelContainer. Refusing to reopen the production store in a different mode.")
+        container = Self.makeRecoveryContainer(
+            issue: "Cadence opened a recovery store because the CloudKit store could not be created."
+        )
     }
 
     private static func makeContainer() throws -> ModelContainer {
@@ -71,17 +72,103 @@ struct PersistenceController {
         return try ModelContainer(for: schema, configurations: [cloudConfig])
     }
 
+    private static func makeRecoveryContainer(issue: String) -> ModelContainer {
+        startupIssue = issue
+        do {
+            let recoveryDirectoryURL = try recoveryStoreDirectoryURL()
+            try FileManager.default.createDirectory(at: recoveryDirectoryURL, withIntermediateDirectories: true)
+            let recoveryConfig = ModelConfiguration(
+                "Cadence Recovery",
+                schema: schema,
+                url: recoveryDirectoryURL.appendingPathComponent("recovery.store"),
+                cloudKitDatabase: .none
+            )
+            return try ModelContainer(for: schema, configurations: [recoveryConfig])
+        } catch {
+            startupIssue = "\(issue) Recovery store creation also failed, so Cadence opened a temporary in-memory store: \(error.localizedDescription)"
+            do {
+                let fallbackConfig = ModelConfiguration(
+                    schema: schema,
+                    isStoredInMemoryOnly: true,
+                    cloudKitDatabase: .none
+                )
+                return try ModelContainer(for: schema, configurations: [fallbackConfig])
+            } catch {
+                fatalError("\(issue) In-memory recovery store creation also failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    static func recoveryStoreDirectoryCandidates(
+        primaryStoreDirectoryURL: URL?,
+        applicationSupportDirectoryURL: URL?,
+        temporaryDirectoryURL: URL
+    ) -> [URL] {
+        var seenPaths: Set<String> = []
+        return [
+            primaryStoreDirectoryURL?.appendingPathComponent("Recovery", isDirectory: true),
+            applicationSupportDirectoryURL?
+                .appendingPathComponent("Cadence", isDirectory: true)
+                .appendingPathComponent("Recovery", isDirectory: true),
+            temporaryDirectoryURL
+                .appendingPathComponent("Cadence", isDirectory: true)
+                .appendingPathComponent("Recovery", isDirectory: true),
+        ]
+        .compactMap(\.self)
+        .filter { candidate in
+            seenPaths.insert(candidate.standardizedFileURL.path).inserted
+        }
+    }
+
+    private static func recoveryStoreDirectoryURL(fileManager: FileManager = .default) throws -> URL {
+        let primaryStoreDirectoryURL = try? CadenceStoreSupport.primaryStoreDirectoryURL(fileManager: fileManager)
+        let applicationSupportDirectoryURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        var lastError: Error?
+
+        for candidate in recoveryStoreDirectoryCandidates(
+            primaryStoreDirectoryURL: primaryStoreDirectoryURL,
+            applicationSupportDirectoryURL: applicationSupportDirectoryURL,
+            temporaryDirectoryURL: fileManager.temporaryDirectory
+        ) {
+            do {
+                try fileManager.createDirectory(at: candidate, withIntermediateDirectories: true)
+                return candidate
+            } catch {
+                lastError = error
+            }
+        }
+
+        throw lastError ?? CocoaError(.fileWriteUnknown)
+    }
+
     private static var shouldUseLocalStoreOnly: Bool {
-        isRunningTests || ProcessInfo.processInfo.environment["CADENCE_LOCAL_STORE_ONLY"] == "1"
+        isRunningTests ||
+            ProcessInfo.processInfo.environment["CADENCE_LOCAL_STORE_ONLY"] == "1" ||
+            ProcessInfo.processInfo.environment["CADENCE_UI_TEST_MODE"] == "1"
     }
 
     private static var isRunningTests: Bool {
         let environment = ProcessInfo.processInfo.environment
         return environment["XCTestConfigurationFilePath"] != nil ||
-            environment["XCTestSessionIdentifier"] != nil
+            environment["XCTestSessionIdentifier"] != nil ||
+            environment["CADENCE_UI_TEST_MODE"] == "1"
+    }
+
+    private static var shouldResetStoreOnLaunch: Bool {
+        ProcessInfo.processInfo.environment["CADENCE_RESET_STORE"] == "1"
     }
 
     private static func resolvedStoreURL() throws -> URL {
+        if let uiTestStoreID = ProcessInfo.processInfo.environment["CADENCE_UI_TEST_STORE_ID"],
+           !uiTestStoreID.isEmpty {
+            let safeID = uiTestStoreID.replacingOccurrences(of: "/", with: "-")
+            let storeDirectoryURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("CadenceUITestStores", isDirectory: true)
+                .appendingPathComponent(safeID, isDirectory: true)
+            try FileManager.default.createDirectory(at: storeDirectoryURL, withIntermediateDirectories: true)
+            return storeDirectoryURL.appendingPathComponent("default.store")
+        }
+
         if isRunningTests {
             let testStoreDirectoryURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("CadenceTestsHostStore", isDirectory: true)
@@ -89,18 +176,23 @@ struct PersistenceController {
             return testStoreDirectoryURL.appendingPathComponent("default.store")
         }
 
-        return try CadenceStoreSupport.appGroupStoreURL()
+        return try CadenceStoreSupport.primaryStoreURL()
+    }
+
+    private static func deleteResolvedStoreDirectory() {
+        guard let storeURL = try? resolvedStoreURL() else { return }
+        try? FileManager.default.removeItem(at: storeURL.deletingLastPathComponent())
     }
 
     private static func deleteStoreFiles() {
-        guard let sharedStoreDirectoryURL = try? CadenceStoreSupport.appGroupStoreDirectoryURL() else { return }
-        if let files = try? FileManager.default.contentsOfDirectory(at: sharedStoreDirectoryURL, includingPropertiesForKeys: nil) {
+        guard let storeDirectoryURL = try? CadenceStoreSupport.primaryStoreDirectoryURL() else { return }
+        if let files = try? FileManager.default.contentsOfDirectory(at: storeDirectoryURL, includingPropertiesForKeys: nil) {
             for file in files where file.lastPathComponent.contains(".store") {
                 try? FileManager.default.removeItem(at: file)
             }
         }
         for name in ["default.store-wal", "default.store-shm"] {
-            try? FileManager.default.removeItem(at: sharedStoreDirectoryURL.appendingPathComponent(name))
+            try? FileManager.default.removeItem(at: storeDirectoryURL.appendingPathComponent(name))
         }
     }
 }
@@ -321,7 +413,7 @@ enum StoreBackupManager {
     }
 
     private static func defaultStoreDirectoryURL() throws -> URL {
-        try CadenceStoreSupport.appGroupStoreDirectoryURL()
+        try CadenceStoreSupport.primaryStoreDirectoryURL()
     }
 
     private static func existingStoreItems(in storeDirectoryURL: URL) -> [URL] {

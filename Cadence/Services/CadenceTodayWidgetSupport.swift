@@ -91,7 +91,7 @@ enum CadenceTodayWidgetSupport {
 
     nonisolated static func unavailableSnapshot(
         todayKey: String = currentTodayKey(),
-        message: String = "Open Cadence once to finish loading your shared data."
+        message: String = "Open Cadence to view today's tasks."
     ) -> CadenceTodayWidgetSnapshot {
         CadenceTodayWidgetSnapshot(
             date: Date(),

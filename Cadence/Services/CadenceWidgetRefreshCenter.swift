@@ -59,7 +59,7 @@ enum CadenceWidgetRefreshCenter {
         if let defaults {
             return defaults
         }
-        return UserDefaults(suiteName: CadenceStoreSupport.appGroupIdentifier) ?? .standard
+        return .standard
     }
 
     private nonisolated static func loadRecentlyCompletedTaskTimestamps(userDefaults: UserDefaults?) -> [String: TimeInterval] {

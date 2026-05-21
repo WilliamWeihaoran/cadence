@@ -218,6 +218,7 @@ private struct SettingsRailButton: View {
             }
         }
         .buttonStyle(.cadencePlain)
+        .accessibilityIdentifier("settings.category.\(category.rawValue)")
     }
 }
 

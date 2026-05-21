@@ -1,14 +1,25 @@
 #if os(macOS)
 import SwiftUI
 import AppKit
+import SwiftData
 
 struct SettingsDataSafetySection: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(AISettingsManager.self) private var aiSettingsManager
+    @Environment(AppleAccountManager.self) private var appleAccountManager
     @State private var backups: [StoreBackupSnapshot] = []
     @State private var statusMessage: String?
     @State private var pendingRestore: StoreBackupSnapshot?
+    @State private var isConfirmingDataDelete = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            SettingsReviewLinksSection()
+            SettingsDataResetCard(
+                statusMessage: statusMessage,
+                onDeleteData: { isConfirmingDataDelete = true }
+            )
+
             SettingsCard {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 14) {
@@ -102,6 +113,18 @@ struct SettingsDataSafetySection: View {
         } message: {
             Text("Cadence will restore this backup before the store opens on the next launch. Quit and reopen Cadence after staging.")
         }
+        .confirmationDialog(
+            "Delete Cadence Account and Data?",
+            isPresented: $isConfirmingDataDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Account & Data", role: .destructive) {
+                deleteCadenceData()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, goals, habits, tags, saved links, and the saved OpenAI key. Backups remain available. Apple Calendar events that already exist in Calendar are not deleted.")
+        }
     }
 
     private func refreshBackups() {
@@ -148,6 +171,133 @@ struct SettingsDataSafetySection: View {
             statusMessage = "Restore staged. Quit and reopen Cadence to apply it."
         } catch {
             statusMessage = "Could not stage restore: \(error.localizedDescription)"
+        }
+    }
+
+    private func deleteCadenceData() {
+        do {
+            _ = try StoreBackupManager.createBackupIfStoreExists(reason: .manual)
+            try PrivacyDataResetService.deleteCadenceData(in: modelContext)
+            try? aiSettingsManager.removeAPIKey()
+            appleAccountManager.signOut()
+            StoreBackupManager.clearPendingRestore()
+            statusMessage = "Cadence account and data were deleted. Backups were left in place."
+            refreshBackups()
+        } catch {
+            statusMessage = "Could not delete Cadence account and data: \(error.localizedDescription)"
+        }
+    }
+}
+
+private struct SettingsReviewLinksSection: View {
+    var body: some View {
+        SettingsCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 14) {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Theme.blue.opacity(0.16))
+                        .frame(width: 42, height: 42)
+                        .overlay {
+                            Image(systemName: "hand.raised.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(Theme.blue)
+                        }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Privacy")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                        Text("Cadence stores planning data locally and in your private iCloud database when sync is available. Calendar access is used for calendar features, and AI actions send selected note content only when you run them.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 10) {
+                        reviewLinkButton(
+                            title: "Privacy Policy",
+                            icon: "lock.shield.fill",
+                            url: AppStoreReviewReadiness.privacyPolicyURL,
+                            missingMessage: AppStoreReviewReadiness.privacyPolicyMissingMessage
+                        )
+                        reviewLinkButton(
+                            title: "Support",
+                            icon: "questionmark.circle.fill",
+                            url: AppStoreReviewReadiness.supportURL,
+                            missingMessage: AppStoreReviewReadiness.supportURLMissingMessage
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func reviewLinkButton(title: String, icon: String, url: URL?, missingMessage: String) -> some View {
+        if let url {
+            SettingsActionButton(tone: .tinted(Theme.blue), action: { NSWorkspace.shared.open(url) }) {
+                Label(title, systemImage: icon)
+            }
+        } else {
+            #if DEBUG
+            VStack(alignment: .trailing, spacing: 4) {
+                Label(title, systemImage: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Theme.dim.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                Text(missingMessage)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.amber)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 190, alignment: .trailing)
+            }
+            #endif
+        }
+    }
+}
+
+private struct SettingsDataResetCard: View {
+    let statusMessage: String?
+    let onDeleteData: () -> Void
+
+    var body: some View {
+        SettingsCard {
+            HStack(alignment: .top, spacing: 14) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Theme.red.opacity(0.14))
+                    .frame(width: 42, height: 42)
+                    .overlay {
+                        Image(systemName: "person.crop.circle.badge.xmark")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Theme.red)
+                    }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Account & Data Controls")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text("Delete the local Cadence account profile, Cadence data from this store, and the saved OpenAI key. Backups remain available so you can recover from accidental deletion.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let statusMessage {
+                        Text(statusMessage)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.muted)
+                    }
+                }
+
+                Spacer()
+
+                SettingsActionButton(tone: .tinted(Theme.red), action: onDeleteData) {
+                    Label("Delete Account & Data", systemImage: "trash.fill")
+                }
+            }
         }
     }
 }

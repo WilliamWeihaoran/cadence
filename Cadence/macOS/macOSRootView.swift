@@ -74,6 +74,13 @@ struct macOSRootView: View {
 
             macOSRootOverlayStack(handleSearchSelection: handleSearchSelection)
                 .id(dataRefreshID)
+
+            if let startupIssue = PersistenceController.startupIssue {
+                RootStartupIssueBanner(message: startupIssue)
+                    .padding(.top, 14)
+                    .padding(.horizontal, 18)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
         }
         .modelContext(currentModelContext)
         .ignoresSafeArea(.container, edges: .top)
@@ -81,6 +88,7 @@ struct macOSRootView: View {
             CadenceDeepLinkManager.shared.handle(url)
         }
         .onAppear {
+            CadenceUITestSupport.prepareAppState(modelContext: activeModelContext ?? modelContext)
             mcpRefreshCoordinator.start {
                 hasPendingExternalDataRefresh = true
                 scheduleAppDataRefreshIfPossible()
@@ -240,6 +248,38 @@ struct macOSRootView: View {
         case .today, .task:
             selection = .today
         }
+    }
+}
+
+private struct RootStartupIssueBanner: View {
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.amber)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Recovery Store Active")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                Text(message)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 620)
+        .background(.ultraThinMaterial)
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Theme.amber.opacity(0.35), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: Color.black.opacity(0.18), radius: 18, x: 0, y: 10)
     }
 }
 

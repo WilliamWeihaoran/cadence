@@ -7,8 +7,14 @@ struct iPadTodayView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var newTitle = ""
+    @State private var saveError: String?
+    @State private var sidePanel: iPadTodaySidePanel = .notes
     @AppStorage("ios.today.sortMode") private var sortModeRaw = iOSTaskSortMode.priority.rawValue
     @AppStorage("ios.today.showCompleted") private var showCompleted = false
+
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
 
     private var sortMode: iOSTaskSortMode {
         get { iOSTaskSortMode(rawValue: sortModeRaw) ?? .priority }
@@ -36,59 +42,101 @@ struct iPadTodayView: View {
     }
 
     var body: some View {
-        Group {
-            if horizontalSizeClass == .regular {
-                HStack(spacing: 0) {
-                    iOSNotesPanel(useStandardHeaderHeight: true)
-                        .frame(minWidth: 360, idealWidth: 430)
-                        .layoutPriority(0.34)
-
-                    Divider().background(Theme.borderSubtle)
-
-                    todayTaskColumn
-                        .frame(minWidth: 400, idealWidth: 470)
-                        .layoutPriority(0.43)
-
-                    Divider().background(Theme.borderSubtle)
-
-                    iOSSchedulePanel()
-                        .frame(minWidth: 310, idealWidth: 350)
-                        .layoutPriority(0.23)
-                }
-            } else {
-                ScrollView {
-                    VStack(spacing: 16) {
-                        iOSCompactPageHeader(
-                            eyebrow: DateFormatters.longDate.string(from: Date()),
-                            title: "Today",
-                            subtitle: "Plan the day, capture notes, and glance at the schedule.",
-                            systemImage: "sun.max.fill",
-                            color: Theme.amber
-                        )
-
-                        todayTaskColumn
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 320)
-                            .iOSCompactPanelCard()
-
-                        iOSNotesPanel()
-                            .frame(minHeight: 360)
-                            .iOSCompactPanelCard()
-
-                        iOSSchedulePanel()
-                            .frame(minHeight: 360)
-                            .iOSCompactPanelCard()
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-                    .padding(.bottom, 12)
-                }
-                .scrollIndicators(.hidden)
-            }
+        GeometryReader { proxy in
+            todayLayout(width: proxy.size.width)
         }
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Today")
         .navigationBarTitleDisplayMode(.large)
+    }
+
+    @ViewBuilder
+    private func todayLayout(width: CGFloat) -> some View {
+        if isRegularWidth && width >= 1_080 {
+            threePaneTodayLayout
+        } else if isRegularWidth {
+            twoPaneTodayLayout
+        } else {
+            compactTodayLayout
+        }
+    }
+
+    private var threePaneTodayLayout: some View {
+        HStack(spacing: 0) {
+            iOSNotesPanel(useStandardHeaderHeight: true)
+                .frame(minWidth: 360, idealWidth: 430)
+                .layoutPriority(0.34)
+
+            Divider().background(Theme.borderSubtle)
+
+            todayTaskColumn
+                .frame(minWidth: 400, idealWidth: 470)
+                .layoutPriority(0.43)
+
+            Divider().background(Theme.borderSubtle)
+
+            iOSSchedulePanel()
+                .frame(minWidth: 310, idealWidth: 350)
+                .layoutPriority(0.23)
+        }
+    }
+
+    private var twoPaneTodayLayout: some View {
+        HStack(spacing: 0) {
+            todayTaskColumn
+                .frame(minWidth: 420)
+                .layoutPriority(0.62)
+
+            Divider().background(Theme.borderSubtle)
+
+            VStack(alignment: .leading, spacing: 0) {
+                iPadTodaySidePanelPicker(selection: $sidePanel)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+
+                Divider().background(Theme.borderSubtle)
+
+                switch sidePanel {
+                case .notes:
+                    iOSNotesPanel(useStandardHeaderHeight: true)
+                case .timeline:
+                    iOSSchedulePanel()
+                }
+            }
+            .frame(minWidth: 320, idealWidth: 380)
+            .layoutPriority(0.38)
+        }
+    }
+
+    private var compactTodayLayout: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                iOSCompactPageHeader(
+                    eyebrow: DateFormatters.longDate.string(from: Date()),
+                    title: "Today",
+                    subtitle: "Plan the day, capture notes, and glance at the schedule.",
+                    systemImage: "sun.max.fill",
+                    color: Theme.amber
+                )
+
+                todayTaskColumn
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 320)
+                    .iOSCompactPanelCard()
+
+                iOSNotesPanel()
+                    .frame(minHeight: 360)
+                    .iOSCompactPanelCard()
+
+                iOSSchedulePanel()
+                    .frame(minHeight: 360)
+                    .iOSCompactPanelCard()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 12)
+        }
+        .scrollIndicators(.hidden)
     }
 
     private var todayTaskColumn: some View {
@@ -108,6 +156,14 @@ struct iPadTodayView: View {
             )
             .padding(.horizontal, 16)
             .padding(.top, 16)
+
+            if let saveError {
+                iOSInlineErrorBanner(message: saveError) {
+                    self.saveError = nil
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+            }
 
             iOSTaskViewOptionsBar(
                 sortMode: Binding(
@@ -163,9 +219,18 @@ struct iPadTodayView: View {
             allTasks: allTasks,
             scheduledDate: todayKey
         ) else { return }
+
+        let pendingTitle = newTitle
         modelContext.insert(task)
-        try? modelContext.save()
-        newTitle = ""
+        do {
+            try modelContext.save()
+            saveError = nil
+            newTitle = ""
+        } catch {
+            modelContext.delete(task)
+            newTitle = pendingTitle
+            saveError = "Couldn't save this task. Try again in a moment."
+        }
     }
 
     private func color(for groupKind: CadenceTodayTaskGroupKind) -> Color {
@@ -173,6 +238,54 @@ struct iPadTodayView: View {
         case .overdue: return Theme.red
         case .dueToday: return Theme.amber
         case .plannedToday: return Theme.blue
+        }
+    }
+}
+
+private enum iPadTodaySidePanel: String, CaseIterable, Identifiable {
+    case notes
+    case timeline
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .notes: return "Notes"
+        case .timeline: return "Timeline"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .notes: return "note.text"
+        case .timeline: return "clock"
+        }
+    }
+}
+
+private struct iPadTodaySidePanelPicker: View {
+    @Binding var selection: iPadTodaySidePanel
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(iPadTodaySidePanel.allCases) { panel in
+                Button {
+                    selection = panel
+                } label: {
+                    Label(panel.title, systemImage: panel.icon)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(selection == panel ? Theme.text : Theme.dim)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(selection == panel ? Theme.blue.opacity(0.16) : Theme.surfaceElevated.opacity(0.34))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(selection == panel ? Theme.blue.opacity(0.32) : Theme.borderSubtle.opacity(0.36), lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 }

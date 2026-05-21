@@ -140,6 +140,7 @@ struct SidebarListRow: View {
         .overlay {
             SidebarRightClickEditTrigger(action: onEdit)
         }
+        .accessibilityIdentifier("sidebar.list.\(kind.accessibilityFragment).\(accessibilitySlug(label))")
         .onHover { hovering in
             isHovered = hovering
             if hovering {
@@ -197,6 +198,23 @@ struct SidebarListRow: View {
         dueDateViewMonth = Calendar.current.date(from: comps) ?? resolved
         showDueDatePicker = true
     }
+}
+
+private extension SidebarListRow.Kind {
+    var accessibilityFragment: String {
+        switch self {
+        case .area: return "area"
+        case .project: return "project"
+        }
+    }
+}
+
+private func accessibilitySlug(_ value: String) -> String {
+    value
+        .lowercased()
+        .components(separatedBy: CharacterSet.alphanumerics.inverted)
+        .filter { !$0.isEmpty }
+        .joined(separator: "-")
 }
 
 private struct SidebarRightClickEditTrigger: NSViewRepresentable {

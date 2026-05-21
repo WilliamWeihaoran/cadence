@@ -55,6 +55,7 @@ struct SettingsAppearanceSection: View {
                                 .padding(.vertical, 3)
                                 .background(Theme.blue)
                                 .clipShape(Capsule())
+                                .accessibilityIdentifier("settings.theme.\(option.rawValue).active")
                         }
                     }
 
@@ -74,11 +75,14 @@ struct SettingsAppearanceSection: View {
             }
         }
         .buttonStyle(.cadencePlain)
+        .accessibilityIdentifier("settings.theme.\(option.rawValue)")
+        .accessibilityValue(isSelected ? "Active" : "Inactive")
     }
 }
 
 struct SettingsAccountSection: View {
     let appleAccountManager: AppleAccountManager
+    let onDeleteAccount: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -128,16 +132,29 @@ struct SettingsAccountSection: View {
                         Spacer()
 
                         if appleAccountManager.isSignedIn {
-                            Button("Sign Out") {
-                                appleAccountManager.signOut()
+                            HStack(spacing: 10) {
+                                Button("Sign Out") {
+                                    appleAccountManager.signOut()
+                                }
+                                .buttonStyle(.cadencePlain)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Theme.red)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(Theme.red.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                                Button("Delete Account...") {
+                                    onDeleteAccount()
+                                }
+                                .buttonStyle(.cadencePlain)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(Theme.red)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
-                            .buttonStyle(.cadencePlain)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Theme.red)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(Theme.red.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         } else {
                             Button {
                                 appleAccountManager.signIn()
@@ -230,7 +247,7 @@ struct SettingsAISection: View {
                             Text("OpenAI API Key")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
-                            Text("Stored in Keychain. Cadence sends content only when you run an AI action.")
+                            Text("Stored in Keychain. Cadence sends selected note content to OpenAI only when you run an AI action, such as summarizing a note or extracting task drafts.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -242,6 +259,26 @@ struct SettingsAISection: View {
                         }
 
                         Spacer()
+                    }
+
+                    Divider().background(Theme.borderSubtle)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        aiDisclosureRow(
+                            icon: "checkmark.shield.fill",
+                            title: "User initiated",
+                            detail: "AI requests run only after you choose an AI command."
+                        )
+                        aiDisclosureRow(
+                            icon: "doc.text.magnifyingglass",
+                            title: "Selected note content",
+                            detail: "The note title, note text, and related list names may be sent for the requested action."
+                        )
+                        aiDisclosureRow(
+                            icon: "key.fill",
+                            title: "Your API key",
+                            detail: "The key is stored in Keychain and can be removed here at any time."
+                        )
                     }
 
                     Divider().background(Theme.borderSubtle)
@@ -308,6 +345,24 @@ struct SettingsAISection: View {
         }
         .onAppear {
             aiSettingsManager.refreshKeyStatus()
+        }
+    }
+
+    private func aiDisclosureRow(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.blue)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

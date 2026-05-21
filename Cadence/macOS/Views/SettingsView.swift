@@ -45,6 +45,7 @@ struct SettingsView: View {
         }
         .background(Theme.bg)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("screen.settings")
         .confirmationDialog(
             "Delete Area?",
             isPresented: Binding(
@@ -144,7 +145,10 @@ struct SettingsView: View {
                 onSelectTheme: { themeManager.selectedTheme = $0 }
             )
         case .account:
-            SettingsAccountSection(appleAccountManager: appleAccountManager)
+            SettingsAccountSection(
+                appleAccountManager: appleAccountManager,
+                onDeleteAccount: { selectedCategory = .dataSafety }
+            )
         case .dataSafety:
             SettingsDataSafetySection()
         case .navigation:

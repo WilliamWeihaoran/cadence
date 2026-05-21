@@ -342,6 +342,44 @@ struct iOSFeatureEmptyDetail: View {
     }
 }
 
+struct iOSInlineErrorBanner: View {
+    let message: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.amber)
+                .padding(.top, 1)
+
+            Text(message)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 8)
+
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Theme.amber.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Theme.amber.opacity(0.24), lineWidth: 1)
+        }
+    }
+}
+
 private struct iOSMacPlaceholderPanel: View {
     let eyebrow: String
     let title: String

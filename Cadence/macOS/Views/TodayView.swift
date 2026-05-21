@@ -17,6 +17,7 @@ struct TodayView: View {
                 .layoutPriority(0.23)
         }
         .background(Theme.bg)
+        .accessibilityIdentifier("screen.today")
     }
 }
 #endif

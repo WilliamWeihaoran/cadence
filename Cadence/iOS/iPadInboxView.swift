@@ -7,6 +7,7 @@ struct iPadInboxView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var newTitle = ""
+    @State private var saveError: String?
     @AppStorage("ios.inbox.sortMode") private var sortModeRaw = iOSTaskSortMode.listOrder.rawValue
     @AppStorage("ios.inbox.showCompleted") private var showCompleted = false
 
@@ -49,7 +50,21 @@ struct iPadInboxView: View {
                 }
                 .scrollIndicators(.hidden)
             } else {
-                inboxColumn
+                HStack(spacing: 0) {
+                    inboxColumn
+                        .frame(minWidth: 440, idealWidth: 560, maxWidth: 680)
+                        .layoutPriority(0.62)
+
+                    Divider().background(Theme.borderSubtle)
+
+                    iPadInboxStatusPanel(
+                        activeCount: inboxTasks.count,
+                        completedCount: completedInboxTasks.count,
+                        oldestTask: inboxTasks.min { $0.createdAt < $1.createdAt }
+                    )
+                    .frame(minWidth: 280, idealWidth: 340)
+                    .layoutPriority(0.38)
+                }
             }
         }
         .background(Theme.bg.ignoresSafeArea())
@@ -74,6 +89,14 @@ struct iPadInboxView: View {
             )
             .padding(.horizontal, 16)
             .padding(.top, 16)
+
+            if let saveError {
+                iOSInlineErrorBanner(message: saveError) {
+                    self.saveError = nil
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+            }
 
             iOSTaskViewOptionsBar(
                 sortMode: Binding(
@@ -127,9 +150,64 @@ struct iPadInboxView: View {
         guard let task = CadenceTaskQuerySupport.makeTask(title: newTitle, allTasks: allTasks) else {
             return
         }
+
+        let pendingTitle = newTitle
         modelContext.insert(task)
-        try? modelContext.save()
-        newTitle = ""
+        do {
+            try modelContext.save()
+            saveError = nil
+            newTitle = ""
+        } catch {
+            modelContext.delete(task)
+            newTitle = pendingTitle
+            saveError = "Couldn't save this inbox task. Try again in a moment."
+        }
+    }
+}
+
+private struct iPadInboxStatusPanel: View {
+    let activeCount: Int
+    let completedCount: Int
+    let oldestTask: AppTask?
+
+    private var oldestLabel: String {
+        guard let oldestTask else { return "Clear" }
+        return DateFormatters.relativeDate(from: DateFormatters.dateKey(from: oldestTask.createdAt))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            iOSPanelHeader(eyebrow: "Workspace", title: "Inbox")
+
+            Divider().background(Theme.borderSubtle)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                        iOSMetricTile(title: "Active", value: "\(activeCount)", icon: "tray.full.fill", color: Theme.blue)
+                        iOSMetricTile(title: "Done", value: "\(completedCount)", icon: "checkmark.circle.fill", color: Theme.green)
+                    }
+
+                    CadenceSettingsCard {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("Oldest item")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Theme.dim)
+                                .textCase(.uppercase)
+                                .kerning(0.8)
+
+                            Text(oldestLabel)
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(Theme.text)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(16)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .background(Theme.bg)
     }
 }
 #endif
