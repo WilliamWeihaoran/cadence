@@ -230,17 +230,24 @@ private struct iOSCalendarToolbar: View {
                     .scrollIndicators(.hidden)
                 }
             } else {
-                HStack(spacing: 10) {
-                    titleBlock
-                    Spacer(minLength: 8)
-                    modePicker
-                    zoomControls
-                    navigationControls
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        titleBlock
+                        Spacer(minLength: 10)
+                        navigationControls
+                    }
+
+                    HStack(spacing: 12) {
+                        modePicker
+                            .frame(maxWidth: 420)
+                        Spacer(minLength: 10)
+                        zoomControls
+                    }
                 }
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, horizontalSizeClass == .regular ? 14 : 10)
+        .padding(.vertical, horizontalSizeClass == .regular ? 12 : 10)
         .background(Theme.surface)
     }
 
@@ -262,32 +269,37 @@ private struct iOSCalendarToolbar: View {
     }
 
     private var modePicker: some View {
-        HStack(spacing: 4) {
+        Picker("", selection: calendarModeSelection) {
             ForEach(CadenceCalendarViewMode.allCases, id: \.self) { mode in
-                Button {
-                    presentation = .timeline
-                    viewMode = mode
-                } label: {
-                    calendarModeLabel(
-                        title: mode.rawValue,
-                        isSelected: presentation == .timeline && viewMode == mode
-                    )
-                }
-                .buttonStyle(.plain)
+                Text(mode.rawValue).tag("mode:\(mode.rawValue)")
             }
 
-            Button {
-                presentation = .board
-            } label: {
-                calendarModeLabel(title: "Board", isSelected: presentation == .board)
+            Text("Board").tag("presentation:\(iOSCalendarPresentation.board.rawValue)")
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .tint(Theme.blue)
+    }
+
+    private var calendarModeSelection: Binding<String> {
+        Binding(
+            get: {
+                presentation == .board
+                    ? "presentation:\(iOSCalendarPresentation.board.rawValue)"
+                    : "mode:\(viewMode.rawValue)"
+            },
+            set: { selection in
+                if selection == "presentation:\(iOSCalendarPresentation.board.rawValue)" {
+                    presentation = .board
+                } else if selection.hasPrefix("mode:") {
+                    let rawValue = String(selection.dropFirst("mode:".count))
+                    if let mode = CadenceCalendarViewMode(rawValue: rawValue) {
+                        presentation = .timeline
+                        viewMode = mode
+                    }
+                }
             }
-            .buttonStyle(.plain)
-        }
-        .padding(3)
-        .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.35), lineWidth: 1)
-        }
+        )
     }
 
     @ViewBuilder
@@ -314,22 +326,6 @@ private struct iOSCalendarToolbar: View {
             iOSFeatureIconButton(systemImage: "location.fill", action: today)
             iOSFeatureIconButton(systemImage: "chevron.right", action: next)
         }
-    }
-
-    private func calendarModeLabel(title: String, isSelected: Bool) -> some View {
-        Text(title)
-            .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
-            .foregroundStyle(isSelected ? Theme.blue : Theme.dim)
-            .frame(minWidth: 48, minHeight: 28)
-            .padding(.horizontal, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(isSelected ? Theme.blue.opacity(0.11) : Color.clear)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(isSelected ? Theme.blue.opacity(0.28) : Color.clear, lineWidth: 1)
-            }
     }
 }
 #endif

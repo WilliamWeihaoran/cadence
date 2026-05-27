@@ -123,7 +123,7 @@ struct SettingsDataSafetySection: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, goals, habits, tags, saved links, and the saved OpenAI key. Backups remain available. Apple Calendar events that already exist in Calendar are not deleted.")
+            Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, goals, habits, tags, saved links, local Cadence backups, pending restores, and the saved OpenAI key. Apple Calendar events that already exist in Calendar are not deleted.")
         }
     }
 
@@ -176,12 +176,15 @@ struct SettingsDataSafetySection: View {
 
     private func deleteCadenceData() {
         do {
-            _ = try StoreBackupManager.createBackupIfStoreExists(reason: .manual)
             try PrivacyDataResetService.deleteCadenceData(in: modelContext)
             try? aiSettingsManager.removeAPIKey()
+            CadenceWidgetRefreshCenter.clearStoredState()
             appleAccountManager.signOut()
             StoreBackupManager.clearPendingRestore()
-            statusMessage = "Cadence account and data were deleted. Backups were left in place."
+            let removedBackupCount = try StoreBackupManager.deleteAllBackups()
+            statusMessage = removedBackupCount == 0
+                ? "Cadence account and data were deleted."
+                : "Cadence account, data, and \(removedBackupCount) backup\(removedBackupCount == 1 ? "" : "s") were deleted."
             refreshBackups()
         } catch {
             statusMessage = "Could not delete Cadence account and data: \(error.localizedDescription)"
@@ -281,7 +284,7 @@ private struct SettingsDataResetCard: View {
                     Text("Account & Data Controls")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                    Text("Delete the local Cadence account profile, Cadence data from this store, and the saved OpenAI key. Backups remain available so you can recover from accidental deletion.")
+                    Text("Delete the local Cadence account profile, Cadence data from this store, local Cadence backups, pending restores, and the saved OpenAI key.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)

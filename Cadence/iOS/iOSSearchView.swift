@@ -7,6 +7,9 @@ struct iOSSearchView: View {
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query(sort: \Note.updatedAt, order: .reverse) private var notes: [Note]
+    @Query(sort: \Pursuit.order) private var pursuits: [Pursuit]
+    @Query(sort: \Goal.order) private var goals: [Goal]
+    @Query(sort: \Habit.order) private var habits: [Habit]
 
     @State private var query = ""
     @State private var selectedTask: AppTask?
@@ -39,6 +42,36 @@ struct iOSSearchView: View {
 
     private var showsNotes: Bool {
         scope == .all || scope == .notes
+    }
+
+    private var showsProgress: Bool {
+        scope == .all || scope == .progress
+    }
+
+    private var pageResults: [iOSSearchResult] {
+        let candidates = iOSSearchFeatureDestination.allCases.map { destination in
+            iOSSearchFeatureCandidate(
+                title: destination.title,
+                subtitle: destination.subtitle,
+                detail: destination.detail,
+                icon: destination.icon,
+                color: destination.color,
+                destination: destination,
+                fields: [destination.title, destination.subtitle, destination.detail, destination.aliases]
+            )
+        }
+
+        if isSearching {
+            return candidates.compactMap { candidate in
+                guard let score = CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: candidate.fields) else {
+                    return nil
+                }
+                return candidate.result(score: score)
+            }
+            .sorted { $0.score > $1.score }
+        }
+
+        return candidates.prefix(5).map { $0.result(score: 0) }
     }
 
     private var taskResults: [iOSSearchResult] {
@@ -136,6 +169,51 @@ struct iOSSearchView: View {
         return searchableNotes.prefix(8).map { noteResult($0, score: 0) }
     }
 
+    private var progressResults: [iOSSearchResult] {
+        let candidates = pursuits.filter { $0.status != .done }.map { pursuit in
+            let summary = CadencePursuitSupport.summary(for: pursuit)
+            return iOSSearchResult(
+                kind: .progress,
+                title: pursuit.title.isEmpty ? "Untitled Pursuit" : pursuit.title,
+                subtitle: pursuit.context?.name ?? pursuit.kind.label,
+                detail: "\(summary.activeGoalCount) milestones / \(summary.activeHabitCount) habits",
+                icon: pursuit.icon,
+                color: Color(hex: pursuit.colorHex),
+                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [pursuit.title, pursuit.kind.label, pursuit.context?.name ?? ""]) ?? 0,
+                featureDestination: .pursuits
+            )
+        } + goals.filter { $0.status != .done }.map { goal in
+            let summary = GoalContributionResolver.summary(for: goal)
+            return iOSSearchResult(
+                kind: .progress,
+                title: goal.title.isEmpty ? "Untitled Milestone" : goal.title,
+                subtitle: goal.pursuit?.title ?? goal.context?.name ?? goal.status.rawValue.capitalized,
+                detail: "\(Int((summary.progress * 100).rounded()))%",
+                icon: "flag.fill",
+                color: Color(hex: goal.colorHex),
+                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [goal.title, goal.desc, goal.pursuit?.title ?? "", goal.context?.name ?? ""]) ?? 0,
+                featureDestination: .milestones
+            )
+        } + habits.map { habit in
+            iOSSearchResult(
+                kind: .progress,
+                title: habit.title.isEmpty ? "Untitled Habit" : habit.title,
+                subtitle: habit.pursuit?.title ?? habit.context?.name ?? habit.frequencySummary,
+                detail: habit.isDueToday ? "Due today" : habit.frequencySummary,
+                icon: "flame.fill",
+                color: Color(hex: habit.colorHex),
+                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [habit.title, habit.pursuit?.title ?? "", habit.context?.name ?? "", habit.frequencySummary]) ?? 0,
+                featureDestination: .habits
+            )
+        }
+
+        if isSearching {
+            return candidates.filter { $0.score > 0 }.sorted { $0.score > $1.score }
+        }
+
+        return Array(candidates.prefix(8))
+    }
+
     private var rankedTaskResults: [iOSSearchResult] {
         searchableTasks.compactMap { task in
             let tagText = task.sortedTags.map(\.name).joined(separator: " ")
@@ -196,6 +274,9 @@ struct iOSSearchView: View {
                 }
             }
 
+            if showsProgress {
+                resultSection("Pages", results: pageResults)
+            }
             if showsTasks {
                 resultSection("Tasks", results: taskResults)
             }
@@ -204,6 +285,9 @@ struct iOSSearchView: View {
             }
             if showsNotes {
                 resultSection("Notes", results: noteResults)
+            }
+            if showsProgress {
+                resultSection("Pursuits, Milestones, Habits", results: progressResults)
             }
 
             if isSearching && visibleResultsAreEmpty {
@@ -235,6 +319,32 @@ struct iOSSearchView: View {
                 }
             }
         }
+        .navigationDestination(for: iOSSearchFeatureDestination.self) { destination in
+            switch destination {
+            case .today:
+                iPadTodayView()
+            case .allTasks:
+                iOSAllTasksView()
+            case .inbox:
+                iPadInboxView()
+            case .notes:
+                iOSCompactNotesView()
+            case .focus:
+                iOSFocusView()
+            case .calendar:
+                iOSCalendarView()
+            case .pursuits:
+                iOSPursuitsView()
+            case .milestones:
+                iOSMilestonesView()
+            case .habits:
+                iOSHabitsView()
+            case .lists:
+                iOSListsView()
+            case .settings:
+                iOSSettingsView()
+            }
+        }
         .sheet(item: $selectedTask) { task in
             iOSTaskDetailSheet(task: task)
         }
@@ -246,7 +356,8 @@ struct iOSSearchView: View {
     private var visibleResultsAreEmpty: Bool {
         (!showsTasks || taskResults.isEmpty) &&
         (!showsLists || listResults.isEmpty) &&
-        (!showsNotes || noteResults.isEmpty)
+        (!showsNotes || noteResults.isEmpty) &&
+        (!showsProgress || pageResults.isEmpty && progressResults.isEmpty)
     }
 
     @ViewBuilder
@@ -256,6 +367,10 @@ struct iOSSearchView: View {
                 ForEach(results.prefix(isSearching ? 24 : 8)) { result in
                     if let route = result.listRoute {
                         NavigationLink(value: route) {
+                            iOSSearchResultRow(result: result)
+                        }
+                    } else if let destination = result.featureDestination {
+                        NavigationLink(value: destination) {
                             iOSSearchResultRow(result: result)
                         }
                     } else {
@@ -346,6 +461,7 @@ private enum iOSSearchScope: String, CaseIterable, Identifiable {
     case tasks
     case lists
     case notes
+    case progress
 
     var id: String { rawValue }
 
@@ -355,6 +471,98 @@ private enum iOSSearchScope: String, CaseIterable, Identifiable {
         case .tasks: return "Tasks"
         case .lists: return "Lists"
         case .notes: return "Notes"
+        case .progress: return "More"
+        }
+    }
+}
+
+private enum iOSSearchFeatureDestination: String, CaseIterable, Hashable {
+    case today
+    case allTasks
+    case inbox
+    case notes
+    case focus
+    case calendar
+    case pursuits
+    case milestones
+    case habits
+    case lists
+    case settings
+
+    var title: String {
+        switch self {
+        case .today: return "Today"
+        case .allTasks: return "All Tasks"
+        case .inbox: return "Inbox"
+        case .notes: return "Notes"
+        case .focus: return "Focus"
+        case .calendar: return "Calendar"
+        case .pursuits: return "Pursuits"
+        case .milestones: return "Milestones"
+        case .habits: return "Habits"
+        case .lists: return "Lists"
+        case .settings: return "Settings"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .today: return "Plan the day"
+        case .allTasks: return "Full task index"
+        case .inbox: return "Capture and triage"
+        case .notes: return "Workspace notes"
+        case .focus: return "Timer and current work"
+        case .calendar: return "Timeline and month"
+        case .pursuits: return "Long-running directions"
+        case .milestones: return "Goals and progress"
+        case .habits: return "Repeating commitments"
+        case .lists: return "Areas and projects"
+        case .settings: return "Preferences and diagnostics"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .today: return "tasks notes schedule"
+        case .allTasks: return "tasks completed active"
+        case .inbox: return "capture unsorted tasks"
+        case .notes: return "daily weekly notepad markdown"
+        case .focus: return "timer pomodoro session"
+        case .calendar: return "calendar schedule timeline month"
+        case .pursuits: return "pursuits aspirations directions"
+        case .milestones: return "goals milestones progress"
+        case .habits: return "habits streaks routines"
+        case .lists: return "areas projects lists"
+        case .settings: return "settings preferences sync tags themes"
+        }
+    }
+
+    var aliases: String { "\(rawValue) \(title) \(subtitle) \(detail)" }
+
+    var icon: String {
+        switch self {
+        case .today: return "sun.max.fill"
+        case .allTasks: return "checklist"
+        case .inbox: return "tray.fill"
+        case .notes: return "note.text"
+        case .focus: return "timer"
+        case .calendar: return "calendar"
+        case .pursuits: return "sparkles"
+        case .milestones: return "flag.fill"
+        case .habits: return "flame.fill"
+        case .lists: return "folder.fill"
+        case .settings: return "gearshape.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .today: return Theme.amber
+        case .allTasks, .inbox, .settings: return Theme.blue
+        case .notes, .calendar, .pursuits: return Theme.purple
+        case .focus: return Theme.red
+        case .milestones, .lists: return Theme.green
+        case .habits: return Theme.amber
         }
     }
 }
@@ -382,11 +590,36 @@ private struct iOSSearchListCandidate {
     }
 }
 
+private struct iOSSearchFeatureCandidate {
+    let title: String
+    let subtitle: String
+    let detail: String
+    let icon: String
+    let color: Color
+    let destination: iOSSearchFeatureDestination
+    let fields: [String]
+
+    func result(score: Int) -> iOSSearchResult {
+        iOSSearchResult(
+            kind: .feature,
+            title: title,
+            subtitle: subtitle,
+            detail: detail,
+            icon: icon,
+            color: color,
+            score: score,
+            featureDestination: destination
+        )
+    }
+}
+
 private struct iOSSearchResult: Identifiable {
     enum Kind {
         case task
         case list
         case note
+        case progress
+        case feature
     }
 
     let id = UUID()
@@ -400,6 +633,7 @@ private struct iOSSearchResult: Identifiable {
     var task: AppTask?
     var note: Note?
     var listRoute: iOSListRoute?
+    var featureDestination: iOSSearchFeatureDestination?
 }
 
 private struct iOSSearchResultRow: View {
@@ -443,16 +677,13 @@ private struct iOSNoteDetailSheet: View {
     @Bindable var note: Note
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @State private var isEditorFocused = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                TextEditor(text: $note.content)
-                    .font(.system(size: 16))
-                    .foregroundStyle(Theme.text)
-                    .scrollContentBackground(.hidden)
+                iOSMarkdownEditor(text: $note.content, isFocused: $isEditorFocused)
                     .background(Theme.surface)
-                    .padding(12)
             }
             .background(Theme.surface.ignoresSafeArea())
             .navigationTitle(note.displayTitle)
@@ -460,6 +691,7 @@ private struct iOSNoteDetailSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") {
+                        isEditorFocused = false
                         note.updatedAt = Date()
                         try? modelContext.save()
                         dismiss()
@@ -469,6 +701,14 @@ private struct iOSNoteDetailSheet: View {
             .onChange(of: note.content) { _, _ in
                 note.updatedAt = Date()
                 try? modelContext.save()
+            }
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        isEditorFocused = false
+                    }
+                }
             }
         }
         .preferredColorScheme(.dark)

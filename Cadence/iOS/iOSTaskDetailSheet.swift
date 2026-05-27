@@ -18,6 +18,7 @@ struct iOSTaskDetailSheet: View {
     @State private var hasDueDate = false
     @State private var containerSelection = "inbox"
     @State private var showDeleteConfirmation = false
+    @State private var isNotesFocused = false
 
     private var sortedSubtasks: [Subtask] {
         (task.subtasks ?? []).sorted { $0.order < $1.order }
@@ -150,11 +151,14 @@ struct iOSTaskDetailSheet: View {
                     }
 
                     iOSTaskEditorSection(title: "Notes") {
-                        TextEditor(text: $task.notes)
-                            .font(.system(size: 14, weight: .regular))
-                            .foregroundStyle(Theme.text)
+                        iOSMarkdownEditor(text: Binding(
+                            get: { task.notes },
+                            set: {
+                                task.notes = $0
+                                try? modelContext.save()
+                            }
+                        ), isFocused: $isNotesFocused)
                             .frame(minHeight: 150)
-                            .scrollContentBackground(.hidden)
                             .background(Theme.surfaceElevated.opacity(0.35))
                             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                             .overlay {
@@ -244,9 +248,16 @@ struct iOSTaskDetailSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") {
+                        isNotesFocused = false
                         applyDates()
                         try? modelContext.save()
                         dismiss()
+                    }
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        isNotesFocused = false
                     }
                 }
             }

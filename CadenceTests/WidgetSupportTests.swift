@@ -22,6 +22,24 @@ struct WidgetSupportTests {
         #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now.addingTimeInterval(120), userDefaults: defaults).isEmpty)
     }
 
+    @Test func widgetRefreshCenterClearsStoredStateForAccountDeletion() {
+        let suiteName = "cadence.widget.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let taskID = UUID()
+        let now = Date(timeIntervalSince1970: 1_000)
+
+        CadenceWidgetRefreshCenter.reloadTodayWidgets(force: true, now: now, userDefaults: defaults)
+        CadenceWidgetRefreshCenter.markTaskCompleted(taskID, now: now, userDefaults: defaults)
+        CadenceWidgetRefreshCenter.clearStoredState(userDefaults: defaults)
+
+        #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now, userDefaults: defaults).isEmpty)
+    }
+
     @Test func todayWidgetSupportSortsTasksLikeTodayView() {
         let todayKey = "2026-05-11"
 

@@ -4,6 +4,7 @@ import SwiftData
 import SwiftUI
 
 struct iOSSettingsView: View {
+    @Environment(ThemeManager.self) private var themeManager
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query private var tasks: [AppTask]
@@ -11,6 +12,7 @@ struct iOSSettingsView: View {
     @Query private var areas: [Area]
     @Query private var projects: [Project]
     @Query private var notes: [Note]
+    @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var accountStatus: CKAccountStatus?
     @State private var accountError: String?
     @State private var isCheckingAccount = false
@@ -88,10 +90,14 @@ struct iOSSettingsView: View {
             tint: selectedCategory.tint
         ) {
             switch selectedCategory {
+            case .appearance:
+                CadenceSettingsStatusBadge(title: themeManager.selectedTheme.title, isActive: true)
             case .sync:
                 CadenceSettingsStatusBadge(title: cloudStatusTitle, isActive: accountStatus == .available && accountError == nil)
             case .organization:
                 CadenceSettingsStatusBadge(title: "\(activeContextCount) contexts", isActive: activeContextCount > 0)
+            case .tags:
+                CadenceSettingsStatusBadge(title: "\(activeTagCount) active", isActive: activeTagCount > 0)
             case .data:
                 CadenceSettingsStatusBadge(title: "\(activeTaskCount) active", isActive: activeTaskCount > 0)
             case .coverage:
@@ -105,10 +111,17 @@ struct iOSSettingsView: View {
     @ViewBuilder
     private var selectedSectionContent: some View {
         switch selectedCategory {
+        case .appearance:
+            iOSAppearanceSettingsSection(
+                selectedTheme: themeManager.selectedTheme,
+                onSelectTheme: { themeManager.selectedTheme = $0 }
+            )
         case .sync:
             syncSection
         case .organization:
             organizationSection
+        case .tags:
+            iOSTagsSettingsSection(tags: tags)
         case .data:
             dataSection
         case .coverage:
@@ -316,6 +329,10 @@ struct iOSSettingsView: View {
         activeContexts.count
     }
 
+    private var activeTagCount: Int {
+        tags.filter { !$0.isArchived }.count
+    }
+
     private var activeAreaCount: Int {
         areas.filter(\.isActive).count
     }
@@ -407,8 +424,10 @@ struct iOSSettingsView: View {
 }
 
 private enum iOSSettingsCategory: String, CaseIterable, Identifiable {
+    case appearance
     case sync
     case organization
+    case tags
     case data
     case coverage
     case about
@@ -417,8 +436,10 @@ private enum iOSSettingsCategory: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .appearance: return "Appearance"
         case .sync: return "Sync"
         case .organization: return "Organization"
+        case .tags: return "Tags"
         case .data: return "Local Data"
         case .coverage: return "Coverage"
         case .about: return "About"
@@ -427,8 +448,10 @@ private enum iOSSettingsCategory: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
+        case .appearance: return "Themes."
         case .sync: return "iCloud status."
         case .organization: return "Contexts and groups."
+        case .tags: return "Task and note tags."
         case .data: return "Counts and storage."
         case .coverage: return "Mobile feature surface."
         case .about: return "Version and bundle."
@@ -437,10 +460,14 @@ private enum iOSSettingsCategory: String, CaseIterable, Identifiable {
 
     var detailDescription: String {
         switch self {
+        case .appearance:
+            return "Choose the same Cadence color themes available on Mac."
         case .sync:
             return "Check whether this device can use iCloud and CloudKit for Cadence sync."
         case .organization:
             return "Manage the top-level contexts shared by areas, projects, tasks, and habits."
+        case .tags:
+            return "Create, archive, restore, and seed tags shared by tasks and notes."
         case .data:
             return "Review the local workspace counts currently visible on this device."
         case .coverage:
@@ -452,8 +479,10 @@ private enum iOSSettingsCategory: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .appearance: return "paintpalette.fill"
         case .sync: return "icloud.fill"
         case .organization: return "square.stack.3d.up.fill"
+        case .tags: return "tag.fill"
         case .data: return "chart.bar.doc.horizontal.fill"
         case .coverage: return "iphone.and.arrow.forward"
         case .about: return "info.circle.fill"
@@ -462,8 +491,10 @@ private enum iOSSettingsCategory: String, CaseIterable, Identifiable {
 
     var tint: Color {
         switch self {
+        case .appearance: return Theme.purple
         case .sync: return Theme.blue
         case .organization: return Theme.red
+        case .tags: return Theme.amber
         case .data: return Theme.green
         case .coverage: return Theme.purple
         case .about: return Theme.amber
@@ -474,11 +505,18 @@ private enum iOSSettingsCategory: String, CaseIterable, Identifiable {
 private enum iOSMobileCapability {
     static let readyCapabilities = [
         "Today planning",
+        "All Tasks",
         "Inbox capture",
+        "Theme selection",
         "Create/edit/archive contexts",
         "Create/edit/archive lists",
+        "Create/archive/restore tags",
         "Search",
-        "Plain notes",
+        "Markdown notes",
+        "List Kanban",
+        "List planning",
+        "List saved links",
+        "Completed task review",
         "Calendar timeline",
         "Focus timer",
         "Pursuits",
@@ -601,6 +639,362 @@ private struct iOSSettingsCompactCategoryPicker: View {
             .padding(.horizontal, 1)
         }
         .scrollIndicators(.hidden)
+    }
+}
+
+private struct iOSAppearanceSettingsSection: View {
+    let selectedTheme: ThemeOption
+    let onSelectTheme: (ThemeOption) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            CadenceSettingsSectionLabel(text: "Theme")
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 10)], spacing: 10) {
+                ForEach(ThemeOption.allCases) { option in
+                    iOSThemeOptionCard(
+                        option: option,
+                        isSelected: selectedTheme == option,
+                        action: { onSelectTheme(option) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+private struct iOSThemeOptionCard: View {
+    let option: ThemeOption
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 6) {
+                    ForEach(Array(option.previewColors.enumerated()), id: \.offset) { _, color in
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(color)
+                            .frame(height: 28)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .strokeBorder(Theme.borderSubtle.opacity(0.7), lineWidth: 1)
+                            }
+                    }
+                }
+
+                HStack(spacing: 7) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(option.title)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                        Text(option.subtitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.dim)
+                            .lineLimit(2)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(Theme.blue)
+                    }
+                }
+            }
+            .padding(13)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(isSelected ? Theme.blue.opacity(0.68) : Theme.borderSubtle.opacity(0.6), lineWidth: isSelected ? 1.4 : 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct iOSTagsSettingsSection: View {
+    let tags: [Tag]
+
+    @Environment(\.modelContext) private var modelContext
+    @State private var newName = ""
+    @State private var newDescription = ""
+    @State private var newColorHex = TagSupport.colorOptions[2]
+
+    private var activeTags: [Tag] {
+        TagSupport.sorted(tags.filter { !$0.isArchived })
+    }
+
+    private var archivedTags: [Tag] {
+        TagSupport.sorted(tags.filter(\.isArchived))
+    }
+
+    private var newSlug: String {
+        TagSupport.slug(for: newName)
+    }
+
+    private var hasDuplicate: Bool {
+        guard !TagSupport.displayName(for: newName).isEmpty else { return false }
+        return activeTags.contains { $0.slug == newSlug }
+    }
+
+    private var matchingArchived: Tag? {
+        guard !TagSupport.displayName(for: newName).isEmpty else { return nil }
+        return archivedTags.first { $0.slug == newSlug }
+    }
+
+    private var canCreate: Bool {
+        let display = TagSupport.displayName(for: newName)
+        return !display.isEmpty &&
+            display.rangeOfCharacter(from: .alphanumerics) != nil &&
+            !hasDuplicate &&
+            matchingArchived == nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CadenceSettingsSectionLabel(text: "Create Tag")
+            CadenceSettingsCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    TextField("Name", text: $newName)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Optional description", text: $newDescription)
+                        .textFieldStyle(.roundedBorder)
+
+                    iOSTagColorPicker(selectedHex: $newColorHex)
+
+                    if let matchingArchived {
+                        iOSTagNoticeRow(
+                            icon: "archivebox.fill",
+                            text: "\"\(matchingArchived.name)\" is archived.",
+                            actionTitle: "Restore",
+                            action: {
+                                restore(matchingArchived)
+                                clearDraft()
+                            }
+                        )
+                    } else if hasDuplicate {
+                        iOSTagNoticeRow(
+                            icon: "exclamationmark.triangle.fill",
+                            text: "A tag with this name already exists.",
+                            actionTitle: nil,
+                            action: {}
+                        )
+                    }
+
+                    HStack {
+                        Button {
+                            TagSupport.seedDefaultTags(in: modelContext)
+                        } label: {
+                            Label("Add Defaults", systemImage: "arrow.clockwise")
+                        }
+                        .font(.system(size: 12, weight: .semibold))
+
+                        Spacer()
+
+                        Button {
+                            createTag()
+                        } label: {
+                            Label("Create", systemImage: "plus")
+                        }
+                        .font(.system(size: 12, weight: .semibold))
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.blue)
+                        .disabled(!canCreate)
+                    }
+                }
+            }
+
+            CadenceSettingsSectionLabel(text: "Active Tags")
+            CadenceSettingsCard {
+                if activeTags.isEmpty {
+                    iOSSettingsEmptyRow(title: "No active tags", subtitle: "Create one or add the default set.")
+                } else {
+                    iOSTagList(tags: activeTags, isArchivedList: false, archive: archive(_:), restore: restore(_:))
+                }
+            }
+
+            if !archivedTags.isEmpty {
+                CadenceSettingsSectionLabel(text: "Archived Tags")
+                CadenceSettingsCard {
+                    iOSTagList(tags: archivedTags, isArchivedList: true, archive: archive(_:), restore: restore(_:))
+                }
+            }
+        }
+        .onAppear {
+            TagSupport.seedDefaultTags(in: modelContext)
+        }
+    }
+
+    private func createTag() {
+        guard canCreate else { return }
+        let displayName = TagSupport.displayName(for: newName)
+        let tag = Tag(
+            name: displayName,
+            slug: TagSupport.slug(for: displayName),
+            desc: newDescription.trimmingCharacters(in: .whitespacesAndNewlines),
+            colorHex: TagSupport.normalizedColorHex(newColorHex),
+            order: (tags.map(\.order).max() ?? -1) + 1
+        )
+        modelContext.insert(tag)
+        try? modelContext.save()
+        clearDraft()
+    }
+
+    private func clearDraft() {
+        newName = ""
+        newDescription = ""
+        newColorHex = TagSupport.colorOptions[2]
+    }
+
+    private func archive(_ tag: Tag) {
+        tag.isArchived = true
+        tag.updatedAt = Date()
+        try? modelContext.save()
+    }
+
+    private func restore(_ tag: Tag) {
+        tag.isArchived = false
+        tag.updatedAt = Date()
+        try? modelContext.save()
+    }
+}
+
+private struct iOSTagList: View {
+    let tags: [Tag]
+    let isArchivedList: Bool
+    let archive: (Tag) -> Void
+    let restore: (Tag) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(tags.enumerated()), id: \.element.id) { index, tag in
+                iOSTagSettingsRow(
+                    tag: tag,
+                    isArchivedList: isArchivedList,
+                    archive: { archive(tag) },
+                    restore: { restore(tag) }
+                )
+
+                if index < tags.count - 1 {
+                    Divider().background(Theme.borderSubtle)
+                }
+            }
+        }
+    }
+}
+
+private struct iOSTagSettingsRow: View {
+    let tag: Tag
+    let isArchivedList: Bool
+    let archive: () -> Void
+    let restore: () -> Void
+
+    private var usageText: String {
+        let taskCount = tag.tasks?.count ?? 0
+        let noteCount = tag.notes?.count ?? 0
+        return "\(taskCount) task\(taskCount == 1 ? "" : "s"), \(noteCount) note\(noteCount == 1 ? "" : "s")"
+    }
+
+    var body: some View {
+        HStack(alignment: tag.desc.isEmpty ? .center : .top, spacing: 11) {
+            Circle()
+                .fill(Color(hex: tag.colorHex))
+                .frame(width: 12, height: 12)
+                .padding(.top, tag.desc.isEmpty ? 0 : 4)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("#\(tag.name)")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(tag.isArchived ? Theme.muted : Theme.text)
+                    .lineLimit(1)
+
+                Text(usageText)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+
+                if !tag.desc.isEmpty {
+                    Text(tag.desc)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                isArchivedList ? restore() : archive()
+            } label: {
+                Image(systemName: isArchivedList ? "arrow.uturn.backward" : "archivebox")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isArchivedList ? Theme.blue : Theme.amber)
+                    .frame(width: 32, height: 32)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 10)
+        .opacity(tag.isArchived ? 0.72 : 1)
+    }
+}
+
+private struct iOSTagColorPicker: View {
+    @Binding var selectedHex: String
+
+    var body: some View {
+        HStack(spacing: 9) {
+            ForEach(TagSupport.colorOptions, id: \.self) { option in
+                Button {
+                    selectedHex = option
+                } label: {
+                    Circle()
+                        .fill(Color(hex: option))
+                        .frame(width: 24, height: 24)
+                        .overlay {
+                            if TagSupport.normalizedColorHex(selectedHex).caseInsensitiveCompare(option) == .orderedSame {
+                                Circle().strokeBorder(Theme.text.opacity(0.78), lineWidth: 2)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+private struct iOSTagNoticeRow: View {
+    let icon: String
+    let text: String
+    let actionTitle: String?
+    let action: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.amber)
+
+            Text(text)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.dim)
+
+            Spacer(minLength: 8)
+
+            if let actionTitle {
+                Button(actionTitle, action: action)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+        }
+        .padding(10)
+        .background(Theme.surfaceElevated.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 

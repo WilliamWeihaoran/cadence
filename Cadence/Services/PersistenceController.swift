@@ -358,6 +358,23 @@ enum StoreBackupManager {
         return removableBackups.count
     }
 
+    @discardableResult
+    static func deleteAllBackups() throws -> Int {
+        try deleteAllBackups(storeDirectoryURL: defaultStoreDirectoryURL())
+    }
+
+    @discardableResult
+    static func deleteAllBackups(storeDirectoryURL: URL) throws -> Int {
+        let snapshots = listBackups(storeDirectoryURL: storeDirectoryURL)
+        let backupRootURL = backupRootURL(for: storeDirectoryURL)
+
+        if FileManager.default.fileExists(atPath: backupRootURL.path) {
+            try FileManager.default.removeItem(at: backupRootURL)
+        }
+
+        return snapshots.count
+    }
+
     static func scheduleRestore(from backupURL: URL) throws {
         guard isBackupDirectory(backupURL) else {
             throw CocoaError(.fileReadInvalidFileName)

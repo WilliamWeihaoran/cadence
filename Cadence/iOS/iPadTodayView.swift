@@ -44,6 +44,7 @@ struct iPadTodayView: View {
     var body: some View {
         GeometryReader { proxy in
             todayLayout(width: proxy.size.width)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Today")
@@ -109,34 +110,113 @@ struct iPadTodayView: View {
     }
 
     private var compactTodayLayout: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                iOSCompactPageHeader(
-                    eyebrow: DateFormatters.longDate.string(from: Date()),
-                    title: "Today",
-                    subtitle: "Plan the day, capture notes, and glance at the schedule.",
-                    systemImage: "sun.max.fill",
-                    color: Theme.amber
-                )
+        VStack(alignment: .leading, spacing: 0) {
+            compactTodayHeader
 
-                todayTaskColumn
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: 320)
-                    .iOSCompactPanelCard()
+            Divider().background(Theme.borderSubtle)
 
-                iOSNotesPanel()
-                    .frame(minHeight: 360)
-                    .iOSCompactPanelCard()
-
-                iOSSchedulePanel()
-                    .frame(minHeight: 360)
-                    .iOSCompactPanelCard()
-            }
+            iOSTaskCaptureBar(
+                placeholder: "Add a task...",
+                title: $newTitle,
+                action: captureTodayTask
+            )
             .padding(.horizontal, 16)
             .padding(.top, 14)
-            .padding(.bottom, 12)
+
+            if let saveError {
+                iOSInlineErrorBanner(message: saveError) {
+                    self.saveError = nil
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+            }
+
+            iOSTaskViewOptionsBar(
+                sortMode: Binding(
+                    get: { sortMode },
+                    set: { sortModeRaw = $0.rawValue }
+                ),
+                showCompleted: $showCompleted,
+                completedCount: completedTodayTasks.count
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 10)
+
+            if todayTasks.isEmpty && (!showCompleted || completedTodayTasks.isEmpty) {
+                iOSEmptyPanel(
+                    systemImage: "checkmark.circle",
+                    title: "Nothing planned",
+                    subtitle: "Add a task above or schedule one from Inbox."
+                )
+            } else {
+                List {
+                    ForEach(todayTaskGroups, id: \.title) { group in
+                        Section {
+                            ForEach(group.tasks) { task in
+                                iOSTaskListRow(task: task)
+                            }
+                        } header: {
+                            iOSTaskSectionHeader(title: group.title, color: color(for: group.kind))
+                        }
+                    }
+
+                    if showCompleted && !completedTodayTasks.isEmpty {
+                        Section {
+                            ForEach(completedTodayTasks.prefix(12)) { task in
+                                iOSTaskListRow(task: task, opacity: 0.62)
+                            }
+                        } header: {
+                            iOSTaskSectionHeader(title: "Completed Today", color: Theme.green)
+                        }
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+            }
         }
-        .scrollIndicators(.hidden)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.surface.ignoresSafeArea())
+    }
+
+    private var compactTodayHeader: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "sun.max.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Theme.amber)
+                .frame(width: 38, height: 38)
+                .background(Theme.amber.opacity(0.13))
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .strokeBorder(Theme.amber.opacity(0.22), lineWidth: 1)
+                }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(DateFormatters.longDate.string(from: Date()))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .textCase(.uppercase)
+                    .kerning(0.8)
+                Text("Today")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            Text("\(todayTasks.count)")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.blue)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Theme.blue.opacity(0.12))
+                .clipShape(Capsule())
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 14)
     }
 
     private var todayTaskColumn: some View {
@@ -267,26 +347,15 @@ private struct iPadTodaySidePanelPicker: View {
     @Binding var selection: iPadTodaySidePanel
 
     var body: some View {
-        HStack(spacing: 8) {
+        Picker("", selection: $selection) {
             ForEach(iPadTodaySidePanel.allCases) { panel in
-                Button {
-                    selection = panel
-                } label: {
-                    Label(panel.title, systemImage: panel.icon)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(selection == panel ? Theme.text : Theme.dim)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(selection == panel ? Theme.blue.opacity(0.16) : Theme.surfaceElevated.opacity(0.34))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(selection == panel ? Theme.blue.opacity(0.32) : Theme.borderSubtle.opacity(0.36), lineWidth: 1)
-                        }
-                }
-                .buttonStyle(.plain)
+                Label(panel.title, systemImage: panel.icon)
+                    .tag(panel)
             }
         }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .tint(Theme.blue)
     }
 }
 

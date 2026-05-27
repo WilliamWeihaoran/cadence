@@ -55,6 +55,12 @@ enum CadenceWidgetRefreshCenter {
         return Set(filtered.keys.compactMap(UUID.init(uuidString:)))
     }
 
+    nonisolated static func clearStoredState(userDefaults: UserDefaults? = nil) {
+        let defaults = sharedDefaults(userDefaults)
+        defaults.removeObject(forKey: reloadTimestampDefaultsKey)
+        defaults.removeObject(forKey: recentlyCompletedTasksDefaultsKey)
+    }
+
     private nonisolated static func sharedDefaults(_ defaults: UserDefaults?) -> UserDefaults {
         if let defaults {
             return defaults

@@ -11,6 +11,7 @@ enum iOSSidebarItem: Hashable {
     case pursuits
     case goals
     case habits
+    case notes
     case lists
     case search
     case settings
@@ -75,6 +76,11 @@ struct iOSRootView: View {
             iOSMilestonesView()
         case .habits:
             iOSHabitsView()
+        case .notes:
+            NavigationStack {
+                iOSCompactNotesView()
+                    .toolbar(.hidden, for: .navigationBar)
+            }
         case .lists:
             NavigationStack {
                 iOSListsView()
@@ -104,7 +110,7 @@ struct iOSRootView: View {
 private enum iOSRootTab: Hashable {
     case today
     case inbox
-    case lists
+    case notes
     case search
     case more
 
@@ -112,7 +118,7 @@ private enum iOSRootTab: Hashable {
         switch self {
         case .today: return "Today"
         case .inbox: return "Inbox"
-        case .lists: return "Lists"
+        case .notes: return "Notes"
         case .search: return "Search"
         case .more: return "More"
         }
@@ -122,7 +128,7 @@ private enum iOSRootTab: Hashable {
         switch self {
         case .today: return "sun.max.fill"
         case .inbox: return "tray.fill"
-        case .lists: return "folder.fill"
+        case .notes: return "note.text"
         case .search: return "magnifyingglass"
         case .more: return "ellipsis"
         }
@@ -133,99 +139,41 @@ private struct iOSCompactRootShell: View {
     @Binding var selection: iOSRootTab
 
     var body: some View {
-        activeTab
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-            iOSCompactTabBar(selection: $selection)
-                .padding(.horizontal, 12)
-                .padding(.top, 6)
-                .padding(.bottom, 8)
-                .background(
-                    LinearGradient(
-                        colors: [Theme.bg.opacity(0.12), Theme.bg.opacity(0.94)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .ignoresSafeArea()
-                )
-            }
-            .background(Theme.bg.ignoresSafeArea())
-            .tint(Theme.blue)
-    }
+        TabView(selection: $selection) {
+            iPadTodayView()
+                .tag(iOSRootTab.today)
+                .tabItem { Label(iOSRootTab.today.title, systemImage: iOSRootTab.today.systemImage) }
 
-    @ViewBuilder
-    private var activeTab: some View {
-        switch selection {
-        case .today:
+            iPadInboxView()
+                .tag(iOSRootTab.inbox)
+                .tabItem { Label(iOSRootTab.inbox.title, systemImage: iOSRootTab.inbox.systemImage) }
+
             NavigationStack {
-                iPadTodayView()
+                iOSCompactNotesView()
                     .toolbar(.hidden, for: .navigationBar)
             }
-        case .inbox:
-            NavigationStack {
-                iPadInboxView()
-                    .toolbar(.hidden, for: .navigationBar)
-            }
-        case .lists:
-            NavigationStack {
-                iOSListsView()
-                    .navigationBarTitleDisplayMode(.inline)
-            }
-        case .search:
+            .tag(iOSRootTab.notes)
+            .tabItem { Label(iOSRootTab.notes.title, systemImage: iOSRootTab.notes.systemImage) }
+
             NavigationStack {
                 iOSSearchView()
                     .navigationBarTitleDisplayMode(.inline)
             }
-        case .more:
+            .tag(iOSRootTab.search)
+            .tabItem { Label(iOSRootTab.search.title, systemImage: iOSRootTab.search.systemImage) }
+
             NavigationStack {
                 iOSMoreView()
                     .toolbar(.hidden, for: .navigationBar)
             }
+            .tag(iOSRootTab.more)
+            .tabItem { Label(iOSRootTab.more.title, systemImage: iOSRootTab.more.systemImage) }
         }
-    }
-}
-
-private struct iOSCompactTabBar: View {
-    @Binding var selection: iOSRootTab
-
-    private let tabs: [iOSRootTab] = [.today, .inbox, .lists, .search, .more]
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(tabs, id: \.self) { tab in
-                Button {
-                    selection = tab
-                } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: tab.systemImage)
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(tab.title)
-                            .font(.system(size: 8, weight: .semibold))
-                            .lineLimit(1)
-                    }
-                    .foregroundStyle(selection == tab ? Theme.blue : Theme.text.opacity(0.72))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 40)
-                    .background {
-                        if selection == tab {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(Theme.blue.opacity(0.13))
-                        }
-                    }
-                    .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(4)
-        .background(.ultraThinMaterial)
-        .background(Theme.surface.opacity(0.86))
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.62), lineWidth: 1)
-        }
-        .shadow(color: Color.black.opacity(0.22), radius: 14, x: 0, y: 8)
+            .background(Theme.bg.ignoresSafeArea())
+            .tint(Theme.blue)
+            .toolbarBackground(Theme.surface, for: .tabBar)
+            .toolbarBackground(.visible, for: .tabBar)
+            .toolbarColorScheme(.dark, for: .tabBar)
     }
 }
 

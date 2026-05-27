@@ -2,6 +2,28 @@
 import SwiftData
 import SwiftUI
 
+enum iOSListDetailPage: String, CaseIterable, Identifiable {
+    case tasks = "Tasks"
+    case kanban = "Kanban"
+    case planning = "Planning"
+    case notes = "Notes"
+    case links = "Links"
+    case completed = "Completed"
+
+    var id: String { rawValue }
+
+    var systemImage: String {
+        switch self {
+        case .tasks: return "checkmark.square"
+        case .kanban: return "square.grid.3x2"
+        case .planning: return "calendar"
+        case .notes: return "note.text"
+        case .links: return "link"
+        case .completed: return "checkmark.circle.fill"
+        }
+    }
+}
+
 struct iOSListDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -10,6 +32,7 @@ struct iOSListDetailView: View {
     let project: Project?
     @State private var newTitle = ""
     @State private var editorMode: iOSListEditorMode?
+    @State private var page: iOSListDetailPage = .tasks
 
     init(area: Area) {
         self.area = area
@@ -79,29 +102,15 @@ struct iOSListDetailView: View {
     }
 
     var body: some View {
-        Group {
-            if horizontalSizeClass == .regular {
-                HStack(spacing: 0) {
-                    taskColumn
-                        .frame(minWidth: 390, idealWidth: 500, maxWidth: 600)
+        VStack(spacing: 0) {
+            iOSListDetailPagePicker(page: $page)
+                .padding(.horizontal, horizontalSizeClass == .regular ? 18 : 12)
+                .padding(.top, horizontalSizeClass == .regular ? 12 : 8)
+                .padding(.bottom, 10)
 
-                    Divider().background(Theme.borderSubtle)
+            Divider().background(Theme.borderSubtle)
 
-                    iOSListNotesPanel(area: area, project: project)
-                        .frame(maxWidth: .infinity)
-                }
-            } else {
-                ScrollView {
-                    VStack(spacing: 16) {
-                        taskColumn
-                            .frame(minHeight: 420)
-
-                        iOSListNotesPanel(area: area, project: project)
-                            .frame(minHeight: 430)
-                    }
-                    .padding(14)
-                }
-            }
+            pageBody
         }
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(title)
@@ -121,6 +130,29 @@ struct iOSListDetailView: View {
         }
         .sheet(item: $editorMode) { mode in
             iOSListEditorSheet(mode: mode)
+        }
+    }
+
+    @ViewBuilder
+    private var pageBody: some View {
+        switch page {
+        case .tasks:
+            taskColumn
+        case .kanban:
+            iOSListKanbanPanel(
+                title: title,
+                tasks: activeTasks,
+                sectionNames: sectionNames,
+                accent: accent
+            )
+        case .planning:
+            iOSListPlanningPanel(tasks: activeTasks)
+        case .notes:
+            iOSListNotesPanel(area: area, project: project)
+        case .links:
+            iOSListLinksPanel(area: area, project: project)
+        case .completed:
+            iOSListCompletedPanel(tasks: completedTasks)
         }
     }
 
@@ -193,6 +225,7 @@ struct iOSListDetailView: View {
                 .fill(accent)
                 .frame(width: 3)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var sectionGroups: [(name: String, tasks: [AppTask])] {

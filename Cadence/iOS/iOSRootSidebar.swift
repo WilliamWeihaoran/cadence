@@ -9,7 +9,7 @@ struct iPadMacStyleRootShell<Content: View>: View {
     var body: some View {
         HStack(spacing: 0) {
             iOSSidebar(selection: $selection)
-                .frame(width: 104)
+                .frame(width: 78)
                 .background(Theme.surface)
                 .overlay(alignment: .trailing) {
                     Rectangle()
@@ -64,7 +64,7 @@ struct iOSSidebar: View {
     var body: some View {
         VStack(alignment: .center, spacing: 0) {
             ScrollView {
-                VStack(alignment: .center, spacing: 9) {
+                VStack(alignment: .center, spacing: 7) {
                     iOSSidebarRailBrand()
 
                     ForEach(iOSStaticSidebarDestination.allCases) { destination in
@@ -80,8 +80,8 @@ struct iOSSidebar: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, 10)
-                .padding(.top, 16)
+                .padding(.horizontal, 8)
+                .padding(.top, 14)
                 .padding(.bottom, 16)
             }
             .scrollIndicators(.hidden)
@@ -117,6 +117,7 @@ struct iOSSidebar: View {
         case .pursuits: return nil
         case .goals: return nil
         case .habits: return nil
+        case .notes: return nil
         case .lists: return nil
         case .search: return nil
         case .settings: return nil
@@ -133,6 +134,7 @@ private enum iOSStaticSidebarDestination: CaseIterable, Identifiable {
     case pursuits
     case goals
     case habits
+    case notes
     case lists
     case search
     case settings
@@ -149,6 +151,7 @@ private enum iOSStaticSidebarDestination: CaseIterable, Identifiable {
         case .pursuits: return .pursuits
         case .goals: return .goals
         case .habits: return .habits
+        case .notes: return .notes
         case .lists: return .lists
         case .search: return .search
         case .settings: return .settings
@@ -165,6 +168,7 @@ private enum iOSStaticSidebarDestination: CaseIterable, Identifiable {
         case .pursuits: return "Pursuits"
         case .goals: return "Milestones"
         case .habits: return "Habits"
+        case .notes: return "Notes"
         case .lists: return "Lists"
         case .search: return "Search"
         case .settings: return "Settings"
@@ -181,6 +185,7 @@ private enum iOSStaticSidebarDestination: CaseIterable, Identifiable {
         case .pursuits: return "Pursuits"
         case .goals: return "Goals"
         case .habits: return "Habits"
+        case .notes: return "Notes"
         case .lists: return "Lists"
         case .search: return "Search"
         case .settings: return "Settings"
@@ -197,6 +202,7 @@ private enum iOSStaticSidebarDestination: CaseIterable, Identifiable {
         case .pursuits: return "sparkles"
         case .goals: return "flag.fill"
         case .habits: return "flame.fill"
+        case .notes: return "note.text"
         case .lists: return "folder.fill"
         case .search: return "magnifyingglass"
         case .settings: return "gearshape.fill"
@@ -213,6 +219,7 @@ private enum iOSStaticSidebarDestination: CaseIterable, Identifiable {
         case .pursuits: return Color(hex: "#A78BFA")
         case .goals: return Color(hex: "#4ECB71")
         case .habits: return Color(hex: "#FFB84D")
+        case .notes: return Color(hex: "#9E8CFF")
         case .lists: return Color(hex: "#4ECB71")
         case .search: return Color(hex: "#9E8CFF")
         case .settings: return Color(hex: "#5AA2FF")
@@ -222,26 +229,20 @@ private enum iOSStaticSidebarDestination: CaseIterable, Identifiable {
 
 struct iOSSidebarRailBrand: View {
     var body: some View {
-        VStack(spacing: 5) {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(Theme.blue.opacity(0.13))
-                .frame(width: 44, height: 44)
-                .overlay {
-                    Image(systemName: "checklist.checked")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Theme.blue)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(Theme.blue.opacity(0.18), lineWidth: 1)
-                }
-
-            Text("Cadence")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-        }
-        .padding(.bottom, 6)
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Theme.blue.opacity(0.13))
+            .frame(width: 40, height: 40)
+            .overlay {
+                Image(systemName: "checklist.checked")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Theme.blue.opacity(0.18), lineWidth: 1)
+            }
+            .padding(.bottom, 8)
+            .accessibilityLabel("Cadence")
     }
 }
 
@@ -255,46 +256,38 @@ struct iOSSidebarRailButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 5) {
-                ZStack(alignment: .topTrailing) {
-                    Image(systemName: systemImage)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(isSelected ? tint : Theme.text.opacity(0.74))
-                        .frame(width: 34, height: 26)
-
-                    if let count, count > 0 {
-                        Text("\(count)")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(isSelected ? Theme.text : tint)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(isSelected ? Color.white.opacity(0.16) : tint.opacity(0.12))
-                            .clipShape(Capsule())
-                            .offset(x: 14, y: -4)
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(isSelected ? tint : Theme.text.opacity(0.74))
+                    .frame(width: 38, height: 38)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(isSelected ? tint.opacity(0.18) : Color.clear)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(isSelected ? tint.opacity(0.34) : Color.clear, lineWidth: 1)
                     }
-                }
 
-                Text(title)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(isSelected ? Theme.text : Theme.dim)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
+                if let count, count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(isSelected ? Theme.text : tint)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(isSelected ? Color.white.opacity(0.16) : tint.opacity(0.12))
+                        .clipShape(Capsule())
+                        .offset(x: 8, y: -5)
+                }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 56)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isSelected ? tint.opacity(0.18) : Color.clear)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(isSelected ? tint.opacity(0.36) : Color.clear, lineWidth: 1)
-            }
+            .frame(height: 48)
             .overlay(alignment: .leading) {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(tint)
-                        .frame(width: 3, height: 28)
+                        .frame(width: 3, height: 24)
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))

@@ -3,6 +3,8 @@ import SwiftUI
 
 struct iOSMoreView: View {
     private let featureRows: [iOSMoreFeatureRow] = [
+        iOSMoreFeatureRow(title: "All Tasks", subtitle: "Review every active and completed task.", icon: "checklist", color: Theme.blue, destination: .allTasks),
+        iOSMoreFeatureRow(title: "Lists", subtitle: "Browse areas, projects, and custom task lists.", icon: "folder.fill", color: Theme.green, destination: .lists),
         iOSMoreFeatureRow(title: "Focus", subtitle: "Work through today's scheduled tasks.", icon: "timer", color: Theme.red, destination: .focus),
         iOSMoreFeatureRow(title: "Calendar", subtitle: "Review schedule, month, and board views.", icon: "calendar", color: Theme.purple, destination: .calendar),
         iOSMoreFeatureRow(title: "Pursuits", subtitle: "See pursuits with linked milestones and habits.", icon: "sparkles", color: Theme.purple, destination: .pursuits),
@@ -46,6 +48,10 @@ struct iOSMoreView: View {
         .scrollIndicators(.hidden)
         .navigationDestination(for: iOSMoreDestination.self) { destination in
             switch destination {
+            case .allTasks:
+                iOSAllTasksView()
+            case .lists:
+                iOSListsView()
             case .focus:
                 iOSFocusView()
             case .calendar:
@@ -115,6 +121,8 @@ private struct iOSMoreFeatureNavigationRow: View {
 }
 
 private enum iOSMoreDestination: Hashable {
+    case allTasks
+    case lists
     case focus
     case calendar
     case pursuits

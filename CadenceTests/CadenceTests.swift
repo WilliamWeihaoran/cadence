@@ -147,6 +147,31 @@ struct CadenceTests {
         #expect(removableIDs.contains("manual-old") == false)
     }
 
+    @Test func deleteAllBackupsRemovesBackupRootForAccountDeletion() throws {
+        let storeDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CadenceTests.store.\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: storeDirectory)
+        }
+
+        try FileManager.default.createDirectory(at: storeDirectory, withIntermediateDirectories: true)
+        try Data("store".utf8).write(to: storeDirectory.appendingPathComponent("default.store"))
+
+        let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
+            reason: .manual,
+            storeDirectoryURL: storeDirectory
+        ))
+        #expect(FileManager.default.fileExists(atPath: backupURL.path))
+
+        let removedCount = try StoreBackupManager.deleteAllBackups(storeDirectoryURL: storeDirectory)
+
+        #expect(removedCount == 1)
+        #expect(StoreBackupManager.listBackups(storeDirectoryURL: storeDirectory).isEmpty)
+        #expect(!FileManager.default.fileExists(
+            atPath: storeDirectory.appendingPathComponent("Cadence Store Backups", isDirectory: true).path
+        ))
+    }
+
     @Test func calendarHeaderVisibleRangeClampsOverscroll() {
         let range = calendarTimelineHeaderVisibleRange(
             headerOffset: -3_700,

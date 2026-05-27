@@ -61,11 +61,25 @@ struct AppStoreReviewReadinessTests {
             contentsOf: repositoryRoot().appendingPathComponent("docs/privacy.html"),
             encoding: .utf8
         )
+        let deletionBody = try #require(
+            dataSafetySettings.range(of: "    private func deleteCadenceData() {").flatMap { start in
+                dataSafetySettings
+                    .range(
+                        of: "\n}\n\nprivate struct SettingsReviewLinksSection",
+                        range: start.upperBound..<dataSafetySettings.endIndex
+                    )
+                    .map { end in String(dataSafetySettings[start.lowerBound..<end.lowerBound]) }
+            }
+        )
 
         #expect(accountSettings.contains("Delete Account..."))
         #expect(dataSafetySettings.contains("Delete Account & Data"))
+        #expect(deletionBody.contains("StoreBackupManager.deleteAllBackups"))
+        #expect(deletionBody.contains("CadenceWidgetRefreshCenter.clearStoredState"))
+        #expect(!deletionBody.contains("createBackupIfStoreExists"))
         #expect(reviewNotes.contains("Settings > Account"))
         #expect(privacyPolicy.contains("Account and Data Deletion"))
+        #expect(privacyPolicy.contains("removes local Cadence backups"))
     }
 
     @Test func appEntitlementsAvoidUnusedPushAndIncludeSandboxNetworkAndCalendarAccess() throws {

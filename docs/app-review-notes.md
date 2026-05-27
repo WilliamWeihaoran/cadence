@@ -22,8 +22,7 @@ AI features:
 
 Account and data deletion:
 - Users can delete their Cadence account and data in Settings > Account or Settings > Data Safety.
-- The delete flow removes Cadence-created content from the current store, removes the saved OpenAI API key, and clears the local Apple account profile.
-- Existing local backups are left in place so users can recover from accidental deletion.
+- The delete flow removes Cadence-created content from the current store, removes local Cadence backups and pending restores, removes the saved OpenAI API key, and clears the local Apple account profile.
 
 Sync:
 - Cadence may sync user-created app data through the user's private iCloud database using CloudKit.
