@@ -5,18 +5,12 @@ import SwiftUI
 struct iOSNotesPanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
-    @State private var activeTab: NoteTab = .today
+    @State private var activeTab: CadenceCoreNoteTab = .today
     @State private var todayNote: Note?
     @State private var weekNote: Note?
     @State private var permanentNote: Note?
     @FocusState private var isEditorFocused: Bool
     var useStandardHeaderHeight = false
-
-    private enum NoteTab: String, CaseIterable {
-        case today = "Today"
-        case week = "This Week"
-        case notepad = "Notepad"
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -27,7 +21,7 @@ struct iOSNotesPanel: View {
                 )
 
                 HStack(spacing: 0) {
-                    ForEach(NoteTab.allCases, id: \.self) { tab in
+                    ForEach(CadenceCoreNoteTab.allCases) { tab in
                         iOSNotePanelTabButton(
                             title: tab.rawValue,
                             isSelected: activeTab == tab
@@ -89,64 +83,41 @@ struct iOSNotesPanel: View {
     }
 
     private var selectedNote: Note? {
-        switch activeTab {
-        case .today: return todayNote
-        case .week: return weekNote
-        case .notepad: return permanentNote
-        }
+        notesSnapshot.note(for: activeTab)
+    }
+
+    private var notesSnapshot: CadenceCoreNoteState {
+        CadenceCoreNoteState(today: todayNote, week: weekNote, notepad: permanentNote)
     }
 
     private func loadNotes() {
-        todayNote = try? NoteMigrationService.dailyNote(for: DateFormatters.todayKey(), in: modelContext)
-        weekNote = try? NoteMigrationService.weeklyNote(for: DateFormatters.currentWeekKey(), in: modelContext)
-        permanentNote = try? NoteMigrationService.permanentNote(in: modelContext)
+        let snapshot = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext)
+        todayNote = snapshot.today
+        weekNote = snapshot.week
+        permanentNote = snapshot.notepad
     }
 
     private func update(_ note: Note, content: String) {
-        note.content = content
-        note.updatedAt = Date()
-        try? modelContext.save()
+        CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
     }
 }
 
 struct iOSCompactNotesView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
-    @State private var activeTab: CompactNoteTab = .today
+    @State private var activeTab: CadenceCoreNoteTab = .today
     @State private var todayNote: Note?
     @State private var weekNote: Note?
     @State private var permanentNote: Note?
     @FocusState private var isEditorFocused: Bool
-
-    private enum CompactNoteTab: String, CaseIterable, Identifiable {
-        case today = "Today"
-        case week = "Week"
-        case notepad = "Notepad"
-
-        var id: Self { self }
-
-        var subtitle: String {
-            switch self {
-            case .today:
-                guard let today = DateFormatters.date(from: DateFormatters.todayKey()) else {
-                    return "Today"
-                }
-                return DateFormatters.longDate.string(from: today)
-            case .week:
-                return DateFormatters.weekLabel(from: DateFormatters.currentWeekKey())
-            case .notepad:
-                return "Permanent notes"
-            }
-        }
-    }
 
     var body: some View {
         VStack(spacing: 0) {
             compactHeader
 
             Picker("Note", selection: $activeTab) {
-                ForEach(CompactNoteTab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
+                ForEach(CadenceCoreNoteTab.allCases) { tab in
+                    Text(tab.compactTitle).tag(tab)
                 }
             }
             .pickerStyle(.segmented)
@@ -227,23 +198,22 @@ struct iOSCompactNotesView: View {
     }
 
     private var selectedNote: Note? {
-        switch activeTab {
-        case .today: return todayNote
-        case .week: return weekNote
-        case .notepad: return permanentNote
-        }
+        notesSnapshot.note(for: activeTab)
+    }
+
+    private var notesSnapshot: CadenceCoreNoteState {
+        CadenceCoreNoteState(today: todayNote, week: weekNote, notepad: permanentNote)
     }
 
     private func loadNotes() {
-        todayNote = try? NoteMigrationService.dailyNote(for: DateFormatters.todayKey(), in: modelContext)
-        weekNote = try? NoteMigrationService.weeklyNote(for: DateFormatters.currentWeekKey(), in: modelContext)
-        permanentNote = try? NoteMigrationService.permanentNote(in: modelContext)
+        let snapshot = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext)
+        todayNote = snapshot.today
+        weekNote = snapshot.week
+        permanentNote = snapshot.notepad
     }
 
     private func update(_ note: Note, content: String) {
-        note.content = content
-        note.updatedAt = Date()
-        try? modelContext.save()
+        CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
     }
 }
 

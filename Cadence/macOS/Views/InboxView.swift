@@ -39,33 +39,13 @@ struct InboxView: View {
         case .none:
             return [InboxTaskGroup(id: "all", title: "Tasks", tasks: activeTasks, color: Theme.dim)]
         case .byDate:
-            let buckets = classifyTasksByDate(activeTasks, todayKey: todayKey)
-            let overdue = activeTasks.filter { buckets.overdueIDs.contains($0.id) }
-            let dueToday = activeTasks.filter { buckets.dueTodayIDs.contains($0.id) }
-            let doToday = activeTasks.filter { buckets.doTodayIDs.contains($0.id) }
-            let scheduled = activeTasks.filter {
-                !$0.scheduledDate.isEmpty &&
-                $0.scheduledDate != todayKey &&
-                !buckets.contains($0)
-            }
-            let unscheduled = activeTasks.filter {
-                $0.scheduledDate.isEmpty &&
-                !buckets.contains($0)
-            }
-            return [
-                InboxTaskGroup(id: "overdue", title: "Overdue", tasks: overdue, color: Theme.red),
-                InboxTaskGroup(id: "due-today", title: "Due Today", tasks: dueToday, color: Theme.red.opacity(0.8)),
-                InboxTaskGroup(id: "do-today", title: "Do Today", tasks: doToday, color: Theme.blue),
-                InboxTaskGroup(id: "scheduled", title: "Scheduled", tasks: scheduled, color: Theme.dim),
-                InboxTaskGroup(id: "unscheduled", title: "Unscheduled", tasks: unscheduled, color: Theme.amber)
-            ].filter { !$0.tasks.isEmpty }
+            return CadenceTaskQuerySupport.dateDisplayGroups(from: activeTasks, todayKey: todayKey)
+                .map { InboxTaskGroup(id: $0.id, title: $0.title, tasks: $0.tasks, color: $0.accent) }
         case .byList:
             return [InboxTaskGroup(id: "inbox", title: "Inbox", tasks: activeTasks, color: Theme.dim)]
         case .byPriority:
-            return TaskPriority.allCases.reversed().compactMap { p in
-                let bucket = activeTasks.filter { $0.priority == p }
-                return bucket.isEmpty ? nil : InboxTaskGroup(id: "p-\(p.rawValue)", title: p.label, tasks: bucket, color: Theme.priorityColor(p))
-            }
+            return CadenceTaskQuerySupport.priorityDisplayGroups(from: activeTasks)
+                .map { InboxTaskGroup(id: $0.id, title: $0.title, tasks: $0.tasks, color: $0.accent) }
         }
     }
 

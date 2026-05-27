@@ -6,7 +6,7 @@ struct iOSCalendarView: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query private var allBundles: [TaskBundle]
     @AppStorage("ios.calendar.viewMode") private var viewModeRaw = CadenceCalendarViewMode.week.rawValue
-    @AppStorage("ios.calendar.presentation") private var presentationRaw = iOSCalendarPresentation.timeline.rawValue
+    @AppStorage("ios.calendar.presentation") private var presentationRaw = CadenceCalendarPresentation.timeline.rawValue
     @AppStorage("ios.calendar.zoomLevel") private var zoomLevel = 1
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
@@ -19,8 +19,8 @@ struct iOSCalendarView: View {
         set { viewModeRaw = newValue.rawValue }
     }
 
-    private var presentation: iOSCalendarPresentation {
-        get { iOSCalendarPresentation(rawValue: presentationRaw) ?? .timeline }
+    private var presentation: CadenceCalendarPresentation {
+        get { CadenceCalendarPresentation(rawValue: presentationRaw) ?? .timeline }
         set { presentationRaw = newValue.rawValue }
     }
 
@@ -163,7 +163,7 @@ struct iOSCalendarView: View {
     }
 
     private func setViewMode(_ newMode: CadenceCalendarViewMode) {
-        presentationRaw = iOSCalendarPresentation.timeline.rawValue
+        presentationRaw = CadenceCalendarPresentation.timeline.rawValue
         viewModeRaw = newMode.rawValue
         if newMode == .month {
             anchorDate = selectedDate
@@ -172,7 +172,7 @@ struct iOSCalendarView: View {
         }
     }
 
-    private func setPresentation(_ newPresentation: iOSCalendarPresentation) {
+    private func setPresentation(_ newPresentation: CadenceCalendarPresentation) {
         presentationRaw = newPresentation.rawValue
         if newPresentation == .board {
             anchorDate = selectedDate
@@ -196,15 +196,10 @@ struct iOSCalendarView: View {
     }
 }
 
-private enum iOSCalendarPresentation: String, CaseIterable, Hashable {
-    case timeline = "Timeline"
-    case board = "Board"
-}
-
 private struct iOSCalendarToolbar: View {
     let title: String
     @Binding var viewMode: CadenceCalendarViewMode
-    @Binding var presentation: iOSCalendarPresentation
+    @Binding var presentation: CadenceCalendarPresentation
     @Binding var zoomLevel: Int
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let previous: () -> Void
@@ -274,7 +269,7 @@ private struct iOSCalendarToolbar: View {
                 Text(mode.rawValue).tag("mode:\(mode.rawValue)")
             }
 
-            Text("Board").tag("presentation:\(iOSCalendarPresentation.board.rawValue)")
+            Text("Board").tag("presentation:\(CadenceCalendarPresentation.board.rawValue)")
         }
         .pickerStyle(.segmented)
         .labelsHidden()
@@ -285,11 +280,11 @@ private struct iOSCalendarToolbar: View {
         Binding(
             get: {
                 presentation == .board
-                    ? "presentation:\(iOSCalendarPresentation.board.rawValue)"
+                    ? "presentation:\(CadenceCalendarPresentation.board.rawValue)"
                     : "mode:\(viewMode.rawValue)"
             },
             set: { selection in
-                if selection == "presentation:\(iOSCalendarPresentation.board.rawValue)" {
+                if selection == "presentation:\(CadenceCalendarPresentation.board.rawValue)" {
                     presentation = .board
                 } else if selection.hasPrefix("mode:") {
                     let rawValue = String(selection.dropFirst("mode:".count))

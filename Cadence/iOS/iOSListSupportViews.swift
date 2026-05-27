@@ -133,36 +133,11 @@ struct iOSListNotesPanel: View {
     }
 
     private func loadOrCreateNote() {
-        let descriptor = FetchDescriptor<Note>()
-        let notes = (try? modelContext.fetch(descriptor)) ?? []
-        if let area {
-            if let existing = notes.first(where: { $0.kind == .list && $0.area?.id == area.id && $0.project == nil }) {
-                note = existing
-                return
-            }
-            let created = Note(kind: .list, title: area.name, area: area)
-            modelContext.insert(created)
-            try? modelContext.save()
-            note = created
-            return
-        }
-
-        if let project {
-            if let existing = notes.first(where: { $0.kind == .list && $0.project?.id == project.id }) {
-                note = existing
-                return
-            }
-            let created = Note(kind: .list, title: project.name, project: project)
-            modelContext.insert(created)
-            try? modelContext.save()
-            note = created
-        }
+        note = CadenceListNoteSupport.firstOrCreateNote(for: area, project: project, in: modelContext)
     }
 
     private func update(_ note: Note, content: String) {
-        note.content = content
-        note.updatedAt = Date()
-        try? modelContext.save()
+        CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
     }
 }
 
@@ -200,31 +175,8 @@ struct iOSListPlanningPanel: View {
 
     private var todayKey: String { DateFormatters.todayKey() }
 
-    private var overdue: [AppTask] {
-        tasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey }
-    }
-
-    private var dueToday: [AppTask] {
-        tasks.filter { $0.dueDate == todayKey }
-    }
-
-    private var scheduledToday: [AppTask] {
-        tasks.filter { $0.scheduledDate == todayKey && $0.dueDate != todayKey }
-    }
-
-    private var upcoming: [AppTask] {
-        tasks.filter { task in
-            let dueFuture = !task.dueDate.isEmpty && task.dueDate > todayKey
-            let scheduledFuture = !task.scheduledDate.isEmpty && task.scheduledDate > todayKey
-            return dueFuture || scheduledFuture
-        }
-        .sorted {
-            planningKey(for: $0) < planningKey(for: $1)
-        }
-    }
-
-    private var unscheduled: [AppTask] {
-        tasks.filter { $0.dueDate.isEmpty && $0.scheduledDate.isEmpty }
+    private var planningGroups: [CadenceTaskDisplayGroup] {
+        CadenceTaskQuerySupport.planningDisplayGroups(from: tasks, todayKey: todayKey)
     }
 
     var body: some View {
@@ -240,11 +192,9 @@ struct iOSListPlanningPanel: View {
                 )
             } else {
                 List {
-                    planningSection(title: "Overdue", color: Theme.red, tasks: overdue)
-                    planningSection(title: "Due Today", color: Theme.amber, tasks: dueToday)
-                    planningSection(title: "Scheduled Today", color: Theme.blue, tasks: scheduledToday)
-                    planningSection(title: "Upcoming", color: Theme.purple, tasks: upcoming)
-                    planningSection(title: "Unscheduled", color: Theme.dim, tasks: unscheduled)
+                    ForEach(planningGroups) { group in
+                        planningSection(group)
+                    }
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
@@ -255,22 +205,14 @@ struct iOSListPlanningPanel: View {
     }
 
     @ViewBuilder
-    private func planningSection(title: String, color: Color, tasks: [AppTask]) -> some View {
-        if !tasks.isEmpty {
-            Section {
-                ForEach(tasks) { task in
-                    iOSTaskListRow(task: task)
-                }
-            } header: {
-                iOSTaskSectionHeader(title: title, color: color)
+    private func planningSection(_ group: CadenceTaskDisplayGroup) -> some View {
+        Section {
+            ForEach(group.tasks) { task in
+                iOSTaskListRow(task: task)
             }
+        } header: {
+            iOSTaskSectionHeader(title: group.title, color: group.accent)
         }
-    }
-
-    private func planningKey(for task: AppTask) -> String {
-        [task.dueDate, task.scheduledDate]
-            .filter { !$0.isEmpty }
-            .min() ?? "9999-99-99"
     }
 }
 
@@ -281,12 +223,8 @@ struct iOSListKanbanPanel: View {
     let accent: Color
 
     private var columns: [(name: String, tasks: [AppTask])] {
-        sectionNames.compactMap { section in
-            let sectionTasks = tasks.filter {
-                $0.resolvedSectionName.caseInsensitiveCompare(section) == .orderedSame
-            }
-            return sectionTasks.isEmpty ? nil : (section, sectionTasks)
-        }
+        CadenceTaskQuerySupport.sectionGroups(from: tasks, sectionNames: sectionNames)
+            .map { ($0.title, $0.tasks) }
     }
 
     var body: some View {

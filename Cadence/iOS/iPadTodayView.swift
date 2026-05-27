@@ -9,15 +9,15 @@ struct iPadTodayView: View {
     @State private var newTitle = ""
     @State private var saveError: String?
     @State private var sidePanel: iPadTodaySidePanel = .notes
-    @AppStorage("ios.today.sortMode") private var sortModeRaw = iOSTaskSortMode.priority.rawValue
+    @AppStorage("ios.today.sortMode") private var sortModeRaw = CadenceTaskSortMode.priority.rawValue
     @AppStorage("ios.today.showCompleted") private var showCompleted = false
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
     }
 
-    private var sortMode: iOSTaskSortMode {
-        get { iOSTaskSortMode(rawValue: sortModeRaw) ?? .priority }
+    private var sortMode: CadenceTaskSortMode {
+        get { CadenceTaskSortMode(rawValue: sortModeRaw) ?? .priority }
         set { sortModeRaw = newValue.rawValue }
     }
 
@@ -29,7 +29,7 @@ struct iPadTodayView: View {
         CadenceTaskQuerySupport.activeTodayTasks(
             from: allTasks,
             todayKey: todayKey,
-            sortMode: sortMode.cadenceSortMode
+            sortMode: sortMode
         )
     }
 
@@ -294,20 +294,17 @@ struct iPadTodayView: View {
     }
 
     private func captureTodayTask() {
-        guard let task = CadenceTaskQuerySupport.makeTask(
-            title: newTitle,
-            allTasks: allTasks,
-            scheduledDate: todayKey
-        ) else { return }
-
         let pendingTitle = newTitle
-        modelContext.insert(task)
         do {
-            try modelContext.save()
+            _ = try CadenceTaskMutationSupport.insertTask(
+                title: newTitle,
+                allTasks: allTasks,
+                modelContext: modelContext,
+                scheduledDate: todayKey
+            )
             saveError = nil
             newTitle = ""
         } catch {
-            modelContext.delete(task)
             newTitle = pendingTitle
             saveError = "Couldn't save this task. Try again in a moment."
         }

@@ -30,12 +30,7 @@ struct ListNotesView: View {
     @Query(sort: \Tag.order) private var allTags: [Tag]
 
     private var listNotes: [Note] {
-        if let area {
-            return allNotes.filter { $0.kind == .list && $0.area?.id == area.id }
-        } else if let project {
-            return allNotes.filter { $0.kind == .list && $0.project?.id == project.id }
-        }
-        return []
+        CadenceListNoteSupport.notes(for: area, project: project, in: allNotes)
     }
 
     private var selectedListNote: Note? {
@@ -412,8 +407,7 @@ struct ListNotesView: View {
 
     private func addNote(folderPath: String = "") {
         let note = Note(kind: .list)
-        note.area = area
-        note.project = project
+        CadenceListNoteSupport.attach(note, to: area, project: project)
         note.order = listNotes.count
         note.folderPath = normalizedFolderPath(folderPath)
         note.content = defaultNoteContent(for: note.title)

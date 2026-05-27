@@ -73,6 +73,46 @@ struct CalendarPageStateSupport {
         return DateFormatters.dateKey(from: targetMonth)
     }
 
+    static func boardAnchorDateKey(
+        viewMode: CadenceCalendarViewMode,
+        visibleMonthIdx: Int,
+        visibleTimelineDayIndex: Int?,
+        anchorDateKey: String,
+        bufferStart: Date,
+        currentMonthStart: Date,
+        calendar: Calendar
+    ) -> String {
+        if viewMode == .month {
+            return dateKeyForVisibleMonth(
+                visibleMonthIdx: visibleMonthIdx,
+                currentMonthStart: currentMonthStart,
+                calendar: calendar
+            )
+        }
+
+        if let visibleTimelineDayIndex,
+           let visibleDate = calendar.date(byAdding: .day, value: visibleTimelineDayIndex, to: bufferStart) {
+            return DateFormatters.dateKey(from: visibleDate)
+        }
+
+        return anchorDateKey
+    }
+
+    static func boardDateByMovingMonth(_ date: Date, by delta: Int, calendar: Calendar) -> Date {
+        let startOfDay = calendar.startOfDay(for: date)
+        guard let shiftedMonth = calendar.date(byAdding: .month, value: delta, to: startOfDay) else {
+            return startOfDay
+        }
+
+        var targetComponents = calendar.dateComponents([.year, .month], from: shiftedMonth)
+        let currentDay = calendar.component(.day, from: startOfDay)
+        let monthStart = calendar.date(from: targetComponents) ?? shiftedMonth
+        let dayRange = calendar.range(of: .day, in: .month, for: monthStart)
+        targetComponents.day = min(currentDay, dayRange?.count ?? currentDay)
+
+        return calendar.startOfDay(for: calendar.date(from: targetComponents) ?? shiftedMonth)
+    }
+
     static func timelineDayIndexForMonthViewReturn(
         visibleMonthIdx: Int,
         todayMonthIdx: Int = todayMonthIndex,

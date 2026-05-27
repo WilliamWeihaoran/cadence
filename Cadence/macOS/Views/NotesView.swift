@@ -150,7 +150,7 @@ private struct DailyNotesPage: View {
         if let existing = notes.first(where: { $0.dateKey == key }) {
             selectedNoteID = existing.id
         } else {
-            if let note = try? NoteMigrationService.dailyNote(for: key, in: modelContext) {
+            if let note = try? CadenceCoreNoteSupport.note(for: .today, in: modelContext) {
                 selectedNoteID = note.id
             }
         }
@@ -239,7 +239,7 @@ private struct WeeklyNotesPage: View {
         if let existing = notes.first(where: { $0.weekKey == key }) {
             selectedNoteID = existing.id
         } else {
-            if let note = try? NoteMigrationService.weeklyNote(for: key, in: modelContext) {
+            if let note = try? CadenceCoreNoteSupport.note(for: .week, in: modelContext) {
                 selectedNoteID = note.id
             }
         }

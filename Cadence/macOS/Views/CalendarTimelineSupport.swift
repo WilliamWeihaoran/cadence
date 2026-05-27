@@ -20,7 +20,7 @@ struct CalendarTimelineViewportMetrics {
     let scrollViewportHeight: CGFloat
     let hourHeight: CGFloat
 
-    init(geoSize: CGSize, viewMode: CalViewMode, zoomLevel: Int) {
+    init(geoSize: CGSize, viewMode: CadenceCalendarViewMode, zoomLevel: Int) {
         let availableTimelineWidth = max(0, geoSize.width - calTimeTotalWidth)
         let targetDayCount = CGFloat(viewMode.daysCount)
         let naturalColWidth = availableTimelineWidth / max(targetDayCount, 1)

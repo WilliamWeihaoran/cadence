@@ -8,18 +8,18 @@ struct iPadInboxView: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var newTitle = ""
     @State private var saveError: String?
-    @AppStorage("ios.inbox.sortMode") private var sortModeRaw = iOSTaskSortMode.listOrder.rawValue
+    @AppStorage("ios.inbox.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
     @AppStorage("ios.inbox.showCompleted") private var showCompleted = false
 
-    private var sortMode: iOSTaskSortMode {
-        get { iOSTaskSortMode(rawValue: sortModeRaw) ?? .listOrder }
+    private var sortMode: CadenceTaskSortMode {
+        get { CadenceTaskSortMode(rawValue: sortModeRaw) ?? .listOrder }
         set { sortModeRaw = newValue.rawValue }
     }
 
     private var inboxTasks: [AppTask] {
         CadenceTaskQuerySupport.activeInboxTasks(
             from: allTasks,
-            sortMode: sortMode.cadenceSortMode
+            sortMode: sortMode
         )
     }
 
@@ -147,18 +147,16 @@ struct iPadInboxView: View {
     }
 
     private func captureInboxTask() {
-        guard let task = CadenceTaskQuerySupport.makeTask(title: newTitle, allTasks: allTasks) else {
-            return
-        }
-
         let pendingTitle = newTitle
-        modelContext.insert(task)
         do {
-            try modelContext.save()
+            _ = try CadenceTaskMutationSupport.insertTask(
+                title: newTitle,
+                allTasks: allTasks,
+                modelContext: modelContext
+            )
             saveError = nil
             newTitle = ""
         } catch {
-            modelContext.delete(task)
             newTitle = pendingTitle
             saveError = "Couldn't save this inbox task. Try again in a moment."
         }

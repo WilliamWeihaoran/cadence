@@ -3,7 +3,7 @@ import SwiftUI
 
 enum CalendarPageLifecycleSupport {
     static func calendarTitleLabel(
-        viewMode: CalViewMode,
+        viewMode: CadenceCalendarViewMode,
         visibleMonthIdx: Int,
         visibleTimelineDayIndex: Int?,
         anchorDateKey: String,

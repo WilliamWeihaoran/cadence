@@ -13,7 +13,9 @@ struct CalendarPageView: View {
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
 
-    @State private var viewMode: CalViewMode = .week
+    @State private var viewMode: CadenceCalendarViewMode = .week
+    @State private var presentation: CadenceCalendarPresentation = .timeline
+    @State private var selectedBoardDate = Calendar.current.startOfDay(for: Date())
     @State private var scrollToTodayTrigger = false
     @AppStorage("calendarZoomLevel") private var zoomLevel: Int = 1
     @AppStorage("calendarRememberedTimelineHour") private var rememberedScrollHour: Int = -1
@@ -52,14 +54,25 @@ struct CalendarPageView: View {
             CalendarPageToolbar(
                 calendarTitleLabel: calendarTitleLabel,
                 viewMode: viewMode,
+                presentation: presentation,
                 scrollToToday: { jumpToToday() },
-                setViewMode: { viewMode = $0 },
+                setViewMode: { setTimelineMode($0) },
+                setPresentation: { setPresentation($0) },
+                moveBoardMonth: { moveBoardMonth(by: $0) },
                 zoomLevel: $zoomLevel
             )
 
             Divider().background(Theme.borderSubtle.opacity(CalendarVisualStyle.dividerOpacity))
 
-            if viewMode == .month {
+            if presentation == .board {
+                CalendarPageBoardView(
+                    monthDate: selectedBoardDate,
+                    selectedDate: $selectedBoardDate,
+                    allTasks: allTasks,
+                    tasksByDate: tasksByDateForMonth,
+                    bundlesByDate: bundlesByDate
+                )
+            } else if viewMode == .month {
                 MonthGridView(
                     allTasks: allTasks,
                     tasksByDate: tasksByDateForMonth,
@@ -121,6 +134,7 @@ struct CalendarPageView: View {
             applyExternalCalendarJump(request)
         }
         .onChange(of: viewMode) { oldMode, newMode in
+            guard presentation == .timeline else { return }
             pendingDayPersistence?.cancel()
             pendingDayPersistence = nil
             CalendarPageDataSupport.handleViewModeChange(
@@ -136,10 +150,18 @@ struct CalendarPageView: View {
                 calendar: cal
             )
         }
+        .onChange(of: selectedBoardDate) { _, newDate in
+            guard presentation == .board else { return }
+            anchorDateKey = DateFormatters.dateKey(from: newDate)
+        }
     }
 
     private var calendarTitleLabel: String {
-        CalendarPageLifecycleSupport.calendarTitleLabel(
+        if presentation == .board {
+            return DateFormatters.monthYear.string(from: selectedBoardDate)
+        }
+
+        return CalendarPageLifecycleSupport.calendarTitleLabel(
             viewMode: viewMode,
             visibleMonthIdx: visibleMonthIdx,
             visibleTimelineDayIndex: visibleTimelineDayIndex,
@@ -148,6 +170,67 @@ struct CalendarPageView: View {
             todayDayIdx: todayDayIdx,
             calendar: cal
         )
+    }
+
+    private func setTimelineMode(_ mode: CadenceCalendarViewMode) {
+        if presentation == .board {
+            anchorDateKey = DateFormatters.dateKey(from: selectedBoardDate)
+            visibleTimelineDayIndex = CalendarPageStateSupport.timelineDayIndex(
+                anchorDateKey: anchorDateKey,
+                bufferStart: bufferStart,
+                todayDayIdx: todayDayIdx,
+                calendar: cal
+            )
+            if mode == .month {
+                visibleMonthIdx = CalendarPageStateSupport.monthIndexForTimelineAnchor(
+                    anchorDateKey: anchorDateKey,
+                    currentMonthStart: CalendarMonthGridSupport.currentMonthStart(calendar: cal),
+                    calendar: cal
+                )
+                monthGridResetNonce += 1
+            }
+        }
+
+        presentation = .timeline
+        viewMode = mode
+        didRestoreTimelineScroll = false
+    }
+
+    private func setPresentation(_ newPresentation: CadenceCalendarPresentation) {
+        guard newPresentation != presentation else { return }
+
+        if newPresentation == .board {
+            prepareBoardSelectionFromCurrentCalendarState()
+        }
+
+        presentation = newPresentation
+    }
+
+    private func prepareBoardSelectionFromCurrentCalendarState() {
+        pendingDayPersistence?.cancel()
+        pendingDayPersistence = nil
+
+        anchorDateKey = CalendarPageStateSupport.boardAnchorDateKey(
+            viewMode: viewMode,
+            visibleMonthIdx: visibleMonthIdx,
+            visibleTimelineDayIndex: visibleTimelineDayIndex,
+            anchorDateKey: anchorDateKey,
+            bufferStart: bufferStart,
+            currentMonthStart: CalendarMonthGridSupport.currentMonthStart(calendar: cal),
+            calendar: cal
+        )
+
+        selectedBoardDate = cal.startOfDay(for: DateFormatters.date(from: anchorDateKey) ?? Date())
+    }
+
+    private func moveBoardMonth(by delta: Int) {
+        guard presentation == .board else { return }
+        selectedBoardDate = CalendarPageStateSupport.boardDateByMovingMonth(
+            selectedBoardDate,
+            by: delta,
+            calendar: cal
+        )
+        anchorDateKey = DateFormatters.dateKey(from: selectedBoardDate)
     }
 
     private func restoreTimelineScrollIfNeeded(vProxy: ScrollViewProxy, hProxy: ScrollViewProxy, colWidth: CGFloat) {
@@ -195,14 +278,16 @@ struct CalendarPageView: View {
         pendingHourPersistence = nil
 
         anchorDateKey = DateFormatters.todayKey()
+        selectedBoardDate = cal.startOfDay(for: Date())
         visibleTimelineDayIndex = todayDayIdx
-        if viewMode == .month {
+        if viewMode == .month || presentation == .board {
             visibleMonthIdx = 60
         }
         scrollToTodayTrigger.toggle()
     }
 
     private func applyExternalCalendarJump(_ request: CalendarNavigationManager.Request) {
+        presentation = .timeline
         viewMode = .week
         CalendarPageInteractionSupport.applyExternalCalendarJump(
             request: request,

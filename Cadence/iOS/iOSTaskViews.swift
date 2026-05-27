@@ -2,35 +2,6 @@
 import SwiftData
 import SwiftUI
 
-enum iOSTaskSortMode: String, CaseIterable, Identifiable {
-    case listOrder = "listOrder"
-    case priority = "priority"
-    case dueDate = "dueDate"
-    case newest = "newest"
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .listOrder: return "List Order"
-        case .priority: return "Priority"
-        case .dueDate: return "Due Date"
-        case .newest: return "Newest"
-        }
-    }
-}
-
-extension iOSTaskSortMode {
-    var cadenceSortMode: CadenceTaskSortMode {
-        switch self {
-        case .listOrder: return .listOrder
-        case .priority: return .priority
-        case .dueDate: return .dueDate
-        case .newest: return .newest
-        }
-    }
-}
-
 struct iOSTaskRow: View {
     @Bindable var task: AppTask
     @Environment(\.modelContext) private var modelContext
@@ -260,35 +231,23 @@ struct iOSTaskRow: View {
     }
 
     private func toggleCompletion() {
-        if task.isDone {
-            task.status = .todo
-            task.completedAt = nil
-        } else {
-            task.status = .done
-            task.completedAt = Date()
-        }
-        try? modelContext.save()
+        CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
     }
 
     private func scheduleToday() {
-        task.scheduledDate = DateFormatters.todayKey()
-        try? modelContext.save()
+        CadenceTaskMutationSupport.scheduleToday(task, modelContext: modelContext)
     }
 
     private func scheduleTomorrow() {
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-        task.scheduledDate = DateFormatters.dateKey(from: tomorrow)
-        try? modelContext.save()
+        CadenceTaskMutationSupport.scheduleTomorrow(task, modelContext: modelContext)
     }
 
     private func clearScheduledDate() {
-        task.scheduledDate = ""
-        task.scheduledStartMin = -1
-        try? modelContext.save()
+        CadenceTaskMutationSupport.clearScheduledDate(task, modelContext: modelContext)
     }
 
     private func deleteTask() {
-        modelContext.deleteTaskForiOS(task)
+        CadenceTaskMutationSupport.delete(task, modelContext: modelContext)
     }
 
     private func handlePendingDeepLink() {
@@ -327,7 +286,7 @@ struct iOSTaskSectionHeader: View {
 
 struct iOSTaskViewOptionsBar: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Binding var sortMode: iOSTaskSortMode
+    @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
     var completedCount: Int
 
@@ -339,7 +298,7 @@ struct iOSTaskViewOptionsBar: View {
         HStack(spacing: 10) {
             Menu {
                 Picker("Sort", selection: $sortMode) {
-                    ForEach(iOSTaskSortMode.allCases) { mode in
+                    ForEach(CadenceTaskSortMode.allCases) { mode in
                         Text(mode.title).tag(mode)
                     }
                 }
@@ -489,21 +448,6 @@ struct iOSEmptyPanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
-    }
-}
-
-extension ModelContext {
-    func deleteTaskForiOS(_ task: AppTask) {
-        let subtasks = task.subtasks ?? []
-        task.subtasks = []
-        task.bundle?.tasks = (task.bundle?.tasks ?? []).filter { $0.id != task.id }
-
-        for subtask in subtasks {
-            delete(subtask)
-        }
-
-        delete(task)
-        try? save()
     }
 }
 #endif

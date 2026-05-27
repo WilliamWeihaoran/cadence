@@ -27,8 +27,8 @@ enum CalendarPageDataSupport {
     }
 
     static func handleViewModeChange(
-        oldMode: CalViewMode,
-        newMode: CalViewMode,
+        oldMode: CadenceCalendarViewMode,
+        newMode: CadenceCalendarViewMode,
         visibleMonthIdx: inout Int,
         monthGridResetNonce: inout Int,
         didRestoreTimelineScroll: inout Bool,

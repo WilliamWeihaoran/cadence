@@ -3,25 +3,14 @@ import Combine
 import EventKit
 import SwiftUI
 
-enum CalViewMode: String, CaseIterable {
-    case week = "Week"
-    case twoWeeks = "2 Weeks"
-    case month = "Month"
-
-    var daysCount: Int {
-        switch self {
-        case .week: return 7
-        case .twoWeeks: return 14
-        case .month: return 1
-        }
-    }
-}
-
 struct CalendarPageToolbar: View {
     let calendarTitleLabel: String
-    let viewMode: CalViewMode
+    let viewMode: CadenceCalendarViewMode
+    let presentation: CadenceCalendarPresentation
     let scrollToToday: () -> Void
-    let setViewMode: (CalViewMode) -> Void
+    let setViewMode: (CadenceCalendarViewMode) -> Void
+    let setPresentation: (CadenceCalendarPresentation) -> Void
+    let moveBoardMonth: (Int) -> Void
     @Binding var zoomLevel: Int
 
     var body: some View {
@@ -40,9 +29,18 @@ struct CalendarPageToolbar: View {
             }
             Spacer()
 
-            CalendarViewModeControl(viewMode: viewMode, setViewMode: setViewMode)
+            CalendarViewModeControl(
+                viewMode: viewMode,
+                presentation: presentation,
+                setViewMode: setViewMode,
+                setPresentation: setPresentation
+            )
 
-            if viewMode != .month {
+            if presentation == .board {
+                CalendarBoardMonthNavigationControl(moveMonth: moveBoardMonth)
+            }
+
+            if presentation == .timeline && viewMode != .month {
                 CalendarToolbarZoomControl(zoomLevel: $zoomLevel, range: 1...3)
             }
 
@@ -55,32 +53,80 @@ struct CalendarPageToolbar: View {
 }
 
 private struct CalendarViewModeControl: View {
-    let viewMode: CalViewMode
-    let setViewMode: (CalViewMode) -> Void
+    let viewMode: CadenceCalendarViewMode
+    let presentation: CadenceCalendarPresentation
+    let setViewMode: (CadenceCalendarViewMode) -> Void
+    let setPresentation: (CadenceCalendarPresentation) -> Void
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(CalViewMode.allCases, id: \.self) { mode in
+            ForEach(CadenceCalendarViewMode.allCases, id: \.self) { mode in
                 Button { setViewMode(mode) } label: {
                     Text(mode.rawValue)
-                        .font(.system(size: 11, weight: viewMode == mode ? .semibold : .medium))
-                        .foregroundStyle(viewMode == mode ? Theme.blue : Theme.dim)
+                        .font(.system(size: 11, weight: presentation == .timeline && viewMode == mode ? .semibold : .medium))
+                        .foregroundStyle(presentation == .timeline && viewMode == mode ? Theme.blue : Theme.dim)
                         .frame(minWidth: 68, minHeight: 28)
                         .padding(.horizontal, 8)
                         .contentShape(Rectangle())
                         .background(
                             RoundedRectangle(cornerRadius: 7)
-                                .fill(viewMode == mode ? Theme.blue.opacity(0.10) : Color.clear)
+                                .fill(presentation == .timeline && viewMode == mode ? Theme.blue.opacity(0.10) : Color.clear)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 7)
-                                .stroke(viewMode == mode ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
+                                .stroke(presentation == .timeline && viewMode == mode ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
                         )
                 }
                 .buttonStyle(.cadencePlain)
             }
+
+            Button { setPresentation(.board) } label: {
+                Text("Board")
+                    .font(.system(size: 11, weight: presentation == .board ? .semibold : .medium))
+                    .foregroundStyle(presentation == .board ? Theme.blue : Theme.dim)
+                    .frame(minWidth: 68, minHeight: 28)
+                    .padding(.horizontal, 8)
+                    .contentShape(Rectangle())
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(presentation == .board ? Theme.blue.opacity(0.10) : Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .stroke(presentation == .board ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.cadencePlain)
         }
         .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9)
+                        .stroke(Theme.borderSubtle.opacity(0.18), lineWidth: 1)
+                )
+        )
+    }
+}
+
+private struct CalendarBoardMonthNavigationControl: View {
+    let moveMonth: (Int) -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            CalendarIconGhostButton(systemImage: "chevron.left", isEnabled: true) {
+                moveMonth(-1)
+            }
+            .help("Previous month")
+
+            CalendarIconGhostButton(systemImage: "chevron.right", isEnabled: true) {
+                moveMonth(1)
+            }
+            .help("Next month")
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
         .background(
             RoundedRectangle(cornerRadius: 9)
                 .fill(Color.clear)
@@ -255,7 +301,7 @@ func calendarTimelineHeaderVisibleRange(
 
 struct CalendarTimelineViewport: View {
     let geoSize: CGSize
-    let viewMode: CalViewMode
+    let viewMode: CadenceCalendarViewMode
     @Binding var zoomLevel: Int
     @Binding var rememberedScrollHour: Int
     @Binding var anchorDateKey: String

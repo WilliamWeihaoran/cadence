@@ -5,19 +5,19 @@ import SwiftUI
 struct iOSAllTasksView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @AppStorage("ios.allTasks.sortMode") private var sortModeRaw = iOSTaskSortMode.listOrder.rawValue
+    @AppStorage("ios.allTasks.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
     @AppStorage("ios.allTasks.showCompleted") private var showCompleted = false
     @State private var newTitle = ""
 
-    private var sortMode: iOSTaskSortMode {
-        get { iOSTaskSortMode(rawValue: sortModeRaw) ?? .listOrder }
+    private var sortMode: CadenceTaskSortMode {
+        get { CadenceTaskSortMode(rawValue: sortModeRaw) ?? .listOrder }
         set { sortModeRaw = newValue.rawValue }
     }
 
     private var activeTasks: [AppTask] {
         CadenceTaskQuerySupport.activeTasks(
             from: allTasks,
-            sortMode: sortMode.cadenceSortMode
+            sortMode: sortMode
         )
     }
 
@@ -88,11 +88,11 @@ struct iOSAllTasksView: View {
     }
 
     private func captureTask() {
-        guard let task = CadenceTaskQuerySupport.makeTask(title: newTitle, allTasks: allTasks) else {
-            return
-        }
-        modelContext.insert(task)
-        try? modelContext.save()
+        guard (try? CadenceTaskMutationSupport.insertTask(
+            title: newTitle,
+            allTasks: allTasks,
+            modelContext: modelContext
+        )) != nil else { return }
         newTitle = ""
     }
 }

@@ -1,11 +1,133 @@
 import Foundation
 import SwiftData
+import SwiftUI
 
-enum CadenceTaskSortMode: String, CaseIterable, Hashable {
+enum CadenceTaskSortMode: String, CaseIterable, Hashable, Identifiable {
     case listOrder
     case priority
     case dueDate
     case newest
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .listOrder: return "List Order"
+        case .priority: return "Priority"
+        case .dueDate: return "Due Date"
+        case .newest: return "Newest"
+        }
+    }
+}
+
+enum CadenceCoreNoteTab: String, CaseIterable, Identifiable {
+    case today = "Today"
+    case week = "This Week"
+    case notepad = "Notepad"
+
+    var id: Self { self }
+
+    var compactTitle: String {
+        switch self {
+        case .today: return "Today"
+        case .week: return "Week"
+        case .notepad: return "Notepad"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .today:
+            guard let today = DateFormatters.date(from: DateFormatters.todayKey()) else {
+                return "Today"
+            }
+            return DateFormatters.longDate.string(from: today)
+        case .week:
+            return DateFormatters.weekLabel(from: DateFormatters.currentWeekKey())
+        case .notepad:
+            return "Permanent notes"
+        }
+    }
+}
+
+struct CadenceCoreNoteState {
+    var today: Note?
+    var week: Note?
+    var notepad: Note?
+
+    func note(for tab: CadenceCoreNoteTab) -> Note? {
+        switch tab {
+        case .today: return today
+        case .week: return week
+        case .notepad: return notepad
+        }
+    }
+}
+
+enum CadenceCoreNoteSupport {
+    static func loadOrCreateCoreNotes(in modelContext: ModelContext) -> CadenceCoreNoteState {
+        CadenceCoreNoteState(
+            today: try? NoteMigrationService.dailyNote(for: DateFormatters.todayKey(), in: modelContext),
+            week: try? NoteMigrationService.weeklyNote(for: DateFormatters.currentWeekKey(), in: modelContext),
+            notepad: try? NoteMigrationService.permanentNote(in: modelContext)
+        )
+    }
+
+    static func note(for tab: CadenceCoreNoteTab, in modelContext: ModelContext) throws -> Note {
+        switch tab {
+        case .today:
+            return try NoteMigrationService.dailyNote(for: DateFormatters.todayKey(), in: modelContext)
+        case .week:
+            return try NoteMigrationService.weeklyNote(for: DateFormatters.currentWeekKey(), in: modelContext)
+        case .notepad:
+            return try NoteMigrationService.permanentNote(in: modelContext)
+        }
+    }
+
+    static func update(_ note: Note, content: String, in modelContext: ModelContext, syncTags: Bool = true) {
+        note.content = content
+        note.updatedAt = Date()
+        if syncTags {
+            TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)
+        }
+        try? modelContext.save()
+    }
+}
+
+enum CadenceListNoteSupport {
+    static func notes(for area: Area?, project: Project?, in notes: [Note]) -> [Note] {
+        if let area {
+            return notes.filter { $0.kind == .list && $0.area?.id == area.id }
+        }
+        if let project {
+            return notes.filter { $0.kind == .list && $0.project?.id == project.id }
+        }
+        return []
+    }
+
+    static func firstOrCreateNote(for area: Area?, project: Project?, in modelContext: ModelContext) -> Note? {
+        let descriptor = FetchDescriptor<Note>()
+        let fetchedNotes = (try? modelContext.fetch(descriptor)) ?? []
+        if let existing = notes(for: area, project: project, in: fetchedNotes).first {
+            return existing
+        }
+
+        guard area != nil || project != nil else { return nil }
+        let created = Note(kind: .list, title: defaultTitle(for: area, project: project))
+        attach(created, to: area, project: project)
+        modelContext.insert(created)
+        try? modelContext.save()
+        return created
+    }
+
+    static func attach(_ note: Note, to area: Area?, project: Project?) {
+        note.area = area
+        note.project = project
+    }
+
+    static func defaultTitle(for area: Area?, project: Project?) -> String {
+        area?.name ?? project?.name ?? "Untitled Note"
+    }
 }
 
 enum CadenceTodayTaskGroupKind: String, CaseIterable, Hashable {
@@ -36,12 +158,113 @@ enum CadenceCalendarViewMode: String, CaseIterable, Hashable {
     }
 }
 
+enum CadenceCalendarPresentation: String, CaseIterable, Hashable {
+    case timeline = "Timeline"
+    case board = "Board"
+}
+
+enum CadenceCalendarBoardMarkerKind: Hashable {
+    case task
+    case event
+}
+
+struct CadenceCalendarBoardMarker: Identifiable {
+    let id: String
+    let kind: CadenceCalendarBoardMarkerKind
+    let color: Color
+    let isCompleted: Bool
+}
+
+struct CadenceCalendarBoardDaySummary: Identifiable {
+    let dateKey: String
+    let taskMarkers: [CadenceCalendarBoardMarker]
+    let eventMarkers: [CadenceCalendarBoardMarker]
+    let bundleCount: Int
+    let overflowCount: Int
+
+    var id: String { dateKey }
+
+    var totalCount: Int {
+        taskMarkers.count + eventMarkers.count + bundleCount + overflowCount
+    }
+}
+
+enum CadenceCalendarBoardSupport {
+    static func daySummary(
+        dateKey: String,
+        tasks: [AppTask],
+        bundles: [TaskBundle],
+        eventMarkers: [CadenceCalendarBoardMarker] = [],
+        maxTaskMarkers: Int = 4,
+        maxEventMarkers: Int = 5,
+        maxBundleMarkers: Int = 1
+    ) -> CadenceCalendarBoardDaySummary {
+        let sortedTasks = CadenceTaskQuerySupport.sortedTasks(
+            tasks.filter { !$0.isCancelled },
+            sortMode: .priority
+        )
+        let visibleTasks = Array(sortedTasks.prefix(max(0, maxTaskMarkers)))
+        let visibleEvents = Array(eventMarkers.prefix(max(0, maxEventMarkers)))
+        let visibleBundleCount = min(max(0, maxBundleMarkers), bundles.count)
+        let hiddenTaskCount = max(0, sortedTasks.count - visibleTasks.count)
+        let hiddenEventCount = max(0, eventMarkers.count - visibleEvents.count)
+        let hiddenBundleCount = max(0, bundles.count - visibleBundleCount)
+
+        return CadenceCalendarBoardDaySummary(
+            dateKey: dateKey,
+            taskMarkers: visibleTasks.map { task in
+                CadenceCalendarBoardMarker(
+                    id: task.id.uuidString,
+                    kind: .task,
+                    color: Color(hex: task.containerColor),
+                    isCompleted: task.isDone
+                )
+            },
+            eventMarkers: visibleEvents,
+            bundleCount: visibleBundleCount,
+            overflowCount: hiddenTaskCount + hiddenEventCount + hiddenBundleCount
+        )
+    }
+}
+
 struct CadenceTodayTaskGroup: Identifiable {
     let kind: CadenceTodayTaskGroupKind
     let tasks: [AppTask]
 
     var id: CadenceTodayTaskGroupKind { kind }
     var title: String { kind.title }
+}
+
+struct CadenceTaskDisplayGroup: Identifiable {
+    let id: String
+    let title: String
+    let accent: Color
+    let tasks: [AppTask]
+    let dropKey: String?
+
+    init(
+        id: String,
+        title: String,
+        accent: Color,
+        tasks: [AppTask],
+        dropKey: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.accent = accent
+        self.tasks = tasks
+        self.dropKey = dropKey
+    }
+}
+
+struct CadenceTaskDateBuckets {
+    let overdueIDs: Set<UUID>
+    let dueTodayIDs: Set<UUID>
+    let doTodayIDs: Set<UUID>
+
+    func contains(_ task: AppTask) -> Bool {
+        overdueIDs.contains(task.id) || dueTodayIDs.contains(task.id) || doTodayIDs.contains(task.id)
+    }
 }
 
 enum CadenceTaskQuerySupport {
@@ -103,10 +326,14 @@ enum CadenceTaskQuerySupport {
             .sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
     }
 
-    static func activeTasks(from tasks: [AppTask], sortMode: CadenceTaskSortMode) -> [AppTask] {
+    static func activeTasks(
+        from tasks: [AppTask],
+        sortMode: CadenceTaskSortMode,
+        sectionNames: [String]? = nil
+    ) -> [AppTask] {
         tasks
             .filter { !$0.isDone && !$0.isCancelled }
-            .sorted { sortTasks($0, $1, sortMode: sortMode) }
+            .sorted { sortTasks($0, $1, sortMode: sortMode, sectionNames: sectionNames) }
     }
 
     static func completedTasks(from tasks: [AppTask]) -> [AppTask] {
@@ -115,8 +342,98 @@ enum CadenceTaskQuerySupport {
             .sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
     }
 
-    static func sortedTasks(_ tasks: [AppTask], sortMode: CadenceTaskSortMode) -> [AppTask] {
-        tasks.sorted { sortTasks($0, $1, sortMode: sortMode) }
+    static func sortedTasks(
+        _ tasks: [AppTask],
+        sortMode: CadenceTaskSortMode,
+        sectionNames: [String]? = nil
+    ) -> [AppTask] {
+        tasks.sorted { sortTasks($0, $1, sortMode: sortMode, sectionNames: sectionNames) }
+    }
+
+    static func sectionGroups(from tasks: [AppTask], sectionNames: [String]) -> [CadenceTaskDisplayGroup] {
+        sectionNames.compactMap { sectionName in
+            let sectionTasks = tasks.filter {
+                $0.resolvedSectionName.caseInsensitiveCompare(sectionName) == .orderedSame
+            }
+            guard !sectionTasks.isEmpty else { return nil }
+            return CadenceTaskDisplayGroup(
+                id: "section-\(sectionName.lowercased())",
+                title: sectionName,
+                accent: Theme.blue,
+                tasks: sectionTasks
+            )
+        }
+    }
+
+    static func dateDisplayGroups(
+        from tasks: [AppTask],
+        todayKey: String,
+        includeDueToday: Bool = true
+    ) -> [CadenceTaskDisplayGroup] {
+        let buckets = dateBuckets(for: tasks, todayKey: todayKey)
+        let overdue = tasks.filter { buckets.overdueIDs.contains($0.id) }
+        let dueToday = tasks.filter { buckets.dueTodayIDs.contains($0.id) }
+        let doToday = tasks.filter { buckets.doTodayIDs.contains($0.id) }
+        let scheduled = tasks.filter {
+            !$0.scheduledDate.isEmpty &&
+            $0.scheduledDate != todayKey &&
+            !buckets.contains($0)
+        }
+        let unscheduled = tasks.filter {
+            $0.scheduledDate.isEmpty &&
+            !buckets.contains($0)
+        }
+
+        var groups = [
+            CadenceTaskDisplayGroup(id: "overdue", title: "Overdue", accent: Theme.red, tasks: overdue)
+        ]
+        if includeDueToday {
+            groups.append(CadenceTaskDisplayGroup(id: "due-today", title: "Due Today", accent: Theme.red.opacity(0.8), tasks: dueToday))
+        }
+        groups.append(contentsOf: [
+            CadenceTaskDisplayGroup(id: "do-today", title: "Do Today", accent: Theme.blue, tasks: doToday),
+            CadenceTaskDisplayGroup(id: "scheduled", title: "Scheduled", accent: Theme.dim, tasks: scheduled),
+            CadenceTaskDisplayGroup(id: "unscheduled", title: "Unscheduled", accent: Theme.amber, tasks: unscheduled)
+        ])
+
+        return groups.filter { !$0.tasks.isEmpty }
+    }
+
+    static func planningDisplayGroups(from tasks: [AppTask], todayKey: String) -> [CadenceTaskDisplayGroup] {
+        let overdue = tasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey }
+        let dueToday = tasks.filter { $0.dueDate == todayKey }
+        let scheduledToday = tasks.filter { $0.scheduledDate == todayKey && $0.dueDate != todayKey }
+        let upcoming = tasks
+            .filter { task in
+                let dueFuture = !task.dueDate.isEmpty && task.dueDate > todayKey
+                let scheduledFuture = !task.scheduledDate.isEmpty && task.scheduledDate > todayKey
+                return dueFuture || scheduledFuture
+            }
+            .sorted { planningKey(for: $0) < planningKey(for: $1) }
+        let unscheduled = tasks.filter { $0.dueDate.isEmpty && $0.scheduledDate.isEmpty }
+
+        return [
+            CadenceTaskDisplayGroup(id: "overdue", title: "Overdue", accent: Theme.red, tasks: overdue),
+            CadenceTaskDisplayGroup(id: "due-today", title: "Due Today", accent: Theme.amber, tasks: dueToday),
+            CadenceTaskDisplayGroup(id: "scheduled-today", title: "Scheduled Today", accent: Theme.blue, tasks: scheduledToday),
+            CadenceTaskDisplayGroup(id: "upcoming", title: "Upcoming", accent: Theme.purple, tasks: upcoming),
+            CadenceTaskDisplayGroup(id: "unscheduled", title: "Unscheduled", accent: Theme.dim, tasks: unscheduled)
+        ]
+        .filter { !$0.tasks.isEmpty }
+    }
+
+    static func priorityDisplayGroups(from tasks: [AppTask]) -> [CadenceTaskDisplayGroup] {
+        TaskPriority.allCases.reversed().compactMap { priority in
+            let priorityTasks = tasks.filter { $0.priority == priority }
+            guard !priorityTasks.isEmpty else { return nil }
+            return CadenceTaskDisplayGroup(
+                id: "priority-\(priority.rawValue)",
+                title: priority.label,
+                accent: Theme.priorityColor(priority),
+                tasks: priorityTasks,
+                dropKey: "priority:\(priority.rawValue)"
+            )
+        }
     }
 
     static func nextTaskOrder(in tasks: [AppTask]) -> Int {
@@ -172,10 +489,14 @@ enum CadenceTaskQuerySupport {
     private static func sortTasks(
         _ lhs: AppTask,
         _ rhs: AppTask,
-        sortMode: CadenceTaskSortMode
+        sortMode: CadenceTaskSortMode,
+        sectionNames: [String]? = nil
     ) -> Bool {
         switch sortMode {
         case .listOrder:
+            if let sectionNames, lhs.resolvedSectionName != rhs.resolvedSectionName {
+                return sectionRank(lhs.resolvedSectionName, in: sectionNames) < sectionRank(rhs.resolvedSectionName, in: sectionNames)
+            }
             return lhs.order < rhs.order
         case .priority:
             if lhs.priority != rhs.priority {
@@ -191,6 +512,111 @@ enum CadenceTaskQuerySupport {
             return lhs.order < rhs.order
         case .newest:
             return lhs.createdAt > rhs.createdAt
+        }
+    }
+
+    private static func dateBuckets(for tasks: [AppTask], todayKey: String) -> CadenceTaskDateBuckets {
+        var overdueIDs = Set<UUID>()
+        var dueTodayIDs = Set<UUID>()
+        var doTodayIDs = Set<UUID>()
+
+        for task in tasks {
+            if !task.dueDate.isEmpty && task.dueDate < todayKey {
+                overdueIDs.insert(task.id)
+            } else if task.dueDate == todayKey {
+                dueTodayIDs.insert(task.id)
+            }
+        }
+
+        for task in tasks where !overdueIDs.contains(task.id) && !dueTodayIDs.contains(task.id) {
+            if task.scheduledDate == todayKey {
+                doTodayIDs.insert(task.id)
+            }
+        }
+
+        return CadenceTaskDateBuckets(
+            overdueIDs: overdueIDs,
+            dueTodayIDs: dueTodayIDs,
+            doTodayIDs: doTodayIDs
+        )
+    }
+
+    private static func planningKey(for task: AppTask) -> String {
+        [task.dueDate, task.scheduledDate]
+            .filter { !$0.isEmpty }
+            .min() ?? "9999-99-99"
+    }
+
+    private static func sectionRank(_ name: String, in sectionNames: [String]) -> Int {
+        sectionNames.firstIndex {
+            $0.caseInsensitiveCompare(name) == .orderedSame
+        } ?? Int.max
+    }
+}
+
+enum CadenceTaskMutationSupport {
+    static func toggleCompletion(_ task: AppTask, modelContext: ModelContext) {
+        if task.isDone {
+            task.status = .todo
+            task.completedAt = nil
+        } else {
+            task.status = .done
+            task.completedAt = Date()
+        }
+        try? modelContext.save()
+    }
+
+    static func scheduleToday(_ task: AppTask, modelContext: ModelContext) {
+        task.scheduledDate = DateFormatters.todayKey()
+        try? modelContext.save()
+    }
+
+    static func scheduleTomorrow(_ task: AppTask, modelContext: ModelContext, calendar: Calendar = .current) {
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+        task.scheduledDate = DateFormatters.dateKey(from: tomorrow)
+        try? modelContext.save()
+    }
+
+    static func clearScheduledDate(_ task: AppTask, modelContext: ModelContext) {
+        task.scheduledDate = ""
+        task.scheduledStartMin = -1
+        try? modelContext.save()
+    }
+
+    static func delete(_ task: AppTask, modelContext: ModelContext) {
+        let subtasks = task.subtasks ?? []
+        task.subtasks = []
+        task.bundle?.tasks = (task.bundle?.tasks ?? []).filter { $0.id != task.id }
+
+        for subtask in subtasks {
+            modelContext.delete(subtask)
+        }
+
+        modelContext.delete(task)
+        try? modelContext.save()
+    }
+
+    static func insertTask(
+        title: String,
+        allTasks: [AppTask],
+        modelContext: ModelContext,
+        scheduledDate: String? = nil,
+        configure: (AppTask) -> Void = { _ in }
+    ) throws -> AppTask? {
+        guard let task = CadenceTaskQuerySupport.makeTask(
+            title: title,
+            allTasks: allTasks,
+            scheduledDate: scheduledDate
+        ) else { return nil }
+
+        configure(task)
+        modelContext.insert(task)
+        do {
+            try modelContext.save()
+            return task
+        } catch {
+            modelContext.delete(task)
+            throw error
         }
     }
 }

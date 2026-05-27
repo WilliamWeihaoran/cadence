@@ -39,41 +39,14 @@ struct ListTasksView: View {
                 ListTasksGroup(id: "all", title: "Tasks", accent: Theme.dim, tasks: activeTasks)
             ]
         case .byDate:
-            let buckets = classifyTasksByDate(activeTasks, todayKey: todayKey)
-            let overdue     = activeTasks.filter { buckets.overdueIDs.contains($0.id) }
-            let dueToday    = activeTasks.filter { buckets.dueTodayIDs.contains($0.id) }
-            let doToday     = activeTasks.filter { buckets.doTodayIDs.contains($0.id) }
-            let scheduled   = activeTasks.filter {
-                !$0.scheduledDate.isEmpty && $0.scheduledDate != todayKey &&
-                !buckets.contains($0)
-            }
-            let unscheduled = activeTasks.filter {
-                $0.scheduledDate.isEmpty &&
-                !buckets.contains($0)
-            }
-
-            return [
-                ListTasksGroup(id: "overdue",    title: "Overdue",    accent: Theme.red,              tasks: overdue),
-                ListTasksGroup(id: "due-today",  title: "Due Today",  accent: Theme.red.opacity(0.8), tasks: dueToday),
-                ListTasksGroup(id: "do-today",   title: "Do Today",   accent: Theme.blue,             tasks: doToday),
-                ListTasksGroup(id: "scheduled",  title: "Scheduled",  accent: Theme.dim,              tasks: scheduled),
-                ListTasksGroup(id: "unscheduled",title: "Unscheduled",accent: Theme.amber,            tasks: unscheduled)
-            ]
-            .filter { !$0.tasks.isEmpty }
+            return CadenceTaskQuerySupport.dateDisplayGroups(from: activeTasks, todayKey: todayKey)
+                .map { ListTasksGroup(id: $0.id, title: $0.title, accent: $0.accent, tasks: $0.tasks) }
         case .byList:
-            return sectionNames.compactMap { sectionName in
-                let sectionTasks = activeTasks.filter {
-                    $0.resolvedSectionName.caseInsensitiveCompare(sectionName) == .orderedSame
-                }
-                guard !sectionTasks.isEmpty else { return nil }
-                return ListTasksGroup(id: "section-\(sectionName.lowercased())", title: sectionName, accent: Theme.blue, tasks: sectionTasks)
-            }
+            return CadenceTaskQuerySupport.sectionGroups(from: activeTasks, sectionNames: sectionNames)
+                .map { ListTasksGroup(id: $0.id, title: $0.title, accent: $0.accent, tasks: $0.tasks) }
         case .byPriority:
-            return TaskPriority.allCases.reversed().compactMap { priority in
-                let sectionTasks = activeTasks.filter { $0.priority == priority }
-                guard !sectionTasks.isEmpty else { return nil }
-                return ListTasksGroup(id: "priority-\(priority.rawValue)", title: priority.label, accent: Theme.priorityColor(priority), tasks: sectionTasks)
-            }
+            return CadenceTaskQuerySupport.priorityDisplayGroups(from: activeTasks)
+                .map { ListTasksGroup(id: $0.id, title: $0.title, accent: $0.accent, tasks: $0.tasks) }
         }
     }
 

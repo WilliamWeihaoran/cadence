@@ -10,13 +10,7 @@ struct NotePanel: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     var useStandardHeaderHeight = false
 
-    enum NoteTab: String, CaseIterable {
-        case today  = "Today"
-        case week   = "This Week"
-        case notepad = "Notepad"
-    }
-
-    @State private var activeTab: NoteTab = .today
+    @State private var activeTab: CadenceCoreNoteTab = .today
     @State private var todayNote:  Note?
     @State private var weekNote:   Note?
     @State private var permNote:   Note?
@@ -42,7 +36,7 @@ struct NotePanel: View {
                 }
 
                 HStack(spacing: 0) {
-                    ForEach(NoteTab.allCases, id: \.self) { tab in
+                    ForEach(CadenceCoreNoteTab.allCases) { tab in
                         NotePanelTabButton(tab: tab, isSelected: activeTab == tab) {
                             activeTab = tab
                         }
@@ -107,19 +101,15 @@ struct NotePanel: View {
     }
 
     private var headerTitle: String {
-        switch activeTab {
-        case .today:   return "Today"
-        case .week:    return "This Week"
-        case .notepad: return "Notepad"
-        }
+        activeTab.rawValue
     }
 
     private var activeNote: Note? {
-        switch activeTab {
-        case .today: return todayNote
-        case .week: return weekNote
-        case .notepad: return permNote
-        }
+        notesSnapshot.note(for: activeTab)
+    }
+
+    private var notesSnapshot: CadenceCoreNoteState {
+        CadenceCoreNoteState(today: todayNote, week: weekNote, notepad: permNote)
     }
 
     @ViewBuilder
@@ -146,9 +136,10 @@ struct NotePanel: View {
         let context = notesContext ?? makeNotesContext()
         notesContext = context
 
-        todayNote = try? NoteMigrationService.dailyNote(for: DateFormatters.todayKey(), in: context)
-        weekNote = try? NoteMigrationService.weeklyNote(for: DateFormatters.currentWeekKey(), in: context)
-        permNote = try? NoteMigrationService.permanentNote(in: context)
+        let snapshot = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: context)
+        todayNote = snapshot.today
+        weekNote = snapshot.week
+        permNote = snapshot.notepad
     }
 
     private func refreshFromStore() {
@@ -168,10 +159,7 @@ struct NotePanel: View {
     }
 
     private func update(note: Note, content: String) {
-        note.content = content
-        note.updatedAt = Date()
-        TagSupport.syncNoteTagsFromMarkdown(note, in: notesContext ?? modelContext)
-        try? notesContext?.save()
+        CadenceCoreNoteSupport.update(note, content: content, in: notesContext ?? modelContext)
     }
 
     private func createEmbeddedTask(title: String) -> MarkdownReferenceSuggestion? {
@@ -292,7 +280,7 @@ struct NotePanel: View {
 // MARK: - Tab Button
 
 private struct NotePanelTabButton: View {
-    let tab: NotePanel.NoteTab
+    let tab: CadenceCoreNoteTab
     let isSelected: Bool
     let action: () -> Void
 

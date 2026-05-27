@@ -285,7 +285,7 @@ struct iOSTaskDetailSheet: View {
             .onChange(of: dueDate) { _, _ in applyDates() }
             .alert("Delete Task?", isPresented: $showDeleteConfirmation) {
                 Button("Delete", role: .destructive) {
-                    modelContext.deleteTaskForiOS(task)
+                    CadenceTaskMutationSupport.delete(task, modelContext: modelContext)
                     dismiss()
                 }
                 Button("Cancel", role: .cancel) {}
@@ -413,14 +413,7 @@ struct iOSTaskDetailSheet: View {
     }
 
     private func toggleCompletion() {
-        if task.isDone {
-            task.status = .todo
-            task.completedAt = nil
-        } else {
-            task.status = .done
-            task.completedAt = Date()
-        }
-        try? modelContext.save()
+        CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
     }
 }
 

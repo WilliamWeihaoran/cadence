@@ -62,18 +62,20 @@ struct iOSListDetailView: View {
         Color(hex: area?.colorHex ?? project?.colorHex ?? "#4a9eff")
     }
 
-    @AppStorage("ios.listDetail.sortMode") private var sortModeRaw = iOSTaskSortMode.listOrder.rawValue
+    @AppStorage("ios.listDetail.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
     @AppStorage("ios.listDetail.showCompleted") private var showCompleted = false
 
-    private var sortMode: iOSTaskSortMode {
-        get { iOSTaskSortMode(rawValue: sortModeRaw) ?? .listOrder }
+    private var sortMode: CadenceTaskSortMode {
+        get { CadenceTaskSortMode(rawValue: sortModeRaw) ?? .listOrder }
         set { sortModeRaw = newValue.rawValue }
     }
 
     private var activeTasks: [AppTask] {
-        filteredTasks
-            .filter { !$0.isDone && !$0.isCancelled }
-            .sorted(by: sortTasks)
+        CadenceTaskQuerySupport.activeTasks(
+            from: filteredTasks,
+            sortMode: sortMode,
+            sectionNames: configuredSectionNames
+        )
     }
 
     private var completedTasks: [AppTask] {
@@ -90,8 +92,12 @@ struct iOSListDetailView: View {
         return []
     }
 
+    private var configuredSectionNames: [String] {
+        area?.sectionNames ?? project?.sectionNames ?? [TaskSectionDefaults.defaultName]
+    }
+
     private var sectionNames: [String] {
-        var names = area?.sectionNames ?? project?.sectionNames ?? [TaskSectionDefaults.defaultName]
+        var names = configuredSectionNames
         for task in activeTasks {
             let name = task.resolvedSectionName
             if !names.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
@@ -229,66 +235,30 @@ struct iOSListDetailView: View {
     }
 
     private var sectionGroups: [(name: String, tasks: [AppTask])] {
-        sectionNames.compactMap { section in
-            let tasks = activeTasks.filter {
-                $0.resolvedSectionName.caseInsensitiveCompare(section) == .orderedSame
-            }
-            return tasks.isEmpty ? nil : (section, tasks)
-        }
+        CadenceTaskQuerySupport.sectionGroups(from: activeTasks, sectionNames: sectionNames)
+            .map { ($0.title, $0.tasks) }
     }
 
     private func captureTask() {
-        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        let task = AppTask(title: trimmed)
-        task.estimatedMinutes = 30
-        task.sectionName = TaskSectionDefaults.defaultName
-        task.order = nextTaskOrder()
-        if let area {
-            task.area = area
-            task.project = nil
-            task.context = area.context
-        } else if let project {
-            task.project = project
-            task.area = nil
-            task.context = project.context ?? project.area?.context
-        }
-        modelContext.insert(task)
-        try? modelContext.save()
+        guard (try? CadenceTaskMutationSupport.insertTask(
+            title: newTitle,
+            allTasks: filteredTasks,
+            modelContext: modelContext,
+            configure: { task in
+                task.sectionName = TaskSectionDefaults.defaultName
+                if let area {
+                    task.area = area
+                    task.project = nil
+                    task.context = area.context
+                } else if let project {
+                    task.project = project
+                    task.area = nil
+                    task.context = project.context ?? project.area?.context
+                }
+            }
+        )) != nil else { return }
         newTitle = ""
     }
 
-    private func nextTaskOrder() -> Int {
-        (filteredTasks.map(\.order).max() ?? -1) + 1
-    }
-
-    private func sectionRank(_ name: String) -> Int {
-        sectionNames.firstIndex { $0.caseInsensitiveCompare(name) == .orderedSame } ?? Int.max
-    }
-
-    private func sortTasks(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
-        switch sortMode {
-        case .listOrder:
-            if lhs.resolvedSectionName != rhs.resolvedSectionName {
-                return sectionRank(lhs.resolvedSectionName) < sectionRank(rhs.resolvedSectionName)
-            }
-            return lhs.order < rhs.order
-        case .priority:
-            if lhs.priority != rhs.priority {
-                return CadenceTaskQuerySupport.priorityRank(lhs.priority) > CadenceTaskQuerySupport.priorityRank(rhs.priority)
-            }
-            return lhs.order < rhs.order
-        case .dueDate:
-            if lhs.dueDate != rhs.dueDate {
-                if lhs.dueDate.isEmpty { return false }
-                if rhs.dueDate.isEmpty { return true }
-                return lhs.dueDate < rhs.dueDate
-            }
-            return lhs.order < rhs.order
-        case .newest:
-            return lhs.createdAt > rhs.createdAt
-        }
-    }
 }
 #endif
