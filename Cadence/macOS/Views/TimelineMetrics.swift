@@ -68,12 +68,14 @@ struct TimelineBlockStyle {
 }
 
 enum CalendarVisualStyle {
-    static let majorGridOpacity: Double = 0.42
+    static let majorGridOpacity: Double = 0.36
     static let minorGridOpacity: Double = 0.30
-    static let majorGridLineWidth: CGFloat = 2.4
-    static let minorGridLineWidth: CGFloat = 1.45
+    static let majorGridLineWidth: CGFloat = 1.25
+    static let minorGridLineWidth: CGFloat = 0.85
     static let dividerOpacity: Double = 0.18
     static let columnGridOpacity: Double = 0.09
+    static let timelineDaySeparatorOpacity: Double = 0.16
+    static let timelineDaySeparatorLineWidth: CGFloat = 0.75
     static let chipRadius: CGFloat = 6
     static let cardShadow = Color.black.opacity(0.16)
     static let selectedCardShadow = Color.black.opacity(0.24)

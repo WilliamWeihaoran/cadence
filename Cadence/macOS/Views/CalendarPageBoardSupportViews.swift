@@ -11,31 +11,17 @@ struct CalendarPageBoardView: View {
 
     @Environment(CalendarManager.self) private var calendarManager
 
-    private let calendar = Calendar.current
     private var selectedKey: String { DateFormatters.dateKey(from: selectedDate) }
 
     private var boardSummaries: [String: CadenceCalendarBoardDaySummary] {
         let _ = calendarManager.storeVersion
-        return Dictionary(uniqueKeysWithValues: CadenceScheduleSupport.monthGridDays(for: monthDate, calendar: calendar).map { date in
-            let key = DateFormatters.dateKey(from: date)
-            let eventMarkers = calendarEvents(for: date).map { event in
-                CadenceCalendarBoardMarker(
-                    id: event.calendarItemIdentifier,
-                    kind: .event,
-                    color: Color(cgColor: event.calendar?.cgColor ?? CGColor(gray: 0.5, alpha: 1)),
-                    isCompleted: false
-                )
-            }
-            return (
-                key,
-                CadenceCalendarBoardSupport.daySummary(
-                    dateKey: key,
-                    tasks: CadenceScheduleSupport.monthTasks(on: key, in: tasksByDate),
-                    bundles: CadenceScheduleSupport.bundles(on: key, in: bundlesByDate),
-                    eventMarkers: eventMarkers
-                )
-            )
-        })
+        return CadenceCalendarBoardSupport.monthSummaries(
+            monthDate: monthDate,
+            tasksByDate: tasksByDate,
+            bundlesByDate: bundlesByDate
+        ) { date, _ in
+            calendarEvents(for: date).map(calendarEventMarker)
+        }
     }
 
     private var selectedTasks: [AppTask] {
@@ -43,7 +29,7 @@ struct CalendarPageBoardView: View {
     }
 
     private var selectedBundles: [TaskBundle] {
-        CadenceScheduleSupport.bundles(on: selectedKey, in: bundlesByDate)
+        CadenceScheduleSupport.items(on: selectedKey, in: bundlesByDate)
     }
 
     private var selectedEvents: [EKEvent] {
@@ -87,6 +73,16 @@ struct CalendarPageBoardView: View {
             if lhs.isAllDay != rhs.isAllDay { return lhs.isAllDay && !rhs.isAllDay }
             return (lhs.startDate ?? .distantPast) < (rhs.startDate ?? .distantPast)
         }
+    }
+
+    private func calendarEventMarker(_ event: EKEvent) -> CadenceCalendarBoardMarker {
+        CadenceCalendarBoardMarker(
+            id: event.calendarItemIdentifier,
+            kind: .event,
+            color: Color(cgColor: event.calendar?.cgColor ?? CGColor(gray: 0.5, alpha: 1)),
+            isCompleted: false,
+            count: 1
+        )
     }
 }
 

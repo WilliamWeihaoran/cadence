@@ -6,12 +6,16 @@ import WidgetKit
 
 enum CadenceWidgetRefreshCenter {
     nonisolated static let todayWidgetKind = "CadenceTodayTasksWidget"
-    private nonisolated static let reloadTimestampDefaultsKey = "cadence.widgets.today.lastReloadAt"
+    nonisolated static let habitWidgetKind = "CadenceHabitCheckInWidget"
+    nonisolated static let milestoneWidgetKind = "CadenceMilestoneMomentumWidget"
+    nonisolated static let calendarWidgetKind = "CadenceCalendarSnapshotWidget"
+    private nonisolated static let reloadTimestampDefaultsKey = "cadence.widgets.lastReloadAt"
     private nonisolated static let recentlyCompletedTasksDefaultsKey = "cadence.widgets.today.recentlyCompletedTasks"
+    private nonisolated static let recentlyChangedHabitsDefaultsKey = "cadence.widgets.habits.recentlyChangedHabits"
     private nonisolated static let completionSuppressionInterval: TimeInterval = 90
     private nonisolated static let defaultReloadInterval: TimeInterval = 15
 
-    nonisolated static func reloadTodayWidgets(
+    nonisolated static func reloadAllWidgets(
         minimumInterval: TimeInterval = defaultReloadInterval,
         force: Bool = false,
         now: Date = Date(),
@@ -26,8 +30,22 @@ enum CadenceWidgetRefreshCenter {
         }
 
         defaults.set(timestamp, forKey: reloadTimestampDefaultsKey)
-        WidgetCenter.shared.reloadTimelines(ofKind: todayWidgetKind)
+        WidgetCenter.shared.reloadAllTimelines()
         #endif
+    }
+
+    nonisolated static func reloadTodayWidgets(
+        minimumInterval: TimeInterval = defaultReloadInterval,
+        force: Bool = false,
+        now: Date = Date(),
+        userDefaults: UserDefaults? = nil
+    ) {
+        reloadAllWidgets(
+            minimumInterval: minimumInterval,
+            force: force,
+            now: now,
+            userDefaults: userDefaults
+        )
     }
 
     nonisolated static func markTaskCompleted(
@@ -55,15 +73,53 @@ enum CadenceWidgetRefreshCenter {
         return Set(filtered.keys.compactMap(UUID.init(uuidString:)))
     }
 
+    nonisolated static func markHabitCompletion(
+        _ habitID: UUID,
+        isDoneToday: Bool,
+        now: Date = Date(),
+        userDefaults: UserDefaults? = nil
+    ) {
+        var states = loadRecentlyChangedHabitStates(userDefaults: userDefaults)
+        states[habitID.uuidString] = HabitCompletionState(
+            timestamp: now.timeIntervalSince1970,
+            isDoneToday: isDoneToday
+        )
+        storeRecentlyChangedHabitStates(states, userDefaults: userDefaults)
+    }
+
+    nonisolated static func recentHabitCompletionStates(
+        now: Date = Date(),
+        userDefaults: UserDefaults? = nil
+    ) -> [UUID: Bool] {
+        let cutoff = now.timeIntervalSince1970 - completionSuppressionInterval
+        let states = loadRecentlyChangedHabitStates(userDefaults: userDefaults)
+        let filtered = states.filter { $0.value.timestamp >= cutoff }
+
+        if filtered.count != states.count {
+            storeRecentlyChangedHabitStates(filtered, userDefaults: userDefaults)
+        }
+
+        return Dictionary(
+            uniqueKeysWithValues: filtered.compactMap { key, value in
+                guard let uuid = UUID(uuidString: key) else { return nil }
+                return (uuid, value.isDoneToday)
+            }
+        )
+    }
+
     nonisolated static func clearStoredState(userDefaults: UserDefaults? = nil) {
         let defaults = sharedDefaults(userDefaults)
         defaults.removeObject(forKey: reloadTimestampDefaultsKey)
         defaults.removeObject(forKey: recentlyCompletedTasksDefaultsKey)
+        defaults.removeObject(forKey: recentlyChangedHabitsDefaultsKey)
     }
 
     private nonisolated static func sharedDefaults(_ defaults: UserDefaults?) -> UserDefaults {
         if let defaults {
             return defaults
+        }
+        if let sharedDefaults = UserDefaults(suiteName: CadenceStoreSupport.appGroupIdentifier) {
+            return sharedDefaults
         }
         return .standard
     }
@@ -93,5 +149,57 @@ enum CadenceWidgetRefreshCenter {
         } else {
             defaults.set(timestamps, forKey: recentlyCompletedTasksDefaultsKey)
         }
+    }
+
+    private struct HabitCompletionState {
+        let timestamp: TimeInterval
+        let isDoneToday: Bool
+    }
+
+    private nonisolated static func loadRecentlyChangedHabitStates(userDefaults: UserDefaults?) -> [String: HabitCompletionState] {
+        let defaults = sharedDefaults(userDefaults)
+        guard let raw = defaults.dictionary(forKey: recentlyChangedHabitsDefaultsKey) else { return [:] }
+
+        var states: [String: HabitCompletionState] = [:]
+        for (key, value) in raw {
+            guard let payload = value as? [String: Any] else { continue }
+
+            let timestamp = (payload["timestamp"] as? NSNumber)?.doubleValue
+                ?? (payload["timestamp"] as? Double)
+            let isDoneToday = (payload["isDoneToday"] as? NSNumber)?.boolValue
+                ?? (payload["isDoneToday"] as? Bool)
+
+            if let timestamp, let isDoneToday {
+                states[key] = HabitCompletionState(
+                    timestamp: timestamp,
+                    isDoneToday: isDoneToday
+                )
+            }
+        }
+        return states
+    }
+
+    private nonisolated static func storeRecentlyChangedHabitStates(
+        _ states: [String: HabitCompletionState],
+        userDefaults: UserDefaults?
+    ) {
+        let defaults = sharedDefaults(userDefaults)
+        if states.isEmpty {
+            defaults.removeObject(forKey: recentlyChangedHabitsDefaultsKey)
+            return
+        }
+
+        let payload = Dictionary(
+            uniqueKeysWithValues: states.map { key, value in
+                (
+                    key,
+                    [
+                        "timestamp": value.timestamp,
+                        "isDoneToday": value.isDoneToday,
+                    ] as [String: Any]
+                )
+            }
+        )
+        defaults.set(payload, forKey: recentlyChangedHabitsDefaultsKey)
     }
 }

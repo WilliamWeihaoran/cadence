@@ -25,6 +25,16 @@ struct PersistenceController {
 
         do {
             let storeDirectoryURL = try CadenceStoreSupport.primaryStoreDirectoryURL()
+            _ = try CadenceStoreSupport.migrateLegacyStoreIfNeeded(
+                appGroupDirectoryURL: storeDirectoryURL,
+                candidateLegacyDirectories: CadenceStoreSupport.legacyStoreCandidateDirectories(),
+                backupHandler: { legacyDirectory in
+                    _ = try StoreBackupManager.createBackupIfStoreExists(
+                        reason: .preRestore,
+                        storeDirectoryURL: legacyDirectory
+                    )
+                }
+            )
             try StoreBackupManager.performPendingRestoreIfNeeded(storeDirectoryURL: storeDirectoryURL)
             _ = try StoreBackupManager.createBackupIfStoreExists(
                 reason: .startup,

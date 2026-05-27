@@ -339,8 +339,8 @@ struct CadenceTests {
             TaskBundle(title: "Bundle 2", dateKey: dateKey, startMin: 600, durationMinutes: 30)
         ]
         let events = [
-            CadenceCalendarBoardMarker(id: "event-1", kind: .event, color: Theme.purple, isCompleted: false),
-            CadenceCalendarBoardMarker(id: "event-2", kind: .event, color: Theme.blue, isCompleted: false)
+            CadenceCalendarBoardMarker(id: "event-1", kind: .event, color: Theme.purple, isCompleted: false, count: 1),
+            CadenceCalendarBoardMarker(id: "event-2", kind: .event, color: Theme.blue, isCompleted: false, count: 1)
         ]
 
         let summary = CadenceCalendarBoardSupport.daySummary(
@@ -364,12 +364,13 @@ struct CadenceTests {
             return false
         }()
 
-        #expect(summary.taskMarkers.count == 2)
+        #expect(summary.taskMarkers.count == 1)
+        #expect(summary.taskMarkers.first?.count == 3)
         #expect(taskKindsAreTasks)
         #expect(summary.eventMarkers.count == 1)
         #expect(firstEventIsEvent)
         #expect(summary.bundleCount == 1)
-        #expect(summary.overflowCount == 3)
+        #expect(summary.overflowCount == 2)
         #expect(summary.totalCount == 7)
     }
 

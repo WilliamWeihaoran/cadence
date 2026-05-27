@@ -33,7 +33,7 @@ struct CompleteTaskIntent: AppIntent {
             if let uuid = UUID(uuidString: taskID) {
                 CadenceWidgetRefreshCenter.markTaskCompleted(uuid)
             }
-            CadenceWidgetRefreshCenter.reloadTodayWidgets(force: true)
+            CadenceWidgetRefreshCenter.reloadAllWidgets(force: true)
         }
         return .result()
     }
@@ -94,7 +94,7 @@ struct CaptureTaskIntent: AppIntent {
             planForToday: planForToday,
             in: modelContext
         )
-        CadenceWidgetRefreshCenter.reloadTodayWidgets(force: true)
+        CadenceWidgetRefreshCenter.reloadAllWidgets(force: true)
         return .result(dialog: "Captured \(trimmed).")
     }
 
@@ -103,7 +103,7 @@ struct CaptureTaskIntent: AppIntent {
         task.estimatedMinutes = 30
         task.order = try nextTaskOrder(in: modelContext)
         if planForToday {
-            task.scheduledDate = DateFormatters.todayKey()
+            task.scheduledDate = CadenceWidgetDateSupport.dateKey(from: Date())
         }
 
         modelContext.insert(task)
@@ -114,6 +114,100 @@ struct CaptureTaskIntent: AppIntent {
         let descriptor = FetchDescriptor<AppTask>()
         let tasks = try modelContext.fetch(descriptor)
         return (tasks.map(\.order).max() ?? -1) + 1
+    }
+}
+
+struct ToggleHabitCompletionIntent: AppIntent {
+    static var title: LocalizedStringResource = "Toggle Habit Check-In"
+    static var description = IntentDescription("Logs or removes today's check-in for a Cadence habit.")
+    static var supportedModes: IntentModes { .background }
+
+    @Parameter(title: "Habit ID")
+    var habitID: String
+
+    init() {
+        self.habitID = ""
+    }
+
+    init(habitID: UUID) {
+        self.habitID = habitID.uuidString
+    }
+
+    func perform() async throws -> some IntentResult {
+        let container = try CadenceStoreSupport.makePrimaryContainer(
+            allowsSave: true,
+            cloudKitDatabase: .none
+        )
+        let modelContext = ModelContext(container)
+        let result = try Self.toggleHabitCompletionResult(habitID: habitID, in: modelContext)
+        if result.changed {
+            if let habitID = result.habitID {
+                CadenceWidgetRefreshCenter.markHabitCompletion(
+                    habitID,
+                    isDoneToday: result.isDoneToday
+                )
+            }
+            CadenceWidgetRefreshCenter.reloadAllWidgets(force: true)
+        }
+        return .result()
+    }
+
+    @discardableResult
+    static func toggleHabitCompletion(
+        habitID: String,
+        on dateKey: String = CadenceWidgetDateSupport.dateKey(from: Date()),
+        in modelContext: ModelContext
+    ) throws -> Bool {
+        try toggleHabitCompletionResult(
+            habitID: habitID,
+            on: dateKey,
+            in: modelContext
+        ).changed
+    }
+
+    private static func toggleHabitCompletionResult(
+        habitID: String,
+        on dateKey: String = CadenceWidgetDateSupport.dateKey(from: Date()),
+        in modelContext: ModelContext
+    ) throws -> HabitToggleResult {
+        guard let uuid = UUID(uuidString: habitID) else {
+            return HabitToggleResult(changed: false, habitID: nil, isDoneToday: false)
+        }
+
+        let predicate = #Predicate<Habit> { habit in
+            habit.id == uuid
+        }
+        let descriptor = FetchDescriptor<Habit>(predicate: predicate)
+        guard let habit = try modelContext.fetch(descriptor).first else {
+            return HabitToggleResult(changed: false, habitID: nil, isDoneToday: false)
+        }
+
+        let existing = (habit.completions ?? []).filter { $0.date == dateKey }
+        let isDoneToday: Bool
+        if existing.isEmpty {
+            let completion = HabitCompletion(date: dateKey, habit: habit)
+            modelContext.insert(completion)
+            habit.completions = (habit.completions ?? []) + [completion]
+            isDoneToday = true
+        } else {
+            for completion in existing {
+                habit.completions = (habit.completions ?? []).filter { $0.id != completion.id }
+                modelContext.delete(completion)
+            }
+            isDoneToday = false
+        }
+        try modelContext.save()
+        return HabitToggleResult(
+            changed: true,
+            habitID: habit.id,
+            isDoneToday: isDoneToday
+        )
+    }
+
+    private struct HabitToggleResult {
+        let changed: Bool
+        let habitID: UUID?
+        let isDoneToday: Bool
     }
 }
 

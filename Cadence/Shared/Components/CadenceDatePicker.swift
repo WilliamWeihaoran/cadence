@@ -68,15 +68,6 @@ struct MonthCalendarPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Scroll to Browse Months")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-
             // Day names
             HStack(spacing: 0) {
                 ForEach(dayNames, id: \.self) { name in

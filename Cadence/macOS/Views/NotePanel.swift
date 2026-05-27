@@ -208,7 +208,7 @@ struct NotePanel: View {
 
     private func renameEmbeddedTask(id: UUID, title: String) {
         guard let task = embeddedTask(id: id) else { return }
-        task.title = title
+        task.title = TaskTitleSupport.normalized(title)
         try? modelContext.save()
         refreshEmbeddedTask(task)
     }

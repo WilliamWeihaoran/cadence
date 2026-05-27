@@ -3,6 +3,8 @@ import SwiftData
 
 enum CadenceStoreSupport {
     nonisolated static let appContainerIdentifier = "com.haoranwei.Cadence"
+    nonisolated static let appGroupIdentifier = "group.com.haoranwei.Cadence"
+    nonisolated static let storeDirectoryName = "Cadence"
     nonisolated static let storeFilename = "default.store"
     nonisolated static let managedStoreItemNames = [
         storeFilename,
@@ -13,10 +15,27 @@ enum CadenceStoreSupport {
     ]
 
     nonisolated static func primaryStoreDirectoryURL(fileManager: FileManager = .default) throws -> URL {
-        guard let baseURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+        try sharedStoreDirectoryURL(fileManager: fileManager)
+    }
+
+    nonisolated static func sharedStoreDirectoryURL(
+        fileManager: FileManager = .default,
+        containerURL: URL? = nil
+    ) throws -> URL {
+        let baseURL: URL
+        if let containerURL {
+            baseURL = containerURL
+        } else if let groupContainerURL = fileManager.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) {
+            baseURL = groupContainerURL
+        } else {
             throw CocoaError(.fileNoSuchFile)
         }
-        return baseURL.appendingPathComponent("Cadence", isDirectory: true)
+
+        let storeDirectoryURL = baseURL
+            .appendingPathComponent("Library/Application Support", isDirectory: true)
+            .appendingPathComponent(storeDirectoryName, isDirectory: true)
+        try fileManager.createDirectory(at: storeDirectoryURL, withIntermediateDirectories: true)
+        return storeDirectoryURL
     }
 
     nonisolated static func primaryStoreURL(fileManager: FileManager = .default) throws -> URL {
@@ -41,9 +60,72 @@ enum CadenceStoreSupport {
         return try ModelContainer(for: CadenceSchema.schema, configurations: [configuration])
     }
 
+    nonisolated static func legacyStoreCandidateDirectories(
+        homeDirectoryURL: URL = userHomeDirectory
+    ) -> [URL] {
+        var seenPaths: Set<String> = []
+        return [
+            homeDirectoryURL
+                .appendingPathComponent("Library/Containers", isDirectory: true)
+                .appendingPathComponent(appContainerIdentifier, isDirectory: true)
+                .appendingPathComponent("Data/Library/Application Support", isDirectory: true)
+                .appendingPathComponent(storeDirectoryName, isDirectory: true),
+            homeDirectoryURL
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
+                .appendingPathComponent(storeDirectoryName, isDirectory: true),
+        ]
+        .filter { candidate in
+            seenPaths.insert(candidate.standardizedFileURL.path).inserted
+        }
+    }
+
+    @discardableResult
+    nonisolated static func migrateLegacyStoreIfNeeded(
+        appGroupDirectoryURL: URL,
+        candidateLegacyDirectories: [URL],
+        fileManager: FileManager = .default,
+        backupHandler: ((URL) throws -> Void)? = nil
+    ) throws -> URL? {
+        try fileManager.createDirectory(at: appGroupDirectoryURL, withIntermediateDirectories: true)
+        guard storeItemURLs(in: appGroupDirectoryURL, fileManager: fileManager).isEmpty else {
+            return nil
+        }
+
+        for legacyDirectory in candidateLegacyDirectories {
+            let legacyItems = storeItemURLs(in: legacyDirectory, fileManager: fileManager)
+            guard !legacyItems.isEmpty else { continue }
+
+            try backupHandler?(legacyDirectory)
+
+            do {
+                for sourceURL in legacyItems {
+                    let destinationURL = appGroupDirectoryURL.appendingPathComponent(sourceURL.lastPathComponent)
+                    try fileManager.copyItem(at: sourceURL, to: destinationURL)
+                }
+                return legacyDirectory
+            } catch {
+                for sourceURL in legacyItems {
+                    let destinationURL = appGroupDirectoryURL.appendingPathComponent(sourceURL.lastPathComponent)
+                    try? fileManager.removeItem(at: destinationURL)
+                }
+                throw error
+            }
+        }
+
+        return nil
+    }
+
     nonisolated static func storeItemURLs(in directoryURL: URL, fileManager: FileManager = .default) -> [URL] {
         managedStoreItemNames
             .map { directoryURL.appendingPathComponent($0) }
             .filter { fileManager.fileExists(atPath: $0.path) }
+    }
+
+    private nonisolated static var userHomeDirectory: URL {
+        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+        URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        #else
+        FileManager.default.homeDirectoryForCurrentUser
+        #endif
     }
 }

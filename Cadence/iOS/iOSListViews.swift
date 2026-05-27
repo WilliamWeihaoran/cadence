@@ -40,7 +40,7 @@ struct iOSListsView: View {
                                 subtitle: area.context?.name,
                                 icon: area.icon,
                                 colorHex: area.colorHex,
-                                count: activeTaskCount(for: area)
+                                count: CadenceTaskQuerySupport.openTaskCount(for: area)
                             )
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -76,7 +76,7 @@ struct iOSListsView: View {
                                 subtitle: [project.context?.name, project.area?.name].compactMap { $0 }.joined(separator: " / "),
                                 icon: project.icon,
                                 colorHex: project.colorHex,
-                                count: activeTaskCount(for: project)
+                                count: CadenceTaskQuerySupport.openTaskCount(for: project)
                             )
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -179,14 +179,6 @@ struct iOSListsView: View {
                 }
             }
         }
-    }
-
-    private func activeTaskCount(for area: Area) -> Int {
-        (area.tasks ?? []).filter { !$0.isDone && !$0.isCancelled }.count
-    }
-
-    private func activeTaskCount(for project: Project) -> Int {
-        (project.tasks ?? []).filter { !$0.isDone && !$0.isCancelled }.count
     }
 
     private func archive(_ area: Area) {

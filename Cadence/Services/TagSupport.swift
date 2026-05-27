@@ -69,6 +69,7 @@ enum TagSupport {
     }
 
     static func seedDefaultTags(in context: ModelContext) {
+        deduplicateTags(in: context, save: false)
         let existing = (try? context.fetch(FetchDescriptor<Tag>())) ?? []
         var existingBySlug = tagsBySlug(existing)
         for (index, definition) in defaultTags.enumerated() {
@@ -90,6 +91,27 @@ enum TagSupport {
             existingBySlug[slug] = tag
         }
         if context.hasChanges {
+            try? context.save()
+        }
+    }
+
+    static func deduplicateTags(in context: ModelContext, save: Bool = true) {
+        let existing = (try? context.fetch(FetchDescriptor<Tag>())) ?? []
+        let grouped = Dictionary(grouping: existing) { stableSlug(for: $0) }
+
+        for (_, duplicates) in grouped where duplicates.count > 1 {
+            let ordered = duplicates.sorted(by: preferredDuplicateTagSort)
+            guard let canonical = ordered.first else { continue }
+            canonical.slug = stableSlug(for: canonical)
+
+            for duplicate in ordered.dropFirst() {
+                mergeTagMetadata(from: duplicate, into: canonical)
+                moveTagRelationships(from: duplicate, into: canonical)
+                context.delete(duplicate)
+            }
+        }
+
+        if save && context.hasChanges {
             try? context.save()
         }
     }
@@ -163,5 +185,72 @@ enum TagSupport {
             result[tag.slug] = tag
         }
         return result
+    }
+
+    private static func stableSlug(for tag: Tag) -> String {
+        let normalized = slug(for: tag.slug)
+        if normalized != "tag" || tag.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return normalized
+        }
+        return slug(for: tag.name)
+    }
+
+    nonisolated private static func preferredDuplicateTagSort(_ lhs: Tag, _ rhs: Tag) -> Bool {
+        if lhs.isArchived != rhs.isArchived {
+            return !lhs.isArchived && rhs.isArchived
+        }
+
+        let lhsUsage = (lhs.tasks?.count ?? 0) + (lhs.notes?.count ?? 0)
+        let rhsUsage = (rhs.tasks?.count ?? 0) + (rhs.notes?.count ?? 0)
+        if lhsUsage != rhsUsage {
+            return lhsUsage > rhsUsage
+        }
+
+        if lhs.desc.isEmpty != rhs.desc.isEmpty {
+            return !lhs.desc.isEmpty
+        }
+
+        if lhs.order != rhs.order {
+            return lhs.order < rhs.order
+        }
+
+        return lhs.createdAt < rhs.createdAt
+    }
+
+    private static func mergeTagMetadata(from source: Tag, into target: Tag) {
+        if target.desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            target.desc = source.desc
+        }
+        if target.colorHex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            target.colorHex = source.colorHex
+        }
+        target.order = min(target.order, source.order)
+        target.isArchived = target.isArchived && source.isArchived
+        target.createdAt = min(target.createdAt, source.createdAt)
+        target.updatedAt = max(target.updatedAt, source.updatedAt)
+    }
+
+    private static func moveTagRelationships(from source: Tag, into target: Tag) {
+        for task in source.tasks ?? [] {
+            task.tags = replacing(source, with: target, in: task.tags ?? [])
+        }
+
+        for note in source.notes ?? [] {
+            note.tags = replacing(source, with: target, in: note.tags ?? [])
+        }
+    }
+
+    private static func replacing(_ source: Tag, with target: Tag, in tags: [Tag]) -> [Tag] {
+        var seen = Set<String>()
+        var result: [Tag] = []
+
+        for tag in tags {
+            let candidate = tag === source ? target : tag
+            let key = stableSlug(for: candidate)
+            guard seen.insert(key).inserted else { continue }
+            result.append(candidate)
+        }
+
+        return sorted(result)
     }
 }

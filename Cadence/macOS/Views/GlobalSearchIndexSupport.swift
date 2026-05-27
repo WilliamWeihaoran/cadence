@@ -91,7 +91,7 @@ enum GlobalSearchIndexSupport {
                 id: "area-\(area.id.uuidString)",
                 category: .areas,
                 title: area.name,
-                subtitle: "\(contextName) • \(area.tasks?.filter { !$0.isDone }.count ?? 0) active tasks • \(area.isArchived ? "Archived" : (area.isDone ? "Completed" : "Active"))",
+                subtitle: "\(contextName) • \(CadenceTaskQuerySupport.openTaskCount(for: area)) active tasks • \(area.isArchived ? "Archived" : (area.isDone ? "Completed" : "Active"))",
                 icon: area.icon,
                 tintHex: area.colorHex,
                 destination: .area(area.id)
@@ -110,7 +110,7 @@ enum GlobalSearchIndexSupport {
                 id: "project-\(project.id.uuidString)",
                 category: .projects,
                 title: project.name,
-                subtitle: "\(summary) • \(project.tasks?.filter { !$0.isDone }.count ?? 0) active tasks • \(project.isArchived ? "Archived" : (project.isDone ? "Completed" : "Active"))",
+                subtitle: "\(summary) • \(CadenceTaskQuerySupport.openTaskCount(for: project)) active tasks • \(project.isArchived ? "Archived" : (project.isDone ? "Completed" : "Active"))",
                 icon: project.icon,
                 tintHex: project.colorHex,
                 destination: .project(project.id)

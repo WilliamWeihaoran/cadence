@@ -5,5 +5,8 @@ import WidgetKit
 struct CadenceWidgetsBundle: WidgetBundle {
     var body: some Widget {
         CadenceTodayTasksWidget()
+        CadenceHabitCheckInWidget()
+        CadenceMilestoneMomentumWidget()
+        CadenceCalendarSnapshotWidget()
     }
 }

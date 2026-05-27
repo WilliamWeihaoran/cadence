@@ -515,6 +515,7 @@ struct NoteEditorPane: View {
     @State private var linkedTaskForPopover: AppTask?
     @State private var embeddedTaskEditRequest: TaskEmbedFieldEditRequest?
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
+    @State private var isInspectorCollapsed = false
 
     private var titleBinding: Binding<String> {
         Binding(
@@ -584,6 +585,12 @@ struct NoteEditorPane: View {
         NoteUnlinkedMentionResolver.unlinkedMentions(for: note, in: referenceNotes)
     }
 
+    private var hasReferenceStripContent: Bool {
+        !NoteReferenceResolver.linkedNotes(for: note, in: relatedNotes).isEmpty ||
+        !NoteReferenceResolver.linkedTasks(for: note, in: relatedTasks).isEmpty ||
+        !NoteReferenceResolver.backlinks(for: note, in: relatedNotes).isEmpty
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
@@ -592,10 +599,27 @@ struct NoteEditorPane: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.dim).kerning(0.8)
                     Spacer()
-                    if let headerAccessory {
-                        headerAccessory
-                    } else {
-                        NoteActionMenu(note: note, area: area, project: project, onDelete: onDelete)
+                    HStack(spacing: 8) {
+                        Button {
+                            isInspectorCollapsed.toggle()
+                        } label: {
+                            Image(systemName: isInspectorCollapsed ? "rectangle.split.2x1" : "rectangle.split.2x1.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(isInspectorCollapsed ? Theme.muted : Theme.blue)
+                                .frame(width: 30, height: 30)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 9)
+                                        .fill(isInspectorCollapsed ? Theme.surfaceElevated.opacity(0.72) : Theme.blue.opacity(0.14))
+                                )
+                        }
+                        .buttonStyle(.cadencePlain)
+                        .help(isInspectorCollapsed ? "Show note sidebar" : "Hide note sidebar")
+
+                        if let headerAccessory {
+                            headerAccessory
+                        } else {
+                            NoteActionMenu(note: note, area: area, project: project, onDelete: onDelete)
+                        }
                     }
                 }
                 if shouldEditTitle {
@@ -622,13 +646,15 @@ struct NoteEditorPane: View {
                 )
             }
             .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
-            Divider().background(Theme.borderSubtle)
-            NoteReferenceStrip(
-                note: note,
-                notes: relatedNotes,
-                tasks: relatedTasks,
-                onOpenNote: onOpenNote
-            )
+            if hasReferenceStripContent {
+                Divider().background(Theme.borderSubtle)
+                NoteReferenceStrip(
+                    note: note,
+                    notes: relatedNotes,
+                    tasks: relatedTasks,
+                    onOpenNote: onOpenNote
+                )
+            }
             HSplitView {
                 MarkdownEditor(
                     text: contentBinding,
@@ -647,17 +673,19 @@ struct NoteEditorPane: View {
                 )
                 .frame(minWidth: 360)
 
-                NoteMarkdownSidePanel(
-                    content: note.content,
-                    noteTitle: note.displayTitle,
-                    noteKind: note.kind,
-                    unlinkedMentions: unlinkedMentions,
-                    onJumpToOutline: jumpToOutline,
-                    onInsertFrontmatter: insertFrontmatter,
-                    onApplyTemplate: applyTemplate,
-                    onLinkMention: linkMention
-                )
-                .frame(minWidth: 220, idealWidth: 240, maxWidth: 290)
+                if !isInspectorCollapsed {
+                    NoteMarkdownSidePanel(
+                        content: note.content,
+                        noteTitle: note.displayTitle,
+                        noteKind: note.kind,
+                        unlinkedMentions: unlinkedMentions,
+                        onJumpToOutline: jumpToOutline,
+                        onInsertFrontmatter: insertFrontmatter,
+                        onApplyTemplate: applyTemplate,
+                        onLinkMention: linkMention
+                    )
+                    .frame(minWidth: 220, idealWidth: 240, maxWidth: 290)
+                }
             }
         }
         .background(Theme.surface)
@@ -794,7 +822,7 @@ struct NoteEditorPane: View {
 
     private func renameEmbeddedTask(id: UUID, title: String) {
         guard let task = embeddedTask(id: id) else { return }
-        task.title = title
+        task.title = TaskTitleSupport.normalized(title)
         try? modelContext.save()
         refreshEmbeddedTask(task)
     }

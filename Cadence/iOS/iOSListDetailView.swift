@@ -83,13 +83,7 @@ struct iOSListDetailView: View {
     }
 
     private var filteredTasks: [AppTask] {
-        if let area {
-            return allTasks.filter { $0.area?.id == area.id }
-        }
-        if let project {
-            return allTasks.filter { $0.project?.id == project.id }
-        }
-        return []
+        CadenceTaskQuerySupport.tasks(for: area, project: project, in: allTasks)
     }
 
     private var configuredSectionNames: [String] {

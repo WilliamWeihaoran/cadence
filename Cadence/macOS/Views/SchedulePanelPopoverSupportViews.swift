@@ -16,26 +16,6 @@ struct TaskDetailHeaderSection: View {
     let projects: [Project]
     let taskContainerBinding: Binding<TaskContainerSelection>
 
-    enum TildeMode {
-        case none
-        case list
-        case section
-    }
-
-    private struct TildeContainerItem: Identifiable {
-        let tag: TaskContainerSelection
-        let icon: String
-        let name: String
-        let color: Color
-        var id: TaskContainerSelection { tag }
-    }
-
-    @State private var tildeMode: TildeMode = .none
-    @State private var tildeSearchQuery = ""
-    @State private var tildeHighlightIdx = 0
-    @FocusState private var isTitleFocused: Bool
-    @FocusState private var isTildeSearchFocused: Bool
-
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             RoundedRectangle(cornerRadius: 8)
@@ -48,62 +28,18 @@ struct TaskDetailHeaderSection: View {
                 }
 
             VStack(alignment: .leading, spacing: 4) {
-                ZStack(alignment: .leading) {
-                    TextField("Task title", text: $task.title, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1...8)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .layoutPriority(1)
-                        .focused($isTitleFocused)
-                        .onChange(of: task.title) { _, newVal in
-                            if newVal.hasSuffix("~") {
-                                let prefix = String(newVal.dropLast())
-                                if prefix.isEmpty || prefix.hasSuffix(" ") {
-                                    task.title = prefix
-                                    tildeSearchQuery = ""
-                                    tildeHighlightIdx = 0
-                                    tildeMode = .list
-                                }
-                            }
-                        }
-                        .opacity(tildeMode == .none ? 1 : 0)
-                        .allowsHitTesting(tildeMode == .none)
-
-                    if tildeMode != .none {
-                        HStack(spacing: 4) {
-                            if !task.title.isEmpty {
-                                Text(task.title)
-                                    .font(.system(size: 17, weight: .bold))
-                                    .foregroundStyle(Theme.text)
-                                    .lineLimit(1)
-                                    .fixedSize()
-                            }
-                            Text("~")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Theme.blue)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                                .popover(
-                                    isPresented: Binding(
-                                        get: { tildeMode != .none },
-                                        set: { if !$0 { tildeMode = .none } }
-                                    ),
-                                    arrowEdge: .bottom
-                                ) {
-                                    if tildeMode == .list {
-                                        tildeListSearchView
-                                    } else {
-                                        tildeSectionSearchView
-                                    }
-                                }
-                        }
-                    }
-                }
+                TaskTitleEntryField(
+                    title: $task.title,
+                    placeholder: "Task title",
+                    font: .system(size: 16, weight: .bold),
+                    previewFont: .system(size: 17, weight: .bold),
+                    lineLimit: 1...8,
+                    contexts: contexts,
+                    areas: areas,
+                    projects: projects,
+                    containerSelection: taskContainerBinding,
+                    sectionName: $task.sectionName
+                )
 
                 Text(scheduleDescriptor)
                     .font(.system(size: 10.5, weight: .medium))
@@ -128,159 +64,6 @@ struct TaskDetailHeaderSection: View {
 
     private var timeRange: String {
         TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledStartMin + max(task.estimatedMinutes, 5))
-    }
-
-    private var availableSections: [String] {
-        switch taskContainerBinding.wrappedValue {
-        case .inbox:
-            return [TaskSectionDefaults.defaultName]
-        case .area(let areaID):
-            return areas.first(where: { $0.id == areaID })?.sectionNames ?? [TaskSectionDefaults.defaultName]
-        case .project(let projectID):
-            return projects.first(where: { $0.id == projectID })?.sectionNames ?? [TaskSectionDefaults.defaultName]
-        }
-    }
-
-    private var tildeFlatContainers: [TildeContainerItem] {
-        let q = tildeSearchQuery.lowercased()
-        func matches(_ name: String) -> Bool { q.isEmpty || name.lowercased().hasPrefix(q) }
-
-        var result: [TildeContainerItem] = []
-        if matches("Inbox") {
-            result.append(.init(tag: .inbox, icon: "tray", name: "Inbox", color: Theme.dim))
-        }
-        for context in contexts {
-            for area in areas.filter({ $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
-                if matches(area.name) {
-                    result.append(.init(tag: .area(area.id), icon: area.icon, name: area.name, color: Color(hex: area.colorHex)))
-                }
-            }
-            for project in projects.filter({ $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
-                if matches(project.name) {
-                    result.append(.init(tag: .project(project.id), icon: project.icon, name: project.name, color: Color(hex: project.colorHex)))
-                }
-            }
-        }
-        return result
-    }
-
-    private func normalizeSelectedSection() {
-        let validSections = availableSections
-        if !validSections.contains(where: { $0.caseInsensitiveCompare(task.sectionName) == .orderedSame }) {
-            task.sectionName = validSections.first ?? TaskSectionDefaults.defaultName
-        }
-    }
-
-    private func selectTildeContainer() {
-        let items = tildeFlatContainers
-        guard !items.isEmpty else { return }
-        selectTildeContainerItem(items[min(tildeHighlightIdx, items.count - 1)].tag)
-    }
-
-    private func selectTildeContainerItem(_ tag: TaskContainerSelection) {
-        taskContainerBinding.wrappedValue = tag
-        normalizeSelectedSection()
-        tildeSearchQuery = ""
-        tildeHighlightIdx = 0
-        tildeMode = .section
-    }
-
-    private var tildeListSearchView: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ZStack {
-                Button("") {
-                    let n = tildeFlatContainers.count
-                    if n > 0 { tildeHighlightIdx = min(tildeHighlightIdx + 1, n - 1) }
-                }
-                .keyboardShortcut("=", modifiers: [.command, .shift])
-                Button("") { tildeHighlightIdx = max(tildeHighlightIdx - 1, 0) }
-                    .keyboardShortcut("-", modifiers: [.command, .shift])
-            }
-            .frame(width: 0, height: 0)
-            .clipped()
-
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-                TextField("Search lists…", text: $tildeSearchQuery)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.text)
-                    .focused($isTildeSearchFocused)
-                    .onSubmit { selectTildeContainer() }
-                    .onKeyPress(.upArrow) {
-                        tildeHighlightIdx = max(tildeHighlightIdx - 1, 0)
-                        return .handled
-                    }
-                    .onKeyPress(.downArrow) {
-                        let n = tildeFlatContainers.count
-                        if n > 0 { tildeHighlightIdx = min(tildeHighlightIdx + 1, n - 1) }
-                        return .handled
-                    }
-                    .onKeyPress(.tab) {
-                        task.title += "~"
-                        tildeMode = .none
-                        DispatchQueue.main.async { isTitleFocused = true }
-                        return .handled
-                    }
-                if !tildeSearchQuery.isEmpty {
-                    Button { tildeSearchQuery = "" } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.dim.opacity(0.5))
-                    }
-                    .buttonStyle(.cadencePlain)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-
-            Divider().background(Theme.borderSubtle)
-
-            let items = tildeFlatContainers
-            if items.isEmpty {
-                Text("No results")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-            } else {
-                VStack(spacing: 2) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
-                        TildeContainerPickerRow(
-                            icon: item.icon,
-                            name: item.name,
-                            color: item.color,
-                            isHighlighted: i == tildeHighlightIdx,
-                            isSelected: taskContainerBinding.wrappedValue == item.tag,
-                            action: { selectTildeContainerItem(item.tag) }
-                        )
-                    }
-                }
-                .padding(.vertical, 6)
-            }
-        }
-        .frame(minWidth: 200)
-        .background(Theme.surfaceElevated)
-        .onAppear { DispatchQueue.main.async { isTildeSearchFocused = true } }
-        .onChange(of: tildeSearchQuery) { _, _ in tildeHighlightIdx = 0 }
-    }
-
-    private var tildeSectionSearchView: some View {
-        TildeSectionSearchPanel(
-            sections: availableSections,
-            selectedSectionName: task.sectionName,
-            onSelect: { section in
-                task.sectionName = section
-                tildeMode = .none
-                DispatchQueue.main.async { isTitleFocused = true }
-            },
-            onDismiss: {
-                tildeMode = .none
-                DispatchQueue.main.async { isTitleFocused = true }
-            }
-        )
     }
 
     private var scheduleDescriptor: String {

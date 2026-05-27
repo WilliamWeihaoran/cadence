@@ -33,8 +33,8 @@ struct iOSCalendarMonthGrid: View {
                         date: date,
                         displayMonth: monthDate,
                         isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
-                        tasks: CadenceScheduleSupport.monthTasks(on: key, in: monthTasksByDate),
-                        bundles: CadenceScheduleSupport.bundles(on: key, in: bundlesByDate)
+                        tasks: CadenceScheduleSupport.items(on: key, in: monthTasksByDate),
+                        bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate)
                     ) {
                         selectedDate = date
                     }

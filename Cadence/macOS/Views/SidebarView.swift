@@ -15,19 +15,23 @@ struct SidebarView: View {
 
     @State private var contextForNewList: Context? = nil
 
-    private var todayKey: String { DateFormatters.todayKey() }
-
     private func count(for destination: SidebarStaticDestination) -> Int? {
         switch destination {
         case .today:
-            let n = allTasks.filter { !$0.isDone && !$0.isCancelled && ($0.scheduledDate == todayKey || $0.dueDate == todayKey) }.count
-            return n > 0 ? n : nil
+            return CadenceTaskQuerySupport.badgeCount(
+                CadenceTaskQuerySupport.scheduledOrDueTodayCount(
+                    from: allTasks,
+                    todayKey: DateFormatters.todayKey()
+                )
+            )
         case .allTasks:
-            let n = allTasks.filter { !$0.isDone && !$0.isCancelled }.count
-            return n > 0 ? n : nil
+            return CadenceTaskQuerySupport.badgeCount(
+                CadenceTaskQuerySupport.openTaskCount(from: allTasks)
+            )
         case .inbox:
-            let n = allTasks.filter { !$0.isDone && !$0.isCancelled && $0.area == nil && $0.project == nil }.count
-            return n > 0 ? n : nil
+            return CadenceTaskQuerySupport.badgeCount(
+                CadenceTaskQuerySupport.openInboxTaskCount(from: allTasks)
+            )
         case .pursuits:
             return activePursuits.isEmpty ? nil : activePursuits.count
         case .goals:

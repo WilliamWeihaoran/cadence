@@ -111,6 +111,32 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     }
 }
 
+private struct SettingsCategoryGroup: Identifiable {
+    let title: String
+    let categories: [SettingsCategory]
+
+    var id: String { title }
+
+    static let all: [SettingsCategoryGroup] = [
+        SettingsCategoryGroup(
+            title: "Interface",
+            categories: [.appearance, .navigation, .sidebar]
+        ),
+        SettingsCategoryGroup(
+            title: "Organization",
+            categories: [.contexts, .lists, .tags]
+        ),
+        SettingsCategoryGroup(
+            title: "Connections",
+            categories: [.calendar, .ai]
+        ),
+        SettingsCategoryGroup(
+            title: "Account & Safety",
+            categories: [.account, .dataSafety]
+        )
+    ]
+}
+
 struct SettingsCard<Content: View>: View {
     @ViewBuilder let content: Content
 
@@ -146,7 +172,7 @@ struct SettingsRail: View {
     @Binding var selectedCategory: SettingsCategory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Settings")
                     .font(.system(size: 26, weight: .bold))
@@ -157,14 +183,16 @@ struct SettingsRail: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            VStack(spacing: 8) {
-                ForEach(SettingsCategory.allCases) { category in
-                    SettingsRailButton(
-                        category: category,
-                        isSelected: selectedCategory == category,
-                        action: { selectedCategory = category }
-                    )
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    ForEach(SettingsCategoryGroup.all) { group in
+                        SettingsRailGroup(
+                            group: group,
+                            selectedCategory: $selectedCategory
+                        )
+                    }
                 }
+                .padding(.bottom, 12)
             }
 
             Spacer()
@@ -174,6 +202,31 @@ struct SettingsRail: View {
         .frame(width: 260)
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.surface.opacity(0.58))
+    }
+}
+
+private struct SettingsRailGroup: View {
+    let group: SettingsCategoryGroup
+    @Binding var selectedCategory: SettingsCategory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(group.title.uppercased())
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Theme.dim.opacity(0.78))
+                .tracking(1.1)
+                .padding(.horizontal, 12)
+
+            VStack(spacing: 6) {
+                ForEach(group.categories) { category in
+                    SettingsRailButton(
+                        category: category,
+                        isSelected: selectedCategory == category,
+                        action: { selectedCategory = category }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -207,7 +260,7 @@ private struct SettingsRailButton: View {
                 Spacer()
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.vertical, 9)
             .background(
                 RoundedRectangle(cornerRadius: 14)
                     .fill(isSelected ? Theme.surfaceElevated : Color.clear)

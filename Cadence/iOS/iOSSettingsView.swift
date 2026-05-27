@@ -306,15 +306,15 @@ struct iOSSettingsView: View {
     }
 
     private var activeTaskCount: Int {
-        tasks.filter { !$0.isDone && !$0.isCancelled }.count
+        CadenceTaskQuerySupport.openTaskCount(from: tasks)
     }
 
     private var completedTaskCount: Int {
-        tasks.filter(\.isDone).count
+        CadenceTaskQuerySupport.completedTaskCount(from: tasks)
     }
 
     private var inboxTaskCount: Int {
-        tasks.filter { $0.area == nil && $0.project == nil && !$0.isDone && !$0.isCancelled }.count
+        CadenceTaskQuerySupport.openInboxTaskCount(from: tasks)
     }
 
     private var activeContexts: [Context] {

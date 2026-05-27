@@ -101,7 +101,7 @@ struct AttachWorkSheet: View {
                             AttachListCandidateRow(
                                 icon: area.icon,
                                 title: area.name,
-                                subtitle: "\(area.tasks?.filter { !$0.isCancelled }.count ?? 0) active tasks",
+                                subtitle: "\(CadenceTaskQuerySupport.openTaskCount(for: area)) active tasks",
                                 color: Color(hex: area.colorHex),
                                 isAttached: isAttached(area: area),
                                 onToggle: { toggle(area: area) }
@@ -111,7 +111,7 @@ struct AttachWorkSheet: View {
                             AttachListCandidateRow(
                                 icon: project.icon,
                                 title: project.name,
-                                subtitle: "\(project.tasks?.filter { !$0.isCancelled }.count ?? 0) active tasks",
+                                subtitle: "\(CadenceTaskQuerySupport.openTaskCount(for: project)) active tasks",
                                 color: Color(hex: project.colorHex),
                                 isAttached: isAttached(project: project),
                                 onToggle: { toggle(project: project) }

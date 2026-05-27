@@ -108,7 +108,7 @@ struct macOSRootView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else {
-                CadenceWidgetRefreshCenter.reloadTodayWidgets()
+                CadenceWidgetRefreshCenter.reloadAllWidgets()
                 return
             }
             if hasPendingExternalDataRefresh || mcpRefreshCoordinator.shouldRefreshForCurrentMarker() {
@@ -247,6 +247,12 @@ struct macOSRootView: View {
         switch route {
         case .today, .task:
             selection = .today
+        case .habits:
+            selection = .habits
+        case .goals:
+            selection = .goals
+        case .calendar:
+            selection = .calendar
         }
     }
 }

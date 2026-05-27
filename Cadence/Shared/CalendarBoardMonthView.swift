@@ -128,10 +128,10 @@ private struct CalendarBoardDayCell: View {
                         CalendarBoardBundleMarker(count: summary.bundleCount, isSelected: isSelected)
                     }
 
-                    CalendarBoardTaskBars(markers: summary.taskMarkers, isSelected: isSelected)
+                    CalendarBoardEventBars(markers: summary.eventMarkers, isSelected: isSelected)
 
-                    if !summary.eventMarkers.isEmpty {
-                        CalendarBoardEventDots(markers: summary.eventMarkers, isSelected: isSelected)
+                    if !summary.taskMarkers.isEmpty {
+                        CalendarBoardTaskCountBubbles(markers: summary.taskMarkers, isSelected: isSelected)
                     }
                 }
 
@@ -178,7 +178,7 @@ private struct CalendarBoardDayCell: View {
     }
 }
 
-private struct CalendarBoardTaskBars: View {
+private struct CalendarBoardEventBars: View {
     let markers: [CadenceCalendarBoardMarker]
     let isSelected: Bool
 
@@ -186,7 +186,7 @@ private struct CalendarBoardTaskBars: View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(markers) { marker in
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(marker.color.opacity(marker.isCompleted ? 0.34 : (isSelected ? 0.82 : 0.72)))
+                    .fill(marker.color.opacity(isSelected ? 0.90 : 0.76))
                     .frame(height: 5)
                     .frame(maxWidth: .infinity)
             }
@@ -194,23 +194,35 @@ private struct CalendarBoardTaskBars: View {
     }
 }
 
-private struct CalendarBoardEventDots: View {
+private struct CalendarBoardTaskCountBubbles: View {
     let markers: [CadenceCalendarBoardMarker]
     let isSelected: Bool
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             ForEach(markers) { marker in
-                Circle()
-                    .fill(marker.color.opacity(isSelected ? 0.95 : 0.82))
-                    .frame(width: 6, height: 6)
-                    .overlay {
-                        Circle()
-                            .stroke(.white.opacity(isSelected ? 0.24 : 0.12), lineWidth: 0.5)
-                    }
+                Text(countLabel(for: marker.count))
+                    .font(.system(size: marker.count > 9 ? 7 : 8, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .frame(minWidth: 18, minHeight: 18)
+                    .padding(.horizontal, marker.count > 9 ? 3 : 0)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(marker.color.opacity(marker.isCompleted ? 0.40 : (isSelected ? 0.96 : 0.84)))
+                    )
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(.white.opacity(isSelected ? 0.34 : 0.16), lineWidth: 0.75)
+                    )
             }
             Spacer(minLength: 0)
         }
+    }
+
+    private func countLabel(for count: Int) -> String {
+        count > 99 ? "99+" : "\(count)"
     }
 }
 

@@ -21,10 +21,10 @@ struct InboxView: View {
     @FocusState private var captureFocused: Bool
 
     private var inboxTasks: [AppTask] {
-        allTasks.filter { $0.area == nil && $0.project == nil && !$0.isCancelled }
+        CadenceTaskQuerySupport.inboxTasks(from: allTasks)
     }
     private var activeTasks: [AppTask] {
-        let sorted = inboxTasks.filter { !$0.isDone }.taskSorted(by: sortField, direction: sortDirection)
+        let sorted = CadenceTaskQuerySupport.openTasks(from: inboxTasks).taskSorted(by: sortField, direction: sortDirection)
         return applyFrozenTaskOrder(sorted, frozen: frozenTaskOrder)
     }
     private var doneTasks: [AppTask] { inboxTasks.filter { $0.isDone || $0.isCancelled }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) } }

@@ -48,7 +48,7 @@ struct ListPlanningView: View {
     }
 
     private var activeTasks: [AppTask] {
-        tasks.filter { !$0.isDone && !$0.isCancelled }
+        CadenceTaskQuerySupport.openTasks(from: tasks)
     }
 
     private var dates: [Date] {

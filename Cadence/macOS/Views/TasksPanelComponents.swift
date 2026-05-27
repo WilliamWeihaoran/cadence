@@ -65,19 +65,7 @@ struct MacTaskRow: View {
 
             Spacer(minLength: 4)
 
-            if isHovered && !task.isDone && !task.isCancelled {
-                Button { focusManager.startFocus(task: task) } label: {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 20, height: 20)
-                        .background(Theme.blue)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.cadencePlain)
-                .help("Start focus session")
-                .padding(.trailing, 6)
-            }
+            focusButtonSlot
 
             if !task.dueDate.isEmpty {
                 dueDateBadgeList
@@ -117,6 +105,7 @@ struct MacTaskRow: View {
         .animation(nil, value: isDoDateHovered)
         .animation(nil, value: isDueDateHovered)
         .onHover { hovering in
+            guard isHovered != hovering else { return }
             isHovered = hovering
             if hovering {
                 hoveredTaskManager.beginHovering(task, source: .list)
@@ -147,6 +136,30 @@ struct MacTaskRow: View {
         .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
             handlePendingDeepLink()
         }
+    }
+
+    private var focusButtonSlot: some View {
+        Group {
+            if !task.isDone && !task.isCancelled {
+                Button { focusManager.startFocus(task: task) } label: {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Theme.blue)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.cadencePlain)
+                .help("Start focus session")
+                .opacity(isHovered ? 1 : 0)
+                .allowsHitTesting(isHovered)
+            } else {
+                Color.clear
+                    .frame(width: 20, height: 20)
+            }
+        }
+        .frame(width: 26, height: 20)
+        .padding(.trailing, 6)
     }
 
     private var doDatePill: some View {
@@ -183,6 +196,7 @@ struct MacTaskRow: View {
         }
         .buttonStyle(.cadencePlain)
         .onHover { hovering in
+            guard isDoDateHovered != hovering else { return }
             isDoDateHovered = hovering
             if hovering {
                 hoveredTaskManager.beginHoveringDate(.doDate, for: task)
@@ -245,6 +259,7 @@ struct MacTaskRow: View {
         .buttonStyle(.cadencePlain)
         .padding(.trailing, 8)
         .onHover { hovering in
+            guard isDueDateHovered != hovering else { return }
             isDueDateHovered = hovering
             if hovering {
                 hoveredTaskManager.beginHoveringDate(.dueDate, for: task)

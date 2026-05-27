@@ -19,7 +19,7 @@ struct ListTasksView: View {
     @State private var dragOverTaskID: UUID? = nil
 
     private var activeTasks: [AppTask] {
-        let sorted = tasks.filter { !$0.isDone && !$0.isCancelled }.taskSorted(by: sortField, direction: sortDirection)
+        let sorted = CadenceTaskQuerySupport.openTasks(from: tasks).taskSorted(by: sortField, direction: sortDirection)
         return applyFrozenTaskOrder(sorted, frozen: frozenTaskOrder)
     }
     private var doneTasks: [AppTask] { tasks.filter { $0.isDone || $0.isCancelled }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) } }

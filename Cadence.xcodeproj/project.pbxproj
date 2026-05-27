@@ -78,6 +78,10 @@
 		B10000002FCE00000000021D /* Cadence/Services/CadenceSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000113 /* Cadence/Services/CadenceSchema.swift */; };
 		B10000002FCE00000000021E /* Cadence/Services/TagSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000124 /* Cadence/Services/TagSupport.swift */; };
 		B10000002FCE00000000021F /* Cadence/Services/MarkdownMetadataSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000113 /* Cadence/Services/MarkdownMetadataSupport.swift */; };
+		B10000002FCE000000000220 /* Cadence/Models/HabitInsights.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000114 /* Cadence/Models/HabitInsights.swift */; };
+		B10000002FCE000000000221 /* Cadence/Services/CadenceHabitWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000115 /* Cadence/Services/CadenceHabitWidgetSupport.swift */; };
+		B10000002FCE000000000222 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000116 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift */; };
+		B10000002FCE000000000223 /* Cadence/Services/CadenceCalendarWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000117 /* Cadence/Services/CadenceCalendarWidgetSupport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -169,6 +173,10 @@
 		B10000002FCE000000000105 /* Cadence/Services/CadenceTodayWidgetSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceTodayWidgetSupport.swift; sourceTree = "<group>"; };
 		B10000002FCE000000000106 /* Cadence/Services/CadenceWidgetIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceWidgetIntents.swift; sourceTree = "<group>"; };
 		B10000002FCE000000000113 /* Cadence/Services/MarkdownMetadataSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MarkdownMetadataSupport.swift; sourceTree = "<group>"; };
+		B10000002FCE000000000114 /* Cadence/Models/HabitInsights.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/HabitInsights.swift; sourceTree = "<group>"; };
+		B10000002FCE000000000115 /* Cadence/Services/CadenceHabitWidgetSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceHabitWidgetSupport.swift; sourceTree = "<group>"; };
+		B10000002FCE000000000116 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceMilestoneWidgetSupport.swift; sourceTree = "<group>"; };
+		B10000002FCE000000000117 /* Cadence/Services/CadenceCalendarWidgetSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceCalendarWidgetSupport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -282,6 +290,7 @@
 				A10000002FCE000000000109 /* Cadence/Models/Subtask.swift */,
 				A10000002FCE00000000010A /* Cadence/Models/Habit.swift */,
 				A10000002FCE00000000010B /* Cadence/Models/HabitCompletion.swift */,
+				B10000002FCE000000000114 /* Cadence/Models/HabitInsights.swift */,
 				A10000002FCE00000000010C /* Cadence/Models/DailyNote.swift */,
 				A10000002FCE00000000010D /* Cadence/Models/WeeklyNote.swift */,
 				A10000002FCE00000000010E /* Cadence/Models/PermNote.swift */,
@@ -301,6 +310,9 @@
 				B10000002FCE000000000103 /* Cadence/Services/CadenceWidgetRefreshCenter.swift */,
 				B10000002FCE000000000104 /* Cadence/Services/CadenceDeepLink.swift */,
 				B10000002FCE000000000105 /* Cadence/Services/CadenceTodayWidgetSupport.swift */,
+				B10000002FCE000000000115 /* Cadence/Services/CadenceHabitWidgetSupport.swift */,
+				B10000002FCE000000000116 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift */,
+				B10000002FCE000000000117 /* Cadence/Services/CadenceCalendarWidgetSupport.swift */,
 				B10000002FCE000000000106 /* Cadence/Services/CadenceWidgetIntents.swift */,
 				B10000002FCE000000000113 /* Cadence/Services/MarkdownMetadataSupport.swift */,
 				A10000002FCE000000000114 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift */,
@@ -635,6 +647,7 @@
 				B10000002FCE000000000211 /* Cadence/Models/Subtask.swift in Sources */,
 				B10000002FCE000000000212 /* Cadence/Models/Habit.swift in Sources */,
 				B10000002FCE000000000213 /* Cadence/Models/HabitCompletion.swift in Sources */,
+				B10000002FCE000000000220 /* Cadence/Models/HabitInsights.swift in Sources */,
 				B10000002FCE000000000214 /* Cadence/Models/DailyNote.swift in Sources */,
 				B10000002FCE000000000215 /* Cadence/Models/WeeklyNote.swift in Sources */,
 				B10000002FCE000000000216 /* Cadence/Models/PermNote.swift in Sources */,
@@ -651,6 +664,9 @@
 				B10000002FCE000000000203 /* Cadence/Services/CadenceWidgetRefreshCenter.swift in Sources */,
 				B10000002FCE000000000204 /* Cadence/Services/CadenceDeepLink.swift in Sources */,
 				B10000002FCE000000000205 /* Cadence/Services/CadenceTodayWidgetSupport.swift in Sources */,
+				B10000002FCE000000000221 /* Cadence/Services/CadenceHabitWidgetSupport.swift in Sources */,
+				B10000002FCE000000000222 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift in Sources */,
+				B10000002FCE000000000223 /* Cadence/Services/CadenceCalendarWidgetSupport.swift in Sources */,
 				B10000002FCE000000000206 /* Cadence/Services/CadenceWidgetIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -686,8 +702,8 @@
 				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = SM6Y3D2D55;
 				ENABLE_APP_SANDBOX = YES;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
@@ -703,6 +719,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.haoranwei.Cadence;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
@@ -726,8 +743,8 @@
 				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = SM6Y3D2D55;
 				ENABLE_APP_SANDBOX = YES;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
@@ -743,6 +760,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.haoranwei.Cadence;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
@@ -1038,6 +1056,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.haoranwei.Cadence.CadenceWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -1069,6 +1088,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.haoranwei.Cadence.CadenceWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;

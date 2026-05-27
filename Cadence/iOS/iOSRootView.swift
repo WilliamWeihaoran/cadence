@@ -52,7 +52,7 @@ struct iOSRootView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active {
-                CadenceWidgetRefreshCenter.reloadTodayWidgets()
+                CadenceWidgetRefreshCenter.reloadAllWidgets()
             }
         }
     }
@@ -184,6 +184,15 @@ private extension iOSRootView {
         case .today, .task:
             selection = .today
             compactTabSelection = .today
+        case .habits:
+            selection = .habits
+            compactTabSelection = .more
+        case .goals:
+            selection = .goals
+            compactTabSelection = .more
+        case .calendar:
+            selection = .calendar
+            compactTabSelection = .more
         }
     }
 }

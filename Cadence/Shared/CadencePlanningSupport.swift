@@ -173,6 +173,7 @@ struct CadenceCalendarBoardMarker: Identifiable {
     let kind: CadenceCalendarBoardMarkerKind
     let color: Color
     let isCompleted: Bool
+    let count: Int
 }
 
 struct CadenceCalendarBoardDaySummary: Identifiable {
@@ -185,11 +186,34 @@ struct CadenceCalendarBoardDaySummary: Identifiable {
     var id: String { dateKey }
 
     var totalCount: Int {
-        taskMarkers.count + eventMarkers.count + bundleCount + overflowCount
+        taskMarkers.reduce(0) { $0 + $1.count } + eventMarkers.count + bundleCount + overflowCount
     }
 }
 
 enum CadenceCalendarBoardSupport {
+    static func monthSummaries(
+        monthDate: Date,
+        tasksByDate: [String: [AppTask]],
+        bundlesByDate: [String: [TaskBundle]],
+        calendar: Calendar = .current,
+        eventMarkers: (Date, String) -> [CadenceCalendarBoardMarker] = { _, _ in [] }
+    ) -> [String: CadenceCalendarBoardDaySummary] {
+        var summaries: [String: CadenceCalendarBoardDaySummary] = [:]
+        summaries.reserveCapacity(42)
+
+        for date in CadenceScheduleSupport.monthGridDays(for: monthDate, calendar: calendar) {
+            let key = DateFormatters.dateKey(from: date)
+            summaries[key] = daySummary(
+                dateKey: key,
+                tasks: CadenceScheduleSupport.items(on: key, in: tasksByDate),
+                bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
+                eventMarkers: eventMarkers(date, key)
+            )
+        }
+
+        return summaries
+    }
+
     static func daySummary(
         dateKey: String,
         tasks: [AppTask],
@@ -203,27 +227,55 @@ enum CadenceCalendarBoardSupport {
             tasks.filter { !$0.isCancelled },
             sortMode: .priority
         )
-        let visibleTasks = Array(sortedTasks.prefix(max(0, maxTaskMarkers)))
+        let taskGroups = taskGroupMarkers(from: sortedTasks)
+        let visibleTaskGroups = Array(taskGroups.prefix(max(0, maxTaskMarkers)))
         let visibleEvents = Array(eventMarkers.prefix(max(0, maxEventMarkers)))
         let visibleBundleCount = min(max(0, maxBundleMarkers), bundles.count)
-        let hiddenTaskCount = max(0, sortedTasks.count - visibleTasks.count)
+        let hiddenTaskCount = taskGroups.dropFirst(visibleTaskGroups.count).reduce(0) { $0 + $1.count }
         let hiddenEventCount = max(0, eventMarkers.count - visibleEvents.count)
         let hiddenBundleCount = max(0, bundles.count - visibleBundleCount)
 
         return CadenceCalendarBoardDaySummary(
             dateKey: dateKey,
-            taskMarkers: visibleTasks.map { task in
-                CadenceCalendarBoardMarker(
-                    id: task.id.uuidString,
-                    kind: .task,
-                    color: Color(hex: task.containerColor),
-                    isCompleted: task.isDone
-                )
-            },
+            taskMarkers: visibleTaskGroups,
             eventMarkers: visibleEvents,
             bundleCount: visibleBundleCount,
             overflowCount: hiddenTaskCount + hiddenEventCount + hiddenBundleCount
         )
+    }
+
+    private static func taskGroupMarkers(from tasks: [AppTask]) -> [CadenceCalendarBoardMarker] {
+        var groupOrder: [String] = []
+        var groupedMarkers: [String: (color: Color, isCompleted: Bool, count: Int)] = [:]
+
+        for task in tasks {
+            let key = taskGroupKey(for: task)
+            if groupedMarkers[key] == nil {
+                groupOrder.append(key)
+                groupedMarkers[key] = (Color(hex: task.containerColor), true, 0)
+            }
+            guard var marker = groupedMarkers[key] else { continue }
+            marker.count += 1
+            marker.isCompleted = marker.isCompleted && task.isDone
+            groupedMarkers[key] = marker
+        }
+
+        return groupOrder.compactMap { key in
+            guard let marker = groupedMarkers[key] else { return nil }
+            return CadenceCalendarBoardMarker(
+                id: key,
+                kind: .task,
+                color: marker.color,
+                isCompleted: marker.isCompleted,
+                count: marker.count
+            )
+        }
+    }
+
+    private static func taskGroupKey(for task: AppTask) -> String {
+        if let area = task.area { return "area-\(area.id.uuidString)" }
+        if let project = task.project { return "project-\(project.id.uuidString)" }
+        return "inbox"
     }
 }
 
@@ -446,7 +498,7 @@ enum CadenceTaskQuerySupport {
         scheduledDate: String? = nil,
         estimatedMinutes: Int = 30
     ) -> AppTask? {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = TaskTitleSupport.normalized(title)
         guard !trimmed.isEmpty else { return nil }
 
         let task = AppTask(title: trimmed)
@@ -794,20 +846,8 @@ enum CadenceScheduleSupport {
         return result.mapValues { $0.sorted { $0.startMin < $1.startMin } }
     }
 
-    static func scheduledTasks(on dateKey: String, in tasksByDate: [String: [AppTask]]) -> [AppTask] {
-        tasksByDate[dateKey] ?? []
-    }
-
-    static func unscheduledTasks(on dateKey: String, in tasksByDate: [String: [AppTask]]) -> [AppTask] {
-        tasksByDate[dateKey] ?? []
-    }
-
-    static func monthTasks(on dateKey: String, in tasksByDate: [String: [AppTask]]) -> [AppTask] {
-        tasksByDate[dateKey] ?? []
-    }
-
-    static func bundles(on dateKey: String, in bundlesByDate: [String: [TaskBundle]]) -> [TaskBundle] {
-        bundlesByDate[dateKey] ?? []
+    static func items<T>(on dateKey: String, in itemsByDate: [String: [T]]) -> [T] {
+        itemsByDate[dateKey] ?? []
     }
 
     static func dueOnlyTasks(on dateKey: String, from tasks: [AppTask]) -> [AppTask] {

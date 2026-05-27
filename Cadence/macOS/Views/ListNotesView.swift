@@ -2,6 +2,12 @@
 import SwiftUI
 import SwiftData
 
+private enum ListNotesSelection: Equatable {
+    case list(UUID)
+    case event(UUID)
+    case task(UUID)
+}
+
 struct ListNotesView: View {
     var area: Area?
     var project: Project?
@@ -16,9 +22,7 @@ struct ListNotesView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(CalendarManager.self) private var calendarManager
-    @State private var selectedNoteID: UUID?
-    @State private var selectedEventNoteID: UUID?
-    @State private var selectedTaskNoteID: UUID?
+    @State private var selection: ListNotesSelection?
     @State private var searchText = ""
     @State private var selectedTagFilterSlugs: Set<String> = []
     @State private var folderSheetRequest: NoteFolderSheetRequest?
@@ -34,7 +38,33 @@ struct ListNotesView: View {
     }
 
     private var selectedListNote: Note? {
-        listNotes.first { $0.id == selectedNoteID }
+        guard case .list(let noteID) = selection else { return nil }
+        return listNotes.first { $0.id == noteID }
+    }
+
+    private var selectedEventNote: Note? {
+        guard case .event(let noteID) = selection else { return nil }
+        return eventNotes.first { $0.id == noteID }
+    }
+
+    private var selectedTaskNote: AppTask? {
+        guard case .task(let taskID) = selection else { return nil }
+        return taskNotes.first { $0.id == taskID }
+    }
+
+    private var selectedListNoteID: UUID? {
+        guard case .list(let noteID) = selection else { return nil }
+        return noteID
+    }
+
+    private var selectedEventNoteID: UUID? {
+        guard case .event(let noteID) = selection else { return nil }
+        return noteID
+    }
+
+    private var selectedTaskNoteID: UUID? {
+        guard case .task(let taskID) = selection else { return nil }
+        return taskID
     }
 
     private var linkedCalendarID: String {
@@ -65,21 +95,8 @@ struct ListNotesView: View {
         return allTags.filter { slugs.contains($0.slug) }
     }
 
-    private var selectedEventNote: Note? {
-        eventNotes.first { $0.id == selectedEventNoteID }
-    }
-
-    private var selectedTaskNote: AppTask? {
-        taskNotes.first { $0.id == selectedTaskNoteID }
-    }
-
     private var tasks: [AppTask] {
-        if let area {
-            return allTasks.filter { $0.area?.id == area.id }
-        } else if let project {
-            return allTasks.filter { $0.project?.id == project.id }
-        }
-        return []
+        CadenceTaskQuerySupport.tasks(for: area, project: project, in: allTasks)
     }
 
     private var taskNotes: [AppTask] {
@@ -254,7 +271,7 @@ struct ListNotesView: View {
                                                 .padding(.horizontal, 12)
                                         }
                                         ForEach(group.notes) { note in
-                                            ListNoteRow(note: note, isSelected: selectedNoteID == note.id)
+                                            ListNoteRow(note: note, isSelected: selectedListNoteID == note.id)
                                                 .onTapGesture {
                                                     openListNote(note)
                                                 }
@@ -297,10 +314,7 @@ struct ListNotesView: View {
                             ForEach(filteredEventNotes) { note in
                                 MeetingNoteListRow(note: note, isSelected: selectedEventNoteID == note.id, showsPreview: false)
                                     .onTapGesture {
-                                        selectedEventNoteID = note.id
-                                        selectedNoteID = nil
-                                        selectedTaskNoteID = nil
-                                        requestedEventNoteID = nil
+                                        select(.event(note.id))
                                     }
                             }
                         }
@@ -315,10 +329,7 @@ struct ListNotesView: View {
                             ForEach(filteredTaskNotes) { task in
                                 TaskNoteListRow(task: task, isSelected: selectedTaskNoteID == task.id)
                                     .onTapGesture {
-                                        selectedTaskNoteID = task.id
-                                        requestedEventNoteID = nil
-                                        selectedEventNoteID = nil
-                                        selectedNoteID = nil
+                                        select(.task(task.id))
                                     }
                             }
                         }
@@ -412,37 +423,34 @@ struct ListNotesView: View {
         note.folderPath = normalizedFolderPath(folderPath)
         note.content = defaultNoteContent(for: note.title)
         modelContext.insert(note)
-        selectedNoteID = note.id
-        selectedEventNoteID = nil
-        selectedTaskNoteID = nil
+        select(.list(note.id), clearsRequestedEventNote: false)
     }
 
     private func openListNote(_ note: Note) {
-        selectedNoteID = note.id
-        selectedEventNoteID = nil
-        selectedTaskNoteID = nil
+        select(.list(note.id))
     }
 
     private func openNote(_ note: Note) {
         if note.kind == .meeting {
-            selectedEventNoteID = note.id
-            selectedNoteID = nil
-            selectedTaskNoteID = nil
+            select(.event(note.id))
         } else {
             openListNote(note)
         }
     }
 
     private func deleteNote(_ note: Note) {
+        let noteID = note.id
+        let title = note.displayTitle
         deleteConfirmationManager.present(
             title: "Delete Note?",
-            message: "This will permanently delete \"\(note.displayTitle)\"."
+            message: "This will permanently delete \"\(title)\"."
         ) {
-            if selectedNoteID == note.id {
-                selectedNoteID = listNotes.first { $0.id != note.id }?.id
+            guard let currentNote = listNotes.first(where: { $0.id == noteID }) else { return }
+            if selection == .list(noteID) {
+                selection = replacementSelectionAfterDeletingListNote(noteID)
             }
-            modelContext.delete(note)
-            modelContext.deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: [note.id])
+            modelContext.delete(currentNote)
+            modelContext.deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: [noteID])
         }
     }
 
@@ -491,10 +499,7 @@ struct ListNotesView: View {
     private func applyRequestedEventNoteSelection() {
         guard let requestedEventNoteID else { return }
         guard eventNotes.contains(where: { $0.id == requestedEventNoteID }) else { return }
-        selectedEventNoteID = requestedEventNoteID
-        selectedNoteID = nil
-        selectedTaskNoteID = nil
-        self.requestedEventNoteID = nil
+        select(.event(requestedEventNoteID))
     }
 
     private func backfillMeetingNoteMetadata() {
@@ -507,24 +512,59 @@ struct ListNotesView: View {
     }
 
     private func selectFirstNoteIfNeeded() {
-        guard selectedNoteID == nil, selectedEventNoteID == nil, selectedTaskNoteID == nil else { return }
-        selectedNoteID = filteredListNotes.first?.id
-        if selectedNoteID == nil {
-            selectedEventNoteID = filteredEventNotes.first?.id
-        }
+        guard selection == nil else { return }
+        selection = firstAvailableSelection()
     }
 
     private func normalizeSelectionIfNeeded() {
-        if let selectedNoteID, !listNotes.contains(where: { $0.id == selectedNoteID }) {
-            self.selectedNoteID = nil
-        }
-        if let selectedEventNoteID, !eventNotes.contains(where: { $0.id == selectedEventNoteID }) {
-            self.selectedEventNoteID = nil
-        }
-        if let selectedTaskNoteID, !taskNotes.contains(where: { $0.id == selectedTaskNoteID }) {
-            self.selectedTaskNoteID = nil
+        if let selection, !containsSelection(selection) {
+            self.selection = nil
         }
         selectFirstNoteIfNeeded()
+    }
+
+    private func select(_ newSelection: ListNotesSelection?, clearsRequestedEventNote: Bool = true) {
+        selection = newSelection
+        if clearsRequestedEventNote {
+            requestedEventNoteID = nil
+        }
+    }
+
+    private func containsSelection(_ selection: ListNotesSelection) -> Bool {
+        switch selection {
+        case .list(let noteID):
+            return listNotes.contains { $0.id == noteID }
+        case .event(let noteID):
+            return eventNotes.contains { $0.id == noteID }
+        case .task(let taskID):
+            return taskNotes.contains { $0.id == taskID }
+        }
+    }
+
+    private func firstAvailableSelection() -> ListNotesSelection? {
+        if let noteID = filteredListNotes.first?.id {
+            return .list(noteID)
+        }
+        if let noteID = filteredEventNotes.first?.id {
+            return .event(noteID)
+        }
+        if let taskID = filteredTaskNotes.first?.id {
+            return .task(taskID)
+        }
+        return nil
+    }
+
+    private func replacementSelectionAfterDeletingListNote(_ deletedNoteID: UUID) -> ListNotesSelection? {
+        if let noteID = filteredListNotes.first(where: { $0.id != deletedNoteID })?.id {
+            return .list(noteID)
+        }
+        if let noteID = filteredEventNotes.first?.id {
+            return .event(noteID)
+        }
+        if let taskID = filteredTaskNotes.first?.id {
+            return .task(taskID)
+        }
+        return nil
     }
 
     private func isPastEventNote(_ note: Note) -> Bool {
@@ -537,246 +577,6 @@ struct ListNotesView: View {
         let nowMinutes = ((components.hour ?? 0) * 60) + (components.minute ?? 0)
         let comparisonMinutes = note.eventEndMin >= 0 ? note.eventEndMin : note.eventStartMin
         return comparisonMinutes >= 0 && comparisonMinutes < nowMinutes
-    }
-}
-
-private struct ListNoteFolderGroup: Identifiable {
-    let folderPath: String
-    let notes: [Note]
-
-    var id: String { folderPath.isEmpty ? "__root__" : folderPath }
-    var displayName: String { folderPath.isEmpty ? "Notes" : folderPath }
-}
-
-private struct NoteFolderSheetRequest: Identifiable {
-    enum Mode {
-        case newNote
-        case moveNote(UUID)
-    }
-
-    let id = UUID()
-    let mode: Mode
-
-    var title: String {
-        switch mode {
-        case .newNote: return "New Folder Note"
-        case .moveNote: return "Move to Folder"
-        }
-    }
-
-    var actionTitle: String {
-        switch mode {
-        case .newNote: return "Create Note"
-        case .moveNote: return "Move"
-        }
-    }
-}
-
-private struct NoteFolderSheet: View {
-    let request: NoteFolderSheetRequest
-    let onSave: (String) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var folderPath = ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(request.title)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Theme.text)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Folder")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                TextField("Planning/Research", text: $folderPath)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.text)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel") {
-                    dismiss()
-                }
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Theme.surfaceElevated.opacity(0.8))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .buttonStyle(.cadencePlain)
-
-                Button(request.actionTitle) {
-                    onSave(folderPath)
-                    dismiss()
-                }
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Theme.blue.opacity(folderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.35 : 0.95))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .buttonStyle(.cadencePlain)
-                .disabled(folderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(18)
-        .frame(width: 320)
-        .background(Theme.surface)
-    }
-}
-
-private struct TaskNoteEditorPane: View {
-    @Bindable var task: AppTask
-    let relatedNotes: [Note]
-    let relatedTasks: [AppTask]
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(task.isDone ? Theme.green : Theme.dim)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Task" : task.title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                    Text("Task notes")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
-                }
-                Spacer()
-                Button {
-                    TaskNotesPanelController.shared.show(
-                        task: task,
-                        referenceNotes: relatedNotes,
-                        referenceTasks: relatedTasks
-                    )
-                } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(width: 30, height: 30)
-                        .background(Theme.surfaceElevated.opacity(0.85))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.cadencePlain)
-                .help("Open task notes")
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-
-            Divider().background(Theme.borderSubtle)
-
-            MarkdownEditor(
-                text: Binding(
-                    get: { task.notes },
-                    set: { task.notes = $0 }
-                ),
-                referenceNotes: relatedNotes,
-                referenceTasks: relatedTasks
-            )
-        }
-        .background(Theme.bg)
-    }
-}
-
-private struct TaskNoteListRow: View {
-    @Bindable var task: AppTask
-    let isSelected: Bool
-
-    private var title: String {
-        task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Task" : task.title
-    }
-
-    private var excerpt: String {
-        task.notes
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(task.isDone ? Theme.green : Theme.dim)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
-                    .lineLimit(1)
-                if !excerpt.isEmpty {
-                    Text(excerpt)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
-                }
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(isSelected ? Theme.blue.opacity(0.15) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .contentShape(Rectangle())
-        .cadenceHoverHighlight(
-            cornerRadius: 6,
-            fillColor: Theme.blue.opacity(isSelected ? 0.16 : 0.06),
-            strokeColor: Theme.blue.opacity(isSelected ? 0.24 : 0.12)
-        )
-    }
-}
-
-private struct ListNoteRow: View {
-    @Bindable var note: Note
-    let isSelected: Bool
-    @State private var isEditingTitle = false
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.dim)
-            VStack(alignment: .leading, spacing: 4) {
-                if isEditingTitle {
-                    TextField("", text: $note.title)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.text)
-                        .focused($focused)
-                        .onSubmit { isEditingTitle = false }
-                        .onExitCommand { isEditingTitle = false }
-                } else {
-                    Text(note.displayTitle)
-                        .font(.system(size: 13))
-                        .foregroundStyle(isSelected ? Theme.text : Theme.muted)
-                        .lineLimit(1)
-                }
-                CompactTagStrip(tags: note.sortedTags, limit: 2)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(isSelected ? Theme.blue.opacity(0.15) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .contentShape(Rectangle())
-        .cadenceHoverHighlight(
-            cornerRadius: 6,
-            fillColor: Theme.blue.opacity(isSelected ? 0.16 : 0.06),
-            strokeColor: Theme.blue.opacity(isSelected ? 0.24 : 0.12)
-        )
-        .onTapGesture(count: 2) {
-            isEditingTitle = true
-            focused = true
-        }
     }
 }
 #endif

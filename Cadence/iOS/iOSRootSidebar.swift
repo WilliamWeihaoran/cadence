@@ -33,10 +33,6 @@ struct iOSSidebar: View {
     @Query(sort: \Project.order) private var projects: [Project]
     @Query private var allTasks: [AppTask]
 
-    private var todayKey: String {
-        DateFormatters.todayKey()
-    }
-
     private var activeContexts: [Context] {
         contexts.filter { !$0.isArchived }
     }
@@ -90,21 +86,24 @@ struct iOSSidebar: View {
     }
 
     private var todayCount: Int? {
-        let count = allTasks.filter { task in
-            guard !task.isDone && !task.isCancelled else { return false }
-            return task.scheduledDate == todayKey || task.dueDate == todayKey
-        }.count
-        return count > 0 ? count : nil
+        CadenceTaskQuerySupport.badgeCount(
+            CadenceTaskQuerySupport.scheduledOrDueTodayCount(
+                from: allTasks,
+                todayKey: DateFormatters.todayKey()
+            )
+        )
     }
 
     private var inboxCount: Int? {
-        let count = allTasks.filter { !$0.isDone && !$0.isCancelled && $0.area == nil && $0.project == nil }.count
-        return count > 0 ? count : nil
+        CadenceTaskQuerySupport.badgeCount(
+            CadenceTaskQuerySupport.openInboxTaskCount(from: allTasks)
+        )
     }
 
     private var allTaskCount: Int? {
-        let count = allTasks.filter { !$0.isDone && !$0.isCancelled }.count
-        return count > 0 ? count : nil
+        CadenceTaskQuerySupport.badgeCount(
+            CadenceTaskQuerySupport.openTaskCount(from: allTasks)
+        )
     }
 
     private func count(for destination: iOSStaticSidebarDestination) -> Int? {

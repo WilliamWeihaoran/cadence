@@ -377,8 +377,8 @@ struct iOSTaskCaptureBar: View {
                     .background(Theme.blue)
                     .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
             }
-            .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .opacity(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
+            .disabled(TaskTitleSupport.isEmpty(title))
+            .opacity(TaskTitleSupport.isEmpty(title) ? 0.45 : 1)
         }
     }
 }

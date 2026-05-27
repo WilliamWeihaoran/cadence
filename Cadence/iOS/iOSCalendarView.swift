@@ -57,11 +57,11 @@ struct iOSCalendarView: View {
     }
 
     private var selectedBundles: [TaskBundle] {
-        CadenceScheduleSupport.bundles(on: selectedKey, in: bundlesByDate)
+        CadenceScheduleSupport.items(on: selectedKey, in: bundlesByDate)
     }
 
     private var selectedUnscheduledTasks: [AppTask] {
-        CadenceScheduleSupport.unscheduledTasks(on: selectedKey, in: unscheduledTasksByDate)
+        CadenceScheduleSupport.items(on: selectedKey, in: unscheduledTasksByDate)
     }
 
     private var selectedDueOnlyTasks: [AppTask] {

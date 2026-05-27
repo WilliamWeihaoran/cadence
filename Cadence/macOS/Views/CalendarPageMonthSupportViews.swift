@@ -191,8 +191,8 @@ struct CalDayHeaderView: View {
         .frame(maxWidth: .infinity)
         .overlay(alignment: .trailing) {
             Rectangle()
-                .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.columnGridOpacity))
-                .frame(width: 0.5)
+                .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.timelineDaySeparatorOpacity))
+                .frame(width: CalendarVisualStyle.timelineDaySeparatorLineWidth)
         }
     }
 
@@ -363,8 +363,8 @@ struct CalDayColumn: View {
         )
         .overlay(alignment: .trailing) {
             Rectangle()
-                .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.columnGridOpacity))
-                .frame(width: 0.5)
+                .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.timelineDaySeparatorOpacity))
+                .frame(width: CalendarVisualStyle.timelineDaySeparatorLineWidth)
         }
     }
 }

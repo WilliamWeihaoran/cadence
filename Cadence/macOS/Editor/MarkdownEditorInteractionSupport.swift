@@ -366,6 +366,7 @@ final class CadenceLayoutManager: NSLayoutManager {
 
 final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     var markdownImageAssets: [UUID: MarkdownImageRenderAsset] = [:]
+    var markdownImageAssetVersions: [UUID: Date] = [:]
     var markdownImageRects: [UUID: NSRect] = [:]
     var markdownTaskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:]
     var markdownTaskEmbedRects: [UUID: MarkdownTaskEmbedHitRects] = [:]
@@ -393,6 +394,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     private var draggingTaskEmbedID: UUID?
     private var inlineTaskTitleEditor: NSTextField?
     private var inlineTaskTitleTaskID: UUID?
+    private var pendingInlineTaskTitleEditID: UUID?
     private var isEndingInlineTaskTitleEdit = false
     private let taskEmbedDragThreshold: CGFloat = 4
 
@@ -604,8 +606,6 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         }
         guard didReplace else { return }
         didChangeText()
-        MarkdownStylist.apply(to: self)
-        needsDisplay = true
     }
 
     func deleteMarkdownImageForCommand(backward: Bool) -> Bool {
@@ -757,6 +757,16 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         editor.selectText(nil)
     }
 
+    fileprivate func queueInlineTaskTitleEdit(id: UUID) {
+        pendingInlineTaskTitleEditID = id
+    }
+
+    fileprivate func performPendingInlineTaskTitleEditIfNeeded() {
+        guard let pendingInlineTaskTitleEditID else { return }
+        self.pendingInlineTaskTitleEditID = nil
+        beginInlineTaskTitleEdit(id: pendingInlineTaskTitleEditID)
+    }
+
     @objc private func commitInlineTaskTitleEditor() {
         endInlineTaskTitleEdit(commit: true)
     }
@@ -766,7 +776,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
               let editor = inlineTaskTitleEditor,
               let taskID = inlineTaskTitleTaskID else { return }
         isEndingInlineTaskTitleEdit = true
-        let newTitle = editor.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newTitle = TaskTitleSupport.normalized(editor.stringValue)
         editor.delegate = nil
         editor.removeFromSuperview()
         inlineTaskTitleEditor = nil
@@ -1150,6 +1160,7 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
     private let slashCommandPicker = MarkdownSlashCommandPickerController()
     private let referencePicker = MarkdownReferencePickerController()
     private let tagPicker = MarkdownTagPickerController()
+    private weak var reportedTextView: CadenceTextView?
     private weak var pendingSlashCommandTextView: NSTextView?
     private weak var pendingReferenceTextView: NSTextView?
     private weak var pendingTagTextView: NSTextView?
@@ -1163,6 +1174,15 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
 
     func update(parent: MarkdownEditorView) {
         self.parent = parent
+    }
+
+    func notifyTextViewIfNeeded(_ textView: CadenceTextView, onChange: @escaping (CadenceTextView) -> Void) {
+        guard reportedTextView !== textView else { return }
+        reportedTextView = textView
+        DispatchQueue.main.async { [weak self, weak textView] in
+            guard let self, let textView, self.reportedTextView === textView else { return }
+            onChange(textView)
+        }
     }
 
     func textDidChange(_ notification: Notification) {
@@ -1184,6 +1204,9 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         }
         if let scrollView {
             MarkdownEditorScrollSupport.refreshLayout(in: scrollView)
+        }
+        if let cadenceTextView = textView as? CadenceTextView {
+            cadenceTextView.performPendingInlineTaskTitleEditIfNeeded()
         }
         textView.typingAttributes = MarkdownStylist.baseAttributes
         scheduleSlashCommandPickerUpdate(for: textView)
@@ -1536,11 +1559,9 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         } else {
             textView.setSelectedRange(NSRange(location: range.location + (suggestion.markdown as NSString).length, length: 0))
         }
+        cadenceTextView.queueInlineTaskTitleEdit(id: suggestion.targetID)
         textView.typingAttributes = MarkdownStylist.baseAttributes
         textView.didChangeText()
-        DispatchQueue.main.async { [weak cadenceTextView] in
-            cadenceTextView?.beginInlineTaskTitleEdit(id: suggestion.targetID)
-        }
         return true
     }
 

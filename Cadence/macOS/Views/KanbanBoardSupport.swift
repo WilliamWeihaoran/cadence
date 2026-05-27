@@ -30,7 +30,7 @@ struct KanbanListColumnModel: Identifiable {
 
 enum KanbanBoardSupport {
     static func activeTasks(from allTasks: [AppTask]) -> [AppTask] {
-        allTasks.filter { !$0.isDone && !$0.isCancelled }
+        CadenceTaskQuerySupport.openTasks(from: allTasks)
     }
 
     static func inboxTasks(

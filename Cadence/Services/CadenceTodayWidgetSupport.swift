@@ -69,29 +69,47 @@ enum CadenceTodayWidgetSupport {
         limit: Int = 3,
         suppressedTaskIDs: Set<UUID> = []
     ) -> CadenceTodayWidgetSnapshot {
-        let todayTasks = todayTasks(from: tasks, todayKey: todayKey)
-            .filter { !suppressedTaskIDs.contains($0.id) }
-        let overdue = todayTasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey }
-        let dueToday = todayTasks.filter { $0.dueDate == todayKey }
-        let scheduledToday = todayTasks.filter { $0.scheduledDate == todayKey && $0.dueDate != todayKey }
-        let state: CadenceTodayWidgetSnapshotState = todayTasks.isEmpty ? .empty : .ready
+        let visibleLimit = max(limit, 0)
+        var totalCount = 0
+        var overdueCount = 0
+        var dueTodayCount = 0
+        var scheduledTodayCount = 0
+        var visibleTasks: [CadenceTodayWidgetTask] = []
+        visibleTasks.reserveCapacity(visibleLimit)
+
+        for task in todayTasks(from: tasks, todayKey: todayKey) where !suppressedTaskIDs.contains(task.id) {
+            totalCount += 1
+            if !task.dueDate.isEmpty && task.dueDate < todayKey {
+                overdueCount += 1
+            } else if task.dueDate == todayKey {
+                dueTodayCount += 1
+            } else if task.scheduledDate == todayKey {
+                scheduledTodayCount += 1
+            }
+
+            if visibleTasks.count < visibleLimit {
+                visibleTasks.append(widgetTask(task))
+            }
+        }
+
+        let state: CadenceTodayWidgetSnapshotState = totalCount == 0 ? .empty : .ready
 
         return CadenceTodayWidgetSnapshot(
             date: Date(),
             dateKey: todayKey,
             state: state,
             statusMessage: nil,
-            totalCount: todayTasks.count,
-            overdueCount: overdue.count,
-            dueTodayCount: dueToday.count,
-            scheduledTodayCount: scheduledToday.count,
-            tasks: Array(todayTasks.prefix(max(limit, 0))).map(widgetTask)
+            totalCount: totalCount,
+            overdueCount: overdueCount,
+            dueTodayCount: dueTodayCount,
+            scheduledTodayCount: scheduledTodayCount,
+            tasks: visibleTasks
         )
     }
 
     nonisolated static func unavailableSnapshot(
         todayKey: String = currentTodayKey(),
-        message: String = "Open Cadence to view today's tasks."
+        message: String = "Open Cadence once to finish setting up your shared widget data."
     ) -> CadenceTodayWidgetSnapshot {
         CadenceTodayWidgetSnapshot(
             date: Date(),
@@ -132,22 +150,20 @@ enum CadenceTodayWidgetSupport {
         from tasks: [AppTask],
         todayKey: String
     ) -> [AppTask] {
-        tasks
-            .filter { task in
-                guard !task.isDone && !task.isCancelled else { return false }
-                return task.scheduledDate == todayKey ||
-                    task.dueDate == todayKey ||
-                    (!task.dueDate.isEmpty && task.dueDate < todayKey)
-            }
+        tasks.compactMap { task -> (task: AppTask, rank: Int, priorityRank: Int, order: Int)? in
+            guard !task.isDone && !task.isCancelled else { return nil }
+            let taskRank = rank(task, todayKey: todayKey)
+            guard taskRank < 3 else { return nil }
+            return (task, taskRank, priorityRank(task.priority), task.order)
+        }
             .sorted { lhs, rhs in
-                let leftRank = rank(lhs, todayKey: todayKey)
-                let rightRank = rank(rhs, todayKey: todayKey)
-                if leftRank != rightRank { return leftRank < rightRank }
-                if lhs.priority != rhs.priority {
-                    return priorityRank(lhs.priority) > priorityRank(rhs.priority)
+                if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
+                if lhs.priorityRank != rhs.priorityRank {
+                    return lhs.priorityRank > rhs.priorityRank
                 }
                 return lhs.order < rhs.order
             }
+            .map(\.task)
     }
 
     private nonisolated static func widgetTask(_ task: AppTask) -> CadenceTodayWidgetTask {
@@ -195,11 +211,24 @@ enum CadenceTodayWidgetSupport {
     }
 
     private nonisolated static func currentTodayKey() -> String {
-        let calendar = Calendar.current
-        let components = calendar.dateComponents([.year, .month, .day], from: Date())
+        CadenceWidgetDateSupport.dateKey(from: Date())
+    }
+}
+
+enum CadenceWidgetDateSupport {
+    nonisolated static func dateKey(from date: Date) -> String {
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
         let year = components.year ?? 0
         let month = components.month ?? 1
         let day = components.day ?? 1
         return String(format: "%04d-%02d-%02d", year, month, day)
+    }
+
+    nonisolated static func weekdayLabel(from date: Date) -> String {
+        date.formatted(.dateTime.weekday(.abbreviated)).uppercased()
+    }
+
+    nonisolated static func dayNumberLabel(from date: Date) -> String {
+        date.formatted(.dateTime.day())
     }
 }

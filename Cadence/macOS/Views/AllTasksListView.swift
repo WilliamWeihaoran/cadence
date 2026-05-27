@@ -28,8 +28,7 @@ struct AllTasksListView: View {
     private var todayKey: String { DateFormatters.todayKey() }
 
     private var activeTasks: [AppTask] {
-        allTasks
-            .filter { !$0.isDone && !$0.isCancelled }
+        CadenceTaskQuerySupport.openTasks(from: allTasks)
             .taskSorted(by: sortField, direction: sortDirection)
     }
 

@@ -5,6 +5,16 @@ import Testing
 
 struct WidgetSupportTests {
 
+    @Test func legacyStoreCandidateDirectoriesCoverSandboxedAndUnsandboxedLocations() {
+        let home = URL(fileURLWithPath: "/Users/tester", isDirectory: true)
+        let directories = CadenceStoreSupport.legacyStoreCandidateDirectories(homeDirectoryURL: home)
+
+        #expect(directories.map(\.path) == [
+            "/Users/tester/Library/Containers/com.haoranwei.Cadence/Data/Library/Application Support/Cadence",
+            "/Users/tester/Library/Application Support/Cadence",
+        ])
+    }
+
     @Test func widgetRefreshCenterSuppressesRecentlyCompletedTasksTemporarily() {
         let suiteName = "cadence.widget.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -22,6 +32,59 @@ struct WidgetSupportTests {
         #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now.addingTimeInterval(120), userDefaults: defaults).isEmpty)
     }
 
+    @Test func widgetRefreshCenterStoresRecentHabitCompletionStateTemporarily() {
+        let suiteName = "cadence.widget.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let habitID = UUID()
+        let now = Date(timeIntervalSince1970: 1_000)
+
+        CadenceWidgetRefreshCenter.markHabitCompletion(
+            habitID,
+            isDoneToday: true,
+            now: now,
+            userDefaults: defaults
+        )
+
+        #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults)[habitID] == true)
+        #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now.addingTimeInterval(120), userDefaults: defaults).isEmpty)
+    }
+
+    @Test func migrateLegacyStoreCopiesManagedItemsIntoAppGroupDirectory() throws {
+        let fileManager = FileManager.default
+        let tempRoot = fileManager.temporaryDirectory.appendingPathComponent("cadence-widget-tests-\(UUID().uuidString)", isDirectory: true)
+        let legacyDirectory = tempRoot.appendingPathComponent("legacy", isDirectory: true)
+        let appGroupDirectory = tempRoot.appendingPathComponent("group", isDirectory: true)
+
+        defer {
+            try? fileManager.removeItem(at: tempRoot)
+        }
+
+        try fileManager.createDirectory(at: legacyDirectory, withIntermediateDirectories: true)
+        try Data("store".utf8).write(to: legacyDirectory.appendingPathComponent("default.store"))
+        try Data("wal".utf8).write(to: legacyDirectory.appendingPathComponent("default.store-wal"))
+        try fileManager.createDirectory(at: legacyDirectory.appendingPathComponent(".default_SUPPORT"), withIntermediateDirectories: true)
+
+        var backedUpDirectory: URL?
+        let migratedFrom = try CadenceStoreSupport.migrateLegacyStoreIfNeeded(
+            appGroupDirectoryURL: appGroupDirectory,
+            candidateLegacyDirectories: [legacyDirectory],
+            backupHandler: { directory in
+                backedUpDirectory = directory
+            }
+        )
+
+        #expect(migratedFrom == legacyDirectory)
+        #expect(backedUpDirectory == legacyDirectory)
+        #expect(fileManager.fileExists(atPath: appGroupDirectory.appendingPathComponent("default.store").path))
+        #expect(fileManager.fileExists(atPath: appGroupDirectory.appendingPathComponent("default.store-wal").path))
+        #expect(fileManager.fileExists(atPath: appGroupDirectory.appendingPathComponent(".default_SUPPORT").path))
+    }
+
     @Test func widgetRefreshCenterClearsStoredStateForAccountDeletion() {
         let suiteName = "cadence.widget.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -31,13 +94,21 @@ struct WidgetSupportTests {
         }
 
         let taskID = UUID()
+        let habitID = UUID()
         let now = Date(timeIntervalSince1970: 1_000)
 
         CadenceWidgetRefreshCenter.reloadTodayWidgets(force: true, now: now, userDefaults: defaults)
         CadenceWidgetRefreshCenter.markTaskCompleted(taskID, now: now, userDefaults: defaults)
+        CadenceWidgetRefreshCenter.markHabitCompletion(
+            habitID,
+            isDoneToday: true,
+            now: now,
+            userDefaults: defaults
+        )
         CadenceWidgetRefreshCenter.clearStoredState(userDefaults: defaults)
 
         #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now, userDefaults: defaults).isEmpty)
+        #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults).isEmpty)
     }
 
     @Test func todayWidgetSupportSortsTasksLikeTodayView() {
@@ -191,5 +262,113 @@ struct WidgetSupportTests {
         #expect(today?.scheduledDate == DateFormatters.todayKey())
         #expect(today?.estimatedMinutes == 30)
         #expect(today?.order == 6)
+    }
+
+    @Test func toggleHabitCompletionIntentLogsAndRemovesTodayCheckIn() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let habit = Habit(title: "Read")
+        modelContext.insert(habit)
+        try modelContext.save()
+
+        let firstToggle = try ToggleHabitCompletionIntent.toggleHabitCompletion(
+            habitID: habit.id.uuidString,
+            on: "2026-05-11",
+            in: modelContext
+        )
+        #expect(firstToggle)
+        #expect(habit.isDone(on: "2026-05-11"))
+
+        let secondToggle = try ToggleHabitCompletionIntent.toggleHabitCompletion(
+            habitID: habit.id.uuidString,
+            on: "2026-05-11",
+            in: modelContext
+        )
+        #expect(secondToggle)
+        #expect(habit.isDone(on: "2026-05-11") == false)
+    }
+
+    @Test func habitWidgetSnapshotPrefersOpenHabitsAndComputesCounts() {
+        let today = DateFormatters.date(from: "2026-05-11")!
+
+        let open = Habit(title: "Walk")
+        open.order = 3
+
+        let done = Habit(title: "Journal")
+        done.order = 1
+        done.completions = [HabitCompletion(date: "2026-05-11", habit: done)]
+
+        let later = Habit(title: "Read")
+        later.order = 2
+
+        let snapshot = CadenceHabitWidgetSupport.snapshot(
+            from: [done, later, open],
+            today: today,
+            limit: 3
+        )
+
+        #expect(snapshot.totalDueCount == 3)
+        #expect(snapshot.doneCount == 1)
+        #expect(snapshot.habits.map(\.title) == ["Read", "Walk", "Journal"])
+    }
+
+    @Test func habitWidgetSnapshotPrefersRecentCompletionOverride() {
+        let today = DateFormatters.date(from: "2026-05-11")!
+        let habit = Habit(title: "Read")
+        habit.order = 1
+
+        let snapshot = CadenceHabitWidgetSupport.snapshot(
+            from: [habit],
+            today: today,
+            limit: 1,
+            recentCompletionStates: [habit.id: true]
+        )
+
+        #expect(snapshot.doneCount == 1)
+        #expect(snapshot.habits.first?.isDoneToday == true)
+    }
+
+    @Test func milestoneWidgetPrioritizesOverdueGoalsFirst() {
+        let overdueGoal = Goal(title: "Overdue launch")
+        let overdueTask = AppTask(title: "Fix blocking task")
+        overdueTask.dueDate = "2026-05-10"
+        overdueGoal.tasks = [overdueTask]
+
+        let routineGoal = Goal(title: "Routine upkeep")
+        let routineTask = AppTask(title: "Follow up")
+        routineTask.dueDate = "2026-05-14"
+        routineGoal.tasks = [routineTask]
+
+        let goals = CadenceMilestoneWidgetSupport.prioritizedGoals(
+            from: [routineGoal, overdueGoal],
+            now: DateFormatters.date(from: "2026-05-11")!
+        )
+
+        #expect(goals.map(\.title) == ["Overdue launch", "Routine upkeep"])
+    }
+
+    @Test func calendarWidgetSnapshotSeparatesDueAndScheduledCounts() {
+        let today = DateFormatters.date(from: "2026-05-11")!
+
+        let due = AppTask(title: "Due")
+        due.dueDate = "2026-05-11"
+
+        let scheduled = AppTask(title: "Scheduled")
+        scheduled.scheduledDate = "2026-05-11"
+
+        let future = AppTask(title: "Future")
+        future.scheduledDate = "2026-05-12"
+
+        let snapshot = CadenceCalendarWidgetSupport.snapshot(
+            from: [due, scheduled, future],
+            today: today,
+            dayCount: 3
+        )
+
+        #expect(snapshot.state == .ready)
+        #expect(snapshot.days.first?.dueCount == 1)
+        #expect(snapshot.days.first?.scheduledCount == 1)
+        #expect(snapshot.days.dropFirst().first?.scheduledCount == 1)
     }
 }

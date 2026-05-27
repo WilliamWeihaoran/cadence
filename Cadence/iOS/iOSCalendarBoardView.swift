@@ -8,19 +8,12 @@ struct iOSCalendarBoardMonth: View {
     let monthTasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
 
-    private let calendar = Calendar.current
     private var summariesByDate: [String: CadenceCalendarBoardDaySummary] {
-        Dictionary(uniqueKeysWithValues: CadenceScheduleSupport.monthGridDays(for: monthDate, calendar: calendar).map { date in
-            let key = DateFormatters.dateKey(from: date)
-            return (
-                key,
-                CadenceCalendarBoardSupport.daySummary(
-                    dateKey: key,
-                    tasks: CadenceScheduleSupport.monthTasks(on: key, in: monthTasksByDate),
-                    bundles: CadenceScheduleSupport.bundles(on: key, in: bundlesByDate)
-                )
-            )
-        })
+        CadenceCalendarBoardSupport.monthSummaries(
+            monthDate: monthDate,
+            tasksByDate: monthTasksByDate,
+            bundlesByDate: bundlesByDate
+        )
     }
 
     var body: some View {

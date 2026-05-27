@@ -50,7 +50,7 @@ struct MarkdownReferenceSuggestion: Identifiable, Hashable {
         MarkdownReferenceSuggestion(
             kind: .task,
             targetID: task.id,
-            title: task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Task" : task.title,
+            title: TaskTitleSupport.displayTitle(task.title),
             subtitle: task.containerName.isEmpty ? task.status.rawValue.capitalized : task.containerName,
             markdown: NoteReferenceParser.taskReferenceMarkdown(for: task)
         )
@@ -99,7 +99,7 @@ struct MarkdownTaskEmbedSubtaskRenderInfo: Hashable {
 }
 
 struct MarkdownTaskEmbedRenderInfo: Hashable {
-    static let untitledTaskTitle = "Untitled Task"
+    static let untitledTaskTitle = TaskTitleSupport.defaultDisplayTitle
     static let compactCardHeight: CGFloat = 68
     static let subtaskCardHeight: CGFloat = 96
     static let lineHeightPadding: CGFloat = 12
@@ -170,7 +170,7 @@ struct MarkdownTaskEmbedRenderInfo: Hashable {
 
         return MarkdownTaskEmbedRenderInfo(
             id: task.id,
-            title: task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? untitledTaskTitle : task.title,
+            title: TaskTitleSupport.displayTitle(task.title, fallback: untitledTaskTitle),
             statusRaw: task.statusRaw,
             priorityRaw: task.priorityRaw,
             sectionName: task.resolvedSectionName,

@@ -82,12 +82,12 @@ struct AppStoreReviewReadinessTests {
         #expect(privacyPolicy.contains("removes local Cadence backups"))
     }
 
-    @Test func appEntitlementsAvoidUnusedPushAndIncludeSandboxNetworkAndCalendarAccess() throws {
+    @Test func appEntitlementsAvoidUnusedPushAndIncludeSandboxNetworkCalendarAndAppGroupAccess() throws {
         let entitlements = try plistDictionary(at: "Cadence/Cadence.entitlements")
 
         #expect(entitlements["aps-environment"] == nil)
         #expect(entitlements["com.apple.developer.aps-environment"] == nil)
-        #expect(entitlements["com.apple.security.application-groups"] == nil)
+        #expect(entitlements["com.apple.security.application-groups"] as? [String] == ["group.com.haoranwei.Cadence"])
         #expect(entitlements["com.apple.security.app-sandbox"] as? Bool == true)
         #expect(entitlements["com.apple.security.network.client"] as? Bool == true)
         #expect(entitlements["com.apple.security.personal-information.calendars"] as? Bool == true)
@@ -103,7 +103,7 @@ struct AppStoreReviewReadinessTests {
         #expect(!project.contains("ENABLE_USER_SELECTED_FILES = readonly;"))
     }
 
-    @Test func appStartupDoesNotProbeLegacyContainersAutomatically() throws {
+    @Test func appStartupMigratesLegacyStoreIntoAppGroupWhenNeeded() throws {
         let source = try String(
             contentsOf: repositoryRoot().appendingPathComponent("Cadence/Services/PersistenceController.swift"),
             encoding: .utf8
@@ -116,36 +116,42 @@ struct AppStoreReviewReadinessTests {
             }
         )
 
-        #expect(!initializerBody.contains("migrateLegacyStoreIfNeeded"))
-        #expect(!initializerBody.contains("legacyStoreCandidateDirectories"))
-        #expect(!initializerBody.contains("appGroupStore"))
+        #expect(initializerBody.contains("migrateLegacyStoreIfNeeded"))
+        #expect(initializerBody.contains("legacyStoreCandidateDirectories"))
+        #expect(initializerBody.contains("appGroupDirectoryURL"))
     }
 
-    @Test func appTargetsDoNotRegisterAppGroupsByDefault() throws {
+    @Test func appTargetsRegisterAppGroups() throws {
         let project = try String(
             contentsOf: repositoryRoot().appendingPathComponent("Cadence.xcodeproj/project.pbxproj"),
             encoding: .utf8
         )
 
-        #expect(!project.contains("REGISTER_APP_GROUPS = YES;"))
+        #expect(project.contains("REGISTER_APP_GROUPS = YES;"))
     }
 
-    @Test func appSourceDoesNotAccessAppGroupContainersByDefault() throws {
+    @Test func appSourceUsesAppGroupContainerForSharedStore() throws {
         let source = try String(
             contentsOf: repositoryRoot().appendingPathComponent("Cadence/Services/CadenceStoreSupport.swift"),
             encoding: .utf8
         )
 
-        #expect(!source.contains("containerURL(forSecurityApplicationGroupIdentifier:"))
-        #expect(!source.contains("group.com.haoranwei.Cadence"))
-        #expect(!source.contains("makeSharedContainer"))
+        #expect(source.contains("containerURL(forSecurityApplicationGroupIdentifier:"))
+        #expect(source.contains("group.com.haoranwei.Cadence"))
+        #expect(source.contains("sharedStoreDirectoryURL"))
     }
 
     @Test func widgetEntitlementsIncludeSandbox() throws {
         let entitlements = try plistDictionary(at: "CadenceWidgets/CadenceWidgets.entitlements")
 
         #expect(entitlements["com.apple.security.app-sandbox"] as? Bool == true)
-        #expect(entitlements["com.apple.security.application-groups"] == nil)
+        #expect(entitlements["com.apple.security.application-groups"] as? [String] == ["group.com.haoranwei.Cadence"])
+    }
+
+    @Test func appEntitlementsIncludeSharedAppGroup() throws {
+        let entitlements = try plistDictionary(at: "Cadence/Cadence.entitlements")
+
+        #expect(entitlements["com.apple.security.application-groups"] as? [String] == ["group.com.haoranwei.Cadence"])
     }
 
     @Test func recoveryStoreCandidatesStartWithPrimaryStoreContainer() {

@@ -129,7 +129,8 @@ struct SettingsView: View {
             case .ai:
                 SettingsStatusBadge(title: aiSettingsManager.hasAPIKey ? "Key saved" : "No key", isActive: aiSettingsManager.hasAPIKey)
             case .tags:
-                SettingsStatusBadge(title: "\(tags.filter { !$0.isArchived }.count) active", isActive: !tags.isEmpty)
+                let activeTagCount = TagSupport.uniqueBySlug(tags.filter { !$0.isArchived }).count
+                SettingsStatusBadge(title: "\(activeTagCount) active", isActive: activeTagCount > 0)
             default:
                 EmptyView()
             }

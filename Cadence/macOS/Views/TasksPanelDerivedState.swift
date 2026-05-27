@@ -51,7 +51,7 @@ struct TasksPanelDerivedState {
                     icon: project.icon,
                     color: Color(hex: project.colorHex),
                     dueDateKey: project.dueDate,
-                    activeTaskCount: (project.tasks ?? []).filter { !$0.isDone && !$0.isCancelled }.count
+                    activeTaskCount: CadenceTaskQuerySupport.openTaskCount(for: project)
                 )
             }
 
@@ -61,8 +61,8 @@ struct TasksPanelDerivedState {
                 area.sectionConfigs.compactMap { config -> TodayOverdueSectionSummary? in
                     guard !config.isArchived, !config.isCompleted, !config.dueDate.isEmpty, config.dueDate < todayKey else { return nil }
                     let tasks = (area.tasks ?? []).filter { $0.resolvedSectionName.caseInsensitiveCompare(config.name) == .orderedSame }
-                    let openCount = tasks.filter { !$0.isDone && !$0.isCancelled }.count
-                    let doneCount = tasks.filter(\.isDone).count
+                    let openCount = CadenceTaskQuerySupport.openTaskCount(from: tasks)
+                    let doneCount = CadenceTaskQuerySupport.completedTaskCount(from: tasks)
                     return TodayOverdueSectionSummary(
                         id: "area-\(area.id.uuidString)-section-\(config.id.uuidString)",
                         areaID: area.id,
@@ -83,8 +83,8 @@ struct TasksPanelDerivedState {
                 project.sectionConfigs.compactMap { config -> TodayOverdueSectionSummary? in
                     guard !config.isArchived, !config.isCompleted, !config.dueDate.isEmpty, config.dueDate < todayKey else { return nil }
                     let tasks = (project.tasks ?? []).filter { $0.resolvedSectionName.caseInsensitiveCompare(config.name) == .orderedSame }
-                    let openCount = tasks.filter { !$0.isDone && !$0.isCancelled }.count
-                    let doneCount = tasks.filter(\.isDone).count
+                    let openCount = CadenceTaskQuerySupport.openTaskCount(from: tasks)
+                    let doneCount = CadenceTaskQuerySupport.completedTaskCount(from: tasks)
                     return TodayOverdueSectionSummary(
                         id: "project-\(project.id.uuidString)-section-\(config.id.uuidString)",
                         areaID: nil,
@@ -105,7 +105,7 @@ struct TasksPanelDerivedState {
             return lhs.sectionName.localizedCaseInsensitiveCompare(rhs.sectionName) == .orderedAscending
         }
 
-        byDoDateBaseTasks = allTasks.filter { !$0.isDone && !$0.isCancelled }
+        byDoDateBaseTasks = CadenceTaskQuerySupport.openTasks(from: allTasks)
         byDoDateBaseSortedTasks = byDoDateBaseTasks.taskSorted(by: sortField, direction: sortDirection)
         doneTasks = allTasks
             .filter { task in

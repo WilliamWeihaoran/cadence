@@ -14,7 +14,7 @@ struct TaskCreationDraft {
     let tags: [Tag]
 
     var trimmedTitle: String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines)
+        TaskTitleSupport.normalized(title)
     }
 
     var trimmedNotes: String {
@@ -98,7 +98,7 @@ struct TaskCreationService {
 
     private func insertSubtasks(_ titles: [String], parent task: AppTask, into modelContext: ModelContext) {
         for (index, title) in titles.enumerated() {
-            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = TaskTitleSupport.normalized(title)
             guard !trimmed.isEmpty else { continue }
             let subtask = Subtask(title: trimmed)
             subtask.parentTask = task

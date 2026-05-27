@@ -112,20 +112,22 @@ struct iOSSearchView: View {
 
     private var listResults: [iOSSearchResult] {
         let listItems = areas.filter(\.isActive).map { area in
+            let count = CadenceTaskQuerySupport.openTaskCount(for: area)
             iOSSearchListCandidate(
                 title: area.name.isEmpty ? "Untitled Area" : area.name,
                 subtitle: area.context?.name ?? "Area",
-                detail: activeTaskCount(for: area) == 1 ? "1 task" : "\(activeTaskCount(for: area)) tasks",
+                detail: count == 1 ? "1 task" : "\(count) tasks",
                 icon: area.icon,
                 color: Color(hex: area.colorHex),
                 route: .area(area.id),
                 fields: [area.name, area.desc, area.context?.name ?? ""]
             )
         } + projects.filter(\.isActive).map { project in
+            let count = CadenceTaskQuerySupport.openTaskCount(for: project)
             iOSSearchListCandidate(
                 title: project.name.isEmpty ? "Untitled Project" : project.name,
                 subtitle: [project.context?.name, project.area?.name].compactMap { $0 }.joined(separator: " / "),
-                detail: activeTaskCount(for: project) == 1 ? "1 task" : "\(activeTaskCount(for: project)) tasks",
+                detail: count == 1 ? "1 task" : "\(count) tasks",
                 icon: project.icon,
                 color: Color(hex: project.colorHex),
                 route: .project(project.id),
@@ -447,13 +449,6 @@ struct iOSSearchView: View {
         return String(trimmed.prefix(117)) + "..."
     }
 
-    private func activeTaskCount(for area: Area) -> Int {
-        (area.tasks ?? []).filter { !$0.isDone && !$0.isCancelled }.count
-    }
-
-    private func activeTaskCount(for project: Project) -> Int {
-        (project.tasks ?? []).filter { !$0.isDone && !$0.isCancelled }.count
-    }
 }
 
 private enum iOSSearchScope: String, CaseIterable, Identifiable {

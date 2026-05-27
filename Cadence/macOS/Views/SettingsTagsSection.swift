@@ -11,11 +11,11 @@ struct SettingsTagsSection: View {
     @State private var newTagColorHex = TagSupport.colorOptions[2]
 
     private var activeTags: [Tag] {
-        TagSupport.sorted(tags.filter { !$0.isArchived })
+        TagSupport.uniqueBySlug(tags.filter { !$0.isArchived })
     }
 
     private var archivedTags: [Tag] {
-        TagSupport.sorted(tags.filter(\.isArchived))
+        TagSupport.uniqueBySlug(tags.filter(\.isArchived))
     }
 
     private var newTagSlug: String {
@@ -94,19 +94,17 @@ struct SettingsTagsSection: View {
             }
 
             SettingsSectionLabel(text: "Active Tags")
-            SettingsCard {
-                if activeTags.isEmpty {
+            if activeTags.isEmpty {
+                SettingsCard {
                     EmptyTagCatalogRow(title: "No active tags.", subtitle: "Create a tag or add the default set.")
-                } else {
-                    tagList(activeTags, isArchivedList: false)
                 }
+            } else {
+                tagCatalog(activeTags, isArchivedList: false)
             }
 
             if !archivedTags.isEmpty {
                 SettingsSectionLabel(text: "Archived Tags")
-                SettingsCard {
-                    tagList(archivedTags, isArchivedList: true)
-                }
+                tagCatalog(archivedTags, isArchivedList: true)
             }
         }
         .onAppear {
@@ -114,9 +112,15 @@ struct SettingsTagsSection: View {
         }
     }
 
-    private func tagList(_ list: [Tag], isArchivedList: Bool) -> some View {
-        VStack(spacing: 0) {
-            ForEach(Array(list.enumerated()), id: \.element.id) { index, tag in
+    private func tagCatalog(_ list: [Tag], isArchivedList: Bool) -> some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.adaptive(minimum: 250), spacing: 12, alignment: .top)
+            ],
+            alignment: .leading,
+            spacing: 12
+        ) {
+            ForEach(list) { tag in
                 SettingsTagRow(
                     tag: tag,
                     allTags: tags,
@@ -124,10 +128,6 @@ struct SettingsTagsSection: View {
                     onArchive: { archive(tag) },
                     onRestore: { restore(tag) }
                 )
-                if index < list.count - 1 {
-                    Divider()
-                        .background(Theme.borderSubtle)
-                }
             }
         }
     }
@@ -206,10 +206,6 @@ private struct SettingsTagRow: View {
         tag.notes?.count ?? 0
     }
 
-    private var usageText: String {
-        "\(taskCount) task\(taskCount == 1 ? "" : "s"), \(noteCount) note\(noteCount == 1 ? "" : "s")"
-    }
-
     private var draftSlug: String {
         TagSupport.slug(for: draftName)
     }
@@ -230,54 +226,74 @@ private struct SettingsTagRow: View {
                 displayContent
             }
         }
-        .padding(.vertical, 7)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Theme.borderSubtle, lineWidth: 1)
+        }
+        .opacity(tag.isArchived ? 0.72 : 1)
         .animation(.easeInOut(duration: 0.15), value: isEditing)
     }
 
     private var displayContent: some View {
-        HStack(alignment: tag.desc.isEmpty ? .center : .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 9) {
-                    TagMiniChip(tag: tag)
-                    Text(usageText)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.muted)
-                        .lineLimit(1)
-                    if tag.isArchived {
-                        Text("Archived")
-                            .font(.system(size: 9, weight: .semibold))
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(alignment: .top, spacing: 10) {
+                Circle()
+                    .fill(Color(hex: tag.colorHex))
+                    .frame(width: 10, height: 10)
+                    .padding(.top, 4)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 7) {
+                        Text(tag.name)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+
+                        if tag.isArchived {
+                            Text("Archived")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Theme.dim)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Theme.surfaceElevated.opacity(0.72))
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                    }
+
+                    if !tag.desc.isEmpty {
+                        Text(tag.desc)
+                            .font(.system(size: 11))
                             .foregroundStyle(Theme.dim)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Theme.surfaceElevated.opacity(0.72))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
-                if !tag.desc.isEmpty {
-                    Text(tag.desc)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+
+                HStack(spacing: 6) {
+                    rowButton(icon: "pencil", help: "Edit tag") {
+                        startEditing()
+                    }
+                    if isArchivedList {
+                        rowButton(icon: "arrow.uturn.backward", color: Theme.blue, help: "Restore tag", action: onRestore)
+                    } else {
+                        rowButton(icon: "archivebox", color: Theme.amber, help: "Archive tag", action: onArchive)
+                    }
                 }
             }
 
-            Spacer()
-
-            HStack(spacing: 6) {
-                rowButton(icon: "pencil", help: "Edit tag") {
-                    startEditing()
-                }
-                if isArchivedList {
-                    rowButton(icon: "arrow.uturn.backward", color: Theme.blue, help: "Restore tag", action: onRestore)
-                } else {
-                    rowButton(icon: "archivebox", color: Theme.amber, help: "Archive tag", action: onArchive)
-                }
+            HStack(spacing: 7) {
+                TagUsageBadge(text: taskCount == 1 ? "1 task" : "\(taskCount) tasks")
+                TagUsageBadge(text: noteCount == 1 ? "1 note" : "\(noteCount) notes")
+                Spacer()
             }
         }
-        .padding(.horizontal, 2)
-        .opacity(tag.isArchived ? 0.72 : 1)
     }
 
     private var editContent: some View {
@@ -322,7 +338,6 @@ private struct SettingsTagRow: View {
                 .opacity(canSave ? 1 : 0.45)
             }
         }
-        .padding(.horizontal, 2)
     }
 
     private func editField(_ placeholder: String, text: Binding<String>) -> some View {
@@ -345,7 +360,7 @@ private struct SettingsTagRow: View {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(color)
-                .frame(width: 26, height: 26)
+                .frame(width: 28, height: 28)
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: 7))
         }
@@ -380,6 +395,20 @@ private struct SettingsTagRow: View {
         withAnimation(.easeInOut(duration: 0.15)) {
             isEditing = false
         }
+    }
+}
+
+private struct TagUsageBadge: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Theme.muted)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(Theme.surfaceElevated.opacity(0.72))
+            .clipShape(Capsule())
     }
 }
 

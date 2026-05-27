@@ -58,8 +58,8 @@ struct iOSCalendarTimelineGrid: View {
                                     iOSCalendarTimelineDayBlocks(
                                         date: date,
                                         isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
-                                        tasks: CadenceScheduleSupport.scheduledTasks(on: key, in: scheduledTasksByDate),
-                                        bundles: CadenceScheduleSupport.bundles(on: key, in: bundlesByDate),
+                                        tasks: CadenceScheduleSupport.items(on: key, in: scheduledTasksByDate),
+                                        bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
                                         colWidth: colWidth,
                                         hourHeight: hourHeight
                                     )
@@ -78,15 +78,15 @@ struct iOSCalendarTimelineGrid: View {
     }
 
     private func scheduledTasks(for date: Date) -> [AppTask] {
-        CadenceScheduleSupport.scheduledTasks(on: DateFormatters.dateKey(from: date), in: scheduledTasksByDate)
+        CadenceScheduleSupport.items(on: DateFormatters.dateKey(from: date), in: scheduledTasksByDate)
     }
 
     private func unscheduledTasks(for date: Date) -> [AppTask] {
-        CadenceScheduleSupport.unscheduledTasks(on: DateFormatters.dateKey(from: date), in: unscheduledTasksByDate)
+        CadenceScheduleSupport.items(on: DateFormatters.dateKey(from: date), in: unscheduledTasksByDate)
     }
 
     private func bundles(for date: Date) -> [TaskBundle] {
-        CadenceScheduleSupport.bundles(on: DateFormatters.dateKey(from: date), in: bundlesByDate)
+        CadenceScheduleSupport.items(on: DateFormatters.dateKey(from: date), in: bundlesByDate)
     }
 }
 

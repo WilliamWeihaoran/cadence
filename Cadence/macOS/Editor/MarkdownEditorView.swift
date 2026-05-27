@@ -400,13 +400,16 @@ struct MarkdownEditorView: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: NSViewRepresentableContext<MarkdownEditorView>) {
-        guard let textView = scrollView.documentView as? NSTextView else { return }
+        guard let textView = scrollView.documentView as? CadenceTextView else { return }
         context.coordinator.update(parent: self)
-        if let cadenceTextView = textView as? CadenceTextView {
-            configure(cadenceTextView, context: context)
-        }
-        let displayText = MarkdownListSupport.normalizedMarkdownListPrefixes(in: text)
-        if textView.string != displayText {
+        let didUpdateRenderedContent = configure(textView, context: context)
+        let currentText = textView.string
+        let displayText = currentText == text ? currentText : MarkdownListSupport.normalizedMarkdownListPrefixes(in: text)
+        let didUpdateText = currentText != displayText
+
+        guard didUpdateText || didUpdateRenderedContent else { return }
+
+        if didUpdateText {
             let sel = textView.selectedRange()
             MarkdownEditorScrollSupport.preservingScrollPosition(in: scrollView) {
                 textView.string = displayText
@@ -426,17 +429,36 @@ struct MarkdownEditorView: NSViewRepresentable {
         MarkdownEditorCoordinator(parent: self)
     }
 
-    private func configure(_ textView: CadenceTextView, context: NSViewRepresentableContext<MarkdownEditorView>) {
+    @discardableResult
+    private func configure(_ textView: CadenceTextView, context: NSViewRepresentableContext<MarkdownEditorView>) -> Bool {
         let referencedImageIDs = MarkdownImageAssetService.referencedIDs(in: text)
-        textView.markdownImageAssets = Dictionary(
-            uniqueKeysWithValues: imageAssets.compactMap { asset in
-                guard referencedImageIDs.contains(asset.id) else { return nil }
-                return MarkdownImageAssetService.renderAsset(for: asset.id, in: imageAssets).map { (asset.id, $0) }
+        let referencedAssets = imageAssets.filter { referencedImageIDs.contains($0.id) }
+        let imageAssetVersions = Dictionary(uniqueKeysWithValues: referencedAssets.map { ($0.id, $0.updatedAt) })
+        var didUpdateRenderedContent = false
+
+        if textView.markdownImageAssetVersions != imageAssetVersions {
+            textView.markdownImageAssetVersions = imageAssetVersions
+            textView.markdownImageRects.removeAll()
+            textView.markdownImageAssets = Dictionary(
+                uniqueKeysWithValues: referencedAssets.compactMap { asset in
+                    MarkdownImageAssetService.renderAsset(for: asset.id, in: referencedAssets).map { (asset.id, $0) }
+                }
+            )
+            if let selectedMarkdownImageID = textView.selectedMarkdownImageID,
+               imageAssetVersions[selectedMarkdownImageID] == nil {
+                textView.selectedMarkdownImageID = nil
             }
-        )
+            didUpdateRenderedContent = true
+        }
+
         if textView.markdownTaskEmbeds != taskEmbedInfos {
             textView.markdownTaskEmbedRects.removeAll()
             textView.markdownTaskEmbeds = taskEmbedInfos
+            if let hoveredMarkdownTaskEmbedID = textView.hoveredMarkdownTaskEmbedID,
+               taskEmbedInfos[hoveredMarkdownTaskEmbedID] == nil {
+                textView.hoveredMarkdownTaskEmbedID = nil
+            }
+            didUpdateRenderedContent = true
         }
         textView.referenceSuggestions = referenceSuggestions
         textView.tagSuggestions = tagSuggestions
@@ -452,9 +474,8 @@ struct MarkdownEditorView: NSViewRepresentable {
         textView.onCreateMarkdownImages = onCreateImages
         textView.onResizeMarkdownImage = onResizeImage
         textView.registerForDraggedTypes([.fileURL, .tiff, .png])
-        DispatchQueue.main.async {
-            onTextViewChanged(textView)
-        }
+        context.coordinator.notifyTextViewIfNeeded(textView, onChange: onTextViewChanged)
+        return didUpdateRenderedContent
     }
 }
 
