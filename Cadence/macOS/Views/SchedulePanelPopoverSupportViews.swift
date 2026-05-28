@@ -14,7 +14,10 @@ struct TaskDetailHeaderSection: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
+    let tags: [Tag]
     let taskContainerBinding: Binding<TaskContainerSelection>
+    let taskTagsBinding: Binding<[Tag]>
+    let onCreateTag: (String) -> Tag
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -30,6 +33,7 @@ struct TaskDetailHeaderSection: View {
             VStack(alignment: .leading, spacing: 4) {
                 TaskTitleEntryField(
                     title: $task.title,
+                    priority: $task.priority,
                     placeholder: "Task title",
                     font: .system(size: 16, weight: .bold),
                     previewFont: .system(size: 17, weight: .bold),
@@ -37,17 +41,12 @@ struct TaskDetailHeaderSection: View {
                     contexts: contexts,
                     areas: areas,
                     projects: projects,
+                    allTags: tags,
                     containerSelection: taskContainerBinding,
-                    sectionName: $task.sectionName
+                    sectionName: $task.sectionName,
+                    selectedTags: taskTagsBinding,
+                    onCreateTag: onCreateTag
                 )
-
-                Text(scheduleDescriptor)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(Theme.surfaceElevated.opacity(0.7))
-                    .clipShape(Capsule())
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -62,25 +61,6 @@ struct TaskDetailHeaderSection: View {
         }
     }
 
-    private var timeRange: String {
-        TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledStartMin + max(task.estimatedMinutes, 5))
-    }
-
-    private var scheduleDescriptor: String {
-        if task.scheduledStartMin >= 0 {
-            return "Scheduled • \(timeRange)"
-        }
-        if !task.dueDate.isEmpty {
-            return "Due \(DateFormatters.relativeDate(from: task.dueDate))"
-        }
-        if !task.containerName.isEmpty {
-            if task.resolvedSectionName != TaskSectionDefaults.defaultName {
-                return "\(task.containerName) • \(task.resolvedSectionName)"
-            }
-            return task.containerName
-        }
-        return "Inbox task"
-    }
 }
 
 struct TaskPriorityPickerPopover: View {
@@ -95,9 +75,10 @@ struct TaskPriorityPickerPopover: View {
                     isPresented = false
                 } label: {
                     HStack(spacing: 8) {
-                        Circle()
-                            .fill(Theme.priorityColor(value))
-                            .frame(width: 7, height: 7)
+                        Text(TaskTitleSupport.priorityMark(for: value))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(value == .none ? Theme.dim : Theme.priorityColor(value))
+                            .frame(width: 24, alignment: .leading)
                         Text(value.label)
                             .font(.system(size: 13))
                             .foregroundStyle(priority == value ? Theme.text : Theme.muted)

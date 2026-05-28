@@ -575,6 +575,11 @@ private struct PlanningTaskCard: View {
         }
         .buttonStyle(.cadencePlain)
         .onHover { isHovered = $0 }
+        .overlay {
+            RightClickActionTrigger {
+                showTaskInspector = true
+            }
+        }
         .draggable(TasksPanelSupport.taskDragPayload(for: task))
         .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             TaskDetailPopover(task: task)

@@ -498,10 +498,12 @@ enum CadenceTaskQuerySupport {
         scheduledDate: String? = nil,
         estimatedMinutes: Int = 30
     ) -> AppTask? {
-        let trimmed = TaskTitleSupport.normalized(title)
+        var priority: TaskPriority = .none
+        let trimmed = TaskTitleSupport.titleApplyingPriorityShortcut(title, priority: &priority)
         guard !trimmed.isEmpty else { return nil }
 
         let task = AppTask(title: trimmed)
+        task.priority = priority
         task.estimatedMinutes = estimatedMinutes
         task.order = nextTaskOrder(in: allTasks)
         if let scheduledDate {

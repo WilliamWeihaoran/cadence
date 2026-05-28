@@ -244,6 +244,11 @@ struct AllDayTaskChip: View {
         .shadow(color: Color.black.opacity(0.07), radius: 4, y: 1)
         .contentShape(Rectangle())
         .onTapGesture { showInspector = true }
+        .overlay {
+            RightClickActionTrigger {
+                showInspector = true
+            }
+        }
         .popover(isPresented: $showInspector, arrowEdge: .bottom) {
             TaskDetailPopover(task: task)
         }

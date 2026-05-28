@@ -123,9 +123,11 @@ struct InboxView: View {
     // MARK: - Actions
 
     private func captureTask() {
-        let t = newTitle.trimmingCharacters(in: .whitespaces)
+        var priority: TaskPriority = .none
+        let t = TaskTitleSupport.titleApplyingPriorityShortcut(newTitle, priority: &priority)
         guard !t.isEmpty else { return }
         let task = AppTask(title: t)
+        task.priority = priority
         task.order = activeTasks.count
         modelContext.insert(task)
         newTitle = ""

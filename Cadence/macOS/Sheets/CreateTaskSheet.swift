@@ -67,28 +67,30 @@ struct CreateTaskSheet: View {
             .clipped()
 
             // ── Title ─────────────────────────────────────────────────────────
-            HStack(alignment: .center, spacing: 10) {
-                Circle()
-                    .strokeBorder(Theme.dim.opacity(0.4), lineWidth: 1.5)
-                    .frame(width: 16, height: 16)
+            HStack(alignment: .center, spacing: 8) {
+                priorityMarkButton
 
                 TaskTitleEntryField(
                     title: $title,
+                    priority: $selectedPriority,
                     placeholder: "What needs doing?",
                     font: .system(size: 17, weight: .semibold),
                     autofocus: true,
                     contexts: contexts,
                     areas: areas,
                     projects: projects,
+                    allTags: tags,
                     containerSelection: $selectedContainer,
                     sectionName: $selectedSectionName,
+                    selectedTags: $selectedTags,
+                    onCreateTag: createTag,
                     onDateNudge: nudgeDoDate
                 ) {
                     if !TaskTitleSupport.isEmpty(title) { createTask() }
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 4)
+            .padding(.top, 12)
             .padding(.bottom, 6)
 
             // ── Notes ────────────────────────────────────────────────────────
@@ -107,7 +109,7 @@ struct CreateTaskSheet: View {
                     .scrollContentBackground(.hidden)
                     .frame(height: 40)
             }
-            .padding(.leading, 42)
+            .padding(.leading, 52)
             .padding(.trailing, 16)
             .padding(.bottom, 6)
 
@@ -137,7 +139,7 @@ struct CreateTaskSheet: View {
                             }
                             .buttonStyle(.cadencePlain)
                         }
-                        .padding(.leading, 42)
+                        .padding(.leading, 52)
                         .padding(.trailing, 16)
                         .padding(.vertical, 4)
                     }
@@ -159,7 +161,7 @@ struct CreateTaskSheet: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
-            .padding(.leading, 42)
+            .padding(.leading, 52)
             .padding(.bottom, 4)
 
             Divider().background(Theme.borderSubtle)
@@ -180,12 +182,6 @@ struct CreateTaskSheet: View {
                     )
                 }
 
-                TagPickerControl(
-                    selectedTags: $selectedTags,
-                    allTags: tags,
-                    onCreateTag: createTag
-                )
-
                 Spacer(minLength: 0)
 
                 TaskDateChip(label: "Do Date",
@@ -199,8 +195,6 @@ struct CreateTaskSheet: View {
                              activeColor: Theme.red,
                              isOn: $hasDueDate, date: $dueDate,
                              showPicker: $showDuePicker)
-
-                priorityChip
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
@@ -210,7 +204,16 @@ struct CreateTaskSheet: View {
 
             // ── Footer ────────────────────────────────────────────────────────
             HStack(spacing: 8) {
+                TagPickerControl(
+                    selectedTags: $selectedTags,
+                    allTags: tags,
+                    onCreateTag: createTag,
+                    showsLabel: true
+                )
+                .layoutPriority(1)
+
                 Spacer(minLength: 0)
+
                 CadenceActionButton(
                     title: "Cancel",
                     role: .ghost,
@@ -242,31 +245,19 @@ struct CreateTaskSheet: View {
 
     // MARK: - Priority chip
 
-    private var priorityChip: some View {
+    private var priorityMarkButton: some View {
         Button { showPriorityPicker.toggle() } label: {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(Theme.priorityColor(selectedPriority))
-                    .frame(width: 7, height: 7)
-                ZStack(alignment: .leading) {
-                    Text("Priority").opacity(0) // width anchor — widest label
-                    Text(selectedPriority == .none ? "Priority" : shortPriorityLabel(selectedPriority))
-                        .foregroundStyle(selectedPriority == .none ? Theme.dim : Theme.muted)
-                }
-                .font(.system(size: 12, weight: .medium))
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 7, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .opacity(selectedPriority == .none ? 0 : 1) // always takes space
-            }
-            .fixedSize() // lock the whole chip to its max intrinsic size
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(selectedPriority == .none ? Color.clear : Theme.priorityColor(selectedPriority).opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            Text(TaskTitleSupport.priorityMark(for: selectedPriority))
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(selectedPriority == .none ? Theme.dim : Theme.priorityColor(selectedPriority))
+                .frame(width: 28, height: 28)
+                .background(selectedPriority == .none ? Theme.surface.opacity(0.6) : Theme.priorityColor(selectedPriority).opacity(0.12))
+                .clipShape(Circle())
+                .contentShape(Circle())
+                .accessibilityLabel("Priority")
             .overlay(
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(Theme.borderSubtle, lineWidth: selectedPriority == .none ? 0 : 1)
+                Circle()
+                    .stroke(selectedPriority == .none ? Theme.borderSubtle : Theme.priorityColor(selectedPriority).opacity(0.35), lineWidth: 1)
             )
         }
         .buttonStyle(.cadencePlain)
@@ -278,7 +269,10 @@ struct CreateTaskSheet: View {
                         showPriorityPicker = false
                     } label: {
                         HStack(spacing: 8) {
-                            Circle().fill(Theme.priorityColor(p)).frame(width: 7, height: 7)
+                            Text(TaskTitleSupport.priorityMark(for: p))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(p == .none ? Theme.dim : Theme.priorityColor(p))
+                                .frame(width: 24, alignment: .leading)
                             Text(p.label).font(.system(size: 13)).foregroundStyle(Theme.text)
                             Spacer()
                             if selectedPriority == p {
@@ -318,7 +312,9 @@ struct CreateTaskSheet: View {
         }
     }
 
-    private var trimmedTitle: String { TaskTitleSupport.normalized(title) }
+    private var trimmedTitle: String {
+        TaskTitleSupport.priorityShortcut(in: title)?.title ?? TaskTitleSupport.normalized(title)
+    }
 
     private func createTask() {
         guard !trimmedTitle.isEmpty else { return }
@@ -376,15 +372,6 @@ struct CreateTaskSheet: View {
             doDate = cal.startOfDay(for: Date())
         }
         doDate = cal.date(byAdding: .day, value: days, to: doDate) ?? doDate
-    }
-
-    private func shortPriorityLabel(_ p: TaskPriority) -> String {
-        switch p {
-        case .none:   return "N/A"
-        case .low:    return "L"
-        case .medium: return "M"
-        case .high:   return "H"
-        }
     }
 
     private func cyclePriority() {

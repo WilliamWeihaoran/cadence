@@ -18,7 +18,7 @@ struct TaskInspectorRecurrenceControl: View {
                 Image(systemName: task.recurrenceRule.systemImage)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(task.isRecurring ? Theme.blue : Theme.dim)
-                Text(task.recurrenceRule.shortLabel)
+                Text(recurrenceLabel)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(task.isRecurring ? Theme.text : Theme.dim)
                 Image(systemName: "chevron.up.chevron.down")
@@ -31,6 +31,10 @@ struct TaskInspectorRecurrenceControl: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.cadencePlain)
+    }
+
+    private var recurrenceLabel: String {
+        task.recurrenceRule == .none ? "No repeat" : task.recurrenceRule.shortLabel
     }
 }
 #endif

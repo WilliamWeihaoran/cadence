@@ -14,11 +14,18 @@ struct TaskCreationDraft {
     let tags: [Tag]
 
     var trimmedTitle: String {
-        TaskTitleSupport.normalized(title)
+        if let shortcut = TaskTitleSupport.priorityShortcut(in: title) {
+            return shortcut.title
+        }
+        return TaskTitleSupport.normalized(title)
     }
 
     var trimmedNotes: String {
         notes.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var resolvedPriority: TaskPriority {
+        TaskTitleSupport.priorityShortcut(in: title)?.priority ?? priority
     }
 }
 
@@ -84,7 +91,7 @@ struct TaskCreationService {
 
         let task = AppTask(title: draft.trimmedTitle)
         task.notes = draft.trimmedNotes
-        task.priority = draft.priority
+        task.priority = draft.resolvedPriority
         task.sectionName = containerResolver.normalizedSectionName(draft.sectionName, for: draft.container)
         task.dueDate = draft.dueDateKey
         task.scheduledDate = draft.scheduledDateKey

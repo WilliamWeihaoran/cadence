@@ -8,39 +8,40 @@ struct TaskDetailNotesSection: View {
     @Query(sort: \AppTask.order) private var referenceTasks: [AppTask]
 
     var body: some View {
-        TaskInspectorInfoCard {
-            VStack(spacing: 6) {
-                HStack {
-                    Spacer()
-                    Button {
-                        TaskNotesPanelController.shared.show(task: task, referenceTasks: referenceTasks)
-                    } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
-                            .frame(width: 24, height: 22)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.cadencePlain)
-                    .help("Open task notes")
-                }
+        ZStack(alignment: .topLeading) {
+            MarkdownEditor(text: taskNotesBinding, showsToolbar: false, referenceTasks: referenceTasks)
+                .frame(minHeight: 120)
+                .background(Theme.surface.opacity(0.45))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
+                )
 
-                ZStack(alignment: .topLeading) {
-                    MarkdownEditor(text: taskNotesBinding, showsToolbar: false, referenceTasks: referenceTasks)
-                        .frame(minHeight: 120)
-                        .background(Theme.surface.opacity(0.45))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                    if task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text("Add notes...")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Theme.dim.opacity(0.6))
-                            .padding(.leading, MarkdownEditorMetrics.firstTextColumnInset)
-                            .padding(.top, MarkdownEditorMetrics.textInset)
-                            .allowsHitTesting(false)
-                    }
-                }
+            if task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("Add notes...")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.dim.opacity(0.6))
+                    .padding(.leading, MarkdownEditorMetrics.firstTextColumnInset)
+                    .padding(.top, MarkdownEditorMetrics.textInset)
+                    .allowsHitTesting(false)
             }
+
+            Button {
+                TaskNotesPanelController.shared.show(task: task, referenceTasks: referenceTasks)
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 24, height: 22)
+                    .background(Theme.surfaceElevated.opacity(0.82))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.cadencePlain)
+            .help("Open task notes")
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .topTrailing)
         }
     }
 
@@ -223,6 +224,7 @@ struct TaskDetailSubtasksSection: View {
 struct TaskDetailActionsSection: View {
     @Bindable var task: AppTask
     @Environment(\.modelContext) private var modelContext
+    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
 
     var body: some View {
         HStack(spacing: 10) {
@@ -262,11 +264,16 @@ struct TaskDetailActionsSection: View {
             }
 
             Button {
-                copyTaskReference()
+                deleteConfirmationManager.present(
+                    title: "Delete Task?",
+                    message: "This will permanently delete \"\(TaskTitleSupport.displayTitle(task.title, fallback: "Untitled"))\"."
+                ) {
+                    modelContext.deleteTask(task)
+                }
             } label: {
-                Label("Copy Ref", systemImage: "link")
+                Label("Delete", systemImage: "trash")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
+                    .foregroundStyle(Theme.red)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                     .background(Theme.surfaceElevated)
@@ -274,12 +281,6 @@ struct TaskDetailActionsSection: View {
             }
             .buttonStyle(.cadencePlain)
         }
-    }
-
-    private func copyTaskReference() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(NoteReferenceParser.taskReferenceMarkdown(for: task), forType: .string)
     }
 }
 #endif

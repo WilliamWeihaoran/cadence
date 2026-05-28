@@ -202,6 +202,11 @@ private struct CalendarBoardTaskRow: View {
             )
         }
         .buttonStyle(.plain)
+        .overlay {
+            RightClickActionTrigger {
+                showInspector = true
+            }
+        }
         .popover(isPresented: $showInspector, arrowEdge: .trailing) {
             TaskDetailPopover(task: task)
         }

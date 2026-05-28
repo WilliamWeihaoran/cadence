@@ -208,7 +208,9 @@ struct NotePanel: View {
 
     private func renameEmbeddedTask(id: UUID, title: String) {
         guard let task = embeddedTask(id: id) else { return }
-        task.title = TaskTitleSupport.normalized(title)
+        var priority = task.priority
+        task.title = TaskTitleSupport.titleApplyingPriorityShortcut(title, priority: &priority)
+        task.priority = priority
         try? modelContext.save()
         refreshEmbeddedTask(task)
     }

@@ -11,7 +11,12 @@ enum SchedulingActions {
 
     /// Create and insert a new task scheduled to a specific date/time slot.
     static func createTask(title: String, dateKey: String, startMin: Int, endMin: Int, in context: ModelContext) {
-        let task = AppTask(title: title)
+        var priority: TaskPriority = .none
+        let cleanedTitle = TaskTitleSupport.titleApplyingPriorityShortcut(title, priority: &priority)
+        guard !cleanedTitle.isEmpty else { return }
+
+        let task = AppTask(title: cleanedTitle)
+        task.priority = priority
         task.scheduledDate = dateKey
         task.scheduledStartMin = startMin
         task.estimatedMinutes = max(5, endMin - startMin)

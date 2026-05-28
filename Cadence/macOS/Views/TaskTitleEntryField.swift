@@ -3,6 +3,7 @@ import SwiftUI
 
 struct TaskTitleEntryField: View {
     @Binding var title: String
+    let priority: Binding<TaskPriority>?
     let placeholder: String
     let font: Font
     let previewFont: Font
@@ -13,17 +14,24 @@ struct TaskTitleEntryField: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
+    let allTags: [Tag]
     let containerSelection: Binding<TaskContainerSelection>?
     let sectionName: Binding<String>?
+    let selectedTags: Binding<[Tag]>?
+    let onCreateTag: ((String) -> Tag)?
 
     @State private var tildeMode: TaskTitleTildeMode = .none
     @State private var tildeSearchQuery = ""
     @State private var tildeHighlightIdx = 0
+    @State private var isTagMode = false
+    @State private var tagSearchQuery = ""
+    @State private var tagHighlightIdx = 0
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isTildeSearchFocused: Bool
 
     init(
         title: Binding<String>,
+        priority: Binding<TaskPriority>? = nil,
         placeholder: String,
         font: Font,
         previewFont: Font? = nil,
@@ -32,12 +40,16 @@ struct TaskTitleEntryField: View {
         contexts: [Context] = [],
         areas: [Area] = [],
         projects: [Project] = [],
+        allTags: [Tag] = [],
         containerSelection: Binding<TaskContainerSelection>? = nil,
         sectionName: Binding<String>? = nil,
+        selectedTags: Binding<[Tag]>? = nil,
+        onCreateTag: ((String) -> Tag)? = nil,
         onDateNudge: ((Int) -> Void)? = nil,
         onSubmit: (() -> Void)? = nil
     ) {
         self._title = title
+        self.priority = priority
         self.placeholder = placeholder
         self.font = font
         self.previewFont = previewFont ?? font
@@ -46,8 +58,11 @@ struct TaskTitleEntryField: View {
         self.contexts = contexts
         self.areas = areas
         self.projects = projects
+        self.allTags = allTags
         self.containerSelection = containerSelection
         self.sectionName = sectionName
+        self.selectedTags = selectedTags
+        self.onCreateTag = onCreateTag
         self.onDateNudge = onDateNudge
         self.onSubmit = onSubmit
     }
@@ -66,34 +81,56 @@ struct TaskTitleEntryField: View {
                 .layoutPriority(1)
                 .focused($isTitleFocused)
                 .onSubmit {
-                    title = TaskTitleSupport.normalized(title)
+                    applyTitleShortcuts()
                     onSubmit?()
                 }
                 .onChange(of: title) { _, newValue in
-                    guard canUseTildeRouting,
-                          let prefix = TaskTitleSupport.titleBeforeContainerShortcut(in: newValue) else {
+                    guard tildeMode == .none, !isTagMode else { return }
+                    if canUseTildeRouting,
+                       let shortcut = TaskTitleSupport.containerShortcut(in: newValue) {
+                        title = shortcut.prefix
+                        tildeSearchQuery = shortcut.query
+                        tildeHighlightIdx = 0
+                        tildeMode = .list
                         return
                     }
-                    title = prefix
-                    tildeSearchQuery = ""
-                    tildeHighlightIdx = 0
-                    tildeMode = .list
+                    if canUseTagRouting,
+                       let shortcut = TaskTitleSupport.tagShortcut(in: newValue) {
+                        title = shortcut.prefix
+                        tagSearchQuery = shortcut.query
+                        tagHighlightIdx = 0
+                        isTagMode = true
+                    }
                 }
-                .opacity(tildeMode == .none ? 1 : 0)
-                .allowsHitTesting(tildeMode == .none)
+                .opacity(isEditingInlineShortcut ? 0 : 1)
+                .allowsHitTesting(!isEditingInlineShortcut)
 
             if tildeMode != .none {
                 tildePreview
+            } else if isTagMode {
+                tagPreview
             }
         }
         .onAppear {
             guard autofocus else { return }
             DispatchQueue.main.async { isTitleFocused = true }
         }
+        .onChange(of: isTitleFocused) { _, focused in
+            guard !focused, !isEditingInlineShortcut else { return }
+            applyTitleShortcuts()
+        }
+    }
+
+    private var isEditingInlineShortcut: Bool {
+        tildeMode != .none || isTagMode
     }
 
     private var canUseTildeRouting: Bool {
         containerSelection != nil && sectionName != nil
+    }
+
+    private var canUseTagRouting: Bool {
+        selectedTags != nil && onCreateTag != nil
     }
 
     private var availableSections: [String] {
@@ -125,6 +162,28 @@ struct TaskTitleEntryField: View {
             }
         }
         return result
+    }
+
+    private var activeTags: [Tag] {
+        TagSupport.uniqueBySlug(allTags.filter { !$0.isArchived })
+    }
+
+    private var filteredTags: [Tag] {
+        let trimmed = tagSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return activeTags }
+        let slug = TagSupport.slug(for: trimmed)
+        return activeTags.filter {
+            $0.name.localizedCaseInsensitiveContains(trimmed) ||
+                $0.slug.localizedCaseInsensitiveContains(slug)
+        }
+    }
+
+    private var canCreateInlineTag: Bool {
+        let name = TagSupport.displayName(for: tagSearchQuery)
+        guard !name.isEmpty,
+              name.rangeOfCharacter(from: .alphanumerics) != nil else { return false }
+        let slug = TagSupport.slug(for: name)
+        return !allTags.contains { $0.slug == slug }
     }
 
     private var hiddenShortcutButtons: some View {
@@ -207,9 +266,7 @@ struct TaskTitleEntryField: View {
                         return .handled
                     }
                     .onKeyPress(.tab) {
-                        title += "~"
-                        tildeMode = .none
-                        DispatchQueue.main.async { isTitleFocused = true }
+                        restoreLiteralShortcut(marker: "~", query: tildeSearchQuery)
                         return .handled
                     }
                 if !tildeSearchQuery.isEmpty {
@@ -255,6 +312,50 @@ struct TaskTitleEntryField: View {
         .onChange(of: tildeSearchQuery) { _, _ in tildeHighlightIdx = 0 }
     }
 
+    private var tagPreview: some View {
+        HStack(spacing: 4) {
+            if !title.isEmpty {
+                Text(title)
+                    .font(previewFont)
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            Text("#")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Theme.purple)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .popover(
+                    isPresented: Binding(
+                        get: { isTagMode },
+                        set: { if !$0 { isTagMode = false } }
+                    ),
+                    arrowEdge: .bottom
+                ) {
+                    tagSearchView
+                }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var tagSearchView: some View {
+        TaskTitleInlineTagPicker(
+            query: $tagSearchQuery,
+            highlightIndex: $tagHighlightIdx,
+            filteredTags: filteredTags,
+            selectedTags: selectedTags?.wrappedValue ?? [],
+            canCreate: canCreateInlineTag,
+            onSelect: selectInlineTagItem,
+            onCreate: createInlineTag,
+            onSubmit: selectInlineTag,
+            onMoveHighlight: moveTagHighlight,
+            onRestoreLiteral: { restoreLiteralShortcut(marker: "#", query: tagSearchQuery) }
+        )
+    }
+
     private var tildeSectionSearchView: some View {
         TildeSectionSearchPanel(
             sections: availableSections,
@@ -277,6 +378,12 @@ struct TaskTitleEntryField: View {
         tildeHighlightIdx = min(max(tildeHighlightIdx + offset, 0), count - 1)
     }
 
+    private func moveTagHighlight(by offset: Int) {
+        let count = filteredTags.count
+        guard count > 0 else { return }
+        tagHighlightIdx = min(max(tagHighlightIdx + offset, 0), count - 1)
+    }
+
     private func selectTildeContainer() {
         let items = tildeFlatContainers
         guard !items.isEmpty else { return }
@@ -291,11 +398,59 @@ struct TaskTitleEntryField: View {
         tildeMode = .section
     }
 
+    private func selectInlineTag() {
+        let tags = filteredTags
+        if !tags.isEmpty {
+            selectInlineTagItem(tags[min(tagHighlightIdx, tags.count - 1)])
+        } else if canCreateInlineTag {
+            createInlineTag()
+        }
+    }
+
+    private func createInlineTag() {
+        guard let onCreateTag else { return }
+        selectInlineTagItem(onCreateTag(tagSearchQuery))
+    }
+
+    private func selectInlineTagItem(_ tag: Tag) {
+        guard let selectedTags else { return }
+        var tags = selectedTags.wrappedValue
+        if !tags.contains(where: { $0.id == tag.id }) {
+            tags.append(tag)
+            selectedTags.wrappedValue = TagSupport.sorted(tags)
+        }
+        tagSearchQuery = ""
+        tagHighlightIdx = 0
+        isTagMode = false
+        DispatchQueue.main.async { isTitleFocused = true }
+    }
+
+    private func restoreLiteralShortcut(marker: Character, query: String) {
+        title += "\(marker)\(query)"
+        tildeMode = .none
+        tildeSearchQuery = ""
+        tildeHighlightIdx = 0
+        isTagMode = false
+        tagSearchQuery = ""
+        tagHighlightIdx = 0
+        DispatchQueue.main.async { isTitleFocused = true }
+    }
+
     private func normalizeSelectedSection() {
         guard let sectionName else { return }
         let validSections = availableSections
         if !validSections.contains(where: { $0.caseInsensitiveCompare(sectionName.wrappedValue) == .orderedSame }) {
             sectionName.wrappedValue = validSections.first ?? TaskSectionDefaults.defaultName
+        }
+    }
+
+    private func applyTitleShortcuts() {
+        if let priority {
+            var currentPriority = priority.wrappedValue
+            title = TaskTitleSupport.titleApplyingPriorityShortcut(title, priority: &currentPriority)
+            priority.wrappedValue = currentPriority
+        } else {
+            title = TaskTitleSupport.normalized(title)
         }
     }
 }
@@ -314,4 +469,5 @@ private struct TaskTitleTildeContainerItem: Identifiable {
 
     var id: TaskContainerSelection { tag }
 }
+
 #endif

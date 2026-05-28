@@ -110,18 +110,12 @@ struct KanbanPriorityPickerPopover: View {
                 Button {
                     priority = value
                     isPresented = false
-                } label: {
-                    HStack(spacing: 8) {
-                        if value == .none {
-                            Text("—")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Theme.dim)
-                                .frame(width: 7)
-                        } else {
-                            Circle()
-                                .fill(Theme.priorityColor(value))
-                                .frame(width: 7, height: 7)
-                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                        Text(TaskTitleSupport.priorityMark(for: value))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(value == .none ? Theme.dim : Theme.priorityColor(value))
+                            .frame(width: 24, alignment: .leading)
                         Text(value.label)
                             .font(.system(size: 13))
                             .foregroundStyle(Theme.text)

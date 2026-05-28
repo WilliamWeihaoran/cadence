@@ -90,6 +90,11 @@ struct MacTaskRow: View {
         .padding(.vertical, 8)
         .contentShape(Rectangle())
         .onTapGesture { showTaskInspector = true }
+        .overlay {
+            RightClickActionTrigger {
+                showTaskInspector = true
+            }
+        }
         .background(TaskRowBackground(task: task, isHovered: isHovered, urgencyTint: urgencyBackgroundTint))
         .overlay {
             RoundedRectangle(cornerRadius: 8)

@@ -776,14 +776,15 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
               let editor = inlineTaskTitleEditor,
               let taskID = inlineTaskTitleTaskID else { return }
         isEndingInlineTaskTitleEdit = true
-        let newTitle = TaskTitleSupport.normalized(editor.stringValue)
+        let rawTitle = TaskTitleSupport.normalized(editor.stringValue)
+        let referenceTitle = TaskTitleSupport.priorityShortcut(in: rawTitle)?.title ?? rawTitle
         editor.delegate = nil
         editor.removeFromSuperview()
         inlineTaskTitleEditor = nil
         inlineTaskTitleTaskID = nil
         if commit {
-            onRenameEmbeddedMarkdownTask?(taskID, newTitle)
-            replaceEmbeddedTaskReferenceTitle(id: taskID, title: newTitle)
+            onRenameEmbeddedMarkdownTask?(taskID, rawTitle)
+            replaceEmbeddedTaskReferenceTitle(id: taskID, title: referenceTitle)
         }
         isEndingInlineTaskTitleEdit = false
         needsDisplay = true

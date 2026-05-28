@@ -76,6 +76,11 @@ struct KanbanCard: View {
         .onTapGesture {
             showTaskInspector = true
         }
+        .overlay {
+            RightClickActionTrigger {
+                showTaskInspector = true
+            }
+        }
         .onHover { hovering in
             isPointerOverCard = hovering
             syncInteractiveHoverState()

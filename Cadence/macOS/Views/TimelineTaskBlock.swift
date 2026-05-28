@@ -97,6 +97,13 @@ struct TimelineTaskBlock: View {
                 onSelect: onSelect
             )
         }
+        .overlay {
+            RightClickActionTrigger {
+                activeDragTaskID = nil
+                selectedTaskID = task.id
+                onSelect()
+            }
+        }
         .onDrag {
             guard activeResizeEdge == nil else {
                 return NSItemProvider()

@@ -70,7 +70,10 @@ struct TaskDetailPopover: View {
                         contexts: contexts,
                         areas: areas,
                         projects: projects,
-                        taskContainerBinding: taskContainerBinding
+                        tags: tags,
+                        taskContainerBinding: taskContainerBinding,
+                        taskTagsBinding: taskTagsBinding,
+                        onCreateTag: createTag
                     )
 
                     TaskInspectorSectionGroup(

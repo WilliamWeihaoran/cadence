@@ -239,19 +239,24 @@ struct TaskPriorityPill: View {
     let selected: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(Theme.priorityColor(priority))
-                .frame(width: 7, height: 7)
-            Text(priority.label)
-                .font(.system(size: 11, weight: selected ? .semibold : .medium))
+        HStack(spacing: 5) {
+            Text(TaskTitleSupport.priorityMark(for: priority))
+                .font(.system(size: 12, weight: .bold))
+                .frame(minWidth: 18)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 7, weight: .semibold))
+                .foregroundStyle(Theme.dim)
         }
-        .foregroundStyle(selected ? Theme.text : Theme.muted)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .foregroundStyle(selected ? Theme.priorityColor(priority) : Theme.dim)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
         .frame(minHeight: 30)
         .contentShape(Rectangle())
-        .background(selected ? Theme.surfaceElevated : Theme.surface.opacity(0.6))
+        .background(selected ? Theme.priorityColor(priority).opacity(0.12) : Theme.surface.opacity(0.6))
+        .overlay(
+            Capsule()
+                .stroke(selected ? Theme.priorityColor(priority).opacity(0.35) : Theme.borderSubtle, lineWidth: 1)
+        )
         .clipShape(Capsule())
     }
 }

@@ -6,6 +6,7 @@ struct TagPickerControl: View {
     @Binding var selectedTags: [Tag]
     let allTags: [Tag]
     let onCreateTag: (String) -> Tag
+    var showsLabel: Bool = false
 
     @State private var isPresented = false
 
@@ -24,12 +25,19 @@ struct TagPickerControl: View {
             Button {
                 isPresented.toggle()
             } label: {
-                Image(systemName: "tag.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 24, height: 24)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                HStack(spacing: 6) {
+                    Image(systemName: "tag.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                    if showsLabel {
+                        Text("Tags")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                }
+                .foregroundStyle(Theme.dim)
+                .padding(.horizontal, showsLabel ? 9 : 0)
+                .frame(width: showsLabel ? nil : 24, height: 24)
+                .background(Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
             }
             .buttonStyle(.cadencePlain)
             .help("Edit tags")
