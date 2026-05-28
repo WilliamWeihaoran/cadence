@@ -13,6 +13,7 @@ enum CadenceReadError: Error, LocalizedError, Sendable {
     case taskNotFound(String)
     case taskBundleNotFound(String)
     case containerNotFound(String, String)
+    case contextNotFound(String)
     case noteNotFound(String)
     case documentNotFound(String)
     case goalNotFound(String)
@@ -30,7 +31,7 @@ enum CadenceReadError: Error, LocalizedError, Sendable {
         case .invalidStatus(let value):
             return "Invalid status value: \(value)."
         case .invalidScope(let value):
-            return "Invalid search scope: \(value). Expected tasks, containers, documents, notes, core_notes, event_notes, goals, habits, links, or tags."
+            return "Invalid search scope: \(value). Expected tasks, containers, contexts, documents, notes, core_notes, event_notes, goals, habits, links, or tags."
         case .invalidNoteKind(let value):
             return "Invalid note kind: \(value). Expected daily, weekly, permanent, list, or meeting."
         case .incompleteContainerFilter:
@@ -41,6 +42,8 @@ enum CadenceReadError: Error, LocalizedError, Sendable {
             return "No task bundle found with id \(value)."
         case .containerNotFound(let kind, let id):
             return "No \(kind) found with id \(id)."
+        case .contextNotFound(let value):
+            return "No context found with id \(value)."
         case .noteNotFound(let value):
             return "No note found with id \(value)."
         case .documentNotFound(let value):
@@ -301,6 +304,25 @@ final class CadenceReadService {
         return Array(refs.prefix(cappedLimit(limit)))
     }
 
+    func listContexts(includeArchived: Bool = false, query: String? = nil, limit: Int = 50) throws -> [CadenceContextRef] {
+        var contexts = try fetchContexts()
+        if !includeArchived {
+            contexts = contexts.filter { !$0.isArchived }
+        }
+        if let query = query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
+            contexts = contexts.filter { context in
+                CadenceSearchMatcher.matchScore(query: query, fields: [context.name, context.icon]) != nil
+            }
+        }
+        return Array(contexts
+            .sorted {
+                if $0.order != $1.order { return $0.order < $1.order }
+                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+            .prefix(cappedLimit(limit))
+            .map(contextRef))
+    }
+
     func containerSummary(kind: String, id: String) throws -> CadenceContainerSummary {
         let uuid = try uuid(from: id)
         let tasks = try fetchTasks()
@@ -323,6 +345,46 @@ final class CadenceReadService {
             sections: try sectionSummaries(kind: kind, id: uuid, tasks: containerTasks),
             documents: noteDocuments,
             links: links
+        )
+    }
+
+    func contextSummary(contextID: String) throws -> CadenceContextSummary {
+        let id = try uuid(from: contextID)
+        guard let context = try fetchContexts().first(where: { $0.id == id }) else {
+            throw CadenceReadError.contextNotFound(contextID)
+        }
+
+        let areas = try fetchAreas()
+            .filter { $0.context?.id == id }
+            .sorted { $0.order < $1.order }
+        let projects = try fetchProjects()
+            .filter { $0.context?.id == id }
+            .sorted { $0.order < $1.order }
+        let goals = try fetchGoals().filter { $0.context?.id == id }
+        let tasks = try fetchTasks().filter { $0.context?.id == id }
+        let activeTasks = tasks.filter { !$0.isDone && !$0.isCancelled }
+        let areaIDs = Set(areas.map(\.id))
+        let projectIDs = Set(projects.map(\.id))
+        let notes = try fetchNotes().filter { note in
+            note.kind == .list && (note.area.map { areaIDs.contains($0.id) } ?? false || note.project.map { projectIDs.contains($0.id) } ?? false)
+        }
+        let links = try fetchLinks().filter { link in
+            link.area.map { areaIDs.contains($0.id) } ?? false || link.project.map { projectIDs.contains($0.id) } ?? false
+        }
+        let today = DateFormatters.todayKey()
+
+        return CadenceContextSummary(
+            context: contextRef(context),
+            inboxTaskCount: tasks.filter { $0.area == nil && $0.project == nil && !$0.isCancelled }.count,
+            activeTaskCount: activeTasks.count,
+            completedTaskCount: tasks.filter(\.isDone).count,
+            scheduledTaskCount: activeTasks.filter { !$0.scheduledDate.isEmpty }.count,
+            overdueTaskCount: activeTasks.filter { !$0.dueDate.isEmpty && $0.dueDate < today }.count,
+            activeGoalCount: goals.filter { $0.status == .active }.count,
+            documentCount: notes.count,
+            linkCount: links.count,
+            areas: areas.map(containerRef),
+            projects: projects.map(containerRef)
         )
     }
 
@@ -572,7 +634,7 @@ final class CadenceReadService {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 
-        let selectedScopes = try validateScopes(scopes ?? ["tasks", "containers", "documents", "core_notes", "event_notes", "goals", "habits", "links", "tags"])
+        let selectedScopes = try validateScopes(scopes ?? ["tasks", "containers", "contexts", "documents", "core_notes", "event_notes", "goals", "habits", "links", "tags"])
         let noteScopes = Set(["documents", "notes", "core_notes", "event_notes"])
         let notes = selectedScopes.isDisjoint(with: noteScopes) ? [] : try fetchNotes()
         var hits: [CadenceSearchHit] = []
@@ -602,6 +664,24 @@ final class CadenceReadService {
             hits += try fetchProjects().compactMap { project in
                 guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [project.name, project.desc, project.context?.name ?? "", project.area?.name ?? ""]) else { return nil }
                 return CadenceSearchHit(entityType: "project", entityId: project.id.uuidString, title: project.name, subtitle: project.context?.name ?? "No context", excerpt: excerpt(project.desc), score: score)
+            }
+        }
+
+        if selectedScopes.contains("contexts") {
+            hits += try fetchContexts().compactMap { context in
+                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [context.name, context.icon]) else { return nil }
+                let areaCount = (context.areas ?? []).count
+                let projectCount = (context.projects ?? []).count
+                let goalCount = (context.goals ?? []).count
+                let habitCount = (context.habits ?? []).count
+                return CadenceSearchHit(
+                    entityType: "context",
+                    entityId: context.id.uuidString,
+                    title: resolvedTitle(context.name, fallback: "Untitled Context"),
+                    subtitle: context.isArchived ? "Archived context" : "Context",
+                    excerpt: "\(areaCount) areas - \(projectCount) projects - \(goalCount) goals - \(habitCount) habits",
+                    score: score
+                )
             }
         }
 
@@ -722,6 +802,10 @@ final class CadenceReadService {
 
     private func fetchTasks() throws -> [AppTask] {
         try context.fetch(FetchDescriptor<AppTask>())
+    }
+
+    private func fetchContexts() throws -> [Context] {
+        try context.fetch(FetchDescriptor<Context>())
     }
 
     private func fetchAreas() throws -> [Area] {
@@ -940,6 +1024,22 @@ final class CadenceReadService {
         default:
             throw CadenceReadError.invalidContainerKind(kind)
         }
+    }
+
+    private func contextRef(_ context: Context) -> CadenceContextRef {
+        CadenceContextRef(
+            id: context.id.uuidString,
+            name: resolvedTitle(context.name, fallback: "Untitled Context"),
+            colorHex: context.colorHex,
+            icon: context.icon,
+            order: context.order,
+            isArchived: context.isArchived,
+            areaCount: (context.areas ?? []).count,
+            projectCount: (context.projects ?? []).count,
+            activeTaskCount: (context.tasks ?? []).filter { !$0.isDone && !$0.isCancelled }.count,
+            goalCount: (context.goals ?? []).count,
+            habitCount: (context.habits ?? []).count
+        )
     }
 
     private func goalRef(_ goal: Goal) -> CadenceGoalRef {
@@ -1186,7 +1286,7 @@ final class CadenceReadService {
     }
 
     private func validateScopes(_ scopes: [String]) throws -> Set<String> {
-        let valid = Set(["tasks", "containers", "documents", "notes", "core_notes", "event_notes", "goals", "habits", "links", "tags"])
+        let valid = Set(["tasks", "containers", "contexts", "documents", "notes", "core_notes", "event_notes", "goals", "habits", "links", "tags"])
         return try Set(scopes.map { scope in
             let normalized = scope.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard valid.contains(normalized) else {

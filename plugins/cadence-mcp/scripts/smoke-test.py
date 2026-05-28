@@ -23,6 +23,8 @@ EXPECTED_TOOLS = {
     "get_task",
     "list_task_bundles",
     "get_task_bundle",
+    "list_contexts",
+    "get_context_summary",
     "list_containers",
     "get_container_summary",
     "list_tags",
@@ -127,11 +129,15 @@ def main() -> int:
         diagnostics = json.loads(diagnostics_response["result"]["content"][0]["text"])
         if diagnostics["mode"] != "read-write":
             raise AssertionError(f"expected read-write diagnostics, got {diagnostics}")
+        if diagnostics.get("supportsFlexibleStringArrays") != "true":
+            raise AssertionError(f"expected flexible string arrays support, got {diagnostics}")
         if diagnostics.get("noteMigrationHealthIssues") != "0":
             raise AssertionError(f"expected clean note migration health, got {diagnostics}")
         audit_log = Path(temp_store.name) / "mcp-audit.log"
         if diagnostics.get("auditLogPath") != str(audit_log):
             raise AssertionError(f"expected audit log path {audit_log}, got {diagnostics.get('auditLogPath')}")
+        if diagnostics.get("storePath") != str(Path(temp_store.name) / "default.store"):
+            raise AssertionError(f"expected store path in diagnostics, got {diagnostics}")
 
         arguments = {"date": date_arg or "2026-04-28"}
         send(
@@ -152,6 +158,36 @@ def main() -> int:
         missing_id = read_response(4)
         if not missing_id["result"].get("isError", False):
             raise AssertionError("get_task without taskId should return an MCP tool error")
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 26,
+                "method": "tools/call",
+                "params": {"name": "list_contexts", "arguments": {"limit": 3}},
+            }
+        )
+        list_contexts_response = read_response(26)
+        if list_contexts_response["result"].get("isError", False):
+            raise AssertionError(list_contexts_response["result"]["content"][0]["text"])
+        context_hits = json.loads(list_contexts_response["result"]["content"][0]["text"])
+        if context_hits != []:
+            raise AssertionError(f"expected empty contexts in fresh store, got {context_hits}")
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 27,
+                "method": "tools/call",
+                "params": {
+                    "name": "get_context_summary",
+                    "arguments": {"contextId": "00000000-0000-0000-0000-000000000000"},
+                },
+            }
+        )
+        missing_context = read_response(27)
+        if not missing_context["result"].get("isError", False):
+            raise AssertionError("get_context_summary with a missing contextId should return an MCP tool error")
 
         send(
             {
@@ -258,7 +294,7 @@ def main() -> int:
                 "jsonrpc": "2.0",
                 "id": 18,
                 "method": "tools/call",
-                "params": {"name": "search_cadence", "arguments": {"query": core_note_marker, "scopes": ["core_notes"]}},
+                "params": {"name": "search_cadence", "arguments": {"query": core_note_marker, "scopes": "core_notes"}},
             }
         )
         core_search_response = read_response(18)
@@ -405,6 +441,52 @@ def main() -> int:
         send(
             {
                 "jsonrpc": "2.0",
+                "id": 28,
+                "method": "tools/call",
+                "params": {
+                    "name": "create_task",
+                    "arguments": {
+                        "title": "MCP smoke flexible arrays",
+                        "tagNames": "alpha, beta",
+                        "subtaskTitles": "first subtask\nsecond subtask",
+                    },
+                },
+            }
+        )
+        create_with_flexible_arrays = read_response(28)
+        if create_with_flexible_arrays["result"].get("isError", False):
+            raise AssertionError(create_with_flexible_arrays["result"]["content"][0]["text"])
+        flexible_task = json.loads(create_with_flexible_arrays["result"]["content"][0]["text"])
+        if len(flexible_task["summary"]["tags"]) != 2:
+            raise AssertionError(f"expected tagNames string to resolve two tags, got {flexible_task}")
+        if len(flexible_task["subtasks"]) != 2:
+            raise AssertionError(f"expected subtaskTitles string to resolve two subtasks, got {flexible_task}")
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 29,
+                "method": "tools/call",
+                "params": {
+                    "name": "list_tasks",
+                    "arguments": {
+                        "status": "todo",
+                        "tagSlugs": "alpha, beta",
+                        "limit": 10,
+                    },
+                },
+            }
+        )
+        flexible_list_response = read_response(29)
+        if flexible_list_response["result"].get("isError", False):
+            raise AssertionError(flexible_list_response["result"]["content"][0]["text"])
+        flexible_list = json.loads(flexible_list_response["result"]["content"][0]["text"])
+        if not any(task["id"] == flexible_task["summary"]["id"] for task in flexible_list):
+            raise AssertionError(f"expected list_tasks flexible filters to return created task, got {flexible_list}")
+
+        send(
+            {
+                "jsonrpc": "2.0",
                 "id": 12,
                 "method": "tools/call",
                 "params": {
@@ -419,6 +501,18 @@ def main() -> int:
         invalid_duration = read_response(12)
         if not invalid_duration["result"].get("isError", False):
             raise AssertionError("create_task with invalid duration should return an MCP tool error")
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 30,
+                "method": "tools/call",
+                "params": {"name": "list_tags", "arguments": {"limit": "many"}},
+            }
+        )
+        invalid_limit = read_response(30)
+        if not invalid_limit["result"].get("isError", False):
+            raise AssertionError("list_tags with a non-integer limit should return an MCP tool error")
 
         send(
             {
@@ -466,8 +560,8 @@ def main() -> int:
             raise AssertionError("expected MCP writes to create an audit log")
         audit_entries = [json.loads(line) for line in audit_log.read_text().splitlines() if line.strip()]
         create_audits = [entry for entry in audit_entries if entry["tool"] == "create_task"]
-        if len(create_audits) < 3:
-            raise AssertionError(f"expected at least 3 create_task audit entries, got {len(create_audits)}")
+        if len(create_audits) < 4:
+            raise AssertionError(f"expected at least 4 create_task audit entries, got {len(create_audits)}")
         bulk_cancel_audits = [entry for entry in audit_entries if entry["tool"] == "bulk_cancel_tasks"]
         if len(bulk_cancel_audits) < 3:
             raise AssertionError(f"expected at least 3 bulk_cancel_tasks audit entries, got {len(bulk_cancel_audits)}")
@@ -481,12 +575,15 @@ def main() -> int:
         print(f"OK get_today_brief dateKey={brief['dateKey']}")
         print("OK core note append/read/search")
         print("OK note list/detail paths")
+        print("OK context list/error paths")
         print("OK tag/goal/habit/link/bundle list paths")
         print("OK document/event-note read paths")
         print("OK string scheduledStartMin")
         print("OK natural date/duration")
         print("OK word duration")
+        print("OK flexible string arrays")
         print("OK invalid duration error")
+        print("OK strict integer validation")
         print("OK bulk cancel")
         print("OK recent MCP writes")
         print(f"OK audit log entries={len(audit_entries)}")

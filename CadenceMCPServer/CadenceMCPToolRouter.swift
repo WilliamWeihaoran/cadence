@@ -35,6 +35,8 @@ struct CadenceMCPToolRouter {
             let health = try? readService.noteMigrationHealth()
             return try encode(CadenceMCPToolDefinitions.diagnostics(
                 auditLogPath: try? CadenceModelContainerFactory.auditLogURL().path,
+                refreshMarkerPath: try? CadenceModelContainerFactory.refreshMarkerURL().path,
+                storePath: try? CadenceModelContainerFactory.resolvedStoreURL().path,
                 noteMigrationHealthReport: health
             ))
 
@@ -43,7 +45,7 @@ struct CadenceMCPToolRouter {
 
         case "list_tasks":
             let options = CadenceTaskListOptions(
-                statuses: arguments.stringArray("status"),
+                statuses: try arguments.flexibleStringArray("status"),
                 includeCompleted: arguments.bool("includeCompleted") ?? false,
                 dueDateFrom: try arguments.dateKey("dueDateFrom"),
                 dueDateTo: try arguments.dateKey("dueDateTo"),
@@ -51,8 +53,8 @@ struct CadenceMCPToolRouter {
                 containerKind: arguments.string("containerKind"),
                 containerId: arguments.string("containerId"),
                 textQuery: arguments.string("textQuery"),
-                tagSlugs: arguments.stringArray("tagSlugs"),
-                limit: arguments.int("limit") ?? 50
+                tagSlugs: try arguments.flexibleStringArray("tagSlugs"),
+                limit: try arguments.strictInt("limit") ?? 50
             )
             return try encode(readService.listTasks(options: options))
 
@@ -62,18 +64,30 @@ struct CadenceMCPToolRouter {
         case "list_task_bundles":
             return try encode(readService.listTaskBundles(options: CadenceTaskBundleListOptions(
                 dateKey: try arguments.dateKey("date"),
-                limit: arguments.int("limit") ?? 50
+                limit: try arguments.strictInt("limit") ?? 50
             )))
 
         case "get_task_bundle":
             return try encode(readService.getTaskBundle(bundleID: try arguments.requiredString("bundleId")))
+
+        case "list_contexts":
+            return try encode(readService.listContexts(
+                includeArchived: arguments.bool("includeArchived") ?? false,
+                query: arguments.string("query"),
+                limit: try arguments.strictInt("limit") ?? 50
+            ))
+
+        case "get_context_summary":
+            return try encode(readService.contextSummary(
+                contextID: try arguments.requiredString("contextId")
+            ))
 
         case "list_containers":
             return try encode(readService.listContainers(
                 kind: arguments.string("kind"),
                 status: arguments.string("status"),
                 contextID: arguments.string("contextId"),
-                limit: arguments.int("limit") ?? 50
+                limit: try arguments.strictInt("limit") ?? 50
             ))
 
         case "get_container_summary":
@@ -86,7 +100,7 @@ struct CadenceMCPToolRouter {
             return try encode(readService.listTags(
                 includeArchived: arguments.bool("includeArchived") ?? false,
                 query: arguments.string("query"),
-                limit: arguments.int("limit") ?? 50
+                limit: try arguments.strictInt("limit") ?? 50
             ))
 
         case "get_core_notes":
@@ -98,8 +112,8 @@ struct CadenceMCPToolRouter {
                 containerKind: arguments.string("containerKind"),
                 containerId: arguments.string("containerId"),
                 query: arguments.string("query"),
-                tagSlugs: arguments.stringArray("tagSlugs"),
-                limit: arguments.int("limit") ?? 50
+                tagSlugs: try arguments.flexibleStringArray("tagSlugs"),
+                limit: try arguments.strictInt("limit") ?? 50
             )))
 
         case "get_note":
@@ -110,7 +124,7 @@ struct CadenceMCPToolRouter {
                 containerKind: arguments.string("containerKind"),
                 containerID: arguments.string("containerId"),
                 query: arguments.string("query"),
-                limit: arguments.int("limit") ?? 50
+                limit: try arguments.strictInt("limit") ?? 50
             ))
 
         case "get_document":
@@ -121,7 +135,7 @@ struct CadenceMCPToolRouter {
                 status: arguments.string("status"),
                 contextId: arguments.string("contextId"),
                 query: arguments.string("query"),
-                limit: arguments.int("limit") ?? 50
+                limit: try arguments.strictInt("limit") ?? 50
             )))
 
         case "get_goal":
@@ -132,7 +146,7 @@ struct CadenceMCPToolRouter {
                 contextId: arguments.string("contextId"),
                 goalId: arguments.string("goalId"),
                 query: arguments.string("query"),
-                limit: arguments.int("limit") ?? 50
+                limit: try arguments.strictInt("limit") ?? 50
             )))
 
         case "list_links":
@@ -140,18 +154,18 @@ struct CadenceMCPToolRouter {
                 containerKind: arguments.string("containerKind"),
                 containerId: arguments.string("containerId"),
                 query: arguments.string("query"),
-                limit: arguments.int("limit") ?? 50
+                limit: try arguments.strictInt("limit") ?? 50
             )))
 
         case "search_cadence":
             return try encode(readService.search(
                 query: try arguments.requiredString("query"),
-                scopes: arguments.stringArray("scopes"),
-                limit: arguments.int("limit") ?? 50
+                scopes: try arguments.flexibleStringArray("scopes"),
+                limit: try arguments.strictInt("limit") ?? 50
             ))
 
         case "get_recent_mcp_writes":
-            return try encode(readService.recentMCPWrites(limit: arguments.int("limit") ?? 50))
+            return try encode(readService.recentMCPWrites(limit: try arguments.strictInt("limit") ?? 50))
 
         case "create_task":
             return try encode(writeService.createTask(options: CadenceCreateTaskOptions(
@@ -165,8 +179,8 @@ struct CadenceMCPToolRouter {
                 containerKind: arguments.string("containerKind"),
                 containerId: arguments.string("containerId"),
                 sectionName: arguments.string("sectionName"),
-                subtaskTitles: arguments.stringArray("subtaskTitles"),
-                tagNames: arguments.stringArray("tagNames")
+                subtaskTitles: try arguments.flexibleStringArray("subtaskTitles"),
+                tagNames: try arguments.flexibleStringArray("tagNames")
             )))
 
         case "update_task":
@@ -182,7 +196,7 @@ struct CadenceMCPToolRouter {
                 containerId: arguments.string("containerId"),
                 clearContainer: arguments.bool("clearContainer") ?? false,
                 sectionName: arguments.string("sectionName"),
-                tagNames: arguments.stringArray("tagNames")
+                tagNames: try arguments.flexibleStringArray("tagNames")
             )))
 
         case "schedule_task":
@@ -205,7 +219,7 @@ struct CadenceMCPToolRouter {
 
         case "bulk_cancel_tasks":
             return try encode(writeService.bulkCancelTasks(options: CadenceBulkCancelTaskOptions(
-                taskIds: arguments.stringArray("taskIds"),
+                taskIds: try arguments.flexibleStringArray("taskIds"),
                 titlePrefix: arguments.string("titlePrefix")
             )))
 

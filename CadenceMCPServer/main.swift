@@ -13,7 +13,7 @@ do {
     )
     let server = Server(
         name: "cadence-mcp",
-        version: "0.1.0",
+        version: "0.2.0",
         capabilities: .init(tools: .init(listChanged: false))
     )
     let router = CadenceMCPToolRouter(readService: readService, writeService: writeService)

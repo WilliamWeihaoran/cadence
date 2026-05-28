@@ -47,6 +47,7 @@
 		A10000002FCE000000000226 /* Cadence/Services/NoteReferenceSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000126 /* Cadence/Services/NoteReferenceSupport.swift */; };
 		A10000002FCE000000000227 /* Cadence/Services/DataIntegrityRepairService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000127 /* Cadence/Services/DataIntegrityRepairService.swift */; };
 		A10000002FCE000000000228 /* Cadence/Models/Pursuit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000128 /* Cadence/Models/Pursuit.swift */; };
+		A10000002FCE000000000229 /* Cadence/Services/MarkdownMetadataSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000113 /* Cadence/Services/MarkdownMetadataSupport.swift */; };
 		B10000002FCE000000000201 /* CadenceWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000101 /* CadenceWidgets.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B10000002FCE000000000202 /* Cadence/Services/CadenceStoreSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000102 /* Cadence/Services/CadenceStoreSupport.swift */; };
 		B10000002FCE000000000203 /* Cadence/Services/CadenceWidgetRefreshCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000103 /* Cadence/Services/CadenceWidgetRefreshCenter.swift */; };
@@ -613,6 +614,7 @@
 				A10000002FCE000000000213 /* Cadence/Services/CadenceSchema.swift in Sources */,
 				A10000002FCE000000000220 /* Cadence/Services/NoteMigrationService.swift in Sources */,
 				A10000002FCE000000000224 /* Cadence/Services/TagSupport.swift in Sources */,
+				A10000002FCE000000000229 /* Cadence/Services/MarkdownMetadataSupport.swift in Sources */,
 				A10000002FCE000000000225 /* Cadence/Services/MarkdownNoteSupport.swift in Sources */,
 				A10000002FCE000000000226 /* Cadence/Services/NoteReferenceSupport.swift in Sources */,
 				A10000002FCE000000000227 /* Cadence/Services/DataIntegrityRepairService.swift in Sources */,

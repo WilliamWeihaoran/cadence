@@ -28,7 +28,21 @@ extension Dictionary where Key == String, Value == MCP.Value {
     }
 
     func bool(_ key: String) -> Bool? {
-        self[key]?.boolValue
+        if let boolValue = self[key]?.boolValue {
+            return boolValue
+        }
+        guard let raw = self[key]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !raw.isEmpty else {
+            return nil
+        }
+        switch raw {
+        case "true", "yes", "1":
+            return true
+        case "false", "no", "0":
+            return false
+        default:
+            return nil
+        }
     }
 
     func int(_ key: String) -> Int? {
@@ -36,13 +50,31 @@ extension Dictionary where Key == String, Value == MCP.Value {
             return intValue
         }
         if let doubleValue = self[key]?.doubleValue {
+            guard doubleValue.rounded() == doubleValue else { return nil }
             return Int(doubleValue)
         }
         if let stringValue = self[key]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
-           let intValue = Int(stringValue) {
+           !stringValue.isEmpty,
+           let intValue = Self.parseIntegerString(stringValue) {
             return intValue
         }
         return nil
+    }
+
+    func strictInt(_ key: String) throws -> Int? {
+        guard let value = self[key] else { return nil }
+        if let intValue = value.intValue {
+            return intValue
+        }
+        if let doubleValue = value.doubleValue, doubleValue.rounded() == doubleValue {
+            return Int(doubleValue)
+        }
+        if let stringValue = value.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !stringValue.isEmpty,
+           let intValue = Self.parseIntegerString(stringValue) {
+            return intValue
+        }
+        throw ToolArgumentError.invalid("Invalid \(key): expected an integer value.")
     }
 
     func dateKey(_ key: String) throws -> String? {
@@ -105,6 +137,27 @@ extension Dictionary where Key == String, Value == MCP.Value {
         return values.compactMap(\.stringValue)
     }
 
+    func flexibleStringArray(_ key: String) throws -> [String]? {
+        guard let value = self[key] else { return nil }
+        if case .array(let values) = value {
+            let strings = values.compactMap(\.stringValue).map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }.filter { !$0.isEmpty }
+            guard strings.count == values.count else {
+                throw ToolArgumentError.invalid("Invalid \(key): expected an array of strings.")
+            }
+            return strings
+        }
+        guard let raw = value.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        let parts = raw
+            .split(whereSeparator: { $0 == "," || $0 == "\n" || $0 == ";" })
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts
+    }
+
     private static func parseRelativeDay(_ value: String, calendar: Calendar, today: Date) -> Date? {
         let patterns = [
             #"^in\s+(\d+)\s+days?$"#,
@@ -127,6 +180,16 @@ extension Dictionary where Key == String, Value == MCP.Value {
             return nil
         }
         return calendar.date(byAdding: .day, value: -days, to: today)
+    }
+
+    private static func parseIntegerString(_ value: String) -> Int? {
+        if let intValue = Int(value) {
+            return intValue
+        }
+        guard let doubleValue = Double(value), doubleValue.rounded() == doubleValue else {
+            return nil
+        }
+        return Int(doubleValue)
     }
 
     private static func parseDuration(_ value: String) -> Int? {

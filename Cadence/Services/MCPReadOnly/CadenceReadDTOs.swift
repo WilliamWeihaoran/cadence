@@ -1,5 +1,19 @@
 import Foundation
 
+struct CadenceContextRef: Codable, Sendable {
+    let id: String
+    let name: String
+    let colorHex: String
+    let icon: String
+    let order: Int
+    let isArchived: Bool
+    let areaCount: Int
+    let projectCount: Int
+    let activeTaskCount: Int
+    let goalCount: Int
+    let habitCount: Int
+}
+
 struct CadenceContainerRef: Codable, Sendable {
     let kind: String
     let id: String
@@ -172,6 +186,20 @@ struct CadenceContainerSummary: Codable, Sendable {
     let sections: [CadenceSectionSummary]
     let documents: [CadenceDocumentSummary]
     let links: [CadenceSavedLinkSummary]
+}
+
+struct CadenceContextSummary: Codable, Sendable {
+    let context: CadenceContextRef
+    let inboxTaskCount: Int
+    let activeTaskCount: Int
+    let completedTaskCount: Int
+    let scheduledTaskCount: Int
+    let overdueTaskCount: Int
+    let activeGoalCount: Int
+    let documentCount: Int
+    let linkCount: Int
+    let areas: [CadenceContainerRef]
+    let projects: [CadenceContainerRef]
 }
 
 struct CadenceDocumentDetail: Codable, Sendable {

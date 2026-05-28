@@ -10,6 +10,7 @@ SOURCE_PATHS=(
   "$ROOT_DIR/Cadence/Models"
   "$ROOT_DIR/Cadence/Services/CadenceSchema.swift"
   "$ROOT_DIR/Cadence/Services/MCPReadOnly"
+  "$ROOT_DIR/Cadence/Services/MarkdownMetadataSupport.swift"
   "$ROOT_DIR/Cadence/Shared/DateFormatters.swift"
   "$ROOT_DIR/Cadence.xcodeproj/project.pbxproj"
 )
