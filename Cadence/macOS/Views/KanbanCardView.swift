@@ -18,6 +18,7 @@ struct KanbanCard: View {
     @State private var showDoDatePicker = false
     @State private var doDatePickerDate: Date = Date()
     @State private var doDateViewMonth: Date = Date()
+    @State private var showSchedulePicker = false
     @State private var isHovered = false
     @State private var isPointerOverCard = false
     @State private var showTaskInspector = false
@@ -34,19 +35,24 @@ struct KanbanCard: View {
                 if hasScheduleTopRow {
                     KanbanCardScheduleTopRow(
                         startTime: scheduleStartLabel,
-                        duration: scheduleDurationLabel
+                        duration: scheduleDurationLabel,
+                        onDurationTap: openSchedulePicker
                     )
                 }
 
-                KanbanCardHeader(
-                    title: task.title,
-                    titleColor: task.isDone || task.isCancelled ? Theme.dim : Theme.text,
-                    isStruckThrough: task.isDone || isPendingCancel,
-                    durationBadge: headerDurationBadge,
-                    completionButtonIcon: completionButtonIcon,
-                    completionButtonColor: completionButtonColor,
-                    onCompletionTap: handleCompletionTap
-                )
+                TimelineView(.animation) { context in
+                    KanbanCardHeader(
+                        title: task.title,
+                        titleColor: task.isDone || task.isCancelled ? Theme.dim : Theme.text,
+                        isStruckThrough: task.isDone || isPendingCancel,
+                        durationBadge: headerDurationBadge,
+                        onDurationTap: openSchedulePicker,
+                        completionButtonIcon: completionButtonIcon,
+                        completionButtonColor: completionButtonColor,
+                        completionProgress: pendingCompletionProgress(now: context.date),
+                        onCompletionTap: handleCompletionTap
+                    )
+                }
 
                 CompactTagStrip(tags: task.sortedTags, limit: 3)
 
@@ -105,16 +111,15 @@ struct KanbanCard: View {
         .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             TaskDetailPopover(task: task)
         }
+        .popover(isPresented: $showSchedulePicker, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
+            TaskEmbedFieldEditorPopover(task: task, initialField: .scheduledDate)
+        }
     }
 
     private var metadataRows: [[KanbanMetaItem]] {
         switch presentation {
         case .listBoard:
-            KanbanCardStateSupport.metadataRows(
-                for: task,
-                doDateMetaItem: doDateMetaItem,
-                dueDateMetaItem: dueDateMetaItem
-            )
+            listBoardMetadataRows
         case .calendarBoard:
             calendarBoardMetadataRows
         }
@@ -143,23 +148,27 @@ struct KanbanCard: View {
         )
     }
 
+    private var listBoardMetadataRows: [[KanbanMetaItem]] {
+        let dateItem = concreteDueDateMetaItem ?? doDateMetaItem
+        return [[dateItem, contextMetaItem]]
+    }
+
     private var calendarBoardMetadataRows: [[KanbanMetaItem]] {
         var primary: [KanbanMetaItem] = []
 
-        if !task.dueDate.isEmpty {
-            primary.append(
-                KanbanMetaItem(
-                    id: "due-date",
-                    icon: "flag.fill",
-                    text: DateFormatters.relativeDate(from: task.dueDate),
-                    tint: Theme.red,
-                    textColor: isOverdue ? Theme.red : Theme.dim,
-                    action: .dueDate
-                )
-            )
+        if let dueDateItem = concreteDueDateMetaItem {
+            primary.append(dueDateItem)
         }
 
-        let listItem = KanbanMetaItem(
+        if primary.count >= 2 {
+            return [primary, [contextMetaItem]]
+        }
+        primary.append(contextMetaItem)
+        return [primary]
+    }
+
+    private var contextMetaItem: KanbanMetaItem {
+        KanbanMetaItem(
             id: "list",
             icon: task.project?.icon ?? task.area?.icon ?? "tray.fill",
             text: task.containerName.isEmpty ? "Inbox" : task.containerName,
@@ -167,12 +176,18 @@ struct KanbanCard: View {
             textColor: Theme.dim,
             action: .none
         )
+    }
 
-        if primary.count >= 2 {
-            return [primary, [listItem]]
-        }
-        primary.append(listItem)
-        return [primary]
+    private var concreteDueDateMetaItem: KanbanMetaItem? {
+        guard !task.dueDate.isEmpty else { return nil }
+        return KanbanMetaItem(
+            id: "due-date",
+            icon: "flag.fill",
+            text: DateFormatters.relativeDate(from: task.dueDate),
+            tint: Theme.red,
+            textColor: isOverdue ? Theme.red : Theme.dim,
+            action: .dueDate
+        )
     }
 
     private var hasScheduleTopRow: Bool {
@@ -299,6 +314,14 @@ struct KanbanCard: View {
         syncInteractiveHoverState()
     }
 
+    private func openSchedulePicker() {
+        if case let .calendarBoard(dateKey) = presentation, task.scheduledDate.isEmpty {
+            task.scheduledDate = dateKey
+        }
+        showSchedulePicker = true
+        syncInteractiveHoverState()
+    }
+
     private func syncInteractiveHoverState() {
         KanbanCardStateSupport.syncInteractiveHoverState(
             task: task,
@@ -362,8 +385,18 @@ struct KanbanCard: View {
         )
     }
 
+    private func pendingCompletionProgress(now: Date) -> Double? {
+        if isPendingCompletion {
+            return taskCompletionAnimationManager.progress(for: task, now: now)
+        }
+        if isPendingCancel {
+            return taskCompletionAnimationManager.cancelProgress(for: task, now: now)
+        }
+        return nil
+    }
+
     private var isPresentingInlinePopover: Bool {
-        showPriorityPicker || showDueDatePicker || showDoDatePicker
+        showPriorityPicker || showDueDatePicker || showDoDatePicker || showSchedulePicker
     }
 
     private var urgencyBackgroundTint: Color {

@@ -82,35 +82,38 @@ struct ListSectionKanbanColumn: View {
 
     private var columnBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            KanbanColumnHeader(
-                section: section,
-                activeTaskCount: activeTasks.count,
-                columnColor: columnColor,
-                hideColumnDueDateIfEmpty: hideColumnDueDateIfEmpty,
-                sectionDueDateIsOverdue: sectionDueDateIsOverdue,
-                isPendingCompletion: isPendingCompletion,
-                showHeaderDueDatePicker: $showHeaderDueDatePicker,
-                showEditor: $showEditor,
-                onToggleCompletion: toggleSectionCompletion,
-                onOpenDueDatePicker: openHeaderDueDatePicker,
-                onOpenEditor: openSectionEditor,
-                onCreateTask: presentNewTaskPanel,
-                onHoverChanged: { hovering in
-                    if hovering {
-                        hoveredEditableManager.beginHovering(id: sectionEditHoverID) {
-                            openSectionEditor()
+            TimelineView(.animation) { context in
+                KanbanColumnHeader(
+                    section: section,
+                    activeTaskCount: activeTasks.count,
+                    columnColor: columnColor,
+                    hideColumnDueDateIfEmpty: hideColumnDueDateIfEmpty,
+                    sectionDueDateIsOverdue: sectionDueDateIsOverdue,
+                    isPendingCompletion: isPendingCompletion,
+                    completionProgress: sectionCompletionAnimationManager.progress(for: section, now: context.date),
+                    showHeaderDueDatePicker: $showHeaderDueDatePicker,
+                    showEditor: $showEditor,
+                    onToggleCompletion: toggleSectionCompletion,
+                    onOpenDueDatePicker: openHeaderDueDatePicker,
+                    onOpenEditor: openSectionEditor,
+                    onCreateTask: presentNewTaskPanel,
+                    onHoverChanged: { hovering in
+                        if hovering {
+                            hoveredEditableManager.beginHovering(id: sectionEditHoverID) {
+                                openSectionEditor()
+                            }
+                        } else {
+                            hoveredEditableManager.endHovering(id: sectionEditHoverID)
                         }
-                    } else {
-                        hoveredEditableManager.endHovering(id: sectionEditHoverID)
+                    },
+                    dueDatePopover: {
+                        sectionDueDatePickerPopover
+                    },
+                    editorPopover: {
+                        columnEditor
                     }
-                },
-                dueDatePopover: {
-                    sectionDueDatePickerPopover
-                },
-                editorPopover: {
-                    columnEditor
-                }
-            )
+                )
+            }
 
             Divider().background(Theme.borderSubtle)
 
@@ -502,15 +505,11 @@ struct ListSectionKanbanColumn: View {
             .overlay {
                 if isPendingCompletion {
                     TimelineView(.animation) { context in
-                        GeometryReader { proxy in
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Theme.green.opacity(0.22))
-                                .frame(
-                                    width: proxy.size.width * sectionCompletionAnimationManager.progress(for: section, now: context.date),
-                                    alignment: .leading
-                                )
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                        }
+                        TaskCompletionPendingOverlay(
+                            progress: sectionCompletionAnimationManager.progress(for: section, now: context.date),
+                            tint: Theme.green,
+                            cornerRadius: 10
+                        )
                     }
                 }
             }

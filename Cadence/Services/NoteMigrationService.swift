@@ -63,7 +63,11 @@ enum NoteMigrationService {
     private static let lastReportKey = "noteMigration.lastReport.v1"
 
     @discardableResult
-    static func migrateIfNeeded(in context: ModelContext, source: String = "unknown") throws -> NoteMigrationReport {
+    static func migrateIfNeeded(
+        in context: ModelContext,
+        source: String = "unknown",
+        saveChanges: Bool = true
+    ) throws -> NoteMigrationReport {
         var report = NoteMigrationReport(
             source: source,
             startedAt: Date(),
@@ -72,7 +76,7 @@ enum NoteMigrationService {
         )
 
         do {
-            let result = try migrate(in: context, report: &report)
+            let result = try migrate(in: context, report: &report, saveChanges: saveChanges)
             record(result)
             log(result)
             return result
@@ -87,9 +91,13 @@ enum NoteMigrationService {
     }
 
     @discardableResult
-    static func migrateAndRecordFailure(in context: ModelContext, source: String) -> NoteMigrationReport? {
+    static func migrateAndRecordFailure(
+        in context: ModelContext,
+        source: String,
+        saveChanges: Bool = true
+    ) -> NoteMigrationReport? {
         do {
-            return try migrateIfNeeded(in: context, source: source)
+            return try migrateIfNeeded(in: context, source: source, saveChanges: saveChanges)
         } catch {
             return lastReport()
         }
@@ -155,7 +163,11 @@ enum NoteMigrationService {
         return report
     }
 
-    private static func migrate(in context: ModelContext, report: inout NoteMigrationReport) throws -> NoteMigrationReport {
+    private static func migrate(
+        in context: ModelContext,
+        report: inout NoteMigrationReport,
+        saveChanges: Bool
+    ) throws -> NoteMigrationReport {
         let notes = try context.fetch(FetchDescriptor<Note>())
         report.existingNoteCount = notes.count
         report.canonicalDuplicateCount = canonicalDuplicateCount(in: notes)
@@ -286,7 +298,7 @@ enum NoteMigrationService {
             inserted = true
         }
 
-        if inserted {
+        if inserted && saveChanges {
             try context.save()
         }
 

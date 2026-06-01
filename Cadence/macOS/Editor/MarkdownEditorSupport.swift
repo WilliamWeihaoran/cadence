@@ -374,15 +374,46 @@ struct MarkdownListPrefixMatch {
     let prefix: String
 }
 
+struct MarkdownListNormalizationResult: Equatable {
+    let text: String
+    let selection: NSRange
+}
+
 enum MarkdownListSupport {
     static func normalizedMarkdownListPrefixes(in text: String) -> String {
+        normalizedMarkdownListPrefixes(in: text, selection: NSRange(location: 0, length: 0)).text
+    }
+
+    static func normalizedMarkdownListPrefixes(in text: String, selection: NSRange) -> MarkdownListNormalizationResult {
+        let originalLines = text.components(separatedBy: "\n")
         var changed = false
-        let lines = text.components(separatedBy: "\n").map { line -> String in
+        let normalizedLines = originalLines.map { line -> String in
             guard let normalized = normalizedMarkdownListLine(line) else { return line }
             changed = true
             return normalized
         }
-        return changed ? lines.joined(separator: "\n") : text
+
+        guard changed else {
+            return MarkdownListNormalizationResult(text: text, selection: clampedSelection(selection, in: text))
+        }
+
+        let normalizedText = normalizedLines.joined(separator: "\n")
+        let adjustedStart = adjustedOffset(
+            selection.location,
+            originalLines: originalLines,
+            normalizedLines: normalizedLines,
+            normalizedTextLength: (normalizedText as NSString).length
+        )
+        let adjustedEnd = adjustedOffset(
+            NSMaxRange(selection),
+            originalLines: originalLines,
+            normalizedLines: normalizedLines,
+            normalizedTextLength: (normalizedText as NSString).length
+        )
+        return MarkdownListNormalizationResult(
+            text: normalizedText,
+            selection: NSRange(location: adjustedStart, length: max(0, adjustedEnd - adjustedStart))
+        )
     }
 
     static func indentationPrefix(in text: NSString, replacingRange: NSRange) -> String? {
@@ -501,6 +532,39 @@ enum MarkdownListSupport {
         indentation.reduce(into: 0) { width, character in
             width += character == "\t" ? 4 : 1
         }
+    }
+
+    private static func clampedSelection(_ selection: NSRange, in text: String) -> NSRange {
+        let length = (text as NSString).length
+        let location = min(max(0, selection.location), length)
+        return NSRange(location: location, length: min(selection.length, max(0, length - location)))
+    }
+
+    private static func adjustedOffset(
+        _ offset: Int,
+        originalLines: [String],
+        normalizedLines: [String],
+        normalizedTextLength: Int
+    ) -> Int {
+        var runningOriginal = 0
+        var runningNormalized = 0
+
+        for (originalLine, normalizedLine) in zip(originalLines, normalizedLines) {
+            let originalLength = (originalLine as NSString).length
+            let normalizedLength = (normalizedLine as NSString).length
+            if offset <= runningOriginal + originalLength {
+                let offsetWithinLine = max(0, offset - runningOriginal)
+                let delta = normalizedLength - originalLength
+                return min(
+                    normalizedTextLength,
+                    max(0, runningNormalized + min(normalizedLength, max(0, offsetWithinLine + delta)))
+                )
+            }
+            runningOriginal += originalLength + 1
+            runningNormalized += normalizedLength + 1
+        }
+
+        return min(normalizedTextLength, max(0, offset))
     }
 
     private static func normalizedMarkdownListLine(_ line: String) -> String? {

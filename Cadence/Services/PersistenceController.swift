@@ -50,15 +50,26 @@ struct PersistenceController {
         if let c = try? PersistenceController.makeContainer() {
             container = c
             let startupContext = ModelContext(c)
-            NoteMigrationService.migrateAndRecordFailure(in: startupContext, source: "app-startup")
-            TagSupport.seedDefaultTags(in: startupContext)
-            TagSupport.syncAllNoteTagsFromMarkdown(in: startupContext)
-            DataIntegrityRepairService.repairAndRecordFailure(in: startupContext, source: "app-startup")
+            Self.performStartupMaintenance(in: startupContext)
             return
         }
         container = Self.makeRecoveryContainer(
             issue: "Cadence opened a recovery store because the CloudKit store could not be created."
         )
+    }
+
+    private static func performStartupMaintenance(in context: ModelContext) {
+        NoteMigrationService.migrateAndRecordFailure(in: context, source: "app-startup", saveChanges: false)
+        TagSupport.seedDefaultTags(in: context, saveChanges: false)
+        TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
+        DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "app-startup", saveChanges: false)
+
+        guard context.hasChanges else { return }
+        do {
+            try context.save()
+        } catch {
+            startupIssue = "Cadence could not save startup maintenance changes: \(error.localizedDescription)"
+        }
     }
 
     private static func makeContainer() throws -> ModelContainer {

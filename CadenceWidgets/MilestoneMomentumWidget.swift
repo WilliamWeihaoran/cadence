@@ -222,7 +222,7 @@ struct MilestoneMomentumWidgetView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Milestones")
+                Text(headerTitle)
                     .font(.system(size: scale.titleSize, weight: .bold))
                     .foregroundStyle(.white)
                 Spacer(minLength: 8)
@@ -245,7 +245,7 @@ struct MilestoneMomentumWidgetView: View {
             VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Priority milestone")
+                        Text(compact ? "Priority" : "Priority milestone")
                             .font(.system(size: scale.captionFontSize, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.58))
                         Text(goal.title)
@@ -378,6 +378,10 @@ struct MilestoneMomentumWidgetView: View {
             }
         }
         .frame(height: 6)
+    }
+
+    private var headerTitle: String {
+        widgetFamily == .systemSmall ? "Momentum" : "Milestones"
     }
 
     private var headerBadges: [WidgetHeaderBadge] {

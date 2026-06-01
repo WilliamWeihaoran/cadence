@@ -132,7 +132,7 @@ struct CalendarSnapshotWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                dayStrip(days: Array(entry.snapshot.days.prefix(5)), compact: true)
+                dayStrip(days: Array(entry.snapshot.days.prefix(4)), compact: true)
                 agendaLabel
             }
         }
@@ -147,7 +147,7 @@ struct CalendarSnapshotWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                dayStrip(days: Array(entry.snapshot.days.prefix(7)), compact: false)
+                dayStrip(days: Array(entry.snapshot.days.prefix(6)), compact: false)
                 HStack(spacing: scale.compactSectionSpacing) {
                     CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)")
                     CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)")
@@ -260,14 +260,14 @@ struct CalendarSnapshotWidgetView: View {
                     if day.dueCount > 0 {
                         countChip(
                             value: "\(day.dueCount)",
-                            label: "due",
+                            label: usesShortCountLabels ? "d" : "due",
                             tint: Color(red: 1.0, green: 0.72, blue: 0.28)
                         )
                     }
                     if day.scheduledCount > 0 {
                         countChip(
                             value: "\(day.scheduledCount)",
-                            label: compact ? "plan" : "planned",
+                            label: usesShortCountLabels ? "p" : "planned",
                             tint: Color(red: 0.48, green: 0.77, blue: 1.0)
                         )
                     }
@@ -360,6 +360,10 @@ struct CalendarSnapshotWidgetView: View {
 
     private var dueCount: Int {
         entry.snapshot.days.reduce(0) { $0 + $1.dueCount }
+    }
+
+    private var usesShortCountLabels: Bool {
+        widgetFamily == .systemSmall || widgetFamily == .systemMedium
     }
 
     private var headerBadges: [WidgetHeaderBadge] {

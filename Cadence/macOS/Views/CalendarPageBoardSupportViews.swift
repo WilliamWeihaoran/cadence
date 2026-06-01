@@ -74,7 +74,7 @@ struct CalendarPageBoardView: View {
             .onScrollGeometryChange(for: Int.self) { geometry in
                 visibleDayIndex(for: geometry.contentOffset.x)
             } action: { _, dayIndex in
-                updateSelectedDate(for: dayIndex)
+                updateSelectedDate(for: dayIndex, proxy: proxy)
             }
             .onAppear {
                 resetWindowAndScroll(proxy, to: anchorDate, animated: false)
@@ -111,6 +111,26 @@ struct CalendarPageBoardView: View {
         }
     }
 
+    private func recenterWindowIfNeeded(_ proxy: ScrollViewProxy, visibleDayIndex dayIndex: Int, visibleDate: Date) {
+        guard !isProgrammaticScroll else { return }
+        guard CalendarBoardPlannerSupport.shouldRecenter(dayIndex: dayIndex, renderDays: renderDays) else { return }
+
+        let startDate = CalendarBoardPlannerSupport.plannerWindowStart(for: visibleDate, calendar: calendar)
+        let recenteredDayIndex = CalendarBoardPlannerSupport.dayIndex(
+            for: visibleDate,
+            bufferStart: startDate,
+            calendar: calendar,
+            renderDays: renderDays
+        )
+
+        isProgrammaticScroll = true
+        windowStartDate = startDate
+        scroll(proxy, to: recenteredDayIndex, anchor: .leading, animated: false)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            isProgrammaticScroll = false
+        }
+    }
+
     private func scroll(_ proxy: ScrollViewProxy, to dayIndex: Int, anchor: UnitPoint, animated: Bool) {
         DispatchQueue.main.async {
             let clampedDayIndex = min(max(dayIndex, 0), renderDays - 1)
@@ -124,12 +144,14 @@ struct CalendarPageBoardView: View {
         }
     }
 
-    private func updateSelectedDate(for dayIndex: Int) {
+    private func updateSelectedDate(for dayIndex: Int, proxy: ScrollViewProxy) {
         guard !isProgrammaticScroll else { return }
         let date = CalendarBoardPlannerSupport.date(at: dayIndex, bufferStart: activeWindowStartDate, calendar: calendar)
-        guard !calendar.isDate(date, inSameDayAs: selectedDate) else { return }
-        isUpdatingSelectedDateFromScroll = true
-        selectedDate = date
+        if !calendar.isDate(date, inSameDayAs: selectedDate) {
+            isUpdatingSelectedDateFromScroll = true
+            selectedDate = date
+        }
+        recenterWindowIfNeeded(proxy, visibleDayIndex: dayIndex, visibleDate: date)
     }
 
     private func createTask(on dateKey: String) {

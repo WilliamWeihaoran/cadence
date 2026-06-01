@@ -64,7 +64,11 @@ enum DataIntegrityRepairService {
     private static let lastReportKey = "dataIntegrityRepair.lastReport.v1"
 
     @discardableResult
-    static func repairIfNeeded(in context: ModelContext, source: String = "unknown") throws -> DataIntegrityRepairReport {
+    static func repairIfNeeded(
+        in context: ModelContext,
+        source: String = "unknown",
+        saveChanges: Bool = true
+    ) throws -> DataIntegrityRepairReport {
         var report = DataIntegrityRepairReport(
             source: source,
             startedAt: Date(),
@@ -74,7 +78,7 @@ enum DataIntegrityRepairService {
 
         do {
             try repair(in: context, report: &report)
-            if report.changed {
+            if report.changed && saveChanges {
                 try context.save()
             }
             report.finishedAt = Date()
@@ -93,9 +97,13 @@ enum DataIntegrityRepairService {
     }
 
     @discardableResult
-    static func repairAndRecordFailure(in context: ModelContext, source: String) -> DataIntegrityRepairReport? {
+    static func repairAndRecordFailure(
+        in context: ModelContext,
+        source: String,
+        saveChanges: Bool = true
+    ) -> DataIntegrityRepairReport? {
         do {
-            return try repairIfNeeded(in: context, source: source)
+            return try repairIfNeeded(in: context, source: source, saveChanges: saveChanges)
         } catch {
             return lastReport()
         }

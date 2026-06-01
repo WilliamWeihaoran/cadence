@@ -151,17 +151,10 @@ struct TagPickerPopover: View {
                     Circle()
                         .fill(Color(hex: tag.colorHex))
                         .frame(width: 8, height: 8)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(tag.name)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                        if !tag.desc.isEmpty {
-                            Text(tag.desc)
-                                .font(.system(size: 10))
-                                .foregroundStyle(Theme.dim)
-                                .lineLimit(1)
-                        }
-                    }
+                    Text(tag.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
                     Spacer()
                     if selected {
                         Image(systemName: "checkmark")

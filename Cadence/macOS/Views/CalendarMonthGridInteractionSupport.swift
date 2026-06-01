@@ -25,7 +25,7 @@ enum CalendarMonthGridInteractionSupport {
     ) {
         let targetMonthIdx = min(max(visibleMonthIdx.wrappedValue, 0), todayMonthIdx * 2 - 1)
         DispatchQueue.main.async {
-            proxy.scrollTo("month_\(targetMonthIdx)", anchor: .top)
+            proxy.scrollTo(CalendarMonthGridIdentifiers.month(targetMonthIdx), anchor: .top)
             DispatchQueue.main.async {
                 setDidInitialPosition(true)
             }
@@ -34,10 +34,15 @@ enum CalendarMonthGridInteractionSupport {
 
     static func handleTodayTrigger(
         proxy: ScrollViewProxy,
-        todayMonthIdx: Int
+        todayMonthIdx: Int,
+        todayKey: String
     ) {
-        withAnimation {
-            proxy.scrollTo("month_\(todayMonthIdx)", anchor: .top)
+        let monthID = CalendarMonthGridIdentifiers.month(todayMonthIdx)
+        let dayID = CalendarMonthGridIdentifiers.day(monthIndex: todayMonthIdx, dateKey: todayKey)
+
+        proxy.scrollTo(monthID, anchor: .top)
+        DispatchQueue.main.async {
+            proxy.scrollTo(dayID, anchor: .center)
         }
     }
 }

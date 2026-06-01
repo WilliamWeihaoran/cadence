@@ -261,20 +261,20 @@ enum MarkdownKeyboardShortcutSupport {
 
     private static func toggleTodoList(in textView: NSTextView) -> Bool {
         rewriteSelectedLines(in: textView) { line, _ in
-            guard !line.isEmpty else { return "[ ] " }
+            guard !line.isEmpty else { return "○ " }
             if let match = MarkdownListSupport.listPrefixMatch(in: line) {
                 switch match.kind {
                 case .todo, .done:
                     return String(line.dropFirst(match.prefix.count))
                 case .ordered, .bullet, .dash, .plus:
                     let content = String(line.dropFirst(match.prefix.count))
-                    return match.indentation + "[ ] " + content
+                    return match.indentation + "○ " + content
                 }
             }
 
             let indentation = leadingWhitespace(in: line)
             let content = String(line.dropFirst(indentation.count))
-            return indentation + "[ ] " + content
+            return indentation + "○ " + content
         }
     }
 

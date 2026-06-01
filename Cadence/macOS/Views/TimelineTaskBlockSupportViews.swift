@@ -165,7 +165,7 @@ func timelineBlockBody(
     let taskColor = Color(hex: task.containerColor)
     let clampedProgress = min(max(completionProgress, 0), 1)
     let completedTransitionOpacity = max(0, (clampedProgress - 0.58) / 0.42)
-    let greenOverlayOpacity = 0.28 * (1 - max(0, (clampedProgress - 0.8) / 0.2))
+    let pendingOverlayOpacity = 1 - max(0, (clampedProgress - 0.86) / 0.14)
     HStack(alignment: .top, spacing: 0) {
         taskColor
             .opacity(task.isDone ? 0.4 : 1)
@@ -178,9 +178,13 @@ func timelineBlockBody(
         HStack(alignment: .top, spacing: 4) {
             if let onToggleDone {
                 Button(action: onToggleDone) {
-                    Image(systemName: task.isDone ? "checkmark.circle.fill" : (isPendingCompletion ? "circle.inset.filled" : "circle"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(task.isDone || isPendingCompletion ? Theme.green : Theme.dim)
+                    TaskCompletionProgressGlyph(
+                        icon: task.isDone ? "checkmark.circle.fill" : "circle",
+                        color: task.isDone || isPendingCompletion ? Theme.green : Theme.dim,
+                        progress: isPendingCompletion ? clampedProgress : nil,
+                        size: 13,
+                        lineWidth: 1.6
+                    )
                 }
                 .buttonStyle(.cadencePlain)
                 .padding(.top, 1)
@@ -242,15 +246,12 @@ func timelineBlockBody(
                     .fill(TimelineHoverVisuals.hoverFill(tint: taskColor, isHovered: showHover, opacity: 0.08))
             }
             if isPendingCompletion {
-                GeometryReader { proxy in
-                    RoundedRectangle(cornerRadius: style.cornerRadius)
-                        .fill(Theme.green.opacity(greenOverlayOpacity))
-                        .frame(
-                            width: proxy.size.width * clampedProgress,
-                            alignment: .leading
-                        )
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                TaskCompletionPendingOverlay(
+                    progress: clampedProgress,
+                    tint: Theme.green,
+                    cornerRadius: style.cornerRadius
+                )
+                .opacity(pendingOverlayOpacity)
             }
         }
     )

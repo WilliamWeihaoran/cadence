@@ -10,7 +10,7 @@ final class QuickTaskPanelController: NSObject {
 
     private var panel: QuickTaskPanel?
     private var hostingController: NSHostingController<AnyView>?
-    private var clickOutsideMonitor: Any?
+    private var panelResignKeyObserver: NSObjectProtocol?
     private var acceptingDismissal = false
     private var sizeObserver: NSKeyValueObservation?
 
@@ -62,7 +62,7 @@ final class QuickTaskPanelController: NSObject {
         panel.makeKeyAndOrderFront(nil)
         logger.debug("Ordering quick task panel front")
 
-        startMonitoringClickOutside()
+        startObservingPanelResignKey(panel)
         DispatchQueue.main.async { [weak self] in
             self?.acceptingDismissal = true
         }
@@ -74,7 +74,7 @@ final class QuickTaskPanelController: NSObject {
         sizeObserver?.invalidate()
         sizeObserver = nil
         acceptingDismissal = false
-        stopMonitoringClickOutside()
+        stopObservingPanelResignKey()
         panel?.orderOut(nil)
     }
 
@@ -84,7 +84,7 @@ final class QuickTaskPanelController: NSObject {
         sizeObserver?.invalidate()
         sizeObserver = nil
         acceptingDismissal = false
-        stopMonitoringClickOutside()
+        stopObservingPanelResignKey()
 
         let content = QuickTaskCaptureSuccessView()
             .preferredColorScheme(.dark)
@@ -98,22 +98,24 @@ final class QuickTaskPanelController: NSObject {
         }
     }
 
-    // MARK: - Click-outside dismissal
+    // MARK: - Focus-loss dismissal
 
-    private func startMonitoringClickOutside() {
-        guard clickOutsideMonitor == nil else { return }
-        clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown]
+    private func startObservingPanelResignKey(_ panel: NSPanel) {
+        guard panelResignKeyObserver == nil else { return }
+        panelResignKeyObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification,
+            object: panel,
+            queue: .main
         ) { [weak self] _ in
             guard self?.acceptingDismissal == true else { return }
             self?.close()
         }
     }
 
-    private func stopMonitoringClickOutside() {
-        if let monitor = clickOutsideMonitor {
-            NSEvent.removeMonitor(monitor)
-            clickOutsideMonitor = nil
+    private func stopObservingPanelResignKey() {
+        if let observer = panelResignKeyObserver {
+            NotificationCenter.default.removeObserver(observer)
+            panelResignKeyObserver = nil
         }
     }
 

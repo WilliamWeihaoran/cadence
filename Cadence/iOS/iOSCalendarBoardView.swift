@@ -3,7 +3,7 @@ import SwiftData
 import SwiftUI
 
 struct iOSCalendarBoardPlanner: View {
-    let anchorDate: Date
+    @Binding var anchorDate: Date
     @Binding var selectedDate: Date
     let allTasks: [AppTask]
     let allBundles: [TaskBundle]
@@ -13,6 +13,7 @@ struct iOSCalendarBoardPlanner: View {
     @Environment(\.modelContext) private var modelContext
     @State private var isUpdatingSelectedDateFromScroll = false
     @State private var isProgrammaticScroll = false
+    @State private var windowStartDate: Date?
 
     private let calendar = Calendar.current
     private let renderDays = CalendarBoardPlannerSupport.plannerRenderDayCount
@@ -26,12 +27,8 @@ struct iOSCalendarBoardPlanner: View {
         horizontalSizeClass == .regular ? 20 : 14
     }
 
-    private var bufferStart: Date {
-        CalendarBoardPlannerSupport.plannerWindowStart(for: anchorDate, calendar: calendar)
-    }
-
-    private var anchorDayIndex: Int {
-        CalendarBoardPlannerSupport.dayIndex(for: anchorDate, bufferStart: bufferStart, calendar: calendar, renderDays: renderDays)
+    private var activeWindowStartDate: Date {
+        windowStartDate ?? CalendarBoardPlannerSupport.plannerWindowStart(for: anchorDate, calendar: calendar)
     }
 
     private var boardTasksByDate: [String: [AppTask]] {
@@ -43,7 +40,7 @@ struct iOSCalendarBoardPlanner: View {
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: columnSpacing) {
                     ForEach(0..<renderDays, id: \.self) { dayIndex in
-                        let date = CalendarBoardPlannerSupport.date(at: dayIndex, bufferStart: bufferStart, calendar: calendar)
+                        let date = CalendarBoardPlannerSupport.date(at: dayIndex, bufferStart: activeWindowStartDate, calendar: calendar)
                         let dateKey = DateFormatters.dateKey(from: date)
                         iOSCalendarBoardDayColumn(
                             dayIndex: dayIndex,
@@ -70,17 +67,17 @@ struct iOSCalendarBoardPlanner: View {
             .onScrollGeometryChange(for: Int.self) { geometry in
                 visibleDayIndex(for: geometry.contentOffset.x)
             } action: { _, dayIndex in
-                updateSelectedDate(for: dayIndex)
+                updateSelectedDate(for: dayIndex, proxy: proxy)
             }
             .onAppear {
-                scroll(proxy, to: anchorDayIndex)
+                resetWindowAndScroll(proxy, to: anchorDate, animated: false)
             }
-            .onChange(of: anchorDate) {
+            .onChange(of: anchorDate) { _, newDate in
                 if isUpdatingSelectedDateFromScroll {
                     isUpdatingSelectedDateFromScroll = false
                     return
                 }
-                scroll(proxy, to: anchorDayIndex)
+                resetWindowAndScroll(proxy, to: newDate, animated: true)
             }
         }
     }
@@ -91,24 +88,60 @@ struct iOSCalendarBoardPlanner: View {
         return min(max(rawIndex, 0), renderDays - 1)
     }
 
-    private func scroll(_ proxy: ScrollViewProxy, to dayIndex: Int) {
+    private func resetWindowAndScroll(_ proxy: ScrollViewProxy, to date: Date, animated: Bool) {
+        let startDate = CalendarBoardPlannerSupport.plannerWindowStart(for: date, calendar: calendar)
         isProgrammaticScroll = true
+        windowStartDate = startDate
+        let target = CalendarBoardPlannerSupport.dayIndex(for: date, bufferStart: startDate, calendar: calendar, renderDays: renderDays)
+        scroll(proxy, to: target, animated: animated)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (animated ? 0.28 : 0.08)) {
+            isProgrammaticScroll = false
+        }
+    }
+
+    private func recenterWindowIfNeeded(_ proxy: ScrollViewProxy, visibleDayIndex dayIndex: Int, visibleDate: Date) {
+        guard !isProgrammaticScroll else { return }
+        guard CalendarBoardPlannerSupport.shouldRecenter(dayIndex: dayIndex, renderDays: renderDays) else { return }
+
+        let startDate = CalendarBoardPlannerSupport.plannerWindowStart(for: visibleDate, calendar: calendar)
+        let recenteredDayIndex = CalendarBoardPlannerSupport.dayIndex(
+            for: visibleDate,
+            bufferStart: startDate,
+            calendar: calendar,
+            renderDays: renderDays
+        )
+
+        isProgrammaticScroll = true
+        windowStartDate = startDate
+        scroll(proxy, to: recenteredDayIndex, animated: false)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            isProgrammaticScroll = false
+        }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to dayIndex: Int, animated: Bool) {
         DispatchQueue.main.async {
-            withAnimation(.snappy(duration: 0.22)) {
+            if animated {
+                withAnimation(.snappy(duration: 0.22)) {
+                    proxy.scrollTo(min(max(dayIndex, 0), renderDays - 1), anchor: .leading)
+                }
+            } else {
                 proxy.scrollTo(min(max(dayIndex, 0), renderDays - 1), anchor: .leading)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
-                isProgrammaticScroll = false
             }
         }
     }
 
-    private func updateSelectedDate(for dayIndex: Int) {
+    private func updateSelectedDate(for dayIndex: Int, proxy: ScrollViewProxy) {
         guard !isProgrammaticScroll else { return }
-        let date = CalendarBoardPlannerSupport.date(at: dayIndex, bufferStart: bufferStart, calendar: calendar)
-        guard !calendar.isDate(date, inSameDayAs: selectedDate) else { return }
-        isUpdatingSelectedDateFromScroll = true
-        selectedDate = date
+        let date = CalendarBoardPlannerSupport.date(at: dayIndex, bufferStart: activeWindowStartDate, calendar: calendar)
+        if !calendar.isDate(date, inSameDayAs: selectedDate) {
+            selectedDate = date
+        }
+        if !calendar.isDate(date, inSameDayAs: anchorDate) {
+            isUpdatingSelectedDateFromScroll = true
+            anchorDate = date
+        }
+        recenterWindowIfNeeded(proxy, visibleDayIndex: dayIndex, visibleDate: date)
     }
 
     private func createTask(on dateKey: String) {

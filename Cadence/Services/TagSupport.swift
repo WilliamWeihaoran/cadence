@@ -68,7 +68,7 @@ enum TagSupport {
         }
     }
 
-    static func seedDefaultTags(in context: ModelContext) {
+    static func seedDefaultTags(in context: ModelContext, saveChanges: Bool = true) {
         deduplicateTags(in: context, save: false)
         let existing = (try? context.fetch(FetchDescriptor<Tag>())) ?? []
         var existingBySlug = tagsBySlug(existing)
@@ -90,7 +90,7 @@ enum TagSupport {
             context.insert(tag)
             existingBySlug[slug] = tag
         }
-        if context.hasChanges {
+        if saveChanges && context.hasChanges {
             try? context.save()
         }
     }
@@ -158,12 +158,12 @@ enum TagSupport {
         note.updatedAt = Date()
     }
 
-    static func syncAllNoteTagsFromMarkdown(in context: ModelContext) {
+    static func syncAllNoteTagsFromMarkdown(in context: ModelContext, saveChanges: Bool = true) {
         let notes = (try? context.fetch(FetchDescriptor<Note>())) ?? []
         for note in notes {
             syncNoteTagsFromMarkdown(note, in: context)
         }
-        if context.hasChanges {
+        if saveChanges && context.hasChanges {
             try? context.save()
         }
     }

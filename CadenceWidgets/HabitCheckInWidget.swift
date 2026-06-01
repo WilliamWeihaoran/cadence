@@ -197,7 +197,7 @@ struct HabitCheckInWidgetView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Habit Check-In")
+                Text(headerTitle)
                     .font(.system(size: scale.titleSize, weight: .bold))
                     .foregroundStyle(.white)
                 Spacer(minLength: 8)
@@ -256,7 +256,7 @@ struct HabitCheckInWidgetView: View {
                     Text(habit.title)
                         .font(.system(size: compact ? scale.bodyFontSize + 0.5 : scale.bodyFontSize + 1, weight: .bold))
                         .foregroundStyle(.white)
-                        .lineLimit(compact ? 2 : 1)
+                        .lineLimit(1)
                         .minimumScaleFactor(0.85)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -334,6 +334,10 @@ struct HabitCheckInWidgetView: View {
         let visible = Array(entry.snapshot.habits.prefix(max(count, 0))).map(Optional.some)
         let remainder = max(0, count - visible.count)
         return visible + Array(repeating: nil, count: remainder)
+    }
+
+    private var headerTitle: String {
+        widgetFamily == .systemSmall ? "Habits" : "Habit Check-In"
     }
 
     private var headerBadges: [WidgetHeaderBadge] {

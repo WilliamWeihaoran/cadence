@@ -49,13 +49,18 @@ struct KanbanMetaChip: View {
 struct KanbanCompletionButton: View {
     let icon: String
     let color: Color
+    var progress: Double?
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(color)
+            TaskCompletionProgressGlyph(
+                icon: icon,
+                color: color,
+                progress: progress,
+                size: 15,
+                lineWidth: 1.8
+            )
         }
         .buttonStyle(.cadencePlain)
     }
@@ -66,8 +71,10 @@ struct KanbanCardHeader: View {
     let titleColor: Color
     let isStruckThrough: Bool
     let durationBadge: String?
+    let onDurationTap: (() -> Void)?
     let completionButtonIcon: String
     let completionButtonColor: Color
+    var completionProgress: Double?
     let onCompletionTap: () -> Void
 
     var body: some View {
@@ -75,6 +82,7 @@ struct KanbanCardHeader: View {
             KanbanCompletionButton(
                 icon: completionButtonIcon,
                 color: completionButtonColor,
+                progress: completionProgress,
                 action: onCompletionTap
             )
 
@@ -87,7 +95,7 @@ struct KanbanCardHeader: View {
                 .contentShape(Rectangle())
 
             if let durationBadge {
-                KanbanDurationBadge(duration: durationBadge)
+                KanbanDurationBadge(duration: durationBadge, onTap: onDurationTap)
                     .padding(.top, -1)
             }
         }
@@ -97,6 +105,7 @@ struct KanbanCardHeader: View {
 struct KanbanCardScheduleTopRow: View {
     let startTime: String?
     let duration: String?
+    let onDurationTap: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .center, spacing: 6) {
@@ -110,7 +119,7 @@ struct KanbanCardScheduleTopRow: View {
             Spacer(minLength: 8)
 
             if let duration {
-                KanbanDurationBadge(duration: duration)
+                KanbanDurationBadge(duration: duration, onTap: onDurationTap)
             }
         }
         .frame(height: 14)
@@ -119,8 +128,23 @@ struct KanbanCardScheduleTopRow: View {
 
 struct KanbanDurationBadge: View {
     let duration: String
+    var onTap: (() -> Void)?
 
     var body: some View {
+        Group {
+            if let onTap {
+                Button(action: onTap) {
+                    label
+                }
+                .buttonStyle(.cadencePlain)
+                .help("Set scheduled time")
+            } else {
+                label
+            }
+        }
+    }
+
+    private var label: some View {
         Text(duration)
             .font(.system(size: 9.5, weight: .bold))
             .foregroundStyle(Theme.dim)
@@ -209,19 +233,17 @@ struct KanbanCardBackground: View {
             }
             .overlay {
                 if isPendingCompletion {
-                    GeometryReader { proxy in
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Theme.green.opacity(0.24))
-                            .frame(width: proxy.size.width * completionProgress, alignment: .leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                    TaskCompletionPendingOverlay(
+                        progress: Double(completionProgress),
+                        tint: Theme.green,
+                        cornerRadius: 8
+                    )
                 } else if isPendingCancel {
-                    GeometryReader { proxy in
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Theme.dim.opacity(0.18))
-                            .frame(width: proxy.size.width * cancelProgress, alignment: .leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                    TaskCompletionPendingOverlay(
+                        progress: Double(cancelProgress),
+                        tint: Theme.dim,
+                        cornerRadius: 8
+                    )
                 }
             }
             .overlay {

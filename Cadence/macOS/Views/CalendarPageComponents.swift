@@ -67,8 +67,14 @@ struct MonthGridView: View {
                     LazyVStack(spacing: 0) {
                         ForEach(0..<totalMonths, id: \.self) { idx in
                             let month = cal.date(byAdding: .month, value: idx - todayMonthIdx, to: currentMonthStart)!
-                            MonthWeeksView(month: month, tasksByDate: tasksByDate, bundlesByDate: bundlesByDate, allTasks: allTasks)
-                                .id("month_\(idx)")
+                            MonthWeeksView(
+                                month: month,
+                                monthIndex: idx,
+                                tasksByDate: tasksByDate,
+                                bundlesByDate: bundlesByDate,
+                                allTasks: allTasks
+                            )
+                            .id(CalendarMonthGridIdentifiers.month(idx))
                         }
                     }
                 }
@@ -92,7 +98,8 @@ struct MonthGridView: View {
                 .onChange(of: scrollToTodayTrigger) {
                     CalendarMonthGridInteractionSupport.handleTodayTrigger(
                         proxy: proxy,
-                        todayMonthIdx: todayMonthIdx
+                        todayMonthIdx: todayMonthIdx,
+                        todayKey: DateFormatters.todayKey()
                     )
                 }
             }
@@ -103,6 +110,7 @@ struct MonthGridView: View {
 
 struct MonthWeeksView: View {
     let month: Date
+    let monthIndex: Int
     let tasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
     let allTasks: [AppTask]
@@ -117,6 +125,7 @@ struct MonthWeeksView: View {
                         if let date = weeks[weekIdx][dayIdx] {
                             let key = DateFormatters.dateKey(from: date)
                             MonthDayCell(date: date, tasks: tasksByDate[key] ?? [], bundles: bundlesByDate[key] ?? [], allTasks: allTasks, displayMonth: month)
+                                .id(CalendarMonthGridIdentifiers.day(monthIndex: monthIndex, dateKey: key))
                         } else {
                             Color.clear
                                 .frame(maxWidth: .infinity, minHeight: 130)

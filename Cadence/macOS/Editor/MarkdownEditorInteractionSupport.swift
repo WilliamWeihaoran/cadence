@@ -118,14 +118,31 @@ final class CadenceLayoutManager: NSLayoutManager {
     }
 
     private func drawRoundedInlineCode(forGlyphRange glyphRange: NSRange, in textContainer: NSTextContainer, at origin: NSPoint) {
-        let selectedRange = NSRange(location: NSNotFound, length: 0)
-        enumerateEnclosingRects(forGlyphRange: glyphRange, withinSelectedGlyphRange: selectedRange, in: textContainer) { rect, _ in
-            let chipRect = rect
-                .offsetBy(dx: origin.x, dy: origin.y)
-                .insetBy(dx: -5, dy: -2)
-            guard chipRect.width > 0, chipRect.height > 0 else { return }
+        guard glyphRange.length > 0 else { return }
 
-            let radius = min(7, chipRect.height / 2)
+        var currentGlyph = glyphRange.location
+        let glyphRangeEnd = NSMaxRange(glyphRange)
+
+        while currentGlyph < glyphRangeEnd, currentGlyph < numberOfGlyphs {
+            var lineGlyphRange = NSRange(location: 0, length: 0)
+            _ = lineFragmentRect(forGlyphAt: currentGlyph, effectiveRange: &lineGlyphRange)
+            let segmentRange = NSIntersectionRange(glyphRange, lineGlyphRange)
+
+            guard segmentRange.length > 0 else {
+                currentGlyph += 1
+                continue
+            }
+
+            let glyphBounds = boundingRect(forGlyphRange: segmentRange, in: textContainer)
+            let chipRect = glyphBounds
+                .offsetBy(dx: origin.x, dy: origin.y)
+                .insetBy(dx: -4, dy: -1)
+            guard chipRect.width > 0, chipRect.height > 0 else {
+                currentGlyph = NSMaxRange(segmentRange)
+                continue
+            }
+
+            let radius = min(6, chipRect.height / 2)
             let path = NSBezierPath(roundedRect: chipRect, xRadius: radius, yRadius: radius)
             MarkdownStylist.codeBackground.withAlphaComponent(0.94).setFill()
             path.fill()
@@ -133,6 +150,8 @@ final class CadenceLayoutManager: NSLayoutManager {
             MarkdownStylist.codeBorder.withAlphaComponent(0.55).setStroke()
             path.lineWidth = 0.7
             path.stroke()
+
+            currentGlyph = NSMaxRange(segmentRange)
         }
     }
 
@@ -1488,10 +1507,10 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
                 return replaceText(in: textView, range: range, with: "• ")
             }
             if snippet == "- ", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
-                return replaceText(in: textView, range: range, with: "– ")
+                return replaceText(in: textView, range: range, with: "• ")
             }
             if snippet == "+ ", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
-                return replaceText(in: textView, range: range, with: "+ ")
+                return replaceText(in: textView, range: range, with: "• ")
             }
         }
 
@@ -1648,16 +1667,12 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
 
     private func normalizeMarkdownListPrefixes(in textView: NSTextView) {
         let originalText = textView.string
-        let normalizedText = MarkdownListSupport.normalizedMarkdownListPrefixes(in: originalText)
-        guard normalizedText != originalText else { return }
-
         let selection = textView.selectedRange()
-        let lengthDelta = (normalizedText as NSString).length - (originalText as NSString).length
-        textView.string = normalizedText
-        let normalizedLength = (normalizedText as NSString).length
-        let adjustedLocation = min(max(0, selection.location + lengthDelta), normalizedLength)
-        let adjustedLength = min(selection.length, max(0, normalizedLength - adjustedLocation))
-        textView.setSelectedRange(NSRange(location: adjustedLocation, length: adjustedLength))
+        let result = MarkdownListSupport.normalizedMarkdownListPrefixes(in: originalText, selection: selection)
+        guard result.text != originalText else { return }
+
+        textView.string = result.text
+        textView.setSelectedRange(result.selection)
     }
 
     private func updateSlashCommandPicker(for textView: NSTextView) {

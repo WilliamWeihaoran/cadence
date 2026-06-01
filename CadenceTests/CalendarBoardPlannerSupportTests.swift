@@ -59,6 +59,15 @@ struct CalendarBoardPlannerSupportTests {
         )
     }
 
+    @Test func plannerRecenterTriggersNearEitherWindowEdge() {
+        let renderDays = CalendarBoardPlannerSupport.plannerRenderDayCount
+        let threshold = CalendarBoardPlannerSupport.plannerRecenterThreshold
+
+        #expect(CalendarBoardPlannerSupport.shouldRecenter(dayIndex: threshold, renderDays: renderDays))
+        #expect(CalendarBoardPlannerSupport.shouldRecenter(dayIndex: renderDays - threshold - 1, renderDays: renderDays))
+        #expect(!CalendarBoardPlannerSupport.shouldRecenter(dayIndex: CalendarBoardPlannerSupport.plannerLeadingDayCount, renderDays: renderDays))
+    }
+
     @Test func boardTaskDateBucketsMatchPerDayLookup() {
         let scheduled = AppTask(title: "Scheduled")
         scheduled.scheduledDate = "2026-06-01"

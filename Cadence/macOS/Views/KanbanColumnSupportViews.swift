@@ -8,6 +8,7 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
     let hideColumnDueDateIfEmpty: Bool
     let sectionDueDateIsOverdue: Bool
     let isPendingCompletion: Bool
+    let completionProgress: Double
     @Binding var showHeaderDueDatePicker: Bool
     @Binding var showEditor: Bool
     let onToggleCompletion: () -> Void
@@ -21,9 +22,13 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
     var body: some View {
         HStack(spacing: 10) {
             Button(action: onToggleCompletion) {
-                Image(systemName: section.isCompleted ? "checkmark.circle.fill" : (isPendingCompletion ? "circle.inset.filled" : "circle"))
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(section.isCompleted || isPendingCompletion ? Theme.green : columnColor.opacity(section.isDefault ? 0.75 : 0.9))
+                TaskCompletionProgressGlyph(
+                    icon: section.isCompleted ? "checkmark.circle.fill" : "circle",
+                    color: section.isCompleted || isPendingCompletion ? Theme.green : columnColor.opacity(section.isDefault ? 0.75 : 0.9),
+                    progress: isPendingCompletion ? completionProgress : nil,
+                    size: 15,
+                    lineWidth: 1.8
+                )
             }
             .buttonStyle(.cadencePlain)
             .padding(.trailing, 2)

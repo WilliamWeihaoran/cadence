@@ -32,6 +32,16 @@ func taskSortPrecedes(_ lhs: AppTask, _ rhs: AppTask, field: TaskSortField, dire
         if ld != rd {
             return direction == .ascending ? ld < rd : ld > rd
         }
+
+        let lhsTimed = lhs.scheduledStartMin >= 0
+        let rhsTimed = rhs.scheduledStartMin >= 0
+        if lhsTimed != rhsTimed { return lhsTimed }
+        if lhsTimed, lhs.scheduledStartMin != rhs.scheduledStartMin {
+            return direction == .ascending
+                ? lhs.scheduledStartMin < rhs.scheduledStartMin
+                : lhs.scheduledStartMin > rhs.scheduledStartMin
+        }
+
         return taskSortFallbackPrecedes(lhs, rhs)
     case .priority:
         let lp = taskPriorityRank(lhs.priority)

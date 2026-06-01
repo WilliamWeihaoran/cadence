@@ -132,7 +132,7 @@ struct iOSCalendarView: View {
     private var calendarContent: some View {
         if presentation == .board {
             iOSCalendarBoardPlanner(
-                anchorDate: anchorDate,
+                anchorDate: $anchorDate,
                 selectedDate: $selectedDate,
                 allTasks: allTasks,
                 allBundles: allBundles,

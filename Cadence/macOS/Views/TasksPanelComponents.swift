@@ -422,9 +422,13 @@ private struct TaskCompletionButton: View {
 
     var body: some View {
         Button { handleTap() } label: {
-            Image(systemName: icon)
-                .foregroundStyle(color)
-                .font(.system(size: 18))
+            TimelineView(.animation) { context in
+                TaskCompletionProgressGlyph(
+                    icon: icon,
+                    color: color,
+                    progress: pendingProgress(now: context.date)
+                )
+            }
         }
         .buttonStyle(.cadencePlain)
     }
@@ -456,6 +460,16 @@ private struct TaskCompletionButton: View {
             manager.toggleCompletion(for: task)
         }
     }
+
+    private func pendingProgress(now: Date) -> Double? {
+        if isPendingCompletion {
+            return manager.progress(for: task, now: now)
+        }
+        if isPendingCancel {
+            return manager.cancelProgress(for: task, now: now)
+        }
+        return nil
+    }
 }
 
 private struct TaskRowBackground: View {
@@ -475,27 +489,19 @@ private struct TaskRowBackground: View {
             .overlay {
                 if manager.isPending(task) {
                     TimelineView(.animation) { context in
-                        GeometryReader { proxy in
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Theme.green.opacity(0.24))
-                                .frame(
-                                    width: proxy.size.width * manager.progress(for: task, now: context.date),
-                                    alignment: .leading
-                                )
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
+                        TaskCompletionPendingOverlay(
+                            progress: manager.progress(for: task, now: context.date),
+                            tint: Theme.green,
+                            cornerRadius: 8
+                        )
                     }
                 } else if manager.isPendingCancel(task) {
                     TimelineView(.animation) { context in
-                        GeometryReader { proxy in
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Theme.dim.opacity(0.18))
-                                .frame(
-                                    width: proxy.size.width * manager.cancelProgress(for: task, now: context.date),
-                                    alignment: .leading
-                                )
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
+                        TaskCompletionPendingOverlay(
+                            progress: manager.cancelProgress(for: task, now: context.date),
+                            tint: Theme.dim,
+                            cornerRadius: 8
+                        )
                     }
                 }
             }

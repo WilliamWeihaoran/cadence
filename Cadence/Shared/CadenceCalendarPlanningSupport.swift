@@ -142,7 +142,8 @@ enum CalendarBoardPlannerSupport {
     static let visibleDayCount = 7
     static let defaultRenderDayCount = 3650
     static let plannerRenderDayCount = 420
-    static let plannerLeadingDayCount = 56
+    static let plannerLeadingDayCount = plannerRenderDayCount / 2
+    static let plannerRecenterThreshold = 42
 
     static func date(at dayIndex: Int, bufferStart: Date, calendar: Calendar = .current) -> Date {
         calendar.startOfDay(for: calendar.date(byAdding: .day, value: dayIndex, to: bufferStart) ?? bufferStart)
@@ -162,6 +163,11 @@ enum CalendarBoardPlannerSupport {
     ) -> Int {
         let raw = calendar.dateComponents([.day], from: bufferStart, to: calendar.startOfDay(for: date)).day ?? 0
         return min(max(raw, 0), max(0, renderDays - 1))
+    }
+
+    static func shouldRecenter(dayIndex: Int, renderDays: Int = plannerRenderDayCount) -> Bool {
+        guard renderDays > plannerRecenterThreshold * 2 else { return false }
+        return dayIndex <= plannerRecenterThreshold || dayIndex >= renderDays - plannerRecenterThreshold - 1
     }
 
     static func title(for anchorDate: Date, calendar: Calendar = .current) -> String {

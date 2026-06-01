@@ -26,6 +26,16 @@ func monthIndexForOffset(y: CGFloat, offsets: [CGFloat], totalMonths: Int) -> In
     return lo
 }
 
+enum CalendarMonthGridIdentifiers {
+    static func month(_ index: Int) -> String {
+        "month_\(index)"
+    }
+
+    static func day(monthIndex: Int, dateKey: String) -> String {
+        "month_day_\(monthIndex)_\(dateKey)"
+    }
+}
+
 struct MonthGridWeekdayHeader: View {
     var body: some View {
         HStack(spacing: 0) {
