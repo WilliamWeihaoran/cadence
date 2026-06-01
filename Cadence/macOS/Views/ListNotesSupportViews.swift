@@ -13,11 +13,6 @@ private struct TaskNoteDerivedState {
     var unlinkedMentions: [Note] = []
 }
 
-private enum TaskNoteSyncTiming {
-    static let derivedStateRefreshDelay: UInt64 = 150_000_000
-    static let fallbackContentCommitDelay: UInt64 = 15_000_000_000
-}
-
 struct TaskNoteEditorPane: View {
     @Bindable var task: AppTask
     let relatedNotes: [Note]
@@ -216,7 +211,7 @@ struct TaskNoteEditorPane: View {
     private func scheduleDerivedStateRefresh(for content: String) {
         pendingDerivedStateTask?.cancel()
         pendingDerivedStateTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: TaskNoteSyncTiming.derivedStateRefreshDelay)
+            try? await Task.sleep(nanoseconds: MarkdownEditorSyncTiming.derivedStateRefreshDelay)
             guard !Task.isCancelled else { return }
             refreshDerivedState(for: content)
             pendingDerivedStateTask = nil
@@ -226,7 +221,7 @@ struct TaskNoteEditorPane: View {
     private func scheduleFallbackContentSync(for content: String) {
         pendingFallbackContentSyncTask?.cancel()
         pendingFallbackContentSyncTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: TaskNoteSyncTiming.fallbackContentCommitDelay)
+            try? await Task.sleep(nanoseconds: MarkdownEditorSyncTiming.fallbackContentCommitDelay)
             guard !Task.isCancelled else { return }
             persistEditorContentIfNeeded(content)
             pendingFallbackContentSyncTask = nil

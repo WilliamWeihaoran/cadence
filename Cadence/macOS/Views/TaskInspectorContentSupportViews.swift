@@ -4,10 +4,6 @@ import SwiftData
 import AppKit
 
 struct TaskDetailNotesSection: View {
-    private enum TaskNotesSyncTiming {
-        static let fallbackContentCommitDelay: UInt64 = 15_000_000_000
-    }
-
     @Bindable var task: AppTask
     @Query(sort: \AppTask.order) private var referenceTasks: [AppTask]
     @State private var editorContent = ""
@@ -100,7 +96,7 @@ struct TaskDetailNotesSection: View {
     private func scheduleFallbackContentSync(for content: String, taskID: UUID) {
         pendingFallbackContentSyncTask?.cancel()
         pendingFallbackContentSyncTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: TaskNotesSyncTiming.fallbackContentCommitDelay)
+            try? await Task.sleep(nanoseconds: MarkdownEditorSyncTiming.fallbackContentCommitDelay)
             guard !Task.isCancelled, loadedTaskID == taskID else { return }
             persistEditorContentIfNeeded(content, taskID: taskID)
             pendingFallbackContentSyncTask = nil

@@ -14,11 +14,6 @@ private struct NoteEditorDerivedState {
     )
 }
 
-private enum NoteEditorSyncTiming {
-    static let derivedStateRefreshDelay: UInt64 = 150_000_000
-    static let fallbackContentCommitDelay: UInt64 = 15_000_000_000
-}
-
 struct NoteEditorPane: View {
     enum HeaderStyle {
         case full
@@ -295,7 +290,7 @@ struct NoteEditorPane: View {
     private func scheduleDerivedStateRefresh(for content: String) {
         pendingDerivedStateTask?.cancel()
         pendingDerivedStateTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: NoteEditorSyncTiming.derivedStateRefreshDelay)
+            try? await Task.sleep(nanoseconds: MarkdownEditorSyncTiming.derivedStateRefreshDelay)
             guard !Task.isCancelled else { return }
             refreshDerivedState(for: content)
             pendingDerivedStateTask = nil
@@ -305,7 +300,7 @@ struct NoteEditorPane: View {
     private func scheduleFallbackContentSync(for content: String) {
         pendingFallbackContentSyncTask?.cancel()
         pendingFallbackContentSyncTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: NoteEditorSyncTiming.fallbackContentCommitDelay)
+            try? await Task.sleep(nanoseconds: MarkdownEditorSyncTiming.fallbackContentCommitDelay)
             guard !Task.isCancelled else { return }
             persistEditorContentIfNeeded(content)
             pendingFallbackContentSyncTask = nil
