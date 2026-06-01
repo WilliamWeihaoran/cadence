@@ -141,10 +141,8 @@ struct CalendarPageStateSupport {
         todayDayIdx: Int,
         visibleTimelineDayIndex: inout Int?,
         visibleTimelineHour: inout Int?,
-        timelineScrollState: CalendarTimelineScrollState,
         vProxy: ScrollViewProxy,
         hProxy: ScrollViewProxy,
-        colWidth: CGFloat,
         setHorizontalRestoring: @escaping (Bool) -> Void,
         setVerticalRestoring: @escaping (Bool) -> Void
     ) {
@@ -165,7 +163,6 @@ struct CalendarPageStateSupport {
         setVerticalRestoring(true)
         visibleTimelineDayIndex = targetDay
         visibleTimelineHour = scrollHour
-        timelineScrollState.jumpHeaderOffset(to: -CGFloat(targetDay) * colWidth)
 
         DispatchQueue.main.async {
             hProxy.scrollTo("day_\(targetDay)", anchor: .leading)

@@ -107,14 +107,18 @@ final class CadenceReadService {
     private let context: ModelContext
     private let encoderDateFormatter = ISO8601DateFormatter()
 
-    init(container: ModelContainer) {
+    init(container: ModelContainer, performsMigrations: Bool = true) {
         context = ModelContext(container)
-        NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-read-service-container")
+        if performsMigrations {
+            NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-read-service-container")
+        }
     }
 
-    init(context: ModelContext) {
+    init(context: ModelContext, performsMigrations: Bool = true) {
         self.context = context
-        NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-read-service-context")
+        if performsMigrations {
+            NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-read-service-context")
+        }
     }
 
     func todayBrief(dateKey: String? = nil) throws -> CadenceTodayBrief {

@@ -3,20 +3,31 @@ import MCP
 import SwiftData
 
 do {
-    let container = try CadenceModelContainerFactory.makeReadWriteContainer()
+    let writesEnabled = CadenceModelContainerFactory.writesEnabled
+    let container: ModelContainer
+    if writesEnabled {
+        container = try CadenceModelContainerFactory.makeReadWriteContainer()
+    } else {
+        container = try CadenceModelContainerFactory.makeReadOnlyContainer()
+    }
     let context = ModelContext(container)
-    let readService = CadenceReadService(context: context)
-    let writeService = CadenceWriteService(
-        context: context,
-        notifiesExternalWrites: true,
-        auditLogger: try CadenceMCPAuditLogger.defaultLogger()
-    )
+    let readService = CadenceReadService(context: context, performsMigrations: writesEnabled)
+    let writeService: CadenceWriteService?
+    if writesEnabled {
+        writeService = try CadenceWriteService(
+            context: context,
+            notifiesExternalWrites: true,
+            auditLogger: try CadenceMCPAuditLogger.defaultLogger()
+        )
+    } else {
+        writeService = nil
+    }
     let server = Server(
         name: "cadence-mcp",
         version: "0.2.0",
         capabilities: .init(tools: .init(listChanged: false))
     )
-    let router = CadenceMCPToolRouter(readService: readService, writeService: writeService)
+    let router = CadenceMCPToolRouter(readService: readService, writeService: writeService, writesEnabled: writesEnabled)
     await router.register(on: server)
 
     try await server.start(transport: StdioTransport())

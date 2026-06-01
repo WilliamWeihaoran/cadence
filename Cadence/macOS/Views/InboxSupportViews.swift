@@ -55,45 +55,6 @@ struct InboxHeaderView: View {
     }
 }
 
-struct InboxCaptureBarView: View {
-    @Binding var newTitle: String
-    @FocusState.Binding var isFocused: Bool
-    let onSubmit: () -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "tray.and.arrow.down")
-                .font(.system(size: 13))
-                .foregroundStyle(isFocused ? Theme.blue : Theme.dim)
-                .animation(.easeInOut(duration: 0.15), value: isFocused)
-
-            TextField("Capture a task…", text: $newTitle)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.text)
-                .focused($isFocused)
-                .onSubmit { onSubmit() }
-
-            if !newTitle.isEmpty {
-                Button(action: onSubmit) {
-                    Image(systemName: "return")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 20, height: 20)
-                        .background(Theme.blue)
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                }
-                .buttonStyle(.cadencePlain)
-                .transition(.scale.combined(with: .opacity))
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 11)
-        .background(Theme.surfaceElevated)
-        .animation(.easeInOut(duration: 0.15), value: newTitle.isEmpty)
-    }
-}
-
 struct InboxControlsBarView: View {
     @Binding var sortField: TaskSortField
     @Binding var sortDirection: TaskSortDirection
@@ -202,7 +163,7 @@ struct InboxCompletedSectionView: View {
 }
 
 struct InboxEmptyStateView: View {
-    @FocusState.Binding var captureFocused: Bool
+    let onNewTask: () -> Void
 
     var body: some View {
         ZStack {
@@ -220,18 +181,16 @@ struct InboxEmptyStateView: View {
                     Text("Inbox is empty")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                    Text("Tasks without a list land here.\nCapture something to get started.")
+                    Text("Tasks without a list land here.\nCreate something to get started.")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.dim)
                         .multilineTextAlignment(.center)
                 }
-                Button {
-                    captureFocused = true
-                } label: {
+                Button(action: onNewTask) {
                     HStack(spacing: 6) {
-                        Image(systemName: "tray.and.arrow.down")
+                        Image(systemName: "plus")
                             .font(.system(size: 11, weight: .semibold))
-                        Text("Capture a task")
+                        Text("New Task")
                             .font(.system(size: 13, weight: .semibold))
                     }
                     .foregroundStyle(Theme.blue)

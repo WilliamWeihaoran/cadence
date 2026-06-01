@@ -19,6 +19,19 @@ struct MonthDayCell: View {
         cal.component(.month, from: date) == cal.component(.month, from: displayMonth) &&
         cal.component(.year, from: date) == cal.component(.year, from: displayMonth)
     }
+    private var isFirstDayOfMonth: Bool {
+        cal.component(.day, from: date) == 1
+    }
+
+    private var dateLabelColor: Color {
+        if isToday { return .white }
+        return isCurrentMonth ? Theme.text : Theme.dim.opacity(0.58)
+    }
+
+    private var dateLabelWeight: Font.Weight {
+        if isToday { return .bold }
+        return isCurrentMonth ? .medium : .regular
+    }
 
     private var calendarEvents: [CalendarEventItem] {
         let _ = calendarManager.storeVersion
@@ -42,14 +55,19 @@ struct MonthDayCell: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            HStack {
+            HStack(spacing: 4) {
+                Spacer(minLength: 0)
+                if isFirstDayOfMonth {
+                    Text(DateFormatters.monthAbbrev.string(from: date))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(dateLabelColor)
+                }
                 Text(DateFormatters.dayNumber.string(from: date))
-                    .font(.system(size: 12, weight: isToday ? .bold : .regular))
-                    .foregroundStyle(isToday ? .white : (isCurrentMonth ? Theme.text : Theme.dim))
+                    .font(.system(size: 12, weight: dateLabelWeight))
+                    .foregroundStyle(dateLabelColor)
                     .frame(width: 24, height: 24)
                     .background(isToday ? Theme.blue : Color.clear)
                     .clipShape(Circle())
-                Spacer()
             }
             .padding(.top, 6)
             .padding(.horizontal, 8)

@@ -58,7 +58,7 @@ struct CalendarPageView: View {
                 scrollToToday: { jumpToToday() },
                 setViewMode: { setTimelineMode($0) },
                 setPresentation: { setPresentation($0) },
-                moveBoardMonth: { moveBoardMonth(by: $0) },
+                moveBoardWindow: { moveBoardWindow(by: $0) },
                 zoomLevel: $zoomLevel
             )
 
@@ -66,10 +66,12 @@ struct CalendarPageView: View {
 
             if presentation == .board {
                 CalendarPageBoardView(
-                    monthDate: selectedBoardDate,
+                    anchorDate: selectedBoardDate,
                     selectedDate: $selectedBoardDate,
                     allTasks: allTasks,
-                    tasksByDate: tasksByDateForMonth,
+                    allBundles: allBundles,
+                    areas: areas,
+                    projects: projects,
                     bundlesByDate: bundlesByDate
                 )
             } else if viewMode == .month {
@@ -115,8 +117,8 @@ struct CalendarPageView: View {
                         onPersistVisibleTimelineHour: { hour in
                             schedulePersistVisibleTimelineHour(hour)
                         },
-                        onRestoreTimelineScrollIfNeeded: { vProxy, hProxy, colWidth in
-                            restoreTimelineScrollIfNeeded(vProxy: vProxy, hProxy: hProxy, colWidth: colWidth)
+                        onRestoreTimelineScrollIfNeeded: { vProxy, hProxy in
+                            restoreTimelineScrollIfNeeded(vProxy: vProxy, hProxy: hProxy)
                         }
                     )
                 }
@@ -158,7 +160,7 @@ struct CalendarPageView: View {
 
     private var calendarTitleLabel: String {
         if presentation == .board {
-            return DateFormatters.monthYear.string(from: selectedBoardDate)
+            return CalendarBoardPlannerSupport.title(for: selectedBoardDate, calendar: cal)
         }
 
         return CalendarPageLifecycleSupport.calendarTitleLabel(
@@ -223,9 +225,9 @@ struct CalendarPageView: View {
         selectedBoardDate = cal.startOfDay(for: DateFormatters.date(from: anchorDateKey) ?? Date())
     }
 
-    private func moveBoardMonth(by delta: Int) {
+    private func moveBoardWindow(by delta: Int) {
         guard presentation == .board else { return }
-        selectedBoardDate = CalendarPageStateSupport.boardDateByMovingMonth(
+        selectedBoardDate = CalendarBoardPlannerSupport.dateByMovingWindow(
             selectedBoardDate,
             by: delta,
             calendar: cal
@@ -233,7 +235,7 @@ struct CalendarPageView: View {
         anchorDateKey = DateFormatters.dateKey(from: selectedBoardDate)
     }
 
-    private func restoreTimelineScrollIfNeeded(vProxy: ScrollViewProxy, hProxy: ScrollViewProxy, colWidth: CGFloat) {
+    private func restoreTimelineScrollIfNeeded(vProxy: ScrollViewProxy, hProxy: ScrollViewProxy) {
         CalendarPageLifecycleSupport.restoreTimelineScrollIfNeeded(
             didRestoreTimelineScroll: &didRestoreTimelineScroll,
             rememberedScrollHour: rememberedScrollHour,
@@ -242,10 +244,8 @@ struct CalendarPageView: View {
             todayDayIdx: todayDayIdx,
             visibleTimelineDayIndex: &visibleTimelineDayIndex,
             visibleTimelineHour: &visibleTimelineHour,
-            timelineScrollState: timelineScrollState,
             vProxy: vProxy,
             hProxy: hProxy,
-            colWidth: colWidth,
             setHorizontalRestoring: { isRestoringHorizontalScroll = $0 },
             setVerticalRestoring: { isRestoringVerticalScroll = $0 }
         )
@@ -280,6 +280,18 @@ struct CalendarPageView: View {
         anchorDateKey = DateFormatters.todayKey()
         selectedBoardDate = cal.startOfDay(for: Date())
         visibleTimelineDayIndex = todayDayIdx
+        externalJumpDayIndex = nil
+        externalJumpHour = nil
+        externalJumpToken = nil
+        if presentation == .timeline && viewMode != .month {
+            let currentHour = cal.component(.hour, from: Date())
+            let scrollHour = max(calStartHour, currentHour - 1)
+            rememberedScrollHour = scrollHour
+            visibleTimelineHour = scrollHour
+            didRestoreTimelineScroll = true
+            isRestoringHorizontalScroll = true
+            isRestoringVerticalScroll = true
+        }
         if viewMode == .month || presentation == .board {
             visibleMonthIdx = 60
         }

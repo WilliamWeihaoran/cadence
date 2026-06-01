@@ -112,10 +112,11 @@ struct CadenceHabitCheckInWidget: Widget {
     }
 }
 
-private struct HabitCheckInWidgetView: View {
+struct HabitCheckInWidgetView: View {
     let entry: HabitCheckInWidgetEntry
 
     @Environment(\.widgetFamily) private var widgetFamily
+    private var scale: CadenceWidgetScale { .forFamily(widgetFamily) }
 
     var body: some View {
         Group {
@@ -135,7 +136,7 @@ private struct HabitCheckInWidgetView: View {
     }
 
     private var smallLayout: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: scale.sectionSpacing) {
             header
 
             if entry.snapshot.isUnavailable {
@@ -146,11 +147,11 @@ private struct HabitCheckInWidgetView: View {
                 habitGrid(columns: 2, cellCount: 4, compact: true)
             }
         }
-        .padding(14)
+        .padding(scale.outerPadding)
     }
 
     private var mediumLayout: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: scale.sectionSpacing) {
             header
 
             if entry.snapshot.isUnavailable {
@@ -158,18 +159,18 @@ private struct HabitCheckInWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                HStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .top, spacing: scale.sectionSpacing) {
                     habitGrid(columns: 3, cellCount: 6, compact: false)
                     summaryRail
-                        .frame(width: 110)
+                        .frame(width: 98)
                 }
             }
         }
-        .padding(14)
+        .padding(scale.outerPadding)
     }
 
     private var largeLayout: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: scale.sectionSpacing) {
             header
 
             if entry.snapshot.isUnavailable {
@@ -177,49 +178,45 @@ private struct HabitCheckInWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                HStack(alignment: .top, spacing: 14) {
+                HStack(alignment: .top, spacing: scale.sectionSpacing) {
                     habitGrid(columns: 4, cellCount: 8, compact: false)
 
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
                         CadenceWidgetMetricCard(title: "Done", value: "\(entry.snapshot.doneCount)")
                         CadenceWidgetMetricCard(title: "Open", value: "\(entry.snapshot.openCount)")
                         CadenceWidgetMetricCard(title: "Due", value: "\(entry.snapshot.totalDueCount)")
                         CadenceWidgetFooterLink(label: "Open Habits", url: entry.snapshot.habitsURL)
                     }
-                    .frame(width: 120, alignment: .topLeading)
+                    .frame(width: 108, alignment: .topLeading)
                 }
             }
         }
-        .padding(16)
+        .padding(scale.outerPadding)
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Habit Check-In")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: scale.titleSize, weight: .bold))
                     .foregroundStyle(.white)
                 Spacer(minLength: 8)
                 Text("\(entry.snapshot.doneCount)")
-                    .font(.system(size: 24, weight: .black, design: .rounded))
+                    .font(.system(size: scale.countSize, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
+                    .minimumScaleFactor(0.8)
             }
 
-            HStack(spacing: 6) {
-                CadenceWidgetBadge(
-                    text: "\(entry.snapshot.doneCount) done",
-                    tint: Color(red: 0.38, green: 0.90, blue: 0.55)
-                )
-                CadenceWidgetBadge(
-                    text: "\(entry.snapshot.openCount) open",
-                    tint: Color(red: 1.0, green: 0.74, blue: 0.30)
-                )
+            HStack(spacing: 5) {
+                ForEach(headerBadges) { badge in
+                    CadenceWidgetBadge(text: badge.text, tint: badge.tint)
+                }
             }
         }
     }
 
     private var summaryRail: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
             CadenceWidgetMetricCard(title: "Checked in", value: "\(entry.snapshot.doneCount)")
             CadenceWidgetMetricCard(title: "Left today", value: "\(entry.snapshot.openCount)")
             CadenceWidgetMetricCard(title: "Due habits", value: "\(entry.snapshot.totalDueCount)")
@@ -229,9 +226,9 @@ private struct HabitCheckInWidgetView: View {
 
     private func habitGrid(columns: Int, cellCount: Int, compact: Bool) -> some View {
         let items = paddedHabits(count: cellCount)
-        let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 8), count: max(columns, 1))
+        let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 6), count: max(columns, 1))
 
-        return LazyVGrid(columns: gridColumns, spacing: 8) {
+        return LazyVGrid(columns: gridColumns, spacing: 6) {
             ForEach(items.indices, id: \.self) { index in
                 habitCell(items[index], compact: compact)
             }
@@ -243,45 +240,53 @@ private struct HabitCheckInWidgetView: View {
     private func habitCell(_ habit: CadenceHabitWidgetHabit?, compact: Bool) -> some View {
         if let habit {
             Button(intent: ToggleHabitCompletionIntent(habitID: habit.id)) {
-                VStack(alignment: .leading, spacing: compact ? 7 : 8) {
+                VStack(alignment: .leading, spacing: compact ? 6 : 7) {
                     HStack(alignment: .top) {
                         Image(systemName: habit.icon)
-                            .font(.system(size: compact ? 13 : 14, weight: .semibold))
+                            .font(.system(size: compact ? scale.bodyFontSize + 2 : scale.bodyFontSize + 3, weight: .semibold))
                             .foregroundStyle(habitTint(for: habit))
                         Spacer(minLength: 8)
                         Image(systemName: habit.isDoneToday ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: compact ? 15 : 16, weight: .semibold))
+                            .font(.system(size: compact ? scale.metricValueSize - 1 : scale.metricValueSize, weight: .semibold))
                             .foregroundStyle(habitTint(for: habit))
                     }
 
                     Spacer(minLength: 0)
 
                     Text(habit.title)
-                        .font(.system(size: compact ? 11 : 12, weight: .bold))
+                        .font(.system(size: compact ? scale.bodyFontSize + 0.5 : scale.bodyFontSize + 1, weight: .bold))
                         .foregroundStyle(.white)
                         .lineLimit(compact ? 2 : 1)
+                        .minimumScaleFactor(0.85)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(habit.currentStreak > 0 ? "\(habit.currentStreak)d streak" : habit.frequencyLabel)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.60))
-                        .lineLimit(1)
+                    if !compact {
+                        Text(habit.currentStreak > 0 ? "\(habit.currentStreak)d streak" : habit.frequencyLabel)
+                            .font(.system(size: scale.captionFontSize, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.60))
+                            .lineLimit(1)
+                    } else if habit.currentStreak > 0 {
+                        Text("\(habit.currentStreak)d")
+                            .font(.system(size: scale.captionFontSize, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.64))
+                            .lineLimit(1)
+                    }
                 }
-                .padding(compact ? 10 : 11)
-                .frame(maxWidth: .infinity, minHeight: compact ? 74 : 82, alignment: .topLeading)
+                .padding(compact ? scale.compactCardPadding : scale.cardPadding)
+                .frame(maxWidth: .infinity, minHeight: compact ? 66 : 74, alignment: .topLeading)
                 .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous)
                         .fill(habitBackground(for: habit))
                 )
             }
             .buttonStyle(.plain)
         } else {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous)
                 .fill(Color.white.opacity(0.04))
-                .frame(minHeight: compact ? 74 : 82)
+                .frame(minHeight: compact ? 66 : 74)
                 .overlay {
                     Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: scale.bodyFontSize + 1, weight: .bold))
                         .foregroundStyle(.white.opacity(0.28))
                 }
         }
@@ -329,5 +334,22 @@ private struct HabitCheckInWidgetView: View {
         let visible = Array(entry.snapshot.habits.prefix(max(count, 0))).map(Optional.some)
         let remainder = max(0, count - visible.count)
         return visible + Array(repeating: nil, count: remainder)
+    }
+
+    private var headerBadges: [WidgetHeaderBadge] {
+        let doneTint = Color(red: 0.38, green: 0.90, blue: 0.55)
+        let openTint = Color(red: 1.0, green: 0.74, blue: 0.30)
+
+        if widgetFamily == .systemSmall {
+            if entry.snapshot.openCount == 0 {
+                return [WidgetHeaderBadge(text: "all checked", tint: doneTint)]
+            }
+            return [WidgetHeaderBadge(text: "\(entry.snapshot.openCount) left today", tint: openTint)]
+        }
+
+        return [
+            WidgetHeaderBadge(text: "\(entry.snapshot.doneCount) done", tint: doneTint),
+            WidgetHeaderBadge(text: "\(entry.snapshot.openCount) open", tint: openTint),
+        ]
     }
 }

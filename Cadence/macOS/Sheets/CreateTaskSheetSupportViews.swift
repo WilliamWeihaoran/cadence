@@ -1,6 +1,38 @@
 #if os(macOS)
 import SwiftUI
 
+struct CreateTaskPanelSurface: View {
+    let seed: TaskCreationSeed
+    let dismissAction: (() -> Void)?
+    let successAction: (() -> Void)?
+
+    init(
+        seed: TaskCreationSeed,
+        dismissAction: (() -> Void)? = nil,
+        successAction: (() -> Void)? = nil
+    ) {
+        self.seed = seed
+        self.dismissAction = dismissAction
+        self.successAction = successAction
+    }
+
+    var body: some View {
+        CreateTaskSheet(
+            seed: seed,
+            dismissAction: dismissAction,
+            successAction: successAction
+        )
+            .ignoresSafeArea()
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Theme.borderSubtle.opacity(0.95), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.42), radius: 34, x: 0, y: 18)
+            .shadow(color: Theme.blue.opacity(0.08), radius: 18, x: 0, y: 0)
+    }
+}
+
 struct TildeContainerPickerRow: View {
     let icon: String
     let name: String

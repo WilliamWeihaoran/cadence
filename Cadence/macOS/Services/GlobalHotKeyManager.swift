@@ -79,16 +79,32 @@ final class GlobalHotKeyManager {
         }
 
         DispatchQueue.main.async {
-            self.logger.notice("Global hotkey fired")
-            if QuickTaskPanelController.shared.isVisible {
-                self.logger.notice("Global hotkey toggled quick panel closed")
-                QuickTaskPanelController.shared.close()
-            } else {
-                QuickTaskPanelController.shared.show()
-            }
+            self.logger.debug("Global hotkey fired")
+            self.handleTaskPanelShortcut()
         }
 
         return noErr
+    }
+
+    private func handleTaskPanelShortcut() {
+        if QuickTaskPanelController.shared.isVisible {
+            logger.debug("Global hotkey toggled quick panel closed")
+            QuickTaskPanelController.shared.close()
+            return
+        }
+
+        if NSApp.isActive {
+            if TaskCreationManager.shared.isPresented {
+                logger.debug("Global hotkey toggled in-app task panel closed")
+                TaskCreationManager.shared.dismiss()
+            } else {
+                logger.debug("Global hotkey opening in-app task panel")
+                TaskCreationManager.shared.present()
+            }
+            return
+        }
+
+        QuickTaskPanelController.shared.show()
     }
 }
 #endif

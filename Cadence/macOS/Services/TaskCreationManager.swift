@@ -40,6 +40,10 @@ final class TaskCreationManager {
         container: TaskContainerSelection = .inbox,
         sectionName: String = TaskSectionDefaults.defaultName
     ) {
+        if QuickTaskPanelController.shared.isVisible {
+            QuickTaskPanelController.shared.close()
+        }
+
         seed = TaskCreationSeed(
             title: title,
             notes: notes,
@@ -51,7 +55,7 @@ final class TaskCreationManager {
         )
 
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.windows.first?.makeKeyAndOrderFront(nil)
+        NSApp.windows.first(where: { !$0.isKind(of: NSPanel.self) })?.makeKeyAndOrderFront(nil)
         isPresented = true
     }
 

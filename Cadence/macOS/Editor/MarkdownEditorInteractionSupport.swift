@@ -398,6 +398,10 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     private var isEndingInlineTaskTitleEdit = false
     private let taskEmbedDragThreshold: CGFloat = 4
 
+    var hasPendingInlineTaskTitleEdit: Bool {
+        pendingInlineTaskTitleEditID != nil
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if MarkdownKeyboardShortcutSupport.handle(event, in: self) {
             return true
@@ -1157,14 +1161,19 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
 }
 
 final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
+    private static let stylingDebounceDelay: TimeInterval = 0.18
+
     private var parent: MarkdownEditorView
     private let slashCommandPicker = MarkdownSlashCommandPickerController()
     private let referencePicker = MarkdownReferencePickerController()
     private let tagPicker = MarkdownTagPickerController()
     private weak var reportedTextView: CadenceTextView?
+    private weak var pendingStylingTextView: NSTextView?
+    private weak var pendingStylingScrollView: NSScrollView?
     private weak var pendingSlashCommandTextView: NSTextView?
     private weak var pendingReferenceTextView: NSTextView?
     private weak var pendingTagTextView: NSTextView?
+    private var pendingStylingWorkItem: DispatchWorkItem?
     private var slashCommandUpdateIsScheduled = false
     private var referenceUpdateIsScheduled = false
     private var tagUpdateIsScheduled = false
@@ -1188,31 +1197,33 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
 
     func textDidChange(_ notification: Notification) {
         guard let textView = notification.object as? NSTextView else { return }
-        let scrollView = textView.enclosingScrollView
         applyInputTransforms(to: textView)
         normalizeMarkdownListPrefixes(in: textView)
         normalizeOrderedListMarkers(in: textView)
         parent.text = textView.string
-        if let scrollView {
-            MarkdownEditorScrollSupport.preservingScrollPosition(in: scrollView) {
-                MarkdownStylist.apply(to: textView)
-            }
+        if let cadenceTextView = textView as? CadenceTextView,
+           cadenceTextView.hasPendingInlineTaskTitleEdit {
+            applyStyling(to: textView, in: textView.enclosingScrollView)
         } else {
-            MarkdownStylist.apply(to: textView)
-        }
-        if let cadenceTextView = textView as? CadenceTextView {
-            cadenceTextView.snapCaretAwayFromHiddenMarkdown(preferringForward: true)
-        }
-        if let scrollView {
-            MarkdownEditorScrollSupport.refreshLayout(in: scrollView)
-        }
-        if let cadenceTextView = textView as? CadenceTextView {
-            cadenceTextView.performPendingInlineTaskTitleEditIfNeeded()
+            scheduleStylingUpdate(for: textView)
         }
         textView.typingAttributes = MarkdownStylist.baseAttributes
         scheduleSlashCommandPickerUpdate(for: textView)
         scheduleReferencePickerUpdate(for: textView)
         scheduleTagPickerUpdate(for: textView)
+    }
+
+    func textDidBeginEditing(_ notification: Notification) {
+        parent.onEditingChanged(true)
+    }
+
+    func textDidEndEditing(_ notification: Notification) {
+        guard let textView = notification.object as? NSTextView else {
+            parent.onEditingChanged(false)
+            return
+        }
+        applyStyling(to: textView, in: textView.enclosingScrollView)
+        parent.onEditingChanged(false)
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -1591,6 +1602,48 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
     private func replaceText(in textView: NSTextView, range: NSRange, with replacement: String) {
         guard textView.shouldChangeText(in: range, replacementString: replacement) else { return }
         textView.textStorage?.replaceCharacters(in: range, with: replacement)
+    }
+
+    private func applyStyling(to textView: NSTextView, in scrollView: NSScrollView?) {
+        pendingStylingWorkItem?.cancel()
+        pendingStylingWorkItem = nil
+        pendingStylingTextView = nil
+        pendingStylingScrollView = nil
+
+        if let scrollView {
+            MarkdownEditorScrollSupport.preservingScrollPosition(in: scrollView) {
+                MarkdownStylist.apply(to: textView)
+            }
+        } else {
+            MarkdownStylist.apply(to: textView)
+        }
+
+        if let cadenceTextView = textView as? CadenceTextView {
+            cadenceTextView.snapCaretAwayFromHiddenMarkdown(preferringForward: true)
+        }
+        if let scrollView {
+            MarkdownEditorScrollSupport.refreshLayout(in: scrollView)
+        }
+        if let cadenceTextView = textView as? CadenceTextView {
+            cadenceTextView.performPendingInlineTaskTitleEditIfNeeded()
+        }
+    }
+
+    private func scheduleStylingUpdate(for textView: NSTextView) {
+        pendingStylingTextView = textView
+        pendingStylingScrollView = textView.enclosingScrollView
+        pendingStylingWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard let textView = pendingStylingTextView else {
+                pendingStylingWorkItem = nil
+                pendingStylingScrollView = nil
+                return
+            }
+            applyStyling(to: textView, in: pendingStylingScrollView)
+        }
+        pendingStylingWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.stylingDebounceDelay, execute: workItem)
     }
 
     private func normalizeMarkdownListPrefixes(in textView: NSTextView) {

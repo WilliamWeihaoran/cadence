@@ -92,7 +92,6 @@ struct MonthGridView: View {
                 .onChange(of: scrollToTodayTrigger) {
                     CalendarMonthGridInteractionSupport.handleTodayTrigger(
                         proxy: proxy,
-                        visibleMonthIdx: $visibleMonthIdx,
                         todayMonthIdx: todayMonthIdx
                     )
                 }

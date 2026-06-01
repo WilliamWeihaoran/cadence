@@ -110,10 +110,11 @@ struct CadenceMilestoneMomentumWidget: Widget {
     }
 }
 
-private struct MilestoneMomentumWidgetView: View {
+struct MilestoneMomentumWidgetView: View {
     let entry: MilestoneMomentumWidgetEntry
 
     @Environment(\.widgetFamily) private var widgetFamily
+    private var scale: CadenceWidgetScale { .forFamily(widgetFamily) }
 
     var body: some View {
         Group {
@@ -135,7 +136,7 @@ private struct MilestoneMomentumWidgetView: View {
     }
 
     private var smallLayout: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: scale.sectionSpacing) {
             header
             if entry.snapshot.isUnavailable {
                 unavailableState
@@ -145,39 +146,39 @@ private struct MilestoneMomentumWidgetView: View {
                 emptyState
             }
         }
-        .padding(14)
+        .padding(scale.outerPadding)
     }
 
     private var mediumLayout: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: scale.sectionSpacing) {
             header
             if entry.snapshot.isUnavailable {
                 unavailableState
             } else if entry.snapshot.visibleGoals.isEmpty {
                 emptyState
             } else {
-                VStack(spacing: 8) {
+                VStack(spacing: scale.compactSectionSpacing) {
                     ForEach(entry.snapshot.visibleGoals.prefix(3)) { goal in
                         goalRow(goal, compact: false)
                     }
                 }
             }
         }
-        .padding(14)
+        .padding(scale.outerPadding)
     }
 
     private var largeLayout: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: scale.sectionSpacing) {
             header
             if entry.snapshot.isUnavailable {
                 unavailableState
             } else if let first = entry.snapshot.visibleGoals.first {
-                HStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .top, spacing: scale.sectionSpacing) {
                     heroCard(goal: first, compact: false)
                     sidePanel
                 }
 
-                VStack(spacing: 8) {
+                VStack(spacing: scale.compactSectionSpacing) {
                     ForEach(entry.snapshot.visibleGoals.dropFirst()) { goal in
                         goalRow(goal, compact: true)
                     }
@@ -186,19 +187,19 @@ private struct MilestoneMomentumWidgetView: View {
                 emptyState
             }
         }
-        .padding(16)
+        .padding(scale.outerPadding)
     }
 
     private var extraLargeLayout: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: scale.sectionSpacing) {
             header
             if entry.snapshot.isUnavailable {
                 unavailableState
             } else if entry.snapshot.visibleGoals.isEmpty {
                 emptyState
             } else {
-                HStack(alignment: .top, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: scale.sectionSpacing) {
+                    VStack(alignment: .leading, spacing: scale.sectionSpacing) {
                         if let first = entry.snapshot.visibleGoals.first {
                             heroCard(goal: first, compact: false)
                         }
@@ -206,7 +207,7 @@ private struct MilestoneMomentumWidgetView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    VStack(spacing: 8) {
+                    VStack(spacing: scale.compactSectionSpacing) {
                         ForEach(entry.snapshot.visibleGoals.dropFirst()) { goal in
                             goalRow(goal, compact: true)
                         }
@@ -215,63 +216,61 @@ private struct MilestoneMomentumWidgetView: View {
                 }
             }
         }
-        .padding(18)
+        .padding(scale.outerPadding)
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Milestones")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: scale.titleSize, weight: .bold))
                     .foregroundStyle(.white)
                 Spacer(minLength: 8)
                 Text("\(entry.snapshot.totalGoalCount)")
-                    .font(.system(size: 24, weight: .black, design: .rounded))
+                    .font(.system(size: scale.countSize, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
+                    .minimumScaleFactor(0.8)
             }
 
-            HStack(spacing: 6) {
-                CadenceWidgetBadge(
-                    text: "\(entry.snapshot.totalOverdueTaskCount) overdue tasks",
-                    tint: Color(red: 1.0, green: 0.52, blue: 0.44)
-                )
-                CadenceWidgetBadge(
-                    text: "\(entry.snapshot.totalGoalCount) active",
-                    tint: Color(red: 0.48, green: 0.77, blue: 1.0)
-                )
+            HStack(spacing: 5) {
+                ForEach(headerBadges) { badge in
+                    CadenceWidgetBadge(text: badge.text, tint: badge.tint)
+                }
             }
         }
     }
 
     private func heroCard(goal: CadenceMilestoneWidgetGoal, compact: Bool) -> some View {
         Link(destination: entry.snapshot.goalsURL) {
-            VStack(alignment: .leading, spacing: compact ? 10 : 12) {
+            VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
                 HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text("Priority milestone")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: scale.captionFontSize, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.58))
                         Text(goal.title)
-                            .font(.system(size: compact ? 14 : 18, weight: .bold))
+                            .font(.system(size: compact ? scale.bodyFontSize + 2 : scale.titleSize, weight: .bold))
                             .foregroundStyle(.white)
                             .lineLimit(compact ? 3 : 2)
+                            .minimumScaleFactor(0.85)
                     }
                     Spacer(minLength: 10)
                     Text(goal.percentLabel)
-                        .font(.system(size: compact ? 16 : 22, weight: .black, design: .rounded))
+                        .font(.system(size: compact ? scale.metricValueSize : scale.metricValueSize + 3, weight: .black, design: .rounded))
                         .foregroundStyle(Color(hex: goal.colorHex))
+                        .minimumScaleFactor(0.8)
                 }
 
                 progressBar(progress: goal.progress, tint: Color(hex: goal.colorHex))
 
                 if let nextActionTitle = goal.nextActionTitle {
                     Text(nextActionTitle)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: scale.bodyFontSize, weight: .medium))
                         .foregroundStyle(.white.opacity(0.70))
                         .lineLimit(compact ? 2 : 3)
                 }
 
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     CadenceWidgetBadge(
                         text: "\(goal.linkedHabitCount) habits",
                         tint: Color(red: 0.55, green: 0.89, blue: 0.78)
@@ -284,7 +283,7 @@ private struct MilestoneMomentumWidgetView: View {
                     }
                 }
             }
-            .padding(compact ? 12 : 14)
+            .padding(compact ? scale.compactCardPadding : scale.cardPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 LinearGradient(
@@ -296,64 +295,65 @@ private struct MilestoneMomentumWidgetView: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .clipShape(RoundedRectangle(cornerRadius: compact ? 16 : 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: compact ? scale.cardCornerRadius : scale.cardCornerRadius + 1, style: .continuous))
         }
     }
 
     private var sidePanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
             CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.totalOverdueTaskCount)")
             CadenceWidgetMetricCard(title: "Visible", value: "\(entry.snapshot.visibleGoals.count)")
             CadenceWidgetMetricCard(title: "Active", value: "\(entry.snapshot.totalGoalCount)")
         }
-        .frame(width: 120)
+        .frame(width: 108)
     }
 
     private func goalRow(_ goal: CadenceMilestoneWidgetGoal, compact: Bool) -> some View {
         Link(destination: entry.snapshot.goalsURL) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(goal.title)
-                        .font(.system(size: compact ? 12 : 13, weight: .semibold))
+                        .font(.system(size: compact ? scale.bodyFontSize + 0.5 : scale.bodyFontSize + 1, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                     Spacer(minLength: 8)
                     Text(goal.percentLabel)
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: scale.bodyFontSize + 0.5, weight: .bold))
                         .foregroundStyle(Color(hex: goal.colorHex))
                 }
 
                 progressBar(progress: goal.progress, tint: Color(hex: goal.colorHex))
 
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Text(goal.dueTodayLabel)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: scale.captionFontSize, weight: .medium))
                         .foregroundStyle(.white.opacity(0.62))
                         .lineLimit(1)
                     if goal.overdueTaskCount > 0 {
                         Text("\(goal.overdueTaskCount) overdue")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: scale.captionFontSize, weight: .semibold))
                             .foregroundStyle(Color(red: 1.0, green: 0.52, blue: 0.44))
                     }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, compact ? 9 : 10)
+            .padding(.horizontal, scale.panelPadding)
+            .padding(.vertical, compact ? max(scale.panelPadding - 2, 6) : max(scale.panelPadding - 1, 7))
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.white.opacity(0.07))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous))
         }
     }
 
     private var footerLink: some View {
-        CadenceWidgetFooterLink(label: "Open Milestones in Cadence", url: entry.snapshot.goalsURL)
+        CadenceWidgetFooterLink(label: "Open Milestones", url: entry.snapshot.goalsURL)
     }
 
     private var emptyState: some View {
         CadenceWidgetStateCard(
             title: "No active milestones",
             message: "Use Cadence to create a milestone, then this widget will track its momentum.",
-            actionLabel: "Open Milestones in Cadence",
+            actionLabel: "Open Milestones",
             actionURL: entry.snapshot.goalsURL
         )
     }
@@ -362,7 +362,7 @@ private struct MilestoneMomentumWidgetView: View {
         CadenceWidgetStateCard(
             title: "Milestone widget needs Cadence",
             message: entry.snapshot.statusMessage,
-            actionLabel: "Open Milestones in Cadence",
+            actionLabel: "Open Milestones",
             actionURL: entry.snapshot.goalsURL
         )
     }
@@ -377,7 +377,23 @@ private struct MilestoneMomentumWidgetView: View {
                     .frame(width: max(8, proxy.size.width * max(0, min(progress, 1))))
             }
         }
-        .frame(height: 8)
+        .frame(height: 6)
     }
 
+    private var headerBadges: [WidgetHeaderBadge] {
+        let overdueTint = Color(red: 1.0, green: 0.52, blue: 0.44)
+        let activeTint = Color(red: 0.48, green: 0.77, blue: 1.0)
+
+        if widgetFamily == .systemSmall {
+            if entry.snapshot.totalOverdueTaskCount > 0 {
+                return [WidgetHeaderBadge(text: "\(entry.snapshot.totalOverdueTaskCount) overdue", tint: overdueTint)]
+            }
+            return [WidgetHeaderBadge(text: "\(entry.snapshot.totalGoalCount) active", tint: activeTint)]
+        }
+
+        return [
+            WidgetHeaderBadge(text: "\(entry.snapshot.totalOverdueTaskCount) overdue", tint: overdueTint),
+            WidgetHeaderBadge(text: "\(entry.snapshot.totalGoalCount) active", tint: activeTint),
+        ]
+    }
 }

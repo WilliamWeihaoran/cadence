@@ -10,7 +10,7 @@ struct CalendarPageToolbar: View {
     let scrollToToday: () -> Void
     let setViewMode: (CadenceCalendarViewMode) -> Void
     let setPresentation: (CadenceCalendarPresentation) -> Void
-    let moveBoardMonth: (Int) -> Void
+    let moveBoardWindow: (Int) -> Void
     @Binding var zoomLevel: Int
 
     var body: some View {
@@ -29,20 +29,20 @@ struct CalendarPageToolbar: View {
             }
             Spacer()
 
+            if presentation == .timeline && viewMode != .month {
+                CalendarToolbarZoomControl(zoomLevel: $zoomLevel, range: 1...3)
+            }
+
+            if presentation == .board {
+                CalendarBoardWindowNavigationControl(moveWindow: moveBoardWindow)
+            }
+
             CalendarViewModeControl(
                 viewMode: viewMode,
                 presentation: presentation,
                 setViewMode: setViewMode,
                 setPresentation: setPresentation
             )
-
-            if presentation == .board {
-                CalendarBoardMonthNavigationControl(moveMonth: moveBoardMonth)
-            }
-
-            if presentation == .timeline && viewMode != .month {
-                CalendarToolbarZoomControl(zoomLevel: $zoomLevel, range: 1...3)
-            }
 
             CalendarGhostButton(title: "Today", systemImage: "location.fill", action: scrollToToday)
         }
@@ -60,7 +60,7 @@ private struct CalendarViewModeControl: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(CadenceCalendarViewMode.allCases, id: \.self) { mode in
+            ForEach(CadenceCalendarViewMode.pickerCases, id: \.self) { mode in
                 Button { setViewMode(mode) } label: {
                     Text(mode.rawValue)
                         .font(.system(size: 11, weight: presentation == .timeline && viewMode == mode ? .semibold : .medium))
@@ -110,20 +110,20 @@ private struct CalendarViewModeControl: View {
     }
 }
 
-private struct CalendarBoardMonthNavigationControl: View {
-    let moveMonth: (Int) -> Void
+private struct CalendarBoardWindowNavigationControl: View {
+    let moveWindow: (Int) -> Void
 
     var body: some View {
         HStack(spacing: 6) {
             CalendarIconGhostButton(systemImage: "chevron.left", isEnabled: true) {
-                moveMonth(-1)
+                moveWindow(-1)
             }
-            .help("Previous month")
+            .help("Previous 7 days")
 
             CalendarIconGhostButton(systemImage: "chevron.right", isEnabled: true) {
-                moveMonth(1)
+                moveWindow(1)
             }
-            .help("Next month")
+            .help("Next 7 days")
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 3)
@@ -327,7 +327,7 @@ struct CalendarTimelineViewport: View {
     let eventCache: CalendarEventDayCache
     let onPersistVisibleTimelineDay: (Int) -> Void
     let onPersistVisibleTimelineHour: (Int) -> Void
-    let onRestoreTimelineScrollIfNeeded: (ScrollViewProxy, ScrollViewProxy, CGFloat) -> Void
+    let onRestoreTimelineScrollIfNeeded: (ScrollViewProxy, ScrollViewProxy) -> Void
 
     private let cal = Calendar.current
 
@@ -398,8 +398,8 @@ struct CalendarTimelineViewport: View {
                             timelineScrollState: timelineScrollState,
                             eventCache: eventCache,
                             onPersistVisibleTimelineDay: onPersistVisibleTimelineDay,
-                            onRestoreTimelineScrollIfNeeded: { hProxy, colWidth in
-                                onRestoreTimelineScrollIfNeeded(vProxy, hProxy, colWidth)
+                            onRestoreTimelineScrollIfNeeded: { hProxy in
+                                onRestoreTimelineScrollIfNeeded(vProxy, hProxy)
                             },
                             scrollToTodayTrigger: scrollToTodayTrigger
                         )
@@ -428,8 +428,6 @@ struct CalendarTimelineViewport: View {
                 .scrollBounceBehavior(.always, axes: [.vertical])
                 .onChange(of: scrollToTodayTrigger) {
                     CalendarTimelineScrollSupport.applyTodayVerticalJump(
-                        visibleTimelineHour: $visibleTimelineHour,
-                        rememberedScrollHour: $rememberedScrollHour,
                         isRestoringVerticalScroll: $isRestoringVerticalScroll,
                         vProxy: vProxy
                     )

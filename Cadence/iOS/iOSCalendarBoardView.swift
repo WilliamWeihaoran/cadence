@@ -2,27 +2,558 @@
 import SwiftData
 import SwiftUI
 
-struct iOSCalendarBoardMonth: View {
-    let monthDate: Date
+struct iOSCalendarBoardPlanner: View {
+    let anchorDate: Date
     @Binding var selectedDate: Date
-    let monthTasksByDate: [String: [AppTask]]
+    let allTasks: [AppTask]
+    let allBundles: [TaskBundle]
     let bundlesByDate: [String: [TaskBundle]]
 
-    private var summariesByDate: [String: CadenceCalendarBoardDaySummary] {
-        CadenceCalendarBoardSupport.monthSummaries(
-            monthDate: monthDate,
-            tasksByDate: monthTasksByDate,
-            bundlesByDate: bundlesByDate
-        )
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.modelContext) private var modelContext
+    @State private var isUpdatingSelectedDateFromScroll = false
+    @State private var isProgrammaticScroll = false
+
+    private let calendar = Calendar.current
+    private let renderDays = CalendarBoardPlannerSupport.plannerRenderDayCount
+    private let columnSpacing: CGFloat = 10
+
+    private var columnWidth: CGFloat {
+        horizontalSizeClass == .regular ? 300 : 268
+    }
+
+    private var horizontalPadding: CGFloat {
+        horizontalSizeClass == .regular ? 20 : 14
+    }
+
+    private var bufferStart: Date {
+        CalendarBoardPlannerSupport.plannerWindowStart(for: anchorDate, calendar: calendar)
+    }
+
+    private var anchorDayIndex: Int {
+        CalendarBoardPlannerSupport.dayIndex(for: anchorDate, bufferStart: bufferStart, calendar: calendar, renderDays: renderDays)
+    }
+
+    private var boardTasksByDate: [String: [AppTask]] {
+        CalendarBoardPlannerSupport.tasksByBoardDate(from: allTasks)
     }
 
     var body: some View {
-        CalendarBoardMonthView(
-            monthDate: monthDate,
-            selectedDate: $selectedDate,
-            summariesByDate: summariesByDate,
-            minCellHeight: 66
-        )
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: columnSpacing) {
+                    ForEach(0..<renderDays, id: \.self) { dayIndex in
+                        let date = CalendarBoardPlannerSupport.date(at: dayIndex, bufferStart: bufferStart, calendar: calendar)
+                        let dateKey = DateFormatters.dateKey(from: date)
+                        iOSCalendarBoardDayColumn(
+                            dayIndex: dayIndex,
+                            date: date,
+                            dateKey: dateKey,
+                            tasks: boardTasksByDate[dateKey] ?? [],
+                            bundles: bundlesByDate[dateKey] ?? [],
+                            allTasks: allTasks,
+                            allBundles: allBundles,
+                            onAddTask: { createTask(on: dateKey) },
+                            onDropTaskOnDay: { task in schedule(task, on: dateKey) },
+                            onDropBundleOnDay: { bundle in move(bundle, on: dateKey) },
+                            onDropTaskOnBundle: { task, bundle in add(task, to: bundle) }
+                        )
+                        .frame(width: columnWidth)
+                        .id(dayIndex)
+                    }
+                }
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, 16)
+            }
+            .scrollIndicators(.visible)
+            .background(Theme.bg)
+            .onScrollGeometryChange(for: Int.self) { geometry in
+                visibleDayIndex(for: geometry.contentOffset.x)
+            } action: { _, dayIndex in
+                updateSelectedDate(for: dayIndex)
+            }
+            .onAppear {
+                scroll(proxy, to: anchorDayIndex)
+            }
+            .onChange(of: anchorDate) {
+                if isUpdatingSelectedDateFromScroll {
+                    isUpdatingSelectedDateFromScroll = false
+                    return
+                }
+                scroll(proxy, to: anchorDayIndex)
+            }
+        }
+    }
+
+    private func visibleDayIndex(for offsetX: CGFloat) -> Int {
+        let stride = columnWidth + columnSpacing
+        let rawIndex = Int(((offsetX - horizontalPadding) / stride).rounded())
+        return min(max(rawIndex, 0), renderDays - 1)
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to dayIndex: Int) {
+        isProgrammaticScroll = true
+        DispatchQueue.main.async {
+            withAnimation(.snappy(duration: 0.22)) {
+                proxy.scrollTo(min(max(dayIndex, 0), renderDays - 1), anchor: .leading)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
+                isProgrammaticScroll = false
+            }
+        }
+    }
+
+    private func updateSelectedDate(for dayIndex: Int) {
+        guard !isProgrammaticScroll else { return }
+        let date = CalendarBoardPlannerSupport.date(at: dayIndex, bufferStart: bufferStart, calendar: calendar)
+        guard !calendar.isDate(date, inSameDayAs: selectedDate) else { return }
+        isUpdatingSelectedDateFromScroll = true
+        selectedDate = date
+    }
+
+    private func createTask(on dateKey: String) {
+        let task = AppTask(title: "New Task")
+        task.scheduledDate = dateKey
+        task.scheduledStartMin = -1
+        modelContext.insert(task)
+        try? modelContext.save()
+    }
+
+    private func schedule(_ task: AppTask, on dateKey: String) {
+        task.bundle = nil
+        task.bundleOrder = 0
+        task.scheduledDate = dateKey
+        if task.estimatedMinutes <= 0 {
+            task.estimatedMinutes = 30
+        }
+        try? modelContext.save()
+    }
+
+    private func move(_ bundle: TaskBundle, on dateKey: String) {
+        let oldDateKey = bundle.dateKey
+        bundle.dateKey = dateKey
+        for task in bundle.tasks ?? [] where task.scheduledDate == oldDateKey {
+            task.scheduledDate = dateKey
+        }
+        try? modelContext.save()
+    }
+
+    private func add(_ task: AppTask, to bundle: TaskBundle) {
+        let nextOrder = ((bundle.tasks ?? []).map(\.bundleOrder).max() ?? -1) + 1
+        task.bundle = bundle
+        task.bundleOrder = nextOrder
+        task.scheduledDate = bundle.dateKey
+        task.scheduledStartMin = -1
+        try? modelContext.save()
     }
 }
+
+private struct iOSCalendarBoardDayColumn: View {
+    let dayIndex: Int
+    let date: Date
+    let dateKey: String
+    let tasks: [AppTask]
+    let bundles: [TaskBundle]
+    let allTasks: [AppTask]
+    let allBundles: [TaskBundle]
+    let onAddTask: () -> Void
+    let onDropTaskOnDay: (AppTask) -> Void
+    let onDropBundleOnDay: (TaskBundle) -> Void
+    let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
+
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var isDropTargeted = false
+
+    private var isToday: Bool {
+        dateKey == DateFormatters.todayKey()
+    }
+
+    private var totalCount: Int {
+        tasks.count + bundles.count
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            todayAccent
+            addTaskButton
+            content
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(laneBackground)
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(0.28))
+                .frame(width: 1)
+                .padding(.vertical, 3)
+        }
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Theme.blue.opacity(0.72), style: StrokeStyle(lineWidth: 1.25, dash: [5, 4]))
+                    .padding(2)
+            }
+        }
+        .contentShape(Rectangle())
+        .dropDestination(for: String.self) { items, _ in
+            handleDrop(items)
+        } isTargeted: { isDropTargeted = $0 }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(DateFormatters.dayOfWeek.string(from: date))
+                    .font(.system(size: horizontalSizeClass == .regular ? 21 : 19, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                Text(DateFormatters.shortDate.string(from: date))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            if isToday {
+                Text("Today")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.amber)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(Theme.amber.opacity(0.13))
+                    .clipShape(Capsule())
+            }
+
+            Text("\(totalCount)")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(isToday ? Theme.amber : Theme.dim)
+                .frame(minWidth: 26, minHeight: 24)
+                .background((isToday ? Theme.amber : Theme.surfaceElevated).opacity(isToday ? 0.14 : 0.82))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .padding(.horizontal, 2)
+    }
+
+    @ViewBuilder
+    private var todayAccent: some View {
+        if isToday {
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [Theme.amber.opacity(0.82), Color.orange.opacity(0.44), Theme.amber.opacity(0.16)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(height: 2)
+                .padding(.horizontal, 2)
+                .shadow(color: Theme.amber.opacity(0.22), radius: 8, y: 2)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var addTaskButton: some View {
+        Button(action: onAddTask) {
+            HStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Add task")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Theme.dim)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(Theme.surfaceElevated.opacity(0.70))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(Theme.borderSubtle.opacity(0.50), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if totalCount == 0 {
+            iOSCalendarBoardEmptyColumn()
+                .frame(maxWidth: .infinity)
+                .padding(.top, 8)
+        } else {
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(bundles) { bundle in
+                        iOSCalendarBoardBundleCard(
+                            bundle: bundle,
+                            allTasks: allTasks,
+                            onDropTask: { task in onDropTaskOnBundle(task, bundle) }
+                        )
+                    }
+
+                    ForEach(tasks) { task in
+                        iOSCalendarBoardTaskCard(task: task, dateKey: dateKey)
+                            .draggable(TaskDragPayload.string(for: task.id))
+                    }
+                }
+                .padding(.bottom, 4)
+            }
+            .scrollIndicators(.hidden)
+        }
+    }
+
+    @ViewBuilder
+    private var laneBackground: some View {
+        if isToday || isDropTargeted {
+            LinearGradient(
+                colors: [
+                    (isDropTargeted ? Theme.blue : Theme.amber).opacity(isDropTargeted ? 0.10 : 0.055),
+                    Color.clear
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        } else {
+            Color.clear
+        }
+    }
+
+    private func handleDrop(_ items: [String]) -> Bool {
+        guard let payload = items.first else { return false }
+        if let bundleID = TaskDragPayload.bundleID(from: payload),
+           let bundle = allBundles.first(where: { $0.id == bundleID }) {
+            onDropBundleOnDay(bundle)
+            return true
+        }
+        if let taskID = TaskDragPayload.taskID(from: payload),
+           let task = allTasks.first(where: { $0.id == taskID }) {
+            onDropTaskOnDay(task)
+            return true
+        }
+        return false
+    }
+}
+
+private struct iOSCalendarBoardTaskCard: View {
+    @Bindable var task: AppTask
+    let dateKey: String
+
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var showDetail = false
+
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(Theme.priorityColor(task.priority))
+                .frame(width: 3.5)
+                .padding(.leading, 10)
+                .padding(.vertical, 12)
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
+                    Button(action: toggleCompletion) {
+                        Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: isRegularWidth ? 17 : 15, weight: .semibold))
+                            .foregroundStyle(task.isDone ? Theme.green : Theme.dim.opacity(0.72))
+                    }
+                    .buttonStyle(.plain)
+
+                    Text(task.title.isEmpty ? "Untitled" : task.title)
+                        .font(.system(size: isRegularWidth ? 14 : 13, weight: .semibold))
+                        .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                        .strikethrough(task.isDone, color: Theme.dim)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                    ForEach(metadataChips, id: \.id) { chip in
+                        iOSCalendarBoardMetadataChip(item: chip)
+                    }
+                }
+            }
+            .padding(.leading, 10)
+            .padding(.trailing, 12)
+            .padding(.vertical, 12)
+        }
+        .background(Theme.surfaceElevated.opacity(0.72))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onTapGesture {
+            showDetail = true
+        }
+        .sheet(isPresented: $showDetail) {
+            iOSTaskDetailSheet(task: task)
+        }
+    }
+
+    private var metadataChips: [iOSCalendarBoardMetadataItem] {
+        var chips: [iOSCalendarBoardMetadataItem] = []
+
+        if task.scheduledStartMin >= 0 {
+            chips.append(
+                .init(
+                    id: "time",
+                    icon: "clock.fill",
+                    title: TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledEndMin),
+                    color: Theme.blue
+                )
+            )
+        }
+
+        if !task.dueDate.isEmpty {
+            chips.append(
+                .init(
+                    id: "due",
+                    icon: "flag.fill",
+                    title: DateFormatters.relativeDate(from: task.dueDate),
+                    color: task.dueDate < DateFormatters.todayKey() && !task.isDone ? Theme.red : Theme.dim
+                )
+            )
+        }
+
+        chips.append(
+            .init(
+                id: "list",
+                icon: task.project?.icon ?? task.area?.icon ?? "tray.fill",
+                title: task.containerName.isEmpty ? "Inbox" : task.containerName,
+                color: Color(hex: task.containerColor)
+            )
+        )
+
+        return chips
+    }
+
+    private func toggleCompletion() {
+        CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
+    }
+}
+
+private struct iOSCalendarBoardBundleCard: View {
+    let bundle: TaskBundle
+    let allTasks: [AppTask]
+    let onDropTask: (AppTask) -> Void
+
+    @State private var isTargeted = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "tray.full.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.amber)
+                    .padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(bundle.displayTitle)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(2)
+
+                    HStack(spacing: 6) {
+                        iOSCalendarBoardMetadataChip(
+                            item: .init(
+                                id: "time",
+                                icon: "clock",
+                                title: TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin),
+                                color: Theme.amber
+                            )
+                        )
+                        iOSCalendarBoardMetadataChip(
+                            item: .init(
+                                id: "tasks",
+                                icon: "checklist",
+                                title: "\(bundle.sortedTasks.count) task\(bundle.sortedTasks.count == 1 ? "" : "s")",
+                                color: Theme.dim
+                            )
+                        )
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Theme.surfaceElevated.opacity(0.78))
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Theme.amber.opacity(isTargeted ? 0.18 : 0.07))
+            }
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Theme.amber.opacity(isTargeted ? 0.74 : 0.24), lineWidth: isTargeted ? 1.25 : 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .draggable(TaskDragPayload.bundleString(for: bundle.id))
+        .dropDestination(for: String.self) { items, _ in
+            guard let payload = items.first,
+                  let taskID = TaskDragPayload.taskID(from: payload),
+                  let task = allTasks.first(where: { $0.id == taskID }) else { return false }
+            onDropTask(task)
+            return true
+        } isTargeted: { isTargeted = $0 }
+    }
+}
+
+private struct iOSCalendarBoardEmptyColumn: View {
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "calendar")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Theme.dim.opacity(0.7))
+            Text("No plans")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+        .background(Theme.surfaceElevated.opacity(0.30))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct iOSCalendarBoardMetadataItem: Identifiable {
+    let id: String
+    let icon: String
+    let title: String
+    let color: Color
+}
+
+private struct iOSCalendarBoardMetadataChip: View {
+    let item: iOSCalendarBoardMetadataItem
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: item.icon)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(item.color)
+                .frame(width: 10)
+            Text(item.title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface.opacity(0.66))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+}
+
 #endif

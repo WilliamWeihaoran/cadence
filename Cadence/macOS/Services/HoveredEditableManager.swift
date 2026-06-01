@@ -12,6 +12,10 @@ final class HoveredEditableManager {
     private init() {}
 
     func beginHovering(id: AnyHashable, onEdit: @escaping () -> Void, onDelete: (() -> Void)? = nil) {
+        guard !TaskCreationManager.shared.isPresented else {
+            clear()
+            return
+        }
         if hoveredID == id { return }
         hoveredID = id
         editAction = onEdit
@@ -20,6 +24,12 @@ final class HoveredEditableManager {
 
     func endHovering(id: AnyHashable) {
         guard hoveredID == id else { return }
+        hoveredID = nil
+        editAction = nil
+        deleteAction = nil
+    }
+
+    func clear() {
         hoveredID = nil
         editAction = nil
         deleteAction = nil

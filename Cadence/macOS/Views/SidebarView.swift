@@ -68,11 +68,27 @@ struct SidebarView: View {
                     }
                     .padding(.bottom, 2)
 
-                    let allDestinations = allVisibleDestinations
-                    if !allDestinations.isEmpty {
+                    let primaryDestinations = visiblePrimaryDestinations
+                    if !primaryDestinations.isEmpty {
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-                            ForEach(allDestinations) { destination in
+                            ForEach(primaryDestinations) { destination in
                                 SidebarCardButton(
+                                    destination: destination,
+                                    tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
+                                    count: count(for: destination),
+                                    isSelected: selection == destination.item
+                                ) {
+                                    selection = destination.item
+                                }
+                            }
+                        }
+                    }
+
+                    let trackingDestinations = visibleTrackingDestinations
+                    if !trackingDestinations.isEmpty {
+                        SidebarSection(title: "TRACK") {
+                            ForEach(trackingDestinations) { destination in
+                                SidebarTrackingButton(
                                     destination: destination,
                                     tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
                                     count: count(for: destination),
@@ -141,6 +157,14 @@ struct SidebarView: View {
         SidebarStaticDestination
             .orderedDestinations(from: sidebarTabOrderRaw)
             .filter { !hiddenTabs.contains($0) }
+    }
+
+    private var visiblePrimaryDestinations: [SidebarStaticDestination] {
+        allVisibleDestinations.filter(\.isPrimaryNavigation)
+    }
+
+    private var visibleTrackingDestinations: [SidebarStaticDestination] {
+        allVisibleDestinations.filter(\.isTrackingNavigation)
     }
 }
 

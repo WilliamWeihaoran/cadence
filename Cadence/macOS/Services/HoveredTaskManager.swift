@@ -25,6 +25,10 @@ final class HoveredTaskManager {
     private init() {}
 
     func beginHovering(_ task: AppTask, source: HoveredTaskSource) {
+        guard !TaskCreationManager.shared.isPresented else {
+            clear()
+            return
+        }
         pendingClearWorkItem?.cancel()
         pendingClearWorkItem = nil
         if hoveredTask?.id == task.id, hoveredSource == source { return }
@@ -33,6 +37,10 @@ final class HoveredTaskManager {
     }
 
     func beginHoveringDate(_ kind: HoveredTaskDateKind, for task: AppTask) {
+        guard !TaskCreationManager.shared.isPresented else {
+            clear()
+            return
+        }
         guard hoveredTask?.id == task.id else { return }
         if hoveredDateKind == kind { return }
         hoveredDateKind = kind
@@ -57,6 +65,14 @@ final class HoveredTaskManager {
         }
         pendingClearWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: workItem)
+    }
+
+    func clear() {
+        pendingClearWorkItem?.cancel()
+        pendingClearWorkItem = nil
+        hoveredTask = nil
+        hoveredSource = nil
+        hoveredDateKind = nil
     }
 }
 #endif

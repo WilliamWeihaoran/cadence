@@ -11,6 +11,10 @@ final class HoveredKanbanColumnManager {
     private init() {}
 
     func beginHovering(id: AnyHashable, onCreateTask: @escaping () -> Void) {
+        guard !TaskCreationManager.shared.isPresented else {
+            clear()
+            return
+        }
         if hoveredID == id { return }
         hoveredID = id
         createTaskAction = onCreateTask
@@ -18,6 +22,11 @@ final class HoveredKanbanColumnManager {
 
     func endHovering(id: AnyHashable) {
         guard hoveredID == id else { return }
+        hoveredID = nil
+        createTaskAction = nil
+    }
+
+    func clear() {
         hoveredID = nil
         createTaskAction = nil
     }

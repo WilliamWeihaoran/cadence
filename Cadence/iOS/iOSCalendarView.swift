@@ -25,7 +25,7 @@ struct iOSCalendarView: View {
     }
 
     private var navigationMode: CadenceCalendarViewMode {
-        presentation == .board ? .month : viewMode
+        viewMode
     }
 
     private var selectedKey: String {
@@ -69,7 +69,10 @@ struct iOSCalendarView: View {
     }
 
     private var titleLabel: String {
-        CadenceScheduleSupport.calendarTitle(for: anchorDate, mode: navigationMode, calendar: calendar)
+        if presentation == .board {
+            return CalendarBoardPlannerSupport.title(for: anchorDate, calendar: calendar)
+        }
+        return CadenceScheduleSupport.calendarTitle(for: anchorDate, mode: navigationMode, calendar: calendar)
     }
 
     private var isCompact: Bool {
@@ -77,7 +80,8 @@ struct iOSCalendarView: View {
     }
 
     private var compactCalendarHeight: CGFloat {
-        presentation == .timeline && viewMode != .month ? 620 : 470
+        if presentation == .board { return 620 }
+        return presentation == .timeline && viewMode != .month ? 620 : 470
     }
 
     var body: some View {
@@ -127,10 +131,11 @@ struct iOSCalendarView: View {
     @ViewBuilder
     private var calendarContent: some View {
         if presentation == .board {
-            iOSCalendarBoardMonth(
-                monthDate: anchorDate,
+            iOSCalendarBoardPlanner(
+                anchorDate: anchorDate,
                 selectedDate: $selectedDate,
-                monthTasksByDate: monthTasksByDate,
+                allTasks: allTasks,
+                allBundles: allBundles,
                 bundlesByDate: bundlesByDate
             )
         } else if viewMode == .month {
@@ -180,6 +185,12 @@ struct iOSCalendarView: View {
     }
 
     private func moveAnchor(by value: Int) {
+        if presentation == .board {
+            anchorDate = CalendarBoardPlannerSupport.dateByMovingWindow(anchorDate, by: value, calendar: calendar)
+            selectedDate = anchorDate
+            return
+        }
+
         anchorDate = CadenceScheduleSupport.shiftedDate(anchorDate, mode: navigationMode, by: value, calendar: calendar)
         if navigationMode == .month,
            let first = CadenceScheduleSupport.monthGridDays(for: anchorDate, calendar: calendar).first(where: {
@@ -265,7 +276,7 @@ private struct iOSCalendarToolbar: View {
 
     private var modePicker: some View {
         Picker("", selection: calendarModeSelection) {
-            ForEach(CadenceCalendarViewMode.allCases, id: \.self) { mode in
+            ForEach(CadenceCalendarViewMode.pickerCases, id: \.self) { mode in
                 Text(mode.rawValue).tag("mode:\(mode.rawValue)")
             }
 

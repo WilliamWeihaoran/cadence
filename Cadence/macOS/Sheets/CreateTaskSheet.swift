@@ -5,6 +5,7 @@ import SwiftData
 struct CreateTaskSheet: View {
     let seed: TaskCreationSeed
     let dismissAction: (() -> Void)?
+    let successAction: (() -> Void)?
 
     @Environment(\.modelContext) private var modelContext
     @Environment(TaskCreationManager.self) private var taskCreationManager
@@ -31,9 +32,14 @@ struct CreateTaskSheet: View {
     @FocusState private var focusedSubtask: Int?
     @State private var subtaskTitles: [String] = []
 
-    init(seed: TaskCreationSeed, dismissAction: (() -> Void)? = nil) {
+    init(
+        seed: TaskCreationSeed,
+        dismissAction: (() -> Void)? = nil,
+        successAction: (() -> Void)? = nil
+    ) {
         self.seed = seed
         self.dismissAction = dismissAction
+        self.successAction = successAction
         let resolvedDueDate = DateFormatters.date(from: seed.dueDateKey) ?? Date()
         let resolvedDoDate  = DateFormatters.date(from: seed.doDateKey)  ?? Date()
         _title             = State(initialValue: seed.title)
@@ -333,12 +339,8 @@ struct CreateTaskSheet: View {
             return
         }
 
-        if dismissAction != nil {
-            // Quick panel: close immediately, then show global toast after panel has dismissed
-            dismiss()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                taskCreationManager.presentSuccessToast()
-            }
+        if let successAction {
+            successAction()
         } else {
             dismiss()
             taskCreationManager.presentSuccessToast()

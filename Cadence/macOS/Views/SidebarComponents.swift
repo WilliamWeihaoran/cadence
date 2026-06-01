@@ -106,20 +106,21 @@ struct ContextSection: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: context.icon)
-                    .font(.system(size: 10))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color(hex: context.colorHex))
+                    .frame(width: 14)
 
                 Text(context.name.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .kerning(0.8)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Theme.text.opacity(0.68))
+                    .kerning(1.1)
 
                 Spacer()
 
                 Button(action: onAddList) {
                     Image(systemName: "plus")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(Theme.text.opacity(0.62))
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
                 }
@@ -128,35 +129,29 @@ struct ContextSection: View {
             .padding(.horizontal, 2)
 
             if hasLists {
-                HStack(alignment: .top, spacing: 8) {
-                    RoundedRectangle(cornerRadius: 999, style: .continuous)
-                        .fill(Color(hex: context.colorHex).opacity(0.22))
-                        .frame(width: 2)
+                VStack(alignment: .leading, spacing: 3) {
+                    // Top drop zone — lets the user drag any item to the first position
+                    if let firstItem = listEntries.first?.dragItem {
+                        Color.clear
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 4)
+                            .onDrop(of: [UTType.text], delegate: SidebarListDropDelegate(
+                                target: firstItem,
+                                dragOverItem: $dragOverListItem,
+                                onDrop: reorderList
+                            ))
+                    }
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        // Top drop zone — lets the user drag any item to the first position
-                        if let firstItem = listEntries.first?.dragItem {
-                            Color.clear
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 4)
-                                .onDrop(of: [UTType.text], delegate: SidebarListDropDelegate(
-                                    target: firstItem,
-                                    dragOverItem: $dragOverListItem,
-                                    onDrop: reorderList
-                                ))
-                        }
-
-                        ForEach(listEntries) { entry in
-                            switch entry {
-                            case .area(let area):
-                                areaRow(area, target: entry.dragItem)
-                            case .project(let project):
-                                projectRow(project, target: entry.dragItem)
-                            }
+                    ForEach(listEntries) { entry in
+                        switch entry {
+                        case .area(let area):
+                            areaRow(area, target: entry.dragItem)
+                        case .project(let project):
+                            projectRow(project, target: entry.dragItem)
                         }
                     }
                 }
-                .padding(.leading, 8)
+                .padding(.leading, 7)
             } else {
                 Button(action: onAddList) {
                     HStack(spacing: 8) {
@@ -175,9 +170,10 @@ struct ContextSection: View {
                     )
                 }
                 .buttonStyle(.cadencePlain)
-                .padding(.leading, 8)
+                .padding(.leading, 4)
             }
         }
+        .padding(.bottom, 8)
         .sheet(item: $areaForEdit) { area in
             EditAreaSheet(area: area)
         }

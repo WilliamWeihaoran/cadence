@@ -80,6 +80,11 @@ struct TaskTitleInlineTagPicker: View {
                     onRestoreLiteral()
                     return .handled
                 }
+                .onKeyPress(.delete) {
+                    guard query.isEmpty else { return .ignored }
+                    onRestoreLiteral()
+                    return .handled
+                }
             if !query.isEmpty {
                 Button { query = "" } label: {
                     Image(systemName: "xmark.circle.fill")

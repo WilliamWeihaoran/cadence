@@ -16,6 +16,16 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 PLUGIN_DIR = SCRIPT_DIR.parent
 LAUNCHER = SCRIPT_DIR / "run-cadence-mcp.sh"
+WRITE_TOOLS = {
+    "create_task",
+    "update_task",
+    "schedule_task",
+    "complete_task",
+    "reopen_task",
+    "cancel_task",
+    "bulk_cancel_tasks",
+    "append_core_note",
+}
 EXPECTED_TOOLS = {
     "mcp_diagnostics",
     "get_today_brief",
@@ -39,27 +49,144 @@ EXPECTED_TOOLS = {
     "list_links",
     "search_cadence",
     "get_recent_mcp_writes",
-    "create_task",
-    "update_task",
-    "schedule_task",
-    "complete_task",
-    "reopen_task",
-    "cancel_task",
-    "bulk_cancel_tasks",
-    "append_core_note",
-}
+} | WRITE_TOOLS
+READ_ONLY_TOOLS = EXPECTED_TOOLS - WRITE_TOOLS
 
 
 def prepare_fixture_store() -> tempfile.TemporaryDirectory:
     return tempfile.TemporaryDirectory(prefix="cadence-mcp-smoke-")
 
 
+def start_server(env: dict) -> subprocess.Popen:
+    return subprocess.Popen(
+        [str(LAUNCHER)],
+        cwd=PLUGIN_DIR,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+        env=env,
+    )
+
+
+def send_message(process: subprocess.Popen, message: dict) -> None:
+    assert process.stdin is not None
+    process.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
+    process.stdin.flush()
+
+
+def read_response(process: subprocess.Popen, expected_id: int, timeout: float = 45.0) -> dict:
+    assert process.stdout is not None
+    assert process.stderr is not None
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        ready, _, _ = select.select([process.stdout, process.stderr], [], [], 0.1)
+        for stream in ready:
+            line = stream.readline()
+            if not line:
+                continue
+            if stream is process.stderr:
+                continue
+            payload = json.loads(line)
+            if payload.get("id") == expected_id:
+                return payload
+
+        if process.poll() is not None:
+            stderr = process.stderr.read()
+            raise RuntimeError(f"server exited {process.returncode}: {stderr}")
+
+    raise TimeoutError(f"timed out waiting for response {expected_id}")
+
+
+def initialize_server(process: subprocess.Popen, request_id: int, client_name: str) -> dict:
+    send_message(
+        process,
+        {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": client_name, "version": "0.1.0"},
+            },
+        },
+    )
+    initialize = read_response(process, request_id)
+    send_message(process, {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+    return initialize
+
+
+def stop_server(process: subprocess.Popen) -> None:
+    process.terminate()
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.kill()
+
+
+def verify_default_read_only_mode() -> None:
+    temp_store = prepare_fixture_store()
+    env = os.environ.copy()
+    env["CADENCE_MCP_STORE_URL"] = str(Path(temp_store.name) / "default.store")
+    env["CADENCE_MCP_CREATE_STORE_IF_MISSING"] = "1"
+
+    try:
+        bootstrap_env = env.copy()
+        bootstrap_env["CADENCE_MCP_ENABLE_WRITES"] = "1"
+        bootstrap = start_server(bootstrap_env)
+        try:
+            initialize_server(bootstrap, 100, "cadence-mcp-smoke-bootstrap")
+        finally:
+            stop_server(bootstrap)
+
+        env.pop("CADENCE_MCP_ENABLE_WRITES", None)
+        process = start_server(env)
+        try:
+            initialize_server(process, 101, "cadence-mcp-smoke-read-only")
+
+            send_message(process, {"jsonrpc": "2.0", "id": 102, "method": "tools/list", "params": {}})
+            tools = read_response(process, 102)["result"]["tools"]
+            tool_names = {tool["name"] for tool in tools}
+            missing = sorted(READ_ONLY_TOOLS - tool_names)
+            if missing:
+                raise AssertionError(f"missing read-only tools: {', '.join(missing)}")
+            exposed_writes = sorted(WRITE_TOOLS & tool_names)
+            if exposed_writes:
+                raise AssertionError(f"default mode exposed write tools: {', '.join(exposed_writes)}")
+
+            send_message(process, {"jsonrpc": "2.0", "id": 103, "method": "tools/call", "params": {"name": "mcp_diagnostics", "arguments": {}}})
+            diagnostics_response = read_response(process, 103)
+            if diagnostics_response["result"].get("isError", False):
+                raise AssertionError(diagnostics_response["result"]["content"][0]["text"])
+            diagnostics = json.loads(diagnostics_response["result"]["content"][0]["text"])
+            if diagnostics["mode"] != "read-only":
+                raise AssertionError(f"expected read-only diagnostics, got {diagnostics}")
+            if diagnostics["writeToolCount"] != "0":
+                raise AssertionError(f"expected no write tools in default diagnostics, got {diagnostics}")
+
+            send_message(process, {"jsonrpc": "2.0", "id": 104, "method": "tools/call", "params": {"name": "create_task", "arguments": {"title": "blocked"}}})
+            blocked_write = read_response(process, 104)
+            if not blocked_write["result"].get("isError", False):
+                raise AssertionError("create_task should be rejected when write mode is disabled")
+        finally:
+            stop_server(process)
+    finally:
+        temp_store.cleanup()
+
+
 def main() -> int:
+    verify_default_read_only_mode()
+    print("OK default read-only MCP mode")
+
     date_arg = sys.argv[1] if len(sys.argv) > 1 else None
     temp_store = prepare_fixture_store()
     env = os.environ.copy()
     env["CADENCE_MCP_STORE_URL"] = str(Path(temp_store.name) / "default.store")
     env["CADENCE_MCP_CREATE_STORE_IF_MISSING"] = "1"
+    env["CADENCE_MCP_ENABLE_WRITES"] = "1"
     process = subprocess.Popen(
         [str(LAUNCHER)],
         cwd=PLUGIN_DIR,

@@ -322,7 +322,7 @@ private struct TimelineBundleDropDelegate: DropDelegate {
     }
 }
 
-private struct TaskBundleDetailPopover: View {
+struct TaskBundleDetailPopover: View {
     let bundle: TaskBundle
     let allTasks: [AppTask]
     let areas: [Area]

@@ -32,6 +32,7 @@ struct TodayTasksWidgetView: View {
     let entry: TodayTasksWidgetEntry
 
     @Environment(\.widgetFamily) private var widgetFamily
+    private var scale: CadenceWidgetScale { .forFamily(widgetFamily) }
 
     var body: some View {
         Group {
@@ -55,7 +56,7 @@ struct TodayTasksWidgetView: View {
     }
 
     private var smallLayout: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: scale.sectionSpacing) {
             widgetHeader
 
             if entry.snapshot.isUnavailable {
@@ -66,11 +67,11 @@ struct TodayTasksWidgetView: View {
                 emptyState(alignment: .leading)
             }
         }
-        .padding(14)
+        .padding(scale.outerPadding)
     }
 
     private var mediumLayout: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: scale.sectionSpacing) {
             widgetHeader
 
             if entry.snapshot.isUnavailable {
@@ -78,18 +79,18 @@ struct TodayTasksWidgetView: View {
             } else if entry.snapshot.tasks.isEmpty {
                 emptyState(alignment: .center)
             } else {
-                VStack(spacing: 8) {
+                VStack(spacing: scale.compactSectionSpacing) {
                     ForEach(entry.snapshot.tasks.prefix(3)) { task in
                         taskRow(task, dense: false)
                     }
                 }
             }
         }
-        .padding(14)
+        .padding(scale.outerPadding)
     }
 
     private var largeLayout: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: scale.sectionSpacing) {
             widgetHeader
 
             if entry.snapshot.isUnavailable {
@@ -97,14 +98,14 @@ struct TodayTasksWidgetView: View {
             } else if entry.snapshot.tasks.isEmpty {
                 emptyState(alignment: .center)
             } else {
-                HStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .top, spacing: scale.sectionSpacing) {
                     if let task = entry.snapshot.tasks.first {
                         primaryTaskCard(task: task, compact: false)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     summaryPanel
-                        .frame(width: 146)
+                        .frame(width: 132)
                 }
 
                 taskStackCard(
@@ -113,14 +114,14 @@ struct TodayTasksWidgetView: View {
                     tasks: Array(entry.snapshot.tasks.prefix(6))
                 )
 
-                footerBar(label: "Open full Today view")
+                footerBar(label: "Open Today")
             }
         }
-        .padding(16)
+        .padding(scale.outerPadding)
     }
 
     private var extraLargeLayout: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: scale.sectionSpacing) {
             widgetHeader
 
             if entry.snapshot.isUnavailable {
@@ -128,18 +129,18 @@ struct TodayTasksWidgetView: View {
             } else if entry.snapshot.tasks.isEmpty {
                 emptyState(alignment: .center)
             } else {
-                HStack(alignment: .top, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: scale.sectionSpacing) {
+                    VStack(alignment: .leading, spacing: scale.sectionSpacing) {
                         if let task = entry.snapshot.tasks.first {
                             primaryTaskCard(task: task, compact: false)
                         }
 
                         focusStrip
-                        footerBar(label: "Open Today in Cadence")
+                        footerBar(label: "Open Today")
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    HStack(alignment: .top, spacing: 12) {
+                    HStack(alignment: .top, spacing: scale.sectionSpacing) {
                         taskColumnCard(
                             title: "On deck",
                             tasks: leadingColumnTasks
@@ -153,12 +154,12 @@ struct TodayTasksWidgetView: View {
                 }
             }
         }
-        .padding(18)
+        .padding(scale.outerPadding)
     }
 
     private var summaryPanel: some View {
         CadenceWidgetPanel {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
                 metricTile(
                     title: "Overdue",
                     value: entry.snapshot.overdueCount,
@@ -179,7 +180,7 @@ struct TodayTasksWidgetView: View {
     }
 
     private var focusStrip: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: scale.compactSectionSpacing) {
             focusTile(
                 title: "Now",
                 value: topStatus.label,
@@ -199,36 +200,21 @@ struct TodayTasksWidgetView: View {
     }
 
     private var widgetHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Today")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: scale.titleSize, weight: .bold))
                     .foregroundStyle(.white)
                 Spacer(minLength: 10)
                 Text("\(entry.snapshot.totalCount)")
-                    .font(.system(size: 24, weight: .black, design: .rounded))
+                    .font(.system(size: scale.countSize, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
+                    .minimumScaleFactor(0.8)
             }
 
-            HStack(spacing: 6) {
-                if entry.snapshot.isUnavailable {
-                    CadenceWidgetBadge(
-                        text: "unavailable",
-                        tint: Color(red: 1.0, green: 0.72, blue: 0.28)
-                    )
-                } else {
-                    CadenceWidgetBadge(
-                        text: "\(entry.snapshot.overdueCount) overdue",
-                        tint: Color(red: 1.0, green: 0.45, blue: 0.41)
-                    )
-                    CadenceWidgetBadge(
-                        text: "\(entry.snapshot.dueTodayCount) due",
-                        tint: Color(red: 1.0, green: 0.72, blue: 0.28)
-                    )
-                    CadenceWidgetBadge(
-                        text: "\(entry.snapshot.scheduledTodayCount) scheduled",
-                        tint: Color(red: 0.39, green: 0.71, blue: 1.0)
-                    )
+            HStack(spacing: 5) {
+                ForEach(headerBadges) { badge in
+                    CadenceWidgetBadge(text: badge.text, tint: badge.tint)
                 }
             }
         }
@@ -237,39 +223,40 @@ struct TodayTasksWidgetView: View {
     private func primaryTaskCard(task: CadenceTodayWidgetTask, compact: Bool) -> some View {
         let status = task.widgetStatus(for: entry.snapshot.dateKey)
 
-        return VStack(alignment: .leading, spacing: compact ? 10 : 12) {
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
+            HStack(alignment: .top, spacing: scale.compactSectionSpacing) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(compact ? "Top task" : "Priority now")
-                        .font(.system(size: compact ? 10 : 11, weight: .semibold))
+                        .font(.system(size: scale.captionFontSize, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.6))
 
                     Link(destination: task.deepLinkURL) {
                         Text(task.title)
-                            .font(.system(size: compact ? 14 : 18, weight: .bold))
+                            .font(.system(size: compact ? scale.bodyFontSize + 2 : scale.titleSize, weight: .bold))
                             .foregroundStyle(.white)
-                            .lineLimit(compact ? 3 : 4)
+                            .lineLimit(compact ? 3 : 3)
+                            .minimumScaleFactor(0.9)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
 
                 if !compact {
-                    completeButton(taskID: task.id, size: 21)
+                    completeButton(taskID: task.id, size: scale.countSize - 2)
                 }
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 statusPill(status)
                 if !task.containerName.isEmpty {
                     containerPill(task.containerName)
                 }
                 Spacer(minLength: 8)
                 if compact {
-                    completeButton(taskID: task.id, size: 18)
+                    completeButton(taskID: task.id, size: scale.metricValueSize)
                 }
             }
         }
-        .padding(compact ? 12 : 14)
+        .padding(compact ? scale.compactCardPadding : scale.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             LinearGradient(
@@ -281,7 +268,7 @@ struct TodayTasksWidgetView: View {
                 endPoint: .bottomTrailing
             )
         )
-        .clipShape(RoundedRectangle(cornerRadius: compact ? 16 : 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: compact ? scale.cardCornerRadius : scale.cardCornerRadius + 1, style: .continuous))
     }
 
     private func taskStackCard(
@@ -290,17 +277,17 @@ struct TodayTasksWidgetView: View {
         tasks: [CadenceTodayWidgetTask]
     ) -> some View {
         CadenceWidgetPanel {
-            VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: scale.bodyFontSize + 1, weight: .bold))
                         .foregroundStyle(.white)
                     Text(subtitle)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: scale.bodyFontSize, weight: .medium))
                         .foregroundStyle(.white.opacity(0.58))
                 }
 
-                VStack(spacing: 8) {
+                VStack(spacing: scale.compactSectionSpacing) {
                     ForEach(tasks) { task in
                         taskRow(task, dense: true)
                     }
@@ -314,18 +301,18 @@ struct TodayTasksWidgetView: View {
         tasks: [CadenceTodayWidgetTask]
     ) -> some View {
         CadenceWidgetPanel {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
                 Text(title)
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: scale.bodyFontSize + 1, weight: .bold))
                     .foregroundStyle(.white)
 
                 if tasks.isEmpty {
                     Text("No more tasks in this lane.")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: scale.bodyFontSize, weight: .medium))
                         .foregroundStyle(.white.opacity(0.55))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
-                    VStack(spacing: 8) {
+                    VStack(spacing: scale.compactSectionSpacing) {
                         ForEach(tasks) { task in
                             taskRow(task, dense: true)
                         }
@@ -339,19 +326,20 @@ struct TodayTasksWidgetView: View {
     private func taskRow(_ task: CadenceTodayWidgetTask, dense: Bool) -> some View {
         let status = task.widgetStatus(for: entry.snapshot.dateKey)
 
-        return HStack(spacing: dense ? 8 : 10) {
+        return HStack(spacing: dense ? 7 : 8) {
             Link(destination: task.deepLinkURL) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(task.title)
-                        .font(.system(size: dense ? 12 : 13, weight: .semibold))
+                        .font(.system(size: dense ? scale.bodyFontSize + 0.5 : scale.bodyFontSize + 1, weight: .semibold))
                         .foregroundStyle(.white)
-                        .lineLimit(dense ? 2 : 3)
+                        .lineLimit(dense ? 2 : 2)
+                        .minimumScaleFactor(0.9)
 
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         statusPill(status)
                         if !task.containerName.isEmpty {
                             Text(task.containerName)
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: scale.captionFontSize, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.55))
                                 .lineLimit(1)
                         }
@@ -360,18 +348,18 @@ struct TodayTasksWidgetView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            completeButton(taskID: task.id, size: dense ? 16 : 17)
+            completeButton(taskID: task.id, size: dense ? scale.metricValueSize - 1 : scale.metricValueSize)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, dense ? 9 : 10)
+        .padding(.horizontal, scale.panelPadding)
+        .padding(.vertical, dense ? max(scale.panelPadding - 2, 6) : max(scale.panelPadding - 1, 7))
         .background(Color.white.opacity(dense ? 0.05 : 0.07))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous))
     }
 
     private func footerBar(label: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: scale.compactSectionSpacing) {
             Text("\(entry.snapshot.totalCount) tasks in view")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: scale.bodyFontSize, weight: .medium))
                 .foregroundStyle(.white.opacity(0.64))
             Spacer(minLength: 8)
             CadenceWidgetFooterLink(label: label, url: entry.snapshot.todayURL)
@@ -381,10 +369,10 @@ struct TodayTasksWidgetView: View {
     private func metricTile(title: String, value: Int, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: scale.captionFontSize, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.58))
             Text("\(value)")
-                .font(.system(size: 22, weight: .black, design: .rounded))
+                .font(.system(size: scale.metricValueSize + 1, weight: .black, design: .rounded))
                 .foregroundStyle(tint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -392,26 +380,27 @@ struct TodayTasksWidgetView: View {
     }
 
     private func focusTile(title: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: scale.captionFontSize, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.55))
             Text(value)
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: scale.bodyFontSize + 2, weight: .bold))
                 .foregroundStyle(tint)
                 .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
-        .padding(10)
+        .padding(scale.panelPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white.opacity(0.07))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
     }
 
     private func emptyState(alignment: HorizontalAlignment) -> some View {
         CadenceWidgetStateCard(
             title: "Nothing planned today",
             message: alignment == .leading ? "Your hot path is clear right now." : nil,
-            actionLabel: "Open Today in Cadence",
+            actionLabel: "Open Today",
             actionURL: entry.snapshot.todayURL,
             alignment: alignment
         )
@@ -444,10 +433,12 @@ struct TodayTasksWidgetView: View {
 
     private func containerPill(_ name: String) -> some View {
         Text(name)
-            .font(.system(size: 10, weight: .semibold))
+            .font(.system(size: scale.captionFontSize, weight: .semibold))
             .foregroundStyle(.white.opacity(0.76))
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+            .padding(.horizontal, scale.badgeHorizontalPadding)
+            .padding(.vertical, scale.badgeVerticalPadding)
             .background(Color.white.opacity(0.08))
             .clipShape(Capsule())
     }
@@ -470,6 +461,43 @@ struct TodayTasksWidgetView: View {
             )
         }
         return task.widgetStatus(for: entry.snapshot.dateKey)
+    }
+
+    private var headerBadges: [WidgetHeaderBadge] {
+        if entry.snapshot.isUnavailable {
+            return [
+                WidgetHeaderBadge(
+                    text: "unavailable",
+                    tint: Color(red: 1.0, green: 0.72, blue: 0.28)
+                )
+            ]
+        }
+
+        let overdueTint = Color(red: 1.0, green: 0.45, blue: 0.41)
+        let dueTint = Color(red: 1.0, green: 0.72, blue: 0.28)
+        let scheduledTint = Color(red: 0.39, green: 0.71, blue: 1.0)
+
+        switch widgetFamily {
+        case .systemSmall:
+            if entry.snapshot.overdueCount > 0 {
+                return [WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint)]
+            }
+            if entry.snapshot.dueTodayCount > 0 {
+                return [WidgetHeaderBadge(text: "\(entry.snapshot.dueTodayCount) due now", tint: dueTint)]
+            }
+            return [WidgetHeaderBadge(text: "\(entry.snapshot.scheduledTodayCount) planned", tint: scheduledTint)]
+        case .systemMedium:
+            return [
+                WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint),
+                WidgetHeaderBadge(text: "\(entry.snapshot.dueTodayCount) due", tint: dueTint),
+            ]
+        default:
+            return [
+                WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint),
+                WidgetHeaderBadge(text: "\(entry.snapshot.dueTodayCount) due", tint: dueTint),
+                WidgetHeaderBadge(text: "\(entry.snapshot.scheduledTodayCount) scheduled", tint: scheduledTint),
+            ]
+        }
     }
 
     private var extraLargeQueueTasks: [CadenceTodayWidgetTask] {

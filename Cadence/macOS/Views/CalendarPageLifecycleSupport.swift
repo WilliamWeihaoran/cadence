@@ -36,10 +36,8 @@ enum CalendarPageLifecycleSupport {
         todayDayIdx: Int,
         visibleTimelineDayIndex: inout Int?,
         visibleTimelineHour: inout Int?,
-        timelineScrollState: CalendarTimelineScrollState,
         vProxy: ScrollViewProxy,
         hProxy: ScrollViewProxy,
-        colWidth: CGFloat,
         setHorizontalRestoring: @escaping (Bool) -> Void,
         setVerticalRestoring: @escaping (Bool) -> Void
     ) {
@@ -51,10 +49,8 @@ enum CalendarPageLifecycleSupport {
             todayDayIdx: todayDayIdx,
             visibleTimelineDayIndex: &visibleTimelineDayIndex,
             visibleTimelineHour: &visibleTimelineHour,
-            timelineScrollState: timelineScrollState,
             vProxy: vProxy,
             hProxy: hProxy,
-            colWidth: colWidth,
             setHorizontalRestoring: setHorizontalRestoring,
             setVerticalRestoring: setVerticalRestoring
         )

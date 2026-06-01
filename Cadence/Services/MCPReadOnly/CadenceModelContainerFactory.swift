@@ -4,8 +4,10 @@ import SwiftData
 enum CadenceModelContainerFactory {
     static let storeURLEnvironmentKey = "CADENCE_MCP_STORE_URL"
     static let createStoreIfMissingEnvironmentKey = "CADENCE_MCP_CREATE_STORE_IF_MISSING"
-    static let appContainerIdentifier = "com.haoranwei.Cadence"
-    static let appGroupIdentifier = "group.com.haoranwei.Cadence"
+    static let enableWritesEnvironmentKey = "CADENCE_MCP_ENABLE_WRITES"
+    private static let inMemoryContainerCreationQueue = DispatchQueue(
+        label: "com.haoranwei.Cadence.inMemoryModelContainerCreation"
+    )
 
     static func makeReadOnlyContainer() throws -> ModelContainer {
         let storeURL = try resolvedStoreURL()
@@ -38,12 +40,18 @@ enum CadenceModelContainerFactory {
     }
 
     static func makeInMemoryContainer() throws -> ModelContainer {
-        let configuration = ModelConfiguration(
-            schema: CadenceSchema.schema,
-            isStoredInMemoryOnly: true,
-            cloudKitDatabase: .none
-        )
-        return try ModelContainer(for: CadenceSchema.schema, configurations: [configuration])
+        try inMemoryContainerCreationQueue.sync {
+            let configuration = ModelConfiguration(
+                schema: CadenceSchema.schema,
+                isStoredInMemoryOnly: true,
+                cloudKitDatabase: .none
+            )
+            return try ModelContainer(for: CadenceSchema.schema, configurations: [configuration])
+        }
+    }
+
+    static var writesEnabled: Bool {
+        environmentFlag(enableWritesEnvironmentKey)
     }
 
     static func resolvedStoreURL() throws -> URL {
@@ -57,34 +65,7 @@ enum CadenceModelContainerFactory {
             }
         }
 
-        let home = userHomeDirectory
-        let appGroupURL = home
-            .appendingPathComponent("Library/Group Containers")
-            .appendingPathComponent(appGroupIdentifier)
-            .appendingPathComponent("Library/Application Support/default.store")
-        if FileManager.default.fileExists(atPath: appGroupURL.path) {
-            return appGroupURL
-        }
-
-        let appContainerURL = home
-            .appendingPathComponent("Library/Containers")
-            .appendingPathComponent(appContainerIdentifier)
-            .appendingPathComponent("Data/Library/Application Support/default.store")
-        if FileManager.default.fileExists(atPath: appContainerURL.path) {
-            return appContainerURL
-        }
-
-        let unsandboxedURL = home
-            .appendingPathComponent("Library/Application Support/default.store")
-        if FileManager.default.fileExists(atPath: unsandboxedURL.path) {
-            return unsandboxedURL
-        }
-
-        throw CadenceReadError.storeNotFound([
-            appGroupURL.path,
-            appContainerURL.path,
-            unsandboxedURL.path,
-        ])
+        return try CadenceStoreSupport.primaryStoreURL()
     }
 
     static func refreshMarkerURL() throws -> URL {
@@ -113,16 +94,12 @@ enum CadenceModelContainerFactory {
         }
     }
 
-    private static var userHomeDirectory: URL {
-        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
-        URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-        #else
-        FileManager.default.homeDirectoryForCurrentUser
-        #endif
+    private static var shouldCreateMissingOverrideStore: Bool {
+        environmentFlag(createStoreIfMissingEnvironmentKey)
     }
 
-    private static var shouldCreateMissingOverrideStore: Bool {
-        let raw = ProcessInfo.processInfo.environment[createStoreIfMissingEnvironmentKey] ?? ""
+    private static func environmentFlag(_ key: String) -> Bool {
+        let raw = ProcessInfo.processInfo.environment[key] ?? ""
         return ["1", "true", "yes"].contains(raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
     }
 }

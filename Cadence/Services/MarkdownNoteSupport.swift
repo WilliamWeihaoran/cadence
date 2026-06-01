@@ -245,13 +245,16 @@ enum MarkdownTableParser {
 
 enum NoteUnlinkedMentionResolver {
     static func unlinkedMentions(for note: Note, in notes: [Note]) -> [Note] {
-        let references = NoteReferenceParser.noteReferences(in: note.content)
+        unlinkedMentions(noteID: note.id, content: note.content, in: notes)
+    }
+
+    static func unlinkedMentions(noteID: UUID, content: String, in notes: [Note]) -> [Note] {
+        let references = NoteReferenceParser.noteReferences(in: content)
         let linkedIDs = Set(references.compactMap(\.noteID))
         let linkedTitles = Set(references.map { $0.fallbackTitle.lowercased() })
-        let content = note.content
 
         return notes.filter { candidate in
-            guard candidate.id != note.id, !linkedIDs.contains(candidate.id) else { return false }
+            guard candidate.id != noteID, !linkedIDs.contains(candidate.id) else { return false }
             let title = candidate.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
             guard title.count >= 3, !linkedTitles.contains(title.lowercased()) else { return false }
             return containsLoosePhrase(title, in: content)

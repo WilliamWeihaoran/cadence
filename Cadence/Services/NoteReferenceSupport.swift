@@ -119,22 +119,30 @@ enum NoteReferenceParser {
 
 enum NoteReferenceResolver {
     static func linkedNotes(for note: Note, in notes: [Note]) -> [Note] {
-        let references = NoteReferenceParser.noteReferences(in: note.content)
+        linkedNotes(noteID: note.id, content: note.content, in: notes)
+    }
+
+    static func linkedNotes(noteID currentNoteID: UUID, content: String, in notes: [Note]) -> [Note] {
+        let references = NoteReferenceParser.noteReferences(in: content)
         return references.compactMap { reference in
             if let noteID = reference.noteID,
-               noteID != note.id,
+               noteID != currentNoteID,
                let exact = notes.first(where: { $0.id == noteID }) {
                 return exact
             }
             let title = reference.fallbackTitle
             return notes.first {
-                $0.id != note.id && noteTitle($0).caseInsensitiveCompare(title) == .orderedSame
+                $0.id != currentNoteID && noteTitle($0).caseInsensitiveCompare(title) == .orderedSame
             }
         }
     }
 
     static func linkedTasks(for note: Note, in tasks: [AppTask]) -> [AppTask] {
-        let references = NoteReferenceParser.taskReferences(in: note.content)
+        linkedTasks(in: note.content, tasks: tasks)
+    }
+
+    static func linkedTasks(in content: String, tasks: [AppTask]) -> [AppTask] {
+        let references = NoteReferenceParser.taskReferences(in: content)
         return references.compactMap { reference in
             if let taskID = reference.taskID,
                let exact = tasks.first(where: { $0.id == taskID }) {
@@ -149,11 +157,15 @@ enum NoteReferenceResolver {
     }
 
     static func backlinks(for note: Note, in notes: [Note]) -> [Note] {
-        let currentTitle = noteTitle(note)
+        backlinks(noteID: note.id, title: noteTitle(note), in: notes)
+    }
+
+    static func backlinks(noteID: UUID, title: String, in notes: [Note]) -> [Note] {
+        let currentTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         return notes.filter { other in
-            guard other.id != note.id else { return false }
+            guard other.id != noteID else { return false }
             return NoteReferenceParser.noteReferences(in: other.content).contains { reference in
-                if reference.noteID == note.id { return true }
+                if reference.noteID == noteID { return true }
                 guard !currentTitle.isEmpty else { return false }
                 return reference.fallbackTitle.caseInsensitiveCompare(currentTitle) == .orderedSame
             }

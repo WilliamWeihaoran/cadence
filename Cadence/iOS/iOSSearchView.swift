@@ -113,7 +113,7 @@ struct iOSSearchView: View {
     private var listResults: [iOSSearchResult] {
         let listItems = areas.filter(\.isActive).map { area in
             let count = CadenceTaskQuerySupport.openTaskCount(for: area)
-            iOSSearchListCandidate(
+            return iOSSearchListCandidate(
                 title: area.name.isEmpty ? "Untitled Area" : area.name,
                 subtitle: area.context?.name ?? "Area",
                 detail: count == 1 ? "1 task" : "\(count) tasks",
@@ -124,7 +124,7 @@ struct iOSSearchView: View {
             )
         } + projects.filter(\.isActive).map { project in
             let count = CadenceTaskQuerySupport.openTaskCount(for: project)
-            iOSSearchListCandidate(
+            return iOSSearchListCandidate(
                 title: project.name.isEmpty ? "Untitled Project" : project.name,
                 subtitle: [project.context?.name, project.area?.name].compactMap { $0 }.joined(separator: " / "),
                 detail: count == 1 ? "1 task" : "\(count) tasks",

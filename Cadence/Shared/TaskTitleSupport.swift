@@ -70,6 +70,31 @@ enum TaskTitleSupport {
         return shortcut.title
     }
 
+    static func priorityShortcutSegments(in title: String) -> TaskTitlePriorityShortcutSegments? {
+        let normalizedTitle = normalized(title)
+        guard let shortcut = priorityShortcut(in: normalizedTitle) else { return nil }
+
+        if let leadingCount = leadingBangCount(in: normalizedTitle) {
+            return TaskTitlePriorityShortcutSegments(
+                title: normalized(String(normalizedTitle.dropFirst(leadingCount))),
+                marker: String(repeating: "!", count: leadingCount),
+                priority: shortcut.priority,
+                placement: .leading
+            )
+        }
+
+        if let trailingCount = trailingBangCount(in: normalizedTitle) {
+            return TaskTitlePriorityShortcutSegments(
+                title: normalized(String(normalizedTitle.dropLast(trailingCount))),
+                marker: String(repeating: "!", count: trailingCount),
+                priority: shortcut.priority,
+                placement: .trailing
+            )
+        }
+
+        return nil
+    }
+
     private static func priority(forBangCount count: Int) -> TaskPriority {
         switch count {
         case 1: return .low
@@ -103,6 +128,18 @@ enum TaskTitleSupport {
 struct TaskTitlePriorityShortcut: Equatable {
     let title: String
     let priority: TaskPriority
+}
+
+struct TaskTitlePriorityShortcutSegments: Equatable {
+    enum Placement: Equatable {
+        case leading
+        case trailing
+    }
+
+    let title: String
+    let marker: String
+    let priority: TaskPriority
+    let placement: Placement
 }
 
 struct TaskTitleInlineShortcut: Equatable {

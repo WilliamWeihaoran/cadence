@@ -17,6 +17,11 @@ struct KanbanMetaItem: Identifiable {
     let action: KanbanMetaAction
 }
 
+enum KanbanCardPresentation {
+    case listBoard
+    case calendarBoard(dateKey: String)
+}
+
 struct KanbanMetaChip: View {
     let item: KanbanMetaItem
 
@@ -60,6 +65,7 @@ struct KanbanCardHeader: View {
     let title: String
     let titleColor: Color
     let isStruckThrough: Bool
+    let durationBadge: String?
     let completionButtonIcon: String
     let completionButtonColor: Color
     let onCompletionTap: () -> Void
@@ -79,7 +85,50 @@ struct KanbanCardHeader: View {
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
+
+            if let durationBadge {
+                KanbanDurationBadge(duration: durationBadge)
+                    .padding(.top, -1)
+            }
         }
+    }
+}
+
+struct KanbanCardScheduleTopRow: View {
+    let startTime: String?
+    let duration: String?
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 6) {
+            if let startTime {
+                Text(startTime)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            if let duration {
+                KanbanDurationBadge(duration: duration)
+            }
+        }
+        .frame(height: 14)
+    }
+}
+
+struct KanbanDurationBadge: View {
+    let duration: String
+
+    var body: some View {
+        Text(duration)
+            .font(.system(size: 9.5, weight: .bold))
+            .foregroundStyle(Theme.dim)
+            .lineLimit(1)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(Theme.surface.opacity(0.72))
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
     }
 }
 

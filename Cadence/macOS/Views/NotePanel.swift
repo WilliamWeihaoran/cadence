@@ -3,6 +3,10 @@ import SwiftUI
 import SwiftData
 
 struct NotePanel: View {
+    private enum CoreNoteSyncTiming {
+        static let fallbackContentCommitDelay: UInt64 = 15_000_000_000
+    }
+
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
@@ -19,6 +23,10 @@ struct NotePanel: View {
     @State private var linkedTaskForPopover: AppTask?
     @State private var embeddedTaskEditRequest: TaskEmbedFieldEditRequest?
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
+    @State private var editorContent = ""
+    @State private var loadedNoteID: UUID?
+    @State private var isEditorFocused = false
+    @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -38,7 +46,7 @@ struct NotePanel: View {
                 HStack(spacing: 0) {
                     ForEach(CadenceCoreNoteTab.allCases) { tab in
                         NotePanelTabButton(tab: tab, isSelected: activeTab == tab) {
-                            activeTab = tab
+                            selectTab(tab)
                         }
                     }
                     Spacer()
@@ -46,6 +54,7 @@ struct NotePanel: View {
                 .padding(.horizontal, 12)
             }
             .frame(height: useStandardHeaderHeight ? todayPanelHeaderHeight : nil, alignment: .top)
+            .zIndex(50)
 
             Divider().background(Theme.borderSubtle)
 
@@ -72,6 +81,7 @@ struct NotePanel: View {
                     }
                 }
             }
+            .zIndex(0)
         }
         .background(Theme.surface)
         .popover(item: $linkedTaskForPopover) { task in
@@ -93,10 +103,16 @@ struct NotePanel: View {
         .onAppear { loadOrCreate() }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
+            flushPendingEditorContent()
             refreshFromStore()
         }
         .onChange(of: activeTab) { _, _ in
             refreshFromStore()
+        }
+        .onDisappear {
+            flushPendingEditorContent()
+            pendingFallbackContentSyncTask?.cancel()
+            pendingFallbackContentSyncTask = nil
         }
     }
 
@@ -115,10 +131,7 @@ struct NotePanel: View {
     @ViewBuilder
     private func noteEditor(for note: Note) -> some View {
         MarkdownEditor(
-            text: Binding(
-                get: { note.content },
-                set: { update(note: note, content: $0) }
-            ),
+            text: coreNoteContentBinding(for: note),
             referenceTasks: allTasks,
             onOpenTaskReference: openTaskReference,
             onCreateEmbeddedTask: createEmbeddedTask,
@@ -128,8 +141,12 @@ struct NotePanel: View {
             onOpenEmbeddedTask: openEmbeddedTask,
             onEditEmbeddedTask: editEmbeddedTask,
             onHoverEmbeddedTask: hoverEmbeddedTask,
+            onEditingChanged: handleEditorFocusChange,
             onTextViewChanged: { activeTextView = $0 }
         )
+        .onAppear {
+            loadEditorStateIfNeeded(for: note)
+        }
     }
 
     private func loadOrCreate() {
@@ -143,6 +160,7 @@ struct NotePanel: View {
     }
 
     private func refreshFromStore() {
+        flushPendingEditorContent()
         if let notesContext, notesContext.hasChanges {
             try? notesContext.save()
         }
@@ -158,7 +176,63 @@ struct NotePanel: View {
         ModelContext(modelContext.container)
     }
 
-    private func update(note: Note, content: String) {
+    private func selectTab(_ tab: CadenceCoreNoteTab) {
+        guard activeTab != tab else { return }
+        flushPendingEditorContent()
+        activeTab = tab
+    }
+
+    private func coreNoteContentBinding(for note: Note) -> Binding<String> {
+        Binding(
+            get: { loadedNoteID == note.id ? editorContent : note.content },
+            set: { updateEditorContent($0, for: note) }
+        )
+    }
+
+    private func loadEditorStateIfNeeded(for note: Note, force: Bool = false) {
+        guard force || loadedNoteID != note.id else { return }
+        pendingFallbackContentSyncTask?.cancel()
+        pendingFallbackContentSyncTask = nil
+        loadedNoteID = note.id
+        editorContent = note.content
+    }
+
+    private func updateEditorContent(_ content: String, for note: Note) {
+        if loadedNoteID != note.id {
+            loadedNoteID = note.id
+            editorContent = note.content
+        }
+        guard editorContent != content else { return }
+        editorContent = content
+        scheduleFallbackContentSync(for: content, noteID: note.id)
+    }
+
+    private func scheduleFallbackContentSync(for content: String, noteID: UUID) {
+        pendingFallbackContentSyncTask?.cancel()
+        pendingFallbackContentSyncTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: CoreNoteSyncTiming.fallbackContentCommitDelay)
+            guard !Task.isCancelled, loadedNoteID == noteID else { return }
+            persistEditorContentIfNeeded(content, noteID: noteID)
+            pendingFallbackContentSyncTask = nil
+        }
+    }
+
+    private func flushPendingEditorContent() {
+        pendingFallbackContentSyncTask?.cancel()
+        pendingFallbackContentSyncTask = nil
+        guard let loadedNoteID else { return }
+        persistEditorContentIfNeeded(editorContent, noteID: loadedNoteID)
+    }
+
+    private func handleEditorFocusChange(_ isFocused: Bool) {
+        isEditorFocused = isFocused
+        guard !isFocused else { return }
+        flushPendingEditorContent()
+    }
+
+    private func persistEditorContentIfNeeded(_ content: String, noteID: UUID) {
+        guard let note = notesSnapshot.note(for: activeTab), note.id == noteID else { return }
+        guard note.content != content else { return }
         CadenceCoreNoteSupport.update(note, content: content, in: notesContext ?? modelContext)
     }
 
@@ -272,10 +346,15 @@ struct NotePanel: View {
     }
 
     private func appendSummary(_ summary: String, to note: Note) {
+        flushPendingEditorContent()
         let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedSummary.isEmpty else { return }
         let separator = note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
-        update(note: note, content: "\(note.content)\(separator)## AI Summary\n\n\(trimmedSummary)")
+        let content = "\(note.content)\(separator)## AI Summary\n\n\(trimmedSummary)"
+        CadenceCoreNoteSupport.update(note, content: content, in: notesContext ?? modelContext)
+        if loadedNoteID == note.id {
+            editorContent = content
+        }
     }
 }
 

@@ -44,7 +44,7 @@ struct CalendarTimelineDayScroller: View {
     @ObservedObject var timelineScrollState: CalendarTimelineScrollState
     let eventCache: CalendarEventDayCache
     let onPersistVisibleTimelineDay: (Int) -> Void
-    let onRestoreTimelineScrollIfNeeded: (ScrollViewProxy, CGFloat) -> Void
+    let onRestoreTimelineScrollIfNeeded: (ScrollViewProxy) -> Void
     let scrollToTodayTrigger: Bool
 
     private let cal = Calendar.current
@@ -106,9 +106,8 @@ struct CalendarTimelineDayScroller: View {
                 onPersistVisibleTimelineDay(clampedDay)
             }
             .onAppear {
-                onRestoreTimelineScrollIfNeeded(hProxy, colWidth)
+                onRestoreTimelineScrollIfNeeded(hProxy)
                 if externalJumpToken != nil, let day = externalJumpDayIndex {
-                    timelineScrollState.jumpHeaderOffset(to: -CGFloat(day) * colWidth)
                     DispatchQueue.main.async {
                         hProxy.scrollTo("day_\(day)", anchor: .leading)
                     }
@@ -117,11 +116,7 @@ struct CalendarTimelineDayScroller: View {
             .onChange(of: scrollToTodayTrigger) {
                 CalendarTimelineScrollSupport.applyTodayHorizontalJump(
                     todayDayIdx: todayDayIdx,
-                    colWidth: colWidth,
-                    anchorDateKey: $anchorDateKey,
-                    visibleTimelineDayIndex: $visibleTimelineDayIndex,
                     isRestoringHorizontalScroll: $isRestoringHorizontalScroll,
-                    timelineScrollState: timelineScrollState,
                     hProxy: hProxy
                 )
             }
@@ -129,10 +124,8 @@ struct CalendarTimelineDayScroller: View {
                 guard let day = externalJumpDayIndex else { return }
                 CalendarTimelineScrollSupport.applyExternalHorizontalJump(
                     day: day,
-                    colWidth: colWidth,
                     visibleTimelineDayIndex: $visibleTimelineDayIndex,
                     isRestoringHorizontalScroll: $isRestoringHorizontalScroll,
-                    timelineScrollState: timelineScrollState,
                     hProxy: hProxy
                 )
             }

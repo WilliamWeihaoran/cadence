@@ -11,6 +11,7 @@ struct DataIntegrityRepairReport: Codable, Equatable {
     var duplicateContextsMerged: Int = 0
     var duplicateAreasMerged: Int = 0
     var duplicateProjectsMerged: Int = 0
+    var duplicateNotesMerged: Int = 0
     var movedAreas: Int = 0
     var movedProjects: Int = 0
     var movedTasks: Int = 0
@@ -25,6 +26,7 @@ struct DataIntegrityRepairReport: Codable, Equatable {
         duplicateContextsMerged > 0 ||
             duplicateAreasMerged > 0 ||
             duplicateProjectsMerged > 0 ||
+            duplicateNotesMerged > 0 ||
             movedAreas > 0 ||
             movedProjects > 0 ||
             movedTasks > 0 ||
@@ -42,6 +44,7 @@ enum DataIntegrityRepairService {
         var deletedAreas = Set<ObjectIdentifier>()
         var deletedProjects = Set<ObjectIdentifier>()
         var deletedContexts = Set<ObjectIdentifier>()
+        var deletedNotes = Set<ObjectIdentifier>()
     }
 
     private struct RepairStore {
@@ -130,6 +133,8 @@ enum DataIntegrityRepairService {
                 mergeContext(duplicate, into: canonical, in: store, modelContext: context, state: &state, report: &report)
             }
         }
+
+        repairDuplicateNotes(in: store, modelContext: context, state: &state, report: &report)
     }
 
     private static func mergeContext(
@@ -319,6 +324,141 @@ enum DataIntegrityRepairService {
         return taskCount + noteCount * 5 + documentCount * 5
     }
 
+    private static func repairDuplicateNotes(
+        in store: RepairStore,
+        modelContext: ModelContext,
+        state: inout RepairState,
+        report: inout DataIntegrityRepairReport
+    ) {
+        let grouped = Dictionary(grouping: store.notes) { canonicalNoteKey(for: $0) }
+
+        for group in grouped.values where group.count > 1 {
+            let liveNotes = group.filter { !state.deletedNotes.contains(ObjectIdentifier($0)) }
+            guard liveNotes.count > 1,
+                  let canonical = liveNotes.max(by: { preferredNoteSort($0, $1) }) else {
+                continue
+            }
+
+            for duplicate in liveNotes where duplicate !== canonical {
+                mergeNote(duplicate, into: canonical, modelContext: modelContext, state: &state, report: &report)
+            }
+        }
+    }
+
+    private static func mergeNote(
+        _ source: Note,
+        into target: Note,
+        modelContext: ModelContext,
+        state: inout RepairState,
+        report: inout DataIntegrityRepairReport
+    ) {
+        guard !state.deletedNotes.contains(ObjectIdentifier(source)) else { return }
+
+        mergeNoteFields(from: source, into: target)
+        modelContext.delete(source)
+        state.deletedNotes.insert(ObjectIdentifier(source))
+        report.duplicateNotesMerged += 1
+    }
+
+    private static func mergeNoteFields(from source: Note, into target: Note) {
+        let targetTitle = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourceTitle = source.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if (targetTitle.isEmpty || targetTitle == "Untitled"), !sourceTitle.isEmpty, sourceTitle != "Untitled" {
+            target.title = source.title
+        }
+
+        let targetContent = target.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourceContent = source.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !sourceContent.isEmpty, !targetContent.contains(sourceContent) {
+            target.content = targetContent.isEmpty ? source.content : "\(target.content)\n\n---\n\n\(source.content)"
+        }
+
+        target.createdAt = min(target.createdAt, source.createdAt)
+        target.updatedAt = max(target.updatedAt, source.updatedAt)
+        fillEmptyString(\.dateKey, on: target, from: source)
+        fillEmptyString(\.weekKey, on: target, from: source)
+        fillEmptyString(\.calendarEventID, on: target, from: source)
+        fillEmptyString(\.calendarID, on: target, from: source)
+        fillEmptyString(\.eventDateKey, on: target, from: source)
+        fillEmptyString(\.legacySourceKindRaw, on: target, from: source)
+        fillEmptyString(\.legacySourceID, on: target, from: source)
+        fillEmptyString(\.folderPath, on: target, from: source)
+
+        if target.eventStartMin < 0, source.eventStartMin >= 0 {
+            target.eventStartMin = source.eventStartMin
+        }
+        if target.eventEndMin < 0, source.eventEndMin >= 0 {
+            target.eventEndMin = source.eventEndMin
+        }
+        if target.area == nil {
+            target.area = source.area
+        }
+        if target.project == nil {
+            target.project = source.project
+        }
+
+        target.tags = mergedTags(primary: target.tags ?? [], secondary: source.tags ?? [])
+    }
+
+    private static func fillEmptyString(_ keyPath: ReferenceWritableKeyPath<Note, String>, on target: Note, from source: Note) {
+        if target[keyPath: keyPath].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            target[keyPath: keyPath] = source[keyPath: keyPath]
+        }
+    }
+
+    private static func mergedTags(primary: [Tag], secondary: [Tag]) -> [Tag] {
+        var tagsByID: [UUID: Tag] = [:]
+        for tag in primary + secondary {
+            tagsByID[tag.id] = tag
+        }
+        return TagSupport.sorted(Array(tagsByID.values))
+    }
+
+    private static func preferredNoteSort(_ lhs: Note, _ rhs: Note) -> Bool {
+        let lhsScore = noteScore(lhs)
+        let rhsScore = noteScore(rhs)
+        if lhsScore != rhsScore { return lhsScore < rhsScore }
+        if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt < rhs.updatedAt }
+        if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+        return lhs.id.uuidString > rhs.id.uuidString
+    }
+
+    private static func noteScore(_ note: Note) -> Int {
+        var score = 0
+        if !note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            score += min(note.content.count, 2_000)
+        }
+        if !note.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, note.title != "Untitled" {
+            score += 100
+        }
+        score += (note.tags ?? []).count * 20
+        if note.area != nil { score += 20 }
+        if note.project != nil { score += 20 }
+        if !note.calendarID.isEmpty { score += 10 }
+        if !note.eventDateKey.isEmpty { score += 10 }
+        if note.eventStartMin >= 0 { score += 5 }
+        if note.eventEndMin >= 0 { score += 5 }
+        return score
+    }
+
+    private static func canonicalNoteKey(for note: Note) -> String {
+        switch note.kind {
+        case .daily:
+            let dateKey = note.dateKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            return dateKey.isEmpty ? "daily-note:\(note.id.uuidString)" : "daily:\(dateKey)"
+        case .weekly:
+            let weekKey = note.weekKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            return weekKey.isEmpty ? "weekly-note:\(note.id.uuidString)" : "weekly:\(weekKey)"
+        case .permanent:
+            return "permanent"
+        case .list:
+            return "list:\(note.id.uuidString)"
+        case .meeting:
+            let eventID = note.calendarEventID.trimmingCharacters(in: .whitespacesAndNewlines)
+            return eventID.isEmpty ? "meeting-note:\(note.id.uuidString)" : "meeting:\(eventID)"
+        }
+    }
+
     private static func normalizedName(_ context: Context) -> String {
         context.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
@@ -372,7 +512,7 @@ enum DataIntegrityRepairService {
     private static func log(_ report: DataIntegrityRepairReport) {
         guard report.changed else { return }
         logger.info(
-            "Data integrity repair merged contexts=\(report.duplicateContextsMerged, privacy: .public), areas=\(report.duplicateAreasMerged, privacy: .public), projects=\(report.duplicateProjectsMerged, privacy: .public), movedTasks=\(report.movedTasks, privacy: .public) from \(report.source, privacy: .public)"
+            "Data integrity repair merged contexts=\(report.duplicateContextsMerged, privacy: .public), areas=\(report.duplicateAreasMerged, privacy: .public), projects=\(report.duplicateProjectsMerged, privacy: .public), notes=\(report.duplicateNotesMerged, privacy: .public), movedTasks=\(report.movedTasks, privacy: .public) from \(report.source, privacy: .public)"
         )
     }
 }

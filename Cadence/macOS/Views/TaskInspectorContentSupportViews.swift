@@ -4,12 +4,24 @@ import SwiftData
 import AppKit
 
 struct TaskDetailNotesSection: View {
+    private enum TaskNotesSyncTiming {
+        static let fallbackContentCommitDelay: UInt64 = 15_000_000_000
+    }
+
     @Bindable var task: AppTask
     @Query(sort: \AppTask.order) private var referenceTasks: [AppTask]
+    @State private var editorContent = ""
+    @State private var loadedTaskID: UUID?
+    @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            MarkdownEditor(text: taskNotesBinding, showsToolbar: false, referenceTasks: referenceTasks)
+            MarkdownEditor(
+                text: taskNotesBinding,
+                showsToolbar: false,
+                referenceTasks: referenceTasks,
+                onEditingChanged: handleEditorFocusChange
+            )
                 .frame(minHeight: 120)
                 .background(Theme.surface.opacity(0.45))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -18,7 +30,7 @@ struct TaskDetailNotesSection: View {
                         .stroke(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
                 )
 
-            if task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if displayedNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text("Add notes...")
                     .font(.system(size: 14))
                     .foregroundStyle(Theme.dim.opacity(0.6))
@@ -43,13 +55,73 @@ struct TaskDetailNotesSection: View {
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .topTrailing)
         }
+        .onAppear {
+            loadEditorStateIfNeeded(force: true)
+        }
+        .onChange(of: task.id) { _, _ in
+            loadEditorStateIfNeeded(force: true)
+        }
+        .onDisappear {
+            flushPendingEditorContent()
+            pendingFallbackContentSyncTask?.cancel()
+            pendingFallbackContentSyncTask = nil
+        }
+    }
+
+    private var displayedNotes: String {
+        loadedTaskID == task.id ? editorContent : task.notes
     }
 
     private var taskNotesBinding: Binding<String> {
         Binding(
-            get: { task.notes },
-            set: { task.notes = $0 }
+            get: { displayedNotes },
+            set: { updateEditorContent($0) }
         )
+    }
+
+    private func loadEditorStateIfNeeded(force: Bool = false) {
+        guard force || loadedTaskID != task.id else { return }
+        pendingFallbackContentSyncTask?.cancel()
+        pendingFallbackContentSyncTask = nil
+        loadedTaskID = task.id
+        editorContent = task.notes
+    }
+
+    private func updateEditorContent(_ content: String) {
+        if loadedTaskID != task.id {
+            loadedTaskID = task.id
+            editorContent = task.notes
+        }
+        guard editorContent != content else { return }
+        editorContent = content
+        scheduleFallbackContentSync(for: content, taskID: task.id)
+    }
+
+    private func scheduleFallbackContentSync(for content: String, taskID: UUID) {
+        pendingFallbackContentSyncTask?.cancel()
+        pendingFallbackContentSyncTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: TaskNotesSyncTiming.fallbackContentCommitDelay)
+            guard !Task.isCancelled, loadedTaskID == taskID else { return }
+            persistEditorContentIfNeeded(content, taskID: taskID)
+            pendingFallbackContentSyncTask = nil
+        }
+    }
+
+    private func flushPendingEditorContent() {
+        pendingFallbackContentSyncTask?.cancel()
+        pendingFallbackContentSyncTask = nil
+        guard loadedTaskID == task.id else { return }
+        persistEditorContentIfNeeded(editorContent, taskID: task.id)
+    }
+
+    private func handleEditorFocusChange(_ isFocused: Bool) {
+        guard !isFocused else { return }
+        flushPendingEditorContent()
+    }
+
+    private func persistEditorContentIfNeeded(_ content: String, taskID: UUID) {
+        guard task.id == taskID, task.notes != content else { return }
+        task.notes = content
     }
 }
 
@@ -61,18 +133,11 @@ struct TaskNotesExpandedEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Task" : task.title)
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                    Text("Task notes")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                }
-                Spacer()
+        TaskNoteEditorPane(
+            task: task,
+            relatedNotes: referenceNotes,
+            relatedTasks: referenceTasks,
+            trailingToolbarAccessory: AnyView(
                 Button {
                     if let onClose {
                         onClose()
@@ -88,23 +153,12 @@ struct TaskNotesExpandedEditorSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.cadencePlain)
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 14)
-
-            Divider().background(Theme.borderSubtle)
-
-            MarkdownEditor(
-                text: Binding(
-                    get: { task.notes },
-                    set: { task.notes = $0 }
-                ),
-                referenceNotes: referenceNotes,
-                referenceTasks: referenceTasks
-            )
-        }
+                .help("Close")
+            ),
+            showsExpandButton: false
+        )
         .frame(minWidth: 760, idealWidth: 900, minHeight: 560, idealHeight: 680)
-        .background(Theme.bg)
+        .background(Theme.surface)
     }
 }
 

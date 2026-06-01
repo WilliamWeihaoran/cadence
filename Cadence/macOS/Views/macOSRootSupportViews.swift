@@ -81,14 +81,7 @@ struct TaskCreationLayerView: View {
                         taskCreationManager.dismiss()
                     }
 
-                CreateTaskSheet(seed: taskCreationManager.seed)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(Theme.borderSubtle.opacity(0.95), lineWidth: 1)
-                    }
-                    .shadow(color: .black.opacity(0.42), radius: 34, x: 0, y: 18)
-                    .shadow(color: Theme.blue.opacity(0.08), radius: 18, x: 0, y: 0)
+                CreateTaskPanelSurface(seed: taskCreationManager.seed)
                     .onTapGesture {
                         // Prevent outside tap handler from firing when clicking inside the panel.
                     }

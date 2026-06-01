@@ -63,6 +63,7 @@ struct macOSRootView: View {
                 detailView
             }
             .id(dataRefreshID)
+            .allowsHitTesting(!taskCreationManager.isPresented)
             .overlay(alignment: .topLeading) {
                 RootSidebarToggleButton(
                     isSidebarHidden: columnVisibility == .detailOnly,
@@ -145,6 +146,11 @@ struct macOSRootView: View {
                 selection: &selection
             )
         }
+        .onChange(of: taskCreationManager.isPresented) { _, isPresented in
+            if isPresented {
+                clearBackgroundHoverState()
+            }
+        }
     }
 
     @ViewBuilder
@@ -172,6 +178,13 @@ struct macOSRootView: View {
         guard let keyMonitor else { return }
         NSEvent.removeMonitor(keyMonitor)
         self.keyMonitor = nil
+    }
+
+    private func clearBackgroundHoverState() {
+        hoveredTaskManager.clear()
+        hoveredEditableManager.clear()
+        hoveredKanbanColumnManager.clear()
+        hoveredSectionManager.clear()
     }
 
     private func toggleSidebarVisibility() {

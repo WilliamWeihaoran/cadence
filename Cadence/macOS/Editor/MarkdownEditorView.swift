@@ -13,6 +13,7 @@ enum MarkdownEditorMetrics {
 struct MarkdownEditor: View {
     @Binding var text: String
     var showsToolbar = true
+    var toolbarAccessory: AnyView? = nil
     var referenceNotes: [Note] = []
     var referenceTasks: [AppTask] = []
     var onOpenNoteReference: (UUID?, String) -> Void = { _, _ in }
@@ -24,6 +25,7 @@ struct MarkdownEditor: View {
     var onOpenEmbeddedTask: (UUID) -> Void = { _ in }
     var onEditEmbeddedTask: (UUID, MarkdownTaskEmbedField) -> Void = { _, _ in }
     var onHoverEmbeddedTask: (UUID, Bool) -> Void = { _, _ in }
+    var onEditingChanged: (Bool) -> Void = { _ in }
     var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
@@ -62,8 +64,10 @@ struct MarkdownEditor: View {
                     textView: textView,
                     noteSuggestions: noteSuggestions,
                     taskSuggestions: taskSuggestions,
-                    onChooseImages: chooseImages
+                    onChooseImages: chooseImages,
+                    accessory: toolbarAccessory
                 )
+                .zIndex(10)
             }
 
             MarkdownEditorView(
@@ -84,11 +88,13 @@ struct MarkdownEditor: View {
                 onOpenEmbeddedTask: onOpenEmbeddedTask,
                 onEditEmbeddedTask: onEditEmbeddedTask,
                 onHoverEmbeddedTask: onHoverEmbeddedTask,
+                onEditingChanged: onEditingChanged,
                 onTextViewChanged: {
                     textView = $0
                     onTextViewChanged($0)
                 }
             )
+            .zIndex(0)
         }
     }
 
@@ -156,83 +162,99 @@ struct MarkdownEditor: View {
 }
 
 private struct MarkdownEditorToolbar: View {
+    private static let height: CGFloat = 44
+
     let textView: CadenceTextView?
     let noteSuggestions: [MarkdownReferenceSuggestion]
     let taskSuggestions: [MarkdownReferenceSuggestion]
     let onChooseImages: () -> Void
+    let accessory: AnyView?
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                MarkdownToolbarTextButton(title: "H1", help: "Heading 1") {
-                    textView?.performMarkdownFormatCommand(.heading(1))
+        HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    MarkdownToolbarTextButton(title: "H1", help: "Heading 1") {
+                        textView?.performMarkdownFormatCommand(.heading(1))
+                    }
+                    MarkdownToolbarTextButton(title: "H2", help: "Heading 2") {
+                        textView?.performMarkdownFormatCommand(.heading(2))
+                    }
+                    toolbarDivider
+                    MarkdownToolbarButton(systemName: "bold", help: "Bold") {
+                        textView?.performMarkdownFormatCommand(.bold)
+                    }
+                    MarkdownToolbarButton(systemName: "italic", help: "Italic") {
+                        textView?.performMarkdownFormatCommand(.italic)
+                    }
+                    MarkdownToolbarButton(systemName: "strikethrough", help: "Strikethrough") {
+                        textView?.performMarkdownFormatCommand(.strikethrough)
+                    }
+                    MarkdownToolbarButton(systemName: "highlighter", help: "Highlight") {
+                        textView?.performMarkdownFormatCommand(.highlight)
+                    }
+                    MarkdownToolbarButton(systemName: "chevron.left.forwardslash.chevron.right", help: "Inline code") {
+                        textView?.performMarkdownFormatCommand(.inlineCode)
+                    }
+                    toolbarDivider
+                    MarkdownToolbarButton(systemName: "link", help: "Link") {
+                        textView?.performMarkdownFormatCommand(.link)
+                    }
+                    MarkdownReferenceMenuButton(
+                        systemName: "text.badge.plus",
+                        help: "Note link",
+                        emptyTitle: "Blank Note Link",
+                        suggestions: noteSuggestions,
+                        blankAction: { textView?.performMarkdownFormatCommand(.noteLink) },
+                        selectAction: { textView?.insertMarkdownReference($0.markdown) }
+                    )
+                    MarkdownReferenceMenuButton(
+                        systemName: "checkmark.circle",
+                        help: "Task reference",
+                        emptyTitle: "Blank Task Reference",
+                        suggestions: taskSuggestions,
+                        blankAction: { textView?.performMarkdownFormatCommand(.taskReference) },
+                        selectAction: { textView?.insertMarkdownReference($0.markdown) }
+                    )
+                    toolbarDivider
+                    MarkdownToolbarButton(systemName: "list.bullet", help: "Bulleted list") {
+                        textView?.performMarkdownFormatCommand(.unorderedList)
+                    }
+                    MarkdownToolbarButton(systemName: "list.number", help: "Numbered list") {
+                        textView?.performMarkdownFormatCommand(.orderedList)
+                    }
+                    MarkdownToolbarButton(systemName: "checklist", help: "Checklist") {
+                        textView?.performMarkdownFormatCommand(.todoList)
+                    }
+                    MarkdownToolbarButton(systemName: "text.quote", help: "Quote") {
+                        textView?.performMarkdownFormatCommand(.quote)
+                    }
+                    toolbarDivider
+                    MarkdownToolbarButton(systemName: "curlybraces.square", help: "Code block") {
+                        textView?.performMarkdownFormatCommand(.codeBlock)
+                    }
+                    MarkdownToolbarButton(systemName: "minus", help: "Divider") {
+                        textView?.performMarkdownFormatCommand(.divider)
+                    }
+                    MarkdownToolbarButton(systemName: "photo", help: "Image") {
+                        onChooseImages()
+                    }
                 }
-                MarkdownToolbarTextButton(title: "H2", help: "Heading 2") {
-                    textView?.performMarkdownFormatCommand(.heading(2))
-                }
-                toolbarDivider
-                MarkdownToolbarButton(systemName: "bold", help: "Bold") {
-                    textView?.performMarkdownFormatCommand(.bold)
-                }
-                MarkdownToolbarButton(systemName: "italic", help: "Italic") {
-                    textView?.performMarkdownFormatCommand(.italic)
-                }
-                MarkdownToolbarButton(systemName: "strikethrough", help: "Strikethrough") {
-                    textView?.performMarkdownFormatCommand(.strikethrough)
-                }
-                MarkdownToolbarButton(systemName: "highlighter", help: "Highlight") {
-                    textView?.performMarkdownFormatCommand(.highlight)
-                }
-                MarkdownToolbarButton(systemName: "chevron.left.forwardslash.chevron.right", help: "Inline code") {
-                    textView?.performMarkdownFormatCommand(.inlineCode)
-                }
-                toolbarDivider
-                MarkdownToolbarButton(systemName: "link", help: "Link") {
-                    textView?.performMarkdownFormatCommand(.link)
-                }
-                MarkdownReferenceMenuButton(
-                    systemName: "text.badge.plus",
-                    help: "Note link",
-                    emptyTitle: "Blank Note Link",
-                    suggestions: noteSuggestions,
-                    blankAction: { textView?.performMarkdownFormatCommand(.noteLink) },
-                    selectAction: { textView?.insertMarkdownReference($0.markdown) }
-                )
-                MarkdownReferenceMenuButton(
-                    systemName: "checkmark.circle",
-                    help: "Task reference",
-                    emptyTitle: "Blank Task Reference",
-                    suggestions: taskSuggestions,
-                    blankAction: { textView?.performMarkdownFormatCommand(.taskReference) },
-                    selectAction: { textView?.insertMarkdownReference($0.markdown) }
-                )
-                toolbarDivider
-                MarkdownToolbarButton(systemName: "list.bullet", help: "Bulleted list") {
-                    textView?.performMarkdownFormatCommand(.unorderedList)
-                }
-                MarkdownToolbarButton(systemName: "list.number", help: "Numbered list") {
-                    textView?.performMarkdownFormatCommand(.orderedList)
-                }
-                MarkdownToolbarButton(systemName: "checklist", help: "Checklist") {
-                    textView?.performMarkdownFormatCommand(.todoList)
-                }
-                MarkdownToolbarButton(systemName: "text.quote", help: "Quote") {
-                    textView?.performMarkdownFormatCommand(.quote)
-                }
-                toolbarDivider
-                MarkdownToolbarButton(systemName: "curlybraces.square", help: "Code block") {
-                    textView?.performMarkdownFormatCommand(.codeBlock)
-                }
-                MarkdownToolbarButton(systemName: "minus", help: "Divider") {
-                    textView?.performMarkdownFormatCommand(.divider)
-                }
-                MarkdownToolbarButton(systemName: "photo", help: "Image") {
-                    onChooseImages()
-                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .frame(maxHeight: .infinity, alignment: .center)
+
+            if let accessory {
+                Divider()
+                    .background(Theme.borderSubtle)
+                accessory
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .fixedSize()
+            }
         }
+        .frame(height: Self.height)
         .background(Theme.surfaceElevated)
         .overlay(alignment: .bottom) {
             Divider().background(Theme.borderSubtle)
@@ -346,6 +368,7 @@ struct MarkdownEditorView: NSViewRepresentable {
     var onOpenEmbeddedTask: (UUID) -> Void = { _ in }
     var onEditEmbeddedTask: (UUID, MarkdownTaskEmbedField) -> Void = { _, _ in }
     var onHoverEmbeddedTask: (UUID, Bool) -> Void = { _, _ in }
+    var onEditingChanged: (Bool) -> Void = { _ in }
     var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
 
     func makeNSView(context: NSViewRepresentableContext<MarkdownEditorView>) -> NSScrollView {

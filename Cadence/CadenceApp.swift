@@ -4,6 +4,9 @@ import SwiftData
 @main
 struct CadenceApp: App {
     var sharedModelContainer: ModelContainer = PersistenceController.shared.container
+#if os(macOS)
+    @NSApplicationDelegateAdaptor(CadenceAppDelegate.self) private var appDelegate
+#endif
 
     var body: some Scene {
         WindowGroup {

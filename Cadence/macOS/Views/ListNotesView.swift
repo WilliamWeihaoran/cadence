@@ -151,7 +151,8 @@ struct ListNotesView: View {
                 TaskNoteEditorPane(
                     task: task,
                     relatedNotes: relatedNotes,
-                    relatedTasks: tasks
+                    relatedTasks: tasks,
+                    onOpenNote: openNote
                 )
                 .id(task.id)
             } else if let eventNote = selectedEventNote {
@@ -159,7 +160,8 @@ struct ListNotesView: View {
                     note: eventNote,
                     relatedNotes: relatedNotes,
                     relatedTasks: tasks,
-                    onOpenNote: openNote
+                    onOpenNote: openNote,
+                    headerStyle: .compact
                 )
                     .id(eventNote.id)
             } else if let note = selectedListNote {
@@ -170,7 +172,8 @@ struct ListNotesView: View {
                     relatedNotes: relatedNotes,
                     relatedTasks: tasks,
                     onOpenNote: openNote,
-                    onDelete: { deleteNote(note) }
+                    onDelete: { deleteNote(note) },
+                    headerStyle: .compact
                 )
                 .id(note.id)
             } else {

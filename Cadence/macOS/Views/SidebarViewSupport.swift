@@ -75,6 +75,19 @@ extension SidebarStaticDestination {
         [.today, .allTasks, .focus, .inbox, .calendar, .pursuits, .goals, .habits]
     }
 
+    var isPrimaryNavigation: Bool {
+        switch self {
+        case .today, .allTasks, .focus, .inbox, .calendar:
+            return true
+        case .pursuits, .goals, .habits:
+            return false
+        }
+    }
+
+    var isTrackingNavigation: Bool {
+        !isPrimaryNavigation
+    }
+
     static func orderedDestinations(from raw: String) -> [SidebarStaticDestination] {
         let stored = raw
             .split(separator: ",")
@@ -228,6 +241,79 @@ struct SidebarCardButton: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("sidebar.destination.\(destination.rawValue)")
         .onHover { isHovered = $0 }
+    }
+}
+
+struct SidebarTrackingButton: View {
+    let destination: SidebarStaticDestination
+    let tint: Color
+    let count: Int?
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: destination.icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isSelected ? .white : tint)
+                    .frame(width: 22, height: 22)
+                    .background(
+                        Circle()
+                            .fill(isSelected ? tint.opacity(0.95) : tint.opacity(isHovered ? 0.18 : 0.12))
+                    )
+
+                Text(destination.label)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isSelected ? Theme.text : Theme.text.opacity(0.9))
+
+                Spacer(minLength: 8)
+
+                if let count {
+                    Text("\(count)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(isSelected ? .white : tint)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(isSelected ? tint.opacity(0.9) : tint.opacity(0.12))
+                        )
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(backgroundFill)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(borderColor, lineWidth: 1)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("sidebar.destination.\(destination.rawValue)")
+        .onHover { isHovered = $0 }
+    }
+
+    private var backgroundFill: Color {
+        if isSelected {
+            return tint.opacity(0.18)
+        }
+        if isHovered {
+            return Theme.surfaceElevated.opacity(0.66)
+        }
+        return Color.clear
+    }
+
+    private var borderColor: Color {
+        if isSelected {
+            return tint.opacity(0.32)
+        }
+        return Theme.borderSubtle.opacity(isHovered ? 0.55 : 0)
     }
 }
 #endif

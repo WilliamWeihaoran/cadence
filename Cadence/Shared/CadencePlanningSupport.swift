@@ -149,6 +149,8 @@ enum CadenceCalendarViewMode: String, CaseIterable, Hashable {
     case twoWeeks = "2 Weeks"
     case month = "Month"
 
+    static let pickerCases: [CadenceCalendarViewMode] = [.week, .month]
+
     var daysCount: Int {
         switch self {
         case .week: return 7
@@ -276,6 +278,108 @@ enum CadenceCalendarBoardSupport {
         if let area = task.area { return "area-\(area.id.uuidString)" }
         if let project = task.project { return "project-\(project.id.uuidString)" }
         return "inbox"
+    }
+}
+
+enum CalendarBoardPlannerSupport {
+    static let visibleDayCount = 7
+    static let defaultRenderDayCount = 3650
+    static let plannerRenderDayCount = 420
+    static let plannerLeadingDayCount = 56
+
+    static func date(at dayIndex: Int, bufferStart: Date, calendar: Calendar = .current) -> Date {
+        calendar.startOfDay(for: calendar.date(byAdding: .day, value: dayIndex, to: bufferStart) ?? bufferStart)
+    }
+
+    static func plannerWindowStart(for anchorDate: Date, calendar: Calendar = .current) -> Date {
+        calendar.startOfDay(
+            for: calendar.date(byAdding: .day, value: -plannerLeadingDayCount, to: anchorDate) ?? anchorDate
+        )
+    }
+
+    static func dayIndex(
+        for date: Date,
+        bufferStart: Date,
+        calendar: Calendar = .current,
+        renderDays: Int = defaultRenderDayCount
+    ) -> Int {
+        let raw = calendar.dateComponents([.day], from: bufferStart, to: calendar.startOfDay(for: date)).day ?? 0
+        return min(max(raw, 0), max(0, renderDays - 1))
+    }
+
+    static func title(for anchorDate: Date, calendar: Calendar = .current) -> String {
+        let start = calendar.startOfDay(for: anchorDate)
+        let end = calendar.date(byAdding: .day, value: visibleDayCount - 1, to: start) ?? start
+        if calendar.isDate(start, equalTo: end, toGranularity: .month) {
+            return "\(DateFormatters.monthAbbrev.string(from: start)) \(DateFormatters.dayNumber.string(from: start))-\(DateFormatters.dayNumber.string(from: end))"
+        }
+        return "\(DateFormatters.monthAbbrev.string(from: start)) \(DateFormatters.dayNumber.string(from: start)) - \(DateFormatters.monthAbbrev.string(from: end)) \(DateFormatters.dayNumber.string(from: end))"
+    }
+
+    static func dateByMovingWindow(_ date: Date, by delta: Int, calendar: Calendar = .current) -> Date {
+        calendar.startOfDay(for: calendar.date(byAdding: .day, value: delta * visibleDayCount, to: date) ?? date)
+    }
+
+    static func tasks(on dateKey: String, from allTasks: [AppTask]) -> [AppTask] {
+        allTasks
+            .filter { task in
+                guard !task.isCancelled, task.bundle == nil else { return false }
+                return task.scheduledDate == dateKey || (task.scheduledDate.isEmpty && task.dueDate == dateKey)
+            }
+            .sorted { lhs, rhs in
+                boardTaskSort(lhs, rhs)
+            }
+    }
+
+    static func tasksByBoardDate(from allTasks: [AppTask]) -> [String: [AppTask]] {
+        var grouped: [String: [AppTask]] = [:]
+
+        for task in allTasks {
+            guard !task.isCancelled, task.bundle == nil else { continue }
+
+            if !task.scheduledDate.isEmpty {
+                grouped[task.scheduledDate, default: []].append(task)
+            } else if !task.dueDate.isEmpty {
+                grouped[task.dueDate, default: []].append(task)
+            }
+        }
+
+        return grouped.mapValues { tasks in
+            tasks.sorted { lhs, rhs in
+                boardTaskSort(lhs, rhs)
+            }
+        }
+    }
+
+    static func boardTaskSort(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
+        let lhsTimed = lhs.scheduledStartMin >= 0
+        let rhsTimed = rhs.scheduledStartMin >= 0
+        if lhsTimed != rhsTimed { return lhsTimed }
+
+        if lhsTimed, lhs.scheduledStartMin != rhs.scheduledStartMin {
+            return lhs.scheduledStartMin < rhs.scheduledStartMin
+        }
+
+        let lhsPlanned = !lhs.scheduledDate.isEmpty
+        let rhsPlanned = !rhs.scheduledDate.isEmpty
+        if lhsPlanned != rhsPlanned { return lhsPlanned }
+
+        let lhsPriority = priorityRank(lhs.priority)
+        let rhsPriority = priorityRank(rhs.priority)
+        if lhsPriority != rhsPriority { return lhsPriority > rhsPriority }
+
+        if lhs.order != rhs.order { return lhs.order < rhs.order }
+        if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
+    private static func priorityRank(_ priority: TaskPriority) -> Int {
+        switch priority {
+        case .high: return 3
+        case .medium: return 2
+        case .low: return 1
+        case .none: return 0
+        }
     }
 }
 

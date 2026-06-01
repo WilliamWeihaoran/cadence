@@ -15,6 +15,21 @@ enum CadenceMCPToolDefinitions {
     ]
 
     static var tools: [Tool] {
+        tools(writesEnabled: false)
+    }
+
+    static func tools(writesEnabled: Bool) -> [Tool] {
+        guard writesEnabled else {
+            return allTools.filter { !writeToolNames.contains($0.name) }
+        }
+        return allTools
+    }
+
+    static func isWriteTool(_ name: String) -> Bool {
+        writeToolNames.contains(name)
+    }
+
+    private static var allTools: [Tool] {
         [
             Tool(name: "mcp_diagnostics", description: "Return Cadence MCP server version, capabilities, and store metadata.", inputSchema: schema([:])),
             Tool(name: "get_today_brief", description: "Return a read-only Cadence dashboard summary for a date.", inputSchema: schema([
@@ -178,16 +193,18 @@ enum CadenceMCPToolDefinitions {
         auditLogPath: String?,
         refreshMarkerPath: String?,
         storePath: String?,
+        writesEnabled: Bool = false,
         noteMigrationReport: NoteMigrationReport? = NoteMigrationService.lastReport(),
         noteMigrationHealthReport: NoteMigrationHealthReport? = nil
     ) -> [String: String] {
-        let writeTools = tools.filter { writeToolNames.contains($0.name) }.map(\.name).sorted()
-        let readTools = tools.filter { !writeToolNames.contains($0.name) }.map(\.name).sorted()
+        let visibleTools = tools(writesEnabled: writesEnabled)
+        let writeTools = visibleTools.filter { writeToolNames.contains($0.name) }.map(\.name).sorted()
+        let readTools = visibleTools.filter { !writeToolNames.contains($0.name) }.map(\.name).sorted()
         var payload = [
             "name": "cadence-mcp",
             "version": serverVersion,
-            "mode": "read-write",
-            "toolCount": "\(tools.count)",
+            "mode": writesEnabled ? "read-write" : "read-only",
+            "toolCount": "\(visibleTools.count)",
             "readToolCount": "\(readTools.count)",
             "writeToolCount": "\(writeTools.count)",
             "supportsNaturalLanguageDates": "true",

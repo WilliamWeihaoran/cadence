@@ -3,19 +3,21 @@ import MCP
 
 struct CadenceMCPToolRouter {
     private let readService: CadenceReadService
-    private let writeService: CadenceWriteService
+    private let writeService: CadenceWriteService?
+    private let writesEnabled: Bool
     private let encoder: JSONEncoder
 
-    init(readService: CadenceReadService, writeService: CadenceWriteService) {
+    init(readService: CadenceReadService, writeService: CadenceWriteService? = nil, writesEnabled: Bool = false) {
         self.readService = readService
         self.writeService = writeService
+        self.writesEnabled = writesEnabled && writeService != nil
         self.encoder = JSONEncoder()
         self.encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     }
 
     func register(on server: Server) async {
         await server.withMethodHandler(ListTools.self) { _ in
-            .init(tools: CadenceMCPToolDefinitions.tools)
+            .init(tools: CadenceMCPToolDefinitions.tools(writesEnabled: writesEnabled))
         }
 
         await server.withMethodHandler(CallTool.self) { params in
@@ -37,6 +39,7 @@ struct CadenceMCPToolRouter {
                 auditLogPath: try? CadenceModelContainerFactory.auditLogURL().path,
                 refreshMarkerPath: try? CadenceModelContainerFactory.refreshMarkerURL().path,
                 storePath: try? CadenceModelContainerFactory.resolvedStoreURL().path,
+                writesEnabled: writesEnabled,
                 noteMigrationHealthReport: health
             ))
 
@@ -168,6 +171,7 @@ struct CadenceMCPToolRouter {
             return try encode(readService.recentMCPWrites(limit: try arguments.strictInt("limit") ?? 50))
 
         case "create_task":
+            let writeService = try requireWriteService(for: name)
             return try encode(writeService.createTask(options: CadenceCreateTaskOptions(
                 title: try arguments.requiredString("title"),
                 notes: arguments.string("notes"),
@@ -184,6 +188,7 @@ struct CadenceMCPToolRouter {
             )))
 
         case "update_task":
+            let writeService = try requireWriteService(for: name)
             return try encode(writeService.updateTask(options: CadenceUpdateTaskOptions(
                 taskId: try arguments.requiredString("taskId"),
                 title: arguments.string("title"),
@@ -200,6 +205,7 @@ struct CadenceMCPToolRouter {
             )))
 
         case "schedule_task":
+            let writeService = try requireWriteService(for: name)
             return try encode(writeService.scheduleTask(options: CadenceScheduleTaskOptions(
                 taskId: try arguments.requiredString("taskId"),
                 scheduledDate: try arguments.dateKey("scheduledDate"),
@@ -209,21 +215,26 @@ struct CadenceMCPToolRouter {
             )))
 
         case "complete_task":
+            let writeService = try requireWriteService(for: name)
             return try encode(writeService.completeTask(taskID: try arguments.requiredString("taskId")))
 
         case "reopen_task":
+            let writeService = try requireWriteService(for: name)
             return try encode(writeService.reopenTask(taskID: try arguments.requiredString("taskId")))
 
         case "cancel_task":
+            let writeService = try requireWriteService(for: name)
             return try encode(writeService.cancelTask(taskID: try arguments.requiredString("taskId")))
 
         case "bulk_cancel_tasks":
+            let writeService = try requireWriteService(for: name)
             return try encode(writeService.bulkCancelTasks(options: CadenceBulkCancelTaskOptions(
                 taskIds: try arguments.flexibleStringArray("taskIds"),
                 titlePrefix: arguments.string("titlePrefix")
             )))
 
         case "append_core_note":
+            let writeService = try requireWriteService(for: name)
             return try encode(writeService.appendCoreNote(
                 kind: try arguments.requiredString("kind"),
                 content: try arguments.requiredString("content"),
@@ -234,6 +245,13 @@ struct CadenceMCPToolRouter {
         default:
             throw ToolArgumentError.invalid("Unknown tool: \(name)")
         }
+    }
+
+    private func requireWriteService(for toolName: String) throws -> CadenceWriteService {
+        guard writesEnabled, let writeService else {
+            throw ToolArgumentError.invalid("Write tool disabled: \(toolName). Restart Cadence MCP with CADENCE_MCP_ENABLE_WRITES=1 to enable mutating tools.")
+        }
+        return writeService
     }
 
     private func encode<T: Encodable>(_ value: T) throws -> String {

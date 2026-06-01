@@ -62,91 +62,170 @@ struct NoteActionMenu: View {
     @State private var payload: AIReviewPayload?
     @State private var errorMessage: String?
     @State private var isRunning = false
+    @State private var showsPicker = false
+    @State private var isMoveSectionExpanded = false
+
+    private var showsMoveDestinationSection: Bool {
+        note.kind == .list && (!areas.isEmpty || !projects.isEmpty)
+    }
+
+    private var canRunAI: Bool {
+        aiSettingsManager.hasAPIKey && !isRunning
+    }
 
     var body: some View {
-        Menu {
-            Section {
-                Button("Export Markdown") {
-                    NoteExportService.export(note, as: .markdown)
+        ZStack(alignment: .topTrailing) {
+            Button {
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+                    showsPicker.toggle()
                 }
-                Button("Export PDF") {
-                    NoteExportService.export(note, as: .pdf, imageAssets: imageAssetsReferencedByNote())
-                }
-                Button("Copy Note Link") {
-                    NoteActionSupport.copyMarkdownLink(to: note)
-                }
-            }
-            if note.kind == .list, !areas.isEmpty || !projects.isEmpty {
-                Section("Move To") {
-                    Button("No List") {
-                        NoteActionSupport.move(note, toArea: nil, modelContext: modelContext)
+            } label: {
+                HStack(spacing: 6) {
+                    if isRunning {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.65)
+                    } else {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 12, weight: .semibold))
                     }
-                    .disabled(note.area == nil && note.project == nil)
-
-                    if !areas.isEmpty {
-                        Menu("Areas") {
-                            ForEach(areas) { area in
-                                Button(area.name) {
-                                    NoteActionSupport.move(note, toArea: area, modelContext: modelContext)
-                                }
-                                .disabled(note.area?.id == area.id)
-                            }
-                        }
-                    }
-
-                    if !projects.isEmpty {
-                        Menu("Projects") {
-                            ForEach(projects) { project in
-                                Button(project.name) {
-                                    NoteActionSupport.move(note, toProject: project, modelContext: modelContext)
-                                }
-                                .disabled(note.project?.id == project.id)
-                            }
-                        }
-                    }
-                }
-            }
-            Section {
-                Button("Summarize Note") {
-                    runSummary()
-                }
-                .disabled(!aiSettingsManager.hasAPIKey || isRunning)
-                Button("Extract Tasks") {
-                    runTaskExtraction()
-                }
-                .disabled(!aiSettingsManager.hasAPIKey || isRunning)
-            }
-            if let onDelete {
-                Section {
-                    Button(role: .destructive) {
-                        onDelete()
-                    } label: {
-                        Text("Delete Note")
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                if isRunning {
-                    ProgressView()
-                        .controlSize(.small)
-                        .scaleEffect(0.65)
-                } else {
-                    Image(systemName: "ellipsis.circle")
+                    Text("Actions")
                         .font(.system(size: 12, weight: .semibold))
+                    Image(systemName: showsPicker ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.muted)
                 }
-                Text("Actions")
-                    .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.blue)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Theme.blue.opacity(0.12))
+                .clipShape(Capsule())
             }
-            .foregroundStyle(Theme.blue)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Theme.blue.opacity(0.12))
-            .clipShape(Capsule())
+            .buttonStyle(.cadencePlain)
+            .fixedSize()
+            .help("Note actions")
+
+            if showsPicker {
+                NoteActionPickerCard {
+                    NoteActionPickerSection(title: "Export") {
+                        NoteActionPickerRow(icon: "doc.text", title: "Export Markdown") {
+                            dismissPicker()
+                            NoteExportService.export(note, as: .markdown)
+                        }
+                        NoteActionPickerRow(icon: "doc.richtext", title: "Export PDF") {
+                            dismissPicker()
+                            NoteExportService.export(note, as: .pdf, imageAssets: imageAssetsReferencedByNote())
+                        }
+                        NoteActionPickerRow(icon: "link", title: "Copy Note Link") {
+                            dismissPicker()
+                            NoteActionSupport.copyMarkdownLink(to: note)
+                        }
+                    }
+
+                    if showsMoveDestinationSection {
+                        Divider().background(Theme.borderSubtle.opacity(0.9))
+
+                        NoteActionPickerSection(title: "Organize") {
+                            NoteActionPickerRow(
+                                icon: "tray.full",
+                                title: "Move Note",
+                                subtitle: "Change which list owns this note",
+                                trailingSymbol: isMoveSectionExpanded ? "chevron.up" : "chevron.down"
+                            ) {
+                                withAnimation(.spring(response: 0.24, dampingFraction: 0.9)) {
+                                    isMoveSectionExpanded.toggle()
+                                }
+                            }
+
+                            if isMoveSectionExpanded {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    NoteActionDestinationRow(
+                                        title: "No List",
+                                        subtitle: "Keep it loose in notes",
+                                        isSelected: note.area == nil && note.project == nil
+                                    ) {
+                                        dismissPicker()
+                                        NoteActionSupport.move(note, toArea: nil, modelContext: modelContext)
+                                    }
+
+                                    if !areas.isEmpty {
+                                        NoteActionSubsectionLabel(title: "Areas")
+                                        ForEach(areas) { area in
+                                            NoteActionDestinationRow(
+                                                title: area.name,
+                                                subtitle: "Area",
+                                                isSelected: note.area?.id == area.id
+                                            ) {
+                                                dismissPicker()
+                                                NoteActionSupport.move(note, toArea: area, modelContext: modelContext)
+                                            }
+                                        }
+                                    }
+
+                                    if !projects.isEmpty {
+                                        NoteActionSubsectionLabel(title: "Projects")
+                                        ForEach(projects) { project in
+                                            NoteActionDestinationRow(
+                                                title: project.name,
+                                                subtitle: "Project",
+                                                isSelected: note.project?.id == project.id
+                                            ) {
+                                                dismissPicker()
+                                                NoteActionSupport.move(note, toProject: project, modelContext: modelContext)
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(.top, 2)
+                                .padding(.leading, 8)
+                            }
+                        }
+                    }
+
+                    Divider().background(Theme.borderSubtle.opacity(0.9))
+
+                    NoteActionPickerSection(title: "AI") {
+                        NoteActionPickerRow(
+                            icon: "text.magnifyingglass",
+                            title: "Summarize Note",
+                            subtitle: aiSettingsManager.hasAPIKey ? "Generate a concise recap" : "Add an API key to enable AI",
+                            isEnabled: canRunAI
+                        ) {
+                            dismissPicker()
+                            runSummary()
+                        }
+                        NoteActionPickerRow(
+                            icon: "sparkles.rectangle.stack",
+                            title: "Extract Tasks",
+                            subtitle: aiSettingsManager.hasAPIKey ? "Turn notes into task drafts" : "Add an API key to enable AI",
+                            isEnabled: canRunAI
+                        ) {
+                            dismissPicker()
+                            runTaskExtraction()
+                        }
+                    }
+
+                    if let onDelete {
+                        Divider().background(Theme.borderSubtle.opacity(0.9))
+
+                        NoteActionPickerSection(title: "Danger") {
+                            NoteActionPickerRow(
+                                icon: "trash",
+                                title: "Delete Note",
+                                tint: Theme.red
+                            ) {
+                                dismissPicker()
+                                onDelete()
+                            }
+                        }
+                    }
+                }
+                .offset(y: 42)
+                .zIndex(1_000)
+                .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity), removal: .opacity))
+            }
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .help("Note actions")
+        .zIndex(showsPicker ? 1_000 : 0)
         .sheet(item: $payload) { payload in
             switch payload {
             case .summary(let markdown):
@@ -176,6 +255,12 @@ struct NoteActionMenu: View {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
+        }
+    }
+
+    private func dismissPicker() {
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
+            showsPicker = false
         }
     }
 
@@ -219,228 +304,138 @@ struct NoteActionMenu: View {
     }
 }
 
-private struct AISummaryReviewSheet: View {
-    let markdown: String
-    let onAppend: () -> Void
-    @Environment(\.dismiss) private var dismiss
+private enum NoteActionPickerMetrics {
+    static let width: CGFloat = 280
+    static let maxHeight: CGFloat = 430
+}
+
+private struct NoteActionPickerCard<Content: View>: View {
+    @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("AI Summary")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.text)
-            ScrollView {
-                Text(markdown)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.text)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                    .padding(14)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                content
             }
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-
-            HStack {
-                Spacer()
-                Button("Close") {
-                    dismiss()
-                }
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-
-                Button("Append to Note") {
-                    onAppend()
-                    dismiss()
-                }
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Theme.blue)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(20)
-        .frame(width: 560, height: 520)
-        .background(Theme.bg)
+        .frame(width: NoteActionPickerMetrics.width)
+        .frame(maxHeight: NoteActionPickerMetrics.maxHeight, alignment: .top)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Theme.surfaceElevated.opacity(0.98))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Theme.borderSubtle.opacity(0.95), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.24), radius: 22, x: 0, y: 14)
     }
 }
 
-private struct AITaskDraftReviewSheet: View {
-    let area: Area?
-    let project: Project?
-    let areas: [Area]
-    let projects: [Project]
-    let modelContext: ModelContext
-    @Environment(\.dismiss) private var dismiss
-    @State private var drafts: [AITaskDraft]
-    @State private var selectedIDs: Set<UUID>
-    @State private var statusMessage: String?
-
-    init(
-        initialDrafts: [AITaskDraft],
-        area: Area?,
-        project: Project?,
-        areas: [Area],
-        projects: [Project],
-        modelContext: ModelContext
-    ) {
-        self.area = area
-        self.project = project
-        self.areas = areas
-        self.projects = projects
-        self.modelContext = modelContext
-        _drafts = State(initialValue: initialDrafts)
-        _selectedIDs = State(initialValue: Set(initialDrafts.map(\.id)))
-    }
+private struct NoteActionPickerSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("AI Task Drafts")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text("Review each draft before creating anything in Cadence.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                }
-                Spacer()
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .kerning(0.8)
+                .padding(.horizontal, 4)
+            content
+        }
+    }
+}
 
-            if drafts.isEmpty {
-                EmptyStateView(message: "No tasks found", subtitle: "The note did not contain clear action items.", icon: "sparkles")
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        ForEach($drafts) { $draft in
-                            AITaskDraftRow(
-                                draft: $draft,
-                                isSelected: Binding(
-                                    get: { selectedIDs.contains(draft.id) },
-                                    set: { isSelected in
-                                        if isSelected {
-                                            selectedIDs.insert(draft.id)
-                                        } else {
-                                            selectedIDs.remove(draft.id)
-                                        }
-                                    }
-                                )
-                            )
-                        }
-                    }
-                    .padding(2)
-                }
-            }
+private struct NoteActionSubsectionLabel: View {
+    let title: String
 
-            if let statusMessage {
-                Text(statusMessage)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.muted)
-            }
+    var body: some View {
+        Text(title.uppercased())
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(Theme.dim)
+            .kerning(0.7)
+            .padding(.horizontal, 12)
+            .padding(.top, 4)
+    }
+}
 
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .buttonStyle(.cadencePlain)
+private struct NoteActionPickerRow: View {
+    let icon: String
+    let title: String
+    var subtitle: String? = nil
+    var tint: Color = Theme.text
+    var isEnabled: Bool = true
+    var trailingSymbol: String? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .foregroundStyle(isEnabled ? tint : Theme.dim)
+                    .frame(width: 16)
 
-                Button("Create Selected") {
-                    createSelected()
+                VStack(alignment: .leading, spacing: subtitle == nil ? 0 : 2) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isEnabled ? tint : Theme.dim)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.dim)
+                            .lineLimit(1)
+                    }
                 }
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(selectedIDs.isEmpty ? Theme.dim : Theme.blue)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .disabled(selectedIDs.isEmpty)
-            }
-        }
-        .padding(20)
-        .frame(width: 720, height: 620)
-        .background(Theme.bg)
-    }
 
-    private func createSelected() {
-        do {
-            let created = try AIActionService.applyTaskDrafts(
-                drafts,
-                selectedIDs: selectedIDs,
-                area: area,
-                project: project,
-                areas: areas,
-                projects: projects,
-                modelContext: modelContext
+                Spacer(minLength: 0)
+
+                if let trailingSymbol {
+                    Image(systemName: trailingSymbol)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(isEnabled ? Theme.dim : Theme.dim.opacity(0.7))
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, subtitle == nil ? 8 : 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.clear)
             )
-            statusMessage = "Created \(created.count) task\(created.count == 1 ? "" : "s")."
-            dismiss()
-        } catch {
-            statusMessage = AIErrorPresenter.message(for: error)
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
+        .buttonStyle(.cadencePlain)
+        .disabled(!isEnabled)
+        .cadenceHoverHighlight(
+            cornerRadius: 12,
+            fillColor: isEnabled ? Theme.blue.opacity(0.08) : Color.clear,
+            strokeColor: isEnabled ? Theme.blue.opacity(0.12) : Color.clear
+        )
     }
 }
 
-private struct AITaskDraftRow: View {
-    @Binding var draft: AITaskDraft
-    @Binding var isSelected: Bool
-
-    private var validation: AITaskDraftValidation {
-        AIActionService.validation(for: draft)
-    }
+private struct NoteActionDestinationRow: View {
+    let title: String
+    let subtitle: String
+    let isSelected: Bool
+    let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Toggle("", isOn: $isSelected)
-                    .toggleStyle(.checkbox)
-                    .labelsHidden()
-                TextField("Task title", text: $draft.title)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-            }
-
-            TextField("Notes", text: $draft.notes, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.dim)
-
-            HStack(spacing: 8) {
-                TextField("Priority", text: $draft.priority)
-                    .frame(width: 90)
-                TextField("Due yyyy-MM-dd", text: $draft.dueDate)
-                    .frame(width: 120)
-                TextField("Do yyyy-MM-dd", text: $draft.scheduledDate)
-                    .frame(width: 120)
-                TextField("Section", text: $draft.sectionName)
-                    .frame(width: 110)
-            }
-            .textFieldStyle(.plain)
-            .font(.system(size: 11))
-            .foregroundStyle(Theme.text)
-
-            if !validation.isValid {
-                Text(validation.errors.joined(separator: " "))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.red)
-            }
-        }
-        .padding(14)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(validation.isValid ? Theme.borderSubtle : Theme.red.opacity(0.45), lineWidth: 1)
+        NoteActionPickerRow(
+            icon: isSelected ? "checkmark.circle.fill" : "circle",
+            title: title,
+            subtitle: subtitle,
+            tint: isSelected ? Theme.blue : Theme.text,
+            trailingSymbol: isSelected ? "checkmark" : nil
+        ) {
+            action()
         }
     }
 }
+
 #endif

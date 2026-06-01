@@ -2,7 +2,29 @@
 import SwiftUI
 import SwiftData
 
+private struct NoteEditorDerivedState {
+    var linkedNotes: [Note] = []
+    var linkedTasks: [AppTask] = []
+    var backlinks: [Note] = []
+    var unlinkedMentions: [Note] = []
+    var outline: [MarkdownOutlineItem] = []
+    var metadata = MarkdownNoteMetadata(
+        frontmatter: MarkdownFrontmatter(properties: [:], range: nil),
+        tags: []
+    )
+}
+
+private enum NoteEditorSyncTiming {
+    static let derivedStateRefreshDelay: UInt64 = 150_000_000
+    static let fallbackContentCommitDelay: UInt64 = 15_000_000_000
+}
+
 struct NoteEditorPane: View {
+    enum HeaderStyle {
+        case full
+        case compact
+    }
+
     @Bindable var note: Note
     var area: Area?
     var project: Project?
@@ -12,15 +34,22 @@ struct NoteEditorPane: View {
     var onDelete: (() -> Void)?
     var headerDetail: String?
     var headerAccessory: AnyView?
+    var headerStyle: HeaderStyle = .full
     @Environment(\.modelContext) private var modelContext
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var editorTextView: CadenceTextView?
+    @State private var editorContent = ""
     @State private var linkedTaskForPopover: AppTask?
     @State private var embeddedTaskEditRequest: TaskEmbedFieldEditRequest?
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
     @State private var isInspectorCollapsed = false
+    @State private var loadedNoteID: UUID?
+    @State private var derivedState = NoteEditorDerivedState()
+    @State private var isEditorFocused = false
+    @State private var pendingDerivedStateTask: Task<Void, Never>?
+    @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
 
     private var titleBinding: Binding<String> {
         Binding(
@@ -34,13 +63,8 @@ struct NoteEditorPane: View {
 
     private var contentBinding: Binding<String> {
         Binding(
-            get: { note.content },
-            set: {
-                note.content = $0
-                note.updatedAt = Date()
-                syncTitleFromH1IfNeeded()
-                TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)
-            }
+            get: { loadedNoteID == note.id ? editorContent : note.content },
+            set: { updateEditorContent($0) }
         )
     }
 
@@ -52,6 +76,9 @@ struct NoteEditorPane: View {
                 note.tags = TagSupport.resolveTags(named: names, in: modelContext)
                 note.content = MarkdownMetadataParser.content(note.content, replacingFrontmatterTags: newTags.map(\.name))
                 note.updatedAt = Date()
+                editorContent = note.content
+                loadedNoteID = note.id
+                refreshDerivedState(for: note.content)
             }
         )
     }
@@ -86,84 +113,99 @@ struct NoteEditorPane: View {
         relatedNotes.filter { $0.id != note.id }
     }
 
-    private var unlinkedMentions: [Note] {
-        NoteUnlinkedMentionResolver.unlinkedMentions(for: note, in: referenceNotes)
+    private var hasReferenceStripContent: Bool {
+        !derivedState.linkedNotes.isEmpty ||
+        !derivedState.linkedTasks.isEmpty ||
+        !derivedState.backlinks.isEmpty
     }
 
-    private var hasReferenceStripContent: Bool {
-        !NoteReferenceResolver.linkedNotes(for: note, in: relatedNotes).isEmpty ||
-        !NoteReferenceResolver.linkedTasks(for: note, in: relatedTasks).isEmpty ||
-        !NoteReferenceResolver.backlinks(for: note, in: relatedNotes).isEmpty
+    @ViewBuilder
+    private var noteHeader: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(kindLabel.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim).kerning(0.8)
+                Spacer()
+                headerControls
+            }
+            if shouldEditTitle {
+                TextField("Note title", text: titleBinding)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Theme.text)
+            } else {
+                Text(headerTitle)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Theme.text)
+            }
+            if let headerDetail,
+               !headerDetail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(headerDetail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+            }
+            TagPickerControl(
+                selectedTags: noteTagsBinding,
+                allTags: tags,
+                onCreateTag: createTag
+            )
+        }
+        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
+    }
+
+    private var toolbarAccessory: AnyView? {
+        guard headerStyle == .compact else { return nil }
+        return AnyView(headerControls)
+    }
+
+    private var headerControls: some View {
+        HStack(spacing: 8) {
+            Button {
+                isInspectorCollapsed.toggle()
+            } label: {
+                Image(systemName: isInspectorCollapsed ? "rectangle.split.2x1" : "rectangle.split.2x1.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isInspectorCollapsed ? Theme.muted : Theme.blue)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9)
+                            .fill(isInspectorCollapsed ? Theme.surfaceElevated.opacity(0.72) : Theme.blue.opacity(0.14))
+                    )
+            }
+            .buttonStyle(.cadencePlain)
+            .help(isInspectorCollapsed ? "Show note sidebar" : "Hide note sidebar")
+
+            if let headerAccessory {
+                headerAccessory
+            } else {
+                NoteActionMenu(note: note, area: area, project: project, onDelete: onDelete)
+            }
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(kindLabel.uppercased())
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim).kerning(0.8)
-                    Spacer()
-                    HStack(spacing: 8) {
-                        Button {
-                            isInspectorCollapsed.toggle()
-                        } label: {
-                            Image(systemName: isInspectorCollapsed ? "rectangle.split.2x1" : "rectangle.split.2x1.fill")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(isInspectorCollapsed ? Theme.muted : Theme.blue)
-                                .frame(width: 30, height: 30)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 9)
-                                        .fill(isInspectorCollapsed ? Theme.surfaceElevated.opacity(0.72) : Theme.blue.opacity(0.14))
-                                )
-                        }
-                        .buttonStyle(.cadencePlain)
-                        .help(isInspectorCollapsed ? "Show note sidebar" : "Hide note sidebar")
-
-                        if let headerAccessory {
-                            headerAccessory
-                        } else {
-                            NoteActionMenu(note: note, area: area, project: project, onDelete: onDelete)
-                        }
-                    }
-                }
-                if shouldEditTitle {
-                    TextField("Note title", text: titleBinding)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                } else {
-                    Text(headerTitle)
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                }
-                if let headerDetail,
-                   !headerDetail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(headerDetail)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
-                }
-                TagPickerControl(
-                    selectedTags: noteTagsBinding,
-                    allTags: tags,
-                    onCreateTag: createTag
-                )
+            if headerStyle == .full {
+                noteHeader
+                    .zIndex(50)
             }
-            .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
             if hasReferenceStripContent {
                 Divider().background(Theme.borderSubtle)
                 NoteReferenceStrip(
-                    note: note,
-                    notes: relatedNotes,
-                    tasks: relatedTasks,
+                    linkedNotes: derivedState.linkedNotes,
+                    linkedTasks: derivedState.linkedTasks,
+                    backlinks: derivedState.backlinks,
                     onOpenNote: onOpenNote
                 )
+                .zIndex(10)
             }
             HSplitView {
                 MarkdownEditor(
                     text: contentBinding,
-                    referenceNotes: referenceNotes,
+                    toolbarAccessory: toolbarAccessory,
+                    referenceNotes: relatedNotes.filter { $0.id != note.id },
                     referenceTasks: relatedTasks,
                     onOpenNoteReference: openNoteReference,
                     onOpenTaskReference: openTaskReference,
@@ -174,16 +216,17 @@ struct NoteEditorPane: View {
                     onOpenEmbeddedTask: openEmbeddedTask,
                     onEditEmbeddedTask: editEmbeddedTask,
                     onHoverEmbeddedTask: hoverEmbeddedTask,
+                    onEditingChanged: handleEditorFocusChange,
                     onTextViewChanged: { editorTextView = $0 }
                 )
                 .frame(minWidth: 360)
 
                 if !isInspectorCollapsed {
                     NoteMarkdownSidePanel(
-                        content: note.content,
-                        noteTitle: note.displayTitle,
-                        noteKind: note.kind,
-                        unlinkedMentions: unlinkedMentions,
+                        outline: derivedState.outline,
+                        metadata: derivedState.metadata,
+                        templates: NoteTemplateLibrary.templates(for: note.kind),
+                        unlinkedMentions: derivedState.unlinkedMentions,
                         onJumpToOutline: jumpToOutline,
                         onInsertFrontmatter: insertFrontmatter,
                         onApplyTemplate: applyTemplate,
@@ -192,6 +235,7 @@ struct NoteEditorPane: View {
                     .frame(minWidth: 220, idealWidth: 240, maxWidth: 290)
                 }
             }
+            .zIndex(0)
         }
         .background(Theme.surface)
         .popover(item: $linkedTaskForPopover) { task in
@@ -211,18 +255,120 @@ struct NoteEditorPane: View {
             }
         }
         .onAppear {
+            loadEditorStateIfNeeded(force: true)
             TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)
+        }
+        .onChange(of: note.id) { _, _ in
+            loadEditorStateIfNeeded(force: true)
+        }
+        .onDisappear {
+            flushPendingEditorContent()
+            pendingDerivedStateTask?.cancel()
+            pendingDerivedStateTask = nil
+            pendingFallbackContentSyncTask?.cancel()
+            pendingFallbackContentSyncTask = nil
         }
     }
 
-    private func syncTitleFromH1IfNeeded() {
+    private func loadEditorStateIfNeeded(force: Bool = false) {
+        guard force || loadedNoteID != note.id else { return }
+        pendingDerivedStateTask?.cancel()
+        pendingDerivedStateTask = nil
+        pendingFallbackContentSyncTask?.cancel()
+        pendingFallbackContentSyncTask = nil
+        loadedNoteID = note.id
+        editorContent = note.content
+        refreshDerivedState(for: note.content)
+    }
+
+    private func updateEditorContent(_ content: String) {
+        if loadedNoteID != note.id {
+            loadedNoteID = note.id
+            editorContent = note.content
+        }
+        guard editorContent != content else { return }
+        editorContent = content
+        scheduleDerivedStateRefresh(for: content)
+        scheduleFallbackContentSync(for: content)
+    }
+
+    private func scheduleDerivedStateRefresh(for content: String) {
+        pendingDerivedStateTask?.cancel()
+        pendingDerivedStateTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: NoteEditorSyncTiming.derivedStateRefreshDelay)
+            guard !Task.isCancelled else { return }
+            refreshDerivedState(for: content)
+            pendingDerivedStateTask = nil
+        }
+    }
+
+    private func scheduleFallbackContentSync(for content: String) {
+        pendingFallbackContentSyncTask?.cancel()
+        pendingFallbackContentSyncTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: NoteEditorSyncTiming.fallbackContentCommitDelay)
+            guard !Task.isCancelled else { return }
+            persistEditorContentIfNeeded(content)
+            pendingFallbackContentSyncTask = nil
+        }
+    }
+
+    private func flushPendingEditorContent() {
+        pendingDerivedStateTask?.cancel()
+        pendingDerivedStateTask = nil
+        pendingFallbackContentSyncTask?.cancel()
+        pendingFallbackContentSyncTask = nil
+        persistEditorContentIfNeeded(editorContent)
+        refreshDerivedState(for: editorContent)
+    }
+
+    private func handleEditorFocusChange(_ isFocused: Bool) {
+        isEditorFocused = isFocused
+        guard !isFocused else { return }
+        flushPendingEditorContent()
+    }
+
+    private func persistEditorContentIfNeeded(_ content: String) {
+        guard note.content != content || loadedNoteID != note.id else { return }
+        note.content = content
+        note.updatedAt = Date()
+        syncTitleFromH1IfNeeded(in: content)
+        TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)
+        loadedNoteID = note.id
+    }
+
+    private func refreshDerivedState(for content: String) {
+        let relatedReferenceNotes = relatedNotes.filter { $0.id != note.id }
+        derivedState = NoteEditorDerivedState(
+            linkedNotes: NoteReferenceResolver.linkedNotes(noteID: note.id, content: content, in: relatedNotes),
+            linkedTasks: NoteReferenceResolver.linkedTasks(in: content, tasks: relatedTasks),
+            backlinks: NoteReferenceResolver.backlinks(noteID: note.id, title: note.displayTitle, in: relatedNotes),
+            unlinkedMentions: NoteUnlinkedMentionResolver.unlinkedMentions(
+                noteID: note.id,
+                content: content,
+                in: relatedReferenceNotes
+            ),
+            outline: MarkdownOutlineParser.items(in: content),
+            metadata: MarkdownMetadataParser.metadata(in: content)
+        )
+    }
+
+    private func replaceEditorContent(_ content: String) {
+        pendingDerivedStateTask?.cancel()
+        pendingDerivedStateTask = nil
+        pendingFallbackContentSyncTask?.cancel()
+        pendingFallbackContentSyncTask = nil
+        editorContent = content
+        persistEditorContentIfNeeded(content)
+        refreshDerivedState(for: content)
+    }
+
+    private func syncTitleFromH1IfNeeded(in content: String) {
         guard note.kind == .list else { return }
-        let firstLine = note.content.prefix(while: { $0 != "\n" })
+        let firstLine = content.prefix(while: { $0 != "\n" })
         guard firstLine.hasPrefix("# ") else { return }
         let h1Text = String(firstLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
         guard !h1Text.isEmpty, h1Text != note.title else { return }
         note.title = h1Text
-        try? modelContext.save()
     }
 
     private func createTag(_ name: String) -> Tag {
@@ -384,34 +530,30 @@ struct NoteEditorPane: View {
     }
 
     private func insertFrontmatter() {
-        let metadata = MarkdownMetadataParser.metadata(in: note.content)
+        let metadata = MarkdownMetadataParser.metadata(in: editorContent)
         guard metadata.frontmatter.range == nil else { return }
-        note.content = MarkdownMetadataParser.frontmatterInsertion(title: note.displayTitle) + note.content
-        note.updatedAt = Date()
+        replaceEditorContent(MarkdownMetadataParser.frontmatterInsertion(title: note.displayTitle) + editorContent)
     }
 
     private func applyTemplate(_ template: NoteTemplate) {
-        let trimmed = note.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = editorContent.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty || trimmed == "# \(note.displayTitle)" {
-            note.content = template.body
+            replaceEditorContent(template.body)
         } else {
-            note.content = note.content.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n" + template.body
+            replaceEditorContent(editorContent.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n" + template.body)
         }
-        note.updatedAt = Date()
-        syncTitleFromH1IfNeeded()
     }
 
     private func linkMention(_ mentionedNote: Note) {
         let markdown = NoteReferenceParser.noteReferenceMarkdown(for: mentionedNote)
         let title = mentionedNote.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let range = firstLoosePhraseRange(title, in: note.content) {
-            let nsContent = note.content as NSString
-            note.content = nsContent.replacingCharacters(in: range, with: markdown)
+        if let range = firstLoosePhraseRange(title, in: editorContent) {
+            let nsContent = editorContent as NSString
+            replaceEditorContent(nsContent.replacingCharacters(in: range, with: markdown))
         } else {
-            let separator = note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
-            note.content += "\(separator)\(markdown)"
+            let separator = editorContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
+            replaceEditorContent(editorContent + "\(separator)\(markdown)")
         }
-        note.updatedAt = Date()
     }
 
     private func firstLoosePhraseRange(_ phrase: String, in content: String) -> NSRange? {
@@ -423,179 +565,4 @@ struct NoteEditorPane: View {
     }
 }
 
-private struct NoteMarkdownSidePanel: View {
-    let content: String
-    let noteTitle: String
-    let noteKind: NoteKind
-    let unlinkedMentions: [Note]
-    let onJumpToOutline: (MarkdownOutlineItem) -> Void
-    let onInsertFrontmatter: () -> Void
-    let onApplyTemplate: (NoteTemplate) -> Void
-    let onLinkMention: (Note) -> Void
-
-    private var outline: [MarkdownOutlineItem] {
-        MarkdownOutlineParser.items(in: content)
-    }
-
-    private var metadata: MarkdownNoteMetadata {
-        MarkdownMetadataParser.metadata(in: content)
-    }
-
-    private var templates: [NoteTemplate] {
-        NoteTemplateLibrary.templates(for: noteKind)
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                sidebarSection("Outline") {
-                    if outline.isEmpty {
-                        sidebarEmpty("No headings")
-                    } else {
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(outline) { item in
-                                Button {
-                                    onJumpToOutline(item)
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Text(String(repeating: "  ", count: max(0, item.level - 1)) + item.title)
-                                            .font(.system(size: 11, weight: item.level <= 2 ? .semibold : .regular))
-                                            .foregroundStyle(item.level <= 2 ? Theme.muted : Theme.dim)
-                                            .lineLimit(1)
-                                        Spacer(minLength: 0)
-                                    }
-                                    .padding(.vertical, 3)
-                                }
-                                .buttonStyle(.cadencePlain)
-                            }
-                        }
-                    }
-                }
-
-                sidebarSection("Properties") {
-                    if metadata.frontmatter.properties.isEmpty && metadata.tags.isEmpty {
-                        Button {
-                            onInsertFrontmatter()
-                        } label: {
-                            Label("Add frontmatter", systemImage: "tag")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Theme.blue)
-                        }
-                        .buttonStyle(.cadencePlain)
-                    } else {
-                        if !metadata.frontmatter.properties.isEmpty {
-                            VStack(alignment: .leading, spacing: 5) {
-                                ForEach(metadata.frontmatter.properties.keys.sorted(), id: \.self) { key in
-                                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                        Text(key)
-                                            .font(.system(size: 10, weight: .semibold))
-                                            .foregroundStyle(Theme.dim)
-                                            .frame(width: 58, alignment: .leading)
-                                        Text(metadata.frontmatter.properties[key] ?? "")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(Theme.muted)
-                                            .lineLimit(1)
-                                    }
-                                }
-                            }
-                        }
-                        if !metadata.tags.isEmpty {
-                            FlowTags(tags: metadata.tags)
-                        }
-                    }
-                }
-
-                sidebarSection("Templates") {
-                    VStack(alignment: .leading, spacing: 5) {
-                        ForEach(templates) { template in
-                            Button {
-                                onApplyTemplate(template)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(template.title)
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(Theme.muted)
-                                    Text(template.subtitle)
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(Theme.dim)
-                                        .lineLimit(1)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 4)
-                            }
-                            .buttonStyle(.cadencePlain)
-                        }
-                    }
-                }
-
-                sidebarSection("Unlinked") {
-                    if unlinkedMentions.isEmpty {
-                        sidebarEmpty("No mentions")
-                    } else {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(unlinkedMentions, id: \.id) { note in
-                                HStack(spacing: 6) {
-                                    Text(note.displayTitle)
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(Theme.muted)
-                                        .lineLimit(1)
-                                    Spacer(minLength: 0)
-                                    Button {
-                                        onLinkMention(note)
-                                    } label: {
-                                        Image(systemName: "link")
-                                            .font(.system(size: 10, weight: .semibold))
-                                            .foregroundStyle(Theme.blue)
-                                    }
-                                    .buttonStyle(.cadencePlain)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(14)
-        }
-        .background(Theme.bg.opacity(0.34))
-        .overlay(alignment: .leading) {
-            Rectangle().fill(Theme.borderSubtle).frame(width: 1)
-        }
-    }
-
-    private func sidebarSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .kerning(0.8)
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func sidebarEmpty(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 11))
-            .foregroundStyle(Theme.dim)
-    }
-}
-
-private struct FlowTags: View {
-    let tags: [String]
-
-    var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 6)], alignment: .leading, spacing: 6) {
-            ForEach(tags, id: \.self) { tag in
-                Text("#\(tag)")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-                    .lineLimit(1)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Theme.blue.opacity(0.12))
-                    .clipShape(Capsule())
-            }
-        }
-    }
-}
 #endif

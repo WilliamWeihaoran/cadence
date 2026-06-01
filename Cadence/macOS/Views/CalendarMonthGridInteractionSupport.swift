@@ -34,10 +34,8 @@ enum CalendarMonthGridInteractionSupport {
 
     static func handleTodayTrigger(
         proxy: ScrollViewProxy,
-        visibleMonthIdx: Binding<Int>,
         todayMonthIdx: Int
     ) {
-        visibleMonthIdx.wrappedValue = todayMonthIdx
         withAnimation {
             proxy.scrollTo("month_\(todayMonthIdx)", anchor: .top)
         }

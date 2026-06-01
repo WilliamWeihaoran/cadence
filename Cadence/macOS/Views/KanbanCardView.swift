@@ -4,6 +4,8 @@ import SwiftData
 
 struct KanbanCard: View {
     @Bindable var task: AppTask
+    var presentation: KanbanCardPresentation = .listBoard
+
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
@@ -28,11 +30,19 @@ struct KanbanCard: View {
                 .padding(.leading, 10)
                 .padding(.vertical, 12)
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: hasScheduleTopRow ? 7 : 10) {
+                if hasScheduleTopRow {
+                    KanbanCardScheduleTopRow(
+                        startTime: scheduleStartLabel,
+                        duration: scheduleDurationLabel
+                    )
+                }
+
                 KanbanCardHeader(
                     title: task.title,
                     titleColor: task.isDone || task.isCancelled ? Theme.dim : Theme.text,
                     isStruckThrough: task.isDone || isPendingCancel,
+                    durationBadge: headerDurationBadge,
                     completionButtonIcon: completionButtonIcon,
                     completionButtonColor: completionButtonColor,
                     onCompletionTap: handleCompletionTap
@@ -98,11 +108,16 @@ struct KanbanCard: View {
     }
 
     private var metadataRows: [[KanbanMetaItem]] {
-        KanbanCardStateSupport.metadataRows(
-            for: task,
-            doDateMetaItem: doDateMetaItem,
-            dueDateMetaItem: dueDateMetaItem
-        )
+        switch presentation {
+        case .listBoard:
+            KanbanCardStateSupport.metadataRows(
+                for: task,
+                doDateMetaItem: doDateMetaItem,
+                dueDateMetaItem: dueDateMetaItem
+            )
+        case .calendarBoard:
+            calendarBoardMetadataRows
+        }
     }
 
     private var doDateMetaItem: KanbanMetaItem {
@@ -128,11 +143,63 @@ struct KanbanCard: View {
         )
     }
 
+    private var calendarBoardMetadataRows: [[KanbanMetaItem]] {
+        var primary: [KanbanMetaItem] = []
+
+        if !task.dueDate.isEmpty {
+            primary.append(
+                KanbanMetaItem(
+                    id: "due-date",
+                    icon: "flag.fill",
+                    text: DateFormatters.relativeDate(from: task.dueDate),
+                    tint: Theme.red,
+                    textColor: isOverdue ? Theme.red : Theme.dim,
+                    action: .dueDate
+                )
+            )
+        }
+
+        let listItem = KanbanMetaItem(
+            id: "list",
+            icon: task.project?.icon ?? task.area?.icon ?? "tray.fill",
+            text: task.containerName.isEmpty ? "Inbox" : task.containerName,
+            tint: Color(hex: task.containerColor),
+            textColor: Theme.dim,
+            action: .none
+        )
+
+        if primary.count >= 2 {
+            return [primary, [listItem]]
+        }
+        primary.append(listItem)
+        return [primary]
+    }
+
+    private var hasScheduleTopRow: Bool {
+        scheduleStartLabel != nil
+    }
+
+    private var headerDurationBadge: String? {
+        scheduleStartLabel == nil ? scheduleDurationLabel : nil
+    }
+
+    private var scheduleStartLabel: String? {
+        guard task.scheduledStartMin >= 0 else { return nil }
+        return TimeFormatters.timeString(from: task.scheduledStartMin).lowercased()
+    }
+
+    private var scheduleDurationLabel: String? {
+        let timedDuration = task.scheduledStartMin >= 0 ? max(0, task.scheduledEndMin - task.scheduledStartMin) : 0
+        let minutes = timedDuration > 0 ? timedDuration : task.estimatedMinutes
+        guard minutes > 0 else { return nil }
+        return KanbanCardStateSupport.compactDurationLabel(minutes)
+    }
+
     @ViewBuilder
     private func metaChip(_ item: KanbanMetaItem) -> some View {
         switch item.action {
         case .none:
-            EmptyView()
+            KanbanMetaChip(item: item)
         case .priority:
             KanbanPriorityMetaButton(
                 item: item,

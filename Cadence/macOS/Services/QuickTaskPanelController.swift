@@ -20,11 +20,12 @@ final class QuickTaskPanelController: NSObject {
 
     func show(seed: TaskCreationSeed = TaskCreationSeed()) {
         let panel = ensurePanel()
-        logger.notice("Preparing quick task panel")
+        logger.debug("Preparing quick task panel")
 
-        let content = CreateTaskSheet(
+        let content = CreateTaskPanelSurface(
             seed: seed,
-            dismissAction: { [weak self] in self?.close() }
+            dismissAction: { [weak self] in self?.close() },
+            successAction: { [weak self] in self?.showCaptureSuccessThenClose() }
         )
         .modelContainer(PersistenceController.shared.container)
         .environment(TaskCreationManager.shared)
@@ -36,7 +37,7 @@ final class QuickTaskPanelController: NSObject {
         let hc = NSHostingController(rootView: AnyView(content))
         panel.contentViewController = hc
         self.hostingController = hc
-        panel.setContentSize(NSSize(width: 680, height: 320))
+        panel.setContentSize(NSSize(width: 600, height: 320))
 
         // Auto-resize panel to fit SwiftUI content (e.g. when subtasks are added)
         sizeObserver = hc.observe(\.preferredContentSize, options: [.new]) { [weak self] _, change in
@@ -59,7 +60,7 @@ final class QuickTaskPanelController: NSObject {
         // No NSApp.activate = no space switch = panel appears right where the
         // user is, over whatever app they were using.
         panel.makeKeyAndOrderFront(nil)
-        logger.notice("Ordering quick task panel front")
+        logger.debug("Ordering quick task panel front")
 
         startMonitoringClickOutside()
         DispatchQueue.main.async { [weak self] in
@@ -69,12 +70,32 @@ final class QuickTaskPanelController: NSObject {
 
     func close() {
         guard panel?.isVisible == true else { return }
-        logger.notice("Closing quick task panel")
+        logger.debug("Closing quick task panel")
         sizeObserver?.invalidate()
         sizeObserver = nil
         acceptingDismissal = false
         stopMonitoringClickOutside()
         panel?.orderOut(nil)
+    }
+
+    private func showCaptureSuccessThenClose() {
+        guard let panel else { return }
+        logger.debug("Showing quick capture success")
+        sizeObserver?.invalidate()
+        sizeObserver = nil
+        acceptingDismissal = false
+        stopMonitoringClickOutside()
+
+        let content = QuickTaskCaptureSuccessView()
+            .preferredColorScheme(.dark)
+        let hc = NSHostingController(rootView: AnyView(content))
+        panel.contentViewController = hc
+        hostingController = hc
+        setPanelContentSize(NSSize(width: 600, height: 150), for: panel)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.95) { [weak self] in
+            self?.close()
+        }
     }
 
     // MARK: - Click-outside dismissal
@@ -102,15 +123,13 @@ final class QuickTaskPanelController: NSObject {
         if let panel { return panel }
 
         let panel = QuickTaskPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 460),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 460),
             // .nonactivatingPanel: the panel can become key (receive keyboard
             // input) without activating the application or switching spaces.
-            styleMask: [.titled, .fullSizeContentView, .utilityWindow, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.isFloatingPanel = true
         panel.level = .floating
@@ -129,7 +148,7 @@ final class QuickTaskPanelController: NSObject {
     private func positionPanel(_ panel: NSPanel) {
         // Use design dimensions directly — panel.frame.size can be zero on the
         // first show before SwiftUI has completed its initial layout pass.
-        let w: CGFloat = 680
+        let w: CGFloat = 600
         let h: CGFloat = max(panel.frame.height > 10 ? panel.frame.height : 320, 280)
         let mouseLocation = NSEvent.mouseLocation
         let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main
@@ -142,10 +161,66 @@ final class QuickTaskPanelController: NSObject {
             y: visibleFrame.midY - h / 2
         ))
     }
+
+    private func setPanelContentSize(_ size: NSSize, for panel: NSPanel) {
+        let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        panel.setContentSize(size)
+        panel.setFrameOrigin(NSPoint(
+            x: center.x - panel.frame.width / 2,
+            y: center.y - panel.frame.height / 2
+        ))
+    }
 }
 
 private final class QuickTaskPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+}
+
+private struct QuickTaskCaptureSuccessView: View {
+    @State private var isVisible = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(Theme.green.opacity(0.18))
+                Image(systemName: "checkmark")
+                    .font(.system(size: 19, weight: .bold))
+                    .foregroundStyle(Theme.green)
+            }
+            .frame(width: 42, height: 42)
+            .scaleEffect(isVisible ? 1 : 0.7)
+            .opacity(isVisible ? 1 : 0)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Captured")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                Text("Task added to Cadence")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.dim)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 22)
+        .frame(width: 600, height: 150)
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Theme.borderSubtle.opacity(0.95), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.42), radius: 34, x: 0, y: 18)
+        .shadow(color: Theme.green.opacity(0.12), radius: 18, x: 0, y: 0)
+        .scaleEffect(isVisible ? 1 : 0.98)
+        .opacity(isVisible ? 1 : 0)
+        .onAppear {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
+                isVisible = true
+            }
+        }
+    }
 }
 #endif

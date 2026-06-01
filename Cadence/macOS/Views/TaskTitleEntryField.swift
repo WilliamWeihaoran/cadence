@@ -29,6 +29,15 @@ struct TaskTitleEntryField: View {
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isTildeSearchFocused: Bool
 
+    private var priorityShortcutSegments: TaskTitlePriorityShortcutSegments? {
+        guard priority != nil else { return nil }
+        return TaskTitleSupport.priorityShortcutSegments(in: title)
+    }
+
+    private var isShowingPriorityShortcutPreview: Bool {
+        priorityShortcutSegments != nil && !isEditingInlineShortcut
+    }
+
     init(
         title: Binding<String>,
         priority: Binding<TaskPriority>? = nil,
@@ -74,7 +83,7 @@ struct TaskTitleEntryField: View {
             TextField(placeholder, text: $title, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(font)
-                .foregroundStyle(Theme.text)
+                .foregroundStyle(isShowingPriorityShortcutPreview ? Color.clear : Theme.text)
                 .lineLimit(lineLimit)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -100,10 +109,18 @@ struct TaskTitleEntryField: View {
                         tagSearchQuery = shortcut.query
                         tagHighlightIdx = 0
                         isTagMode = true
+                        return
                     }
+                    syncPriorityShortcut(from: newValue)
                 }
                 .opacity(isEditingInlineShortcut ? 0 : 1)
                 .allowsHitTesting(!isEditingInlineShortcut)
+
+            if isShowingPriorityShortcutPreview {
+                priorityShortcutPreview
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
 
             if tildeMode != .none {
                 tildePreview
@@ -269,6 +286,11 @@ struct TaskTitleEntryField: View {
                         restoreLiteralShortcut(marker: "~", query: tildeSearchQuery)
                         return .handled
                     }
+                    .onKeyPress(.delete) {
+                        guard tildeSearchQuery.isEmpty else { return .ignored }
+                        restoreLiteralShortcut(marker: "~", query: tildeSearchQuery)
+                        return .handled
+                    }
                 if !tildeSearchQuery.isEmpty {
                     Button { tildeSearchQuery = "" } label: {
                         Image(systemName: "xmark.circle.fill")
@@ -354,6 +376,42 @@ struct TaskTitleEntryField: View {
             onMoveHighlight: moveTagHighlight,
             onRestoreLiteral: { restoreLiteralShortcut(marker: "#", query: tagSearchQuery) }
         )
+    }
+
+    private var priorityShortcutPreview: some View {
+        HStack(spacing: 4) {
+            if let segments = priorityShortcutSegments {
+                switch segments.placement {
+                case .leading:
+                    priorityShortcutMarker(segments)
+                    if !segments.title.isEmpty {
+                        Text(segments.title)
+                            .font(previewFont)
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                case .trailing:
+                    if !segments.title.isEmpty {
+                        Text(segments.title)
+                            .font(previewFont)
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                    priorityShortcutMarker(segments)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func priorityShortcutMarker(_ segments: TaskTitlePriorityShortcutSegments) -> some View {
+        Text(segments.marker)
+            .font(previewFont)
+            .foregroundStyle(Theme.priorityColor(segments.priority))
+            .lineLimit(1)
+            .fixedSize()
     }
 
     private var tildeSectionSearchView: some View {
@@ -452,6 +510,12 @@ struct TaskTitleEntryField: View {
         } else {
             title = TaskTitleSupport.normalized(title)
         }
+    }
+
+    private func syncPriorityShortcut(from value: String) {
+        guard let priority,
+              let shortcut = TaskTitleSupport.priorityShortcut(in: value) else { return }
+        priority.wrappedValue = shortcut.priority
     }
 }
 

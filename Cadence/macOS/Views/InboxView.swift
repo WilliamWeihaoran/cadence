@@ -3,14 +3,12 @@ import SwiftUI
 import SwiftData
 
 struct InboxView: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(TaskCreationManager.self) private var taskCreationManager
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order)    private var areas:    [Area]
     @Query(sort: \Project.order) private var projects: [Project]
 
-    @State private var newTitle = ""
     @State private var isCompletedCollapsed = true
     @AppStorage("inboxSortField") private var sortField: TaskSortField = .custom
     @AppStorage("inboxSortDirection") private var sortDirection: TaskSortDirection = .ascending
@@ -18,7 +16,6 @@ struct InboxView: View {
     @State private var frozenTaskOrder: [AppTask]? = nil
     @State private var frozenGroups: [FrozenTaskGroupSnapshot]? = nil
     @State private var dragOverTaskID: UUID? = nil
-    @FocusState private var captureFocused: Bool
 
     private var inboxTasks: [AppTask] {
         CadenceTaskQuerySupport.inboxTasks(from: allTasks)
@@ -53,10 +50,6 @@ struct InboxView: View {
         VStack(spacing: 0) {
             InboxHeaderView(activeTaskCount: activeTasks.count) {
                 taskCreationManager.present()
-            }
-            Divider().background(Theme.borderSubtle)
-            InboxCaptureBarView(newTitle: $newTitle, isFocused: $captureFocused) {
-                captureTask()
             }
             Divider().background(Theme.borderSubtle)
             InboxControlsBarView(sortField: $sortField, sortDirection: $sortDirection, groupingMode: $groupingMode)
@@ -117,21 +110,12 @@ struct InboxView: View {
     }
 
     private var emptyState: some View {
-        InboxEmptyStateView(captureFocused: $captureFocused)
+        InboxEmptyStateView {
+            taskCreationManager.present()
+        }
     }
 
     // MARK: - Actions
-
-    private func captureTask() {
-        var priority: TaskPriority = .none
-        let t = TaskTitleSupport.titleApplyingPriorityShortcut(newTitle, priority: &priority)
-        guard !t.isEmpty else { return }
-        let task = AppTask(title: t)
-        task.priority = priority
-        task.order = activeTasks.count
-        modelContext.insert(task)
-        newTitle = ""
-    }
 
     private func reorderTask(droppedID: UUID, targetID: UUID) {
         var sorted = activeTasks

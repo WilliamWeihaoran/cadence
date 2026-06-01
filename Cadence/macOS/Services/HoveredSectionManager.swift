@@ -17,12 +17,20 @@ final class HoveredSectionManager {
     private init() {}
 
     func beginHovering(id: UUID, onToggleComplete: @escaping () -> Void) {
+        guard !TaskCreationManager.shared.isPresented else {
+            clear()
+            return
+        }
         if target?.id == id { return }
         target = Target(id: id, onToggleComplete: onToggleComplete)
     }
 
     func endHovering(id: UUID) {
         guard target?.id == id else { return }
+        target = nil
+    }
+
+    func clear() {
         target = nil
     }
 

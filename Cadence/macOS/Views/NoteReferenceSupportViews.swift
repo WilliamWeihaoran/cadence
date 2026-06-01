@@ -2,22 +2,10 @@
 import SwiftUI
 
 struct NoteReferenceStrip: View {
-    let note: Note
-    let notes: [Note]
-    let tasks: [AppTask]
+    let linkedNotes: [Note]
+    let linkedTasks: [AppTask]
+    let backlinks: [Note]
     let onOpenNote: (Note) -> Void
-
-    private var linkedNotes: [Note] {
-        NoteReferenceResolver.linkedNotes(for: note, in: notes)
-    }
-
-    private var linkedTasks: [AppTask] {
-        NoteReferenceResolver.linkedTasks(for: note, in: tasks)
-    }
-
-    private var backlinks: [Note] {
-        NoteReferenceResolver.backlinks(for: note, in: notes)
-    }
 
     var body: some View {
         if linkedNotes.isEmpty && linkedTasks.isEmpty && backlinks.isEmpty {
