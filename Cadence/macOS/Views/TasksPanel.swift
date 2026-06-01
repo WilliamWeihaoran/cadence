@@ -159,218 +159,304 @@ struct TasksPanel: View {
     }
 
     var body: some View {
-        let sortedByDoDate: [AppTask] = mode == .byDoDate ? byDoDateSortedTasks : []
-        let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+        panelShell
+            .background(
+                Color.clear.contentShape(Rectangle()).onTapGesture { clearAppEditingFocus() }
+            )
+            .background(Theme.surface)
+            .onAppear {
+                isCompletedCollapsed = true
+            }
+            .onChange(of: localSortField) { _, v in
+                UserDefaults.standard.set(v.rawValue, forKey: udPrefix + "SortField")
+            }
+            .onChange(of: localSortDirection) { _, v in
+                UserDefaults.standard.set(v.rawValue, forKey: udPrefix + "SortDirection")
+            }
+            .onChange(of: localGroupingMode) { _, v in
+                UserDefaults.standard.set(v.rawValue, forKey: udPrefix + "GroupingMode")
+            }
+            .background { hoverFreezeObserver }
+    }
+
+    private var panelShell: some View {
         VStack(alignment: .leading, spacing: 0) {
             if showsHeader {
-                VStack(alignment: .leading, spacing: 0) {
-                    TasksPanelHeader(mode: mode)
-                    if enableControls {
-                        controlsBar
-                    }
-                }
-                .frame(height: useStandardHeaderHeight ? todayPanelHeaderHeight : nil, alignment: .top)
-                Divider().background(Theme.borderSubtle)
+                headerSection
             }
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
-                    if mode == .todayOverview {
-                        if shouldShowRolloverNotice {
-                            TasksPanelRolloverNoticeSectionView(tasks: overdoTasks) {
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    for task in overdoTasks {
-                                        SchedulingActions.rollOverTaskToToday(task, todayKey: todayKey, in: modelContext)
-                                    }
-                                    rolloverNoticeDismissedDate = todayKey
-                                    try? modelContext.save()
-                                }
-                            }
-                        }
-                        if !overdueListSummaries.isEmpty {
-                            overdueListsSection
-                        }
-                        if !overdueSectionSummaries.isEmpty {
-                            overdueSectionsSection
-                        }
-                        let todayTasks = shouldShowRolloverNotice ? todayGroupedTaskItems : todayEligibleTasks
-                        if enableControls {
-                            switch activeGroupingMode {
-                            case .none:
-                                if let frozenSections = resolvedFrozenFlatSections {
-                                    ForEach(frozenSections, id: \.id) { section in
-                                        sectionView(from: section, tasksByID: tasksByID)
-                                    }
-                                } else if !todayTasks.isEmpty {
-                                    liveFlatSection(label: "Today Tasks", tasks: todayTasks, labelColor: Theme.dim)
-                                }
-                            case .byDate:
-                                if let frozenSections = resolvedFrozenFlatSections {
-                                    ForEach(frozenSections, id: \.id) { section in
-                                        sectionView(from: section, tasksByID: tasksByID)
-                                    }
-                                } else {
-                                    if !overdue.isEmpty { liveFlatSection(label: "Past Due", tasks: overdue, labelColor: Theme.red) }
-                                    if !overdoTasks.isEmpty { liveFlatSection(label: "Past Do", tasks: overdoTasks, labelColor: Theme.amber) }
-                                    if !dueTodayTasks.isEmpty { liveFlatSection(label: "Due Today", tasks: dueTodayTasks, labelColor: Theme.red.opacity(0.85)) }
-                                    if !doTodayTasks.isEmpty { liveFlatSection(label: "Do Today", tasks: doTodayTasks, labelColor: Theme.blue) }
-                                }
-                            case .byList:
-                                todayListSections(groups: groupedTasks(todayTasks))
-                            case .byPriority:
-                                if let frozenSections = resolvedFrozenFlatSections {
-                                    ForEach(frozenSections, id: \.id) { section in
-                                        sectionView(from: section, tasksByID: tasksByID)
-                                    }
-                                } else {
-                                    ForEach(TaskPriority.allCases.reversed(), id: \.self) { priority in
-                                        let tasks = todayTasks.filter { $0.priority == priority }
-                                        if !tasks.isEmpty {
-                                            liveFlatSection(
-                                                label: priority.label,
-                                                tasks: tasks,
-                                                labelColor: Theme.priorityColor(priority),
-                                                dropKey: "priority:\(priority.rawValue)"
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            let groups = groupedTasks(todayGroupedTaskItems)
-                            if !groups.isEmpty {
-                                todayListSections(groups: groups)
-                            }
-                        }
-                    } else {
-                        let todayK = todayKey
-                        switch activeGroupingMode {
-                        case .none:
-                            if let frozenSections = resolvedFrozenFlatSections {
-                                ForEach(frozenSections, id: \.id) { section in
-                                    sectionView(from: section, tasksByID: tasksByID)
-                                }
-                            } else if !sortedByDoDate.isEmpty {
-                                liveFlatSection(label: "Tasks", tasks: sortedByDoDate, labelColor: Theme.dim)
-                            }
-                        case .byDate:
-                            if let frozenSections = resolvedFrozenFlatSections {
-                                ForEach(frozenSections, id: \.id) { section in
-                                    sectionView(from: section, tasksByID: tasksByID)
-                                }
-                            } else {
-                                let todayTasks = sortedByDoDate.filter { $0.scheduledDate == todayK }
-                                let upcomingTasks = sortedByDoDate.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate != todayK }
-                                let unscheduledTasks = sortedByDoDate.filter { taskIsUnscheduled($0) }
-                                if !todayTasks.isEmpty  { liveFlatSection(label: "Do Today", tasks: todayTasks, labelColor: Theme.blue, dropKey: "date:today") }
-                                if !upcomingTasks.isEmpty { liveFlatSection(label: "Scheduled", tasks: upcomingTasks, labelColor: Theme.dim, dropKey: "date:scheduled") }
-                                if !unscheduledTasks.isEmpty { liveFlatSection(label: "Unscheduled", tasks: unscheduledTasks, labelColor: Theme.amber, dropKey: "date:unscheduled") }
-                            }
-                        case .byList:
-                            ForEach(groupedTasks(sortedByDoDate)) { group in
-                                TasksPanelGroupSectionView(
-                                    group: group,
-                                    dragOverTaskID: $dragOverTaskID,
-                                    contexts: contexts,
-                                    areas: areas,
-                                    projects: projects,
-                                    allTasks: allTasks,
-                                    isCollapsed: collapsedGroupIDs.contains(group.id),
-                                    overdueCount: overdueCount(in: group.tasks),
-                                    regularCount: regularCount(in: group.tasks),
-                                    onToggle: { toggleGroup(group.id) },
-                                    taskDragPayload: taskDragPayload,
-                                    onDropOnGroupPayload: { payload in
-                                        dropCoordinator.handleSectionDrop(payload: payload, dropKey: "list:\(group.id)")
-                                    },
-                                    onDropOnTaskPayload: { payload, targetTask in
-                                        dropCoordinator.handleTaskDrop(
-                                            payload: payload,
-                                            targetTask: targetTask,
-                                            scopeTasks: group.tasks,
-                                            dropKey: "list:\(group.id)"
-                                        )
-                                    }
-                                )
-                            }
-                        case .byPriority:
-                            if let frozenSections = resolvedFrozenFlatSections {
-                                ForEach(frozenSections, id: \.id) { section in
-                                    sectionView(from: section, tasksByID: tasksByID)
-                                }
-                            } else {
-                                ForEach(TaskPriority.allCases.reversed(), id: \.self) { priority in
-                                    let tasks = sortedByDoDate.filter { $0.priority == priority }
-                                    if !tasks.isEmpty {
-                                        liveFlatSection(label: priority.label, tasks: tasks, labelColor: Theme.priorityColor(priority), dropKey: "priority:\(priority.rawValue)")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if !doneTasks.isEmpty {
-                        TasksPanelCompletedSectionView(
-                            tasks: doneTasks,
-                            mode: mode,
-                            contexts: contexts,
-                            areas: areas,
-                            projects: projects,
-                            allTasks: allTasks,
-                            isCollapsed: isCompletedCollapsed,
-                            onToggle: { isCompletedCollapsed.toggle() },
-                            taskDragPayload: taskDragPayload
-                        )
-                    }
-                    if isEmptyState {
-                        EmptyStateView(
-                            message: mode == .byDoDate ? "No tasks yet" : "Nothing for today",
-                            subtitle: mode == .byDoDate ? "Add a task above to get started" : "Due-today and do-today tasks will appear here",
-                            icon: "checkmark.circle"
-                        )
-                        .padding(.top, 40)
-                    }
+                    taskSections
+                    completedSection
+                    emptyStateSection
                 }
                 .padding(.top, showsHeader && mode == .todayOverview ? 12 : 0)
                 .padding(.bottom, 16)
             }
             .cadenceSoftPageBounce()
         }
-        .background(
-            Color.clear.contentShape(Rectangle()).onTapGesture { clearAppEditingFocus() }
-        )
-        .background(Theme.surface)
-        .onAppear {
-            isCompletedCollapsed = true
+    }
+
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                TasksPanelHeader(mode: mode)
+                if enableControls {
+                    controlsBar
+                }
+            }
+            .frame(height: useStandardHeaderHeight ? todayPanelHeaderHeight : nil, alignment: .top)
+            Divider().background(Theme.borderSubtle)
         }
-        .onChange(of: localSortField) { _, v in
-            UserDefaults.standard.set(v.rawValue, forKey: udPrefix + "SortField")
+    }
+
+    @ViewBuilder
+    private var taskSections: some View {
+        switch mode {
+        case .todayOverview:
+            todayOverviewSections
+        case .byDoDate:
+            byDoDateSections
         }
-        .onChange(of: localSortDirection) { _, v in
-            UserDefaults.standard.set(v.rawValue, forKey: udPrefix + "SortDirection")
+    }
+
+    @ViewBuilder
+    private var todayOverviewSections: some View {
+        if shouldShowRolloverNotice {
+            TasksPanelRolloverNoticeSectionView(tasks: overdoTasks) {
+                rollOverPastDoTasks()
+            }
         }
-        .onChange(of: localGroupingMode) { _, v in
-            UserDefaults.standard.set(v.rawValue, forKey: udPrefix + "GroupingMode")
+        if !overdueListSummaries.isEmpty {
+            overdueListsSection
         }
-        .background {
-            HoverFreezeObserver(
-                frozenOrder: $frozenTaskOrder,
-                frozenListGroups: $frozenListGroups,
-                frozenFlatSections: $frozenFlatSections,
-                naturalTasks: mode == .todayOverview
-                    ? todayEligibleTasks.sorted(by: compareTasksForCurrentSort)
-                    : sortedByDoDate
-                ,
-                listGroupSnapshot: {
-                    let snapshotTasks = mode == .todayOverview
-                        ? (shouldShowRolloverNotice ? todayGroupedTaskItems : todayEligibleTasks)
-                        : sortedByDoDate
-                    return activeGroupingMode == .byList ? currentFrozenListGroupSnapshot(for: snapshotTasks) : []
-                }(),
-                // Intentional: keep flat/date/priority section trees live while hovering.
-                // Capturing section snapshots swaps the row tree under the pointer and
-                // can create hover-enter/exit refresh jitter in grouped Today views.
-                flatSectionSnapshot: []
+        if !overdueSectionSummaries.isEmpty {
+            overdueSectionsSection
+        }
+
+        if enableControls {
+            todayControlledSections
+        } else {
+            let groups = groupedTasks(todayGroupedTaskItems)
+            if !groups.isEmpty {
+                todayListSections(groups: groups)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var todayControlledSections: some View {
+        let todayTasks = shouldShowRolloverNotice ? todayGroupedTaskItems : todayEligibleTasks
+        let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+
+        switch activeGroupingMode {
+        case .none:
+            frozenOrSingleFlatSection(
+                frozenSections: resolvedFrozenFlatSections,
+                tasksByID: tasksByID,
+                label: "Today Tasks",
+                tasks: todayTasks,
+                labelColor: Theme.dim
             )
+        case .byDate:
+            if let frozenSections = resolvedFrozenFlatSections {
+                frozenFlatSections(frozenSections, tasksByID: tasksByID)
+            } else {
+                todayDateSections
+            }
+        case .byList:
+            todayListSections(groups: groupedTasks(todayTasks))
+        case .byPriority:
+            prioritySections(tasks: todayTasks, frozenSections: resolvedFrozenFlatSections, tasksByID: tasksByID)
+        }
+    }
+
+    @ViewBuilder
+    private var todayDateSections: some View {
+        if !overdue.isEmpty { liveFlatSection(label: "Past Due", tasks: overdue, labelColor: Theme.red) }
+        if !overdoTasks.isEmpty { liveFlatSection(label: "Past Do", tasks: overdoTasks, labelColor: Theme.amber) }
+        if !dueTodayTasks.isEmpty { liveFlatSection(label: "Due Today", tasks: dueTodayTasks, labelColor: Theme.red.opacity(0.85)) }
+        if !doTodayTasks.isEmpty { liveFlatSection(label: "Do Today", tasks: doTodayTasks, labelColor: Theme.blue) }
+    }
+
+    @ViewBuilder
+    private var byDoDateSections: some View {
+        let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+
+        switch activeGroupingMode {
+        case .none:
+            frozenOrSingleFlatSection(
+                frozenSections: resolvedFrozenFlatSections,
+                tasksByID: tasksByID,
+                label: "Tasks",
+                tasks: byDoDateSortedTasks,
+                labelColor: Theme.dim
+            )
+        case .byDate:
+            if let frozenSections = resolvedFrozenFlatSections {
+                frozenFlatSections(frozenSections, tasksByID: tasksByID)
+            } else {
+                byDoDateDateSections
+            }
+        case .byList:
+            byDoDateListSections
+        case .byPriority:
+            prioritySections(tasks: byDoDateSortedTasks, frozenSections: resolvedFrozenFlatSections, tasksByID: tasksByID)
+        }
+    }
+
+    @ViewBuilder
+    private var byDoDateDateSections: some View {
+        let todayTasks = byDoDateSortedTasks.filter { $0.scheduledDate == todayKey }
+        let upcomingTasks = byDoDateSortedTasks.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate != todayKey }
+        let unscheduledTasks = byDoDateSortedTasks.filter { taskIsUnscheduled($0) }
+
+        if !todayTasks.isEmpty {
+            liveFlatSection(label: "Do Today", tasks: todayTasks, labelColor: Theme.blue, dropKey: "date:today")
+        }
+        if !upcomingTasks.isEmpty {
+            liveFlatSection(label: "Scheduled", tasks: upcomingTasks, labelColor: Theme.dim, dropKey: "date:scheduled")
+        }
+        if !unscheduledTasks.isEmpty {
+            liveFlatSection(label: "Unscheduled", tasks: unscheduledTasks, labelColor: Theme.amber, dropKey: "date:unscheduled")
+        }
+    }
+
+    @ViewBuilder
+    private var byDoDateListSections: some View {
+        ForEach(groupedTasks(byDoDateSortedTasks)) { group in
+            TasksPanelGroupSectionView(
+                group: group,
+                dragOverTaskID: $dragOverTaskID,
+                contexts: contexts,
+                areas: areas,
+                projects: projects,
+                allTasks: allTasks,
+                isCollapsed: collapsedGroupIDs.contains(group.id),
+                overdueCount: overdueCount(in: group.tasks),
+                regularCount: regularCount(in: group.tasks),
+                onToggle: { toggleGroup(group.id) },
+                taskDragPayload: taskDragPayload,
+                onDropOnGroupPayload: { payload in
+                    dropCoordinator.handleSectionDrop(payload: payload, dropKey: "list:\(group.id)")
+                },
+                onDropOnTaskPayload: { payload, targetTask in
+                    dropCoordinator.handleTaskDrop(
+                        payload: payload,
+                        targetTask: targetTask,
+                        scopeTasks: group.tasks,
+                        dropKey: "list:\(group.id)"
+                    )
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func frozenOrSingleFlatSection(
+        frozenSections: [FrozenFlatTaskSection]?,
+        tasksByID: [UUID: AppTask],
+        label: String,
+        tasks: [AppTask],
+        labelColor: Color
+    ) -> some View {
+        if let frozenSections {
+            frozenFlatSections(frozenSections, tasksByID: tasksByID)
+        } else if !tasks.isEmpty {
+            liveFlatSection(label: label, tasks: tasks, labelColor: labelColor)
+        }
+    }
+
+    @ViewBuilder
+    private func frozenFlatSections(_ sections: [FrozenFlatTaskSection], tasksByID: [UUID: AppTask]) -> some View {
+        ForEach(sections, id: \.id) { section in
+            sectionView(from: section, tasksByID: tasksByID)
+        }
+    }
+
+    @ViewBuilder
+    private func prioritySections(
+        tasks: [AppTask],
+        frozenSections: [FrozenFlatTaskSection]?,
+        tasksByID: [UUID: AppTask]
+    ) -> some View {
+        if let frozenSections {
+            frozenFlatSections(frozenSections, tasksByID: tasksByID)
+        } else {
+            ForEach(TaskPriority.allCases.reversed(), id: \.self) { priority in
+                let priorityTasks = tasks.filter { $0.priority == priority }
+                if !priorityTasks.isEmpty {
+                    liveFlatSection(
+                        label: priority.label,
+                        tasks: priorityTasks,
+                        labelColor: Theme.priorityColor(priority),
+                        dropKey: "priority:\(priority.rawValue)"
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var completedSection: some View {
+        if !doneTasks.isEmpty {
+            TasksPanelCompletedSectionView(
+                tasks: doneTasks,
+                mode: mode,
+                contexts: contexts,
+                areas: areas,
+                projects: projects,
+                allTasks: allTasks,
+                isCollapsed: isCompletedCollapsed,
+                onToggle: { isCompletedCollapsed.toggle() },
+                taskDragPayload: taskDragPayload
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var emptyStateSection: some View {
+        if isEmptyState {
+            EmptyStateView(
+                message: mode == .byDoDate ? "No tasks yet" : "Nothing for today",
+                subtitle: mode == .byDoDate ? "Add a task above to get started" : "Due-today and do-today tasks will appear here",
+                icon: "checkmark.circle"
+            )
+            .padding(.top, 40)
+        }
+    }
+
+    private var hoverFreezeObserver: some View {
+        HoverFreezeObserver(
+            frozenOrder: $frozenTaskOrder,
+            frozenListGroups: $frozenListGroups,
+            frozenFlatSections: $frozenFlatSections,
+            naturalTasks: mode == .todayOverview
+                ? todayEligibleTasks.sorted(by: compareTasksForCurrentSort)
+                : byDoDateSortedTasks,
+            listGroupSnapshot: currentFrozenListSnapshotForHover(),
+            // Intentional: keep flat/date/priority section trees live while hovering.
+            // Capturing section snapshots swaps the row tree under the pointer and
+            // can create hover-enter/exit refresh jitter in grouped Today views.
+            flatSectionSnapshot: []
+        )
+    }
+
+    private func currentFrozenListSnapshotForHover() -> [FrozenTodayTaskGroup] {
+        let snapshotTasks = mode == .todayOverview
+            ? (shouldShowRolloverNotice ? todayGroupedTaskItems : todayEligibleTasks)
+            : byDoDateSortedTasks
+        return activeGroupingMode == .byList ? currentFrozenListGroupSnapshot(for: snapshotTasks) : []
+    }
+
+    private func rollOverPastDoTasks() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            for task in overdoTasks {
+                SchedulingActions.rollOverTaskToToday(task, todayKey: todayKey, in: modelContext)
+            }
+            rolloverNoticeDismissedDate = todayKey
+            try? modelContext.save()
         }
     }
 

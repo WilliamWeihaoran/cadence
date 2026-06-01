@@ -1246,6 +1246,17 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if let handled = handleTagPickerCommand(commandSelector, in: textView) { return handled }
+        if let handled = handleReferencePickerCommand(commandSelector, in: textView) { return handled }
+        if let handled = handleSlashCommandPickerCommand(commandSelector, in: textView) { return handled }
+        if let handled = handleCaretMovementCommand(commandSelector, in: textView) { return handled }
+        if let handled = handleIndentationCommand(commandSelector, in: textView) { return handled }
+        if let handled = handleDeletionCommand(commandSelector, in: textView) { return handled }
+        return handleNewlineCommand(commandSelector, in: textView)
+    }
+
+    private func handleTagPickerCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool? {
+        guard tagPicker.isShown else { return nil }
         if tagPicker.isShown {
             if commandSelector == #selector(NSResponder.moveUp(_:)) {
                 tagPicker.moveSelection(delta: -1)
@@ -1265,7 +1276,11 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
                 }
             }
         }
+        return nil
+    }
 
+    private func handleReferencePickerCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool? {
+        guard referencePicker.isShown else { return nil }
         if referencePicker.isShown {
             if commandSelector == #selector(NSResponder.moveUp(_:)) {
                 referencePicker.moveSelection(delta: -1)
@@ -1285,7 +1300,11 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
                 }
             }
         }
+        return nil
+    }
 
+    private func handleSlashCommandPickerCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool? {
+        guard slashCommandPicker.isShown else { return nil }
         if slashCommandPicker.isShown {
             if commandSelector == #selector(NSResponder.moveUp(_:)) {
                 slashCommandPicker.moveSelection(delta: -1)
@@ -1305,7 +1324,10 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
                 }
             }
         }
+        return nil
+    }
 
+    private func handleCaretMovementCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool? {
         if commandSelector == #selector(NSResponder.moveLeft(_:)) {
             return moveCaret(in: textView, forward: false, extendSelection: false)
         }
@@ -1321,7 +1343,10 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         if commandSelector == #selector(NSResponder.moveRightAndModifySelection(_:)) {
             return moveCaret(in: textView, forward: true, extendSelection: true)
         }
+        return nil
+    }
 
+    private func handleIndentationCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool? {
         if commandSelector == #selector(NSResponder.insertTab(_:)) {
             return adjustIndentation(in: textView, increase: true)
         }
@@ -1329,7 +1354,10 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         if commandSelector == #selector(NSResponder.insertBacktab(_:)) {
             return adjustIndentation(in: textView, increase: false)
         }
+        return nil
+    }
 
+    private func handleDeletionCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool? {
         if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
             if slashCommandPicker.isShown {
                 scheduleSlashCommandPickerUpdate(for: textView)
@@ -1362,7 +1390,10 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
             }
             return false
         }
+        return nil
+    }
 
+    private func handleNewlineCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool {
         guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
         let nsText = textView.string as NSString
         let selection = textView.selectedRange()

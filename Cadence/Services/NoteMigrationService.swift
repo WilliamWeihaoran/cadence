@@ -59,6 +59,12 @@ enum NoteMigrationService {
         case eventNote = "event_note"
     }
 
+    private struct MigrationTracking {
+        var migratedSources: Set<String>
+        var canonicalKeys: Set<String>
+        var inserted = false
+    }
+
     private static let logger = Logger(subsystem: "com.haoranwei.Cadence", category: "NoteMigration")
     private static let lastReportKey = "noteMigration.lastReport.v1"
 
@@ -171,15 +177,36 @@ enum NoteMigrationService {
         let notes = try context.fetch(FetchDescriptor<Note>())
         report.existingNoteCount = notes.count
         report.canonicalDuplicateCount = canonicalDuplicateCount(in: notes)
-        var migratedSources = Set(notes.compactMap(sourceKey(for:)))
-        var canonicalKeys = Set(notes.map(canonicalKey(for:)))
-        var inserted = false
+        var tracking = MigrationTracking(
+            migratedSources: Set(notes.compactMap(sourceKey(for:))),
+            canonicalKeys: Set(notes.map(canonicalKey(for:)))
+        )
 
+        try migrateDailyNotes(in: context, report: &report, tracking: &tracking)
+        try migrateWeeklyNotes(in: context, report: &report, tracking: &tracking)
+        try migratePermanentNotes(in: context, report: &report, tracking: &tracking)
+        try migrateDocumentNotes(in: context, report: &report, tracking: &tracking)
+        try migrateEventNotes(in: context, report: &report, tracking: &tracking)
+
+        if tracking.inserted && saveChanges {
+            try context.save()
+        }
+
+        report.finishedAt = Date()
+        report.success = true
+        return report
+    }
+
+    private static func migrateDailyNotes(
+        in context: ModelContext,
+        report: inout NoteMigrationReport,
+        tracking: inout MigrationTracking
+    ) throws {
         for legacy in try context.fetch(FetchDescriptor<DailyNote>()) {
             report.legacyDailyScanned += 1
             let source = sourceKey(kind: .daily, id: legacy.id)
             let canonical = "daily:\(legacy.date)"
-            guard shouldMigrate(source: source, canonical: canonical, migratedSources: migratedSources, canonicalKeys: canonicalKeys, report: &report) else {
+            guard shouldMigrate(source: source, canonical: canonical, migratedSources: tracking.migratedSources, canonicalKeys: tracking.canonicalKeys, report: &report) else {
                 continue
             }
             context.insert(Note(
@@ -193,17 +220,23 @@ enum NoteMigrationService {
                 legacySourceKind: LegacyKind.daily.rawValue,
                 legacySourceID: legacy.id.uuidString
             ))
-            migratedSources.insert(source)
-            canonicalKeys.insert(canonical)
+            tracking.migratedSources.insert(source)
+            tracking.canonicalKeys.insert(canonical)
             report.insertedDaily += 1
-            inserted = true
+            tracking.inserted = true
         }
+    }
 
+    private static func migrateWeeklyNotes(
+        in context: ModelContext,
+        report: inout NoteMigrationReport,
+        tracking: inout MigrationTracking
+    ) throws {
         for legacy in try context.fetch(FetchDescriptor<WeeklyNote>()) {
             report.legacyWeeklyScanned += 1
             let source = sourceKey(kind: .weekly, id: legacy.id)
             let canonical = "weekly:\(legacy.weekKey)"
-            guard shouldMigrate(source: source, canonical: canonical, migratedSources: migratedSources, canonicalKeys: canonicalKeys, report: &report) else {
+            guard shouldMigrate(source: source, canonical: canonical, migratedSources: tracking.migratedSources, canonicalKeys: tracking.canonicalKeys, report: &report) else {
                 continue
             }
             context.insert(Note(
@@ -217,17 +250,23 @@ enum NoteMigrationService {
                 legacySourceKind: LegacyKind.weekly.rawValue,
                 legacySourceID: legacy.id.uuidString
             ))
-            migratedSources.insert(source)
-            canonicalKeys.insert(canonical)
+            tracking.migratedSources.insert(source)
+            tracking.canonicalKeys.insert(canonical)
             report.insertedWeekly += 1
-            inserted = true
+            tracking.inserted = true
         }
+    }
 
+    private static func migratePermanentNotes(
+        in context: ModelContext,
+        report: inout NoteMigrationReport,
+        tracking: inout MigrationTracking
+    ) throws {
         for legacy in try context.fetch(FetchDescriptor<PermNote>()) {
             report.legacyPermanentScanned += 1
             let source = sourceKey(kind: .permanent, id: legacy.id)
             let canonical = "permanent"
-            guard shouldMigrate(source: source, canonical: canonical, migratedSources: migratedSources, canonicalKeys: canonicalKeys, report: &report) else {
+            guard shouldMigrate(source: source, canonical: canonical, migratedSources: tracking.migratedSources, canonicalKeys: tracking.canonicalKeys, report: &report) else {
                 continue
             }
             context.insert(Note(
@@ -239,16 +278,22 @@ enum NoteMigrationService {
                 legacySourceKind: LegacyKind.permanent.rawValue,
                 legacySourceID: legacy.id.uuidString
             ))
-            migratedSources.insert(source)
-            canonicalKeys.insert(canonical)
+            tracking.migratedSources.insert(source)
+            tracking.canonicalKeys.insert(canonical)
             report.insertedPermanent += 1
-            inserted = true
+            tracking.inserted = true
         }
+    }
 
+    private static func migrateDocumentNotes(
+        in context: ModelContext,
+        report: inout NoteMigrationReport,
+        tracking: inout MigrationTracking
+    ) throws {
         for legacy in try context.fetch(FetchDescriptor<Document>()) {
             report.legacyDocumentScanned += 1
             let source = sourceKey(kind: .document, id: legacy.id)
-            guard shouldMigrate(source: source, canonical: nil, migratedSources: migratedSources, canonicalKeys: canonicalKeys, report: &report) else {
+            guard shouldMigrate(source: source, canonical: nil, migratedSources: tracking.migratedSources, canonicalKeys: tracking.canonicalKeys, report: &report) else {
                 continue
             }
             context.insert(Note(
@@ -264,17 +309,23 @@ enum NoteMigrationService {
                 area: legacy.area,
                 project: legacy.project
             ))
-            migratedSources.insert(source)
-            canonicalKeys.insert("list:\(legacy.id.uuidString)")
+            tracking.migratedSources.insert(source)
+            tracking.canonicalKeys.insert("list:\(legacy.id.uuidString)")
             report.insertedList += 1
-            inserted = true
+            tracking.inserted = true
         }
+    }
 
+    private static func migrateEventNotes(
+        in context: ModelContext,
+        report: inout NoteMigrationReport,
+        tracking: inout MigrationTracking
+    ) throws {
         for legacy in try context.fetch(FetchDescriptor<EventNote>()) {
             report.legacyEventNoteScanned += 1
             let source = sourceKey(kind: .eventNote, id: legacy.id)
             let canonical = legacy.calendarEventID.isEmpty ? source : "meeting:\(legacy.calendarEventID)"
-            guard shouldMigrate(source: source, canonical: canonical, migratedSources: migratedSources, canonicalKeys: canonicalKeys, report: &report) else {
+            guard shouldMigrate(source: source, canonical: canonical, migratedSources: tracking.migratedSources, canonicalKeys: tracking.canonicalKeys, report: &report) else {
                 continue
             }
             context.insert(Note(
@@ -292,19 +343,11 @@ enum NoteMigrationService {
                 legacySourceKind: LegacyKind.eventNote.rawValue,
                 legacySourceID: legacy.id.uuidString
             ))
-            migratedSources.insert(source)
-            canonicalKeys.insert(canonical)
+            tracking.migratedSources.insert(source)
+            tracking.canonicalKeys.insert(canonical)
             report.insertedMeeting += 1
-            inserted = true
+            tracking.inserted = true
         }
-
-        if inserted && saveChanges {
-            try context.save()
-        }
-
-        report.finishedAt = Date()
-        report.success = true
-        return report
     }
 
     @discardableResult

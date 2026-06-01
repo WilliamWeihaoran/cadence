@@ -57,210 +57,12 @@ struct iOSTaskDetailSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    iOSTaskEditorTitleCard(task: task)
-
-                    iOSTaskEditorSection(title: "Task") {
-                        iOSTaskEditorRow(label: "Priority", systemImage: "flag.fill", color: Theme.priorityColor(task.priority)) {
-                            Picker("Priority", selection: $task.priority) {
-                                ForEach(TaskPriority.allCases, id: \.self) { priority in
-                                    Text(priority.label).tag(priority)
-                                }
-                            }
-                            .labelsHidden()
-                            .tint(Theme.priorityColor(task.priority))
-                        }
-
-                        iOSTaskEditorDivider()
-
-                        iOSTaskEditorRow(label: "Estimate", systemImage: "clock.fill", color: Theme.blue) {
-                            Stepper(value: $task.estimatedMinutes, in: 5...480, step: 5) {
-                                Text(estimateLabel)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(Theme.text)
-                            }
-                        }
-                    }
-
-                    iOSTaskEditorSection(title: "Organize") {
-                        iOSTaskEditorRow(label: "List", systemImage: "tray.full.fill", color: Theme.blue) {
-                            Picker("List", selection: $containerSelection) {
-                                Text("Inbox").tag("inbox")
-
-                                if !activeAreas.isEmpty {
-                                    Section("Areas") {
-                                        ForEach(activeAreas) { area in
-                                            Text(area.name.isEmpty ? "Untitled Area" : area.name)
-                                                .tag("area:\(area.id.uuidString)")
-                                        }
-                                    }
-                                }
-
-                                if !activeProjects.isEmpty {
-                                    Section("Projects") {
-                                        ForEach(activeProjects) { project in
-                                            Text(project.name.isEmpty ? "Untitled Project" : project.name)
-                                                .tag("project:\(project.id.uuidString)")
-                                        }
-                                    }
-                                }
-                            }
-                            .labelsHidden()
-                        }
-
-                        iOSTaskEditorDivider()
-
-                        iOSTaskEditorRow(label: "Section", systemImage: "rectangle.split.3x1.fill", color: Theme.purple) {
-                            Picker("Section", selection: $task.sectionName) {
-                                ForEach(availableSectionNames, id: \.self) { section in
-                                    Text(section).tag(section)
-                                }
-                            }
-                            .labelsHidden()
-                            .disabled(containerSelection == "inbox")
-                            .opacity(containerSelection == "inbox" ? 0.45 : 1)
-                        }
-                    }
-
-                    iOSTaskEditorSection(title: "Dates") {
-                        iOSTaskEditorToggleRow(
-                            label: "Do date",
-                            systemImage: "sun.max.fill",
-                            color: Theme.amber,
-                            isOn: $hasScheduledDate
-                        )
-                        if hasScheduledDate {
-                            DatePicker("Do", selection: $scheduledDate, displayedComponents: .date)
-                                .datePickerStyle(.compact)
-                                .tint(Theme.amber)
-                        }
-
-                        iOSTaskEditorDivider()
-
-                        iOSTaskEditorToggleRow(
-                            label: "Due date",
-                            systemImage: "flag.fill",
-                            color: Theme.red,
-                            isOn: $hasDueDate
-                        )
-                        if hasDueDate {
-                            DatePicker("Due", selection: $dueDate, displayedComponents: .date)
-                                .datePickerStyle(.compact)
-                                .tint(Theme.red)
-                        }
-                    }
-
-                    iOSTaskEditorSection(title: "Notes") {
-                        iOSMarkdownEditor(text: Binding(
-                            get: { task.notes },
-                            set: {
-                                task.notes = $0
-                                try? modelContext.save()
-                            }
-                        ), isFocused: $isNotesFocused)
-                            .frame(minHeight: 150)
-                            .background(Theme.surfaceElevated.opacity(0.35))
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
-                            }
-                    }
-
-                    iOSTaskEditorSection(title: "Tags") {
-                        iOSTaskTagEditorSection(
-                            task: task,
-                            allTags: tags,
-                            newTagName: $newTagName
-                        )
-                    }
-
-                    iOSTaskEditorSection(title: "Subtasks") {
-                        if sortedSubtasks.isEmpty {
-                            Text("No subtasks")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Theme.dim)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        } else {
-                            VStack(spacing: 7) {
-                                ForEach(sortedSubtasks) { subtask in
-                                    iOSSubtaskRow(subtask: subtask) {
-                                        deleteSubtask(subtask)
-                                    }
-                                }
-                            }
-                        }
-
-                        HStack(spacing: 8) {
-                            TextField("Add subtask", text: $newSubtaskTitle)
-                                .textFieldStyle(.plain)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Theme.text)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 9)
-                                .background(Theme.surfaceElevated.opacity(0.55))
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
-                                }
-                                .onSubmit(addSubtask)
-
-                            Button(action: addSubtask) {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 36, height: 36)
-                                    .background(canAddSubtask ? Theme.blue : Theme.surfaceElevated)
-                                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(!canAddSubtask)
-                        }
-                    }
-
-                    iOSTaskEditorSection(title: "Actions") {
-                        Button(action: toggleCompletion) {
-                            Label(task.isDone ? "Mark Todo" : "Mark Done",
-                                  systemImage: task.isDone ? "circle" : "checkmark.circle.fill")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(task.isDone ? Theme.blue : Theme.green)
-
-                        iOSTaskEditorDivider()
-
-                        Button(role: .destructive) {
-                            showDeleteConfirmation = true
-                        } label: {
-                            Label("Delete Task", systemImage: "trash")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Theme.red)
-                    }
-                }
-                .padding(18)
+                taskForm.padding(18)
             }
             .background(Theme.bg)
             .navigationTitle("Edit Task")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
-                        isNotesFocused = false
-                        applyDates()
-                        try? modelContext.save()
-                        dismiss()
-                    }
-                }
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        isNotesFocused = false
-                    }
-                }
-            }
+            .toolbar { taskToolbar }
             .tint(Theme.blue)
             .onAppear {
                 loadDates()
@@ -296,8 +98,269 @@ struct iOSTaskDetailSheet: View {
         .preferredColorScheme(.dark)
     }
 
+    private var taskForm: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            iOSTaskEditorTitleCard(task: task)
+            taskPropertiesSection
+            organizeSection
+            datesSection
+            notesSection
+            tagsSection
+            subtasksSection
+            actionsSection
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var taskToolbar: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            Button("Done") {
+                finishEditingAndDismiss()
+            }
+        }
+        ToolbarItemGroup(placement: .keyboard) {
+            Spacer()
+            Button("Done") {
+                isNotesFocused = false
+            }
+        }
+    }
+
+    private var taskPropertiesSection: some View {
+        iOSTaskEditorSection(title: "Task") {
+            iOSTaskEditorRow(label: "Priority", systemImage: "flag.fill", color: Theme.priorityColor(task.priority)) {
+                Picker("Priority", selection: $task.priority) {
+                    ForEach(TaskPriority.allCases, id: \.self) { priority in
+                        Text(priority.label).tag(priority)
+                    }
+                }
+                .labelsHidden()
+                .tint(Theme.priorityColor(task.priority))
+            }
+
+            iOSTaskEditorDivider()
+
+            iOSTaskEditorRow(label: "Estimate", systemImage: "clock.fill", color: Theme.blue) {
+                Stepper(value: $task.estimatedMinutes, in: 5...480, step: 5) {
+                    Text(estimateLabel)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                }
+            }
+        }
+    }
+
+    private var organizeSection: some View {
+        iOSTaskEditorSection(title: "Organize") {
+            iOSTaskEditorRow(label: "List", systemImage: "tray.full.fill", color: Theme.blue) {
+                Picker("List", selection: $containerSelection) {
+                    Text("Inbox").tag("inbox")
+                    areaPickerSection
+                    projectPickerSection
+                }
+                .labelsHidden()
+            }
+
+            iOSTaskEditorDivider()
+
+            iOSTaskEditorRow(label: "Section", systemImage: "rectangle.split.3x1.fill", color: Theme.purple) {
+                Picker("Section", selection: $task.sectionName) {
+                    ForEach(availableSectionNames, id: \.self) { section in
+                        Text(section).tag(section)
+                    }
+                }
+                .labelsHidden()
+                .disabled(containerSelection == "inbox")
+                .opacity(containerSelection == "inbox" ? 0.45 : 1)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var areaPickerSection: some View {
+        if !activeAreas.isEmpty {
+            Section("Areas") {
+                ForEach(activeAreas) { area in
+                    Text(area.name.isEmpty ? "Untitled Area" : area.name)
+                        .tag("area:\(area.id.uuidString)")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var projectPickerSection: some View {
+        if !activeProjects.isEmpty {
+            Section("Projects") {
+                ForEach(activeProjects) { project in
+                    Text(project.name.isEmpty ? "Untitled Project" : project.name)
+                        .tag("project:\(project.id.uuidString)")
+                }
+            }
+        }
+    }
+
+    private var datesSection: some View {
+        iOSTaskEditorSection(title: "Dates") {
+            dateToggleSection(
+                label: "Do date",
+                systemImage: "sun.max.fill",
+                color: Theme.amber,
+                isOn: $hasScheduledDate,
+                date: $scheduledDate,
+                pickerLabel: "Do"
+            )
+
+            iOSTaskEditorDivider()
+
+            dateToggleSection(
+                label: "Due date",
+                systemImage: "flag.fill",
+                color: Theme.red,
+                isOn: $hasDueDate,
+                date: $dueDate,
+                pickerLabel: "Due"
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func dateToggleSection(
+        label: String,
+        systemImage: String,
+        color: Color,
+        isOn: Binding<Bool>,
+        date: Binding<Date>,
+        pickerLabel: String
+    ) -> some View {
+        iOSTaskEditorToggleRow(
+            label: label,
+            systemImage: systemImage,
+            color: color,
+            isOn: isOn
+        )
+        if isOn.wrappedValue {
+            DatePicker(pickerLabel, selection: date, displayedComponents: .date)
+                .datePickerStyle(.compact)
+                .tint(color)
+        }
+    }
+
+    private var notesSection: some View {
+        iOSTaskEditorSection(title: "Notes") {
+            iOSMarkdownEditor(text: Binding(
+                get: { task.notes },
+                set: {
+                    task.notes = $0
+                    try? modelContext.save()
+                }
+            ), isFocused: $isNotesFocused)
+                .frame(minHeight: 150)
+                .background(Theme.surfaceElevated.opacity(0.35))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
+                }
+        }
+    }
+
+    private var tagsSection: some View {
+        iOSTaskEditorSection(title: "Tags") {
+            iOSTaskTagEditorSection(
+                task: task,
+                allTags: tags,
+                newTagName: $newTagName
+            )
+        }
+    }
+
+    private var subtasksSection: some View {
+        iOSTaskEditorSection(title: "Subtasks") {
+            subtaskList
+            subtaskComposer
+        }
+    }
+
+    @ViewBuilder
+    private var subtaskList: some View {
+        if sortedSubtasks.isEmpty {
+            Text("No subtasks")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.dim)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(spacing: 7) {
+                ForEach(sortedSubtasks) { subtask in
+                    iOSSubtaskRow(subtask: subtask) {
+                        deleteSubtask(subtask)
+                    }
+                }
+            }
+        }
+    }
+
+    private var subtaskComposer: some View {
+        HStack(spacing: 8) {
+            TextField("Add subtask", text: $newSubtaskTitle)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .background(Theme.surfaceElevated.opacity(0.55))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
+                }
+                .onSubmit(addSubtask)
+
+            Button(action: addSubtask) {
+                Image(systemName: "plus")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(canAddSubtask ? Theme.blue : Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(!canAddSubtask)
+        }
+    }
+
+    private var actionsSection: some View {
+        iOSTaskEditorSection(title: "Actions") {
+            Button(action: toggleCompletion) {
+                Label(task.isDone ? "Mark Todo" : "Mark Done",
+                      systemImage: task.isDone ? "circle" : "checkmark.circle.fill")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(task.isDone ? Theme.blue : Theme.green)
+
+            iOSTaskEditorDivider()
+
+            Button(role: .destructive) {
+                showDeleteConfirmation = true
+            } label: {
+                Label("Delete Task", systemImage: "trash")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.red)
+        }
+    }
+
     private var canAddSubtask: Bool {
         !newSubtaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func finishEditingAndDismiss() {
+        isNotesFocused = false
+        applyDates()
+        try? modelContext.save()
+        dismiss()
     }
 
     private var estimateLabel: String {

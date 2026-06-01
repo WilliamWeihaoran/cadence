@@ -97,91 +97,17 @@ struct TimelineDayCanvas: View {
                     selectedBundleID: $selectedBundleID,
                     dragYOffset: $dragYOffset
                 ),
-                onTap: {
-                    TimelineDayCanvasStateSupport.resetCanvasSelection(
-                        selectedTaskID: &selectedTaskID,
-                        selectedEventID: &selectedEventID,
-                        activeDragTaskID: &activeDragTaskID,
-                        selectedBundleID: &selectedBundleID,
-                        activeDragBundleID: &activeDragBundleID,
-                        dragStartMin: &dragStartMin,
-                        dragEndMin: &dragEndMin,
-                        pendingStartMin: &pendingStartMin,
-                        pendingEndMin: &pendingEndMin,
-                        showNewTaskPopover: &showNewTaskPopover
-                    )
-                }
+                onTap: resetCanvasSelection
             )
-
-            let blockedFrames = layouts.map { layout in
-                computeTimelineBlockFrame(
-                    startMinute: layout.task.scheduledStartMin,
-                    durationMinutes: layout.task.estimatedMinutes,
-                    column: layout.column,
-                    totalColumns: layout.totalColumns,
-                    totalWidth: width,
-                    metrics: metrics,
-                    style: style
-                )
-            } + bundleLayouts.map { layout in
-                computeTimelineBlockFrame(
-                    startMinute: layout.bundle.startMin,
-                    durationMinutes: layout.bundle.durationMinutes,
-                    column: layout.column,
-                    totalColumns: layout.totalColumns,
-                    totalWidth: width,
-                    metrics: metrics,
-                    style: style
-                )
-            } + eventLayouts.map { layout in
-                computeTimelineBlockFrame(
-                    startMinute: layout.item.startMin,
-                    durationMinutes: layout.item.durationMinutes,
-                    column: layout.column,
-                    totalColumns: layout.totalColumns,
-                    totalWidth: width,
-                    metrics: metrics,
-                    style: style
-                )
-            }
 
             TimelineCreateGridLayer(
                 metrics: metrics,
-                blockedFrames: blockedFrames,
+                blockedFrames: blockedFrames(layouts: layouts, bundleLayouts: bundleLayouts, eventLayouts: eventLayouts),
                 showHalfHourMarks: showHalfHourMarks,
                 activeDragTaskID: $activeDragTaskID,
-                onTapBackground: {
-                    clearDraftCreation()
-                    selectedTaskID = nil
-                    selectedBundleID = nil
-                    activeDragTaskID = nil
-                    activeDragBundleID = nil
-                },
-                onDragChanged: { startMin, endMin in
-                    selectedBundleID = nil
-                    activeDragBundleID = nil
-                    TimelineDayCanvasStateSupport.beginDraftSelection(
-                        startMin: startMin,
-                        endMin: endMin,
-                        dragStartMin: &dragStartMin,
-                        dragEndMin: &dragEndMin,
-                        pendingStartMin: &pendingStartMin,
-                        pendingEndMin: &pendingEndMin,
-                        showNewTaskPopover: &showNewTaskPopover,
-                        selectedTaskID: &selectedTaskID
-                    )
-                },
-                onDragEnded: { startMin, endMin in
-                    TimelineDayCanvasStateSupport.commitDraftSelection(
-                        startMin: startMin,
-                        endMin: endMin,
-                        dragStartMin: &dragStartMin,
-                        dragEndMin: &dragEndMin,
-                        pendingStartMin: &pendingStartMin,
-                        pendingEndMin: &pendingEndMin,
-                        showNewTaskPopover: &showNewTaskPopover
-                    )
-                }
+                onTapBackground: clearCreateGridSelection,
+                onDragChanged: beginDraftSelection,
+                onDragEnded: commitDraftSelection
             )
 
             TimelineDraftCreationOverlay(
@@ -196,51 +122,7 @@ struct TimelineDayCanvas: View {
                     }
                 }
             ) { start, end in
-                AnyView(
-                    QuickCreateChoicePopover(
-                        startMin: start,
-                        endMin: end,
-                        dateKey: dateKey,
-                        onCreateTask: { title, containerSelection, sectionName, notes, subtaskTitles in
-                            if let start = pendingStartMin, let end = pendingEndMin {
-                                onCreateTask(
-                                    title.isEmpty ? "New Task" : title,
-                                    start,
-                                    end,
-                                    containerSelection,
-                                    sectionName,
-                                    notes,
-                                    subtaskTitles
-                                )
-                            }
-                            showNewTaskPopover = false
-                            pendingStartMin = nil
-                            pendingEndMin = nil
-                        },
-                        onCreateBundle: { title, selectedTasks in
-                            if let start = pendingStartMin, let end = pendingEndMin {
-                                onCreateBundle(title.isEmpty ? "Task Bundle" : title, start, end, selectedTasks)
-                            }
-                            showNewTaskPopover = false
-                            pendingStartMin = nil
-                            pendingEndMin = nil
-                        },
-                        onCreateEvent: onCreateEvent == nil ? nil : { title, calendarID, notes in
-                            if let start = pendingStartMin, let end = pendingEndMin {
-                                onCreateEvent?(title.isEmpty ? "New Event" : title, start, end, calendarID, notes)
-                            }
-                            showNewTaskPopover = false
-                            pendingStartMin = nil
-                            pendingEndMin = nil
-                        },
-                        onCancel: {
-                            showNewTaskPopover = false
-                            pendingStartMin = nil
-                            pendingEndMin = nil
-                        },
-                        defaultsToCalendarEvent: prefersCalendarEventCreation
-                    )
-                )
+                quickCreatePopover(start: start, end: end)
             }
 
             TimelineDropPreviewOverlay(
@@ -272,16 +154,8 @@ struct TimelineDayCanvas: View {
                 onCreateBundleFromTasks: { targetTask, draggedTask in
                     _ = SchedulingActions.createBundle(from: targetTask, adding: draggedTask, in: modelContext)
                 },
-                onTaskSelected: {
-                    clearDraftCreation()
-                    selectedEventID = nil
-                    selectedBundleID = nil
-                },
-                onBundleSelected: {
-                    clearDraftCreation()
-                    selectedEventID = nil
-                    selectedTaskID = nil
-                }
+                onTaskSelected: selectTaskBlock,
+                onBundleSelected: selectBundleBlock
             )
 
             TimelineCurrentTimeOverlay(
@@ -295,6 +169,158 @@ struct TimelineDayCanvas: View {
         }
         .frame(width: width, height: metrics.totalHeight)
         .coordinateSpace(name: "timelineCanvas")
+    }
+
+    private func resetCanvasSelection() {
+        TimelineDayCanvasStateSupport.resetCanvasSelection(
+            selectedTaskID: &selectedTaskID,
+            selectedEventID: &selectedEventID,
+            activeDragTaskID: &activeDragTaskID,
+            selectedBundleID: &selectedBundleID,
+            activeDragBundleID: &activeDragBundleID,
+            dragStartMin: &dragStartMin,
+            dragEndMin: &dragEndMin,
+            pendingStartMin: &pendingStartMin,
+            pendingEndMin: &pendingEndMin,
+            showNewTaskPopover: &showNewTaskPopover
+        )
+    }
+
+    private func clearCreateGridSelection() {
+        clearDraftCreation()
+        selectedTaskID = nil
+        selectedBundleID = nil
+        activeDragTaskID = nil
+        activeDragBundleID = nil
+    }
+
+    private func beginDraftSelection(startMin: Int, endMin: Int) {
+        selectedBundleID = nil
+        activeDragBundleID = nil
+        TimelineDayCanvasStateSupport.beginDraftSelection(
+            startMin: startMin,
+            endMin: endMin,
+            dragStartMin: &dragStartMin,
+            dragEndMin: &dragEndMin,
+            pendingStartMin: &pendingStartMin,
+            pendingEndMin: &pendingEndMin,
+            showNewTaskPopover: &showNewTaskPopover,
+            selectedTaskID: &selectedTaskID
+        )
+    }
+
+    private func commitDraftSelection(startMin: Int, endMin: Int) {
+        TimelineDayCanvasStateSupport.commitDraftSelection(
+            startMin: startMin,
+            endMin: endMin,
+            dragStartMin: &dragStartMin,
+            dragEndMin: &dragEndMin,
+            pendingStartMin: &pendingStartMin,
+            pendingEndMin: &pendingEndMin,
+            showNewTaskPopover: &showNewTaskPopover
+        )
+    }
+
+    private func selectTaskBlock() {
+        clearDraftCreation()
+        selectedEventID = nil
+        selectedBundleID = nil
+    }
+
+    private func selectBundleBlock() {
+        clearDraftCreation()
+        selectedEventID = nil
+        selectedTaskID = nil
+    }
+
+    private func finishDraftCreation() {
+        showNewTaskPopover = false
+        pendingStartMin = nil
+        pendingEndMin = nil
+    }
+
+    private func quickCreatePopover(start: Int, end: Int) -> AnyView {
+        AnyView(
+            QuickCreateChoicePopover(
+                startMin: start,
+                endMin: end,
+                dateKey: dateKey,
+                onCreateTask: { title, containerSelection, sectionName, notes, subtaskTitles in
+                    if let start = pendingStartMin, let end = pendingEndMin {
+                        onCreateTask(
+                            title.isEmpty ? "New Task" : title,
+                            start,
+                            end,
+                            containerSelection,
+                            sectionName,
+                            notes,
+                            subtaskTitles
+                        )
+                    }
+                    finishDraftCreation()
+                },
+                onCreateBundle: { title, selectedTasks in
+                    if let start = pendingStartMin, let end = pendingEndMin {
+                        onCreateBundle(title.isEmpty ? "Task Bundle" : title, start, end, selectedTasks)
+                    }
+                    finishDraftCreation()
+                },
+                onCreateEvent: onCreateEvent == nil ? nil : { title, calendarID, notes in
+                    if let start = pendingStartMin, let end = pendingEndMin {
+                        onCreateEvent?(title.isEmpty ? "New Event" : title, start, end, calendarID, notes)
+                    }
+                    finishDraftCreation()
+                },
+                onCancel: finishDraftCreation,
+                defaultsToCalendarEvent: prefersCalendarEventCreation
+            )
+        )
+    }
+
+    private func blockedFrames(
+        layouts: [TimelineBlockLayout],
+        bundleLayouts: [TimelineBundleLayout],
+        eventLayouts: [TimelineEventLayout]
+    ) -> [TimelineBlockFrame] {
+        layouts.map { layout in
+            timelineFrame(
+                startMinute: layout.task.scheduledStartMin,
+                durationMinutes: layout.task.estimatedMinutes,
+                column: layout.column,
+                totalColumns: layout.totalColumns
+            )
+        } + bundleLayouts.map { layout in
+            timelineFrame(
+                startMinute: layout.bundle.startMin,
+                durationMinutes: layout.bundle.durationMinutes,
+                column: layout.column,
+                totalColumns: layout.totalColumns
+            )
+        } + eventLayouts.map { layout in
+            timelineFrame(
+                startMinute: layout.item.startMin,
+                durationMinutes: layout.item.durationMinutes,
+                column: layout.column,
+                totalColumns: layout.totalColumns
+            )
+        }
+    }
+
+    private func timelineFrame(
+        startMinute: Int,
+        durationMinutes: Int,
+        column: Int,
+        totalColumns: Int
+    ) -> TimelineBlockFrame {
+        computeTimelineBlockFrame(
+            startMinute: startMinute,
+            durationMinutes: durationMinutes,
+            column: column,
+            totalColumns: totalColumns,
+            totalWidth: width,
+            metrics: metrics,
+            style: style
+        )
     }
 }
 #endif

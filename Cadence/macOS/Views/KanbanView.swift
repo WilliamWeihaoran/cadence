@@ -117,102 +117,7 @@ struct ListSectionKanbanColumn: View {
 
             Divider().background(Theme.borderSubtle)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(activeTasks) { task in
-                        KanbanCard(task: task)
-                            .overlay(alignment: .top) {
-                                if dragOverTaskID == task.id {
-                                    Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
-                                }
-                            }
-                            .animation(.easeInOut(duration: 0.15), value: dragOverTaskID)
-                            .draggable(task.id.uuidString)
-                            .dropDestination(for: String.self) { items, _ in
-                                guard let payload = items.first,
-                                      let droppedID = taskID(from: payload),
-                                      droppedID != task.id,
-                                      let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
-                                moveTask(droppedTask, before: task)
-                                return true
-                            } isTargeted: { isOver in
-                                if isOver { dragOverTaskID = task.id }
-                                else if dragOverTaskID == task.id { dragOverTaskID = nil }
-                            }
-                    }
-
-                    if !completedTasks.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.18)) {
-                                    showDoneTasks.toggle()
-                                }
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: showDoneTasks ? "chevron.down" : "chevron.right")
-                                        .font(.system(size: 10, weight: .semibold))
-                                    Text("Completed")
-                                        .font(.system(size: 11, weight: .semibold))
-                                    Text("\(completedTasks.count)")
-                                        .font(.system(size: 10, weight: .medium))
-                                        .foregroundStyle(Theme.green)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Theme.green.opacity(0.12))
-                                        .clipShape(Capsule())
-                                    Spacer()
-                                }
-                                .foregroundStyle(Theme.dim)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 9)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(Theme.surface.opacity(0.5))
-                                )
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .strokeBorder(Theme.borderSubtle.opacity(0.75))
-                                }
-                                .contentShape(RoundedRectangle(cornerRadius: 8))
-                            }
-                            .buttonStyle(.cadencePlain)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 4)
-
-                            if showDoneTasks {
-                                VStack(spacing: 6) {
-                                    ForEach(completedTasks) { task in
-                                        KanbanCard(task: task)
-                                            .draggable(task.id.uuidString)
-                                            .dropDestination(for: String.self) { items, _ in
-                                                guard let payload = items.first,
-                                                      let droppedID = taskID(from: payload),
-                                                      droppedID != task.id,
-                                                      let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
-                                                moveTask(droppedTask, before: task)
-                                                return true
-                                            }
-                                    }
-                                }
-                                .transition(
-                                    .asymmetric(
-                                        insertion: .opacity.combined(with: .scale(scale: 0.985, anchor: .top)),
-                                        removal: .opacity
-                                    )
-                                )
-                            }
-                        }
-                        .padding(.top, 6)
-                    }
-                }
-                .padding(8)
-            }
-            .frame(minHeight: 200)
-            .background(
-                RoundedRectangle(cornerRadius: 0)
-                    .fill(.clear)
-            )
+            columnTaskScroll
         }
         .frame(width: kanbanColumnWidth)
         .background(columnBackground)
@@ -274,6 +179,124 @@ struct ListSectionKanbanColumn: View {
                 hoveredSectionManager.endHovering(id: section.id)
             }
         }
+    }
+
+    private var columnTaskScroll: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                activeTaskCards
+                completedTaskSection
+            }
+            .padding(8)
+        }
+        .frame(minHeight: 200)
+        .background(
+            RoundedRectangle(cornerRadius: 0)
+                .fill(.clear)
+        )
+    }
+
+    @ViewBuilder
+    private var activeTaskCards: some View {
+        ForEach(activeTasks) { task in
+            kanbanCard(task, showsDropIndicator: dragOverTaskID == task.id)
+                .dropDestination(for: String.self) { items, _ in
+                    handleTaskDrop(items: items, before: task)
+                } isTargeted: { isOver in
+                    if isOver { dragOverTaskID = task.id }
+                    else if dragOverTaskID == task.id { dragOverTaskID = nil }
+                }
+        }
+    }
+
+    @ViewBuilder
+    private var completedTaskSection: some View {
+        if !completedTasks.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                completedTasksToggle
+
+                if showDoneTasks {
+                    completedTaskCards
+                }
+            }
+            .padding(.top, 6)
+        }
+    }
+
+    private var completedTasksToggle: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                showDoneTasks.toggle()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: showDoneTasks ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("Completed")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("\(completedTasks.count)")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.green)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Theme.green.opacity(0.12))
+                    .clipShape(Capsule())
+                Spacer()
+            }
+            .foregroundStyle(Theme.dim)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Theme.surface.opacity(0.5))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Theme.borderSubtle.opacity(0.75))
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.cadencePlain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 4)
+    }
+
+    private var completedTaskCards: some View {
+        VStack(spacing: 6) {
+            ForEach(completedTasks) { task in
+                kanbanCard(task)
+                    .dropDestination(for: String.self) { items, _ in
+                        return handleTaskDrop(items: items, before: task)
+                    }
+            }
+        }
+        .transition(
+            .asymmetric(
+                insertion: .opacity.combined(with: .scale(scale: 0.985, anchor: .top)),
+                removal: .opacity
+            )
+        )
+    }
+
+    private func kanbanCard(_ task: AppTask, showsDropIndicator: Bool = false) -> some View {
+        KanbanCard(task: task)
+            .overlay(alignment: .top) {
+                if showsDropIndicator {
+                    Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: dragOverTaskID)
+            .draggable(task.id.uuidString)
+    }
+
+    private func handleTaskDrop(items: [String], before target: AppTask) -> Bool {
+        guard let payload = items.first,
+              let droppedID = taskID(from: payload),
+              droppedID != target.id,
+              let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
+        moveTask(droppedTask, before: target)
+        return true
     }
 
     private func presentNewTaskPanel() {

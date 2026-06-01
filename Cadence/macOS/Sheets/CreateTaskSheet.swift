@@ -55,191 +55,19 @@ struct CreateTaskSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-
-            // ── Sheet-local keyboard shortcuts ─────────────────────────────────
-            ZStack {
-                Button("") { setDoToday() }
-                    .keyboardShortcut("t", modifiers: .command)
-                Button("") { showDoPicker = true }
-                    .keyboardShortcut("t", modifiers: [.command, .shift])
-                Button("") { setDueToday() }
-                    .keyboardShortcut("d", modifiers: .command)
-                Button("") { showDuePicker = true }
-                    .keyboardShortcut("d", modifiers: [.command, .shift])
-                Button("") { cyclePriority() }
-                    .keyboardShortcut("p", modifiers: .command)
-            }
-            .frame(width: 0, height: 0)
-            .clipped()
-
-            // ── Title ─────────────────────────────────────────────────────────
-            HStack(alignment: .center, spacing: 8) {
-                priorityMarkButton
-
-                TaskTitleEntryField(
-                    title: $title,
-                    priority: $selectedPriority,
-                    placeholder: "What needs doing?",
-                    font: .system(size: 17, weight: .semibold),
-                    autofocus: true,
-                    contexts: contexts,
-                    areas: areas,
-                    projects: projects,
-                    allTags: tags,
-                    containerSelection: $selectedContainer,
-                    sectionName: $selectedSectionName,
-                    selectedTags: $selectedTags,
-                    onCreateTag: createTag,
-                    onDateNudge: nudgeDoDate
-                ) {
-                    if !TaskTitleSupport.isEmpty(title) { createTask() }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 6)
-
-            // ── Notes ────────────────────────────────────────────────────────
-            ZStack(alignment: .topLeading) {
-                if notes.isEmpty {
-                    Text("Notes")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.dim.opacity(0.45))
-                        .padding(.top, 1)
-                        .padding(.leading, 5)
-                        .allowsHitTesting(false)
-                }
-                TextEditor(text: $notes)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.text)
-                    .scrollContentBackground(.hidden)
-                    .frame(height: 40)
-            }
-            .padding(.leading, 52)
-            .padding(.trailing, 16)
-            .padding(.bottom, 6)
-
-            // ── Subtasks ──────────────────────────────────────────────────────
-            if !subtaskTitles.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(subtaskTitles.indices, id: \.self) { i in
-                        HStack(spacing: 8) {
-                            Circle()
-                                .strokeBorder(Theme.dim.opacity(0.3), lineWidth: 1)
-                                .frame(width: 12, height: 12)
-                            TextField("Subtask", text: $subtaskTitles[i])
-                                .textFieldStyle(.plain)
-                                .font(.system(size: 14))
-                                .foregroundStyle(Theme.text)
-                                .focused($focusedSubtask, equals: i)
-                                .onSubmit {
-                                    subtaskTitles.append("")
-                                    focusedSubtask = subtaskTitles.count - 1
-                                }
-                            Button {
-                                subtaskTitles.remove(at: i)
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(Theme.dim.opacity(0.5))
-                            }
-                            .buttonStyle(.cadencePlain)
-                        }
-                        .padding(.leading, 52)
-                        .padding(.trailing, 16)
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-
-            Button {
-                subtaskTitles.append("")
-                focusedSubtask = subtaskTitles.count - 1
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .semibold))
-                    Text("Add Subtask")
-                        .font(.system(size: 12))
-                }
-                .foregroundStyle(Theme.dim.opacity(0.65))
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.cadencePlain)
-            .padding(.leading, 52)
-            .padding(.bottom, 4)
+            keyboardShortcuts
+            titleSection
+            notesSection
+            subtasksSection
+            addSubtaskButton
 
             Divider().background(Theme.borderSubtle)
 
-            // ── Chip strip: list/section left, dates + priority right ─────────
-            HStack(spacing: 4) {
-                ContainerPickerBadge(
-                    selection: $selectedContainer,
-                    contexts: contexts,
-                    areas: areas,
-                    projects: projects
-                )
-
-                if showsSectionPicker {
-                    TaskSectionPickerBadge(
-                        selection: $selectedSectionName,
-                        sections: availableSections
-                    )
-                }
-
-                Spacer(minLength: 0)
-
-                TaskDateChip(label: "Do Date",
-                             icon: "calendar",
-                             activeColor: Theme.blue,
-                             isOn: $hasDoDate, date: $doDate,
-                             showPicker: $showDoPicker)
-
-                TaskDateChip(label: "Due Date",
-                             icon: "flag.fill",
-                             activeColor: Theme.red,
-                             isOn: $hasDueDate, date: $dueDate,
-                             showPicker: $showDuePicker)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(Theme.surfaceElevated)
+            pickerStrip
 
             Divider().background(Theme.borderSubtle)
 
-            // ── Footer ────────────────────────────────────────────────────────
-            HStack(spacing: 8) {
-                TagPickerControl(
-                    selectedTags: $selectedTags,
-                    allTags: tags,
-                    onCreateTag: createTag,
-                    showsLabel: true
-                )
-                .layoutPriority(1)
-
-                Spacer(minLength: 0)
-
-                CadenceActionButton(
-                    title: "Cancel",
-                    role: .ghost,
-                    size: .regular
-                ) {
-                    dismiss()
-                }
-                CadenceActionButton(
-                    title: "Create Task",
-                    role: .primary,
-                    size: .regular,
-                    isDisabled: trimmedTitle.isEmpty,
-                    shortcut: KeyboardShortcut(.return, modifiers: [.command])
-                ) {
-                    createTask()
-                }
-                    .padding(.trailing, 12)
-            }
-            .padding(.vertical, 2)
-            .background(Theme.surfaceElevated)
+            footer
         }
         .frame(width: 600)
         .background(Theme.surface)
@@ -247,6 +75,199 @@ struct CreateTaskSheet: View {
             normalizeSelectedSection()
         }
         .onChange(of: selectedContainer) { _, _ in normalizeSelectedSection() }
+    }
+
+    private var keyboardShortcuts: some View {
+        ZStack {
+            Button("") { setDoToday() }
+                .keyboardShortcut("t", modifiers: .command)
+            Button("") { showDoPicker = true }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+            Button("") { setDueToday() }
+                .keyboardShortcut("d", modifiers: .command)
+            Button("") { showDuePicker = true }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+            Button("") { cyclePriority() }
+                .keyboardShortcut("p", modifiers: .command)
+        }
+        .frame(width: 0, height: 0)
+        .clipped()
+    }
+
+    private var titleSection: some View {
+        HStack(alignment: .center, spacing: 8) {
+            priorityMarkButton
+
+            TaskTitleEntryField(
+                title: $title,
+                priority: $selectedPriority,
+                placeholder: "What needs doing?",
+                font: .system(size: 17, weight: .semibold),
+                autofocus: true,
+                contexts: contexts,
+                areas: areas,
+                projects: projects,
+                allTags: tags,
+                containerSelection: $selectedContainer,
+                sectionName: $selectedSectionName,
+                selectedTags: $selectedTags,
+                onCreateTag: createTag,
+                onDateNudge: nudgeDoDate
+            ) {
+                if !TaskTitleSupport.isEmpty(title) { createTask() }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 6)
+    }
+
+    private var notesSection: some View {
+        ZStack(alignment: .topLeading) {
+            if notes.isEmpty {
+                Text("Notes")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.dim.opacity(0.45))
+                    .padding(.top, 1)
+                    .padding(.leading, 5)
+                    .allowsHitTesting(false)
+            }
+            TextEditor(text: $notes)
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.text)
+                .scrollContentBackground(.hidden)
+                .frame(height: 40)
+        }
+        .padding(.leading, 52)
+        .padding(.trailing, 16)
+        .padding(.bottom, 6)
+    }
+
+    @ViewBuilder
+    private var subtasksSection: some View {
+        if !subtaskTitles.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(subtaskTitles.indices, id: \.self) { index in
+                    subtaskRow(at: index)
+                }
+            }
+        }
+    }
+
+    private func subtaskRow(at index: Int) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .strokeBorder(Theme.dim.opacity(0.3), lineWidth: 1)
+                .frame(width: 12, height: 12)
+            TextField("Subtask", text: $subtaskTitles[index])
+                .textFieldStyle(.plain)
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.text)
+                .focused($focusedSubtask, equals: index)
+                .onSubmit(addNextSubtask)
+            Button {
+                subtaskTitles.remove(at: index)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.dim.opacity(0.5))
+            }
+            .buttonStyle(.cadencePlain)
+        }
+        .padding(.leading, 52)
+        .padding(.trailing, 16)
+        .padding(.vertical, 4)
+    }
+
+    private var addSubtaskButton: some View {
+        Button(action: addNextSubtask) {
+            HStack(spacing: 5) {
+                Image(systemName: "plus")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("Add Subtask")
+                    .font(.system(size: 12))
+            }
+            .foregroundStyle(Theme.dim.opacity(0.65))
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.cadencePlain)
+        .padding(.leading, 52)
+        .padding(.bottom, 4)
+    }
+
+    private var pickerStrip: some View {
+        HStack(spacing: 4) {
+            ContainerPickerBadge(
+                selection: $selectedContainer,
+                contexts: contexts,
+                areas: areas,
+                projects: projects
+            )
+
+            if showsSectionPicker {
+                TaskSectionPickerBadge(
+                    selection: $selectedSectionName,
+                    sections: availableSections
+                )
+            }
+
+            Spacer(minLength: 0)
+
+            TaskDateChip(label: "Do Date",
+                         icon: "calendar",
+                         activeColor: Theme.blue,
+                         isOn: $hasDoDate, date: $doDate,
+                         showPicker: $showDoPicker)
+
+            TaskDateChip(label: "Due Date",
+                         icon: "flag.fill",
+                         activeColor: Theme.red,
+                         isOn: $hasDueDate, date: $dueDate,
+                         showPicker: $showDuePicker)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Theme.surfaceElevated)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            TagPickerControl(
+                selectedTags: $selectedTags,
+                allTags: tags,
+                onCreateTag: createTag,
+                showsLabel: true
+            )
+            .layoutPriority(1)
+
+            Spacer(minLength: 0)
+
+            CadenceActionButton(
+                title: "Cancel",
+                role: .ghost,
+                size: .regular
+            ) {
+                dismiss()
+            }
+            CadenceActionButton(
+                title: "Create Task",
+                role: .primary,
+                size: .regular,
+                isDisabled: trimmedTitle.isEmpty,
+                shortcut: KeyboardShortcut(.return, modifiers: [.command])
+            ) {
+                createTask()
+            }
+            .padding(.trailing, 12)
+        }
+        .padding(.vertical, 2)
+        .background(Theme.surfaceElevated)
+    }
+
+    private func addNextSubtask() {
+        subtaskTitles.append("")
+        focusedSubtask = subtaskTitles.count - 1
     }
 
     // MARK: - Priority chip

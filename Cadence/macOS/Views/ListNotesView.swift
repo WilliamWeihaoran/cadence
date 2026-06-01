@@ -209,155 +209,190 @@ struct ListNotesView: View {
 
     private var notesList: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Notes")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.muted)
-                Spacer()
-                Menu {
-                    Button("New Note") {
-                        addNote()
-                    }
-                    Button("New Note in Folder...") {
-                        folderSheetRequest = NoteFolderSheetRequest(mode: .newNote)
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.blue)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-
-            HStack(spacing: 7) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                TextField("Search notes", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.text)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Theme.bg.opacity(0.45))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Theme.borderSubtle.opacity(0.8), lineWidth: 1)
-            )
-            .padding(.horizontal, 10)
-            .padding(.bottom, filterableTags.isEmpty ? 10 : 6)
-
+            notesListHeader
+            notesSearchField
             TagFilterBar(tags: filterableTags, selectedSlugs: $selectedTagFilterSlugs)
 
             Divider().background(Theme.borderSubtle)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    if !filteredListNoteGroups.isEmpty {
-                        collapsibleNoteSection(
-                            title: "Notes",
-                            count: filteredListNotes.count,
-                            isCollapsed: $isListNotesCollapsed
-                        ) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                ForEach(filteredListNoteGroups) { group in
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        if !group.folderPath.isEmpty {
-                                            Text(group.displayName)
-                                                .font(.system(size: 10, weight: .semibold))
-                                                .foregroundStyle(Theme.dim)
-                                                .padding(.horizontal, 12)
-                                        }
-                                        ForEach(group.notes) { note in
-                                            ListNoteRow(note: note, isSelected: selectedListNoteID == note.id)
-                                                .onTapGesture {
-                                                    openListNote(note)
-                                                }
-                                                .contextMenu {
-                                                    Button("Copy Note Link") {
-                                                        NoteActionSupport.copyMarkdownLink(to: note)
-                                                    }
-                                                    Menu("Move to Folder") {
-                                                        Button("No Folder") {
-                                                            note.folderPath = ""
-                                                        }
-                                                        ForEach(listNoteFolderNames, id: \.self) { folder in
-                                                            Button(folder) {
-                                                                note.folderPath = folder
-                                                            }
-                                                        }
-                                                        Button("New Folder...") {
-                                                            folderSheetRequest = NoteFolderSheetRequest(mode: .moveNote(note.id))
-                                                        }
-                                                    }
-                                                    Button(role: .destructive) {
-                                                        deleteNote(note)
-                                                    } label: {
-                                                        Label("Delete", systemImage: "trash")
-                                                    }
-                                                }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+            notesScroll
+            notesListEmptyState
+        }
+    }
 
-                    if !filteredEventNotes.isEmpty {
-                        collapsibleNoteSection(
-                            title: "Event Notes",
-                            count: filteredEventNotes.count,
-                            isCollapsed: $isEventNotesCollapsed
-                        ) {
-                            ForEach(filteredEventNotes) { note in
-                                MeetingNoteListRow(note: note, isSelected: selectedEventNoteID == note.id, showsPreview: false)
-                                    .onTapGesture {
-                                        select(.event(note.id))
-                                    }
-                            }
-                        }
-                    }
+    private var notesListHeader: some View {
+        HStack {
+            Text("Notes")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.muted)
+            Spacer()
+            Menu {
+                Button("New Note") {
+                    addNote()
+                }
+                Button("New Note in Folder...") {
+                    folderSheetRequest = NoteFolderSheetRequest(mode: .newNote)
+                }
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
 
-                    if !filteredTaskNotes.isEmpty {
-                        collapsibleNoteSection(
-                            title: "Task Notes",
-                            count: filteredTaskNotes.count,
-                            isCollapsed: $isTaskNotesCollapsed
-                        ) {
-                            ForEach(filteredTaskNotes) { task in
-                                TaskNoteListRow(task: task, isSelected: selectedTaskNoteID == task.id)
-                                    .onTapGesture {
-                                        select(.task(task.id))
-                                    }
-                            }
-                        }
+    private var notesSearchField: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+            TextField("Search notes", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.text)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Theme.bg.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Theme.borderSubtle.opacity(0.8), lineWidth: 1)
+        )
+        .padding(.horizontal, 10)
+        .padding(.bottom, filterableTags.isEmpty ? 10 : 6)
+    }
+
+    private var notesScroll: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                listNoteSection
+                eventNoteSection
+                taskNoteSection
+            }
+            .padding(8)
+        }
+    }
+
+    @ViewBuilder
+    private var listNoteSection: some View {
+        if !filteredListNoteGroups.isEmpty {
+            collapsibleNoteSection(
+                title: "Notes",
+                count: filteredListNotes.count,
+                isCollapsed: $isListNotesCollapsed
+            ) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(filteredListNoteGroups) { group in
+                        listNoteGroup(group)
                     }
                 }
-                .padding(8)
             }
+        }
+    }
 
-            if listNotes.isEmpty && eventNotes.isEmpty && taskNotes.isEmpty {
-                Spacer()
-                EmptyStateView(
-                    message: "No notes",
-                    subtitle: "Tap + to create one",
-                    icon: "doc.text"
-                )
-                Spacer()
-            } else if filteredListNotes.isEmpty && filteredEventNotes.isEmpty && filteredTaskNotes.isEmpty {
-                Spacer()
-                EmptyStateView(
-                    message: "No matches",
-                    subtitle: "Try a different search",
-                    icon: "magnifyingglass"
-                )
-                Spacer()
+    private func listNoteGroup(_ group: ListNoteFolderGroup) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if !group.folderPath.isEmpty {
+                Text(group.displayName)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 12)
             }
+            ForEach(group.notes) { note in
+                listNoteRow(note)
+            }
+        }
+    }
+
+    private func listNoteRow(_ note: Note) -> some View {
+        ListNoteRow(note: note, isSelected: selectedListNoteID == note.id)
+            .onTapGesture {
+                openListNote(note)
+            }
+            .contextMenu {
+                Button("Copy Note Link") {
+                    NoteActionSupport.copyMarkdownLink(to: note)
+                }
+                Menu("Move to Folder") {
+                    Button("No Folder") {
+                        note.folderPath = ""
+                    }
+                    ForEach(listNoteFolderNames, id: \.self) { folder in
+                        Button(folder) {
+                            note.folderPath = folder
+                        }
+                    }
+                    Button("New Folder...") {
+                        folderSheetRequest = NoteFolderSheetRequest(mode: .moveNote(note.id))
+                    }
+                }
+                Button(role: .destructive) {
+                    deleteNote(note)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var eventNoteSection: some View {
+        if !filteredEventNotes.isEmpty {
+            collapsibleNoteSection(
+                title: "Event Notes",
+                count: filteredEventNotes.count,
+                isCollapsed: $isEventNotesCollapsed
+            ) {
+                ForEach(filteredEventNotes) { note in
+                    MeetingNoteListRow(note: note, isSelected: selectedEventNoteID == note.id, showsPreview: false)
+                        .onTapGesture {
+                            select(.event(note.id))
+                        }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var taskNoteSection: some View {
+        if !filteredTaskNotes.isEmpty {
+            collapsibleNoteSection(
+                title: "Task Notes",
+                count: filteredTaskNotes.count,
+                isCollapsed: $isTaskNotesCollapsed
+            ) {
+                ForEach(filteredTaskNotes) { task in
+                    TaskNoteListRow(task: task, isSelected: selectedTaskNoteID == task.id)
+                        .onTapGesture {
+                            select(.task(task.id))
+                        }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var notesListEmptyState: some View {
+        if listNotes.isEmpty && eventNotes.isEmpty && taskNotes.isEmpty {
+            Spacer()
+            EmptyStateView(
+                message: "No notes",
+                subtitle: "Tap + to create one",
+                icon: "doc.text"
+            )
+            Spacer()
+        } else if filteredListNotes.isEmpty && filteredEventNotes.isEmpty && filteredTaskNotes.isEmpty {
+            Spacer()
+            EmptyStateView(
+                message: "No matches",
+                subtitle: "Try a different search",
+                icon: "magnifyingglass"
+            )
+            Spacer()
         }
     }
 
