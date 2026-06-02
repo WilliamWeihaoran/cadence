@@ -5,6 +5,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case appearance
     case navigation
     case sidebar
+    case templates
     case contexts
     case lists
     case tags
@@ -22,6 +23,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .dataSafety: return "Data Safety"
         case .navigation: return "Navigation"
         case .sidebar: return "Sidebar"
+        case .templates: return "Templates"
         case .contexts: return "Contexts"
         case .tags: return "Tags"
         case .lists: return "Lists"
@@ -42,6 +44,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             return "Default list behavior."
         case .sidebar:
             return "Tabs, order, and visibility."
+        case .templates:
+            return "Reusable note scaffolds."
         case .contexts:
             return "Active and archived contexts."
         case .tags:
@@ -67,6 +71,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             return "Choose the first page Cadence opens for lists without a saved page."
         case .sidebar:
             return "Arrange the main sidebar tabs and decide which ones stay visible."
+        case .templates:
+            return "Edit the templates available from the note sidebar. Defaults stay recoverable."
         case .contexts:
             return "Manage the top-level groups that organize your areas, projects, tasks, and habits."
         case .tags:
@@ -87,6 +93,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .dataSafety: return "externaldrive.fill.badge.timemachine"
         case .navigation: return "rectangle.stack.fill"
         case .sidebar: return "sidebar.left"
+        case .templates: return "doc.text.fill"
         case .contexts: return "square.stack.3d.up.fill"
         case .tags: return "tag.fill"
         case .lists: return "archivebox.fill"
@@ -102,6 +109,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .dataSafety: return Theme.amber
         case .navigation: return Theme.green
         case .sidebar: return Theme.amber
+        case .templates: return Theme.blue
         case .contexts: return Theme.red
         case .tags: return Theme.green
         case .lists: return Theme.amber
@@ -124,7 +132,7 @@ private struct SettingsCategoryGroup: Identifiable {
         ),
         SettingsCategoryGroup(
             title: "Organization",
-            categories: [.contexts, .lists, .tags]
+            categories: [.contexts, .lists, .tags, .templates]
         ),
         SettingsCategoryGroup(
             title: "Connections",

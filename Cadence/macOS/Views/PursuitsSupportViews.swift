@@ -51,15 +51,12 @@ struct PursuitContextGroupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: group.icon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color(hex: group.colorHex))
-                Text(group.title.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                Spacer()
-            }
+            CommitmentGroupHeader(
+                title: group.title,
+                icon: group.icon,
+                color: Color(hex: group.colorHex),
+                trailingText: "\(group.pursuits.count)"
+            )
 
             VStack(spacing: 9) {
                 ForEach(group.pursuits) { pursuit in
@@ -90,12 +87,13 @@ struct PursuitListCard: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 12) {
-                Image(systemName: pursuit.icon)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color(hex: pursuit.colorHex))
-                    .frame(width: 34, height: 34)
-                    .background(Color(hex: pursuit.colorHex).opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 9))
+                CommitmentIconTile(
+                    systemImage: pursuit.icon,
+                    color: Color(hex: pursuit.colorHex),
+                    size: 34,
+                    iconSize: 15,
+                    cornerRadius: 9
+                )
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(pursuit.title)
@@ -179,12 +177,14 @@ struct PursuitDetailView: View {
     private var hero: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 14) {
-                Image(systemName: pursuit.icon)
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(Color(hex: pursuit.colorHex))
-                    .frame(width: 54, height: 54)
-                    .background(Color(hex: pursuit.colorHex).opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                CommitmentIconTile(
+                    systemImage: pursuit.icon,
+                    color: Color(hex: pursuit.colorHex),
+                    size: 54,
+                    iconSize: 24,
+                    cornerRadius: 14,
+                    fillOpacity: 0.15
+                )
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
@@ -260,7 +260,7 @@ struct PursuitDetailView: View {
 
     @ViewBuilder
     private var goalsSection: some View {
-        PursuitSection(title: "Milestones", count: goals.count) {
+        PursuitSection(title: "Milestones", icon: "flag.fill", color: Theme.green, count: goals.count) {
             if goals.isEmpty {
                 PursuitEmptySectionText("No milestones in this pursuit yet.")
             } else {
@@ -275,7 +275,7 @@ struct PursuitDetailView: View {
 
     @ViewBuilder
     private var habitsSection: some View {
-        PursuitSection(title: "Habits", count: habits.count) {
+        PursuitSection(title: "Habits", icon: "flame.fill", color: Theme.amber, count: habits.count) {
             if habits.isEmpty {
                 PursuitEmptySectionText("No habits in this pursuit yet.")
             } else {
@@ -324,24 +324,19 @@ private struct PursuitSignalTile: View {
 
 private struct PursuitSection<Content: View>: View {
     let title: String
+    let icon: String
+    let color: Color
     let count: Int
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(title.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                Text("\(count)")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.text.opacity(0.72))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(Capsule())
-                Spacer()
-            }
+            CommitmentGroupHeader(
+                title: title,
+                icon: icon,
+                color: color,
+                trailingText: "\(count)"
+            )
             content
         }
         .padding(16)
@@ -360,12 +355,14 @@ private struct PursuitGoalRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "flag.fill")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color(hex: goal.colorHex))
-                .frame(width: 28, height: 28)
-                .background(Color(hex: goal.colorHex).opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+            CommitmentIconTile(
+                systemImage: "flag.fill",
+                color: Color(hex: goal.colorHex),
+                size: 28,
+                iconSize: 12,
+                cornerRadius: 8,
+                fillOpacity: 0.13
+            )
             VStack(alignment: .leading, spacing: 2) {
                 Text(goal.title)
                     .font(.system(size: 13, weight: .semibold))
@@ -393,12 +390,14 @@ private struct PursuitHabitRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: habit.icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color(hex: habit.colorHex))
-                .frame(width: 28, height: 28)
-                .background(Color(hex: habit.colorHex).opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+            CommitmentIconTile(
+                systemImage: habit.icon,
+                color: Color(hex: habit.colorHex),
+                size: 28,
+                iconSize: 12,
+                cornerRadius: 8,
+                fillOpacity: 0.13
+            )
             VStack(alignment: .leading, spacing: 2) {
                 Text(habit.title)
                     .font(.system(size: 13, weight: .semibold))
@@ -427,13 +426,7 @@ private struct PursuitEmptySectionText: View {
     }
 
     var body: some View {
-        Text(text)
-            .font(.system(size: 12))
-            .foregroundStyle(Theme.dim)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(Theme.surfaceElevated.opacity(0.36))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+        CommitmentInlineEmpty(text: text)
     }
 }
 
@@ -441,13 +434,7 @@ private struct PursuitStatusBadge: View {
     let status: PursuitStatus
 
     var body: some View {
-        Text(status.label)
-            .font(.system(size: 10, weight: .bold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.12))
-            .clipShape(Capsule())
+        CommitmentMetaChip(label: status.label, color: color)
     }
 
     private var color: Color {
@@ -463,17 +450,7 @@ private struct PursuitKindBadge: View {
     let kind: PursuitKind
 
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: kind.systemImage)
-                .font(.system(size: 9, weight: .bold))
-            Text(kind.label)
-                .font(.system(size: 10, weight: .bold))
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(color.opacity(0.12))
-        .clipShape(Capsule())
+        CommitmentMetaChip(label: kind.label, color: color, systemImage: kind.systemImage)
     }
 
     private var color: Color {

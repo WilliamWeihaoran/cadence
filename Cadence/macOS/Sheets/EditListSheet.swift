@@ -177,12 +177,24 @@ struct EditAreaSheet: View {
     }
 
     private func toggleDone() {
-        area.status = area.isDone ? .active : .done
+        if area.isDone {
+            area.status = .active
+        } else {
+            area.status = .done
+            TaskContainerLifecycleService.completeRemainingActiveTasks(in: area, includingChildProjects: true, in: modelContext)
+        }
+        try? modelContext.save()
         dismiss()
     }
 
     private func toggleArchived() {
-        area.status = area.isArchived ? .active : .archived
+        if area.isArchived {
+            area.status = .active
+        } else {
+            area.status = .archived
+            TaskContainerLifecycleService.cancelRemainingActiveTasks(in: area, includingChildProjects: true, in: modelContext)
+        }
+        try? modelContext.save()
         dismiss()
     }
 
@@ -376,12 +388,24 @@ struct EditProjectSheet: View {
     }
 
     private func toggleDone() {
-        project.status = project.isDone ? .active : .done
+        if project.isDone {
+            project.status = .active
+        } else {
+            project.status = .done
+            TaskContainerLifecycleService.completeRemainingActiveTasks(in: project, in: modelContext)
+        }
+        try? modelContext.save()
         dismiss()
     }
 
     private func toggleArchived() {
-        project.status = project.isArchived ? .active : .archived
+        if project.isArchived {
+            project.status = .active
+        } else {
+            project.status = .archived
+            TaskContainerLifecycleService.cancelRemainingActiveTasks(in: project, in: modelContext)
+        }
+        try? modelContext.save()
         dismiss()
     }
 

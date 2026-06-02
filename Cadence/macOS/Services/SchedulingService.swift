@@ -62,15 +62,13 @@ enum SchedulingActions {
             dueDateKey: "",
             scheduledDateKey: dateKey,
             subtaskTitles: subtaskTitles,
-            tags: []
+            tags: [],
+            scheduledStartMin: startMin,
+            estimatedMinutes: max(5, endMin - startMin)
         )
         guard let task = TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: context) else {
             return
         }
-
-        task.scheduledDate = dateKey
-        task.scheduledStartMin = startMin
-        task.estimatedMinutes = max(5, endMin - startMin)
     }
 
     /// Move an existing task to a new date/time. Assigns a 30-min default if the task has no estimate.

@@ -24,8 +24,12 @@ enum KanbanCardPresentation {
 
 struct KanbanMetaChip: View {
     let item: KanbanMetaItem
+    var isFocused: Bool = false
+    var onHoverChanged: (Bool) -> Void = { _ in }
+    @State private var isHovered = false
 
     var body: some View {
+        let focused = isFocused || isHovered
         HStack(spacing: 5) {
             Image(systemName: item.icon)
                 .font(.system(size: 9, weight: .semibold))
@@ -41,8 +45,24 @@ struct KanbanMetaChip: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface.opacity(0.66))
+        .background {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Theme.surface.opacity(focused ? 0.86 : 0.66))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(item.tint.opacity(focused ? 0.10 : 0))
+                }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(item.tint.opacity(focused ? 0.28 : 0), lineWidth: 1)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .onHover { hovering in
+            isHovered = hovering
+            onHoverChanged(hovering)
+        }
     }
 }
 
@@ -72,6 +92,8 @@ struct KanbanCardHeader: View {
     let isStruckThrough: Bool
     let durationBadge: String?
     let onDurationTap: (() -> Void)?
+    var isDurationFocused = false
+    var onDurationHoverChanged: (Bool) -> Void = { _ in }
     let completionButtonIcon: String
     let completionButtonColor: Color
     var completionProgress: Double?
@@ -95,7 +117,12 @@ struct KanbanCardHeader: View {
                 .contentShape(Rectangle())
 
             if let durationBadge {
-                KanbanDurationBadge(duration: durationBadge, onTap: onDurationTap)
+                KanbanDurationBadge(
+                    duration: durationBadge,
+                    onTap: onDurationTap,
+                    isFocused: isDurationFocused,
+                    onHoverChanged: onDurationHoverChanged
+                )
                     .padding(.top, -1)
             }
         }
@@ -106,6 +133,8 @@ struct KanbanCardScheduleTopRow: View {
     let startTime: String?
     let duration: String?
     let onDurationTap: (() -> Void)?
+    var isDurationFocused = false
+    var onDurationHoverChanged: (Bool) -> Void = { _ in }
 
     var body: some View {
         HStack(alignment: .center, spacing: 6) {
@@ -119,7 +148,12 @@ struct KanbanCardScheduleTopRow: View {
             Spacer(minLength: 8)
 
             if let duration {
-                KanbanDurationBadge(duration: duration, onTap: onDurationTap)
+                KanbanDurationBadge(
+                    duration: duration,
+                    onTap: onDurationTap,
+                    isFocused: isDurationFocused,
+                    onHoverChanged: onDurationHoverChanged
+                )
             }
         }
         .frame(height: 14)
@@ -129,6 +163,9 @@ struct KanbanCardScheduleTopRow: View {
 struct KanbanDurationBadge: View {
     let duration: String
     var onTap: (() -> Void)?
+    var isFocused = false
+    var onHoverChanged: (Bool) -> Void = { _ in }
+    @State private var isHovered = false
 
     var body: some View {
         Group {
@@ -137,22 +174,42 @@ struct KanbanDurationBadge: View {
                     label
                 }
                 .buttonStyle(.cadencePlain)
-                .help("Set scheduled time")
+                .help("Set duration")
             } else {
                 label
             }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .onHover { hovering in
+            isHovered = hovering
+            onHoverChanged(hovering)
         }
     }
 
     private var label: some View {
         Text(duration)
             .font(.system(size: 9.5, weight: .bold))
-            .foregroundStyle(Theme.dim)
+            .foregroundStyle(focused ? Theme.text : Theme.dim)
             .lineLimit(1)
             .padding(.horizontal, 5)
             .padding(.vertical, 1.5)
-            .background(Theme.surface.opacity(0.72))
+            .background {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Theme.surface.opacity(focused ? 0.92 : 0.72))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Theme.blue.opacity(focused ? 0.12 : 0))
+                    }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(Theme.blue.opacity(focused ? 0.30 : 0), lineWidth: 1)
+            }
             .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+    }
+
+    private var focused: Bool {
+        isFocused || isHovered
     }
 }
 

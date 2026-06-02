@@ -33,6 +33,7 @@ struct NoteEditorPane: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
+    @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
     @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var editorTextView: CadenceTextView?
     @State private var editorContent = ""
@@ -220,7 +221,7 @@ struct NoteEditorPane: View {
                     NoteMarkdownSidePanel(
                         outline: derivedState.outline,
                         metadata: derivedState.metadata,
-                        templates: NoteTemplateLibrary.templates(for: note.kind),
+                        templates: NoteTemplateLibrary.templates(for: note.kind, overridesRaw: noteTemplateOverridesRaw),
                         unlinkedMentions: derivedState.unlinkedMentions,
                         onJumpToOutline: jumpToOutline,
                         onInsertFrontmatter: insertFrontmatter,

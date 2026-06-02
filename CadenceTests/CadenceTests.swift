@@ -485,6 +485,63 @@ struct CadenceTests {
     }
 
     @MainActor
+    @Test func recurringEventOccurrenceIdentifiersKeepMeetingNotesSeparate() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let baseID = "recurring-event-id"
+        let firstOccurrence = try #require(calendar.date(from: DateComponents(year: 2026, month: 4, day: 29, hour: 10, minute: 0)))
+        let secondOccurrence = try #require(calendar.date(from: DateComponents(year: 2026, month: 5, day: 6, hour: 10, minute: 0)))
+        let firstID = CalendarEventIdentity.occurrenceIdentifier(
+            baseIdentifier: baseID,
+            occurrenceDate: firstOccurrence,
+            calendar: calendar
+        )
+        let secondID = CalendarEventIdentity.occurrenceIdentifier(
+            baseIdentifier: baseID,
+            occurrenceDate: secondOccurrence,
+            calendar: calendar
+        )
+        let firstNote = Note(
+            kind: .meeting,
+            title: "Planning Sync",
+            content: "First occurrence notes",
+            calendarEventID: firstID,
+            calendarID: "calendar-1",
+            eventDateKey: "2026-04-29",
+            eventStartMin: 600,
+            eventEndMin: 630
+        )
+
+        var insertedNote: Note?
+        let secondNote = try #require(EventNoteSupport.noteForEditing(
+            calendarEventID: secondID,
+            eventTitle: "Planning Sync",
+            calendarID: "calendar-1",
+            eventDateKey: "2026-05-06",
+            eventStartMin: 600,
+            eventEndMin: 630,
+            notes: [firstNote],
+            insert: { insertedNote = $0 }
+        ))
+
+        #expect(CalendarEventIdentity.lookupIdentifier(from: secondID) == baseID)
+        #expect(secondNote.id != firstNote.id)
+        #expect(insertedNote?.id == secondNote.id)
+        #expect(secondNote.calendarEventID == secondID)
+        #expect(firstNote.content == "First occurrence notes")
+    }
+
+    @Test func allDayEventDragPayloadKeepsOccurrenceIdentifierIntact() throws {
+        let rawIdentifier = "event-1#occurrence=2026-05-06:600"
+        let payload = CalendarEventDragPayload.allDayEventPayload(
+            from: "allDayEvent:2026-05-06|\(rawIdentifier)"
+        )
+
+        #expect(payload?.sourceDateKey == "2026-05-06")
+        #expect(payload?.eventIdentifier == rawIdentifier)
+        #expect(CalendarEventIdentity.lookupIdentifier(from: payload?.eventIdentifier ?? "") == "event-1")
+    }
+
+    @MainActor
     @Test func linkedCalendarMeetingNotesAreSortedAndScoped() throws {
         let older = Note(kind: .meeting, title: "Older", calendarEventID: "a", calendarID: "calendar-1", eventDateKey: "2026-04-28", eventStartMin: 900)
         let newer = Note(kind: .meeting, title: "Newer", calendarEventID: "b", calendarID: "calendar-1", eventDateKey: "2026-04-29", eventStartMin: 600)

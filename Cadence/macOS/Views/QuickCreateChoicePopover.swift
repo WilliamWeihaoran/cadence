@@ -4,7 +4,6 @@ import EventKit
 import SwiftData
 
 struct QuickCreateChoicePopover: View {
-    enum TildeMode { case none, list, section }
     enum Mode { case timeBlock, calendarEvent, bundle }
 
     let startMin: Int
@@ -14,6 +13,7 @@ struct QuickCreateChoicePopover: View {
     let onCreateBundle: ((String, [AppTask]) -> Void)?
     let onCreateEvent: ((String, String, String) -> Void)?
     let onCancel: () -> Void
+    let usesTaskPanelForTaskCreation: Bool
 
     @Environment(CalendarManager.self) private var calendarManager
     @Query(sort: \AppTask.createdAt, order: .reverse) private var allTasks: [AppTask]
@@ -28,7 +28,7 @@ struct QuickCreateChoicePopover: View {
     @State private var subtaskTitles: [String] = []
     @State private var selectedContainer: TaskContainerSelection = .inbox
     @State private var selectedSectionName: String = TaskSectionDefaults.defaultName
-    @State private var tildeMode: TildeMode = .none
+    @State private var tildeMode: Bool = false
     @State private var tildeSearchQuery = ""
     @State private var tildeHighlightIdx = 0
     @State private var bundleTaskSearch = ""
@@ -45,6 +45,7 @@ struct QuickCreateChoicePopover: View {
         onCreateBundle: ((String, [AppTask]) -> Void)? = nil,
         onCreateEvent: ((String, String, String) -> Void)?,
         onCancel: @escaping () -> Void,
+        usesTaskPanelForTaskCreation: Bool = true,
         defaultsToCalendarEvent: Bool = false
     ) {
         self.startMin = startMin
@@ -54,6 +55,7 @@ struct QuickCreateChoicePopover: View {
         self.onCreateBundle = onCreateBundle
         self.onCreateEvent = onCreateEvent
         self.onCancel = onCancel
+        self.usesTaskPanelForTaskCreation = usesTaskPanelForTaskCreation
         let initialMode: Mode = defaultsToCalendarEvent && onCreateEvent != nil ? .calendarEvent : .timeBlock
         _mode = State(initialValue: initialMode)
     }
@@ -75,19 +77,19 @@ struct QuickCreateChoicePopover: View {
                         .focused($focused)
                         .onSubmit { create() }
                         .onChange(of: title) { _, newValue in
-                            guard mode == .timeBlock, newValue.hasSuffix("~") else { return }
+                            guard mode == .timeBlock, !tildeMode, newValue.hasSuffix("~") else { return }
                             let prefix = String(newValue.dropLast())
                             if prefix.isEmpty || prefix.hasSuffix(" ") {
                                 title = prefix
                                 tildeSearchQuery = ""
                                 tildeHighlightIdx = 0
-                                tildeMode = .list
+                                tildeMode = true
                             }
                         }
-                        .opacity(tildeMode == .none ? 1 : 0)
-                        .allowsHitTesting(tildeMode == .none)
+                        .opacity(tildeMode ? 0 : 1)
+                        .allowsHitTesting(!tildeMode)
 
-                    if tildeMode != .none {
+                    if tildeMode {
                         HStack(spacing: 4) {
                             if !title.isEmpty {
                                 Text(title)
@@ -107,11 +109,18 @@ struct QuickCreateChoicePopover: View {
                     }
                 }
 
-                if tildeMode != .none {
+                if tildeMode {
                     tildeInlineSearchView
                 }
 
-                if mode == .timeBlock {
+                if mode == .timeBlock && usesTaskPanelForTaskCreation {
+                    QuickCreateTaskPanelHandoffView(
+                        dateKey: dateKey,
+                        startMin: startMin,
+                        endMin: endMin,
+                        containerName: selectedContainerName
+                    )
+                } else if mode == .timeBlock {
                     QuickCreateTaskDetailsView(
                         selectedContainer: $selectedContainer,
                         selectedSectionName: $selectedSectionName,
@@ -173,7 +182,7 @@ struct QuickCreateChoicePopover: View {
                 }
                 Spacer()
                 CadenceActionButton(
-                    title: "Create",
+                    title: primaryActionTitle,
                     role: .secondary,
                     size: .compact,
                     tint: mode == .bundle ? Theme.amber : Theme.blue,
@@ -213,9 +222,24 @@ struct QuickCreateChoicePopover: View {
 
     private var titlePlaceholder: String {
         switch mode {
-        case .timeBlock: return "Task title"
+        case .timeBlock: return usesTaskPanelForTaskCreation ? "Task title, then continue" : "Task title"
         case .bundle: return "Bundle title"
         case .calendarEvent: return "Event title"
+        }
+    }
+
+    private var primaryActionTitle: String {
+        mode == .timeBlock && usesTaskPanelForTaskCreation ? "Open Task Panel" : "Create"
+    }
+
+    private var selectedContainerName: String {
+        switch selectedContainer {
+        case .inbox:
+            return "Inbox"
+        case .area(let areaID):
+            return areas.first(where: { $0.id == areaID })?.name ?? "Selected list"
+        case .project(let projectID):
+            return projects.first(where: { $0.id == projectID })?.name ?? "Selected list"
         }
     }
 
@@ -282,7 +306,7 @@ struct QuickCreateChoicePopover: View {
     private func selectTildeContainer() {
         let items = tildeFlatContainers
         guard !items.isEmpty else { return }
-        selectTildeContainerItem(items[min(tildeHighlightIdx, items.count - 1)].tag)
+        selectTildeContainerItem(items[clampedTildeHighlightIndex].tag)
     }
 
     private func selectTildeContainerItem(_ tag: TaskContainerSelection) {
@@ -290,18 +314,18 @@ struct QuickCreateChoicePopover: View {
         normalizeSelectedSection()
         tildeSearchQuery = ""
         tildeHighlightIdx = 0
-        tildeMode = .section
+        tildeMode = false
+        DispatchQueue.main.async { focused = true }
     }
 
     private var tildeListSearchView: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack {
                 Button("") {
-                    let count = tildeFlatContainers.count
-                    if count > 0 { tildeHighlightIdx = min(tildeHighlightIdx + 1, count - 1) }
+                    moveTildeHighlight(by: 1)
                 }
                 .keyboardShortcut("=", modifiers: [.command, .shift])
-                Button("") { tildeHighlightIdx = max(tildeHighlightIdx - 1, 0) }
+                Button("") { moveTildeHighlight(by: -1) }
                     .keyboardShortcut("-", modifiers: [.command, .shift])
             }
             .frame(width: 0, height: 0)
@@ -318,18 +342,15 @@ struct QuickCreateChoicePopover: View {
                     .focused($isTildeSearchFocused)
                     .onSubmit { selectTildeContainer() }
                     .onKeyPress(.upArrow) {
-                        tildeHighlightIdx = max(tildeHighlightIdx - 1, 0)
+                        moveTildeHighlight(by: -1)
                         return .handled
                     }
                     .onKeyPress(.downArrow) {
-                        let count = tildeFlatContainers.count
-                        if count > 0 { tildeHighlightIdx = min(tildeHighlightIdx + 1, count - 1) }
+                        moveTildeHighlight(by: 1)
                         return .handled
                     }
                     .onKeyPress(.tab) {
-                        title += "~"
-                        tildeMode = .none
-                        DispatchQueue.main.async { focused = true }
+                        selectTildeContainer()
                         return .handled
                     }
                 if !tildeSearchQuery.isEmpty {
@@ -360,7 +381,7 @@ struct QuickCreateChoicePopover: View {
                             icon: item.icon,
                             name: item.name,
                             color: item.color,
-                            isHighlighted: index == tildeHighlightIdx,
+                            isHighlighted: index == clampedTildeHighlightIndex,
                             isSelected: selectedContainer == item.tag,
                             action: { selectTildeContainerItem(item.tag) }
                         )
@@ -371,39 +392,43 @@ struct QuickCreateChoicePopover: View {
         }
         .frame(minWidth: 200)
         .background(Theme.surfaceElevated)
-        .onAppear { DispatchQueue.main.async { isTildeSearchFocused = true } }
+        .onAppear {
+            clampTildeHighlight()
+            DispatchQueue.main.async { isTildeSearchFocused = true }
+        }
         .onChange(of: tildeSearchQuery) { _, _ in tildeHighlightIdx = 0 }
+        .onChange(of: tildeFlatContainers.map(\.id)) { _, _ in clampTildeHighlight() }
+    }
+
+    private var clampedTildeHighlightIndex: Int {
+        clampedHighlightIndex(tildeHighlightIdx, count: tildeFlatContainers.count)
+    }
+
+    private func moveTildeHighlight(by offset: Int) {
+        tildeHighlightIdx = movedHighlightIndex(tildeHighlightIdx, by: offset, count: tildeFlatContainers.count)
+    }
+
+    private func clampTildeHighlight() {
+        tildeHighlightIdx = clampedTildeHighlightIndex
+    }
+
+    private func movedHighlightIndex(_ current: Int, by offset: Int, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        return (clampedHighlightIndex(current, count: count) + offset + count) % count
+    }
+
+    private func clampedHighlightIndex(_ index: Int, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        return min(max(index, 0), count - 1)
     }
 
     @ViewBuilder
     private var tildeInlineSearchView: some View {
-        Group {
-            if tildeMode == .list {
-                tildeListSearchView
-            } else {
-                tildeSectionSearchView
-            }
-        }
+        tildeListSearchView
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Theme.borderSubtle.opacity(0.8), lineWidth: 1)
-        )
-    }
-
-    private var tildeSectionSearchView: some View {
-        TildeSectionSearchPanel(
-            sections: availableSections,
-            selectedSectionName: selectedSectionName,
-            onSelect: { section in
-                selectedSectionName = section
-                tildeMode = .none
-                DispatchQueue.main.async { focused = true }
-            },
-            onDismiss: {
-                tildeMode = .none
-                DispatchQueue.main.async { focused = true }
-            }
         )
     }
 
@@ -449,7 +474,7 @@ struct QuickCreateChoicePopover: View {
 
     private func selectMode(_ target: Mode) {
         mode = target
-        tildeMode = .none
+        tildeMode = false
         if target == .bundle,
            title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             title = "Task Bundle"

@@ -18,6 +18,7 @@ struct TimelineDayCanvas: View {
     let showCurrentTimeDot: Bool
     var showHalfHourMarks: Bool = false
     let dropBehavior: TimelineDropBehavior
+    var usesTaskPanelForTaskCreation = true
     let onCreateTask: (String, Int, Int, TaskContainerSelection, String, String, [String]) -> Void
     let onCreateBundle: (String, Int, Int, [AppTask]) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
@@ -29,7 +30,7 @@ struct TimelineDayCanvas: View {
     /// Calendar pages should treat dragged time slots as events first; task timelines keep time blocks first.
     var prefersCalendarEventCreation = false
     /// Optional: called when an all-day event chip is dropped onto the timeline, with the event identifier and target minute.
-    var onDropAllDayEventAtMinute: ((String, Int) -> Void)? = nil
+    var onDropAllDayEventAtMinute: ((CalendarAllDayEventDropPayload, Int) -> Void)? = nil
 
     @State private var dragStartMin: Int? = nil
     @State private var dragEndMin: Int? = nil
@@ -272,6 +273,7 @@ struct TimelineDayCanvas: View {
                     finishDraftCreation()
                 },
                 onCancel: finishDraftCreation,
+                usesTaskPanelForTaskCreation: usesTaskPanelForTaskCreation,
                 defaultsToCalendarEvent: prefersCalendarEventCreation
             )
         )

@@ -9,6 +9,7 @@ struct CalendarBoardBundleCard: View {
     let areas: [Area]
     let projects: [Project]
     let onDropTask: (AppTask) -> Void
+    var onDropTargetedChanged: (Bool) -> Void = { _ in }
 
     @Environment(\.modelContext) private var modelContext
     @Environment(FocusManager.self) private var focusManager
@@ -23,6 +24,7 @@ struct CalendarBoardBundleCard: View {
             label
         }
         .buttonStyle(.cadencePlain)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onHover { isHovered = $0 }
         .draggable(TaskDragPayload.bundleString(for: bundle.id))
         .dropDestination(for: String.self) { items, _ in
@@ -33,6 +35,7 @@ struct CalendarBoardBundleCard: View {
             return true
         } isTargeted: { targeted in
             isTargeted = targeted
+            onDropTargetedChanged(targeted)
         }
         .popover(isPresented: $showPopover, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             bundleDetailPopover
@@ -133,11 +136,58 @@ struct CalendarBoardBundleCard: View {
 struct CalendarBoardEventCard: View {
     let event: EKEvent
 
+    @Environment(CalendarManager.self) private var calendarManager
+    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
+    @State private var showPopover = false
+    @State private var isHovered = false
+
     private var tint: Color {
         Color(cgColor: event.calendar?.cgColor ?? CGColor(gray: 0.5, alpha: 1))
     }
 
+    private var item: CalendarEventItem {
+        CalendarEventItem(event: event)
+    }
+
     var body: some View {
+        Button {
+            showPopover = true
+        } label: {
+            label
+        }
+        .buttonStyle(.cadencePlain)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onHover { isHovered = $0 }
+        .popover(isPresented: $showPopover, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
+            CalendarEventEditPopover(
+                item: item,
+                onSave: { title, startMin, duration, calendarID, notes in
+                    let dateKey = DateFormatters.dateKey(from: event.startDate)
+                    calendarManager.updateEvent(
+                        event,
+                        title: title,
+                        startMin: startMin,
+                        durationMinutes: duration,
+                        dateKey: dateKey,
+                        calendarID: calendarID,
+                        notes: notes
+                    )
+                    showPopover = false
+                },
+                onDelete: {
+                    deleteConfirmationManager.present(
+                        title: "Delete Calendar Event?",
+                        message: "This will permanently delete \"\(item.title)\" from your calendar."
+                    ) {
+                        calendarManager.deleteEvent(event)
+                        showPopover = false
+                    }
+                }
+            )
+        }
+    }
+
+    private var label: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: event.isAllDay ? "calendar" : "clock")
                 .font(.system(size: 13, weight: .semibold))
@@ -159,7 +209,7 @@ struct CalendarBoardEventCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(tint.opacity(0.30), lineWidth: 1)
+                .strokeBorder(tint.opacity(isHovered || showPopover ? 0.58 : 0.30), lineWidth: isHovered || showPopover ? 1.25 : 1)
         }
     }
 
@@ -179,23 +229,6 @@ struct CalendarBoardEventCard: View {
         let start = calendar.component(.hour, from: startDate) * 60 + calendar.component(.minute, from: startDate)
         let end = calendar.component(.hour, from: endDate) * 60 + calendar.component(.minute, from: endDate)
         return TimeFormatters.timeRange(startMin: start, endMin: max(start + 5, end))
-    }
-}
-
-struct CalendarBoardEmptyColumn: View {
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "calendar")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.dim.opacity(0.7))
-            Text("No plans")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .background(Theme.surfaceElevated.opacity(0.30))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

@@ -33,7 +33,7 @@ struct TaskTitleInlineTagPicker: View {
                     }
 
                     if canCreate {
-                        createRow
+                        createRow(isHighlighted: highlightIndex == filteredTags.count)
                     }
 
                     if filteredTags.isEmpty && !canCreate {
@@ -49,8 +49,13 @@ struct TaskTitleInlineTagPicker: View {
         }
         .frame(width: 240)
         .background(Theme.surfaceElevated)
-        .onAppear { DispatchQueue.main.async { isSearchFocused = true } }
+        .onAppear {
+            clampHighlightIndex()
+            DispatchQueue.main.async { isSearchFocused = true }
+        }
         .onChange(of: query) { _, _ in highlightIndex = 0 }
+        .onChange(of: filteredTags.map(\.id)) { _, _ in clampHighlightIndex() }
+        .onChange(of: canCreate) { _, _ in clampHighlightIndex() }
     }
 
     private var searchRow: some View {
@@ -73,7 +78,7 @@ struct TaskTitleInlineTagPicker: View {
                     return .handled
                 }
                 .onKeyPress(.tab) {
-                    onRestoreLiteral()
+                    onSubmit()
                     return .handled
                 }
                 .onKeyPress(.escape) {
@@ -98,7 +103,7 @@ struct TaskTitleInlineTagPicker: View {
         .padding(.vertical, 8)
     }
 
-    private var createRow: some View {
+    private func createRow(isHighlighted: Bool) -> some View {
         Button(action: onCreate) {
             HStack(spacing: 8) {
                 Image(systemName: "plus.circle.fill")
@@ -112,9 +117,23 @@ struct TaskTitleInlineTagPicker: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .contentShape(Rectangle())
+            .background(isHighlighted ? Theme.blue.opacity(0.08) : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.cadencePlain)
         .cadenceHoverHighlight(cornerRadius: 6)
+    }
+
+    private var optionCount: Int {
+        filteredTags.count + (canCreate ? 1 : 0)
+    }
+
+    private func clampHighlightIndex() {
+        guard optionCount > 0 else {
+            highlightIndex = 0
+            return
+        }
+        highlightIndex = min(max(highlightIndex, 0), optionCount - 1)
     }
 }
 

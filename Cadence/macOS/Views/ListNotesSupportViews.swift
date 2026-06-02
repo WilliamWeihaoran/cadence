@@ -23,6 +23,7 @@ struct TaskNoteEditorPane: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
+    @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
     @State private var editorTextView: CadenceTextView?
     @State private var linkedTaskForPopover: AppTask?
     @State private var embeddedTaskEditRequest: TaskEmbedFieldEditRequest?
@@ -143,7 +144,7 @@ struct TaskNoteEditorPane: View {
                     NoteMarkdownSidePanel(
                         outline: derivedState.outline,
                         metadata: derivedState.metadata,
-                        templates: NoteTemplateLibrary.templates(for: .list),
+                        templates: NoteTemplateLibrary.templates(for: .list, overridesRaw: noteTemplateOverridesRaw),
                         unlinkedMentions: derivedState.unlinkedMentions,
                         onJumpToOutline: jumpToOutline,
                         onInsertFrontmatter: insertFrontmatter,

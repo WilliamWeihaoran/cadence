@@ -217,14 +217,13 @@ struct HabitIconTile: View {
     var iconSize: CGFloat
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: min(12, size * 0.28))
-                .fill(Color(hex: habit.colorHex).opacity(0.16))
-                .frame(width: size, height: size)
-            Image(systemName: habit.icon)
-                .font(.system(size: iconSize, weight: .semibold))
-                .foregroundStyle(Color(hex: habit.colorHex))
-        }
+        CommitmentIconTile(
+            systemImage: habit.icon,
+            color: Color(hex: habit.colorHex),
+            size: size,
+            iconSize: iconSize,
+            fillOpacity: 0.16
+        )
     }
 }
 

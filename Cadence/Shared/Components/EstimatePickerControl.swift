@@ -5,16 +5,6 @@ struct EstimatePickerControl: View {
     var compact: Bool = false
     @State private var showPicker = false
 
-    private let options: [(Int, String)] = [
-        (0, "No estimate"),
-        (5, "5 min"),
-        (15, "15 min"),
-        (30, "30 min"),
-        (45, "45 min"),
-        (60, "1 hour"),
-        (90, "1.5 hrs"),
-    ]
-
     var body: some View {
         Button {
             showPicker.toggle()
@@ -39,41 +29,9 @@ struct EstimatePickerControl: View {
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker, arrowEdge: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(options, id: \.0) { mins, title in
-                    Button {
-                        value = mins
-                        showPicker = false
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "timer")
-                                .font(.system(size: 12))
-                                .foregroundStyle(value == mins ? Theme.blue : Theme.dim)
-                                .frame(width: 16)
-                            Text(title)
-                                .font(.system(size: 13))
-                                .foregroundStyle(value == mins ? Theme.text : Theme.muted)
-                            Spacer()
-                            if value == mins {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(Theme.blue)
-                            }
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(value == mins ? Theme.blue.opacity(0.08) : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.cadencePlain)
-                    .cadenceHoverHighlight(cornerRadius: 6, fillColor: Theme.blue.opacity(0.08), strokeColor: .clear)
-                }
+            EstimatePickerPopoverContent(value: $value) {
+                showPicker = false
             }
-            .padding(6)
-            .frame(minWidth: 160)
-            .background(Theme.surfaceElevated)
         }
     }
 
@@ -88,5 +46,58 @@ struct EstimatePickerControl: View {
         case 90: return "1.5h"
         default: return "\(value)m"
         }
+    }
+}
+
+struct EstimatePickerPopoverContent: View {
+    @Binding var value: Int
+    var onSelect: () -> Void = {}
+
+    private let options: [(Int, String)] = [
+        (0, "No estimate"),
+        (5, "5 min"),
+        (15, "15 min"),
+        (30, "30 min"),
+        (45, "45 min"),
+        (60, "1 hour"),
+        (90, "1.5 hrs"),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(options, id: \.0) { mins, title in
+                Button {
+                    value = mins
+                    onSelect()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "timer")
+                            .font(.system(size: 12))
+                            .foregroundStyle(value == mins ? Theme.blue : Theme.dim)
+                            .frame(width: 16)
+                        Text(title)
+                            .font(.system(size: 13))
+                            .foregroundStyle(value == mins ? Theme.text : Theme.muted)
+                        Spacer()
+                        if value == mins {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Theme.blue)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(value == mins ? Theme.blue.opacity(0.08) : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.cadencePlain)
+                .cadenceHoverHighlight(cornerRadius: 6, fillColor: Theme.blue.opacity(0.08), strokeColor: .clear)
+            }
+        }
+        .padding(6)
+        .frame(minWidth: 160)
+        .background(Theme.surfaceElevated)
     }
 }

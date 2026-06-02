@@ -8,18 +8,27 @@ struct FocusBundleTasksPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Bundle tasks")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text("Selected tasks receive logged time from this session.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "checklist")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.amber)
+                        .frame(width: 24, height: 24)
+                        .background(Theme.amber.opacity(0.1))
+                        .clipShape(Circle())
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Bundle tasks")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                        Text("Selected tasks receive logged time from this session.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.dim)
+                    }
                 }
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 13)
+            .padding(.horizontal, 15)
+            .padding(.vertical, 12)
 
             Divider().background(Theme.borderSubtle)
 
@@ -55,7 +64,7 @@ struct FocusBundleTasksPanel: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
+                .stroke(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
         }
     }
 

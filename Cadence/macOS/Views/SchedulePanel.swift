@@ -43,6 +43,7 @@ struct SchedulePanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(TodayTimelineFocusManager.self) private var todayTimelineFocusManager
+    @Environment(TaskCreationManager.self) private var taskCreationManager
     var presentation: SchedulePanelPresentation = .standard
     var useStandardHeaderHeight = false
     @Query private var allTasks: [AppTask]
@@ -103,18 +104,15 @@ struct SchedulePanel: View {
                             todayKey: todayKey,
                             externalEventItems: externalEventItems,
                             onCreateTask: { title, startMin, endMin, containerSelection, sectionName, notes, subtaskTitles in
-                                SchedulingActions.createTask(
+                                taskCreationManager.present(
                                     title: title,
-                                    dateKey: todayKey,
-                                    startMin: startMin,
-                                    endMin: endMin,
-                                    containerSelection: containerSelection,
-                                    sectionName: sectionName,
                                     notes: notes,
-                                    subtaskTitles: subtaskTitles,
-                                    areas: areas,
-                                    projects: projects,
-                                    in: modelContext
+                                    doDateKey: todayKey,
+                                    scheduledStartMin: startMin,
+                                    estimatedMinutes: max(5, endMin - startMin),
+                                    container: containerSelection,
+                                    sectionName: sectionName,
+                                    subtaskTitles: subtaskTitles
                                 )
                             },
                             onDropTaskAtMinute: { task, startMin in

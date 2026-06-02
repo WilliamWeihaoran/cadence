@@ -18,9 +18,10 @@ struct KanbanCard: View {
     @State private var showDoDatePicker = false
     @State private var doDatePickerDate: Date = Date()
     @State private var doDateViewMonth: Date = Date()
-    @State private var showSchedulePicker = false
+    @State private var showDurationPicker = false
     @State private var isHovered = false
     @State private var isPointerOverCard = false
+    @State private var isAttributeFocused = false
     @State private var showTaskInspector = false
 
     var body: some View {
@@ -36,7 +37,9 @@ struct KanbanCard: View {
                     KanbanCardScheduleTopRow(
                         startTime: scheduleStartLabel,
                         duration: scheduleDurationLabel,
-                        onDurationTap: openSchedulePicker
+                        onDurationTap: openDurationPicker,
+                        isDurationFocused: showDurationPicker,
+                        onDurationHoverChanged: setAttributeFocused
                     )
                 }
 
@@ -46,7 +49,9 @@ struct KanbanCard: View {
                         titleColor: task.isDone || task.isCancelled ? Theme.dim : Theme.text,
                         isStruckThrough: task.isDone || isPendingCancel,
                         durationBadge: headerDurationBadge,
-                        onDurationTap: openSchedulePicker,
+                        onDurationTap: openDurationPicker,
+                        isDurationFocused: showDurationPicker,
+                        onDurationHoverChanged: setAttributeFocused,
                         completionButtonIcon: completionButtonIcon,
                         completionButtonColor: completionButtonColor,
                         completionProgress: pendingCompletionProgress(now: context.date),
@@ -80,10 +85,10 @@ struct KanbanCard: View {
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(
-                    isHovered
-                        ? TaskHoverVisuals.borderColor(for: task, isHovered: isHovered, opacity: 0.56)
+                    isCardVisuallyFocused
+                        ? TaskHoverVisuals.borderColor(for: task, isHovered: isCardVisuallyFocused, opacity: 0.56)
                         : .white.opacity(0.06),
-                    lineWidth: isHovered ? 1.35 : 1
+                    lineWidth: isCardVisuallyFocused ? 1.35 : 1
                 )
         }
         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -102,6 +107,9 @@ struct KanbanCard: View {
             syncInteractiveHoverState()
         }
         .onChange(of: isPresentingInlinePopover) { _, isPresented in
+            if !isPresented {
+                setAttributeFocused(false)
+            }
             if isPresented {
                 syncInteractiveHoverState()
             } else {
@@ -111,9 +119,21 @@ struct KanbanCard: View {
         .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             TaskDetailPopover(task: task)
         }
-        .popover(isPresented: $showSchedulePicker, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
-            TaskEmbedFieldEditorPopover(task: task, initialField: .scheduledDate)
+        .popover(isPresented: $showDurationPicker, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
+            EstimatePickerPopoverContent(value: durationBinding) {
+                showDurationPicker = false
+            }
         }
+    }
+
+    private var durationBinding: Binding<Int> {
+        Binding(
+            get: { task.estimatedMinutes },
+            set: { newValue in
+                task.estimatedMinutes = max(0, min(newValue, 1440))
+                try? modelContext.save()
+            }
+        )
     }
 
     private var metadataRows: [[KanbanMetaItem]] {
@@ -204,17 +224,15 @@ struct KanbanCard: View {
     }
 
     private var scheduleDurationLabel: String? {
-        let timedDuration = task.scheduledStartMin >= 0 ? max(0, task.scheduledEndMin - task.scheduledStartMin) : 0
-        let minutes = timedDuration > 0 ? timedDuration : task.estimatedMinutes
-        guard minutes > 0 else { return nil }
-        return KanbanCardStateSupport.compactDurationLabel(minutes)
+        guard task.estimatedMinutes > 0 else { return nil }
+        return KanbanCardStateSupport.compactDurationLabel(task.estimatedMinutes)
     }
 
     @ViewBuilder
     private func metaChip(_ item: KanbanMetaItem) -> some View {
         switch item.action {
         case .none:
-            KanbanMetaChip(item: item)
+            KanbanMetaChip(item: item, onHoverChanged: setAttributeFocused)
         case .priority:
             KanbanPriorityMetaButton(
                 item: item,
@@ -223,7 +241,8 @@ struct KanbanCard: View {
                 onOpen: {
                     showPriorityPicker = true
                     syncInteractiveHoverState()
-                }
+                },
+                onHoverChanged: setAttributeFocused
             )
         case .doDate:
             KanbanDateMetaButton(
@@ -231,6 +250,7 @@ struct KanbanCard: View {
                 isPresented: $showDoDatePicker,
                 onOpen: openDoDatePicker,
                 onHoverChanged: { hovering in
+                    setAttributeFocused(hovering)
                     if hovering {
                         hoveredTaskManager.beginHoveringDate(.doDate, for: task)
                     } else {
@@ -246,6 +266,7 @@ struct KanbanCard: View {
                 isPresented: $showDueDatePicker,
                 onOpen: openDueDatePicker,
                 onHoverChanged: { hovering in
+                    setAttributeFocused(hovering)
                     if hovering {
                         hoveredTaskManager.beginHoveringDate(.dueDate, for: task)
                     } else {
@@ -295,6 +316,7 @@ struct KanbanCard: View {
     }
 
     private func openDueDatePicker() {
+        setAttributeFocused(true)
         KanbanCardStateSupport.openDatePicker(
             dateKey: task.dueDate,
             setSelection: { dueDatePickerDate = $0 },
@@ -305,6 +327,7 @@ struct KanbanCard: View {
     }
 
     private func openDoDatePicker() {
+        setAttributeFocused(true)
         KanbanCardStateSupport.openDatePicker(
             dateKey: task.scheduledDate,
             setSelection: { doDatePickerDate = $0 },
@@ -314,12 +337,14 @@ struct KanbanCard: View {
         syncInteractiveHoverState()
     }
 
-    private func openSchedulePicker() {
-        if case let .calendarBoard(dateKey) = presentation, task.scheduledDate.isEmpty {
-            task.scheduledDate = dateKey
-        }
-        showSchedulePicker = true
+    private func openDurationPicker() {
+        showDurationPicker = true
+        setAttributeFocused(true)
         syncInteractiveHoverState()
+    }
+
+    private func setAttributeFocused(_ focused: Bool) {
+        isAttributeFocused = focused
     }
 
     private func syncInteractiveHoverState() {
@@ -396,18 +421,22 @@ struct KanbanCard: View {
     }
 
     private var isPresentingInlinePopover: Bool {
-        showPriorityPicker || showDueDatePicker || showDoDatePicker || showSchedulePicker
+        showPriorityPicker || showDueDatePicker || showDoDatePicker || showDurationPicker
+    }
+
+    private var isCardVisuallyFocused: Bool {
+        isHovered && !isAttributeFocused && !isPresentingInlinePopover
     }
 
     private var urgencyBackgroundTint: Color {
-        KanbanCardComputedSupport.urgencyBackgroundTint(task: task, isHovered: isHovered)
+        KanbanCardComputedSupport.urgencyBackgroundTint(task: task, isHovered: isCardVisuallyFocused)
     }
 
     @ViewBuilder
     private var cardBackground: some View {
         TimelineView(.animation) { context in
             KanbanCardBackground(
-                isHovered: isHovered,
+                isHovered: isCardVisuallyFocused,
                 isDone: task.isDone,
                 isPendingCompletion: isPendingCompletion,
                 isPendingCancel: isPendingCancel,

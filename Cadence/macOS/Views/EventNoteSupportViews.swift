@@ -157,7 +157,8 @@ enum EventNoteSupport {
 
     static func backfillMetadataIfPossible(_ note: Note, calendarManager: CalendarManager) {
         guard note.kind == .meeting else { return }
-        guard let event = calendarManager.event(withIdentifier: note.calendarEventID) else { return }
+        let lookupID = CalendarEventIdentity.lookupIdentifier(from: note.calendarEventID)
+        guard let event = calendarManager.event(withIdentifier: lookupID) else { return }
         let metadata = eventDateMetadata(from: event)
         updateMetadata(
             note,

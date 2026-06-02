@@ -13,9 +13,12 @@ struct TaskCreationSeed {
     var notes: String = ""
     var dueDateKey: String = ""
     var doDateKey: String = ""
+    var scheduledStartMin: Int = -1
+    var estimatedMinutes: Int = 30
     var priority: TaskPriority = .none
     var container: TaskContainerSelection = .inbox
     var sectionName: String = TaskSectionDefaults.defaultName
+    var subtaskTitles: [String] = []
 }
 
 @Observable
@@ -36,9 +39,12 @@ final class TaskCreationManager {
         notes: String = "",
         dueDateKey: String = "",
         doDateKey: String = "",
+        scheduledStartMin: Int = -1,
+        estimatedMinutes: Int = 30,
         priority: TaskPriority = .none,
         container: TaskContainerSelection = .inbox,
-        sectionName: String = TaskSectionDefaults.defaultName
+        sectionName: String = TaskSectionDefaults.defaultName,
+        subtaskTitles: [String] = []
     ) {
         if QuickTaskPanelController.shared.isVisible {
             QuickTaskPanelController.shared.close()
@@ -49,9 +55,12 @@ final class TaskCreationManager {
             notes: notes,
             dueDateKey: dueDateKey,
             doDateKey: doDateKey,
+            scheduledStartMin: scheduledStartMin,
+            estimatedMinutes: estimatedMinutes,
             priority: priority,
             container: container,
-            sectionName: sectionName
+            sectionName: sectionName,
+            subtaskTitles: subtaskTitles
         )
 
         NSApp.activate(ignoringOtherApps: true)

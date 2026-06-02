@@ -84,7 +84,7 @@ struct TimelineDropDelegate: DropDelegate {
     let allBundles: [TaskBundle]
     let onDropTaskAtMinute: (AppTask, Int) -> Void
     let onDropBundleAtMinute: (TaskBundle, Int) -> Void
-    let onDropAllDayEventAtMinute: ((String, Int) -> Void)?
+    let onDropAllDayEventAtMinute: ((CalendarAllDayEventDropPayload, Int) -> Void)?
 
     @Binding var isTargeted: Bool
     @Binding var previewTaskID: UUID?
@@ -151,11 +151,9 @@ struct TimelineDropDelegate: DropDelegate {
         _ = provider.loadObject(ofClass: NSString.self) { object, _ in
             guard let payload = object as? NSString else { return }
             let payloadString = payload as String
-            if payloadString.hasPrefix("allDayEvent:") {
-                let eventID = String(payloadString.dropFirst(12))
-                guard !eventID.isEmpty else { return }
+            if let eventPayload = CalendarEventDragPayload.allDayEventPayload(from: payloadString) {
                 Task { @MainActor in
-                    onDropAllDayEventAtMinute?(eventID, startMin)
+                    onDropAllDayEventAtMinute?(eventPayload, startMin)
                 }
             } else if let bundleID = TaskDragPayload.bundleID(from: payloadString) {
                 Task { @MainActor in

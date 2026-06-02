@@ -1,6 +1,63 @@
 #if os(macOS)
 import SwiftUI
 
+struct QuickCreateTaskPanelHandoffView: View {
+    let dateKey: String
+    let startMin: Int
+    let endMin: Int
+    let containerName: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "rectangle.on.rectangle.angled")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+                    .frame(width: 34, height: 34)
+                    .background(Theme.blue.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Use the task panel")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text("Continue to the shared task creator with this slot prefilled.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                handoffDetail(icon: "calendar", text: DateFormatters.relativeDate(from: dateKey))
+                handoffDetail(icon: "clock", text: TimeFormatters.timeRange(startMin: startMin, endMin: endMin))
+                handoffDetail(icon: "tray", text: containerName)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surfaceElevated.opacity(0.72))
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+
+            Text("Tip: type `~` in the title to route the task to a list before opening the panel.")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Theme.dim.opacity(0.82))
+        }
+    }
+
+    private func handoffDetail(icon: String, text: String) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .frame(width: 13)
+            Text(text)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.muted)
+                .lineLimit(1)
+        }
+    }
+}
+
 struct QuickCreateTaskDetailsView: View {
     @Binding var selectedContainer: TaskContainerSelection
     @Binding var selectedSectionName: String

@@ -156,17 +156,11 @@ struct GoalsView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Milestones")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                    Text("Finish lines and stages across pursuits.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.muted)
-                }
-                Spacer(minLength: 20)
+        CommitmentPageHeader(
+            title: "Milestones",
+            subtitle: "Finish lines and stages across pursuits."
+        ) {
+            HStack(spacing: 10) {
                 GoalsViewModeToggle(selection: goalsViewModeBinding)
                 CadenceActionButton(
                     title: "New Milestone",
@@ -177,7 +171,7 @@ struct GoalsView: View {
                     showCreateGoal = true
                 }
             }
-
+        } controls: {
             HStack(spacing: 12) {
                 CommitmentSearchField(
                     placeholder: "Search milestones",
@@ -192,8 +186,6 @@ struct GoalsView: View {
                 )
             }
         }
-        .padding(20)
-        .background(Theme.surface)
     }
 
     private var goalList: some View {

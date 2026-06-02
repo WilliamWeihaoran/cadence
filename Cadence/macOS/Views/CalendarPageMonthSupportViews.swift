@@ -182,6 +182,9 @@ struct CalDayHeaderView: View {
 
     private let cal = Calendar.current
     private var isToday: Bool { cal.isDateInToday(date) }
+    private var allDayEventItems: [CalendarAllDayEventItem] {
+        allDayEvents.map { CalendarAllDayEventItem(event: $0) }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -220,8 +223,8 @@ struct CalDayHeaderView: View {
                 ForEach(unscheduledTasks) { task in
                     AllDayTaskChip(task: task)
                 }
-                ForEach(allDayEvents, id: \.eventIdentifier) { event in
-                    AllDayEventChip(event: event)
+                ForEach(allDayEventItems) { item in
+                    AllDayEventChip(event: item.event)
                 }
             }
             .padding(.horizontal, 4)
@@ -302,7 +305,7 @@ struct AllDayEventChip: View {
                 .stroke(eventColor.opacity(0.62), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.08), radius: 4, y: 1)
-            .draggable("allDayEvent:\(event.eventIdentifier ?? "")")
+        .draggable(CalendarEventDragPayload.string(for: event))
     }
 }
 
@@ -346,6 +349,7 @@ struct CalDayColumn: View {
             showCurrentTimeDot: true,
             showHalfHourMarks: showHalfHourMarks,
             dropBehavior: .perHour,
+            usesTaskPanelForTaskCreation: false,
             onCreateTask: { title, startMin, endMin, containerSelection, sectionName, notes, subtaskTitles in
                 SchedulingActions.createTask(
                     title: title,
@@ -379,8 +383,12 @@ struct CalDayColumn: View {
                 calendarManager.createStandaloneEvent(title: title, startMin: startMin, durationMinutes: endMin - startMin, calendarID: calendarID, date: date, notes: notes)
             },
             prefersCalendarEventCreation: true,
-            onDropAllDayEventAtMinute: { eventID, startMin in
-                guard let event = calendarManager.event(withIdentifier: eventID) else { return }
+            onDropAllDayEventAtMinute: { payload, startMin in
+                let sourceDate = DateFormatters.date(from: payload.sourceDateKey) ?? date
+                let event = eventCache.allDayEvents(for: sourceDate, calendarManager: calendarManager)
+                    .first { CalendarEventIdentity.matches($0, identifier: payload.eventIdentifier) }
+                    ?? calendarManager.event(withIdentifier: CalendarEventIdentity.lookupIdentifier(from: payload.eventIdentifier))
+                guard let event else { return }
                 calendarManager.convertAllDayEventToTimed(event, startMin: startMin, dateKey: dateKey)
             }
         )

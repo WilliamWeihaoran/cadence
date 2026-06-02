@@ -9,14 +9,14 @@ private struct FocusSurfaceHeader<Metadata: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text(eyebrow)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .textCase(.uppercase)
 
                 Text(title)
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(2)
                     .minimumScaleFactor(0.82)
@@ -40,10 +40,10 @@ private struct FocusSurfaceHeader<Metadata: View>: View {
             .buttonStyle(.cadencePlain)
             .help("Close focus session")
         }
-        .padding(.leading, 28)
+        .padding(.leading, 24)
         .padding(.trailing, 18)
-        .padding(.top, 22)
-        .padding(.bottom, 18)
+        .padding(.top, 18)
+        .padding(.bottom, 16)
         .background(Theme.surface)
         .overlay(alignment: .bottom) {
             Rectangle()
@@ -150,7 +150,7 @@ struct FocusTimerPanel<Controls: View>: View {
     @ViewBuilder let controls: () -> Controls
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             HStack {
                 Label(isRunning ? "Running" : "Paused", systemImage: isRunning ? "timer" : "pause.circle")
                     .font(.system(size: 11, weight: .semibold))
@@ -161,7 +161,7 @@ struct FocusTimerPanel<Controls: View>: View {
             Spacer(minLength: 0)
 
             Text(clockDisplay)
-                .font(.system(size: 82, weight: .ultraLight, design: .monospaced))
+                .font(.system(size: 78, weight: .ultraLight, design: .monospaced))
                 .foregroundStyle(isRunning ? Theme.text : Theme.muted)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -173,13 +173,16 @@ struct FocusTimerPanel<Controls: View>: View {
 
             Spacer(minLength: 0)
         }
-        .padding(18)
+        .padding(20)
         .frame(maxWidth: .infinity)
-        .background(Theme.surface)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Theme.surface)
+        )
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
+                .stroke(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
         }
         .overlay(alignment: .top) {
             Rectangle()

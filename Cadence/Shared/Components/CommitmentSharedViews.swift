@@ -1,6 +1,55 @@
 #if os(macOS)
 import SwiftUI
 
+struct CommitmentPageHeader<Accessory: View, Controls: View>: View {
+    let title: String
+    let subtitle: String
+    var titleSize: CGFloat = 28
+    @ViewBuilder let accessory: Accessory
+    @ViewBuilder let controls: Controls
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: titleSize, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
+                }
+
+                Spacer(minLength: 20)
+
+                accessory
+            }
+
+            controls
+        }
+        .padding(20)
+        .background(Theme.surface)
+    }
+}
+
+struct CommitmentIconTile: View {
+    let systemImage: String
+    let color: Color
+    var size: CGFloat = 32
+    var iconSize: CGFloat = 13
+    var cornerRadius: CGFloat? = nil
+    var fillOpacity: Double = 0.14
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: iconSize, weight: .semibold))
+            .foregroundStyle(color)
+            .frame(width: size, height: size)
+            .background(color.opacity(fillOpacity))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius ?? min(12, size * 0.28)))
+    }
+}
+
 struct CommitmentSearchField: View {
     let placeholder: String
     @Binding var text: String
@@ -87,15 +136,22 @@ struct CommitmentGroupHeader: View {
 struct CommitmentMetaChip: View {
     let label: String
     let color: Color
+    var systemImage: String? = nil
 
     var body: some View {
-        Text(label)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(color.opacity(0.12))
-            .clipShape(Capsule())
+        HStack(spacing: 4) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 9, weight: .bold))
+            }
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(color.opacity(0.12))
+        .clipShape(Capsule())
     }
 }
 

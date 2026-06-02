@@ -17,6 +17,7 @@ struct ListSectionKanbanColumn: View {
     let isHighlighted: Bool
     let onReorderBefore: (String) -> Void
 
+    @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(HoveredKanbanColumnManager.self) private var hoveredKanbanColumnManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
@@ -416,12 +417,19 @@ struct ListSectionKanbanColumn: View {
                 showEditor = false
             },
             onToggleArchive: {
+                var shouldCancelActiveTasks = false
                 updateSection { config in
+                    let willArchive = !config.isArchived
                     config.isArchived.toggle()
+                    shouldCancelActiveTasks = willArchive && !config.isCompleted
                     if !config.isArchived {
                         config.isCompleted = false
                     }
                 }
+                if shouldCancelActiveTasks {
+                    TaskContainerLifecycleService.cancelRemainingActiveTasks(in: section, area: area, project: project, in: modelContext)
+                }
+                try? modelContext.save()
                 showEditor = false
             },
             onDelete: {
@@ -506,7 +514,14 @@ struct ListSectionKanbanColumn: View {
     }
 
     private func saveSection(_ updatedSection: TaskSectionConfig) {
+        let current = currentSection()
         KanbanSectionStateSupport.saveSection(updatedSection: updatedSection, area: area, project: project)
+        if updatedSection.isCompleted && current?.isCompleted != true {
+            TaskContainerLifecycleService.completeRemainingActiveTasks(in: updatedSection, area: area, project: project, in: modelContext)
+        } else if updatedSection.isArchived && !updatedSection.isCompleted && current?.isArchived != true {
+            TaskContainerLifecycleService.cancelRemainingActiveTasks(in: updatedSection, area: area, project: project, in: modelContext)
+        }
+        try? modelContext.save()
     }
 
     private var isPendingCompletion: Bool {

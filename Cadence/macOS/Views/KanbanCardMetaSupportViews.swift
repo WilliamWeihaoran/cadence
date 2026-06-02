@@ -6,12 +6,13 @@ struct KanbanPriorityMetaButton: View {
     @Binding var priority: TaskPriority
     @Binding var isPresented: Bool
     let onOpen: () -> Void
+    var onHoverChanged: (Bool) -> Void = { _ in }
 
     var body: some View {
         Button {
             onOpen()
         } label: {
-            KanbanMetaChip(item: item)
+            KanbanMetaChip(item: item, isFocused: isPresented, onHoverChanged: onHoverChanged)
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $isPresented) {
@@ -31,10 +32,9 @@ struct KanbanDateMetaButton<PopoverContent: View>: View {
         Button {
             onOpen()
         } label: {
-            KanbanMetaChip(item: item)
+            KanbanMetaChip(item: item, isFocused: isPresented, onHoverChanged: onHoverChanged)
         }
         .buttonStyle(.cadencePlain)
-        .onHover(perform: onHoverChanged)
         .popover(isPresented: $isPresented, content: popoverContent)
     }
 }

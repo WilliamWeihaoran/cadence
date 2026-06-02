@@ -157,29 +157,19 @@ struct HabitsView: View {
 
     private var leftPane: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Habits")
-                            .font(.system(size: 30, weight: .bold))
-                            .foregroundStyle(Theme.text)
-                        Text("Rhythms across pursuits.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.muted)
-                    }
-
-                    Spacer(minLength: 16)
-
-                    CadenceActionButton(
-                        title: "New Habit",
-                        systemImage: "plus",
-                        role: .primary,
-                        size: .compact
-                    ) {
-                        showCreateHabit = true
-                    }
+            CommitmentPageHeader(
+                title: "Habits",
+                subtitle: "Rhythms across pursuits."
+            ) {
+                CadenceActionButton(
+                    title: "New Habit",
+                    systemImage: "plus",
+                    role: .primary,
+                    size: .compact
+                ) {
+                    showCreateHabit = true
                 }
-
+            } controls: {
                 HStack(spacing: 10) {
                     CommitmentSearchField(
                         placeholder: "Search habits, pursuits, frequency, context",
@@ -194,10 +184,6 @@ struct HabitsView: View {
                     label: \.label
                 )
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-            .background(Theme.surface)
 
             Divider().background(Theme.borderSubtle)
 

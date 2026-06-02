@@ -69,7 +69,8 @@ struct CalendarPageBoardView: View {
                 .padding(.horizontal, Self.horizontalPadding)
                 .padding(.vertical, 18)
             }
-            .scrollIndicators(.visible)
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.always, axes: .horizontal)
             .background(Theme.bg)
             .onScrollGeometryChange(for: Int.self) { geometry in
                 visibleDayIndex(for: geometry.contentOffset.x)
@@ -207,13 +208,32 @@ private struct CalendarBoardDayColumn: View {
     let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
 
     @State private var isDropTargeted = false
+    @State private var targetedBundleID: UUID?
+    @State private var recentlyBundledTaskID: UUID?
+    @State private var recentlyBundledTaskDropExpiresAt = Date.distantPast
+    @State private var isCompletedCollapsed = true
 
     private var isToday: Bool {
         dateKey == DateFormatters.todayKey()
     }
 
+    private var activeTasks: [AppTask] {
+        tasks.filter { !$0.isDone }
+    }
+
+    private var completedTasks: [AppTask] {
+        tasks.filter { $0.isDone }
+    }
+
+    private var activeItems: [CalendarBoardColumnItem] {
+        let eventItems = events.map { CalendarBoardColumnItem.event(CalendarAllDayEventItem(event: $0)) }
+        let bundleItems = bundles.map { CalendarBoardColumnItem.bundle($0) }
+        let taskItems = activeTasks.map { CalendarBoardColumnItem.task($0) }
+        return (eventItems + bundleItems + taskItems).sorted(by: sortColumnItems)
+    }
+
     private var totalCount: Int {
-        tasks.count + bundles.count + events.count
+        activeItems.count + completedTasks.count
     }
 
     var body: some View {
@@ -222,6 +242,7 @@ private struct CalendarBoardDayColumn: View {
             todayAccent
             addTaskButton
             content
+            completedFooter
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
@@ -327,35 +348,92 @@ private struct CalendarBoardDayColumn: View {
 
     @ViewBuilder
     private var content: some View {
-        if totalCount == 0 {
-            CalendarBoardEmptyColumn()
-                .frame(maxWidth: .infinity)
-                .padding(.top, 8)
-        } else {
+        if !activeItems.isEmpty {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(events, id: \.calendarItemIdentifier) { event in
-                        CalendarBoardEventCard(event: event)
-                    }
-
-                    ForEach(bundles) { bundle in
-                        CalendarBoardBundleCard(
-                            bundle: bundle,
-                            allTasks: allTasks,
-                            areas: areas,
-                            projects: projects,
-                            onDropTask: { task in onDropTaskOnBundle(task, bundle) }
-                        )
-                    }
-
-                    ForEach(tasks) { task in
-                        KanbanCard(task: task, presentation: .calendarBoard(dateKey: dateKey))
-                            .draggable(TaskDragPayload.string(for: task.id))
+                    ForEach(activeItems) { item in
+                        columnItemView(item)
                     }
                 }
                 .padding(.bottom, 4)
             }
             .scrollIndicators(.hidden)
+        }
+    }
+
+    @ViewBuilder
+    private var completedFooter: some View {
+        if !completedTasks.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    withAnimation(.snappy(duration: 0.16)) {
+                        isCompletedCollapsed.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: isCompletedCollapsed ? "chevron.right" : "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                            .frame(width: 12)
+                        Text("Completed")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer(minLength: 0)
+                        Text("\(completedTasks.count)")
+                            .font(.system(size: 11, weight: .bold))
+                            .monospacedDigit()
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Theme.surfaceElevated.opacity(0.72))
+                            .clipShape(Capsule())
+                    }
+                    .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 10)
+                    .frame(height: 34)
+                    .background(Theme.surfaceElevated.opacity(0.42))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(Theme.borderSubtle.opacity(0.35), lineWidth: 1)
+                    }
+                }
+                .buttonStyle(.cadencePlain)
+
+                if !isCompletedCollapsed {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(completedTasks.sorted { lhs, rhs in
+                            CalendarBoardPlannerSupport.boardTaskSort(lhs, rhs)
+                        }) { task in
+                            KanbanCard(task: task, presentation: .calendarBoard(dateKey: dateKey))
+                                .draggable(TaskDragPayload.string(for: task.id))
+                        }
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func columnItemView(_ item: CalendarBoardColumnItem) -> some View {
+        switch item {
+        case .event(let item):
+            CalendarBoardEventCard(event: item.event)
+        case .bundle(let bundle):
+            CalendarBoardBundleCard(
+                bundle: bundle,
+                allTasks: allTasks,
+                areas: areas,
+                projects: projects,
+                onDropTask: { task in
+                    rememberBundleTaskDrop(task)
+                    onDropTaskOnBundle(task, bundle)
+                },
+                onDropTargetedChanged: { targeted in
+                    updateTargetedBundle(bundle, targeted: targeted)
+                }
+            )
+        case .task(let task):
+            KanbanCard(task: task, presentation: .calendarBoard(dateKey: dateKey))
+                .draggable(TaskDragPayload.string(for: task.id))
         }
     }
 
@@ -384,14 +462,112 @@ private struct CalendarBoardDayColumn: View {
         }
         if let taskID = TaskDragPayload.taskID(from: payload),
            let task = allTasks.first(where: { $0.id == taskID }) {
+            if shouldSuppressDayDrop(for: taskID) {
+                return true
+            }
             onDropTaskOnDay(task)
             return true
         }
         return false
     }
 
+    private func updateTargetedBundle(_ bundle: TaskBundle, targeted: Bool) {
+        if targeted {
+            targetedBundleID = bundle.id
+        } else if targetedBundleID == bundle.id {
+            targetedBundleID = nil
+        }
+    }
+
+    private func rememberBundleTaskDrop(_ task: AppTask) {
+        recentlyBundledTaskID = task.id
+        recentlyBundledTaskDropExpiresAt = Date().addingTimeInterval(0.75)
+    }
+
+    private func shouldSuppressDayDrop(for taskID: UUID) -> Bool {
+        if targetedBundleID != nil {
+            return true
+        }
+        if recentlyBundledTaskID == taskID, Date() < recentlyBundledTaskDropExpiresAt {
+            return true
+        }
+        return false
+    }
+
+    private func sortColumnItems(_ lhs: CalendarBoardColumnItem, _ rhs: CalendarBoardColumnItem) -> Bool {
+        let lhsStart = lhs.sortStartMinute
+        let rhsStart = rhs.sortStartMinute
+        if lhsStart != rhsStart {
+            return lhsStart < rhsStart
+        }
+        if lhs.kindRank != rhs.kindRank {
+            return lhs.kindRank < rhs.kindRank
+        }
+        switch (lhs, rhs) {
+        case (.task(let lhsTask), .task(let rhsTask)):
+            return CalendarBoardPlannerSupport.boardTaskSort(lhsTask, rhsTask)
+        case (.bundle(let lhsBundle), .bundle(let rhsBundle)):
+            if lhsBundle.createdAt != rhsBundle.createdAt {
+                return lhsBundle.createdAt < rhsBundle.createdAt
+            }
+            return lhsBundle.id.uuidString < rhsBundle.id.uuidString
+        case (.event(let lhsEvent), .event(let rhsEvent)):
+            return lhsEvent.id < rhsEvent.id
+        default:
+            return lhs.id < rhs.id
+        }
+    }
+
     private func allBundlesLookup(_ id: UUID) -> TaskBundle? {
         allBundles.first(where: { $0.id == id }) ?? bundles.first(where: { $0.id == id })
+    }
+}
+
+private enum CalendarBoardColumnItem: Identifiable {
+    case event(CalendarAllDayEventItem)
+    case bundle(TaskBundle)
+    case task(AppTask)
+
+    var id: String {
+        switch self {
+        case .event(let item):
+            return "event-\(item.id)"
+        case .bundle(let bundle):
+            return "bundle-\(bundle.id.uuidString)"
+        case .task(let task):
+            return "task-\(task.id.uuidString)"
+        }
+    }
+
+    var kindRank: Int {
+        switch self {
+        case .event:
+            return 0
+        case .bundle:
+            return 1
+        case .task:
+            return 2
+        }
+    }
+
+    var sortStartMinute: Int {
+        switch self {
+        case .event(let item):
+            if item.event.isAllDay {
+                return -1
+            }
+            return CalendarBoardColumnItem.startMinute(for: item.event)
+        case .bundle(let bundle):
+            return bundle.startMin
+        case .task(let task):
+            return task.scheduledStartMin >= 0 ? task.scheduledStartMin : Int.max
+        }
+    }
+
+    private static func startMinute(for event: EKEvent) -> Int {
+        guard let startDate = event.startDate else { return Int.max - 1 }
+        let components = Calendar.current.dateComponents([.hour, .minute], from: startDate)
+        return max(0, ((components.hour ?? 0) * 60) + (components.minute ?? 0))
     }
 }
 

@@ -72,16 +72,16 @@ struct FocusPickSessionCard: View {
     @FocusState private var searchFieldFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 18) {
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Ready to focus")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.dim)
                         .textCase(.uppercase)
 
                     Text(title)
-                        .font(.system(size: 28, weight: .semibold))
+                        .font(.system(size: 23, weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
@@ -106,13 +106,10 @@ struct FocusPickSessionCard: View {
                     .lineLimit(1)
 
                 Spacer(minLength: 12)
-
-                FocusPickerLegendItem(color: Theme.blue, title: "Tasks")
-                FocusPickerLegendItem(color: Theme.amber, title: "Bundles")
             }
 
             ScrollView {
-                LazyVStack(spacing: 8) {
+                LazyVStack(spacing: 6) {
                     if items.isEmpty {
                         emptyState
                     } else {
@@ -139,8 +136,13 @@ struct FocusPickSessionCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.blue.opacity(0.18), lineWidth: 1)
+                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
         )
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Theme.blue.opacity(searchFieldFocused ? 0.55 : 0.22))
+                .frame(height: 2)
+        }
     }
 
     private var searchBar: some View {
@@ -238,15 +240,16 @@ struct FocusPickSessionCard: View {
 private struct FocusPickItemRow: View {
     let item: FocusPickItem
     let action: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 leadingIcon
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Theme.text)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .lineLimit(1)
@@ -257,32 +260,25 @@ private struct FocusPickItemRow: View {
                         .lineLimit(1)
                 }
 
-                Text(kindLabel)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(tint.opacity(0.1))
-                    .clipShape(Capsule())
-
                 Image(systemName: "play.fill")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(tint)
-                    .frame(width: 30, height: 30)
-                    .background(tint.opacity(0.12))
+                    .frame(width: 26, height: 26)
+                    .background(tint.opacity(isHovered ? 0.16 : 0.09))
                     .clipShape(Circle())
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .background(Theme.surfaceElevated.opacity(0.9))
+            .padding(.horizontal, 11)
+            .padding(.vertical, 9)
+            .background(Theme.surfaceElevated.opacity(isHovered ? 0.88 : 0.58))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
+                    .stroke(isHovered ? tint.opacity(0.2) : Theme.borderSubtle.opacity(0.35), lineWidth: 1)
             }
         }
         .buttonStyle(.cadencePlain)
         .help(helpText)
+        .onHover { isHovered = $0 }
     }
 
     @ViewBuilder
@@ -296,12 +292,12 @@ private struct FocusPickItemRow: View {
                     .fill(Color(hex: task.containerColor))
                     .frame(width: 8, height: 8)
             }
-            .frame(width: 28, height: 28)
+            .frame(width: 24, height: 24)
         case .bundle:
             Image(systemName: "tray.full")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.amber)
-                .frame(width: 28, height: 28)
+                .frame(width: 24, height: 24)
                 .background(Theme.amber.opacity(0.12))
                 .clipShape(Circle())
         }
@@ -342,15 +338,6 @@ private struct FocusPickItemRow: View {
         }
     }
 
-    private var kindLabel: String {
-        switch item {
-        case .task:
-            return "Task"
-        case .bundle:
-            return "Bundle"
-        }
-    }
-
     private var helpText: String {
         switch item {
         case .task:
@@ -365,44 +352,22 @@ private struct FocusIdleClockBadge: View {
     let clockDisplay: String
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 4) {
-            Text("Session")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .textCase(.uppercase)
+        HStack(spacing: 9) {
+            Image(systemName: "timer")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.blue)
 
             Text(clockDisplay)
-                .font(.system(size: 34, weight: .light, design: .monospaced))
+                .font(.system(size: 24, weight: .light, design: .monospaced))
                 .foregroundStyle(Theme.muted)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(minWidth: 142, alignment: .trailing)
-        .background(Theme.surfaceElevated.opacity(0.7))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.borderSubtle.opacity(0.75), lineWidth: 1)
-        }
-    }
-}
-
-private struct FocusPickerLegendItem: View {
-    let color: Color
-    let title: String
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(color)
-                .frame(width: 6, height: 6)
-            Text(title)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Theme.dim)
-        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Theme.surfaceElevated.opacity(0.58))
+        .clipShape(Capsule())
     }
 }
 #endif

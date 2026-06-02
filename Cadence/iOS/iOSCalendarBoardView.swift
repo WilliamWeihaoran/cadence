@@ -62,7 +62,8 @@ struct iOSCalendarBoardPlanner: View {
                 .padding(.horizontal, horizontalPadding)
                 .padding(.vertical, 16)
             }
-            .scrollIndicators(.visible)
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.always, axes: .horizontal)
             .background(Theme.bg)
             .onScrollGeometryChange(for: Int.self) { geometry in
                 visibleDayIndex(for: geometry.contentOffset.x)
@@ -196,13 +197,31 @@ private struct iOSCalendarBoardDayColumn: View {
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var isDropTargeted = false
+    @State private var targetedBundleID: UUID?
+    @State private var recentlyBundledTaskID: UUID?
+    @State private var recentlyBundledTaskDropExpiresAt = Date.distantPast
+    @State private var isCompletedCollapsed = true
 
     private var isToday: Bool {
         dateKey == DateFormatters.todayKey()
     }
 
+    private var activeTasks: [AppTask] {
+        tasks.filter { !$0.isDone }
+    }
+
+    private var completedTasks: [AppTask] {
+        tasks.filter { $0.isDone }
+    }
+
+    private var activeItems: [iOSCalendarBoardColumnItem] {
+        let bundleItems = bundles.map { iOSCalendarBoardColumnItem.bundle($0) }
+        let taskItems = activeTasks.map { iOSCalendarBoardColumnItem.task($0) }
+        return (bundleItems + taskItems).sorted(by: sortColumnItems)
+    }
+
     private var totalCount: Int {
-        tasks.count + bundles.count
+        activeItems.count + completedTasks.count
     }
 
     var body: some View {
@@ -211,6 +230,7 @@ private struct iOSCalendarBoardDayColumn: View {
             todayAccent
             addTaskButton
             content
+            completedFooter
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
@@ -312,29 +332,88 @@ private struct iOSCalendarBoardDayColumn: View {
 
     @ViewBuilder
     private var content: some View {
-        if totalCount == 0 {
-            iOSCalendarBoardEmptyColumn()
-                .frame(maxWidth: .infinity)
-                .padding(.top, 8)
-        } else {
+        if !activeItems.isEmpty {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(bundles) { bundle in
-                        iOSCalendarBoardBundleCard(
-                            bundle: bundle,
-                            allTasks: allTasks,
-                            onDropTask: { task in onDropTaskOnBundle(task, bundle) }
-                        )
-                    }
-
-                    ForEach(tasks) { task in
-                        iOSCalendarBoardTaskCard(task: task, dateKey: dateKey)
-                            .draggable(TaskDragPayload.string(for: task.id))
+                    ForEach(activeItems) { item in
+                        columnItemView(item)
                     }
                 }
                 .padding(.bottom, 4)
             }
             .scrollIndicators(.hidden)
+        }
+    }
+
+    @ViewBuilder
+    private var completedFooter: some View {
+        if !completedTasks.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    withAnimation(.snappy(duration: 0.16)) {
+                        isCompletedCollapsed.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: isCompletedCollapsed ? "chevron.right" : "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                            .frame(width: 12)
+                        Text("Completed")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer(minLength: 0)
+                        Text("\(completedTasks.count)")
+                            .font(.system(size: 11, weight: .bold))
+                            .monospacedDigit()
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Theme.surfaceElevated.opacity(0.72))
+                            .clipShape(Capsule())
+                    }
+                    .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 10)
+                    .frame(height: 34)
+                    .background(Theme.surfaceElevated.opacity(0.42))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(Theme.borderSubtle.opacity(0.35), lineWidth: 1)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                if !isCompletedCollapsed {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(completedTasks.sorted { lhs, rhs in
+                            CalendarBoardPlannerSupport.boardTaskSort(lhs, rhs)
+                        }) { task in
+                            iOSCalendarBoardTaskCard(task: task, dateKey: dateKey)
+                                .draggable(TaskDragPayload.string(for: task.id))
+                        }
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func columnItemView(_ item: iOSCalendarBoardColumnItem) -> some View {
+        switch item {
+        case .bundle(let bundle):
+            iOSCalendarBoardBundleCard(
+                bundle: bundle,
+                allTasks: allTasks,
+                onDropTask: { task in
+                    rememberBundleTaskDrop(task)
+                    onDropTaskOnBundle(task, bundle)
+                },
+                onDropTargetedChanged: { targeted in
+                    updateTargetedBundle(bundle, targeted: targeted)
+                }
+            )
+        case .task(let task):
+            iOSCalendarBoardTaskCard(task: task, dateKey: dateKey)
+                .draggable(TaskDragPayload.string(for: task.id))
         }
     }
 
@@ -363,10 +442,90 @@ private struct iOSCalendarBoardDayColumn: View {
         }
         if let taskID = TaskDragPayload.taskID(from: payload),
            let task = allTasks.first(where: { $0.id == taskID }) {
+            if shouldSuppressDayDrop(for: taskID) {
+                return true
+            }
             onDropTaskOnDay(task)
             return true
         }
         return false
+    }
+
+    private func updateTargetedBundle(_ bundle: TaskBundle, targeted: Bool) {
+        if targeted {
+            targetedBundleID = bundle.id
+        } else if targetedBundleID == bundle.id {
+            targetedBundleID = nil
+        }
+    }
+
+    private func rememberBundleTaskDrop(_ task: AppTask) {
+        recentlyBundledTaskID = task.id
+        recentlyBundledTaskDropExpiresAt = Date().addingTimeInterval(0.75)
+    }
+
+    private func shouldSuppressDayDrop(for taskID: UUID) -> Bool {
+        if targetedBundleID != nil {
+            return true
+        }
+        if recentlyBundledTaskID == taskID, Date() < recentlyBundledTaskDropExpiresAt {
+            return true
+        }
+        return false
+    }
+
+    private func sortColumnItems(_ lhs: iOSCalendarBoardColumnItem, _ rhs: iOSCalendarBoardColumnItem) -> Bool {
+        let lhsStart = lhs.sortStartMinute
+        let rhsStart = rhs.sortStartMinute
+        if lhsStart != rhsStart {
+            return lhsStart < rhsStart
+        }
+        if lhs.kindRank != rhs.kindRank {
+            return lhs.kindRank < rhs.kindRank
+        }
+        switch (lhs, rhs) {
+        case (.task(let lhsTask), .task(let rhsTask)):
+            return CalendarBoardPlannerSupport.boardTaskSort(lhsTask, rhsTask)
+        case (.bundle(let lhsBundle), .bundle(let rhsBundle)):
+            if lhsBundle.createdAt != rhsBundle.createdAt {
+                return lhsBundle.createdAt < rhsBundle.createdAt
+            }
+            return lhsBundle.id.uuidString < rhsBundle.id.uuidString
+        default:
+            return lhs.id < rhs.id
+        }
+    }
+}
+
+private enum iOSCalendarBoardColumnItem: Identifiable {
+    case bundle(TaskBundle)
+    case task(AppTask)
+
+    var id: String {
+        switch self {
+        case .bundle(let bundle):
+            return "bundle-\(bundle.id.uuidString)"
+        case .task(let task):
+            return "task-\(task.id.uuidString)"
+        }
+    }
+
+    var kindRank: Int {
+        switch self {
+        case .bundle:
+            return 0
+        case .task:
+            return 1
+        }
+    }
+
+    var sortStartMinute: Int {
+        switch self {
+        case .bundle(let bundle):
+            return bundle.startMin
+        case .task(let task):
+            return task.scheduledStartMin >= 0 ? task.scheduledStartMin : Int.max
+        }
     }
 }
 
@@ -478,6 +637,7 @@ private struct iOSCalendarBoardBundleCard: View {
     let bundle: TaskBundle
     let allTasks: [AppTask]
     let onDropTask: (AppTask) -> Void
+    var onDropTargetedChanged: (Bool) -> Void = { _ in }
 
     @State private var isTargeted = false
 
@@ -538,24 +698,10 @@ private struct iOSCalendarBoardBundleCard: View {
                   let task = allTasks.first(where: { $0.id == taskID }) else { return false }
             onDropTask(task)
             return true
-        } isTargeted: { isTargeted = $0 }
-    }
-}
-
-private struct iOSCalendarBoardEmptyColumn: View {
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "calendar")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.dim.opacity(0.7))
-            Text("No plans")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.dim)
+        } isTargeted: { targeted in
+            isTargeted = targeted
+            onDropTargetedChanged(targeted)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .background(Theme.surfaceElevated.opacity(0.30))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

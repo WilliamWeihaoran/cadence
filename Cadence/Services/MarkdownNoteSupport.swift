@@ -7,8 +7,94 @@ struct NoteTemplate: Identifiable, Hashable {
     let body: String
 }
 
+struct NoteTemplateOverride: Codable, Equatable {
+    var title: String
+    var subtitle: String
+    var body: String
+}
+
 enum NoteTemplateLibrary {
-    static func templates(for kind: NoteKind) -> [NoteTemplate] {
+    static let storageKey = "noteTemplateOverrides"
+
+    static func templates(for kind: NoteKind, overridesRaw: String? = nil) -> [NoteTemplate] {
+        let overrides = overrides(from: overridesRaw ?? UserDefaults.standard.string(forKey: storageKey) ?? "")
+        switch kind {
+        case .daily:
+            return merged([dailyPlan, dailyReview], with: overrides)
+        case .weekly:
+            return merged([weeklyReview, projectBrief, decisionLog], with: overrides)
+        case .meeting:
+            return merged([meetingNotes, decisionLog], with: overrides)
+        case .permanent, .list:
+            return merged([projectBrief, researchNote, decisionLog, checklist], with: overrides)
+        }
+    }
+
+    static func editableTemplates(overridesRaw: String) -> [NoteTemplate] {
+        merged(defaultTemplates, with: overrides(from: overridesRaw))
+    }
+
+    static func overrides(from raw: String) -> [String: NoteTemplateOverride] {
+        guard let data = raw.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([String: NoteTemplateOverride].self, from: data) else {
+            return [:]
+        }
+        return decoded
+    }
+
+    static func rawOverrides(from overrides: [String: NoteTemplateOverride]) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(overrides),
+              let raw = String(data: data, encoding: .utf8) else {
+            return ""
+        }
+        return raw
+    }
+
+    static func setOverride(for id: String, title: String, subtitle: String, body: String, in raw: String) -> String {
+        var overrides = overrides(from: raw)
+        guard let defaultTemplate = defaultTemplates.first(where: { $0.id == id }) else { return raw }
+        let normalized = NoteTemplateOverride(
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+            subtitle: subtitle.trimmingCharacters(in: .whitespacesAndNewlines),
+            body: body
+        )
+        if normalized.title == defaultTemplate.title,
+           normalized.subtitle == defaultTemplate.subtitle,
+           normalized.body == defaultTemplate.body {
+            overrides.removeValue(forKey: id)
+        } else {
+            overrides[id] = normalized
+        }
+        return rawOverrides(from: overrides)
+    }
+
+    static func resetOverride(for id: String, in raw: String) -> String {
+        var overrides = overrides(from: raw)
+        overrides.removeValue(forKey: id)
+        return rawOverrides(from: overrides)
+    }
+
+    static func isCustomized(_ template: NoteTemplate, overridesRaw: String) -> Bool {
+        overrides(from: overridesRaw)[template.id] != nil
+    }
+
+    static func defaultTemplate(id: String) -> NoteTemplate? {
+        defaultTemplates.first { $0.id == id }
+    }
+
+    static func noteKinds(containing template: NoteTemplate) -> [NoteKind] {
+        NoteKind.allCases.filter { kind in
+            defaultTemplates(for: kind).contains { $0.id == template.id }
+        }
+    }
+
+    private static var defaultTemplates: [NoteTemplate] {
+        [dailyPlan, dailyReview, weeklyReview, meetingNotes, projectBrief, researchNote, decisionLog, checklist]
+    }
+
+    private static func defaultTemplates(for kind: NoteKind) -> [NoteTemplate] {
         switch kind {
         case .daily:
             return [dailyPlan, dailyReview]
@@ -18,6 +104,18 @@ enum NoteTemplateLibrary {
             return [meetingNotes, decisionLog]
         case .permanent, .list:
             return [projectBrief, researchNote, decisionLog, checklist]
+        }
+    }
+
+    private static func merged(_ templates: [NoteTemplate], with overrides: [String: NoteTemplateOverride]) -> [NoteTemplate] {
+        templates.map { template in
+            guard let override = overrides[template.id] else { return template }
+            return NoteTemplate(
+                id: template.id,
+                title: override.title.isEmpty ? template.title : override.title,
+                subtitle: override.subtitle.isEmpty ? template.subtitle : override.subtitle,
+                body: override.body
+            )
         }
     }
 
@@ -184,6 +282,23 @@ enum NoteTemplateLibrary {
 
         """
     )
+}
+
+extension NoteKind {
+    var templateDisplayName: String {
+        switch self {
+        case .daily:
+            return "Daily"
+        case .weekly:
+            return "Weekly"
+        case .permanent:
+            return "Permanent"
+        case .list:
+            return "List"
+        case .meeting:
+            return "Meeting"
+        }
+    }
 }
 
 struct MarkdownTableRowStyle: Hashable {

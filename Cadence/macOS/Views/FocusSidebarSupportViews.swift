@@ -99,13 +99,19 @@ struct FocusSidebar: View {
 struct FocusSidebarTaskRow: View {
     let task: AppTask
     let action: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 9) {
-                Circle()
-                    .fill(Color(hex: task.containerColor))
-                    .frame(width: 7, height: 7)
+                ZStack {
+                    Circle()
+                        .fill(Color(hex: task.containerColor).opacity(0.14))
+                    Circle()
+                        .fill(Color(hex: task.containerColor))
+                        .frame(width: 6, height: 6)
+                }
+                .frame(width: 22, height: 22)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(task.title.isEmpty ? "Untitled" : task.title)
@@ -124,17 +130,18 @@ struct FocusSidebarTaskRow: View {
                 Image(systemName: "play.fill")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Theme.blue)
-                    .frame(width: 24, height: 24)
-                    .background(Theme.blue.opacity(0.11))
+                    .frame(width: 22, height: 22)
+                    .background(Theme.blue.opacity(isHovered ? 0.15 : 0.08))
                     .clipShape(Circle())
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(Theme.surfaceElevated.opacity(0.82))
+            .background(Theme.surfaceElevated.opacity(isHovered ? 0.78 : 0.52))
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.cadencePlain)
         .help("Focus this task")
+        .onHover { isHovered = $0 }
     }
 
     private var detail: String {

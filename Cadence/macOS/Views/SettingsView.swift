@@ -12,6 +12,7 @@ struct SettingsView: View {
     @AppStorage("sidebarHiddenTabs") private var sidebarHiddenTabsRaw = ""
     @AppStorage("sidebarTabOrder") private var sidebarTabOrderRaw = ""
     @AppStorage("sidebarTabColors") private var sidebarTabColorsRaw = ""
+    @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -131,6 +132,9 @@ struct SettingsView: View {
             case .tags:
                 let activeTagCount = TagSupport.uniqueBySlug(tags.filter { !$0.isArchived }).count
                 SettingsStatusBadge(title: "\(activeTagCount) active", isActive: activeTagCount > 0)
+            case .templates:
+                let customCount = NoteTemplateLibrary.overrides(from: noteTemplateOverridesRaw).count
+                SettingsStatusBadge(title: "\(customCount) customized", isActive: customCount > 0)
             default:
                 EmptyView()
             }
@@ -174,6 +178,8 @@ struct SettingsView: View {
             )
         case .tags:
             SettingsTagsSection(tags: tags)
+        case .templates:
+            SettingsTemplatesSection(templateOverridesRaw: $noteTemplateOverridesRaw)
         case .lists:
             SettingsListsSection(
                 completedAreas: areas.filter(\.isDone),

@@ -143,7 +143,7 @@ struct TaskTitleEntryField: View {
     }
 
     private var canUseTildeRouting: Bool {
-        containerSelection != nil && sectionName != nil
+        containerSelection != nil
     }
 
     private var canUseTagRouting: Bool {
@@ -250,11 +250,7 @@ struct TaskTitleEntryField: View {
                     ),
                     arrowEdge: .bottom
                 ) {
-                    if tildeMode == .list {
-                        tildeListSearchView
-                    } else {
-                        tildeSectionSearchView
-                    }
+                    tildeListSearchView
                 }
             Spacer(minLength: 0)
         }
@@ -283,7 +279,7 @@ struct TaskTitleEntryField: View {
                         return .handled
                     }
                     .onKeyPress(.tab) {
-                        restoreLiteralShortcut(marker: "~", query: tildeSearchQuery)
+                        selectTildeContainer()
                         return .handled
                     }
                     .onKeyPress(.delete) {
@@ -319,7 +315,7 @@ struct TaskTitleEntryField: View {
                             icon: item.icon,
                             name: item.name,
                             color: item.color,
-                            isHighlighted: index == tildeHighlightIdx,
+                            isHighlighted: index == clampedTildeHighlightIndex,
                             isSelected: containerSelection.map { $0.wrappedValue == item.tag } ?? false,
                             action: { selectTildeContainerItem(item.tag) }
                         )
@@ -330,8 +326,12 @@ struct TaskTitleEntryField: View {
         }
         .frame(minWidth: 200)
         .background(Theme.surfaceElevated)
-        .onAppear { DispatchQueue.main.async { isTildeSearchFocused = true } }
+        .onAppear {
+            clampTildeHighlight()
+            DispatchQueue.main.async { isTildeSearchFocused = true }
+        }
         .onChange(of: tildeSearchQuery) { _, _ in tildeHighlightIdx = 0 }
+        .onChange(of: tildeFlatContainers.map(\.id)) { _, _ in clampTildeHighlight() }
     }
 
     private var tagPreview: some View {
@@ -414,38 +414,18 @@ struct TaskTitleEntryField: View {
             .fixedSize()
     }
 
-    private var tildeSectionSearchView: some View {
-        TildeSectionSearchPanel(
-            sections: availableSections,
-            selectedSectionName: sectionName?.wrappedValue ?? TaskSectionDefaults.defaultName,
-            onSelect: { section in
-                sectionName?.wrappedValue = section
-                tildeMode = .none
-                DispatchQueue.main.async { isTitleFocused = true }
-            },
-            onDismiss: {
-                tildeMode = .none
-                DispatchQueue.main.async { isTitleFocused = true }
-            }
-        )
-    }
-
     private func moveTildeHighlight(by offset: Int) {
-        let count = tildeFlatContainers.count
-        guard count > 0 else { return }
-        tildeHighlightIdx = min(max(tildeHighlightIdx + offset, 0), count - 1)
+        tildeHighlightIdx = movedHighlightIndex(tildeHighlightIdx, by: offset, count: tildeFlatContainers.count)
     }
 
     private func moveTagHighlight(by offset: Int) {
-        let count = filteredTags.count
-        guard count > 0 else { return }
-        tagHighlightIdx = min(max(tagHighlightIdx + offset, 0), count - 1)
+        tagHighlightIdx = movedHighlightIndex(tagHighlightIdx, by: offset, count: tagPickerOptionCount)
     }
 
     private func selectTildeContainer() {
         let items = tildeFlatContainers
         guard !items.isEmpty else { return }
-        selectTildeContainerItem(items[min(tildeHighlightIdx, items.count - 1)].tag)
+        selectTildeContainerItem(items[clampedTildeHighlightIndex].tag)
     }
 
     private func selectTildeContainerItem(_ tag: TaskContainerSelection) {
@@ -453,16 +433,40 @@ struct TaskTitleEntryField: View {
         normalizeSelectedSection()
         tildeSearchQuery = ""
         tildeHighlightIdx = 0
-        tildeMode = .section
+        tildeMode = .none
+        DispatchQueue.main.async { isTitleFocused = true }
     }
 
     private func selectInlineTag() {
         let tags = filteredTags
-        if !tags.isEmpty {
-            selectInlineTagItem(tags[min(tagHighlightIdx, tags.count - 1)])
+        let index = clampedHighlightIndex(tagHighlightIdx, count: tagPickerOptionCount)
+        if index < tags.count {
+            selectInlineTagItem(tags[index])
         } else if canCreateInlineTag {
             createInlineTag()
         }
+    }
+
+    private var tagPickerOptionCount: Int {
+        filteredTags.count + (canCreateInlineTag ? 1 : 0)
+    }
+
+    private var clampedTildeHighlightIndex: Int {
+        clampedHighlightIndex(tildeHighlightIdx, count: tildeFlatContainers.count)
+    }
+
+    private func clampTildeHighlight() {
+        tildeHighlightIdx = clampedTildeHighlightIndex
+    }
+
+    private func movedHighlightIndex(_ current: Int, by offset: Int, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        return (clampedHighlightIndex(current, count: count) + offset + count) % count
+    }
+
+    private func clampedHighlightIndex(_ index: Int, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        return min(max(index, 0), count - 1)
     }
 
     private func createInlineTag() {
@@ -522,7 +526,6 @@ struct TaskTitleEntryField: View {
 private enum TaskTitleTildeMode {
     case none
     case list
-    case section
 }
 
 private struct TaskTitleTildeContainerItem: Identifiable {

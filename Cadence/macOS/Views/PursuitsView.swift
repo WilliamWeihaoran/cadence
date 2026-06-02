@@ -89,13 +89,13 @@ struct PursuitsView: View {
                 )
                 .frame(minWidth: 560, idealWidth: 720)
             } else {
-                EmptyStateView(
-                    message: "No pursuits yet",
+                CommitmentEmptyDetail(
+                    icon: "sparkles",
+                    title: "No pursuits yet",
                     subtitle: "Create a pursuit for ongoing directions like learning, strength, or craft.",
-                    icon: "sparkles"
+                    background: Theme.bg
                 )
                 .frame(minWidth: 560, idealWidth: 720)
-                .background(Theme.bg)
             }
         }
         .background(Theme.bg)
@@ -121,44 +121,24 @@ struct PursuitsView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Pursuits")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                    Text("Directions powered by milestones and habits.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.muted)
-                }
-                Spacer()
-                CadenceActionButton(
-                    title: "New Pursuit",
-                    systemImage: "plus",
-                    role: .primary,
-                    size: .compact
-                ) {
-                    showCreatePursuit = true
-                }
+        CommitmentPageHeader(
+            title: "Pursuits",
+            subtitle: "Directions powered by milestones and habits."
+        ) {
+            CadenceActionButton(
+                title: "New Pursuit",
+                systemImage: "plus",
+                role: .primary,
+                size: .compact
+            ) {
+                showCreatePursuit = true
             }
-
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
-                TextField("Search pursuits", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.text)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+        } controls: {
+            CommitmentSearchField(
+                placeholder: "Search pursuits",
+                text: $searchText
+            )
         }
-        .padding(20)
-        .background(Theme.surface)
     }
 
     @ViewBuilder

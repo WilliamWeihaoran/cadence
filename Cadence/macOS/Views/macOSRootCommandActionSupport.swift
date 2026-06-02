@@ -123,7 +123,7 @@ enum RootCommandActionSupport {
             }
         case .event(let eventID):
             let event = context.calendarManager.searchEvents(matching: "")
-                .first { ($0.eventIdentifier ?? "") == eventID }
+                .first { CalendarEventIdentity.matches($0, identifier: eventID) }
             if let startDate = event?.startDate {
                 context.calendarNavigationManager.open(date: startDate)
             }

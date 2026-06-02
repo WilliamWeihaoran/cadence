@@ -51,6 +51,7 @@ struct CreateTaskSheet: View {
         _dueDate           = State(initialValue: resolvedDueDate)
         _hasDoDate         = State(initialValue: !seed.doDateKey.isEmpty)
         _doDate            = State(initialValue: resolvedDoDate)
+        _subtaskTitles     = State(initialValue: seed.subtaskTitles)
     }
 
     var body: some View {
@@ -354,7 +355,9 @@ struct CreateTaskSheet: View {
             dueDateKey: hasDueDate ? DateFormatters.dateKey(from: dueDate) : "",
             scheduledDateKey: hasDoDate ? DateFormatters.dateKey(from: doDate) : "",
             subtaskTitles: subtaskTitles,
-            tags: selectedTags
+            tags: selectedTags,
+            scheduledStartMin: seed.scheduledStartMin,
+            estimatedMinutes: seed.estimatedMinutes
         )
         guard TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: modelContext) != nil else {
             return

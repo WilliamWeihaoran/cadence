@@ -12,6 +12,8 @@ struct TaskCreationDraft {
     let scheduledDateKey: String
     let subtaskTitles: [String]
     let tags: [Tag]
+    var scheduledStartMin: Int = -1
+    var estimatedMinutes: Int = 30
 
     var trimmedTitle: String {
         if let shortcut = TaskTitleSupport.priorityShortcut(in: title) {
@@ -95,6 +97,8 @@ struct TaskCreationService {
         task.sectionName = containerResolver.normalizedSectionName(draft.sectionName, for: draft.container)
         task.dueDate = draft.dueDateKey
         task.scheduledDate = draft.scheduledDateKey
+        task.scheduledStartMin = draft.scheduledDateKey.isEmpty ? -1 : draft.scheduledStartMin
+        task.estimatedMinutes = max(5, draft.estimatedMinutes)
         task.tags = TagSupport.sorted(draft.tags)
         containerResolver.applyContainer(draft.container, to: task)
 
