@@ -35,7 +35,20 @@ struct QuickCreateChoicePopover: View {
     @State private var selectedBundleTaskIDs: [UUID] = []
     @FocusState private var focused: Bool
     @FocusState private var isTildeSearchFocused: Bool
-    private let modeFormMinHeight: CGFloat = 280
+
+    private var usesCalendarCreationPanel: Bool {
+        !usesTaskPanelForTaskCreation
+    }
+
+    private var modeFormMinHeight: CGFloat {
+        usesCalendarCreationPanel ? 330 : 280
+    }
+
+    private var popoverWidth: CGFloat {
+        if usesCalendarCreationPanel { return 440 }
+        if mode == .bundle { return 326 }
+        return 316
+    }
 
     init(
         startMin: Int,
@@ -62,9 +75,11 @@ struct QuickCreateChoicePopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(TimeFormatters.timeRange(startMin: startMin, endMin: endMin))
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.dim)
+            if !usesCalendarCreationPanel {
+                Text(TimeFormatters.timeRange(startMin: startMin, endMin: endMin))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+            }
 
             modeSelector
 
@@ -122,6 +137,9 @@ struct QuickCreateChoicePopover: View {
                     )
                 } else if mode == .timeBlock {
                     QuickCreateTaskDetailsView(
+                        dateKey: dateKey,
+                        startMin: startMin,
+                        endMin: endMin,
                         selectedContainer: $selectedContainer,
                         selectedSectionName: $selectedSectionName,
                         notes: $notes,
@@ -135,32 +153,19 @@ struct QuickCreateChoicePopover: View {
                     )
                 } else if mode == .calendarEvent {
                     let _ = calendarManager.storeVersion
-                    let calendars = calendarManager.writableCalendars
-                    if !calendars.isEmpty {
-                        CadenceCalendarPickerButton(
-                            calendars: calendars,
-                            selectedID: $selectedCalendarID,
-                            allowNone: false,
-                            style: .compact
-                        )
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Notes")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
-
-                        TextEditor(text: $notes)
-                            .scrollContentBackground(.hidden)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.text)
-                            .frame(minHeight: 84)
-                            .padding(8)
-                            .background(Theme.surfaceElevated)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
+                    QuickCreateEventDetailsView(
+                        dateKey: dateKey,
+                        startMin: startMin,
+                        endMin: endMin,
+                        calendars: calendarManager.writableCalendars,
+                        selectedCalendarID: $selectedCalendarID,
+                        notes: $notes
+                    )
                 } else if mode == .bundle {
-                    QuickCreateBundleTaskSelectionView(
+                    QuickCreateBundleDetailsView(
+                        dateKey: dateKey,
+                        startMin: startMin,
+                        endMin: endMin,
                         bundleDateKey: dateKey,
                         allTasks: allTasks,
                         areas: areas,
@@ -193,7 +198,7 @@ struct QuickCreateChoicePopover: View {
             }
         }
         .padding(14)
-        .frame(width: mode == .bundle ? 326 : 316)
+        .frame(width: popoverWidth)
         .background(Theme.surface)
         .onAppear {
             focused = true
@@ -282,12 +287,12 @@ struct QuickCreateChoicePopover: View {
             result.append(.init(tag: .inbox, icon: "tray", name: "Inbox", color: Theme.dim))
         }
         for context in contexts {
-            for area in areas.filter({ $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
+            for area in areas.filter({ $0.isActive && $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
                 if matches(area.name) {
                     result.append(.init(tag: .area(area.id), icon: area.icon, name: area.name, color: Color(hex: area.colorHex)))
                 }
             }
-            for project in projects.filter({ $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
+            for project in projects.filter({ $0.isActive && $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
                 if matches(project.name) {
                     result.append(.init(tag: .project(project.id), icon: project.icon, name: project.name, color: Color(hex: project.colorHex)))
                 }

@@ -28,6 +28,48 @@ struct TimelineCreateGridLayer: View {
     }
 }
 
+struct TimelineWorkHoursHighlightLayer: View {
+    let width: CGFloat
+    let metrics: TimelineMetrics
+    let startMinute: Int
+    let endMinute: Int
+
+    private var highlightFrame: CalendarWorkHoursPreferences.HighlightFrame? {
+        CalendarWorkHoursPreferences.highlightFrame(
+            startMinute: startMinute,
+            endMinute: endMinute,
+            timelineStartHour: metrics.startHour,
+            timelineEndHour: metrics.endHour,
+            hourHeight: metrics.hourHeight
+        )
+    }
+
+    var body: some View {
+        if let highlightFrame {
+            RoundedRectangle(cornerRadius: 0, style: .continuous)
+                .fill(Theme.amber.opacity(0.075))
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(Theme.amber.opacity(0.28))
+                        .frame(width: 3)
+                }
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(Theme.amber.opacity(0.12))
+                        .frame(height: 1)
+                }
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(Theme.amber.opacity(0.1))
+                        .frame(height: 1)
+                }
+                .frame(width: width, height: highlightFrame.height)
+                .offset(y: highlightFrame.y)
+                .allowsHitTesting(false)
+        }
+    }
+}
+
 struct TimelineScheduledBlocksLayer: View {
     let eventLayouts: [TimelineEventLayout]
     let bundleLayouts: [TimelineBundleLayout]
@@ -44,6 +86,7 @@ struct TimelineScheduledBlocksLayer: View {
     @Binding var activeDragTaskID: UUID?
     @Binding var activeDragBundleID: UUID?
     let onTaskDroppedOnBundle: (AppTask, TaskBundle) -> Void
+    let onTaskBundleDropAccepted: (UUID) -> Void
     let onCreateBundleFromTasks: (AppTask, AppTask) -> Void
     let onTaskSelected: () -> Void
     let onBundleSelected: () -> Void
@@ -92,6 +135,7 @@ struct TimelineScheduledBlocksLayer: View {
                 style: style,
                 selectedTaskID: $selectedTaskID,
                 activeDragTaskID: $activeDragTaskID,
+                onBundleDropAccepted: onTaskBundleDropAccepted,
                 onCreateBundleWithTask: onCreateBundleFromTasks,
                 onSelect: onTaskSelected
             )

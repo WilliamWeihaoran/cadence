@@ -83,6 +83,7 @@ struct TimelineBundleBlock: View {
                 activeDragBundleID = nil
                 selectedBundleID = bundle.id
             }
+            .suppressWindowBackgroundDrag()
             .onDrag {
                 selectedBundleID = nil
                 activeDragBundleID = bundle.id
@@ -135,6 +136,10 @@ struct TimelineBundleBlock: View {
                             focusManager.activeSession = nil
                         }
                         SchedulingActions.completeBundle(bundle, in: modelContext)
+                        selectedBundleID = nil
+                    },
+                    onUnbundle: {
+                        SchedulingActions.unbundle(bundle, in: modelContext)
                         selectedBundleID = nil
                     },
                     onDelete: {
@@ -332,61 +337,124 @@ struct TaskBundleDetailPopover: View {
     let onRemoveTask: (AppTask) -> Void
     let onMoveTask: (AppTask, Int) -> Void
     let onComplete: () -> Void
+    let onUnbundle: () -> Void
     let onDelete: () -> Void
 
     @State private var isConfirmingDelete = false
+    @State private var isConfirmingUnbundle = false
     @State private var isConfirmingComplete = false
     @State private var isAddingTasks = false
     @State private var taskSearch = ""
 
+    private var taskCountLabel: String {
+        "\(bundle.sortedTasks.count) task\(bundle.sortedTasks.count == 1 ? "" : "s")"
+    }
+
+    private var blockLengthLabel: String {
+        "\(bundle.durationMinutes)m block"
+    }
+
+    private var estimatedLengthLabel: String {
+        "\(bundle.totalEstimatedMinutes)m tasks"
+    }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            headerSection
+
+            Divider().background(Theme.borderSubtle.opacity(0.85))
+
+            taskSection
+
+            confirmationSection
+            actionDeck
+        }
+        .padding(18)
+        .frame(width: 376)
+        .background(
+            ZStack {
+                Theme.surface
+                LinearGradient(
+                    colors: [Theme.amber.opacity(0.045), Color.clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+        )
+    }
+
+    private var headerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            TextField("Bundle title", text: Binding(
-                get: { bundle.title },
-                set: { bundle.title = $0 }
-            ))
-            .textFieldStyle(.plain)
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(Theme.text)
-            .onSubmit {
-                if bundle.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    bundle.title = "Task Bundle"
+            HStack(alignment: .center, spacing: 12) {
+                TextField("Bundle title", text: Binding(
+                    get: { bundle.title },
+                    set: { bundle.title = $0 }
+                ))
+                .textFieldStyle(.plain)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .onSubmit {
+                    if bundle.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        bundle.title = "Task Bundle"
+                    }
                 }
+
+                Text(taskCountLabel)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Theme.amber)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Theme.amber.opacity(0.13))
+                    .clipShape(Capsule())
             }
 
-            HStack(spacing: 7) {
-                Text(TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.amber)
-                Text("/")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim.opacity(0.42))
-                Text("\(bundle.durationMinutes)m block")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
+            HStack(spacing: 8) {
+                BundleInspectorMetricPill(
+                    title: TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin),
+                    systemImage: "clock",
+                    tint: Theme.amber,
+                    isProminent: true
+                )
+                BundleInspectorMetricPill(
+                    title: blockLengthLabel,
+                    systemImage: "calendar.badge.clock",
+                    tint: Theme.dim
+                )
                 if bundle.totalEstimatedMinutes > 0 {
-                    Text("/")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim.opacity(0.42))
-                    Text("\(bundle.totalEstimatedMinutes)m tasks")
-                        .font(.system(size: 11))
+                    BundleInspectorMetricPill(
+                        title: estimatedLengthLabel,
+                        systemImage: "checklist",
+                        tint: Theme.dim
+                    )
+                }
+            }
+        }
+    }
+
+    private var taskSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tasks")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                    Text("\(bundle.activeTasks.count) active")
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Theme.dim)
                 }
-            }
 
-            Divider().background(Theme.borderSubtle)
-
-            HStack {
-                Text("\(bundle.sortedTasks.count) task\(bundle.sortedTasks.count == 1 ? "" : "s")")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
                 Spacer()
+
                 Button {
                     isAddingTasks.toggle()
                     taskSearch = ""
                 } label: {
-                    Label(isAddingTasks ? "Done" : "Add", systemImage: isAddingTasks ? "checkmark" : "plus")
-                        .font(.system(size: 11, weight: .semibold))
+                    Label(isAddingTasks ? "Done" : "Add task", systemImage: isAddingTasks ? "checkmark" : "plus")
+                        .font(.system(size: 12, weight: .bold))
+                        .padding(.horizontal, 10)
+                        .frame(height: 30)
+                        .background(Theme.amber.opacity(isAddingTasks ? 0.16 : 0.10))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.cadencePlain)
                 .foregroundStyle(Theme.amber)
@@ -406,11 +474,9 @@ struct TaskBundleDetailPopover: View {
             }
 
             if bundle.sortedTasks.isEmpty {
-                Text(isAddingTasks ? "Choose tasks above or drop tasks here." : "Drop tasks here or add them from this popover.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
+                BundleInspectorEmptyTasksView(isAddingTasks: isAddingTasks)
             } else {
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(bundle.sortedTasks.enumerated()), id: \.element.id) { index, task in
                         BundleTaskPopoverRow(
                             task: task,
@@ -422,69 +488,227 @@ struct TaskBundleDetailPopover: View {
                     }
                 }
             }
+        }
+    }
 
-            if isConfirmingComplete {
-                Text("This will mark every active task in this bundle complete and remove the bundle block.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-                    .padding(9)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.green.opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
-            }
+    @ViewBuilder
+    private var confirmationSection: some View {
+        if isConfirmingDelete {
+            BundleInspectorConfirmationCard(
+                message: "Delete this bundle block and keep its tasks on the same day.",
+                tint: Theme.red
+            )
+        } else if isConfirmingComplete {
+            BundleInspectorConfirmationCard(
+                message: "Mark every active task in this bundle complete and remove the bundle block.",
+                tint: Theme.green
+            )
+        } else if isConfirmingUnbundle {
+            BundleInspectorConfirmationCard(
+                message: "Remove the bundle block and preserve each task's list, schedule, and metadata.",
+                tint: Theme.amber
+            )
+        }
+    }
 
-            HStack(spacing: 8) {
-                if isConfirmingDelete {
-                    CadenceActionButton(title: "Cancel", role: .ghost, size: .compact) {
-                        isConfirmingDelete = false
+    private var actionDeck: some View {
+        VStack(spacing: 9) {
+            if isConfirmingDelete {
+                confirmationButtons(
+                    confirmTitle: "Delete Bundle",
+                    confirmImage: "trash.fill",
+                    role: .destructive,
+                    tint: Theme.red,
+                    confirmAction: onDelete,
+                    cancelAction: { isConfirmingDelete = false }
+                )
+            } else if isConfirmingUnbundle {
+                confirmationButtons(
+                    confirmTitle: "Unbundle Tasks",
+                    confirmImage: "rectangle.split.3x1",
+                    role: .secondary,
+                    tint: Theme.amber,
+                    confirmAction: onUnbundle,
+                    cancelAction: { isConfirmingUnbundle = false }
+                )
+            } else if isConfirmingComplete {
+                confirmationButtons(
+                    confirmTitle: "Complete Tasks",
+                    confirmImage: "checkmark.circle.fill",
+                    role: .secondary,
+                    tint: Theme.green,
+                    confirmAction: onComplete,
+                    cancelAction: { isConfirmingComplete = false }
+                )
+            } else {
+                HStack(spacing: 9) {
+                    CadenceActionButton(
+                        title: "Unbundle",
+                        systemImage: "rectangle.split.3x1",
+                        role: .secondary,
+                        size: .compact,
+                        tint: Theme.amber,
+                        fullWidth: true
+                    ) {
+                        beginConfirmation(.unbundle)
                     }
-                    CadenceActionButton(title: "Delete", role: .destructive, size: .compact, action: onDelete)
-                } else if isConfirmingComplete {
-                    CadenceActionButton(title: "Cancel", role: .ghost, size: .compact) {
-                        isConfirmingComplete = false
+
+                    CadenceActionButton(
+                        title: "Delete",
+                        systemImage: "trash",
+                        role: .destructive,
+                        size: .compact,
+                        fullWidth: true
+                    ) {
+                        beginConfirmation(.delete)
                     }
+                }
+
+                HStack(spacing: 9) {
                     CadenceActionButton(
                         title: "Complete",
                         systemImage: "checkmark.circle.fill",
                         role: .secondary,
                         size: .compact,
                         tint: Theme.green,
-                        action: onComplete
-                    )
-                } else {
-                    CadenceActionButton(title: "Delete", role: .ghost, size: .compact) {
-                        isConfirmingComplete = false
-                        isConfirmingDelete = true
-                    }
-                }
-                Spacer()
-                if !isConfirmingDelete && !isConfirmingComplete {
-                    CadenceActionButton(
-                        title: "Complete",
-                        systemImage: "checkmark.circle.fill",
-                        role: .ghost,
-                        size: .compact,
-                        tint: Theme.green,
+                        fullWidth: true,
                         isDisabled: bundle.activeTasks.isEmpty
                     ) {
-                        isConfirmingDelete = false
-                        isConfirmingComplete = true
+                        beginConfirmation(.complete)
                     }
+
+                    CadenceActionButton(
+                        title: "Start Focus",
+                        systemImage: "play.fill",
+                        role: .primary,
+                        size: .compact,
+                        tint: Theme.amber,
+                        fullWidth: true,
+                        isDisabled: bundle.activeTasks.isEmpty,
+                        action: onFocus
+                    )
                 }
-                CadenceActionButton(
-                    title: "Focus",
-                    systemImage: "play.fill",
-                    role: .secondary,
-                    size: .compact,
-                    tint: Theme.amber,
-                    isDisabled: bundle.activeTasks.isEmpty,
-                    action: onFocus
-                )
             }
         }
-        .padding(14)
-        .frame(width: 306)
-        .background(Theme.surface)
+    }
+
+    private func confirmationButtons(
+        confirmTitle: String,
+        confirmImage: String,
+        role: CadenceActionButtonRole,
+        tint: Color,
+        confirmAction: @escaping () -> Void,
+        cancelAction: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 9) {
+            CadenceActionButton(
+                title: "Cancel",
+                systemImage: "xmark",
+                role: .ghost,
+                size: .compact,
+                fullWidth: true,
+                action: cancelAction
+            )
+            CadenceActionButton(
+                title: confirmTitle,
+                systemImage: confirmImage,
+                role: role,
+                size: .compact,
+                tint: tint,
+                fullWidth: true,
+                action: confirmAction
+            )
+        }
+    }
+
+    private enum PendingConfirmation {
+        case complete
+        case delete
+        case unbundle
+    }
+
+    private func beginConfirmation(_ confirmation: PendingConfirmation) {
+        isConfirmingComplete = confirmation == .complete
+        isConfirmingDelete = confirmation == .delete
+        isConfirmingUnbundle = confirmation == .unbundle
+    }
+}
+
+private struct BundleInspectorMetricPill: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+    var isProminent = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.system(size: 10, weight: .semibold))
+            Text(title)
+                .font(.system(size: 11, weight: isProminent ? .bold : .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 8)
+        .frame(height: 26)
+        .background((isProminent ? tint : Theme.surfaceElevated).opacity(isProminent ? 0.12 : 0.58))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(tint.opacity(isProminent ? 0.20 : 0.10), lineWidth: 1)
+        }
+    }
+}
+
+private struct BundleInspectorConfirmationCard: View {
+    let message: String
+    let tint: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.circle")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(tint)
+                .padding(.top, 1)
+            Text(message)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.09))
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(tint.opacity(0.15), lineWidth: 1)
+        }
+    }
+}
+
+private struct BundleInspectorEmptyTasksView: View {
+    let isAddingTasks: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "tray")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Theme.dim.opacity(0.70))
+            Text(isAddingTasks ? "Choose tasks above or drop tasks here." : "Drop tasks here or add them from this inspector.")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.dim)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+        .padding(.horizontal, 12)
+        .background(Theme.surfaceElevated.opacity(0.42))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Theme.borderSubtle.opacity(0.38), lineWidth: 1)
+        }
     }
 }
 
@@ -496,38 +720,66 @@ private struct BundleTaskPopoverRow: View {
     let onRemove: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .center, spacing: 10) {
             Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 12))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(task.isDone ? Theme.green : Theme.dim)
-            Text(task.title.isEmpty ? "Untitled" : task.title)
-                .font(.system(size: 12))
-                .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            Text("\(max(task.estimatedMinutes, 5))m")
-                .font(.system(size: 10))
-                .foregroundStyle(Theme.dim)
-            rowIconButton("chevron.up", isDisabled: !canMoveUp) { onMove(-1) }
-            rowIconButton("chevron.down", isDisabled: !canMoveDown) { onMove(1) }
-            rowIconButton("xmark", isDisabled: false, action: onRemove)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(task.title.isEmpty ? "Untitled" : task.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                    .lineLimit(1)
+                    .strikethrough(task.isDone, color: Theme.dim.opacity(0.75))
+
+                HStack(spacing: 6) {
+                    Label("\(max(task.estimatedMinutes, 5))m", systemImage: "timer")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .labelStyle(.titleAndIcon)
+                }
+            }
+
+            Spacer(minLength: 10)
+
+            HStack(spacing: 4) {
+                rowIconButton("chevron.up", label: "Move task up", isDisabled: !canMoveUp) { onMove(-1) }
+                rowIconButton("chevron.down", label: "Move task down", isDisabled: !canMoveDown) { onMove(1) }
+            }
+            .padding(3)
+            .background(Theme.surface.opacity(0.55))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            rowIconButton("xmark", label: "Remove task", isDisabled: false, tint: Theme.red, action: onRemove)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 10)
         .background(Theme.surfaceElevated.opacity(0.62))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Theme.borderSubtle.opacity(0.28), lineWidth: 1)
+        }
     }
 
-    private func rowIconButton(_ systemName: String, isDisabled: Bool, action: @escaping () -> Void) -> some View {
+    private func rowIconButton(
+        _ systemName: String,
+        label: String,
+        isDisabled: Bool,
+        tint: Color = Theme.dim,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(isDisabled ? Theme.dim.opacity(0.35) : Theme.dim)
-                .frame(width: 18, height: 18)
-                .contentShape(Rectangle())
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(isDisabled ? Theme.dim.opacity(0.32) : tint)
+                .frame(width: 24, height: 24)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.cadencePlain)
         .disabled(isDisabled)
+        .help(label)
     }
 }
 

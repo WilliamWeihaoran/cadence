@@ -1,6 +1,12 @@
 #if os(macOS)
 import SwiftUI
 
+struct CalendarTimelineJumpTarget: Equatable {
+    let dateKey: String
+    let dayIndex: Int
+    let hour: Int
+}
+
 enum CalendarPageInteractionSupport {
     static func persistVisibleTimelineDay(
         dayIndex: Int,
@@ -47,19 +53,82 @@ enum CalendarPageInteractionSupport {
         anchorDateKey: inout String,
         clearRequest: () -> Void
     ) {
-        anchorDateKey = request.dateKey
+        let target = externalTimelineJumpTarget(
+            request: request,
+            calendar: calendar,
+            bufferStart: bufferStart,
+            todayDayIdx: todayDayIdx
+        )
+        applyTimelineJump(
+            target,
+            token: request.token,
+            visibleTimelineDayIndex: &visibleTimelineDayIndex,
+            visibleTimelineHour: &visibleTimelineHour,
+            externalJumpDayIndex: &externalJumpDayIndex,
+            externalJumpHour: &externalJumpHour,
+            externalJumpToken: &externalJumpToken,
+            anchorDateKey: &anchorDateKey
+        )
+        clearRequest()
+    }
+
+    static func todayTimelineJumpTarget(
+        now: Date = Date(),
+        calendar: Calendar,
+        bufferStart: Date,
+        todayDayIdx: Int
+    ) -> CalendarTimelineJumpTarget {
+        let startOfToday = calendar.startOfDay(for: now)
+        let day = min(max(
+            calendar.dateComponents([.day], from: bufferStart, to: startOfToday).day ?? todayDayIdx,
+            0
+        ), calRenderDays - 1)
+        let preferredHour = calendar.component(.hour, from: now) - 1
+        let hour = min(max(preferredHour, calStartHour), calEndHour - 1)
+
+        return CalendarTimelineJumpTarget(
+            dateKey: DateFormatters.dateKey(from: startOfToday, calendar: calendar),
+            dayIndex: day,
+            hour: hour
+        )
+    }
+
+    static func externalTimelineJumpTarget(
+        request: CalendarNavigationManager.Request,
+        calendar: Calendar,
+        bufferStart: Date,
+        todayDayIdx: Int
+    ) -> CalendarTimelineJumpTarget {
         let target = CalendarPageStateSupport.timelineJumpTarget(
             request: request,
             bufferStart: bufferStart,
             todayDayIdx: todayDayIdx,
             calendar: calendar
         )
-        visibleTimelineDayIndex = target.day
+
+        return CalendarTimelineJumpTarget(
+            dateKey: request.dateKey,
+            dayIndex: target.day,
+            hour: target.hour
+        )
+    }
+
+    static func applyTimelineJump(
+        _ target: CalendarTimelineJumpTarget,
+        token: UUID?,
+        visibleTimelineDayIndex: inout Int?,
+        visibleTimelineHour: inout Int?,
+        externalJumpDayIndex: inout Int?,
+        externalJumpHour: inout Int?,
+        externalJumpToken: inout UUID?,
+        anchorDateKey: inout String
+    ) {
+        anchorDateKey = target.dateKey
+        visibleTimelineDayIndex = target.dayIndex
         visibleTimelineHour = target.hour
-        externalJumpDayIndex = target.day
+        externalJumpDayIndex = target.dayIndex
         externalJumpHour = target.hour
-        externalJumpToken = request.token
-        clearRequest()
+        externalJumpToken = token
     }
 }
 #endif

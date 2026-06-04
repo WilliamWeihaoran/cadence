@@ -17,6 +17,7 @@ struct TimelineDayCanvas: View {
     let style: TimelineBlockStyle
     let showCurrentTimeDot: Bool
     var showHalfHourMarks: Bool = false
+    var showWorkHoursHighlight = false
     let dropBehavior: TimelineDropBehavior
     var usesTaskPanelForTaskCreation = true
     let onCreateTask: (String, Int, Int, TaskContainerSelection, String, String, [String]) -> Void
@@ -46,6 +47,10 @@ struct TimelineDayCanvas: View {
     @State private var activeDragTaskID: UUID? = nil
     @State private var activeDragBundleID: UUID? = nil
     @State private var dragYOffset: CGFloat = 0
+    @State private var recentlyBundledTaskDropID: UUID? = nil
+    @State private var recentlyBundledTaskDropExpiresAt: Date = .distantPast
+    @AppStorage(CalendarWorkHoursPreferences.startMinuteKey) private var workHoursStartMinute = CalendarWorkHoursPreferences.defaultStartMinute
+    @AppStorage(CalendarWorkHoursPreferences.endMinuteKey) private var workHoursEndMinute = CalendarWorkHoursPreferences.defaultEndMinute
     @Environment(\.modelContext) private var modelContext
 
     private func clearDraftCreation() {
@@ -96,10 +101,21 @@ struct TimelineDayCanvas: View {
                     activeDragBundleID: $activeDragBundleID,
                     selectedTaskID: $selectedTaskID,
                     selectedBundleID: $selectedBundleID,
-                    dragYOffset: $dragYOffset
+                    dragYOffset: $dragYOffset,
+                    recentlyBundledTaskDropID: $recentlyBundledTaskDropID,
+                    recentlyBundledTaskDropExpiresAt: $recentlyBundledTaskDropExpiresAt
                 ),
                 onTap: resetCanvasSelection
             )
+
+            if showWorkHoursHighlight {
+                TimelineWorkHoursHighlightLayer(
+                    width: width,
+                    metrics: metrics,
+                    startMinute: workHoursStartMinute,
+                    endMinute: workHoursEndMinute
+                )
+            }
 
             TimelineCreateGridLayer(
                 metrics: metrics,
@@ -152,6 +168,7 @@ struct TimelineDayCanvas: View {
                 activeDragTaskID: $activeDragTaskID,
                 activeDragBundleID: $activeDragBundleID,
                 onTaskDroppedOnBundle: onDropTaskOnBundle,
+                onTaskBundleDropAccepted: rememberTaskBundleDrop,
                 onCreateBundleFromTasks: { targetTask, draggedTask in
                     _ = SchedulingActions.createBundle(from: targetTask, adding: draggedTask, in: modelContext)
                 },
@@ -185,6 +202,11 @@ struct TimelineDayCanvas: View {
             pendingEndMin: &pendingEndMin,
             showNewTaskPopover: &showNewTaskPopover
         )
+    }
+
+    private func rememberTaskBundleDrop(_ taskID: UUID) {
+        recentlyBundledTaskDropID = taskID
+        recentlyBundledTaskDropExpiresAt = Date().addingTimeInterval(0.75)
     }
 
     private func clearCreateGridSelection() {

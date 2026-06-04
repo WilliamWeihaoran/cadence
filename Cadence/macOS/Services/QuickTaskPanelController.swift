@@ -6,6 +6,9 @@ import os
 
 final class QuickTaskPanelController: NSObject {
     static let shared = QuickTaskPanelController()
+    private static let panelSurfaceSize = NSSize(width: 600, height: 320)
+    private static let panelSuccessSurfaceSize = NSSize(width: 600, height: 150)
+    private static let shadowPadding: CGFloat = 24
     private let logger = Logger(subsystem: "com.haoranwei.Cadence", category: "QuickTaskPanel")
 
     private var panel: QuickTaskPanel?
@@ -27,6 +30,7 @@ final class QuickTaskPanelController: NSObject {
             dismissAction: { [weak self] in self?.close() },
             successAction: { [weak self] in self?.showCaptureSuccessThenClose() }
         )
+        .padding(Self.shadowPadding)
         .modelContainer(PersistenceController.shared.container)
         .environment(TaskCreationManager.shared)
         .preferredColorScheme(.dark)
@@ -35,9 +39,9 @@ final class QuickTaskPanelController: NSObject {
         sizeObserver?.invalidate()
         sizeObserver = nil
         let hc = NSHostingController(rootView: AnyView(content))
-        panel.contentViewController = hc
+        installHostingController(hc, in: panel)
         self.hostingController = hc
-        panel.setContentSize(NSSize(width: 600, height: 320))
+        panel.setContentSize(panelContentSize(for: Self.panelSurfaceSize))
 
         // Auto-resize panel to fit SwiftUI content (e.g. when subtasks are added)
         sizeObserver = hc.observe(\.preferredContentSize, options: [.new]) { [weak self] _, change in
@@ -87,11 +91,12 @@ final class QuickTaskPanelController: NSObject {
         stopObservingPanelResignKey()
 
         let content = QuickTaskCaptureSuccessView()
+            .padding(Self.shadowPadding)
             .preferredColorScheme(.dark)
         let hc = NSHostingController(rootView: AnyView(content))
-        panel.contentViewController = hc
+        installHostingController(hc, in: panel)
         hostingController = hc
-        setPanelContentSize(NSSize(width: 600, height: 150), for: panel)
+        setPanelContentSize(panelContentSize(for: Self.panelSuccessSurfaceSize), for: panel)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.95) { [weak self] in
             self?.close()
@@ -139,10 +144,11 @@ final class QuickTaskPanelController: NSObject {
         panel.hidesOnDeactivate = false
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = true
+        panel.hasShadow = false
         panel.becomesKeyOnlyIfNeeded = false
         panel.worksWhenModal = true
         panel.animationBehavior = .utilityWindow
+        configureTransparentContentView(for: panel)
         self.panel = panel
         return panel
     }
@@ -150,8 +156,8 @@ final class QuickTaskPanelController: NSObject {
     private func positionPanel(_ panel: NSPanel) {
         // Use design dimensions directly — panel.frame.size can be zero on the
         // first show before SwiftUI has completed its initial layout pass.
-        let w: CGFloat = 600
-        let h: CGFloat = max(panel.frame.height > 10 ? panel.frame.height : 320, 280)
+        let w: CGFloat = max(panel.frame.width > 10 ? panel.frame.width : panelContentSize(for: Self.panelSurfaceSize).width, 280)
+        let h: CGFloat = max(panel.frame.height > 10 ? panel.frame.height : panelContentSize(for: Self.panelSurfaceSize).height, 280)
         let mouseLocation = NSEvent.mouseLocation
         let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main
 
@@ -171,6 +177,25 @@ final class QuickTaskPanelController: NSObject {
             x: center.x - panel.frame.width / 2,
             y: center.y - panel.frame.height / 2
         ))
+    }
+
+    private func panelContentSize(for surfaceSize: NSSize) -> NSSize {
+        NSSize(
+            width: surfaceSize.width + (Self.shadowPadding * 2),
+            height: surfaceSize.height + (Self.shadowPadding * 2)
+        )
+    }
+
+    private func installHostingController(_ hostingController: NSHostingController<AnyView>, in panel: NSPanel) {
+        hostingController.view.wantsLayer = true
+        hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
+        panel.contentViewController = hostingController
+        configureTransparentContentView(for: panel)
+    }
+
+    private func configureTransparentContentView(for panel: NSPanel) {
+        panel.contentView?.wantsLayer = true
+        panel.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
     }
 }
 

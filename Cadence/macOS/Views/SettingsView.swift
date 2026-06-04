@@ -200,7 +200,8 @@ struct SettingsView: View {
             SettingsCalendarSection(
                 calendarManager: calendarManager,
                 areas: areas,
-                projects: projects
+                projects: projects,
+                modelContext: modelContext
             )
         }
     }

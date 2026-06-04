@@ -14,35 +14,67 @@ enum CalendarTimelineScrollSupport {
 
     static func applyTodayHorizontalJump(
         todayDayIdx: Int,
+        visibleTimelineDayIndex: Binding<Int?>,
         isRestoringHorizontalScroll: Binding<Bool>,
-        hProxy: ScrollViewProxy
+        hProxy: ScrollViewProxy,
+        scrollState: CalendarTimelineScrollState,
+        colWidth: CGFloat
     ) {
-        DispatchQueue.main.async {
-            scrollHorizontally(to: todayDayIdx, hProxy: hProxy)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
-                scrollHorizontally(to: todayDayIdx, hProxy: hProxy)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                scrollHorizontally(to: todayDayIdx, hProxy: hProxy)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.36) {
-                isRestoringHorizontalScroll.wrappedValue = false
-            }
-        }
+        jumpHorizontally(
+            to: todayDayIdx,
+            visibleTimelineDayIndex: visibleTimelineDayIndex,
+            isRestoringHorizontalScroll: isRestoringHorizontalScroll,
+            hProxy: hProxy,
+            scrollState: scrollState,
+            colWidth: colWidth,
+            animated: false
+        )
     }
 
     static func applyExternalHorizontalJump(
         day: Int,
         visibleTimelineDayIndex: Binding<Int?>,
         isRestoringHorizontalScroll: Binding<Bool>,
-        hProxy: ScrollViewProxy
+        hProxy: ScrollViewProxy,
+        scrollState: CalendarTimelineScrollState,
+        colWidth: CGFloat
+    ) {
+        jumpHorizontally(
+            to: day,
+            visibleTimelineDayIndex: visibleTimelineDayIndex,
+            isRestoringHorizontalScroll: isRestoringHorizontalScroll,
+            hProxy: hProxy,
+            scrollState: scrollState,
+            colWidth: colWidth,
+            animated: true
+        )
+    }
+
+    static func jumpHorizontally(
+        to day: Int,
+        visibleTimelineDayIndex: Binding<Int?>,
+        isRestoringHorizontalScroll: Binding<Bool>,
+        hProxy: ScrollViewProxy,
+        scrollState: CalendarTimelineScrollState,
+        colWidth: CGFloat,
+        animated: Bool
     ) {
         visibleTimelineDayIndex.wrappedValue = day
         isRestoringHorizontalScroll.wrappedValue = true
-        withAnimation(.easeInOut(duration: 0.2)) {
+        syncHeaderOffset(to: day, scrollState: scrollState, colWidth: colWidth)
+
+        let scroll = {
             scrollHorizontally(to: day, hProxy: hProxy)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
+
+        if animated {
+            withAnimation(.easeInOut(duration: 0.18), scroll)
+        } else {
+            scroll()
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + (animated ? 0.22 : 0.08)) {
+            syncHeaderOffset(to: day, scrollState: scrollState, colWidth: colWidth)
             isRestoringHorizontalScroll.wrappedValue = false
         }
     }
@@ -59,6 +91,10 @@ enum CalendarTimelineScrollSupport {
 
     private static func scrollHorizontally(to day: Int, hProxy: ScrollViewProxy) {
         hProxy.scrollTo("day_\(day)", anchor: .leading)
+    }
+
+    static func syncHeaderOffset(to day: Int, scrollState: CalendarTimelineScrollState, colWidth: CGFloat) {
+        scrollState.jumpHeaderOffset(to: -CGFloat(day) * max(colWidth, 1))
     }
 
     static func applyTodayVerticalJump(

@@ -68,8 +68,9 @@ enum TagSupport {
         }
     }
 
-    static func seedDefaultTags(in context: ModelContext, saveChanges: Bool = true) {
-        deduplicateTags(in: context, save: false)
+    @discardableResult
+    static func seedDefaultTags(in context: ModelContext, saveChanges: Bool = true) -> Bool {
+        var changed = deduplicateTags(in: context, save: false)
         let existing = (try? context.fetch(FetchDescriptor<Tag>())) ?? []
         var existingBySlug = tagsBySlug(existing)
         for (index, definition) in defaultTags.enumerated() {
@@ -77,6 +78,7 @@ enum TagSupport {
             if let tag = existingBySlug[slug] {
                 if tag.order == 0 && index != 0 {
                     tag.order = index
+                    changed = true
                 }
                 continue
             }
@@ -89,13 +91,17 @@ enum TagSupport {
             )
             context.insert(tag)
             existingBySlug[slug] = tag
+            changed = true
         }
         if saveChanges && context.hasChanges {
             try? context.save()
         }
+        return changed
     }
 
-    static func deduplicateTags(in context: ModelContext, save: Bool = true) {
+    @discardableResult
+    static func deduplicateTags(in context: ModelContext, save: Bool = true) -> Bool {
+        var changed = false
         let existing = (try? context.fetch(FetchDescriptor<Tag>())) ?? []
         let grouped = Dictionary(grouping: existing) { stableSlug(for: $0) }
 
@@ -108,12 +114,14 @@ enum TagSupport {
                 mergeTagMetadata(from: duplicate, into: canonical)
                 moveTagRelationships(from: duplicate, into: canonical)
                 context.delete(duplicate)
+                changed = true
             }
         }
 
         if save && context.hasChanges {
             try? context.save()
         }
+        return changed
     }
 
     static func resolveTags(named names: [String], in context: ModelContext) -> [Tag] {
@@ -150,22 +158,27 @@ enum TagSupport {
         note.updatedAt = Date()
     }
 
-    static func syncNoteTagsFromMarkdown(_ note: Note, in context: ModelContext) {
+    @discardableResult
+    static func syncNoteTagsFromMarkdown(_ note: Note, in context: ModelContext) -> Bool {
         let tagNames = MarkdownMetadataParser.metadata(in: note.content).tags
         let resolved = resolveTags(named: tagNames, in: context)
-        guard tagSlugs(note.tags ?? []) != tagSlugs(resolved) else { return }
+        guard tagSlugs(note.tags ?? []) != tagSlugs(resolved) else { return false }
         note.tags = resolved
         note.updatedAt = Date()
+        return true
     }
 
-    static func syncAllNoteTagsFromMarkdown(in context: ModelContext, saveChanges: Bool = true) {
+    @discardableResult
+    static func syncAllNoteTagsFromMarkdown(in context: ModelContext, saveChanges: Bool = true) -> Bool {
+        var changed = false
         let notes = (try? context.fetch(FetchDescriptor<Note>())) ?? []
         for note in notes {
-            syncNoteTagsFromMarkdown(note, in: context)
+            changed = syncNoteTagsFromMarkdown(note, in: context) || changed
         }
         if saveChanges && context.hasChanges {
             try? context.save()
         }
+        return changed
     }
 
     nonisolated static func tagSlugs(_ tags: [Tag]) -> [String] {

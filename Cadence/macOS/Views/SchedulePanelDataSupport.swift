@@ -17,8 +17,7 @@ enum SchedulePanelDataSupport {
         calendarManager: CalendarManager,
         date: Date
     ) -> [CalendarEventItem] {
-        return calendarManager.fetchEvents(for: date)
-            .map { CalendarEventItem(event: $0) }
+        CalendarEventItem.timedSegments(from: calendarManager.fetchEvents(for: date), for: date)
     }
 
     static func syncLinkedTasks(

@@ -144,6 +144,8 @@ enum CalendarBoardPlannerSupport {
     static let plannerRenderDayCount = 420
     static let plannerLeadingDayCount = plannerRenderDayCount / 2
     static let plannerRecenterThreshold = 42
+    static let allDaySortMinute = -1
+    static let untimedSortMinute = Int.max
 
     static func date(at dayIndex: Int, bufferStart: Date, calendar: Calendar = .current) -> Date {
         calendar.startOfDay(for: calendar.date(byAdding: .day, value: dayIndex, to: bufferStart) ?? bufferStart)
@@ -215,25 +217,48 @@ enum CalendarBoardPlannerSupport {
     }
 
     static func boardTaskSort(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
-        let lhsTimed = lhs.scheduledStartMin >= 0
-        let rhsTimed = rhs.scheduledStartMin >= 0
-        if lhsTimed != rhsTimed { return lhsTimed }
+        sortKey(for: lhs, kindRank: 0) < sortKey(for: rhs, kindRank: 0)
+    }
 
-        if lhsTimed, lhs.scheduledStartMin != rhs.scheduledStartMin {
-            return lhs.scheduledStartMin < rhs.scheduledStartMin
-        }
+    static func sortKey(for task: AppTask, kindRank: Int) -> CalendarBoardSortKey {
+        CalendarBoardSortKey(
+            startMinute: task.scheduledStartMin >= 0 ? task.scheduledStartMin : untimedSortMinute,
+            kindRank: kindRank,
+            plannedRank: task.scheduledDate.isEmpty ? 1 : 0,
+            priorityRank: priorityRank(task.priority),
+            order: task.order,
+            createdAt: task.createdAt,
+            id: task.id.uuidString
+        )
+    }
 
-        let lhsPlanned = !lhs.scheduledDate.isEmpty
-        let rhsPlanned = !rhs.scheduledDate.isEmpty
-        if lhsPlanned != rhsPlanned { return lhsPlanned }
+    static func sortKey(for bundle: TaskBundle, kindRank: Int) -> CalendarBoardSortKey {
+        CalendarBoardSortKey(
+            startMinute: bundle.startMin,
+            kindRank: kindRank,
+            plannedRank: 0,
+            priorityRank: 0,
+            order: 0,
+            createdAt: bundle.createdAt,
+            id: bundle.id.uuidString
+        )
+    }
 
-        let lhsPriority = priorityRank(lhs.priority)
-        let rhsPriority = priorityRank(rhs.priority)
-        if lhsPriority != rhsPriority { return lhsPriority > rhsPriority }
-
-        if lhs.order != rhs.order { return lhs.order < rhs.order }
-        if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
-        return lhs.id.uuidString < rhs.id.uuidString
+    static func sortKeyForCalendarEvent(
+        id: String,
+        startMinute: Int,
+        isAllDay: Bool,
+        kindRank: Int
+    ) -> CalendarBoardSortKey {
+        CalendarBoardSortKey(
+            startMinute: isAllDay ? allDaySortMinute : startMinute,
+            kindRank: kindRank,
+            plannedRank: 0,
+            priorityRank: 0,
+            order: 0,
+            createdAt: .distantPast,
+            id: id
+        )
     }
 
     private static func priorityRank(_ priority: TaskPriority) -> Int {
@@ -243,6 +268,26 @@ enum CalendarBoardPlannerSupport {
         case .low: return 1
         case .none: return 0
         }
+    }
+}
+
+struct CalendarBoardSortKey: Equatable, Comparable {
+    let startMinute: Int
+    let kindRank: Int
+    let plannedRank: Int
+    let priorityRank: Int
+    let order: Int
+    let createdAt: Date
+    let id: String
+
+    static func < (lhs: CalendarBoardSortKey, rhs: CalendarBoardSortKey) -> Bool {
+        if lhs.startMinute != rhs.startMinute { return lhs.startMinute < rhs.startMinute }
+        if lhs.kindRank != rhs.kindRank { return lhs.kindRank < rhs.kindRank }
+        if lhs.plannedRank != rhs.plannedRank { return lhs.plannedRank < rhs.plannedRank }
+        if lhs.priorityRank != rhs.priorityRank { return lhs.priorityRank > rhs.priorityRank }
+        if lhs.order != rhs.order { return lhs.order < rhs.order }
+        if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+        return lhs.id < rhs.id
     }
 }
 

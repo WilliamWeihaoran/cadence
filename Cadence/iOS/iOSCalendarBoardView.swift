@@ -475,14 +475,9 @@ private struct iOSCalendarBoardDayColumn: View {
     }
 
     private func sortColumnItems(_ lhs: iOSCalendarBoardColumnItem, _ rhs: iOSCalendarBoardColumnItem) -> Bool {
-        let lhsStart = lhs.sortStartMinute
-        let rhsStart = rhs.sortStartMinute
-        if lhsStart != rhsStart {
-            return lhsStart < rhsStart
-        }
-        if lhs.kindRank != rhs.kindRank {
-            return lhs.kindRank < rhs.kindRank
-        }
+        let lhsKey = lhs.sortKey
+        let rhsKey = rhs.sortKey
+        if lhsKey != rhsKey { return lhsKey < rhsKey }
         switch (lhs, rhs) {
         case (.task(let lhsTask), .task(let rhsTask)):
             return CalendarBoardPlannerSupport.boardTaskSort(lhsTask, rhsTask)
@@ -510,21 +505,12 @@ private enum iOSCalendarBoardColumnItem: Identifiable {
         }
     }
 
-    var kindRank: Int {
-        switch self {
-        case .bundle:
-            return 0
-        case .task:
-            return 1
-        }
-    }
-
-    var sortStartMinute: Int {
+    var sortKey: CalendarBoardSortKey {
         switch self {
         case .bundle(let bundle):
-            return bundle.startMin
+            return CalendarBoardPlannerSupport.sortKey(for: bundle, kindRank: 0)
         case .task(let task):
-            return task.scheduledStartMin >= 0 ? task.scheduledStartMin : Int.max
+            return CalendarBoardPlannerSupport.sortKey(for: task, kindRank: 1)
         }
     }
 }

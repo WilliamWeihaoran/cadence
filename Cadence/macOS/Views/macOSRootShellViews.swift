@@ -61,6 +61,11 @@ struct macOSRootMainShell<Content: View>: View {
             .zIndex(0)
         }
         .preferredColorScheme(.dark)
+        .overlay(alignment: .top) {
+            WindowTopDragRegion()
+                .frame(height: 10)
+                .frame(maxWidth: .infinity)
+        }
         .onAppear {
             sidebarWidth = clampedWidth(storedSidebarWidth)
             storedSidebarWidth = sidebarWidth
@@ -253,6 +258,16 @@ struct macOSRootOverlayStack: View {
         DeleteConfirmationLayerView()
         DatePickerLayerView()
         GlobalSearchLayerView(onSelect: handleSearchSelection)
+    }
+}
+
+extension View {
+    func suppressWindowBackgroundDrag() -> some View {
+        simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in }
+                .onEnded { _ in }
+        )
     }
 }
 #endif

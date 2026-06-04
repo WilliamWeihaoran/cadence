@@ -73,6 +73,17 @@ enum DateFormatters {
         ymd.string(from: date)
     }
 
+    /// Converts a `Date` to a `yyyy-MM-dd` storage key using the supplied calendar's day components.
+    static func dateKey(from date: Date, calendar: Calendar) -> String {
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(
+            format: "%04d-%02d-%02d",
+            components.year ?? 0,
+            components.month ?? 1,
+            components.day ?? 1
+        )
+    }
+
     /// Parses a `yyyy-MM-dd` storage key back to a `Date`
     static func date(from key: String) -> Date? {
         ymd.date(from: key)
@@ -143,8 +154,9 @@ enum DateFormatters {
 enum TimeFormatters {
     /// Formats minutes-from-midnight as 12-hour time: 75 → "1:15 AM", 720 → "12 PM"
     static func timeString(from minutes: Int) -> String {
-        let h = minutes / 60
-        let m = minutes % 60
+        let normalized = ((minutes % (24 * 60)) + (24 * 60)) % (24 * 60)
+        let h = normalized / 60
+        let m = normalized % 60
         let h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h)
         let ampm = h < 12 ? "AM" : "PM"
         return m == 0 ? "\(h12) \(ampm)" : String(format: "%d:%02d %@", h12, m, ampm)

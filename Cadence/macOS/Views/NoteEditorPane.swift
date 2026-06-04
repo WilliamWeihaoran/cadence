@@ -27,6 +27,7 @@ struct NoteEditorPane: View {
     var relatedTasks: [AppTask] = []
     var onOpenNote: (Note) -> Void = { _ in }
     var onDelete: (() -> Void)?
+    var onPersistContent: (Note, String) -> Void = { _, _ in }
     var headerDetail: String?
     var headerAccessory: AnyView?
     var headerStyle: HeaderStyle = .full
@@ -329,6 +330,7 @@ struct NoteEditorPane: View {
         note.updatedAt = Date()
         syncTitleFromH1IfNeeded(in: content)
         TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)
+        onPersistContent(note, content)
         loadedNoteID = note.id
     }
 

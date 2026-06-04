@@ -35,4 +35,9 @@ struct DateFormatterSupportTests {
         #expect(TimeFormatters.durationLabel(actual: 90, estimated: 120) == "1.5h/2h")
         #expect(TimeFormatters.durationLabel(actual: 0, estimated: 30) == "-/30m")
     }
+
+    @Test func timeLabelsWrapEndOfDayToMidnight() throws {
+        #expect(TimeFormatters.timeString(from: 24 * 60) == "12 AM")
+        #expect(TimeFormatters.timeRange(startMin: 18 * 60, endMin: 24 * 60) == "6 PM – 12 AM")
+    }
 }

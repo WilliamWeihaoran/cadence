@@ -44,6 +44,9 @@ struct EstimatePickerControl: View {
         case 45: return "45m"
         case 60: return "1h"
         case 90: return "1.5h"
+        case 120: return "2h"
+        case 150: return "2.5h"
+        case 180: return "3h"
         default: return "\(value)m"
         }
     }
@@ -61,6 +64,9 @@ struct EstimatePickerPopoverContent: View {
         (45, "45 min"),
         (60, "1 hour"),
         (90, "1.5 hrs"),
+        (120, "2 hours"),
+        (150, "2.5 hrs"),
+        (180, "3 hours"),
     ]
 
     var body: some View {

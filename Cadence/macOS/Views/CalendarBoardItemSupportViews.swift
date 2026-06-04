@@ -1,5 +1,4 @@
 #if os(macOS)
-import EventKit
 import SwiftData
 import SwiftUI
 
@@ -125,6 +124,10 @@ struct CalendarBoardBundleCard: View {
                 SchedulingActions.completeBundle(bundle, in: modelContext)
                 showPopover = false
             },
+            onUnbundle: {
+                SchedulingActions.unbundle(bundle, in: modelContext)
+                showPopover = false
+            },
             onDelete: {
                 SchedulingActions.deleteBundle(bundle, in: modelContext)
                 showPopover = false
@@ -134,7 +137,7 @@ struct CalendarBoardBundleCard: View {
 }
 
 struct CalendarBoardEventCard: View {
-    let event: EKEvent
+    let item: CalendarBoardEventDisplayItem
 
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
@@ -142,11 +145,7 @@ struct CalendarBoardEventCard: View {
     @State private var isHovered = false
 
     private var tint: Color {
-        Color(cgColor: event.calendar?.cgColor ?? CGColor(gray: 0.5, alpha: 1))
-    }
-
-    private var item: CalendarEventItem {
-        CalendarEventItem(event: event)
+        item.calendarColor
     }
 
     var body: some View {
@@ -160,17 +159,15 @@ struct CalendarBoardEventCard: View {
         .onHover { isHovered = $0 }
         .popover(isPresented: $showPopover, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             CalendarEventEditPopover(
-                item: item,
-                onSave: { title, startMin, duration, calendarID, notes in
-                    let dateKey = DateFormatters.dateKey(from: event.startDate)
+                item: item.editItem,
+                onSave: { title, startMin, duration, calendarID in
                     calendarManager.updateEvent(
-                        event,
+                        item.ekEvent,
                         title: title,
                         startMin: startMin,
                         durationMinutes: duration,
-                        dateKey: dateKey,
-                        calendarID: calendarID,
-                        notes: notes
+                        dateKey: item.dateKey,
+                        calendarID: calendarID
                     )
                     showPopover = false
                 },
@@ -179,7 +176,7 @@ struct CalendarBoardEventCard: View {
                         title: "Delete Calendar Event?",
                         message: "This will permanently delete \"\(item.title)\" from your calendar."
                     ) {
-                        calendarManager.deleteEvent(event)
+                        calendarManager.deleteEvent(item.ekEvent)
                         showPopover = false
                     }
                 }
@@ -189,18 +186,18 @@ struct CalendarBoardEventCard: View {
 
     private var label: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: event.isAllDay ? "calendar" : "clock")
+            Image(systemName: item.isAllDay ? "calendar" : "clock")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(tint)
                 .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 7) {
-                Text(event.title ?? "Untitled Event")
+                Text(item.title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(2)
 
-                CalendarBoardMetadataChip(title: subtitle, systemImage: event.isAllDay ? "sun.max" : "clock", tint: tint)
+                CalendarBoardMetadataChip(title: subtitle, systemImage: item.isAllDay ? "sun.max" : "clock", tint: tint)
             }
         }
         .padding(10)
@@ -209,26 +206,25 @@ struct CalendarBoardEventCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(tint.opacity(isHovered || showPopover ? 0.58 : 0.30), lineWidth: isHovered || showPopover ? 1.25 : 1)
+                .strokeBorder(
+                    tint.opacity(CalendarEventVisualStyle.borderOpacity(isSelected: showPopover, isHovered: isHovered)),
+                    lineWidth: isHovered || showPopover ? 1.25 : 1
+                )
         }
     }
 
     private var cardBackground: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Theme.surfaceElevated.opacity(0.76))
+                .fill(Theme.surfaceElevated.opacity(CalendarEventVisualStyle.surfaceOpacity(isActive: isHovered || showPopover)))
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(tint.opacity(0.08))
+                .fill(tint.opacity(CalendarEventVisualStyle.tintOpacity(isSelected: showPopover, isHovered: isHovered)))
         }
     }
 
     private var subtitle: String {
-        if event.isAllDay { return "All day" }
-        guard let startDate = event.startDate, let endDate = event.endDate else { return "Event" }
-        let calendar = Calendar.current
-        let start = calendar.component(.hour, from: startDate) * 60 + calendar.component(.minute, from: startDate)
-        let end = calendar.component(.hour, from: endDate) * 60 + calendar.component(.minute, from: endDate)
-        return TimeFormatters.timeRange(startMin: start, endMin: max(start + 5, end))
+        if item.isAllDay { return "All day" }
+        return TimeFormatters.timeRange(startMin: item.startMin, endMin: item.startMin + max(item.durationMinutes, 5))
     }
 }
 
@@ -249,7 +245,7 @@ struct CalendarBoardMetadataChip: View {
         .foregroundStyle(tint)
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
-        .background(tint.opacity(0.12))
+        .background(tint.opacity(CalendarEventVisualStyle.chipTintOpacity()))
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }

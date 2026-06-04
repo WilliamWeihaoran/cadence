@@ -35,8 +35,7 @@ struct MonthDayCell: View {
 
     private var calendarEvents: [CalendarEventItem] {
         let _ = calendarManager.storeVersion
-        return calendarManager.fetchEvents(for: date)
-            .map { CalendarEventItem(event: $0) }
+        return CalendarEventItem.timedSegments(from: calendarManager.fetchEvents(for: date), for: date)
     }
 
     private var visibleEvents: [CalendarEventItem] {
@@ -130,7 +129,7 @@ struct MonthDayCell: View {
                 ForEach(eventChips) { event in
                     Text(event.title)
                         .font(.system(size: 10))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.white.opacity(0.92))
                         .lineLimit(1)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
@@ -138,16 +137,16 @@ struct MonthDayCell: View {
                         .background(
                             ZStack {
                                 RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                    .fill(event.calendarColor.opacity(0.78))
+                                    .fill(event.calendarColor.opacity(CalendarEventVisualStyle.chipFillOpacity()))
                                 RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                    .fill(.white.opacity(0.04))
+                                    .fill(.white.opacity(0.035))
                             }
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                .stroke(event.calendarColor.opacity(0.62), lineWidth: 1)
+                                .stroke(event.calendarColor.opacity(CalendarEventVisualStyle.chipBorderOpacity()), lineWidth: 1)
                         )
-                        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 1)
+                        .shadow(color: Color.black.opacity(0.06), radius: 3, y: 1)
                 }
                 if overflow > 0 {
                     Text("+ \(overflow) more")
@@ -202,12 +201,12 @@ struct CalDayHeaderView: View {
             }
             .frame(height: calDayHeaderHeight)
             .frame(maxWidth: .infinity)
-            .background(isToday ? Theme.blue.opacity(0.05) : Theme.surface)
+            .background(isToday ? Theme.blue.opacity(0.05) : Theme.bg)
 
             allDayBannerContent
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .frame(height: calAllDayBannerHeight, alignment: .top)
-                .background(isToday ? Theme.blue.opacity(0.03) : Theme.surface)
+                .background(isToday ? Theme.blue.opacity(0.03) : Theme.bg)
         }
         .frame(maxWidth: .infinity)
         .overlay(alignment: .trailing) {
@@ -273,6 +272,7 @@ struct AllDayTaskChip: View {
         .popover(isPresented: $showInspector, arrowEdge: .bottom) {
             TaskDetailPopover(task: task)
         }
+        .suppressWindowBackgroundDrag()
         .draggable(task.id.uuidString)
     }
 }
@@ -287,7 +287,7 @@ struct AllDayEventChip: View {
     var body: some View {
         Text(event.title ?? "Untitled")
             .font(.system(size: 10))
-            .foregroundStyle(.white)
+            .foregroundStyle(.white.opacity(0.92))
             .lineLimit(1)
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
@@ -295,16 +295,16 @@ struct AllDayEventChip: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                    .fill(eventColor.opacity(0.78))
+                    .fill(eventColor.opacity(CalendarEventVisualStyle.chipFillOpacity()))
                 RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                    .fill(.white.opacity(0.04))
+                    .fill(.white.opacity(0.035))
             }
         )
         .overlay(
             RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                .stroke(eventColor.opacity(0.62), lineWidth: 1)
+                .stroke(eventColor.opacity(CalendarEventVisualStyle.chipBorderOpacity()), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 1)
+        .shadow(color: Color.black.opacity(0.06), radius: 3, y: 1)
         .draggable(CalendarEventDragPayload.string(for: event))
     }
 }
@@ -329,8 +329,7 @@ struct CalDayColumn: View {
     }
 
     private var externalEventItems: [CalendarEventItem] {
-        return eventCache.timedEvents(for: date, calendarManager: calendarManager)
-            .map { CalendarEventItem(event: $0) }
+        return CalendarEventItem.timedSegments(from: eventCache.timedEvents(for: date, calendarManager: calendarManager), for: date)
     }
 
     var body: some View {
@@ -348,6 +347,7 @@ struct CalDayColumn: View {
             style: .calendar,
             showCurrentTimeDot: true,
             showHalfHourMarks: showHalfHourMarks,
+            showWorkHoursHighlight: true,
             dropBehavior: .perHour,
             usesTaskPanelForTaskCreation: false,
             onCreateTask: { title, startMin, endMin, containerSelection, sectionName, notes, subtaskTitles in

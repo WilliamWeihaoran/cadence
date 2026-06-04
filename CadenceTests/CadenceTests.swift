@@ -10,6 +10,7 @@ import Foundation
 import SwiftUI
 #if os(macOS)
 import AppKit
+import EventKit
 #endif
 @testable import Cadence
 
@@ -192,6 +193,38 @@ struct CadenceTests {
         #expect(CalendarTimelineScrollSupport.clampedDayIndex(offsetX: 99, colWidth: 100) == 0)
         #expect(CalendarTimelineScrollSupport.clampedDayIndex(offsetX: 100, colWidth: 100) == 1)
         #expect(CalendarTimelineScrollSupport.clampedDayIndex(offsetX: CGFloat(calRenderDays + 4) * 100, colWidth: 100) == calRenderDays - 1)
+    }
+
+    @Test func todayTimelineJumpTargetUsesConcreteDateAndPreviousHour() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        let now = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 3, hour: 15, minute: 30)))
+        let bufferStart = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 1)))
+
+        let target = CalendarPageInteractionSupport.todayTimelineJumpTarget(
+            now: now,
+            calendar: calendar,
+            bufferStart: bufferStart,
+            todayDayIdx: 999
+        )
+
+        #expect(target == CalendarTimelineJumpTarget(dateKey: "2026-06-03", dayIndex: 2, hour: 14))
+    }
+
+    @Test func todayTimelineJumpTargetClampsDayAndHour() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        let now = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 3, hour: 0, minute: 15)))
+        let futureBufferStart = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 10)))
+
+        let target = CalendarPageInteractionSupport.todayTimelineJumpTarget(
+            now: now,
+            calendar: calendar,
+            bufferStart: futureBufferStart,
+            todayDayIdx: 42
+        )
+
+        #expect(target == CalendarTimelineJumpTarget(dateKey: "2026-06-03", dayIndex: 0, hour: calStartHour))
     }
 
     @Test func monthIndexForOffsetHandlesSparseOrEmptyOffsets() {
@@ -530,6 +563,44 @@ struct CadenceTests {
         #expect(firstNote.content == "First occurrence notes")
     }
 
+    @MainActor
+    @Test func eventNoteCreationSeedsFromNativeCalendarNotes() throws {
+        var insertedNote: Note?
+        let created = try #require(EventNoteSupport.noteForEditing(
+            calendarEventID: "event-1",
+            eventTitle: "Planning Sync",
+            calendarID: "calendar-1",
+            eventDateKey: "2026-05-06",
+            eventStartMin: 600,
+            eventEndMin: 630,
+            nativeNotes: "Agenda\n\n- Review launch blockers",
+            notes: [],
+            insert: { insertedNote = $0 }
+        ))
+
+        #expect(insertedNote?.id == created.id)
+        #expect(created.content == "Agenda\n\n- Review launch blockers")
+    }
+
+    @MainActor
+    @Test func eventNoteCreationFallsBackToMarkdownTitleWhenNativeNotesAreEmpty() throws {
+        var insertedNote: Note?
+        let created = try #require(EventNoteSupport.noteForEditing(
+            calendarEventID: "event-2",
+            eventTitle: "Planning Sync",
+            calendarID: "calendar-1",
+            eventDateKey: "2026-05-06",
+            eventStartMin: 600,
+            eventEndMin: 630,
+            nativeNotes: "   \n ",
+            notes: [],
+            insert: { insertedNote = $0 }
+        ))
+
+        #expect(insertedNote?.id == created.id)
+        #expect(created.content == "# Planning Sync\n\n")
+    }
+
     @Test func allDayEventDragPayloadKeepsOccurrenceIdentifierIntact() throws {
         let rawIdentifier = "event-1#occurrence=2026-05-06:600"
         let payload = CalendarEventDragPayload.allDayEventPayload(
@@ -539,6 +610,50 @@ struct CadenceTests {
         #expect(payload?.sourceDateKey == "2026-05-06")
         #expect(payload?.eventIdentifier == rawIdentifier)
         #expect(CalendarEventIdentity.lookupIdentifier(from: payload?.eventIdentifier ?? "") == "event-1")
+    }
+
+    @Test func timedCalendarEventSegmentsAcrossMidnightForVisibleDay() throws {
+        let store = EKEventStore()
+        let calendar = Calendar.current
+        let start = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 11, hour: 18)))
+        let end = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 12, hour: 6)))
+        let secondDay = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 12)))
+        let event = EKEvent(eventStore: store)
+        event.title = "EXP Building Work"
+        event.startDate = start
+        event.endDate = end
+        event.isAllDay = false
+
+        let firstSegment = try #require(CalendarEventItem(event: event, clippedTo: start, calendar: calendar))
+        let secondSegment = try #require(CalendarEventItem(event: event, clippedTo: secondDay, calendar: calendar))
+
+        #expect(firstSegment.dateKey == "2026-06-11")
+        #expect(firstSegment.startMin == 18 * 60)
+        #expect(firstSegment.durationMinutes == 6 * 60)
+        #expect(secondSegment.dateKey == "2026-06-12")
+        #expect(secondSegment.startMin == 0)
+        #expect(secondSegment.durationMinutes == 6 * 60)
+    }
+
+    @Test func calendarBoardEventDisplayUsesClippedVisibleDaySegment() throws {
+        let store = EKEventStore()
+        let calendar = Calendar.current
+        let start = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 11, hour: 18)))
+        let end = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 12, hour: 6)))
+        let secondDay = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 12)))
+        let event = EKEvent(eventStore: store)
+        event.title = "EXP Building Work"
+        event.startDate = start
+        event.endDate = end
+        event.isAllDay = false
+
+        let segment = try #require(CalendarEventItem(event: event, clippedTo: secondDay, calendar: calendar))
+        let boardItem = CalendarBoardEventDisplayItem(timed: segment)
+
+        #expect(boardItem.dateKey == "2026-06-12")
+        #expect(boardItem.startMin == 0)
+        #expect(boardItem.durationMinutes == 6 * 60)
+        #expect(boardItem.sortKey.startMinute == 0)
     }
 
     @MainActor

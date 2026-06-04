@@ -23,6 +23,7 @@ struct TimelineTaskBlock: View {
     @Environment(TaskCompletionAnimationManager.self) private var taskCompletionAnimationManager
     @Binding var selectedTaskID: UUID?
     @Binding var activeDragTaskID: UUID?
+    let onBundleDropAccepted: (UUID) -> Void
     let onCreateBundleWithTask: (AppTask, AppTask) -> Void
     let onSelect: () -> Void
 
@@ -104,6 +105,7 @@ struct TimelineTaskBlock: View {
                 onSelect()
             }
         }
+        .suppressWindowBackgroundDrag()
         .onDrag {
             guard activeResizeEdge == nil else {
                 return NSItemProvider()
@@ -144,6 +146,7 @@ struct TimelineTaskBlock: View {
                 height: min(max(30, frame.height * 0.38), 46),
                 activeDragTaskID: $activeDragTaskID,
                 isTargeted: $isBundleDropTargeted,
+                onDropAccepted: onBundleDropAccepted,
                 onCreateBundle: onCreateBundleWithTask
             )
         }
@@ -215,6 +218,7 @@ private struct TimelineTaskBundleDropShelf: View {
     let height: CGFloat
     @Binding var activeDragTaskID: UUID?
     @Binding var isTargeted: Bool
+    let onDropAccepted: (UUID) -> Void
     let onCreateBundle: (AppTask, AppTask) -> Void
 
     var body: some View {
@@ -244,6 +248,7 @@ private struct TimelineTaskBundleDropShelf: View {
             delegate: TimelineTaskBundleDropDelegate(
                 targetTask: targetTask,
                 allTasks: allTasks,
+                onDropAccepted: onDropAccepted,
                 onCreateBundle: onCreateBundle,
                 activeDragTaskID: $activeDragTaskID,
                 isTargeted: $isTargeted
@@ -255,6 +260,7 @@ private struct TimelineTaskBundleDropShelf: View {
 private struct TimelineTaskBundleDropDelegate: DropDelegate {
     let targetTask: AppTask
     let allTasks: [AppTask]
+    let onDropAccepted: (UUID) -> Void
     let onCreateBundle: (AppTask, AppTask) -> Void
     @Binding var activeDragTaskID: UUID?
     @Binding var isTargeted: Bool
@@ -277,6 +283,9 @@ private struct TimelineTaskBundleDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         isTargeted = false
+        if let draggedTaskID = activeDragTaskID {
+            onDropAccepted(draggedTaskID)
+        }
         activeDragTaskID = nil
         guard let provider = info.itemProviders(for: [UTType.text]).first else { return false }
         _ = provider.loadObject(ofClass: NSString.self) { object, _ in
@@ -285,6 +294,7 @@ private struct TimelineTaskBundleDropDelegate: DropDelegate {
             Task { @MainActor in
                 guard targetTask.id != taskID,
                       let draggedTask = allTasks.first(where: { $0.id == taskID }) else { return }
+                onDropAccepted(taskID)
                 onCreateBundle(targetTask, draggedTask)
             }
         }

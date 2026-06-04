@@ -82,11 +82,11 @@ struct AppStoreReviewReadinessTests {
         #expect(privacyPolicy.contains("removes local Cadence backups"))
     }
 
-    @Test func appEntitlementsAvoidUnusedPushAndIncludeSandboxNetworkCalendarAndAppGroupAccess() throws {
+    @Test func appEntitlementsIncludeCloudKitPushSandboxNetworkCalendarAndAppGroupAccess() throws {
         let entitlements = try plistDictionary(at: "Cadence/Cadence.entitlements")
 
         #expect(entitlements["aps-environment"] == nil)
-        #expect(entitlements["com.apple.developer.aps-environment"] == nil)
+        #expect(entitlements["com.apple.developer.aps-environment"] as? String == "$(APS_ENVIRONMENT)")
         #expect(entitlements["com.apple.security.application-groups"] as? [String] == ["group.com.haoranwei.Cadence"])
         #expect(entitlements["com.apple.security.app-sandbox"] as? Bool == true)
         #expect(entitlements["com.apple.security.network.client"] as? Bool == true)

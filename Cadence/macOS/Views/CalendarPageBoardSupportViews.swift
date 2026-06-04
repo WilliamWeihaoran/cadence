@@ -49,7 +49,7 @@ struct CalendarPageBoardView: View {
                             dateKey: dateKey,
                             tasks: boardTasksByDate[dateKey] ?? [],
                             bundles: bundlesByDate[dateKey] ?? [],
-                            events: calendarEvents(for: date),
+                            events: calendarDisplayItems(for: date),
                             allTasks: allTasks,
                             allBundles: allBundles,
                             areas: areas,
@@ -179,15 +179,17 @@ struct CalendarPageBoardView: View {
         try? modelContext.save()
     }
 
-    private func calendarEvents(for date: Date) -> [EKEvent] {
+    @MainActor
+    private func calendarDisplayItems(for date: Date) -> [CalendarBoardEventDisplayItem] {
         guard calendarManager.isAuthorized else { return [] }
         let _ = calendarManager.storeVersion
-        let allDay = calendarManager.fetchAllDayEvents(for: date)
-        let timed = calendarManager.fetchEvents(for: date)
-        return (allDay + timed).sorted { lhs, rhs in
-            if lhs.isAllDay != rhs.isAllDay { return lhs.isAllDay && !rhs.isAllDay }
-            return (lhs.startDate ?? .distantPast) < (rhs.startDate ?? .distantPast)
+        let allDay = calendarManager.fetchAllDayEvents(for: date).map {
+            CalendarBoardEventDisplayItem(allDay: $0, date: date, calendar: calendar)
         }
+        let timed = CalendarEventItem
+            .timedSegments(from: calendarManager.fetchEvents(for: date), for: date, calendar: calendar)
+            .map(CalendarBoardEventDisplayItem.init(timed:))
+        return (allDay + timed).sorted { $0.sortKey < $1.sortKey }
     }
 }
 
@@ -197,7 +199,7 @@ private struct CalendarBoardDayColumn: View {
     let dateKey: String
     let tasks: [AppTask]
     let bundles: [TaskBundle]
-    let events: [EKEvent]
+    let events: [CalendarBoardEventDisplayItem]
     let allTasks: [AppTask]
     let allBundles: [TaskBundle]
     let areas: [Area]
@@ -226,7 +228,7 @@ private struct CalendarBoardDayColumn: View {
     }
 
     private var activeItems: [CalendarBoardColumnItem] {
-        let eventItems = events.map { CalendarBoardColumnItem.event(CalendarAllDayEventItem(event: $0)) }
+        let eventItems = events.map { CalendarBoardColumnItem.event($0) }
         let bundleItems = bundles.map { CalendarBoardColumnItem.bundle($0) }
         let taskItems = activeTasks.map { CalendarBoardColumnItem.task($0) }
         return (eventItems + bundleItems + taskItems).sorted(by: sortColumnItems)
@@ -403,6 +405,7 @@ private struct CalendarBoardDayColumn: View {
                             CalendarBoardPlannerSupport.boardTaskSort(lhs, rhs)
                         }) { task in
                             KanbanCard(task: task, presentation: .calendarBoard(dateKey: dateKey))
+                                .suppressWindowBackgroundDrag()
                                 .draggable(TaskDragPayload.string(for: task.id))
                         }
                     }
@@ -416,7 +419,7 @@ private struct CalendarBoardDayColumn: View {
     private func columnItemView(_ item: CalendarBoardColumnItem) -> some View {
         switch item {
         case .event(let item):
-            CalendarBoardEventCard(event: item.event)
+            CalendarBoardEventCard(item: item)
         case .bundle(let bundle):
             CalendarBoardBundleCard(
                 bundle: bundle,
@@ -433,6 +436,7 @@ private struct CalendarBoardDayColumn: View {
             )
         case .task(let task):
             KanbanCard(task: task, presentation: .calendarBoard(dateKey: dateKey))
+                .suppressWindowBackgroundDrag()
                 .draggable(TaskDragPayload.string(for: task.id))
         }
     }
@@ -495,14 +499,9 @@ private struct CalendarBoardDayColumn: View {
     }
 
     private func sortColumnItems(_ lhs: CalendarBoardColumnItem, _ rhs: CalendarBoardColumnItem) -> Bool {
-        let lhsStart = lhs.sortStartMinute
-        let rhsStart = rhs.sortStartMinute
-        if lhsStart != rhsStart {
-            return lhsStart < rhsStart
-        }
-        if lhs.kindRank != rhs.kindRank {
-            return lhs.kindRank < rhs.kindRank
-        }
+        let lhsKey = lhs.sortKey
+        let rhsKey = rhs.sortKey
+        if lhsKey != rhsKey { return lhsKey < rhsKey }
         switch (lhs, rhs) {
         case (.task(let lhsTask), .task(let rhsTask)):
             return CalendarBoardPlannerSupport.boardTaskSort(lhsTask, rhsTask)
@@ -524,7 +523,7 @@ private struct CalendarBoardDayColumn: View {
 }
 
 private enum CalendarBoardColumnItem: Identifiable {
-    case event(CalendarAllDayEventItem)
+    case event(CalendarBoardEventDisplayItem)
     case bundle(TaskBundle)
     case task(AppTask)
 
@@ -539,35 +538,15 @@ private enum CalendarBoardColumnItem: Identifiable {
         }
     }
 
-    var kindRank: Int {
-        switch self {
-        case .event:
-            return 0
-        case .bundle:
-            return 1
-        case .task:
-            return 2
-        }
-    }
-
-    var sortStartMinute: Int {
+    var sortKey: CalendarBoardSortKey {
         switch self {
         case .event(let item):
-            if item.event.isAllDay {
-                return -1
-            }
-            return CalendarBoardColumnItem.startMinute(for: item.event)
+            return item.sortKey
         case .bundle(let bundle):
-            return bundle.startMin
+            return CalendarBoardPlannerSupport.sortKey(for: bundle, kindRank: 1)
         case .task(let task):
-            return task.scheduledStartMin >= 0 ? task.scheduledStartMin : Int.max
+            return CalendarBoardPlannerSupport.sortKey(for: task, kindRank: 2)
         }
-    }
-
-    private static func startMinute(for event: EKEvent) -> Int {
-        guard let startDate = event.startDate else { return Int.max - 1 }
-        let components = Calendar.current.dateComponents([.hour, .minute], from: startDate)
-        return max(0, ((components.hour ?? 0) * 60) + (components.minute ?? 0))
     }
 }
 

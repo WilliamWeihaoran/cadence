@@ -59,12 +59,16 @@ struct PersistenceController {
     }
 
     private static func performStartupMaintenance(in context: ModelContext) {
-        NoteMigrationService.migrateAndRecordFailure(in: context, source: "app-startup", saveChanges: false)
-        TagSupport.seedDefaultTags(in: context, saveChanges: false)
-        TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
-        DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "app-startup", saveChanges: false)
+        let migrationReport = NoteMigrationService.migrateAndRecordFailure(in: context, source: "app-startup", saveChanges: false)
+        let seededDefaultTags = TagSupport.seedDefaultTags(in: context, saveChanges: false)
+        let syncedNoteTags = TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
+        let repairReport = DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "app-startup", saveChanges: false)
+        let changedStore = (migrationReport?.insertedTotal ?? 0) > 0 ||
+            seededDefaultTags ||
+            syncedNoteTags ||
+            repairReport?.changed == true
 
-        guard context.hasChanges else { return }
+        guard changedStore, context.hasChanges else { return }
         do {
             try context.save()
         } catch {

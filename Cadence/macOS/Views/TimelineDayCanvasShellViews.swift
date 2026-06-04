@@ -17,6 +17,7 @@ struct TimelineCanvasDropSurface: View {
             .frame(width: width, height: totalHeight)
             .onTapGesture(perform: onTap)
             .onDrop(of: [UTType.text.identifier], delegate: dropDelegate)
+            .suppressWindowBackgroundDrag()
     }
 }
 

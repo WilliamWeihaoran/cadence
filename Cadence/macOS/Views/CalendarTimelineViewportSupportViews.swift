@@ -107,8 +107,20 @@ struct CalendarTimelineDayScroller: View {
             }
             .onAppear {
                 onRestoreTimelineScrollIfNeeded(hProxy)
+                if let day = visibleTimelineDayIndex {
+                    CalendarTimelineScrollSupport.syncHeaderOffset(
+                        to: day,
+                        scrollState: timelineScrollState,
+                        colWidth: colWidth
+                    )
+                }
                 if externalJumpToken != nil, let day = externalJumpDayIndex {
                     DispatchQueue.main.async {
+                        CalendarTimelineScrollSupport.syncHeaderOffset(
+                            to: day,
+                            scrollState: timelineScrollState,
+                            colWidth: colWidth
+                        )
                         hProxy.scrollTo("day_\(day)", anchor: .leading)
                     }
                 }
@@ -116,8 +128,11 @@ struct CalendarTimelineDayScroller: View {
             .onChange(of: scrollToTodayTrigger) {
                 CalendarTimelineScrollSupport.applyTodayHorizontalJump(
                     todayDayIdx: todayDayIdx,
+                    visibleTimelineDayIndex: $visibleTimelineDayIndex,
                     isRestoringHorizontalScroll: $isRestoringHorizontalScroll,
-                    hProxy: hProxy
+                    hProxy: hProxy,
+                    scrollState: timelineScrollState,
+                    colWidth: colWidth
                 )
             }
             .onChange(of: externalJumpToken) { _, _ in
@@ -126,7 +141,9 @@ struct CalendarTimelineDayScroller: View {
                     day: day,
                     visibleTimelineDayIndex: $visibleTimelineDayIndex,
                     isRestoringHorizontalScroll: $isRestoringHorizontalScroll,
-                    hProxy: hProxy
+                    hProxy: hProxy,
+                    scrollState: timelineScrollState,
+                    colWidth: colWidth
                 )
             }
         }

@@ -28,11 +28,14 @@ final class NotesNavigationManager {
 struct EventNoteEditorSheet: View {
     @Bindable var note: Note
     let eventTitle: String
+    var nativeEvent: EKEvent?
     @Environment(\.dismiss) private var dismiss
+    @Environment(CalendarManager.self) private var calendarManager
 
     var body: some View {
         NoteEditorPane(
             note: note,
+            onPersistContent: syncNativeEventNotes,
             headerDetail: eventTitle.isEmpty ? "Linked event note" : eventTitle,
             headerAccessory: AnyView(
                 HStack(spacing: 10) {
@@ -48,6 +51,14 @@ struct EventNoteEditorSheet: View {
         )
         .frame(minWidth: 760, minHeight: 560)
         .background(Theme.bg)
+    }
+
+    private func syncNativeEventNotes(_ note: Note, content: String) {
+        if let nativeEvent {
+            calendarManager.updateEventNotes(nativeEvent, notes: content)
+            return
+        }
+        EventNoteSupport.syncNativeCalendarNotes(for: note, content: content, calendarManager: calendarManager)
     }
 }
 
@@ -99,6 +110,7 @@ enum EventNoteSupport {
         eventDateKey: String = "",
         eventStartMin: Int = -1,
         eventEndMin: Int = -1,
+        nativeNotes: String? = nil,
         notes: [Note],
         insert: (Note) -> Void
     ) -> Note? {
@@ -132,7 +144,7 @@ enum EventNoteSupport {
         let created = Note(
             kind: .meeting,
             title: resolvedTitle,
-            content: "# \(resolvedTitle)\n\n",
+            content: initialContent(eventTitle: resolvedTitle, nativeNotes: nativeNotes),
             calendarEventID: calendarEventID,
             calendarID: calendarID,
             eventDateKey: eventDateKey,
@@ -141,6 +153,20 @@ enum EventNoteSupport {
         )
         insert(created)
         return created
+    }
+
+    static func initialContent(eventTitle: String, nativeNotes: String?) -> String {
+        let trimmedNativeNotes = (nativeNotes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedNativeNotes.isEmpty {
+            return nativeNotes ?? trimmedNativeNotes
+        }
+        let resolvedTitle = eventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Event Note" : eventTitle
+        return "# \(resolvedTitle)\n\n"
+    }
+
+    static func syncNativeCalendarNotes(for note: Note, content: String, calendarManager: CalendarManager) {
+        guard note.kind == .meeting, !note.calendarEventID.isEmpty else { return }
+        calendarManager.updateEventNotes(calendarEventID: note.calendarEventID, notes: content)
     }
 
     static func eventDateMetadata(from event: EKEvent) -> (dateKey: String, startMin: Int, endMin: Int) {

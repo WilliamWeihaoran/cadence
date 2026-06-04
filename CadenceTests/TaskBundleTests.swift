@@ -205,12 +205,47 @@ struct TaskBundleTests {
 
         #expect(bundle.dateKey == "2026-05-01")
         #expect(bundle.startMin == 600)
-        #expect(bundle.durationMinutes == 25)
+        #expect(bundle.durationMinutes == 35)
         #expect(bundle.sortedTasks.map(\.title) == ["A", "B"])
         #expect(target.scheduledDate == "2026-05-01")
         #expect(target.scheduledStartMin == -1)
         #expect(dragged.scheduledDate == "2026-05-01")
         #expect(dragged.scheduledStartMin == -1)
+    }
+
+    @Test func unbundlingKeepsTasksOnBundleDateAndPreservesListMetadata() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let area = Area(name: "General", colorHex: "#8b5cf6", icon: "globe")
+        let tag = Tag(name: "enhancement", colorHex: "#22c55e")
+        let task = AppTask(title: "Keep metadata")
+        task.area = area
+        task.sectionName = "Backlog"
+        task.dueDate = "2026-05-10"
+        task.notes = "Original notes"
+        task.tags = [tag]
+        task.order = 42
+        task.priority = .high
+        let bundle = TaskBundle(title: "Batch", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
+        context.insert(area)
+        context.insert(tag)
+        context.insert(task)
+        context.insert(bundle)
+        SchedulingActions.addTask(task, to: bundle)
+
+        SchedulingActions.unbundle(bundle, in: context)
+
+        #expect(task.bundle == nil)
+        #expect(task.scheduledDate == "2026-05-01")
+        #expect(task.scheduledStartMin == -1)
+        #expect(task.area?.id == area.id)
+        #expect(task.sectionName == "Backlog")
+        #expect(task.dueDate == "2026-05-10")
+        #expect(task.notes == "Original notes")
+        #expect(task.tags?.map(\.id) == [tag.id])
+        #expect(task.order == 42)
+        #expect(task.priority == .high)
+        #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
     }
 
     @Test func bundleTimesAreClampedInsideOneDay() throws {

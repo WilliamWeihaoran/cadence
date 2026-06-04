@@ -341,7 +341,7 @@ struct CalendarTimelineViewport: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 Rectangle()
-                    .fill(Theme.surface)
+                    .fill(Theme.bg)
                     .frame(width: calTimeTotalWidth, height: calDayHeaderHeight + calAllDayBannerHeight)
                     .overlay(alignment: .trailing) {
                         Rectangle()
@@ -366,9 +366,12 @@ struct CalendarTimelineViewport: View {
                 )
             }
             .frame(height: calDayHeaderHeight + calAllDayBannerHeight)
-            .background(Theme.surface)
-
-            Divider().background(Theme.borderSubtle.opacity(CalendarVisualStyle.dividerOpacity))
+            .background(Theme.bg)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.majorGridOpacity))
+                    .frame(height: 0.5)
+            }
 
             ScrollViewReader { vProxy in
                 ScrollView(.vertical) {

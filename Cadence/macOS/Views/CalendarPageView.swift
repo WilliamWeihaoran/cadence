@@ -277,17 +277,24 @@ struct CalendarPageView: View {
         pendingHourPersistence?.cancel()
         pendingHourPersistence = nil
 
-        anchorDateKey = DateFormatters.todayKey()
-        selectedBoardDate = cal.startOfDay(for: Date())
-        visibleTimelineDayIndex = todayDayIdx
-        externalJumpDayIndex = nil
-        externalJumpHour = nil
-        externalJumpToken = nil
+        let target = CalendarPageInteractionSupport.todayTimelineJumpTarget(
+            calendar: cal,
+            bufferStart: bufferStart,
+            todayDayIdx: todayDayIdx
+        )
+        selectedBoardDate = cal.startOfDay(for: DateFormatters.date(from: target.dateKey) ?? Date())
+        CalendarPageInteractionSupport.applyTimelineJump(
+            target,
+            token: nil,
+            visibleTimelineDayIndex: &visibleTimelineDayIndex,
+            visibleTimelineHour: &visibleTimelineHour,
+            externalJumpDayIndex: &externalJumpDayIndex,
+            externalJumpHour: &externalJumpHour,
+            externalJumpToken: &externalJumpToken,
+            anchorDateKey: &anchorDateKey
+        )
         if presentation == .timeline && viewMode != .month {
-            let currentHour = cal.component(.hour, from: Date())
-            let scrollHour = max(calStartHour, currentHour - 1)
-            rememberedScrollHour = scrollHour
-            visibleTimelineHour = scrollHour
+            rememberedScrollHour = target.hour
             didRestoreTimelineScroll = true
             isRestoringHorizontalScroll = true
             isRestoringVerticalScroll = true

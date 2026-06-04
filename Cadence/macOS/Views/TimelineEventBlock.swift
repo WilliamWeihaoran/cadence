@@ -92,11 +92,10 @@ struct TimelineEventBlock: View {
                     .onEnded { _ in
                         guard activeResizeEdge == nil else { return }
                         if let newStart = liveStartMin {
-                            let dateKey = DateFormatters.dateKey(from: item.ekEvent.startDate)
                             calendarManager.updateEvent(item.ekEvent, title: item.title,
                                                         startMin: newStart,
                                                         durationMinutes: item.durationMinutes,
-                                                        dateKey: dateKey)
+                                                        dateKey: item.dateKey)
                             // Keep liveStartMin set until item refreshes from iCal (onChange clears it)
                         }
                         dragGrabOffset = 0
@@ -114,14 +113,12 @@ struct TimelineEventBlock: View {
             ) {
                 CalendarEventEditPopover(
                     item: item,
-                    onSave: { title, startMin, duration, calendarID, notes in
-                        let dateKey = DateFormatters.dateKey(from: item.ekEvent.startDate)
+                    onSave: { title, startMin, duration, calendarID in
                         calendarManager.updateEvent(item.ekEvent, title: title,
                                                     startMin: startMin,
                                                     durationMinutes: duration,
-                                                    dateKey: dateKey,
-                                                    calendarID: calendarID,
-                                                    notes: notes)
+                                                    dateKey: item.dateKey,
+                                                    calendarID: calendarID)
                         selectedEventID = nil
                     },
                     onDelete: {
@@ -203,11 +200,10 @@ struct TimelineEventBlock: View {
     private func endResize() {
         let finalStart    = liveStartMin        ?? effectiveStartMin
         let finalDuration = liveDurationMinutes ?? effectiveDuration
-        let dateKey = DateFormatters.dateKey(from: item.ekEvent.startDate)
         calendarManager.updateEvent(item.ekEvent, title: item.title,
                                     startMin: finalStart,
                                     durationMinutes: finalDuration,
-                                    dateKey: dateKey)
+                                    dateKey: item.dateKey)
         // Keep live state until item refreshes (onChange clears it)
         activeResizeEdge    = nil
         resizeOriginStartMin = nil
@@ -242,11 +238,11 @@ struct TimelineEventBlock: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(item.calendarColor.opacity(isSelected ? 0.94 : (isHovered ? 0.90 : 0.84)))
+                    .fill(item.calendarColor.opacity(CalendarEventVisualStyle.blockFillOpacity(isSelected: isSelected, isHovered: isHovered)))
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(TimelineHoverVisuals.hoverFill(tint: .white, isHovered: isHovered && !isSelected, opacity: 0.06))
+                    .fill(TimelineHoverVisuals.hoverFill(tint: .white, isHovered: isHovered && !isSelected, opacity: 0.04))
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(.white.opacity(isSelected ? 0.08 : 0.035))
+                    .fill(.white.opacity(CalendarEventVisualStyle.blockHighlightOpacity(isSelected: isSelected, isHovered: isHovered)))
             }
         )
         .overlay(
@@ -256,16 +252,16 @@ struct TimelineEventBlock: View {
                         tint: item.calendarColor,
                         isSelected: isSelected,
                         isHovered: isHovered,
-                        selectedOpacity: 0.42,
-                        hoverOpacity: 0.32,
-                        idleOpacity: 0.07
+                        selectedOpacity: CalendarEventVisualStyle.chipBorderOpacity(isActive: true),
+                        hoverOpacity: CalendarEventVisualStyle.chipBorderOpacity(),
+                        idleOpacity: 0.12
                     ),
                     lineWidth: isHovered || isSelected ? 1.2 : 1
                 )
         )
         .overlay(alignment: .top) {
             Rectangle()
-                .fill((isSelected || isHovered ? item.calendarColor : .white).opacity(isSelected ? 0.55 : (isHovered ? 0.38 : 0.18)))
+                .fill(.white.opacity(CalendarEventVisualStyle.blockAccentOpacity(isSelected: isSelected, isHovered: isHovered)))
                 .frame(height: isSelected ? 2 : 1)
                 .padding(.horizontal, 8)
         }
@@ -287,7 +283,7 @@ struct TimelineEventBlock: View {
 
 struct CalendarEventEditPopover: View {
     let item: CalendarEventItem
-    let onSave: (String, Int, Int, String, String) -> Void
+    let onSave: (String, Int, Int, String) -> Void
     let onDelete: () -> Void
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(\.modelContext) private var modelContext
@@ -299,10 +295,9 @@ struct CalendarEventEditPopover: View {
     @State private var startText: String
     @State private var endText: String
     @State private var selectedCalendarID: String
-    @State private var notes: String
     @State private var presentedEventNote: Note?
 
-    init(item: CalendarEventItem, onSave: @escaping (String, Int, Int, String, String) -> Void, onDelete: @escaping () -> Void) {
+    init(item: CalendarEventItem, onSave: @escaping (String, Int, Int, String) -> Void, onDelete: @escaping () -> Void) {
         self.item = item
         self.onSave = onSave
         self.onDelete = onDelete
@@ -314,7 +309,6 @@ struct CalendarEventEditPopover: View {
         _startText = State(initialValue: TimeFormatters.timeString(from: s))
         _endText   = State(initialValue: TimeFormatters.timeString(from: e))
         _selectedCalendarID = State(initialValue: item.ekEvent.calendar.calendarIdentifier)
-        _notes = State(initialValue: item.ekEvent.notes ?? "")
     }
 
     private var durationMinutes: Int { max(0, endMin - startMin) }
@@ -356,7 +350,7 @@ struct CalendarEventEditPopover: View {
             set: { if !$0 { presentedEventNote = nil } }
         )) {
             if let presentedEventNote {
-                EventNoteEditorSheet(note: presentedEventNote, eventTitle: item.title)
+                EventNoteEditorSheet(note: presentedEventNote, eventTitle: item.title, nativeEvent: item.ekEvent)
             }
         }
     }
@@ -368,7 +362,6 @@ struct CalendarEventEditPopover: View {
                 timeCard
                 calendarCard
                 linkedNoteCard
-                notesCard
                 actionButtons
             }
             .padding(18)
@@ -480,28 +473,9 @@ struct CalendarEventEditPopover: View {
         }
     }
 
-    private var notesCard: some View {
-        infoCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Notes", systemImage: "note.text")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-
-                TextEditor(text: $notes)
-                    .scrollContentBackground(.hidden)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.text)
-                    .frame(minHeight: 96)
-                    .padding(8)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-        }
-    }
-
     private var actionButtons: some View {
         HStack(spacing: 10) {
-            Button { onSave(title, startMin, durationMinutes, selectedCalendarID, notes) } label: {
+            Button { onSave(title, startMin, durationMinutes, selectedCalendarID) } label: {
                 Label("Save", systemImage: "checkmark.circle.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.blue)
@@ -577,6 +551,7 @@ struct CalendarEventEditPopover: View {
             eventDateKey: metadata.dateKey,
             eventStartMin: metadata.startMin,
             eventEndMin: metadata.endMin,
+            nativeNotes: item.ekEvent.notes,
             notes: eventNotes
         ) { modelContext.insert($0) }
     }

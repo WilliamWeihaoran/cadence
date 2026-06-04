@@ -167,12 +167,12 @@ struct TaskTitleEntryField: View {
             result.append(.init(tag: .inbox, icon: "tray", name: "Inbox", color: Theme.dim))
         }
         for context in contexts {
-            for area in areas.filter({ $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
+            for area in areas.filter({ $0.isActive && $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
                 if matches(area.name) {
                     result.append(.init(tag: .area(area.id), icon: area.icon, name: area.name, color: Color(hex: area.colorHex)))
                 }
             }
-            for project in projects.filter({ $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
+            for project in projects.filter({ $0.isActive && $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
                 if matches(project.name) {
                     result.append(.init(tag: .project(project.id), icon: project.icon, name: project.name, color: Color(hex: project.colorHex)))
                 }

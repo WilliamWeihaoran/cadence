@@ -119,11 +119,15 @@ enum SchedulingActions {
               !targetTask.scheduledDate.isEmpty,
               targetTask.scheduledStartMin >= 0 else { return nil }
 
+        let duration = clampedBundleDuration(
+            startingAt: targetTask.scheduledStartMin,
+            tasks: [targetTask, draggedTask]
+        )
         let bundle = TaskBundle(
             title: "Task Bundle",
             dateKey: targetTask.scheduledDate,
             startMin: targetTask.scheduledStartMin,
-            durationMinutes: max(targetTask.estimatedMinutes, minimumBundleDuration)
+            durationMinutes: duration
         )
         context.insert(bundle)
         addTask(targetTask, to: bundle)
@@ -193,6 +197,11 @@ enum SchedulingActions {
         bundle.durationMinutes = range.duration
     }
 
+    static func unbundle(_ bundle: TaskBundle, in context: ModelContext) {
+        detachBundleMembers(bundle)
+        context.delete(bundle)
+    }
+
     private static func ensureTask(_ task: AppTask, isLinkedIn bundle: TaskBundle) {
         if bundle.tasks == nil {
             bundle.tasks = []
@@ -211,15 +220,7 @@ enum SchedulingActions {
     }
 
     static func deleteBundle(_ bundle: TaskBundle, in context: ModelContext) {
-        for task in memberTasks(in: bundle) {
-            task.bundle = nil
-            task.bundleOrder = 0
-            task.scheduledDate = bundle.dateKey
-            task.scheduledStartMin = -1
-            task.calendarEventID = ""
-        }
-        bundle.tasks = []
-        context.delete(bundle)
+        unbundle(bundle, in: context)
     }
 
     /// Detach any legacy calendar-event reference from a task without deleting the calendar event.
@@ -229,6 +230,11 @@ enum SchedulingActions {
 
     private static func cleanupInactiveBundleIfNeeded(_ bundle: TaskBundle, in context: ModelContext) {
         guard memberTasks(in: bundle).allSatisfy({ $0.isDone || $0.isCancelled }) else { return }
+        detachBundleMembers(bundle)
+        context.delete(bundle)
+    }
+
+    private static func detachBundleMembers(_ bundle: TaskBundle) {
         for task in memberTasks(in: bundle) {
             task.bundle = nil
             task.bundleOrder = 0
@@ -237,7 +243,14 @@ enum SchedulingActions {
             task.calendarEventID = ""
         }
         bundle.tasks = []
-        context.delete(bundle)
+    }
+
+    private static func clampedBundleDuration(startingAt startMin: Int, tasks: [AppTask]) -> Int {
+        let total = tasks.reduce(0) { partial, task in
+            partial + max(task.estimatedMinutes, minimumBundleDuration)
+        }
+        let clampedStart = clampedStartMin(startMin)
+        return max(minimumBundleDuration, min(total, dayEndMin - clampedStart))
     }
 
     private static func clampedStartMin(_ startMin: Int) -> Int {

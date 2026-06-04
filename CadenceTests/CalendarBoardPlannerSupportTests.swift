@@ -44,6 +44,44 @@ struct CalendarBoardPlannerSupportTests {
         #expect(result.map(\.title) == ["Timed low", "Untimed high", "Untimed medium"])
     }
 
+    @Test func sharedBoardSortKeyOrdersAllDayTimedAndUntimedItems() {
+        let allDay = CalendarBoardPlannerSupport.sortKeyForCalendarEvent(
+            id: "all-day",
+            startMinute: 0,
+            isAllDay: true,
+            kindRank: 0
+        )
+        let event = CalendarBoardPlannerSupport.sortKeyForCalendarEvent(
+            id: "event",
+            startMinute: 9 * 60,
+            isAllDay: false,
+            kindRank: 0
+        )
+
+        let bundle = TaskBundle(title: "Bundle", dateKey: "2026-06-01", startMin: 9 * 60, durationMinutes: 60)
+        let timedTask = AppTask(title: "Task")
+        timedTask.scheduledDate = "2026-06-01"
+        timedTask.scheduledStartMin = 9 * 60
+        let untimedTask = AppTask(title: "Untimed")
+        untimedTask.scheduledDate = "2026-06-01"
+
+        let ordered = [
+            CalendarBoardPlannerSupport.sortKey(for: untimedTask, kindRank: 2),
+            CalendarBoardPlannerSupport.sortKey(for: timedTask, kindRank: 2),
+            CalendarBoardPlannerSupport.sortKey(for: bundle, kindRank: 1),
+            event,
+            allDay
+        ].sorted()
+
+        #expect(ordered == [
+            allDay,
+            event,
+            CalendarBoardPlannerSupport.sortKey(for: bundle, kindRank: 1),
+            CalendarBoardPlannerSupport.sortKey(for: timedTask, kindRank: 2),
+            CalendarBoardPlannerSupport.sortKey(for: untimedTask, kindRank: 2)
+        ])
+    }
+
     @Test func plannerWindowStartsBeforeAnchorByLeadingDayCount() {
         let calendar = Calendar(identifier: .gregorian)
         let anchor = calendar.date(from: DateComponents(year: 2026, month: 6, day: 1))!

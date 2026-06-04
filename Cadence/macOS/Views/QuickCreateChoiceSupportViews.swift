@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import EventKit
 
 struct QuickCreateTaskPanelHandoffView: View {
     let dateKey: String
@@ -59,6 +60,9 @@ struct QuickCreateTaskPanelHandoffView: View {
 }
 
 struct QuickCreateTaskDetailsView: View {
+    let dateKey: String
+    let startMin: Int
+    let endMin: Int
     @Binding var selectedContainer: TaskContainerSelection
     @Binding var selectedSectionName: String
     @Binding var notes: String
@@ -72,47 +76,53 @@ struct QuickCreateTaskDetailsView: View {
     let onContainerChanged: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 8) {
-                ContainerPickerBadge(
-                    selection: $selectedContainer,
-                    contexts: contexts,
-                    areas: areas,
-                    projects: projects
-                )
-                .onChange(of: selectedContainer) { onContainerChanged() }
+        VStack(alignment: .leading, spacing: 12) {
+            TaskInspectorInfoCard {
+                QuickCreateSlotMetadataRows(dateKey: dateKey, startMin: startMin, endMin: endMin)
 
-                sectionPicker
+                Divider().background(Theme.borderSubtle.opacity(0.7))
+
+                TaskInspectorDetailRow(title: "List", icon: "tray") {
+                    HStack(alignment: .center, spacing: 8) {
+                        ContainerPickerBadge(
+                            selection: $selectedContainer,
+                            contexts: contexts,
+                            areas: areas,
+                            projects: projects
+                        )
+                        .onChange(of: selectedContainer) { onContainerChanged() }
+
+                        if showsSectionPicker {
+                            TaskSectionPickerBadge(
+                                selection: $selectedSectionName,
+                                sections: availableSections
+                            )
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
 
-            notesEditor
-            subtasksEditor
+            TaskInspectorInfoCard {
+                TaskInspectorDetailRow(title: "Notes", icon: "note.text") {
+                    notesEditor
+                }
+
+                Divider().background(Theme.borderSubtle.opacity(0.7))
+
+                TaskInspectorDetailRow(title: "Subtasks", icon: "checklist") {
+                    subtasksEditor
+                }
+            }
         }
     }
 
     private var notesEditor: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Notes")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-
-            TextEditor(text: $notes)
-                .scrollContentBackground(.hidden)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.text)
-                .frame(minHeight: 72)
-                .padding(8)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
+        QuickCreateNotesEditor(text: $notes)
     }
 
     private var subtasksEditor: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Subtasks")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-
             if !subtaskTitles.isEmpty {
                 VStack(spacing: 5) {
                     ForEach(Array(subtaskTitles.enumerated()), id: \.offset) { index, title in
@@ -138,34 +148,11 @@ struct QuickCreateTaskDetailsView: View {
         }
     }
 
-    private var sectionPicker: some View {
-        Menu {
-            ForEach(availableSections, id: \.self) { section in
-                Button(section) {
-                    selectedSectionName = section
-                }
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "rectangle.split.2x1")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                Text(selectedSectionName)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.muted)
-                    .lineLimit(1)
-                    .frame(maxWidth: 92, alignment: .leading)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .frame(minHeight: 28)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+    private var showsSectionPicker: Bool {
+        switch selectedContainer {
+        case .inbox: return false
+        case .area, .project: return true
         }
-        .buttonStyle(.cadencePlain)
     }
 
     private func subtaskRow(title: String, index: Int) -> some View {
@@ -200,6 +187,142 @@ struct QuickCreateTaskDetailsView: View {
         guard !trimmed.isEmpty else { return }
         subtaskTitles.append(trimmed)
         subtaskDraft = ""
+    }
+}
+
+struct QuickCreateEventDetailsView: View {
+    let dateKey: String
+    let startMin: Int
+    let endMin: Int
+    let calendars: [EKCalendar]
+    @Binding var selectedCalendarID: String
+    @Binding var notes: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TaskInspectorInfoCard {
+                QuickCreateSlotMetadataRows(dateKey: dateKey, startMin: startMin, endMin: endMin)
+
+                Divider().background(Theme.borderSubtle.opacity(0.7))
+
+                TaskInspectorDetailRow(title: "Calendar", icon: "calendar") {
+                    if calendars.isEmpty {
+                        Text("No writable calendars")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.dim)
+                            .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+                    } else {
+                        CadenceCalendarPickerButton(
+                            calendars: calendars,
+                            selectedID: $selectedCalendarID,
+                            allowNone: false,
+                            style: .compact
+                        )
+                    }
+                }
+            }
+
+            TaskInspectorInfoCard {
+                TaskInspectorDetailRow(title: "Notes", icon: "note.text") {
+                    QuickCreateNotesEditor(text: $notes, minHeight: 150)
+                }
+            }
+        }
+    }
+}
+
+struct QuickCreateBundleDetailsView: View {
+    let dateKey: String
+    let startMin: Int
+    let endMin: Int
+    let bundleDateKey: String
+    let allTasks: [AppTask]
+    let areas: [Area]
+    let projects: [Project]
+    @Binding var searchText: String
+    @Binding var selectedTaskIDs: [UUID]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TaskInspectorInfoCard {
+                QuickCreateSlotMetadataRows(dateKey: dateKey, startMin: startMin, endMin: endMin)
+            }
+
+            TaskInspectorInfoCard {
+                TaskInspectorDetailRow(title: "Tasks", icon: "checklist") {
+                    QuickCreateBundleTaskSelectionView(
+                        bundleDateKey: bundleDateKey,
+                        allTasks: allTasks,
+                        areas: areas,
+                        projects: projects,
+                        searchText: $searchText,
+                        selectedTaskIDs: $selectedTaskIDs
+                    )
+                }
+            }
+        }
+    }
+}
+
+struct QuickCreateSlotMetadataRows: View {
+    let dateKey: String
+    let startMin: Int
+    let endMin: Int
+
+    var body: some View {
+        TaskInspectorDetailRow(title: "When", icon: "clock") {
+            HStack(spacing: 8) {
+                QuickCreateInspectorValue(text: DateFormatters.relativeDate(from: dateKey), icon: "calendar")
+                QuickCreateInspectorValue(text: TimeFormatters.timeRange(startMin: startMin, endMin: endMin), icon: "clock")
+            }
+        }
+    }
+}
+
+struct QuickCreateInspectorValue: View {
+    let text: String
+    let icon: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+            Text(text)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.muted)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(Theme.surfaceElevated.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+struct QuickCreateNotesEditor: View {
+    @Binding var text: String
+    var minHeight: CGFloat = 78
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if text.isEmpty {
+                Text("Notes")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.dim.opacity(0.45))
+                    .padding(.top, 8)
+                    .padding(.leading, 10)
+                    .allowsHitTesting(false)
+            }
+            TextEditor(text: $text)
+                .scrollContentBackground(.hidden)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.text)
+                .frame(minHeight: minHeight)
+                .padding(8)
+                .background(Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
     }
 }
 

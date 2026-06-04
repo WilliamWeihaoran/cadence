@@ -48,7 +48,7 @@ enum macOSRootStateSupport {
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.toolbar = nil
-            window.isMovableByWindowBackground = true
+            window.isMovableByWindowBackground = false
             window.styleMask.insert(.fullSizeContentView)
         }
     }

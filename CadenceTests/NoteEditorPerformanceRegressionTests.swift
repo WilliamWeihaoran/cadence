@@ -13,12 +13,14 @@ struct NoteEditorPerformanceRegressionTests {
 
     @Test func taskNoteEditorsDoNotPersistEveryEditorChange() throws {
         let taskInspectorSource = try sourceFile("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift")
-        let focusSource = try sourceFile("Cadence/macOS/Views/FocusViewSupportViews.swift")
+        let focusSource = try sourceFile("Cadence/macOS/Views/FocusNotesPanel.swift")
+        let timingSource = try sourceFile("Cadence/macOS/Views/MarkdownEditorSyncTiming.swift")
 
         #expect(taskInspectorSource.contains("text: taskNotesBinding"))
         #expect(focusSource.contains("text: taskNotesBinding"))
-        #expect(taskInspectorSource.contains("fallbackContentCommitDelay: UInt64 = 15_000_000_000"))
-        #expect(focusSource.contains("fallbackContentCommitDelay: UInt64 = 15_000_000_000"))
+        #expect(timingSource.contains("fallbackContentCommitDelay: UInt64 = 15_000_000_000"))
+        #expect(taskInspectorSource.contains("MarkdownEditorSyncTiming.fallbackContentCommitDelay"))
+        #expect(focusSource.contains("MarkdownEditorSyncTiming.fallbackContentCommitDelay"))
         #expect(!taskInspectorSource.matches(#"set:\s*\{\s*task\.notes\s*=\s*\$0\s*\}"#))
         #expect(!focusSource.matches(#"set:\s*\{\s*task\.notes\s*=\s*\$0\s*\}"#))
     }

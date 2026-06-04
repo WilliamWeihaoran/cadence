@@ -1,53 +1,26 @@
 #if os(macOS)
 import SwiftUI
 import AppKit
+import EventKit
+import SwiftData
 
 struct SettingsCalendarSection: View {
     let calendarManager: CalendarManager
     let areas: [Area]
     let projects: [Project]
+    let modelContext: ModelContext
+
+    @AppStorage(CalendarVisibilityPreferences.hiddenCalendarIDsKey) private var hiddenCalendarIDsRaw = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if calendarManager.isAuthorized {
-                if !activeAreas.isEmpty {
-                    SettingsSectionLabel(text: "Area Calendars")
-                    linkCard(items: activeAreas)
-                }
+            SettingsCalendarWorkHoursSection()
 
-                if !activeProjects.isEmpty {
-                    SettingsSectionLabel(text: "Project Calendars")
-                    linkCard(items: activeProjects)
-                }
+            if calendarManager.isAuthorized {
+                SettingsSectionLabel(text: "Apple Calendars")
+                calendarsCard
             } else {
-                SettingsCard {
-                    HStack(spacing: 12) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Theme.amber)
-                            .font(.system(size: 14))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(calendarManager.isDenied ? "Calendar access denied" : "Calendar access required")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Theme.text)
-                            Text(calendarManager.isDenied
-                                 ? "Allow Cadence from System Settings, Privacy & Security, Calendars."
-                                 : "Allow Cadence to create and sync calendar events.")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Theme.dim)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
-                        if calendarManager.isDenied {
-                            SettingsActionButton(tone: .filled(Theme.dim), action: openCalendarPrivacySettings) {
-                                Text("Open Calendar Settings")
-                            }
-                        } else {
-                            SettingsActionButton(tone: .filled(Theme.blue), action: requestCalendarAccess) {
-                                Text("Allow Access")
-                            }
-                        }
-                    }
-                }
+                calendarAccessCard
             }
         }
     }
@@ -60,6 +33,83 @@ struct SettingsCalendarSection: View {
         projects.filter(\.isActive)
     }
 
+    private var calendars: [EKCalendar] {
+        _ = calendarManager.storeVersion
+        return calendarManager.allCalendars
+    }
+
+    private var hiddenCalendarIDs: Set<String> {
+        CalendarVisibilityPreferences.hiddenCalendarIDs(from: hiddenCalendarIDsRaw)
+    }
+
+    private var calendarsCard: some View {
+        SettingsCard {
+            VStack(spacing: 0) {
+                if calendars.isEmpty {
+                    HStack(spacing: 12) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                        Text("No Apple calendars found.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.dim)
+                        Spacer()
+                    }
+                    .padding(.vertical, 10)
+                } else {
+                    ForEach(Array(calendars.enumerated()), id: \.element.calendarIdentifier) { index, calendar in
+                        SettingsCalendarRow(
+                            calendar: calendar,
+                            areas: activeAreas,
+                            projects: activeProjects,
+                            isActive: !hiddenCalendarIDs.contains(calendar.calendarIdentifier),
+                            onActiveChanged: { setCalendar(calendar.calendarIdentifier, isActive: $0) },
+                            onToggleArea: { toggleCalendar(calendar.calendarIdentifier, for: $0) },
+                            onToggleProject: { toggleCalendar(calendar.calendarIdentifier, for: $0) }
+                        )
+
+                        if index < calendars.count - 1 {
+                            Divider()
+                                .background(Theme.borderSubtle)
+                                .padding(.leading, 44)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var calendarAccessCard: some View {
+        SettingsCard {
+            HStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Theme.amber)
+                    .font(.system(size: 14))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(calendarManager.isDenied ? "Calendar access denied" : "Calendar access required")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text(calendarManager.isDenied
+                         ? "Allow Cadence from System Settings, Privacy & Security, Calendars."
+                         : "Allow Cadence to create and sync calendar events.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                if calendarManager.isDenied {
+                    SettingsActionButton(tone: .filled(Theme.dim), action: openCalendarPrivacySettings) {
+                        Text("Open Calendar Settings")
+                    }
+                } else {
+                    SettingsActionButton(tone: .filled(Theme.blue), action: requestCalendarAccess) {
+                        Text("Allow Access")
+                    }
+                }
+            }
+        }
+    }
+
     private func requestCalendarAccess() {
         Task { await calendarManager.requestAccess() }
     }
@@ -68,52 +118,165 @@ struct SettingsCalendarSection: View {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!)
     }
 
-    private func linkCard(items: [Area]) -> some View {
-        SettingsCard {
-            VStack(spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, area in
-                    CalendarLinkRow(
-                        icon: area.icon,
-                        name: area.name,
-                        color: Color(hex: area.colorHex),
-                        linkedCalendarID: Binding(
-                            get: { area.linkedCalendarID },
-                            set: { area.linkedCalendarID = $0 }
-                        ),
-                        calendars: calendarManager.availableCalendars
-                    )
-                    if index < items.count - 1 {
-                        Divider()
-                            .background(Theme.borderSubtle)
-                            .padding(.leading, 44)
-                    }
-                }
-            }
+    private func setCalendar(_ calendarID: String, isActive: Bool) {
+        var ids = hiddenCalendarIDs
+        if isActive {
+            ids.remove(calendarID)
+        } else {
+            ids.insert(calendarID)
         }
+        hiddenCalendarIDsRaw = CalendarVisibilityPreferences.rawHiddenCalendarIDs(from: ids)
+        calendarManager.storeVersion += 1
     }
 
-    private func linkCard(items: [Project]) -> some View {
-        SettingsCard {
-            VStack(spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, project in
-                    CalendarLinkRow(
-                        icon: project.icon,
-                        name: project.name,
-                        color: Color(hex: project.colorHex),
-                        linkedCalendarID: Binding(
-                            get: { project.linkedCalendarID },
-                            set: { project.linkedCalendarID = $0 }
-                        ),
-                        calendars: calendarManager.availableCalendars
-                    )
-                    if index < items.count - 1 {
-                        Divider()
-                            .background(Theme.borderSubtle)
-                            .padding(.leading, 44)
+    private func toggleCalendar(_ calendarID: String, for area: Area) {
+        area.linkedCalendarID = area.linkedCalendarID == calendarID ? "" : calendarID
+        saveCalendarLinks()
+    }
+
+    private func toggleCalendar(_ calendarID: String, for project: Project) {
+        project.linkedCalendarID = project.linkedCalendarID == calendarID ? "" : calendarID
+        saveCalendarLinks()
+    }
+
+    private func saveCalendarLinks() {
+        do {
+            try modelContext.save()
+        } catch {
+            print("SettingsCalendarSection: failed to save calendar links: \(error)")
+        }
+    }
+}
+
+private struct SettingsCalendarRow: View {
+    let calendar: EKCalendar
+    let areas: [Area]
+    let projects: [Project]
+    let isActive: Bool
+    let onActiveChanged: (Bool) -> Void
+    let onToggleArea: (Area) -> Void
+    let onToggleProject: (Project) -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(calendarColor)
+                .frame(width: 12, height: 12)
+                .padding(.top, 15)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(calendar.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isActive ? Theme.text : Theme.muted)
+                        .lineLimit(1)
+
+                    if !calendar.allowsContentModifications {
+                        Text("Read Only")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Theme.surfaceElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                }
+
+                Text(sourceTitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+
+                Text(connectionSummary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(connectedNames.isEmpty ? Theme.dim : Theme.muted)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            HStack(spacing: 12) {
+                connectionMenu
+
+                Toggle("Active", isOn: Binding(
+                    get: { isActive },
+                    set: { onActiveChanged($0) }
+                ))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .help(isActive ? "Hide this calendar from Cadence" : "Show this calendar in Cadence")
+            }
+            .padding(.top, 7)
+        }
+        .padding(.vertical, 10)
+    }
+
+    private var connectionMenu: some View {
+        Menu {
+            if areas.isEmpty && projects.isEmpty {
+                Text("No active areas or projects")
+            } else {
+                if !areas.isEmpty {
+                    Section("Areas") {
+                        ForEach(areas) { area in
+                            Button {
+                                onToggleArea(area)
+                            } label: {
+                                Label(area.name, systemImage: area.linkedCalendarID == calendar.calendarIdentifier ? "checkmark" : area.icon)
+                            }
+                        }
+                    }
+                }
+
+                if !projects.isEmpty {
+                    Section("Projects") {
+                        ForEach(projects) { project in
+                            Button {
+                                onToggleProject(project)
+                            } label: {
+                                Label(project.name, systemImage: project.linkedCalendarID == calendar.calendarIdentifier ? "checkmark" : project.icon)
+                            }
+                        }
                     }
                 }
             }
+        } label: {
+            Image(systemName: "link")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .frame(width: 28, height: 28)
+                .background(Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.borderSubtle))
         }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Connect to areas and projects")
+    }
+
+    private var calendarColor: Color {
+        guard let cgColor = calendar.cgColor else { return Theme.blue }
+        return Color(cgColor: cgColor)
+    }
+
+    private var sourceTitle: String {
+        calendar.source?.title ?? "Apple Calendar"
+    }
+
+    private var connectedNames: [String] {
+        let areaNames = areas
+            .filter { $0.linkedCalendarID == calendar.calendarIdentifier }
+            .map(\.name)
+        let projectNames = projects
+            .filter { $0.linkedCalendarID == calendar.calendarIdentifier }
+            .map(\.name)
+        return areaNames + projectNames
+    }
+
+    private var connectionSummary: String {
+        guard !connectedNames.isEmpty else { return "Not connected to any area or project" }
+        return connectedNames.joined(separator: ", ")
     }
 }
 

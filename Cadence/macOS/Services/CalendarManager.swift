@@ -108,15 +108,19 @@ final class CalendarManager {
 
     // MARK: - Available Calendars
 
-    var availableCalendars: [EKCalendar] {
+    var allCalendars: [EKCalendar] {
         guard isAuthorized else { return [] }
         return store.calendars(for: .event).sorted { $0.title < $1.title }
+    }
+
+    var availableCalendars: [EKCalendar] {
+        activeCalendars(from: allCalendars)
     }
 
     /// Calendars the user can write to (excludes read-only subscribed calendars).
     var writableCalendars: [EKCalendar] {
         guard isAuthorized else { return [] }
-        return store.calendars(for: .event)
+        return activeCalendars(from: store.calendars(for: .event))
             .filter { $0.allowsContentModifications }
             .sorted { $0.title < $1.title }
     }
@@ -124,7 +128,8 @@ final class CalendarManager {
     var defaultWritableCalendar: EKCalendar? {
         guard isAuthorized else { return nil }
         if let calendar = store.defaultCalendarForNewEvents,
-           calendar.allowsContentModifications {
+           calendar.allowsContentModifications,
+           isActiveCalendar(calendar) {
             return calendar
         }
         return writableCalendars.first
@@ -135,7 +140,10 @@ final class CalendarManager {
     func createStandaloneEvent(title: String, startMin: Int, durationMinutes: Int, calendarID: String, date: Date, notes: String = "") {
         guard isAuthorized else { return }
         let selectedCalendar = calendarID.isEmpty ? defaultWritableCalendar : store.calendar(withIdentifier: calendarID)
-        guard let calendar = selectedCalendar, calendar.allowsContentModifications else { return }
+        guard let calendar = selectedCalendar,
+              calendar.allowsContentModifications,
+              isActiveCalendar(calendar)
+        else { return }
         let event = EKEvent(eventStore: store)
         event.title = title.isEmpty ? "New Event" : title
         let startOfDay = Calendar.current.startOfDay(for: date)
@@ -156,16 +164,20 @@ final class CalendarManager {
     /// Fetch all non-all-day events for a specific day.
     func fetchEvents(for date: Date) -> [EKEvent] {
         guard isAuthorized else { return [] }
+        let calendars = availableCalendars
+        guard !calendars.isEmpty else { return [] }
         let bounds = dayBounds(for: date)
-        let predicate = store.predicateForEvents(withStart: bounds.start, end: bounds.end, calendars: nil)
+        let predicate = store.predicateForEvents(withStart: bounds.start, end: bounds.end, calendars: calendars)
         return store.events(matching: predicate).filter { !$0.isAllDay }
     }
 
     /// Fetch all all-day events for a specific day.
     func fetchAllDayEvents(for date: Date) -> [EKEvent] {
         guard isAuthorized else { return [] }
+        let calendars = availableCalendars
+        guard !calendars.isEmpty else { return [] }
         let bounds = dayBounds(for: date)
-        let predicate = store.predicateForEvents(withStart: bounds.start, end: bounds.end, calendars: nil)
+        let predicate = store.predicateForEvents(withStart: bounds.start, end: bounds.end, calendars: calendars)
         return store.events(matching: predicate).filter { $0.isAllDay }
     }
 
@@ -191,12 +203,14 @@ final class CalendarManager {
 
     func searchEvents(matching query: String, pastDays: Int = 60, futureDays: Int = 365) -> [EKEvent] {
         guard isAuthorized else { return [] }
+        let calendars = availableCalendars
+        guard !calendars.isEmpty else { return [] }
 
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let now = Date()
         let start = Calendar.current.date(byAdding: .day, value: -max(0, pastDays), to: now) ?? now
         let end = Calendar.current.date(byAdding: .day, value: max(0, futureDays), to: now) ?? now
-        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
 
         let events = store.events(matching: predicate).filter { !$0.isAllDay }
         guard !trimmed.isEmpty else {
@@ -244,6 +258,25 @@ final class CalendarManager {
         }
     }
 
+    func updateEventNotes(_ event: EKEvent, notes: String) {
+        guard isAuthorized else { return }
+        let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextNotes = trimmed.isEmpty ? nil : notes
+        guard event.notes != nextNotes else { return }
+        event.notes = nextNotes
+        do {
+            try store.save(event, span: .thisEvent)
+        } catch {
+            print("CalendarManager: failed to update event notes: \(error)")
+        }
+    }
+
+    func updateEventNotes(calendarEventID: String, notes: String) {
+        let lookupID = CalendarEventIdentity.lookupIdentifier(from: calendarEventID)
+        guard let event = event(withIdentifier: lookupID) else { return }
+        updateEventNotes(event, notes: notes)
+    }
+
     // MARK: - Delete Event
 
     /// Delete an EKEvent directly (used from the event edit popover).
@@ -261,6 +294,14 @@ final class CalendarManager {
         let start = cal.startOfDay(for: date)
         let end = cal.date(byAdding: .day, value: 1, to: start) ?? start
         return (start, end)
+    }
+
+    private func activeCalendars(from calendars: [EKCalendar]) -> [EKCalendar] {
+        calendars.filter(isActiveCalendar)
+    }
+
+    private func isActiveCalendar(_ calendar: EKCalendar) -> Bool {
+        CalendarVisibilityPreferences.isActive(calendar.calendarIdentifier)
     }
 }
 #endif
