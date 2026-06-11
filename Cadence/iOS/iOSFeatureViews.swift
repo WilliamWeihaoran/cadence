@@ -5,6 +5,9 @@ import SwiftUI
 struct iOSPursuitsView: View {
     @Query(sort: \Pursuit.order) private var pursuits: [Pursuit]
     @State private var selectedID: UUID?
+    @State private var editorMode: iOSPursuitEditorMode?
+    @State private var goalEditorMode: iOSGoalEditorMode?
+    @State private var habitEditorMode: iOSHabitEditorMode?
 
     private var activePursuits: [Pursuit] {
         pursuits.filter { $0.status != .done }
@@ -24,8 +27,11 @@ struct iOSPursuitsView: View {
                 title: "Pursuits",
                 count: activePursuits.count,
                 emptyTitle: "No pursuits yet",
-                emptySubtitle: "Pursuits from Mac will appear here.",
-                emptyIcon: "sparkles"
+                emptySubtitle: "Create a direction for related milestones and habits.",
+                emptyIcon: "sparkles",
+                actionTitle: "New Pursuit",
+                actionSystemImage: "plus",
+                action: { editorMode = .new }
             ) {
                 ForEach(activePursuits) { pursuit in
                     Button {
@@ -48,13 +54,31 @@ struct iOSPursuitsView: View {
 
             if let pursuit = selected {
                 let summary = CadencePursuitSupport.summary(for: pursuit)
-                iOSPursuitDetail(pursuit: pursuit, goals: summary.goals, habits: summary.habits)
+                iOSPursuitDetail(
+                    pursuit: pursuit,
+                    goals: summary.goals,
+                    habits: summary.habits,
+                    onEdit: { editorMode = .edit(pursuit) },
+                    onNewGoal: { goalEditorMode = .new(pursuit) },
+                    onNewHabit: { habitEditorMode = .new(pursuit) }
+                )
             } else {
                 iOSFeatureEmptyDetail(systemImage: "sparkles", title: "No pursuit selected")
             }
         }
         .onAppear {
             selectedID = selectedID ?? selected?.id
+        }
+        .sheet(item: $editorMode) { mode in
+            iOSPursuitEditorSheet(mode: mode) { pursuit in
+                selectedID = pursuit.id
+            }
+        }
+        .sheet(item: $goalEditorMode) { mode in
+            iOSGoalEditorSheet(mode: mode)
+        }
+        .sheet(item: $habitEditorMode) { mode in
+            iOSHabitEditorSheet(mode: mode)
         }
     }
 
@@ -67,6 +91,7 @@ struct iOSPursuitsView: View {
 struct iOSMilestonesView: View {
     @Query(sort: \Goal.order) private var goals: [Goal]
     @State private var selectedID: UUID?
+    @State private var editorMode: iOSGoalEditorMode?
 
     private var activeGoals: [Goal] {
         goals.filter { $0.status != .done }
@@ -86,8 +111,11 @@ struct iOSMilestonesView: View {
                 title: "Milestones",
                 count: activeGoals.count,
                 emptyTitle: "No milestones yet",
-                emptySubtitle: "Milestones created on Mac will show here.",
-                emptyIcon: "flag.fill"
+                emptySubtitle: "Create milestones under a pursuit to track outcomes.",
+                emptyIcon: "flag.fill",
+                actionTitle: "New Milestone",
+                actionSystemImage: "plus",
+                action: { editorMode = .new(nil) }
             ) {
                 ForEach(activeGoals) { goal in
                     Button {
@@ -110,13 +138,18 @@ struct iOSMilestonesView: View {
             Divider().background(Theme.borderSubtle)
 
             if let goal = selected {
-                iOSMilestoneDetail(goal: goal)
+                iOSMilestoneDetail(goal: goal, onEdit: { editorMode = .edit(goal) })
             } else {
                 iOSFeatureEmptyDetail(systemImage: "flag.fill", title: "No milestone selected")
             }
         }
         .onAppear {
             selectedID = selectedID ?? selected?.id
+        }
+        .sheet(item: $editorMode) { mode in
+            iOSGoalEditorSheet(mode: mode) { goal in
+                selectedID = goal.id
+            }
         }
     }
 }
@@ -125,6 +158,7 @@ struct iOSHabitsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Habit.order) private var habits: [Habit]
     @State private var selectedID: UUID?
+    @State private var editorMode: iOSHabitEditorMode?
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -146,8 +180,11 @@ struct iOSHabitsView: View {
                 title: "Habits",
                 count: habits.count,
                 emptyTitle: "No habits yet",
-                emptySubtitle: "Habits created on Mac will show here.",
-                emptyIcon: "flame.fill"
+                emptySubtitle: "Create repeating commitments and track today.",
+                emptyIcon: "flame.fill",
+                actionTitle: "New Habit",
+                actionSystemImage: "plus",
+                action: { editorMode = .new(nil) }
             ) {
                 ForEach(habits) { habit in
                     Button {
@@ -167,13 +204,23 @@ struct iOSHabitsView: View {
             Divider().background(Theme.borderSubtle)
 
             if let habit = selected {
-                iOSHabitDetail(habit: habit, todayKey: todayKey, toggle: { toggle(habit) })
+                iOSHabitDetail(
+                    habit: habit,
+                    todayKey: todayKey,
+                    toggle: { toggle(habit) },
+                    onEdit: { editorMode = .edit(habit) }
+                )
             } else {
                 iOSFeatureEmptyDetail(systemImage: "flame.fill", title: "No habit selected")
             }
         }
         .onAppear {
             selectedID = selectedID ?? selected?.id
+        }
+        .sheet(item: $editorMode) { mode in
+            iOSHabitEditorSheet(mode: mode) { habit in
+                selectedID = habit.id
+            }
         }
     }
 

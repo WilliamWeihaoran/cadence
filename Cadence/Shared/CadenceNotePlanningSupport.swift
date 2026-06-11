@@ -29,6 +29,14 @@ enum CadenceCoreNoteTab: String, CaseIterable, Identifiable {
             return "Permanent notes"
         }
     }
+
+    var noteKind: NoteKind {
+        switch self {
+        case .today: return .daily
+        case .week: return .weekly
+        case .notepad: return .permanent
+        }
+    }
 }
 
 struct CadenceCoreNoteState {
@@ -108,5 +116,21 @@ enum CadenceListNoteSupport {
 
     static func defaultTitle(for area: Area?, project: Project?) -> String {
         area?.name ?? project?.name ?? "Untitled Note"
+    }
+}
+
+enum CadenceNoteTemplateInsertionSupport {
+    static func contentByApplying(_ template: NoteTemplate, to currentContent: String) -> String {
+        let trimmed = currentContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return template.body }
+        return trimmed + "\n\n" + template.body
+    }
+
+    static func apply(_ template: NoteTemplate, to note: Note, in modelContext: ModelContext) {
+        CadenceCoreNoteSupport.update(
+            note,
+            content: contentByApplying(template, to: note.content),
+            in: modelContext
+        )
     }
 }

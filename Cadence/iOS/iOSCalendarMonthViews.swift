@@ -1,4 +1,5 @@
 #if os(iOS)
+import EventKit
 import SwiftData
 import SwiftUI
 
@@ -7,6 +8,7 @@ struct iOSCalendarMonthGrid: View {
     @Binding var selectedDate: Date
     let monthTasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
+    let eventsByDate: [String: [EKEvent]]
 
     private let calendar = Calendar.current
     private var monthDays: [Date] {
@@ -34,7 +36,8 @@ struct iOSCalendarMonthGrid: View {
                         displayMonth: monthDate,
                         isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
                         tasks: CadenceScheduleSupport.items(on: key, in: monthTasksByDate),
-                        bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate)
+                        bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
+                        events: CadenceScheduleSupport.items(on: key, in: eventsByDate)
                     ) {
                         selectedDate = date
                     }
@@ -51,14 +54,16 @@ private struct iOSCalendarMonthDayCell: View {
     let isSelected: Bool
     let tasks: [AppTask]
     let bundles: [TaskBundle]
+    let events: [EKEvent]
     let action: () -> Void
 
     private let calendar = Calendar.current
     private var isToday: Bool { calendar.isDateInToday(date) }
     private var isCurrentMonth: Bool { calendar.isDate(date, equalTo: displayMonth, toGranularity: .month) }
     private var visibleBundles: [TaskBundle] { Array(bundles.prefix(2)) }
-    private var visibleTasks: [AppTask] { Array(tasks.prefix(max(0, 4 - visibleBundles.count))) }
-    private var overflow: Int { max(0, tasks.count + bundles.count - visibleTasks.count - visibleBundles.count) }
+    private var visibleEvents: [EKEvent] { Array(events.prefix(max(0, 2 - visibleBundles.count))) }
+    private var visibleTasks: [AppTask] { Array(tasks.prefix(max(0, 4 - visibleBundles.count - visibleEvents.count))) }
+    private var overflow: Int { max(0, tasks.count + bundles.count + events.count - visibleTasks.count - visibleBundles.count - visibleEvents.count) }
 
     var body: some View {
         Button(action: action) {
@@ -79,6 +84,13 @@ private struct iOSCalendarMonthDayCell: View {
                             title: bundle.displayTitle,
                             icon: "tray.full.fill",
                             color: Theme.amber
+                        )
+                    }
+                    ForEach(visibleEvents, id: \.calendarItemIdentifier) { event in
+                        iOSCalendarMiniChip(
+                            title: iOSCalendarEventSupport.title(for: event),
+                            icon: event.isAllDay ? "calendar" : "calendar.badge.clock",
+                            color: iOSCalendarEventSupport.color(for: event.calendar)
                         )
                     }
                     ForEach(visibleTasks) { task in

@@ -1,8 +1,13 @@
 #if os(iOS)
+import EventKit
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct iOSSearchView: View {
+    @Environment(\.openURL) private var openURL
+    @Environment(iOSCalendarManager.self) private var calendarManager
+
     @Query(sort: \AppTask.createdAt, order: .reverse) private var tasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -14,6 +19,8 @@ struct iOSSearchView: View {
     @State private var query = ""
     @State private var selectedTask: AppTask?
     @State private var selectedNote: Note?
+    @State private var selectedEvent: iOSCalendarEventSelection?
+    @State private var calendarSearchEvents: [EKEvent] = []
     @State private var scope: iOSSearchScope = .all
     @State private var includeCompletedTasks = false
 
@@ -44,8 +51,21 @@ struct iOSSearchView: View {
         scope == .all || scope == .notes
     }
 
+    private var showsEvents: Bool {
+        scope == .all || scope == .events
+    }
+
     private var showsProgress: Bool {
         scope == .all || scope == .progress
+    }
+
+    private var calendarSearchRequestID: String {
+        [
+            trimmedQuery,
+            scope.rawValue,
+            calendarManager.isAuthorized ? "authorized" : "unauthorized",
+            String(calendarManager.storeVersion)
+        ].joined(separator: "|")
     }
 
     private var pageResults: [iOSSearchResult] {
@@ -216,6 +236,21 @@ struct iOSSearchView: View {
         return Array(candidates.prefix(8))
     }
 
+    private var eventResults: [iOSSearchResult] {
+        if isSearching {
+            return calendarSearchEvents.compactMap { event in
+                let fields = eventSearchFields(for: event)
+                guard let score = CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: fields) else {
+                    return nil
+                }
+                return eventResult(event, score: score)
+            }
+            .sorted { $0.score > $1.score }
+        }
+
+        return calendarSearchEvents.prefix(8).map { eventResult($0, score: 0) }
+    }
+
     private var rankedTaskResults: [iOSSearchResult] {
         searchableTasks.compactMap { task in
             let tagText = task.sortedTags.map(\.name).joined(separator: " ")
@@ -254,7 +289,7 @@ struct iOSSearchView: View {
                         Text("Search")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundStyle(Theme.text)
-                        Text("Find tasks, lists, and notes across Cadence.")
+                        Text("Find tasks, lists, notes, and calendar events across Cadence.")
                             .font(.system(size: 15))
                             .foregroundStyle(Theme.dim)
                     }
@@ -264,12 +299,7 @@ struct iOSSearchView: View {
             }
 
             Section {
-                Picker("Scope", selection: $scope) {
-                    ForEach(iOSSearchScope.allCases) { scope in
-                        Text(scope.title).tag(scope)
-                    }
-                }
-                .pickerStyle(.segmented)
+                iOSSearchScopePicker(selection: $scope)
 
                 if showsTasks {
                     Toggle("Include completed tasks", isOn: $includeCompletedTasks)
@@ -288,23 +318,30 @@ struct iOSSearchView: View {
             if showsNotes {
                 resultSection("Notes", results: noteResults)
             }
+            if showsEvents {
+                calendarAccessSection
+                resultSection("Calendar Events", results: eventResults)
+            }
             if showsProgress {
                 resultSection("Pursuits, Milestones, Habits", results: progressResults)
             }
 
-            if isSearching && visibleResultsAreEmpty {
+            if isSearching && visibleResultsAreEmpty && !(showsEvents && !calendarManager.isAuthorized) {
                 iOSEmptyPanel(
                     systemImage: "magnifyingglass",
                     title: "No results",
-                    subtitle: "Try a task, note, area, project, tag, or section name."
+                    subtitle: "Try a task, note, area, project, event, tag, or section name."
                 )
                 .listRowBackground(Color.clear)
             }
         }
         .navigationTitle("Search")
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Tasks, lists, notes")
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Tasks, lists, notes, events")
         .scrollContentBackground(.hidden)
         .background(Theme.bg)
+        .task(id: calendarSearchRequestID) {
+            refreshCalendarSearchEvents()
+        }
         .navigationDestination(for: iOSListRoute.self) { route in
             switch route {
             case .area(let id):
@@ -351,7 +388,58 @@ struct iOSSearchView: View {
             iOSTaskDetailSheet(task: task)
         }
         .sheet(item: $selectedNote) { note in
+            noteSheet(for: note)
+        }
+        .sheet(item: $selectedEvent) { selection in
+            iOSCalendarEventEditSheet(event: selection.event)
+        }
+    }
+
+    @ViewBuilder
+    private func noteSheet(for note: Note) -> some View {
+        if note.kind == .meeting {
+            let event = calendarManager.event(withIdentifier: note.calendarEventID)
+            iOSEventNoteEditorSheet(
+                note: note,
+                eventTitle: event.map { iOSCalendarEventSupport.title(for: $0) } ?? note.displayTitle,
+                event: event
+            )
+        } else {
             iOSNoteDetailSheet(note: note)
+        }
+    }
+
+    @ViewBuilder
+    private var calendarAccessSection: some View {
+        if !calendarManager.isAuthorized {
+            Section("Calendar Events") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label(
+                        calendarManager.isDenied ? "Calendar access is disabled" : "Calendar access is off",
+                        systemImage: calendarManager.isDenied ? "calendar.badge.exclamationmark" : "calendar"
+                    )
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+
+                    Text(calendarManager.isDenied ? "Enable Calendar access in Settings to include Apple Calendar events in search." : "Allow Calendar access to search and edit Apple Calendar events from Cadence.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.dim)
+
+                    Button {
+                        if calendarManager.isDenied {
+                            openAppSettings()
+                        } else {
+                            Task { await calendarManager.requestAccess() }
+                        }
+                    } label: {
+                        Label(calendarManager.isDenied ? "Open Settings" : "Allow Calendar Access", systemImage: calendarManager.isDenied ? "gearshape.fill" : "checkmark.shield.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.blue)
+                }
+                .padding(.vertical, 6)
+            }
         }
     }
 
@@ -359,6 +447,7 @@ struct iOSSearchView: View {
         (!showsTasks || taskResults.isEmpty) &&
         (!showsLists || listResults.isEmpty) &&
         (!showsNotes || noteResults.isEmpty) &&
+        (!showsEvents || eventResults.isEmpty) &&
         (!showsProgress || pageResults.isEmpty && progressResults.isEmpty)
     }
 
@@ -381,6 +470,8 @@ struct iOSSearchView: View {
                                 selectedTask = task
                             } else if let note = result.note {
                                 selectedNote = note
+                            } else if let event = result.event {
+                                selectedEvent = iOSCalendarEventSelection(event: event)
                             }
                         } label: {
                             iOSSearchResultRow(result: result)
@@ -390,6 +481,24 @@ struct iOSSearchView: View {
                 }
             }
         }
+    }
+
+    private func refreshCalendarSearchEvents() {
+        guard showsEvents, calendarManager.isAuthorized else {
+            calendarSearchEvents = []
+            return
+        }
+
+        calendarSearchEvents = calendarManager.searchEvents(
+            matching: trimmedQuery,
+            pastDays: isSearching ? 60 : 0,
+            futureDays: isSearching ? 365 : 30
+        )
+    }
+
+    private func openAppSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(url)
     }
 
     private func taskSubtitle(_ task: AppTask) -> String {
@@ -411,6 +520,39 @@ struct iOSSearchView: View {
             parts.append(task.estimatedMinutes < 60 ? "\(task.estimatedMinutes)m" : "\(task.estimatedMinutes / 60)h")
         }
         return parts.joined(separator: " · ")
+    }
+
+    private func eventSearchFields(for event: EKEvent) -> [String] {
+        [
+            iOSCalendarEventSupport.title(for: event),
+            event.notes ?? "",
+            event.calendar?.title ?? "",
+            eventDetail(event)
+        ]
+    }
+
+    private func eventDetail(_ event: EKEvent) -> String {
+        let startDate = event.startDate ?? event.occurrenceDate ?? Date()
+        let dayLabel = "\(DateFormatters.dayOfWeek.string(from: startDate)), \(DateFormatters.shortDate.string(from: startDate))"
+        return [
+            dayLabel,
+            iOSCalendarEventSupport.timeRangeLabel(for: event)
+        ]
+        .filter { !$0.isEmpty }
+        .joined(separator: " · ")
+    }
+
+    private func eventResult(_ event: EKEvent, score: Int) -> iOSSearchResult {
+        iOSSearchResult(
+            kind: .event,
+            title: iOSCalendarEventSupport.title(for: event),
+            subtitle: event.calendar?.title ?? "Apple Calendar",
+            detail: eventDetail(event),
+            icon: event.isAllDay ? "calendar.badge.clock" : "calendar",
+            color: iOSCalendarEventSupport.color(for: event.calendar),
+            score: score,
+            event: event
+        )
     }
 
     private func noteSubtitle(_ note: Note) -> String {
@@ -456,6 +598,7 @@ private enum iOSSearchScope: String, CaseIterable, Identifiable {
     case tasks
     case lists
     case notes
+    case events
     case progress
 
     var id: String { rawValue }
@@ -466,7 +609,19 @@ private enum iOSSearchScope: String, CaseIterable, Identifiable {
         case .tasks: return "Tasks"
         case .lists: return "Lists"
         case .notes: return "Notes"
+        case .events: return "Events"
         case .progress: return "More"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .all: return "square.grid.2x2"
+        case .tasks: return "checkmark.circle"
+        case .lists: return "folder"
+        case .notes: return "note.text"
+        case .events: return "calendar"
+        case .progress: return "sparkles"
         }
     }
 }
@@ -613,6 +768,7 @@ private struct iOSSearchResult: Identifiable {
         case task
         case list
         case note
+        case event
         case progress
         case feature
     }
@@ -627,8 +783,66 @@ private struct iOSSearchResult: Identifiable {
     let score: Int
     var task: AppTask?
     var note: Note?
+    var event: EKEvent?
     var listRoute: iOSListRoute?
     var featureDestination: iOSSearchFeatureDestination?
+}
+
+private struct iOSSearchScopePicker: View {
+    @Binding var selection: iOSSearchScope
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(iOSSearchScope.allCases) { scope in
+                    iOSSearchScopeChip(
+                        scope: scope,
+                        isSelected: selection == scope
+                    ) {
+                        withAnimation(.snappy(duration: 0.16)) {
+                            selection = scope
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .scrollClipDisabled()
+    }
+}
+
+private struct iOSSearchScopeChip: View {
+    let scope: iOSSearchScope
+    let isSelected: Bool
+    let action: () -> Void
+
+    private var foreground: Color {
+        isSelected ? .white : Theme.text
+    }
+
+    private var background: Color {
+        isSelected ? Theme.blue : Theme.surfaceElevated
+    }
+
+    private var border: Color {
+        Theme.borderSubtle.opacity(isSelected ? 0 : 0.9)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Label(scope.title, systemImage: scope.icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(foreground)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 8)
+                .background(background)
+                .clipShape(Capsule())
+                .overlay {
+                    Capsule().stroke(border, lineWidth: 1)
+                }
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 private struct iOSSearchResultRow: View {

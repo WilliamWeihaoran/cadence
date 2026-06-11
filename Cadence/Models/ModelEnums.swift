@@ -32,6 +32,24 @@ enum TaskStatus: String, Codable, CaseIterable, Hashable {
     case inProgress  = "inprogress"
     case done        = "done"
     case cancelled   = "cancelled"
+
+    var label: String {
+        switch self {
+        case .todo: return "Todo"
+        case .inProgress: return "In Progress"
+        case .done: return "Done"
+        case .cancelled: return "Cancelled"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .todo: return "circle"
+        case .inProgress: return "play.circle.fill"
+        case .done: return "checkmark.circle.fill"
+        case .cancelled: return "xmark.circle.fill"
+        }
+    }
 }
 
 enum TaskRecurrenceRule: String, Codable, CaseIterable, Hashable {

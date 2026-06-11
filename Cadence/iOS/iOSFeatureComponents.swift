@@ -9,12 +9,29 @@ struct iOSFeatureListPane<Content: View>: View {
     let emptyTitle: String
     let emptySubtitle: String
     let emptyIcon: String
+    var actionTitle: String? = nil
+    var actionSystemImage = "plus"
+    var action: (() -> Void)? = nil
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             iOSPanelHeader(eyebrow: eyebrow, title: title, count: count)
             Divider().background(Theme.borderSubtle)
+
+            if let actionTitle, let action {
+                Button(action: action) {
+                    Label(actionTitle, systemImage: actionSystemImage)
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.blue)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+
+                Divider().background(Theme.borderSubtle)
+            }
 
             if count == 0 {
                 iOSEmptyPanel(systemImage: emptyIcon, title: emptyTitle, subtitle: emptySubtitle)

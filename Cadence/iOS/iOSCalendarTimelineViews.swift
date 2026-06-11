@@ -1,4 +1,5 @@
 #if os(iOS)
+import EventKit
 import SwiftData
 import SwiftUI
 
@@ -8,6 +9,7 @@ struct iOSCalendarTimelineGrid: View {
     let scheduledTasksByDate: [String: [AppTask]]
     let unscheduledTasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
+    let eventsByDate: [String: [EKEvent]]
     let zoomLevel: Int
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -40,6 +42,7 @@ struct iOSCalendarTimelineGrid: View {
                                         date: date,
                                         isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
                                         unscheduledTasks: unscheduledTasks(for: date),
+                                        eventCount: events(for: date).count,
                                         bundleCount: bundles(for: date).count,
                                         taskCount: scheduledTasks(for: date).count
                                     ) {
@@ -60,6 +63,7 @@ struct iOSCalendarTimelineGrid: View {
                                         isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
                                         tasks: CadenceScheduleSupport.items(on: key, in: scheduledTasksByDate),
                                         bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
+                                        events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
                                         colWidth: colWidth,
                                         hourHeight: hourHeight
                                     )
@@ -88,12 +92,17 @@ struct iOSCalendarTimelineGrid: View {
     private func bundles(for date: Date) -> [TaskBundle] {
         CadenceScheduleSupport.items(on: DateFormatters.dateKey(from: date), in: bundlesByDate)
     }
+
+    private func events(for date: Date) -> [EKEvent] {
+        CadenceScheduleSupport.items(on: DateFormatters.dateKey(from: date), in: eventsByDate)
+    }
 }
 
 private struct iOSCalendarTimelineDayHeader: View {
     let date: Date
     let isSelected: Bool
     let unscheduledTasks: [AppTask]
+    let eventCount: Int
     let bundleCount: Int
     let taskCount: Int
     let action: () -> Void
@@ -131,9 +140,9 @@ private struct iOSCalendarTimelineDayHeader: View {
                         )
                     }
 
-                    if taskCount + bundleCount > 0 {
+                    if taskCount + bundleCount + eventCount > 0 {
                         iOSCalendarMiniChip(
-                            title: "\(taskCount + bundleCount) timed",
+                            title: "\(taskCount + bundleCount + eventCount) timed",
                             icon: "clock.fill",
                             color: Theme.blue
                         )
@@ -227,6 +236,7 @@ private struct iOSCalendarTimelineDayBlocks: View {
     let isSelected: Bool
     let tasks: [AppTask]
     let bundles: [TaskBundle]
+    let events: [EKEvent]
     let colWidth: CGFloat
     let hourHeight: CGFloat
 
@@ -248,6 +258,13 @@ private struct iOSCalendarTimelineDayBlocks: View {
                     .offset(x: 7, y: yOffset(for: bundle.startMin))
             }
 
+            ForEach(timedEvents, id: \.calendarItemIdentifier) { event in
+                let range = iOSCalendarEventSupport.minuteRange(for: event)
+                iOSCalendarEventBlock(event: event, startMin: range.start, endMin: range.end)
+                    .frame(width: colWidth - 18, height: blockHeight(start: range.start, end: range.end))
+                    .offset(x: 9, y: yOffset(for: range.start))
+            }
+
             ForEach(tasks) { task in
                 let range = CadenceScheduleSupport.blockRange(
                     startMinute: task.scheduledStartMin,
@@ -265,12 +282,61 @@ private struct iOSCalendarTimelineDayBlocks: View {
         CGFloat(CadenceScheduleSupport.calendarEndHour - CadenceScheduleSupport.calendarStartHour) * hourHeight
     }
 
+    private var timedEvents: [EKEvent] {
+        events.filter { !$0.isAllDay }
+    }
+
     private func yOffset(for minute: Int) -> CGFloat {
         CGFloat(minute - CadenceScheduleSupport.calendarStartHour * 60) / 60.0 * hourHeight
     }
 
     private func blockHeight(start: Int, end: Int) -> CGFloat {
         max(24, CGFloat(end - start) / 60.0 * hourHeight - 4)
+    }
+}
+
+private struct iOSCalendarEventBlock: View {
+    let event: EKEvent
+    let startMin: Int
+    let endMin: Int
+
+    private var color: Color {
+        iOSCalendarEventSupport.color(for: event.calendar)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(iOSCalendarEventSupport.title(for: event))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(2)
+
+            Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Theme.surfaceElevated)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(color.opacity(0.12))
+            }
+        )
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(color)
+                .frame(width: 3)
+                .padding(.vertical, 5)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(color.opacity(0.24), lineWidth: 1)
+        }
     }
 }
 
@@ -329,37 +395,53 @@ private struct iOSCalendarTaskBlock: View {
 
 private struct iOSCalendarBundleBlock: View {
     let bundle: TaskBundle
+    @State private var showDetail = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 4) {
-                Image(systemName: "tray.full.fill")
-                    .font(.system(size: 9, weight: .semibold))
-                Text(bundle.displayTitle)
-                    .font(.system(size: 11, weight: .semibold))
-                    .lineLimit(2)
-            }
-            .foregroundStyle(Theme.text)
+        Button {
+            showDetail = true
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Image(systemName: "tray.full.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text(bundle.displayTitle)
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(2)
+                }
+                .foregroundStyle(Theme.text)
 
-            Text(CadenceScheduleSupport.timeRangeLabel(startMinute: bundle.startMin, endMinute: bundle.endMin))
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(Theme.dim)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 5)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Theme.surfaceElevated)
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Theme.amber.opacity(0.14))
+                Text(CadenceScheduleSupport.timeRangeLabel(startMinute: bundle.startMin, endMinute: bundle.endMin))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
             }
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(Theme.amber.opacity(0.28), lineWidth: 1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Theme.surfaceElevated)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Theme.amber.opacity(0.14))
+                }
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(Theme.amber.opacity(0.28), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                showDetail = true
+            } label: {
+                Label("Edit Block", systemImage: "square.and.pencil")
+            }
+        }
+        .sheet(isPresented: $showDetail) {
+            iOSCalendarBundleDetailSheet(bundle: bundle)
         }
     }
 }

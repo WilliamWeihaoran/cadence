@@ -6,6 +6,9 @@ struct iOSPursuitDetail: View {
     let pursuit: Pursuit
     let goals: [Goal]
     let habits: [Habit]
+    var onEdit: () -> Void = {}
+    var onNewGoal: () -> Void = {}
+    var onNewHabit: () -> Void = {}
 
     var body: some View {
         ScrollView {
@@ -17,6 +20,29 @@ struct iOSPursuitDetail: View {
                     icon: pursuit.icon,
                     color: Color(hex: pursuit.colorHex)
                 )
+
+                HStack(spacing: 10) {
+                    Button(action: onEdit) {
+                        Label("Edit", systemImage: "square.and.pencil")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color(hex: pursuit.colorHex))
+
+                    Button(action: onNewGoal) {
+                        Label("Milestone", systemImage: "flag.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Theme.green)
+
+                    Button(action: onNewHabit) {
+                        Label("Habit", systemImage: "flame.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Theme.amber)
+                }
 
                 HStack(spacing: 10) {
                     iOSMetricTile(title: "Milestones", value: "\(goals.count)", icon: "flag.fill", color: Theme.green)
@@ -57,6 +83,7 @@ struct iOSPursuitDetail: View {
 
 struct iOSMilestoneDetail: View {
     let goal: Goal
+    var onEdit: () -> Void = {}
 
     private var summary: GoalContributionSummary {
         GoalContributionResolver.summary(for: goal)
@@ -72,6 +99,13 @@ struct iOSMilestoneDetail: View {
                     icon: "flag.fill",
                     color: Color(hex: goal.colorHex)
                 )
+
+                Button(action: onEdit) {
+                    Label("Edit Milestone", systemImage: "square.and.pencil")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color(hex: goal.colorHex))
 
                 ProgressView(value: summary.progress)
                     .tint(Color(hex: goal.colorHex))
@@ -156,6 +190,7 @@ struct iOSHabitDetail: View {
     let habit: Habit
     let todayKey: String
     let toggle: () -> Void
+    var onEdit: () -> Void = {}
 
     var body: some View {
         ScrollView {
@@ -179,6 +214,13 @@ struct iOSHabitDetail: View {
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 .buttonStyle(.plain)
+
+                Button(action: onEdit) {
+                    Label("Edit Habit", systemImage: "square.and.pencil")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color(hex: habit.colorHex))
 
                 HStack(spacing: 10) {
                     iOSMetricTile(title: "Current", value: "\(habit.currentStreak)d", icon: "flame.fill", color: Theme.amber)

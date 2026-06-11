@@ -114,6 +114,18 @@ struct iOSListNotesPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             iOSPanelHeader(eyebrow: "List Notes", title: "Notes")
+
+            if let note {
+                HStack {
+                    Spacer()
+                    iOSNoteTemplateMenu(kind: .list) { template in
+                        apply(template, to: note)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+            }
+
             Divider().background(Theme.borderSubtle)
 
             if let note {
@@ -138,6 +150,10 @@ struct iOSListNotesPanel: View {
 
     private func update(_ note: Note, content: String) {
         CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
+    }
+
+    private func apply(_ template: NoteTemplate, to note: Note) {
+        CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
     }
 }
 

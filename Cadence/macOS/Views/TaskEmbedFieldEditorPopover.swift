@@ -421,18 +421,4 @@ struct TaskEmbedFieldEditorPopover: View {
     }
 }
 
-private extension TaskStatus {
-    var label: String {
-        switch self {
-        case .todo:
-            return "Todo"
-        case .inProgress:
-            return "In progress"
-        case .done:
-            return "Done"
-        case .cancelled:
-            return "Cancelled"
-        }
-    }
-}
 #endif

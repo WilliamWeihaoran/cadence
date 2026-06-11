@@ -64,8 +64,7 @@ struct EventNoteEditorSheet: View {
 
 enum EventNoteSupport {
     static func note(for calendarEventID: String, in notes: [Note]) -> Note? {
-        guard !calendarEventID.isEmpty else { return nil }
-        return notes.first { $0.kind == .meeting && $0.calendarEventID == calendarEventID }
+        CadenceEventNoteSupport.note(for: calendarEventID, in: notes)
     }
 
     static func note(
@@ -77,29 +76,15 @@ enum EventNoteSupport {
         eventEndMin: Int,
         in notes: [Note]
     ) -> Note? {
-        if let exact = note(for: calendarEventID, in: notes) {
-            return exact
-        }
-
-        let normalizedTitle = normalizedEventTitle(eventTitle)
-        guard !calendarID.isEmpty,
-              !eventDateKey.isEmpty,
-              eventStartMin >= 0,
-              eventEndMin >= 0,
-              !normalizedTitle.isEmpty else {
-            return nil
-        }
-
-        return notes.first { note in
-            guard note.kind == .meeting,
-                  note.calendarID == calendarID,
-                  note.eventDateKey == eventDateKey,
-                  note.eventStartMin == eventStartMin,
-                  note.eventEndMin == eventEndMin else {
-                return false
-            }
-            return normalizedEventTitle(note.title) == normalizedTitle
-        }
+        CadenceEventNoteSupport.note(
+            for: calendarEventID,
+            eventTitle: eventTitle,
+            calendarID: calendarID,
+            eventDateKey: eventDateKey,
+            eventStartMin: eventStartMin,
+            eventEndMin: eventEndMin,
+            in: notes
+        )
     }
 
     @discardableResult
@@ -114,54 +99,21 @@ enum EventNoteSupport {
         notes: [Note],
         insert: (Note) -> Void
     ) -> Note? {
-        guard !calendarEventID.isEmpty else { return nil }
-        if let existing = note(
-            for: calendarEventID,
+        CadenceEventNoteSupport.noteForEditing(
+            calendarEventID: calendarEventID,
             eventTitle: eventTitle,
             calendarID: calendarID,
             eventDateKey: eventDateKey,
             eventStartMin: eventStartMin,
             eventEndMin: eventEndMin,
-            in: notes
-        ) {
-            if existing.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                existing.title = eventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Event Note" : eventTitle
-            }
-            if existing.calendarEventID.isEmpty || existing.calendarEventID != calendarEventID {
-                existing.calendarEventID = calendarEventID
-            }
-            updateMetadata(
-                existing,
-                calendarID: calendarID,
-                eventDateKey: eventDateKey,
-                eventStartMin: eventStartMin,
-                eventEndMin: eventEndMin
-            )
-            return existing
-        }
-
-        let resolvedTitle = eventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Event Note" : eventTitle
-        let created = Note(
-            kind: .meeting,
-            title: resolvedTitle,
-            content: initialContent(eventTitle: resolvedTitle, nativeNotes: nativeNotes),
-            calendarEventID: calendarEventID,
-            calendarID: calendarID,
-            eventDateKey: eventDateKey,
-            eventStartMin: eventStartMin,
-            eventEndMin: eventEndMin
+            nativeNotes: nativeNotes,
+            notes: notes,
+            insert: insert
         )
-        insert(created)
-        return created
     }
 
     static func initialContent(eventTitle: String, nativeNotes: String?) -> String {
-        let trimmedNativeNotes = (nativeNotes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedNativeNotes.isEmpty {
-            return nativeNotes ?? trimmedNativeNotes
-        }
-        let resolvedTitle = eventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Event Note" : eventTitle
-        return "# \(resolvedTitle)\n\n"
+        CadenceEventNoteSupport.initialContent(eventTitle: eventTitle, nativeNotes: nativeNotes)
     }
 
     static func syncNativeCalendarNotes(for note: Note, content: String, calendarManager: CalendarManager) {
@@ -170,15 +122,7 @@ enum EventNoteSupport {
     }
 
     static func eventDateMetadata(from event: EKEvent) -> (dateKey: String, startMin: Int, endMin: Int) {
-        let start = event.startDate ?? Date()
-        let end = event.endDate ?? start
-        let startComps = Calendar.current.dateComponents([.hour, .minute], from: start)
-        let endComps = Calendar.current.dateComponents([.hour, .minute], from: end)
-        return (
-            DateFormatters.dateKey(from: start),
-            ((startComps.hour ?? 0) * 60) + (startComps.minute ?? 0),
-            ((endComps.hour ?? 0) * 60) + (endComps.minute ?? 0)
-        )
+        CadenceEventNoteSupport.eventDateMetadata(from: event)
     }
 
     static func backfillMetadataIfPossible(_ note: Note, calendarManager: CalendarManager) {
@@ -202,44 +146,17 @@ enum EventNoteSupport {
         eventStartMin: Int,
         eventEndMin: Int
     ) {
-        var changed = false
-        if !calendarID.isEmpty, note.calendarID != calendarID {
-            note.calendarID = calendarID
-            changed = true
-        }
-        if !eventDateKey.isEmpty, note.eventDateKey != eventDateKey {
-            note.eventDateKey = eventDateKey
-            changed = true
-        }
-        if eventStartMin >= 0, note.eventStartMin != eventStartMin {
-            note.eventStartMin = eventStartMin
-            changed = true
-        }
-        if eventEndMin >= 0, note.eventEndMin != eventEndMin {
-            note.eventEndMin = eventEndMin
-            changed = true
-        }
-        if changed {
-            note.updatedAt = Date()
-        }
+        CadenceEventNoteSupport.updateMetadata(
+            note,
+            calendarID: calendarID,
+            eventDateKey: eventDateKey,
+            eventStartMin: eventStartMin,
+            eventEndMin: eventEndMin
+        )
     }
 
     static func meetingNotes(forLinkedCalendarID calendarID: String, in notes: [Note]) -> [Note] {
-        let trimmed = calendarID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
-        return notes
-            .filter { $0.kind == .meeting && $0.calendarID == trimmed }
-            .sorted {
-                if $0.eventDateKey != $1.eventDateKey { return $0.eventDateKey > $1.eventDateKey }
-                if $0.eventStartMin != $1.eventStartMin { return $0.eventStartMin > $1.eventStartMin }
-                return $0.updatedAt > $1.updatedAt
-            }
-    }
-
-    private static func normalizedEventTitle(_ title: String) -> String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .lowercased()
+        CadenceEventNoteSupport.meetingNotes(forLinkedCalendarID: calendarID, in: notes)
     }
 }
 #endif

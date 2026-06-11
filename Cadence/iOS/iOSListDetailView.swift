@@ -239,16 +239,14 @@ struct iOSListDetailView: View {
             allTasks: filteredTasks,
             modelContext: modelContext,
             configure: { task in
-                task.sectionName = TaskSectionDefaults.defaultName
-                if let area {
-                    task.area = area
-                    task.project = nil
-                    task.context = area.context
-                } else if let project {
-                    task.project = project
-                    task.area = nil
-                    task.context = project.context ?? project.area?.context
-                }
+                CadenceTaskMutationSupport.assignContainer(
+                    task,
+                    area: area,
+                    project: project,
+                    sectionName: TaskSectionDefaults.defaultName,
+                    allTasks: filteredTasks,
+                    updateOrder: false
+                )
             }
         )) != nil else { return }
         newTitle = ""

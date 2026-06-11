@@ -1,4 +1,5 @@
 #if os(iOS)
+import EventKit
 import SwiftData
 import SwiftUI
 
@@ -8,6 +9,8 @@ struct iOSCalendarBoardPlanner: View {
     let allTasks: [AppTask]
     let allBundles: [TaskBundle]
     let bundlesByDate: [String: [TaskBundle]]
+    let eventsByDate: [String: [EKEvent]]
+    let onAddItem: (String) -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
@@ -48,9 +51,10 @@ struct iOSCalendarBoardPlanner: View {
                             dateKey: dateKey,
                             tasks: boardTasksByDate[dateKey] ?? [],
                             bundles: bundlesByDate[dateKey] ?? [],
+                            events: eventsByDate[dateKey] ?? [],
                             allTasks: allTasks,
                             allBundles: allBundles,
-                            onAddTask: { createTask(on: dateKey) },
+                            onAddTask: { onAddItem(dateKey) },
                             onDropTaskOnDay: { task in schedule(task, on: dateKey) },
                             onDropBundleOnDay: { bundle in move(bundle, on: dateKey) },
                             onDropTaskOnBundle: { task, bundle in add(task, to: bundle) }
@@ -145,40 +149,16 @@ struct iOSCalendarBoardPlanner: View {
         recenterWindowIfNeeded(proxy, visibleDayIndex: dayIndex, visibleDate: date)
     }
 
-    private func createTask(on dateKey: String) {
-        let task = AppTask(title: "New Task")
-        task.scheduledDate = dateKey
-        task.scheduledStartMin = -1
-        modelContext.insert(task)
-        try? modelContext.save()
-    }
-
     private func schedule(_ task: AppTask, on dateKey: String) {
-        task.bundle = nil
-        task.bundleOrder = 0
-        task.scheduledDate = dateKey
-        if task.estimatedMinutes <= 0 {
-            task.estimatedMinutes = 30
-        }
-        try? modelContext.save()
+        CadenceTaskMutationSupport.moveTaskToDate(task, dateKey: dateKey, modelContext: modelContext)
     }
 
     private func move(_ bundle: TaskBundle, on dateKey: String) {
-        let oldDateKey = bundle.dateKey
-        bundle.dateKey = dateKey
-        for task in bundle.tasks ?? [] where task.scheduledDate == oldDateKey {
-            task.scheduledDate = dateKey
-        }
-        try? modelContext.save()
+        CadenceTaskMutationSupport.moveBundle(bundle, to: dateKey, modelContext: modelContext)
     }
 
     private func add(_ task: AppTask, to bundle: TaskBundle) {
-        let nextOrder = ((bundle.tasks ?? []).map(\.bundleOrder).max() ?? -1) + 1
-        task.bundle = bundle
-        task.bundleOrder = nextOrder
-        task.scheduledDate = bundle.dateKey
-        task.scheduledStartMin = -1
-        try? modelContext.save()
+        CadenceTaskMutationSupport.addTask(task, to: bundle, modelContext: modelContext)
     }
 }
 
@@ -188,6 +168,7 @@ private struct iOSCalendarBoardDayColumn: View {
     let dateKey: String
     let tasks: [AppTask]
     let bundles: [TaskBundle]
+    let events: [EKEvent]
     let allTasks: [AppTask]
     let allBundles: [TaskBundle]
     let onAddTask: () -> Void
@@ -215,9 +196,10 @@ private struct iOSCalendarBoardDayColumn: View {
     }
 
     private var activeItems: [iOSCalendarBoardColumnItem] {
+        let eventItems = iOSCalendarBoardEventItem.items(from: events, for: date).map { iOSCalendarBoardColumnItem.event($0) }
         let bundleItems = bundles.map { iOSCalendarBoardColumnItem.bundle($0) }
         let taskItems = activeTasks.map { iOSCalendarBoardColumnItem.task($0) }
-        return (bundleItems + taskItems).sorted(by: sortColumnItems)
+        return (eventItems + bundleItems + taskItems).sorted(by: sortColumnItems)
     }
 
     private var totalCount: Int {
@@ -399,6 +381,8 @@ private struct iOSCalendarBoardDayColumn: View {
     @ViewBuilder
     private func columnItemView(_ item: iOSCalendarBoardColumnItem) -> some View {
         switch item {
+        case .event(let item):
+            iOSCalendarBoardEventCard(item: item)
         case .bundle(let bundle):
             iOSCalendarBoardBundleCard(
                 bundle: bundle,
@@ -486,6 +470,8 @@ private struct iOSCalendarBoardDayColumn: View {
                 return lhsBundle.createdAt < rhsBundle.createdAt
             }
             return lhsBundle.id.uuidString < rhsBundle.id.uuidString
+        case (.event(let lhsEvent), .event(let rhsEvent)):
+            return lhsEvent.id < rhsEvent.id
         default:
             return lhs.id < rhs.id
         }
@@ -493,11 +479,14 @@ private struct iOSCalendarBoardDayColumn: View {
 }
 
 private enum iOSCalendarBoardColumnItem: Identifiable {
+    case event(iOSCalendarBoardEventItem)
     case bundle(TaskBundle)
     case task(AppTask)
 
     var id: String {
         switch self {
+        case .event(let item):
+            return "event-\(item.id)"
         case .bundle(let bundle):
             return "bundle-\(bundle.id.uuidString)"
         case .task(let task):
@@ -507,11 +496,136 @@ private enum iOSCalendarBoardColumnItem: Identifiable {
 
     var sortKey: CalendarBoardSortKey {
         switch self {
+        case .event(let item):
+            return item.sortKey
         case .bundle(let bundle):
-            return CalendarBoardPlannerSupport.sortKey(for: bundle, kindRank: 0)
+            return CalendarBoardPlannerSupport.sortKey(for: bundle, kindRank: 1)
         case .task(let task):
-            return CalendarBoardPlannerSupport.sortKey(for: task, kindRank: 1)
+            return CalendarBoardPlannerSupport.sortKey(for: task, kindRank: 2)
         }
+    }
+}
+
+private struct iOSCalendarBoardEventItem: Identifiable {
+    let id: String
+    let title: String
+    let calendarTitle: String
+    let startMin: Int
+    let endMin: Int
+    let isAllDay: Bool
+    let isRecurring: Bool
+    let color: Color
+
+    var sortKey: CalendarBoardSortKey {
+        CalendarBoardPlannerSupport.sortKeyForCalendarEvent(
+            id: id,
+            startMinute: startMin,
+            isAllDay: isAllDay,
+            kindRank: 0
+        )
+    }
+
+    static func items(from events: [EKEvent], for date: Date, calendar: Calendar = .current) -> [iOSCalendarBoardEventItem] {
+        events.compactMap { event in
+            iOSCalendarBoardEventItem(event: event, date: date, calendar: calendar)
+        }
+    }
+
+    private init?(event: EKEvent, date: Date, calendar: Calendar) {
+        let dateKey = DateFormatters.dateKey(from: date)
+        let rawIdentifier = event.eventIdentifier ?? event.calendarItemIdentifier
+        let eventIdentifier = rawIdentifier.isEmpty ? "\(dateKey)-\(event.hash)" : rawIdentifier
+        title = iOSCalendarEventSupport.title(for: event)
+        calendarTitle = event.calendar?.title ?? "Apple Calendar"
+        isAllDay = event.isAllDay
+        isRecurring = event.hasRecurrenceRules
+        color = iOSCalendarEventSupport.color(for: event.calendar)
+
+        if event.isAllDay {
+            startMin = CalendarBoardPlannerSupport.allDaySortMinute
+            endMin = 24 * 60
+        } else {
+            let dayStart = calendar.startOfDay(for: date)
+            let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+            let eventStart = event.startDate ?? dayStart
+            let fallbackEnd = eventStart.addingTimeInterval(30 * 60)
+            let eventEnd = max(event.endDate ?? fallbackEnd, fallbackEnd)
+            let segmentStart = max(eventStart, dayStart)
+            let segmentEnd = min(eventEnd, dayEnd)
+            guard segmentEnd > segmentStart else { return nil }
+            let startComponents = calendar.dateComponents([.hour, .minute], from: segmentStart)
+            let rawStart = (startComponents.hour ?? 0) * 60 + (startComponents.minute ?? 0)
+            let duration = max(5, Int(segmentEnd.timeIntervalSince(segmentStart) / 60))
+            startMin = min(max(0, rawStart), 24 * 60 - 5)
+            endMin = min(24 * 60, max(startMin + 5, startMin + duration))
+        }
+
+        id = "\(eventIdentifier)-\(dateKey)-\(startMin)"
+    }
+}
+
+private struct iOSCalendarBoardEventCard: View {
+    let item: iOSCalendarBoardEventItem
+
+    private var subtitle: String {
+        if item.isAllDay {
+            return "All day"
+        }
+        return TimeFormatters.timeRange(startMin: item.startMin, endMin: item.endMin)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: item.isAllDay ? "calendar" : "clock")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(item.color)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(item.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(2)
+
+                HStack(spacing: 6) {
+                    iOSCalendarBoardMetadataChip(
+                        item: .init(
+                            id: "time",
+                            icon: item.isAllDay ? "sun.max" : "clock",
+                            title: subtitle,
+                            color: item.color
+                        )
+                    )
+                    if item.isRecurring {
+                        iOSCalendarBoardMetadataChip(
+                            item: .init(id: "repeat", icon: "repeat", title: "Repeats", color: item.color)
+                        )
+                    }
+                }
+
+                if !item.calendarTitle.isEmpty {
+                    Text(item.calendarTitle)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Theme.surfaceElevated.opacity(0.80))
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(item.color.opacity(0.08))
+            }
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(item.color.opacity(0.28), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -626,6 +740,7 @@ private struct iOSCalendarBoardBundleCard: View {
     var onDropTargetedChanged: (Bool) -> Void = { _ in }
 
     @State private var isTargeted = false
+    @State private var showDetail = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -664,6 +779,7 @@ private struct iOSCalendarBoardBundleCard: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -677,6 +793,19 @@ private struct iOSCalendarBoardBundleCard: View {
                 .strokeBorder(Theme.amber.opacity(isTargeted ? 0.74 : 0.24), lineWidth: isTargeted ? 1.25 : 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onTapGesture {
+            showDetail = true
+        }
+        .contextMenu {
+            Button {
+                showDetail = true
+            } label: {
+                Label("Edit Block", systemImage: "square.and.pencil")
+            }
+        }
+        .sheet(isPresented: $showDetail) {
+            iOSCalendarBundleDetailSheet(bundle: bundle)
+        }
         .draggable(TaskDragPayload.bundleString(for: bundle.id))
         .dropDestination(for: String.self) { items, _ in
             guard let payload = items.first,

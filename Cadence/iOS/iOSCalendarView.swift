@@ -1,8 +1,10 @@
 #if os(iOS)
+import EventKit
 import SwiftData
 import SwiftUI
 
 struct iOSCalendarView: View {
+    @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query private var allBundles: [TaskBundle]
     @AppStorage("ios.calendar.viewMode") private var viewModeRaw = CadenceCalendarViewMode.week.rawValue
@@ -11,6 +13,7 @@ struct iOSCalendarView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var anchorDate = Calendar.current.startOfDay(for: Date())
+    @State private var quickCreateSeed: iOSCalendarQuickCreateSeed?
 
     private let calendar = Calendar.current
 
@@ -58,6 +61,30 @@ struct iOSCalendarView: View {
 
     private var selectedBundles: [TaskBundle] {
         CadenceScheduleSupport.items(on: selectedKey, in: bundlesByDate)
+    }
+
+    private var selectedEvents: [EKEvent] {
+        calendarManager.fetchEvents(for: selectedDate)
+    }
+
+    private var visibleEventsByDate: [String: [EKEvent]] {
+        eventsByDate(for: calendarEventDates)
+    }
+
+    private var calendarEventDates: [Date] {
+        if presentation == .board {
+            return boardEventDates
+        }
+        if viewMode == .month {
+            return CadenceScheduleSupport.monthGridDays(for: anchorDate, calendar: calendar)
+        }
+        return visibleDates
+    }
+
+    private var boardEventDates: [Date] {
+        (0..<CalendarBoardPlannerSupport.visibleDayCount).map { offset in
+            calendar.startOfDay(for: calendar.date(byAdding: .day, value: offset, to: anchorDate) ?? anchorDate)
+        }
     }
 
     private var selectedUnscheduledTasks: [AppTask] {
@@ -126,6 +153,9 @@ struct iOSCalendarView: View {
             }
         }
         .background(Theme.bg.ignoresSafeArea())
+        .sheet(item: $quickCreateSeed) { seed in
+            iOSCalendarQuickCreateSheet(dateKey: seed.dateKey)
+        }
     }
 
     @ViewBuilder
@@ -136,14 +166,17 @@ struct iOSCalendarView: View {
                 selectedDate: $selectedDate,
                 allTasks: allTasks,
                 allBundles: allBundles,
-                bundlesByDate: bundlesByDate
+                bundlesByDate: bundlesByDate,
+                eventsByDate: visibleEventsByDate,
+                onAddItem: openQuickCreate
             )
         } else if viewMode == .month {
             iOSCalendarMonthGrid(
                 monthDate: anchorDate,
                 selectedDate: $selectedDate,
                 monthTasksByDate: monthTasksByDate,
-                bundlesByDate: bundlesByDate
+                bundlesByDate: bundlesByDate,
+                eventsByDate: visibleEventsByDate
             )
         } else {
             iOSCalendarTimelineGrid(
@@ -152,6 +185,7 @@ struct iOSCalendarView: View {
                 scheduledTasksByDate: scheduledTasksByDate,
                 unscheduledTasksByDate: unscheduledTasksByDate,
                 bundlesByDate: bundlesByDate,
+                eventsByDate: visibleEventsByDate,
                 zoomLevel: zoomLevel
             )
         }
@@ -162,9 +196,27 @@ struct iOSCalendarView: View {
             date: selectedDate,
             tasks: selectedTasks,
             bundles: selectedBundles,
+            events: selectedEvents,
             unscheduledTasks: selectedUnscheduledTasks,
             dueOnlyTasks: selectedDueOnlyTasks
-        )
+        ) {
+            openQuickCreate(on: selectedKey)
+        }
+    }
+
+    private func eventsByDate(for dates: [Date]) -> [String: [EKEvent]] {
+        _ = calendarManager.storeVersion
+        guard calendarManager.isAuthorized else { return [:] }
+        var grouped: [String: [EKEvent]] = [:]
+        for date in dates {
+            let key = DateFormatters.dateKey(from: date)
+            grouped[key] = calendarManager.fetchEvents(for: date)
+        }
+        return grouped
+    }
+
+    private func openQuickCreate(on dateKey: String) {
+        quickCreateSeed = iOSCalendarQuickCreateSeed(dateKey: dateKey)
     }
 
     private func setViewMode(_ newMode: CadenceCalendarViewMode) {
@@ -205,6 +257,11 @@ struct iOSCalendarView: View {
         selectedDate = today
         anchorDate = today
     }
+}
+
+private struct iOSCalendarQuickCreateSeed: Identifiable {
+    let dateKey: String
+    var id: String { dateKey }
 }
 
 private struct iOSCalendarToolbar: View {

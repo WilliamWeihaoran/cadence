@@ -7,11 +7,22 @@ struct iOSTaskRow: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
     @State private var showDetail = false
     @State private var showDeleteConfirmation = false
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
+    }
+
+    private var activeAreas: [Area] {
+        areas.filter(\.isActive)
+    }
+
+    private var activeProjects: [Project] {
+        projects.filter(\.isActive)
     }
 
     var body: some View {
@@ -95,12 +106,28 @@ struct iOSTaskRow: View {
 
     private var taskBadges: some View {
         HStack(spacing: 6) {
+            if task.status == .inProgress {
+                taskBadge(
+                    systemImage: "play.fill",
+                    text: "In Progress",
+                    color: Theme.blue
+                )
+            }
+
             priorityBadge
+
+            if let goal = task.goal {
+                taskBadge(
+                    systemImage: "flag.fill",
+                    text: goal.title.isEmpty ? "Milestone" : goal.title,
+                    color: Color(hex: goal.colorHex)
+                )
+            }
 
             if !task.scheduledDate.isEmpty {
                 taskBadge(
-                    systemImage: "sun.max.fill",
-                    text: DateFormatters.relativeDate(from: task.scheduledDate),
+                    systemImage: task.scheduledStartMin >= 0 ? "clock.fill" : "sun.max.fill",
+                    text: scheduledDateLabel,
                     color: task.scheduledDate == DateFormatters.todayKey() ? Theme.amber : Theme.dim
                 )
             }
@@ -179,6 +206,13 @@ struct iOSTaskRow: View {
         }
         .tint(Theme.blue)
 
+        Button {
+            dueToday()
+        } label: {
+            Label("Due", systemImage: "flag.fill")
+        }
+        .tint(Theme.red)
+
         if !task.scheduledDate.isEmpty {
             Button {
                 clearScheduledDate()
@@ -197,37 +231,169 @@ struct iOSTaskRow: View {
             Label("Edit", systemImage: "square.and.pencil")
         }
 
-        Button {
-            toggleCompletion()
-        } label: {
-            Label(task.isDone ? "Mark Todo" : "Mark Done",
-                  systemImage: task.isDone ? "circle" : "checkmark.circle.fill")
-        }
+        statusMenu
+        priorityMenu
+        doDateMenu
+        dueDateMenu
+        sectionMenu
+        moveToListMenu
 
         Button {
-            scheduleToday()
+            duplicateTask()
         } label: {
-            Label("Schedule Today", systemImage: "sun.max.fill")
-        }
-
-        Button {
-            scheduleTomorrow()
-        } label: {
-            Label("Schedule Tomorrow", systemImage: "calendar")
-        }
-
-        if !task.scheduledDate.isEmpty {
-            Button {
-                clearScheduledDate()
-            } label: {
-                Label("Clear Do Date", systemImage: "xmark.circle")
-            }
+            Label("Duplicate", systemImage: "plus.square.on.square")
         }
 
         Button(role: .destructive) {
             showDeleteConfirmation = true
         } label: {
             Label("Delete Task", systemImage: "trash")
+        }
+    }
+
+    private var statusMenu: some View {
+        Menu {
+            ForEach(TaskStatus.allCases, id: \.self) { status in
+                Button {
+                    setStatus(status)
+                } label: {
+                    Label(status.label, systemImage: status.systemImage)
+                }
+            }
+        } label: {
+            Label(task.status.label, systemImage: task.status.systemImage)
+        }
+    }
+
+    private var priorityMenu: some View {
+        Menu {
+            ForEach(TaskPriority.allCases, id: \.self) { priority in
+                Button {
+                    setPriority(priority)
+                } label: {
+                    Label(priority.label, systemImage: priority == task.priority ? "checkmark.circle.fill" : "circle")
+                }
+            }
+        } label: {
+            Label("Priority: \(task.priority.label)", systemImage: "flag.fill")
+        }
+    }
+
+    private var doDateMenu: some View {
+        Menu {
+            Button {
+                scheduleToday()
+            } label: {
+                Label("Today", systemImage: "sun.max.fill")
+            }
+
+            Button {
+                scheduleTomorrow()
+            } label: {
+                Label("Tomorrow", systemImage: "calendar")
+            }
+
+            Button {
+                scheduleNextWeek()
+            } label: {
+                Label("Next Week", systemImage: "calendar.badge.clock")
+            }
+
+            if !task.scheduledDate.isEmpty {
+                Button {
+                    clearScheduledDate()
+                } label: {
+                    Label("Clear Do Date", systemImage: "xmark.circle")
+                }
+            }
+        } label: {
+            Label("Do Date", systemImage: "sun.max.fill")
+        }
+    }
+
+    private var dueDateMenu: some View {
+        Menu {
+            Button {
+                dueToday()
+            } label: {
+                Label("Today", systemImage: "flag.fill")
+            }
+
+            Button {
+                dueTomorrow()
+            } label: {
+                Label("Tomorrow", systemImage: "calendar")
+            }
+
+            Button {
+                dueNextWeek()
+            } label: {
+                Label("Next Week", systemImage: "calendar.badge.clock")
+            }
+
+            if !task.dueDate.isEmpty {
+                Button {
+                    clearDueDate()
+                } label: {
+                    Label("Clear Due Date", systemImage: "xmark.circle")
+                }
+            }
+        } label: {
+            Label("Due Date", systemImage: "flag.fill")
+        }
+    }
+
+    @ViewBuilder
+    private var sectionMenu: some View {
+        let names = availableSectionNames
+        if names.count > 1 {
+            Menu {
+                ForEach(names, id: \.self) { section in
+                    Button {
+                        moveToSection(section)
+                    } label: {
+                        Label(section, systemImage: section.caseInsensitiveCompare(task.resolvedSectionName) == .orderedSame ? "checkmark.circle.fill" : "rectangle.split.3x1")
+                    }
+                }
+            } label: {
+                Label("Move Section", systemImage: "rectangle.split.3x1.fill")
+            }
+        }
+    }
+
+    private var moveToListMenu: some View {
+        Menu {
+            Button {
+                moveToContainer(area: nil, project: nil)
+            } label: {
+                Label("Inbox", systemImage: task.area == nil && task.project == nil ? "checkmark.circle.fill" : "tray.fill")
+            }
+
+            if !activeAreas.isEmpty {
+                Divider()
+
+                ForEach(activeAreas) { area in
+                    Button {
+                        moveToContainer(area: area, project: nil)
+                    } label: {
+                        Label(area.name.isEmpty ? "Untitled Area" : area.name, systemImage: task.area?.id == area.id && task.project == nil ? "checkmark.circle.fill" : area.icon)
+                    }
+                }
+            }
+
+            if !activeProjects.isEmpty {
+                Divider()
+
+                ForEach(activeProjects) { project in
+                    Button {
+                        moveToContainer(area: nil, project: project)
+                    } label: {
+                        Label(project.name.isEmpty ? "Untitled Project" : project.name, systemImage: task.project?.id == project.id ? "checkmark.circle.fill" : project.icon)
+                    }
+                }
+            }
+        } label: {
+            Label("Move to List", systemImage: "folder.fill")
         }
     }
 
@@ -249,6 +415,26 @@ struct iOSTaskRow: View {
         return String(format: "%.1fh", Double(task.estimatedMinutes) / 60.0)
     }
 
+    private var scheduledDateLabel: String {
+        if task.scheduledStartMin >= 0 {
+            let time = TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledEndMin)
+            if task.scheduledDate == DateFormatters.todayKey() {
+                return time
+            }
+            return "\(DateFormatters.relativeDate(from: task.scheduledDate)) at \(time)"
+        }
+        return DateFormatters.relativeDate(from: task.scheduledDate)
+    }
+
+    private var availableSectionNames: [String] {
+        let rawNames = task.area?.sectionNames ?? task.project?.sectionNames ?? []
+        let names = rawNames.isEmpty ? [TaskSectionDefaults.defaultName] : rawNames
+        if names.contains(where: { $0.caseInsensitiveCompare(task.resolvedSectionName) == .orderedSame }) {
+            return names
+        }
+        return names + [task.resolvedSectionName]
+    }
+
     private func taskBadge(systemImage: String, text: String, color: Color) -> some View {
         HStack(spacing: 4) {
             Image(systemName: systemImage)
@@ -268,6 +454,14 @@ struct iOSTaskRow: View {
         CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
     }
 
+    private func setStatus(_ status: TaskStatus) {
+        CadenceTaskMutationSupport.setStatus(status, for: task, modelContext: modelContext)
+    }
+
+    private func setPriority(_ priority: TaskPriority) {
+        CadenceTaskMutationSupport.setPriority(priority, for: task, modelContext: modelContext)
+    }
+
     private func scheduleToday() {
         CadenceTaskMutationSupport.scheduleToday(task, modelContext: modelContext)
     }
@@ -276,8 +470,47 @@ struct iOSTaskRow: View {
         CadenceTaskMutationSupport.scheduleTomorrow(task, modelContext: modelContext)
     }
 
+    private func scheduleNextWeek() {
+        CadenceTaskMutationSupport.scheduleNextWeek(task, modelContext: modelContext)
+    }
+
     private func clearScheduledDate() {
         CadenceTaskMutationSupport.clearScheduledDate(task, modelContext: modelContext)
+    }
+
+    private func dueToday() {
+        CadenceTaskMutationSupport.dueToday(task, modelContext: modelContext)
+    }
+
+    private func dueTomorrow() {
+        CadenceTaskMutationSupport.dueTomorrow(task, modelContext: modelContext)
+    }
+
+    private func dueNextWeek() {
+        CadenceTaskMutationSupport.dueNextWeek(task, modelContext: modelContext)
+    }
+
+    private func clearDueDate() {
+        CadenceTaskMutationSupport.clearDueDate(task, modelContext: modelContext)
+    }
+
+    private func moveToSection(_ section: String) {
+        CadenceTaskMutationSupport.moveToSection(section, task: task, modelContext: modelContext)
+    }
+
+    private func moveToContainer(area: Area?, project: Project?) {
+        CadenceTaskMutationSupport.moveToContainer(
+            task,
+            area: area,
+            project: project,
+            sectionName: task.resolvedSectionName,
+            allTasks: allTasks,
+            modelContext: modelContext
+        )
+    }
+
+    private func duplicateTask() {
+        _ = try? CadenceTaskMutationSupport.duplicate(task, allTasks: allTasks, modelContext: modelContext)
     }
 
     private func deleteTask() {

@@ -9,6 +9,7 @@ struct iOSTaskDetailSheet: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
+    @Query(sort: \Goal.order) private var goals: [Goal]
     @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var newSubtaskTitle = ""
     @State private var newTagName = ""
@@ -19,6 +20,7 @@ struct iOSTaskDetailSheet: View {
     @State private var containerSelection = "inbox"
     @State private var showDeleteConfirmation = false
     @State private var isNotesFocused = false
+    @State private var pendingRecurrenceRule: TaskRecurrenceRule?
 
     private var sortedSubtasks: [Subtask] {
         (task.subtasks ?? []).sorted { $0.order < $1.order }
@@ -32,16 +34,16 @@ struct iOSTaskDetailSheet: View {
         projects.filter(\.isActive)
     }
 
+    private var availableGoals: [Goal] {
+        let openGoals = goals.filter { $0.status != .done }
+        guard let currentGoal = task.goal,
+              !openGoals.contains(where: { $0.id == currentGoal.id })
+        else { return openGoals }
+        return openGoals + [currentGoal]
+    }
+
     private var availableSectionNames: [String] {
-        if let areaID = selectedAreaID,
-           let area = areas.first(where: { $0.id == areaID }) {
-            return area.sectionNames
-        }
-        if let projectID = selectedProjectID,
-           let project = projects.first(where: { $0.id == projectID }) {
-            return project.sectionNames
-        }
-        return [TaskSectionDefaults.defaultName]
+        CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject)
     }
 
     private var selectedAreaID: UUID? {
@@ -54,48 +56,87 @@ struct iOSTaskDetailSheet: View {
         return UUID(uuidString: String(containerSelection.dropFirst(8)))
     }
 
+    private var selectedArea: Area? {
+        guard let selectedAreaID else { return nil }
+        return areas.first { $0.id == selectedAreaID }
+    }
+
+    private var selectedProject: Project? {
+        guard let selectedProjectID else { return nil }
+        return projects.first { $0.id == selectedProjectID }
+    }
+
+    private var selectedGoal: Goal? {
+        task.goal
+    }
+
     var body: some View {
         NavigationStack {
-            ScrollView {
-                taskForm.padding(18)
-            }
-            .background(Theme.bg)
-            .navigationTitle("Edit Task")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { taskToolbar }
-            .tint(Theme.blue)
-            .onAppear {
-                loadDates()
-                loadContainerSelection()
-            }
-            .onChange(of: containerSelection) { _, _ in
-                applyContainerSelection()
-            }
-            .onChange(of: hasScheduledDate) { _, newValue in
-                if newValue && task.scheduledDate.isEmpty {
-                    scheduledDate = Date()
-                }
-                applyDates()
-            }
-            .onChange(of: hasDueDate) { _, newValue in
-                if newValue && task.dueDate.isEmpty {
-                    dueDate = Date()
-                }
-                applyDates()
-            }
-            .onChange(of: scheduledDate) { _, _ in applyDates() }
-            .onChange(of: dueDate) { _, _ in applyDates() }
-            .alert("Delete Task?", isPresented: $showDeleteConfirmation) {
-                Button("Delete", role: .destructive) {
-                    CadenceTaskMutationSupport.delete(task, modelContext: modelContext)
-                    dismiss()
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This removes the task and its subtasks.")
-            }
+            editorScrollView
         }
         .preferredColorScheme(.dark)
+        .onAppear(perform: initializeTaskSheet)
+        .onChange(of: containerSelection) { _, _ in
+            applyContainerSelection()
+        }
+        .onChange(of: hasScheduledDate) { _, newValue in
+            if newValue && task.scheduledDate.isEmpty {
+                scheduledDate = Date()
+            }
+            applyDates()
+        }
+        .onChange(of: hasDueDate) { _, newValue in
+            if newValue && task.dueDate.isEmpty {
+                dueDate = Date()
+            }
+            applyDates()
+        }
+        .onChange(of: scheduledDate) { _, _ in applyDates() }
+        .onChange(of: dueDate) { _, _ in applyDates() }
+        .onChange(of: task.title) { _, _ in saveTask() }
+        .onChange(of: task.priorityRaw) { _, _ in saveTask() }
+        .onChange(of: task.statusRaw) { _, _ in saveTask() }
+        .onChange(of: task.recurrenceRaw) { _, _ in saveTask() }
+        .onChange(of: task.estimatedMinutes) { _, _ in saveTask() }
+        .onChange(of: task.actualMinutes) { _, _ in saveTask() }
+        .onChange(of: task.sectionName) { _, _ in saveTask() }
+        .alert("Delete Task?", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                CadenceTaskMutationSupport.delete(task, modelContext: modelContext)
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the task and its subtasks.")
+        }
+        .confirmationDialog(
+            "Change repeating task?",
+            isPresented: recurrenceScopeDialogPresentation,
+            titleVisibility: .visible
+        ) {
+            Button(CadenceTaskRecurrenceEditScope.thisTask.label) {
+                applyPendingRecurrenceRule(scope: .thisTask)
+            }
+            Button(CadenceTaskRecurrenceEditScope.thisAndFuture.label) {
+                applyPendingRecurrenceRule(scope: .thisAndFuture)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingRecurrenceRule = nil
+            }
+        } message: {
+            Text("Choose whether this repeat change applies only here or to this task and future instances.")
+        }
+    }
+
+    private var editorScrollView: some View {
+        ScrollView {
+            taskForm.padding(18)
+        }
+        .background(Theme.bg)
+        .navigationTitle("Edit Task")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { taskToolbar }
+        .tint(Theme.blue)
     }
 
     private var taskForm: some View {
@@ -103,6 +144,7 @@ struct iOSTaskDetailSheet: View {
             iOSTaskEditorTitleCard(task: task)
             taskPropertiesSection
             organizeSection
+            milestoneSection
             datesSection
             notesSection
             tagsSection
@@ -128,6 +170,18 @@ struct iOSTaskDetailSheet: View {
 
     private var taskPropertiesSection: some View {
         iOSTaskEditorSection(title: "Task") {
+            iOSTaskEditorRow(label: "Status", systemImage: task.status.systemImage, color: statusColor(task.status)) {
+                Picker("Status", selection: $task.status) {
+                    ForEach(TaskStatus.allCases, id: \.self) { status in
+                        Text(status.label).tag(status)
+                    }
+                }
+                .labelsHidden()
+                .tint(statusColor(task.status))
+            }
+
+            iOSTaskEditorDivider()
+
             iOSTaskEditorRow(label: "Priority", systemImage: "flag.fill", color: Theme.priorityColor(task.priority)) {
                 Picker("Priority", selection: $task.priority) {
                     ForEach(TaskPriority.allCases, id: \.self) { priority in
@@ -140,9 +194,31 @@ struct iOSTaskDetailSheet: View {
 
             iOSTaskEditorDivider()
 
+            iOSTaskEditorRow(label: "Repeat", systemImage: task.recurrenceRule.systemImage, color: Theme.purple) {
+                Picker("Repeat", selection: recurrenceSelection) {
+                    ForEach(TaskRecurrenceRule.allCases, id: \.self) { recurrence in
+                        Text(recurrence.label).tag(recurrence)
+                    }
+                }
+                .labelsHidden()
+                .tint(Theme.purple)
+            }
+
+            iOSTaskEditorDivider()
+
             iOSTaskEditorRow(label: "Estimate", systemImage: "clock.fill", color: Theme.blue) {
                 Stepper(value: $task.estimatedMinutes, in: 5...480, step: 5) {
                     Text(estimateLabel)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                }
+            }
+
+            iOSTaskEditorDivider()
+
+            iOSTaskEditorRow(label: "Logged", systemImage: "timer", color: Theme.green) {
+                Stepper(value: $task.actualMinutes, in: 0...1440, step: 5) {
+                    Text(actualTimeLabel)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.text)
                 }
@@ -172,6 +248,71 @@ struct iOSTaskDetailSheet: View {
                 .labelsHidden()
                 .disabled(containerSelection == "inbox")
                 .opacity(containerSelection == "inbox" ? 0.45 : 1)
+            }
+        }
+    }
+
+    private var milestoneSection: some View {
+        iOSTaskEditorSection(title: "Milestone") {
+            iOSTaskEditorRow(
+                label: "Linked milestone",
+                systemImage: selectedGoal == nil ? "circle.dashed" : "flag.fill",
+                color: selectedGoal.map { Color(hex: $0.colorHex) } ?? Theme.dim
+            ) {
+                Picker("Milestone", selection: goalSelection) {
+                    Text("None").tag(Optional<UUID>.none)
+                    if !availableGoals.isEmpty {
+                        Section("Milestones") {
+                            ForEach(availableGoals) { goal in
+                                Text(goal.title.isEmpty ? "Untitled Milestone" : goal.title)
+                                    .tag(Optional(goal.id))
+                            }
+                        }
+                    }
+                }
+                .labelsHidden()
+                .tint(selectedGoal.map { Color(hex: $0.colorHex) } ?? Theme.blue)
+            }
+
+            if let selectedGoal {
+                iOSTaskEditorDivider()
+
+                HStack(spacing: 10) {
+                    Image(systemName: "flag.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color(hex: selectedGoal.colorHex))
+                        .frame(width: 28, height: 28)
+                        .background(Color(hex: selectedGoal.colorHex).opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(selectedGoal.title.isEmpty ? "Untitled Milestone" : selectedGoal.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(1)
+
+                        Text(selectedGoal.pursuit?.title ?? selectedGoal.context?.name ?? selectedGoal.status.rawValue.capitalized)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Theme.dim)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Button {
+                        CadenceTaskMutationSupport.setGoal(nil, for: task, modelContext: modelContext)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else if availableGoals.isEmpty {
+                Text("Create a milestone first, then attach tasks here.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -210,6 +351,11 @@ struct iOSTaskDetailSheet: View {
                 date: $scheduledDate,
                 pickerLabel: "Do"
             )
+
+            if hasScheduledDate {
+                iOSTaskEditorDivider()
+                scheduledTimeSection
+            }
 
             iOSTaskEditorDivider()
 
@@ -356,6 +502,80 @@ struct iOSTaskDetailSheet: View {
         !newSubtaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private var scheduledTimeSection: some View {
+        iOSTaskEditorRow(label: "Time", systemImage: "clock.fill", color: Theme.blue) {
+            Toggle("Time", isOn: scheduledTimeEnabled)
+                .labelsHidden()
+                .tint(Theme.blue)
+
+            Stepper(value: scheduledStartSelection, in: 0...1425, step: 15) {
+                Text(scheduledTimeLabel)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(task.scheduledStartMin >= 0 ? Theme.text : Theme.dim)
+                    .monospacedDigit()
+            }
+            .labelsHidden()
+            .disabled(task.scheduledStartMin < 0)
+            .opacity(task.scheduledStartMin < 0 ? 0.45 : 1)
+            .frame(width: 92)
+        }
+    }
+
+    private var recurrenceSelection: Binding<TaskRecurrenceRule> {
+        Binding(
+            get: { task.recurrenceRule },
+            set: { selectRecurrenceRule($0) }
+        )
+    }
+
+    private var recurrenceScopeDialogPresentation: Binding<Bool> {
+        Binding(
+            get: { pendingRecurrenceRule != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingRecurrenceRule = nil
+                }
+            }
+        )
+    }
+
+    private var scheduledTimeEnabled: Binding<Bool> {
+        Binding(
+            get: { task.scheduledStartMin >= 0 },
+            set: { isEnabled in
+                if isEnabled {
+                    enableScheduledTime()
+                } else {
+                    CadenceTaskMutationSupport.clearScheduledTime(task, modelContext: modelContext)
+                }
+            }
+        )
+    }
+
+    private var scheduledStartSelection: Binding<Int> {
+        Binding(
+            get: { task.scheduledStartMin >= 0 ? task.scheduledStartMin : defaultScheduledStartMin },
+            set: { minutes in
+                if !hasScheduledDate {
+                    hasScheduledDate = true
+                    scheduledDate = Date()
+                    applyDates()
+                }
+                CadenceTaskMutationSupport.setScheduledTime(minutes, for: task, modelContext: modelContext)
+            }
+        )
+    }
+
+    private var goalSelection: Binding<UUID?> {
+        Binding(
+            get: { task.goal?.id },
+            set: { goalID in
+                let goal = goalID.flatMap { id in goals.first { $0.id == id } }
+                CadenceTaskMutationSupport.setGoal(goal, for: task, modelContext: modelContext)
+            }
+        )
+    }
+
     private func finishEditingAndDismiss() {
         isNotesFocused = false
         applyDates()
@@ -367,6 +587,28 @@ struct iOSTaskDetailSheet: View {
         if task.estimatedMinutes < 60 { return "\(task.estimatedMinutes)m" }
         if task.estimatedMinutes % 60 == 0 { return "\(task.estimatedMinutes / 60)h" }
         return String(format: "%.1fh", Double(task.estimatedMinutes) / 60.0)
+    }
+
+    private var actualTimeLabel: String {
+        if task.actualMinutes == 0 { return "None" }
+        if task.actualMinutes < 60 { return "\(task.actualMinutes)m" }
+        if task.actualMinutes % 60 == 0 { return "\(task.actualMinutes / 60)h" }
+        return String(format: "%.1fh", Double(task.actualMinutes) / 60.0)
+    }
+
+    private var scheduledTimeLabel: String {
+        task.scheduledStartMin >= 0 ? TimeFormatters.timeString(from: task.scheduledStartMin) : "No time"
+    }
+
+    private var defaultScheduledStartMin: Int {
+        let comps = Calendar.current.dateComponents([.hour, .minute], from: Date())
+        let raw = ((comps.hour ?? 9) * 60) + (comps.minute ?? 0)
+        return min(1425, max(0, Int((Double(raw) / 15.0).rounded()) * 15))
+    }
+
+    private func initializeTaskSheet() {
+        loadDates()
+        loadContainerSelection()
     }
 
     private func loadContainerSelection() {
@@ -399,61 +641,35 @@ struct iOSTaskDetailSheet: View {
     }
 
     private func applyDates() {
-        task.scheduledDate = hasScheduledDate ? DateFormatters.dateKey(from: scheduledDate) : ""
-        task.dueDate = hasDueDate ? DateFormatters.dateKey(from: dueDate) : ""
-        try? modelContext.save()
+        CadenceTaskMutationSupport.setPlanningDates(
+            scheduledDate: hasScheduledDate ? DateFormatters.dateKey(from: scheduledDate) : nil,
+            dueDate: hasDueDate ? DateFormatters.dateKey(from: dueDate) : nil,
+            for: task,
+            modelContext: modelContext
+        )
+    }
+
+    private func saveTask() {
+        CadenceTaskMutationSupport.normalizeCompletionState(for: task, modelContext: modelContext)
     }
 
     private func applyContainerSelection() {
-        if containerSelection == "inbox" {
-            task.area = nil
-            task.project = nil
-            task.context = nil
-            task.sectionName = TaskSectionDefaults.defaultName
-            task.order = nextOrderForCurrentContainer()
-            try? modelContext.save()
-            return
-        }
-
-        if let areaID = selectedAreaID,
-           let area = areas.first(where: { $0.id == areaID }) {
-            task.area = area
-            task.project = nil
-            task.context = area.context
-            normalizeSectionForCurrentContainer()
-            task.order = nextOrderForCurrentContainer()
-            try? modelContext.save()
-            return
-        }
-
-        if let projectID = selectedProjectID,
-           let project = projects.first(where: { $0.id == projectID }) {
-            task.project = project
-            task.area = nil
-            task.context = project.context ?? project.area?.context
-            normalizeSectionForCurrentContainer()
-            task.order = nextOrderForCurrentContainer()
-            try? modelContext.save()
-        }
+        CadenceTaskMutationSupport.moveToContainer(
+            task,
+            area: selectedArea,
+            project: selectedProject,
+            sectionName: task.resolvedSectionName,
+            allTasks: allTasks,
+            modelContext: modelContext
+        )
     }
 
     private func normalizeSectionForCurrentContainer() {
-        let names = availableSectionNames
-        if !names.contains(where: { $0.caseInsensitiveCompare(task.resolvedSectionName) == .orderedSame }) {
-            task.sectionName = names.first ?? TaskSectionDefaults.defaultName
-        }
-    }
-
-    private func nextOrderForCurrentContainer() -> Int {
-        let relatedTasks: [AppTask]
-        if let areaID = selectedAreaID {
-            relatedTasks = (areas.first(where: { $0.id == areaID })?.tasks ?? []).filter { $0.id != task.id }
-        } else if let projectID = selectedProjectID {
-            relatedTasks = (projects.first(where: { $0.id == projectID })?.tasks ?? []).filter { $0.id != task.id }
-        } else {
-            relatedTasks = allTasks.filter { $0.id != task.id && $0.area == nil && $0.project == nil }
-        }
-        return (relatedTasks.map(\.order).max() ?? -1) + 1
+        task.sectionName = CadenceTaskMutationSupport.normalizedSectionName(
+            task.resolvedSectionName,
+            area: selectedArea,
+            project: selectedProject
+        )
     }
 
     private func addSubtask() {
@@ -477,6 +693,51 @@ struct iOSTaskDetailSheet: View {
 
     private func toggleCompletion() {
         CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
+    }
+
+    private func enableScheduledTime() {
+        if !hasScheduledDate {
+            hasScheduledDate = true
+            scheduledDate = Date()
+            applyDates()
+        }
+        CadenceTaskMutationSupport.setScheduledTime(defaultScheduledStartMin, for: task, modelContext: modelContext)
+    }
+
+    private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) {
+        guard task.recurrenceRule != rule else { return }
+        if task.isRecurrenceSeriesMember {
+            pendingRecurrenceRule = rule
+        } else {
+            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
+                rule,
+                to: task,
+                allTasks: allTasks,
+                scope: .thisTask
+            )
+            try? modelContext.save()
+        }
+    }
+
+    private func applyPendingRecurrenceRule(scope: CadenceTaskRecurrenceEditScope) {
+        guard let pendingRecurrenceRule else { return }
+        CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
+            pendingRecurrenceRule,
+            to: task,
+            allTasks: allTasks,
+            scope: scope
+        )
+        self.pendingRecurrenceRule = nil
+        try? modelContext.save()
+    }
+
+    private func statusColor(_ status: TaskStatus) -> Color {
+        switch status {
+        case .todo: return Theme.dim
+        case .inProgress: return Theme.blue
+        case .done: return Theme.green
+        case .cancelled: return Theme.red
+        }
     }
 }
 

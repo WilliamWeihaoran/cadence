@@ -5,8 +5,11 @@ import SwiftUI
 
 struct iOSSettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(AISettingsManager.self) private var aiSettingsManager
+    @Environment(iOSCalendarManager.self) private var calendarManager
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
     @Query private var tasks: [AppTask]
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query private var areas: [Area]
@@ -19,6 +22,7 @@ struct iOSSettingsView: View {
     @State private var lastChecked: Date?
     @State private var contextEditorMode: iOSContextEditorMode?
     @State private var selectedCategory: iOSSettingsCategory = .sync
+    @State private var aiAPIKeyDraft = ""
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -94,10 +98,18 @@ struct iOSSettingsView: View {
                 CadenceSettingsStatusBadge(title: themeManager.selectedTheme.title, isActive: true)
             case .sync:
                 CadenceSettingsStatusBadge(title: cloudStatusTitle, isActive: accountStatus == .available && accountError == nil)
+            case .calendar:
+                CadenceSettingsStatusBadge(title: calendarManager.isAuthorized ? "Connected" : "Not connected", isActive: calendarManager.isAuthorized)
             case .organization:
                 CadenceSettingsStatusBadge(title: "\(activeContextCount) contexts", isActive: activeContextCount > 0)
             case .tags:
                 CadenceSettingsStatusBadge(title: "\(activeTagCount) active", isActive: activeTagCount > 0)
+            case .templates:
+                CadenceSettingsStatusBadge(title: "\(customTemplateCount) customized", isActive: customTemplateCount > 0)
+            case .lists:
+                CadenceSettingsStatusBadge(title: "\(inactiveListCount) inactive", isActive: inactiveListCount > 0)
+            case .ai:
+                CadenceSettingsStatusBadge(title: aiSettingsManager.hasAPIKey ? "Key saved" : "No key", isActive: aiSettingsManager.hasAPIKey)
             case .data:
                 CadenceSettingsStatusBadge(title: "\(activeTaskCount) active", isActive: activeTaskCount > 0)
             case .coverage:
@@ -118,10 +130,26 @@ struct iOSSettingsView: View {
             )
         case .sync:
             syncSection
+        case .calendar:
+            iOSCalendarSettingsSection(
+                calendarManager: calendarManager,
+                areas: areas,
+                projects: projects,
+                modelContext: modelContext
+            )
         case .organization:
             organizationSection
         case .tags:
             iOSTagsSettingsSection(tags: tags)
+        case .templates:
+            iOSTemplatesSettingsSection(templateOverridesRaw: $noteTemplateOverridesRaw)
+        case .lists:
+            listsSection
+        case .ai:
+            iOSAISettingsSection(
+                aiSettingsManager: aiSettingsManager,
+                aiAPIKeyDraft: $aiAPIKeyDraft
+            )
         case .data:
             dataSection
         case .coverage:
@@ -129,6 +157,17 @@ struct iOSSettingsView: View {
         case .about:
             aboutSection
         }
+    }
+
+    private var listsSection: some View {
+        iOSListsLifecycleSettingsSection(
+            completedAreas: areas.filter(\.isDone),
+            archivedAreas: areas.filter(\.isArchived),
+            completedProjects: projects.filter(\.isDone),
+            archivedProjects: projects.filter(\.isArchived),
+            onReopenArea: reopen(_:),
+            onReopenProject: reopen(_:)
+        )
     }
 
     private var syncSection: some View {
@@ -333,6 +372,15 @@ struct iOSSettingsView: View {
         tags.filter { !$0.isArchived }.count
     }
 
+    private var customTemplateCount: Int {
+        NoteTemplateLibrary.overrides(from: noteTemplateOverridesRaw).count
+    }
+
+    private var inactiveListCount: Int {
+        areas.filter { $0.isDone || $0.isArchived }.count +
+            projects.filter { $0.isDone || $0.isArchived }.count
+    }
+
     private var activeAreaCount: Int {
         areas.filter(\.isActive).count
     }
@@ -421,13 +469,27 @@ struct iOSSettingsView: View {
         context.isArchived = false
         try? modelContext.save()
     }
+
+    private func reopen(_ area: Area) {
+        area.status = .active
+        try? modelContext.save()
+    }
+
+    private func reopen(_ project: Project) {
+        project.status = .active
+        try? modelContext.save()
+    }
 }
 
 private enum iOSSettingsCategory: String, CaseIterable, Identifiable {
     case appearance
     case sync
+    case calendar
     case organization
     case tags
+    case templates
+    case lists
+    case ai
     case data
     case coverage
     case about
@@ -438,8 +500,12 @@ private enum iOSSettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: return "Appearance"
         case .sync: return "Sync"
+        case .calendar: return "Calendar"
         case .organization: return "Organization"
         case .tags: return "Tags"
+        case .templates: return "Templates"
+        case .lists: return "Lists"
+        case .ai: return "AI"
         case .data: return "Local Data"
         case .coverage: return "Coverage"
         case .about: return "About"
@@ -450,8 +516,12 @@ private enum iOSSettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: return "Themes."
         case .sync: return "iCloud status."
+        case .calendar: return "Apple Calendar."
         case .organization: return "Contexts and groups."
         case .tags: return "Task and note tags."
+        case .templates: return "Note templates."
+        case .lists: return "List lifecycle."
+        case .ai: return "OpenAI key."
         case .data: return "Counts and storage."
         case .coverage: return "Mobile feature surface."
         case .about: return "Version and bundle."
@@ -464,10 +534,18 @@ private enum iOSSettingsCategory: String, CaseIterable, Identifiable {
             return "Choose the same Cadence color themes available on Mac."
         case .sync:
             return "Check whether this device can use iCloud and CloudKit for Cadence sync."
+        case .calendar:
+            return "Connect Apple Calendar and choose which calendars are visible or linked to lists."
         case .organization:
             return "Manage the top-level contexts shared by areas, projects, tasks, and habits."
         case .tags:
             return "Create, archive, restore, and seed tags shared by tasks and notes."
+        case .templates:
+            return "Customize the note templates used by Today, lists, meetings, and permanent notes."
+        case .lists:
+            return "Review completed and archived areas or projects and return them to active work."
+        case .ai:
+            return "Store your OpenAI API key in Keychain and choose the model for AI note actions."
         case .data:
             return "Review the local workspace counts currently visible on this device."
         case .coverage:
@@ -481,8 +559,12 @@ private enum iOSSettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: return "paintpalette.fill"
         case .sync: return "icloud.fill"
+        case .calendar: return "calendar"
         case .organization: return "square.stack.3d.up.fill"
         case .tags: return "tag.fill"
+        case .templates: return "doc.text.fill"
+        case .lists: return "archivebox.fill"
+        case .ai: return "sparkles"
         case .data: return "chart.bar.doc.horizontal.fill"
         case .coverage: return "iphone.and.arrow.forward"
         case .about: return "info.circle.fill"
@@ -493,8 +575,12 @@ private enum iOSSettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: return Theme.purple
         case .sync: return Theme.blue
+        case .calendar: return Theme.purple
         case .organization: return Theme.red
         case .tags: return Theme.amber
+        case .templates: return Theme.purple
+        case .lists: return Theme.green
+        case .ai: return Theme.blue
         case .data: return Theme.green
         case .coverage: return Theme.purple
         case .about: return Theme.amber
@@ -508,9 +594,13 @@ private enum iOSMobileCapability {
         "All Tasks",
         "Inbox capture",
         "Theme selection",
+        "Apple Calendar access and list links",
         "Create/edit/archive contexts",
         "Create/edit/archive lists",
         "Create/archive/restore tags",
+        "Customize note templates",
+        "Restore completed/archived lists",
+        "AI key/model settings",
         "Search",
         "Markdown notes",
         "List Kanban",

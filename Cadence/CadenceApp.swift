@@ -44,6 +44,8 @@ struct CadenceApp: App {
             iOSRootView()
                 .environment(ThemeManager.shared)
                 .environment(CadenceDeepLinkManager.shared)
+                .environment(AISettingsManager.shared)
+                .environment(iOSCalendarManager.shared)
 #endif
         }
         .modelContainer(sharedModelContainer)
