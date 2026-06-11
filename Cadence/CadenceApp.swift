@@ -3,10 +3,17 @@ import SwiftData
 
 @main
 struct CadenceApp: App {
-    var sharedModelContainer: ModelContainer = PersistenceController.shared.container
+    let sharedModelContainer: ModelContainer
 #if os(macOS)
     @NSApplicationDelegateAdaptor(CadenceAppDelegate.self) private var appDelegate
 #endif
+
+    init() {
+#if os(macOS)
+        CadenceRemoteNotificationRegistrar.registerIfNeeded()
+#endif
+        sharedModelContainer = PersistenceController.shared.container
+    }
 
     var body: some Scene {
         WindowGroup {

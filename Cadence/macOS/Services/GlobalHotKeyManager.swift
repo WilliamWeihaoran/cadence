@@ -22,7 +22,7 @@ final class GlobalHotKeyManager {
             eventKind: UInt32(kEventHotKeyPressed)
         )
 
-        InstallEventHandler(
+        let installStatus = InstallEventHandler(
             GetEventDispatcherTarget(),
             { _, eventRef, userData in
                 guard let userData else { return noErr }
@@ -34,9 +34,14 @@ final class GlobalHotKeyManager {
             Unmanaged.passUnretained(self).toOpaque(),
             &eventHandlerRef
         )
+        guard installStatus == noErr else {
+            logger.error("Failed to install global hotkey handler: \(installStatus)")
+            eventHandlerRef = nil
+            return
+        }
 
         let identifier = EventHotKeyID(signature: signature, id: hotKeyID)
-        RegisterEventHotKey(
+        let registerStatus = RegisterEventHotKey(
             UInt32(kVK_Space),
             UInt32(controlKey),
             identifier,
@@ -44,6 +49,17 @@ final class GlobalHotKeyManager {
             0,
             &hotKeyRef
         )
+        guard registerStatus == noErr else {
+            logger.error("Failed to register Control-Space global hotkey: \(registerStatus)")
+            if let eventHandlerRef {
+                RemoveEventHandler(eventHandlerRef)
+                self.eventHandlerRef = nil
+            }
+            hotKeyRef = nil
+            return
+        }
+
+        logger.debug("Registered Control-Space global hotkey")
     }
 
     func unregister() {

@@ -41,13 +41,19 @@ struct QuickCreateChoicePopover: View {
     }
 
     private var modeFormMinHeight: CGFloat {
-        usesCalendarCreationPanel ? 330 : 280
+        switch mode {
+        case .timeBlock:
+            return usesCalendarCreationPanel ? 246 : 188
+        case .calendarEvent:
+            return 232
+        case .bundle:
+            return 300
+        }
     }
 
     private var popoverWidth: CGFloat {
-        if usesCalendarCreationPanel { return 440 }
-        if mode == .bundle { return 326 }
-        return 316
+        if mode == .bundle { return 404 }
+        return usesCalendarCreationPanel ? 392 : 304
     }
 
     init(
@@ -74,7 +80,7 @@ struct QuickCreateChoicePopover: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             if !usesCalendarCreationPanel {
                 Text(TimeFormatters.timeRange(startMin: startMin, endMin: endMin))
                     .font(.system(size: 11))
@@ -83,11 +89,11 @@ struct QuickCreateChoicePopover: View {
 
             modeSelector
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 ZStack(alignment: .leading) {
                     TextField(titlePlaceholder, text: $title)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .focused($focused)
                         .onSubmit { create() }
@@ -108,7 +114,7 @@ struct QuickCreateChoicePopover: View {
                         HStack(spacing: 4) {
                             if !title.isEmpty {
                                 Text(title)
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.system(size: 17, weight: .semibold))
                                     .foregroundStyle(Theme.text)
                                     .fixedSize()
                             }
@@ -197,7 +203,8 @@ struct QuickCreateChoicePopover: View {
                 }
             }
         }
-        .padding(14)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .frame(width: popoverWidth)
         .background(Theme.surface)
         .onAppear {
@@ -462,17 +469,17 @@ struct QuickCreateChoicePopover: View {
                 .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
                 .foregroundStyle(isSelected ? tint : Theme.dim)
                 .lineLimit(1)
-                .frame(maxWidth: .infinity, minHeight: 28)
-                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity, minHeight: 24)
+                .padding(.horizontal, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 7)
                         .fill(isSelected ? tint.opacity(0.12) : Color.clear)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 7)
                         .strokeBorder(isSelected ? tint.opacity(0.24) : Theme.borderSubtle.opacity(0.38), lineWidth: 1)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 8))
+                .contentShape(RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.cadencePlain)
     }

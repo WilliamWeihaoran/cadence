@@ -13,13 +13,11 @@ enum macOSRootLifecycleSupport {
         }
         TaskCompletionAnimationManager.shared.modelContext = modelContext
         installKeyMonitorIfNeeded()
-        GlobalHotKeyManager.shared.registerIfNeeded()
         CalendarManager.shared.refreshAuthorizationState()
     }
 
     static func handleDisappear(removeKeyMonitor: () -> Void) {
         removeKeyMonitor()
-        GlobalHotKeyManager.shared.unregister()
     }
 
     static func handleSelectionChange(

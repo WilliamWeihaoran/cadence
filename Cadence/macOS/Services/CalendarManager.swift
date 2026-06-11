@@ -8,6 +8,25 @@ import EventKit
 import SwiftData
 import Observation
 
+enum CalendarRecurrenceEditScope: String, CaseIterable, Hashable {
+    case thisOccurrence
+    case futureOccurrences
+
+    var label: String {
+        switch self {
+        case .thisOccurrence: return "Only This Event"
+        case .futureOccurrences: return "This And Future Events"
+        }
+    }
+
+    var eventSpan: EKSpan {
+        switch self {
+        case .thisOccurrence: return .thisEvent
+        case .futureOccurrences: return .futureEvents
+        }
+    }
+}
+
 @Observable
 final class CalendarManager {
 
@@ -235,11 +254,41 @@ final class CalendarManager {
     // MARK: - Update External Event (iCal event edited in Cadence)
 
     /// Update an EKEvent's title and time, then save back to iCal.
-    func updateEvent(_ event: EKEvent, title: String, startMin: Int, durationMinutes: Int, dateKey: String, calendarID: String? = nil, notes: String? = nil) {
+    func updateEvent(
+        _ event: EKEvent,
+        title: String,
+        startMin: Int,
+        durationMinutes: Int,
+        dateKey: String,
+        calendarID: String? = nil,
+        notes: String? = nil,
+        scope: CalendarRecurrenceEditScope = .thisOccurrence
+    ) {
         guard isAuthorized, let baseDate = DateFormatters.date(from: dateKey) else { return }
         let cal = Calendar.current
         let startDate = cal.date(byAdding: .minute, value: startMin, to: baseDate) ?? baseDate
         let endDate = cal.date(byAdding: .minute, value: max(5, durationMinutes), to: startDate) ?? startDate
+        updateEvent(
+            event,
+            title: title,
+            startDate: startDate,
+            endDate: endDate,
+            calendarID: calendarID,
+            notes: notes,
+            scope: scope
+        )
+    }
+
+    func updateEvent(
+        _ event: EKEvent,
+        title: String,
+        startDate: Date,
+        endDate: Date,
+        calendarID: String? = nil,
+        notes: String? = nil,
+        scope: CalendarRecurrenceEditScope = .thisOccurrence
+    ) {
+        guard isAuthorized, endDate > startDate else { return }
         event.title = title.isEmpty ? "Untitled" : title
         event.startDate = startDate
         event.endDate = endDate
@@ -252,7 +301,7 @@ final class CalendarManager {
             event.calendar = targetCalendar
         }
         do {
-            try store.save(event, span: .thisEvent)
+            try store.save(event, span: scope.eventSpan)
         } catch {
             print("CalendarManager: failed to update event: \(error)")
         }
@@ -280,10 +329,10 @@ final class CalendarManager {
     // MARK: - Delete Event
 
     /// Delete an EKEvent directly (used from the event edit popover).
-    func deleteEvent(_ event: EKEvent) {
+    func deleteEvent(_ event: EKEvent, scope: CalendarRecurrenceEditScope = .thisOccurrence) {
         guard isAuthorized else { return }
         do {
-            try store.remove(event, span: .thisEvent)
+            try store.remove(event, span: scope.eventSpan)
         } catch {
             print("CalendarManager: failed to delete event: \(error)")
         }

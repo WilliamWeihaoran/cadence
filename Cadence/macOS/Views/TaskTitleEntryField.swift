@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import SwiftUI
 
 struct TaskTitleEntryField: View {
@@ -9,6 +10,7 @@ struct TaskTitleEntryField: View {
     let previewFont: Font
     let lineLimit: ClosedRange<Int>
     let autofocus: Bool
+    let suppressInitialSelection: Bool
     let onSubmit: (() -> Void)?
     let onDateNudge: ((Int) -> Void)?
     let contexts: [Context]
@@ -26,6 +28,7 @@ struct TaskTitleEntryField: View {
     @State private var isTagMode = false
     @State private var tagSearchQuery = ""
     @State private var tagHighlightIdx = 0
+    @State private var shouldSuppressInitialTitleSelection = false
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isTildeSearchFocused: Bool
 
@@ -46,6 +49,7 @@ struct TaskTitleEntryField: View {
         previewFont: Font? = nil,
         lineLimit: ClosedRange<Int> = 1...1,
         autofocus: Bool = false,
+        suppressInitialSelection: Bool = false,
         contexts: [Context] = [],
         areas: [Area] = [],
         projects: [Project] = [],
@@ -64,6 +68,7 @@ struct TaskTitleEntryField: View {
         self.previewFont = previewFont ?? font
         self.lineLimit = lineLimit
         self.autofocus = autofocus
+        self.suppressInitialSelection = suppressInitialSelection
         self.contexts = contexts
         self.areas = areas
         self.projects = projects
@@ -89,6 +94,15 @@ struct TaskTitleEntryField: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
                 .focused($isTitleFocused)
+                .background {
+                    if suppressInitialSelection {
+                        TaskTitleInitialSelectionSuppressor(
+                            expectedText: title,
+                            shouldCollapseSelection: $shouldSuppressInitialTitleSelection
+                        )
+                        .frame(width: 0, height: 0)
+                    }
+                }
                 .onSubmit {
                     applyTitleShortcuts()
                     onSubmit?()
@@ -97,18 +111,12 @@ struct TaskTitleEntryField: View {
                     guard tildeMode == .none, !isTagMode else { return }
                     if canUseTildeRouting,
                        let shortcut = TaskTitleSupport.containerShortcut(in: newValue) {
-                        title = shortcut.prefix
-                        tildeSearchQuery = shortcut.query
-                        tildeHighlightIdx = 0
-                        tildeMode = .list
+                        enterTildeSearch(shortcut)
                         return
                     }
                     if canUseTagRouting,
                        let shortcut = TaskTitleSupport.tagShortcut(in: newValue) {
-                        title = shortcut.prefix
-                        tagSearchQuery = shortcut.query
-                        tagHighlightIdx = 0
-                        isTagMode = true
+                        enterTagSearch(shortcut)
                         return
                     }
                     syncPriorityShortcut(from: newValue)
@@ -129,12 +137,26 @@ struct TaskTitleEntryField: View {
             }
         }
         .onAppear {
+            if suppressInitialSelection {
+                shouldSuppressInitialTitleSelection = true
+            }
             guard autofocus else { return }
             DispatchQueue.main.async { isTitleFocused = true }
         }
         .onChange(of: isTitleFocused) { _, focused in
             guard !focused, !isEditingInlineShortcut else { return }
             applyTitleShortcuts()
+        }
+        .onChange(of: tildeMode) { _, mode in
+            if mode == .none {
+                isTildeSearchFocused = false
+            } else {
+                focusTildeSearch()
+            }
+        }
+        .onChange(of: isTagMode) { _, active in
+            guard active else { return }
+            isTitleFocused = false
         }
     }
 
@@ -280,6 +302,10 @@ struct TaskTitleEntryField: View {
                     }
                     .onKeyPress(.tab) {
                         selectTildeContainer()
+                        return .handled
+                    }
+                    .onKeyPress(.escape) {
+                        restoreLiteralShortcut(marker: "~", query: tildeSearchQuery)
                         return .handled
                     }
                     .onKeyPress(.delete) {
@@ -437,6 +463,27 @@ struct TaskTitleEntryField: View {
         DispatchQueue.main.async { isTitleFocused = true }
     }
 
+    private func enterTildeSearch(_ shortcut: TaskTitleInlineShortcut) {
+        title = shortcut.prefix
+        tildeSearchQuery = shortcut.query
+        tildeHighlightIdx = 0
+        tildeMode = .list
+        focusTildeSearch()
+    }
+
+    private func enterTagSearch(_ shortcut: TaskTitleInlineShortcut) {
+        title = shortcut.prefix
+        tagSearchQuery = shortcut.query
+        tagHighlightIdx = 0
+        isTagMode = true
+        isTitleFocused = false
+    }
+
+    private func focusTildeSearch() {
+        isTitleFocused = false
+        DispatchQueue.main.async { isTildeSearchFocused = true }
+    }
+
     private func selectInlineTag() {
         let tags = filteredTags
         let index = clampedHighlightIndex(tagHighlightIdx, count: tagPickerOptionCount)
@@ -535,6 +582,41 @@ private struct TaskTitleTildeContainerItem: Identifiable {
     let color: Color
 
     var id: TaskContainerSelection { tag }
+}
+
+private struct TaskTitleInitialSelectionSuppressor: NSViewRepresentable {
+    let expectedText: String
+    @Binding var shouldCollapseSelection: Bool
+
+    func makeNSView(context: NSViewRepresentableContext<TaskTitleInitialSelectionSuppressor>) -> NSView {
+        NSView(frame: .zero)
+    }
+
+    func updateNSView(
+        _ nsView: NSView,
+        context: NSViewRepresentableContext<TaskTitleInitialSelectionSuppressor>
+    ) {
+        guard shouldCollapseSelection else { return }
+        collapseSelection(in: nsView, remainingAttempts: 4)
+    }
+
+    private func collapseSelection(in nsView: NSView, remainingAttempts: Int) {
+        DispatchQueue.main.async {
+            guard shouldCollapseSelection else { return }
+            guard let editor = nsView.window?.firstResponder as? NSTextView,
+                  editor.string == expectedText else {
+                guard remainingAttempts > 0 else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+                    collapseSelection(in: nsView, remainingAttempts: remainingAttempts - 1)
+                }
+                return
+            }
+
+            let length = (editor.string as NSString).length
+            editor.setSelectedRange(NSRange(location: length, length: 0))
+            shouldCollapseSelection = false
+        }
+    }
 }
 
 #endif

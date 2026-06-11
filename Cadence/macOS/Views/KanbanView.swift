@@ -410,7 +410,9 @@ struct ListSectionKanbanColumn: View {
             onDueDateChanged: saveSectionChanges,
             onClearDate: {
                 editorHasDueDate = false
-                saveSectionChanges()
+                updateSection { config in
+                    config.dueDate = ""
+                }
             },
             onToggleCompletion: {
                 toggleSectionCompletion()

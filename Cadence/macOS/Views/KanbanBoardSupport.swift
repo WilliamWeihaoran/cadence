@@ -30,7 +30,16 @@ struct KanbanListColumnModel: Identifiable {
 
 enum KanbanBoardSupport {
     static func activeTasks(from allTasks: [AppTask]) -> [AppTask] {
-        CadenceTaskQuerySupport.openTasks(from: allTasks)
+        let tasksInActiveContainers = allTasks.filter { task in
+            if let project = task.project {
+                return project.isActive
+            }
+            if let area = task.area {
+                return area.isActive
+            }
+            return true
+        }
+        return CadenceTaskQuerySupport.openTasks(from: tasksInActiveContainers)
     }
 
     static func inboxTasks(
@@ -94,7 +103,7 @@ enum KanbanBoardSupport {
             )
         ]
 
-        columns += areas.map { area in
+        columns += areas.filter(\.isActive).map { area in
             KanbanListColumnModel(
                 id: "area-\(area.id.uuidString)",
                 title: area.name,
@@ -110,7 +119,7 @@ enum KanbanBoardSupport {
             )
         }
 
-        columns += projects.map { project in
+        columns += projects.filter(\.isActive).map { project in
             KanbanListColumnModel(
                 id: "project-\(project.id.uuidString)",
                 title: project.name,

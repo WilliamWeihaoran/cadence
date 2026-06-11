@@ -27,13 +27,17 @@ struct AllTasksListView: View {
 
     private var todayKey: String { DateFormatters.todayKey() }
 
+    private var visibleTaskUniverse: [AppTask] {
+        allTasks.filter(isTaskInActiveContainer)
+    }
+
     private var activeTasks: [AppTask] {
-        CadenceTaskQuerySupport.openTasks(from: allTasks)
+        CadenceTaskQuerySupport.openTasks(from: visibleTaskUniverse)
             .taskSorted(by: sortField, direction: sortDirection)
     }
 
     private var completedTasks: [AppTask] {
-        allTasks
+        visibleTaskUniverse
             .filter { $0.isDone || $0.isCancelled }
             .sorted { lhs, rhs in
                 let lhsDate = lhs.completedAt ?? lhs.createdAt
@@ -44,7 +48,7 @@ struct AllTasksListView: View {
     }
 
     private var completedTaskCount: Int {
-        allTasks.reduce(into: 0) { count, task in
+        visibleTaskUniverse.reduce(into: 0) { count, task in
             if task.isDone || task.isCancelled {
                 count += 1
             }
@@ -52,7 +56,17 @@ struct AllTasksListView: View {
     }
 
     private var tasksByID: [UUID: AppTask] {
-        Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: visibleTaskUniverse.map { ($0.id, $0) })
+    }
+
+    private func isTaskInActiveContainer(_ task: AppTask) -> Bool {
+        if let project = task.project {
+            return project.isActive
+        }
+        if let area = task.area {
+            return area.isActive
+        }
+        return true
     }
 
     private func flatSections(from activeTasks: [AppTask]) -> [AllTasksFlatSection] {

@@ -14,6 +14,7 @@ struct TaskEmbedFieldEditorPopover: View {
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
+    @Query private var allTasks: [AppTask]
 
     @Bindable var task: AppTask
     let initialField: MarkdownTaskEmbedField
@@ -21,6 +22,7 @@ struct TaskEmbedFieldEditorPopover: View {
 
     @State private var dateSelection = Date()
     @State private var dateViewMonth = Date()
+    @State private var pendingRecurrenceRule: TaskRecurrenceRule?
 
     var body: some View {
         content
@@ -28,6 +30,26 @@ struct TaskEmbedFieldEditorPopover: View {
             .frame(width: popoverWidth)
             .background(Theme.surfaceElevated)
             .onAppear { resetDateState() }
+            .confirmationDialog(
+                "Change repeating task?",
+                isPresented: Binding(
+                    get: { pendingRecurrenceRule != nil },
+                    set: { if !$0 { pendingRecurrenceRule = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button(TaskRecurrenceEditScope.thisTask.label) {
+                    applyPendingRecurrenceRule(scope: .thisTask)
+                }
+                Button(TaskRecurrenceEditScope.thisAndFuture.label) {
+                    applyPendingRecurrenceRule(scope: .thisAndFuture)
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingRecurrenceRule = nil
+                }
+            } message: {
+                Text("Choose whether this repeat change applies only here or to this task and future instances.")
+            }
     }
 
     @ViewBuilder
@@ -153,9 +175,7 @@ struct TaskEmbedFieldEditorPopover: View {
             optionList(title: "Repeat") {
                 ForEach(TaskRecurrenceRule.allCases, id: \.self) { rule in
                     optionButton(rule.label, isSelected: task.recurrenceRule == rule) {
-                        task.recurrenceRule = rule
-                        persist()
-                        dismiss()
+                        selectRecurrenceRule(rule)
                     }
                 }
             }
@@ -300,6 +320,34 @@ struct TaskEmbedFieldEditorPopover: View {
             task.status = .cancelled
         }
         persist()
+    }
+
+    private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) {
+        guard task.recurrenceRule != rule else {
+            dismiss()
+            return
+        }
+
+        if task.isRecurrenceSeriesMember {
+            pendingRecurrenceRule = rule
+        } else {
+            TaskWorkflowService.applyRecurrenceRule(rule, to: task, allTasks: allTasks, scope: .thisTask)
+            persist()
+            dismiss()
+        }
+    }
+
+    private func applyPendingRecurrenceRule(scope: TaskRecurrenceEditScope) {
+        guard let pendingRecurrenceRule else { return }
+        TaskWorkflowService.applyRecurrenceRule(
+            pendingRecurrenceRule,
+            to: task,
+            allTasks: allTasks,
+            scope: scope
+        )
+        self.pendingRecurrenceRule = nil
+        persist()
+        dismiss()
     }
 
     private func persist() {

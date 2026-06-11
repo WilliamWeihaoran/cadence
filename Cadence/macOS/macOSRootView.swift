@@ -105,7 +105,10 @@ struct macOSRootView: View {
             macOSRootLifecycleSupport.handleDisappear(removeKeyMonitor: removeKeyMonitor)
         }
         .onChange(of: calendarManager.storeVersion) {
-            macOSRootStateSupport.clearCalendarLinkedTasks(modelContext: activeModelContext ?? modelContext)
+            macOSRootStateSupport.clearMissingCalendarLinkedTasks(
+                modelContext: activeModelContext ?? modelContext,
+                calendarManager: calendarManager
+            )
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else {

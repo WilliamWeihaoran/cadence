@@ -76,14 +76,12 @@ struct QuickCreateTaskDetailsView: View {
     let onContainerChanged: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            TaskInspectorInfoCard {
-                QuickCreateSlotMetadataRows(dateKey: dateKey, startMin: startMin, endMin: endMin)
+        VStack(alignment: .leading, spacing: 10) {
+            QuickCreateSlotSummary(dateKey: dateKey, startMin: startMin, endMin: endMin)
 
-                Divider().background(Theme.borderSubtle.opacity(0.7))
-
+            QuickCreateCompactSection {
                 TaskInspectorDetailRow(title: "List", icon: "tray") {
-                    HStack(alignment: .center, spacing: 8) {
+                    HStack(alignment: .center, spacing: 6) {
                         ContainerPickerBadge(
                             selection: $selectedContainer,
                             contexts: contexts,
@@ -103,22 +101,14 @@ struct QuickCreateTaskDetailsView: View {
                 }
             }
 
-            TaskInspectorInfoCard {
+            QuickCreateCompactSection {
                 TaskInspectorDetailRow(title: "Notes", icon: "note.text") {
-                    notesEditor
-                }
-
-                Divider().background(Theme.borderSubtle.opacity(0.7))
-
-                TaskInspectorDetailRow(title: "Subtasks", icon: "checklist") {
-                    subtasksEditor
+                    QuickCreateNotesEditor(text: $notes, minHeight: 64)
                 }
             }
-        }
-    }
 
-    private var notesEditor: some View {
-        QuickCreateNotesEditor(text: $notes)
+            subtasksEditor
+        }
     }
 
     private var subtasksEditor: some View {
@@ -199,12 +189,10 @@ struct QuickCreateEventDetailsView: View {
     @Binding var notes: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            TaskInspectorInfoCard {
-                QuickCreateSlotMetadataRows(dateKey: dateKey, startMin: startMin, endMin: endMin)
+        VStack(alignment: .leading, spacing: 10) {
+            QuickCreateSlotSummary(dateKey: dateKey, startMin: startMin, endMin: endMin)
 
-                Divider().background(Theme.borderSubtle.opacity(0.7))
-
+            QuickCreateCompactSection {
                 TaskInspectorDetailRow(title: "Calendar", icon: "calendar") {
                     if calendars.isEmpty {
                         Text("No writable calendars")
@@ -222,9 +210,9 @@ struct QuickCreateEventDetailsView: View {
                 }
             }
 
-            TaskInspectorInfoCard {
+            QuickCreateCompactSection {
                 TaskInspectorDetailRow(title: "Notes", icon: "note.text") {
-                    QuickCreateNotesEditor(text: $notes, minHeight: 150)
+                    QuickCreateNotesEditor(text: $notes, minHeight: 84)
                 }
             }
         }
@@ -243,12 +231,10 @@ struct QuickCreateBundleDetailsView: View {
     @Binding var selectedTaskIDs: [UUID]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            TaskInspectorInfoCard {
-                QuickCreateSlotMetadataRows(dateKey: dateKey, startMin: startMin, endMin: endMin)
-            }
+        VStack(alignment: .leading, spacing: 10) {
+            QuickCreateSlotSummary(dateKey: dateKey, startMin: startMin, endMin: endMin)
 
-            TaskInspectorInfoCard {
+            QuickCreateCompactSection {
                 TaskInspectorDetailRow(title: "Tasks", icon: "checklist") {
                     QuickCreateBundleTaskSelectionView(
                         bundleDateKey: bundleDateKey,
@@ -260,6 +246,38 @@ struct QuickCreateBundleDetailsView: View {
                     )
                 }
             }
+        }
+    }
+}
+
+struct QuickCreateCompactSection<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            content()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(Theme.surface.opacity(0.76))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
+        )
+    }
+}
+
+struct QuickCreateSlotSummary: View {
+    let dateKey: String
+    let startMin: Int
+    let endMin: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            QuickCreateInspectorValue(text: DateFormatters.relativeDate(from: dateKey), icon: "calendar")
+            QuickCreateInspectorValue(text: TimeFormatters.timeRange(startMin: startMin, endMin: endMin), icon: "clock")
+            Spacer(minLength: 0)
         }
     }
 }
@@ -293,10 +311,10 @@ struct QuickCreateInspectorValue: View {
                 .foregroundStyle(Theme.muted)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
         .background(Theme.surfaceElevated.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
     }
 }
 
@@ -319,7 +337,7 @@ struct QuickCreateNotesEditor: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.text)
                 .frame(minHeight: minHeight)
-                .padding(8)
+                .padding(7)
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
         }
@@ -357,7 +375,7 @@ struct QuickCreateBundleTaskSelectionView: View {
                 projects: projects,
                 excludedTaskIDs: selectedTaskSet,
                 searchText: $searchText,
-                maxHeight: 188,
+                maxHeight: 170,
                 onAdd: addSelectedTask
             )
         }

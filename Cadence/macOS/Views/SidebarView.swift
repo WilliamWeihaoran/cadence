@@ -15,6 +15,18 @@ struct SidebarView: View {
 
     @State private var contextForNewList: Context? = nil
 
+    private var tasksInActiveContainers: [AppTask] {
+        allTasks.filter { task in
+            if let project = task.project {
+                return project.isActive
+            }
+            if let area = task.area {
+                return area.isActive
+            }
+            return true
+        }
+    }
+
     private func count(for destination: SidebarStaticDestination) -> Int? {
         switch destination {
         case .today:
@@ -26,7 +38,7 @@ struct SidebarView: View {
             )
         case .allTasks:
             return CadenceTaskQuerySupport.badgeCount(
-                CadenceTaskQuerySupport.openTaskCount(from: allTasks)
+                CadenceTaskQuerySupport.openTaskCount(from: tasksInActiveContainers)
             )
         case .inbox:
             return CadenceTaskQuerySupport.badgeCount(

@@ -158,25 +158,30 @@ struct CalendarBoardEventCard: View {
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onHover { isHovered = $0 }
         .popover(isPresented: $showPopover, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
+            let editItem = item.editItem
             CalendarEventEditPopover(
-                item: item.editItem,
-                onSave: { title, startMin, duration, calendarID in
-                    calendarManager.updateEvent(
-                        item.ekEvent,
-                        title: title,
-                        startMin: startMin,
-                        durationMinutes: duration,
-                        dateKey: item.dateKey,
-                        calendarID: calendarID
-                    )
+                item: editItem,
+                onSave: { title, startMin, duration, calendarID, scope in
+                    if let range = editItem.eventDateRangeForEditedSegment(startMin: startMin, durationMinutes: duration) {
+                        calendarManager.updateEvent(
+                            item.ekEvent,
+                            title: title,
+                            startDate: range.start,
+                            endDate: range.end,
+                            calendarID: calendarID,
+                            scope: scope
+                        )
+                    }
                     showPopover = false
                 },
-                onDelete: {
+                onDelete: { scope in
                     deleteConfirmationManager.present(
                         title: "Delete Calendar Event?",
-                        message: "This will permanently delete \"\(item.title)\" from your calendar."
+                        message: scope == .futureOccurrences
+                            ? "This will permanently delete \"\(item.title)\" and future events from your calendar."
+                            : "This will permanently delete \"\(item.title)\" from your calendar."
                     ) {
-                        calendarManager.deleteEvent(item.ekEvent)
+                        calendarManager.deleteEvent(item.ekEvent, scope: scope)
                         showPopover = false
                     }
                 }
@@ -197,7 +202,12 @@ struct CalendarBoardEventCard: View {
                     .foregroundStyle(Theme.text)
                     .lineLimit(2)
 
-                CalendarBoardMetadataChip(title: subtitle, systemImage: item.isAllDay ? "sun.max" : "clock", tint: tint)
+                HStack(spacing: 6) {
+                    CalendarBoardMetadataChip(title: subtitle, systemImage: item.isAllDay ? "sun.max" : "clock", tint: tint)
+                    if item.isRecurringSeriesMember {
+                        CalendarBoardMetadataChip(title: "Repeats", systemImage: "repeat", tint: tint)
+                    }
+                }
             }
         }
         .padding(10)

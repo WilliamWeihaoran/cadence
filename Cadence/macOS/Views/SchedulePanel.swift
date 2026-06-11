@@ -176,7 +176,8 @@ struct SchedulePanel: View {
         .onChange(of: calendarManager.storeVersion) {
             SchedulePanelDataSupport.syncLinkedTasks(
                 allTasks: allTasks,
-                modelContext: modelContext
+                modelContext: modelContext,
+                calendarManager: calendarManager
             )
         }
     }

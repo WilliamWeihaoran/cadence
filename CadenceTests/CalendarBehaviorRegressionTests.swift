@@ -3,6 +3,7 @@ import Testing
 #if os(macOS)
 import EventKit
 import SwiftUI
+import SwiftData
 #endif
 @testable import Cadence
 
@@ -245,6 +246,69 @@ struct CalendarBehaviorRegressionTests {
         #expect(fullFrame.height == CGFloat(8 * 48))
     }
 
+    @Test func workHoursHighlightSkipsWeekendDays() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+
+        let weekday = calendar.date(from: DateComponents(year: 2026, month: 6, day: 8))!
+        let weekend = calendar.date(from: DateComponents(year: 2026, month: 6, day: 13))!
+
+        #expect(CalendarWorkHoursPreferences.shouldShowHighlight(on: weekday, calendar: calendar))
+        #expect(!CalendarWorkHoursPreferences.shouldShowHighlight(on: weekend, calendar: calendar))
+    }
+
+    @Test func recurringTaskCompletionStampsSeriesMetadataOnNextTask() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Daily review")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-06-08"
+        task.scheduledStartMin = 540
+        context.insert(task)
+
+        TaskWorkflowService.markDone(task, in: context)
+        try context.save()
+
+        let spawnedID = try #require(task.recurrenceSpawnedTaskID)
+        let descriptor = FetchDescriptor<AppTask>()
+        let tasks = try context.fetch(descriptor)
+        let next = try #require(tasks.first { $0.id == spawnedID })
+
+        #expect(task.recurrenceSeriesID == task.id)
+        #expect(next.recurrenceSeriesID == task.recurrenceSeriesID)
+        #expect(next.recurrenceSourceTaskID == task.id)
+        #expect(next.recurrenceOccurrenceIndex == 1)
+        #expect(next.scheduledDate == "2026-06-09")
+    }
+
+    @Test func recurrenceRuleScopeCanTargetOnlyCurrentOrFutureTasks() {
+        let first = AppTask(title: "First")
+        let second = AppTask(title: "Second")
+        let third = AppTask(title: "Third")
+        first.recurrenceRule = .daily
+        second.recurrenceRule = .daily
+        third.recurrenceRule = .daily
+        first.scheduledDate = "2026-06-08"
+        second.scheduledDate = "2026-06-09"
+        third.scheduledDate = "2026-06-10"
+        first.recurrenceSpawnedTaskID = second.id
+        second.recurrenceSpawnedTaskID = third.id
+        let seriesID = first.id.uuidString
+        first.recurrenceSeriesIDRaw = seriesID
+        second.recurrenceSeriesIDRaw = seriesID
+        third.recurrenceSeriesIDRaw = seriesID
+
+        TaskWorkflowService.applyRecurrenceRule(.weekly, to: second, allTasks: [first, second, third], scope: .thisTask)
+        #expect(first.recurrenceRule == .daily)
+        #expect(second.recurrenceRule == .weekly)
+        #expect(third.recurrenceRule == .daily)
+
+        TaskWorkflowService.applyRecurrenceRule(.monthly, to: second, allTasks: [first, second, third], scope: .thisAndFuture)
+        #expect(first.recurrenceRule == .daily)
+        #expect(second.recurrenceRule == .monthly)
+        #expect(third.recurrenceRule == .monthly)
+    }
+
     @Test func boardOrderingIsSequentialAcrossEventsBundlesAndTasks() {
         let earlyTask = AppTask(title: "9 am task")
         earlyTask.scheduledDate = "2026-06-02"
@@ -352,6 +416,48 @@ struct CalendarBehaviorRegressionTests {
         #expect(secondSegments.map(\.startMin) == [0])
         #expect(secondSegments.map(\.durationMinutes) == [6 * 60])
         #expect(unrelatedSegments.isEmpty)
+    }
+
+    @Test func crossMidnightTimedEventSegmentsKeepFullEventRangeForSaving() throws {
+        let store = EKEventStore()
+        let calendar = Calendar.current
+        let firstDay = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 11)))
+        let secondDay = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 12)))
+        let start = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 11, hour: 18)))
+        let end = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 12, hour: 6)))
+        let event = EKEvent(eventStore: store)
+        event.title = "Overnight work"
+        event.startDate = start
+        event.endDate = end
+        event.isAllDay = false
+
+        let firstSegment = try #require(CalendarEventItem(event: event, clippedTo: firstDay, calendar: calendar))
+        let secondSegment = try #require(CalendarEventItem(event: event, clippedTo: secondDay, calendar: calendar))
+        let unchangedSecondDayRange = try #require(secondSegment.eventDateRangeForEditedSegment(
+            startMin: secondSegment.startMin,
+            durationMinutes: secondSegment.durationMinutes,
+            calendar: calendar
+        ))
+        let movedSecondDayRange = try #require(secondSegment.eventDateRangeForMovedSegment(
+            startMin: secondSegment.startMin + 60,
+            calendar: calendar
+        ))
+        let movedStart = try #require(calendar.date(byAdding: .minute, value: 60, to: start))
+        let movedEnd = try #require(calendar.date(byAdding: .minute, value: 60, to: end))
+
+        #expect(firstSegment.isMultiDayTimedEvent)
+        #expect(firstSegment.isFirstSegment)
+        #expect(!firstSegment.isLastSegment)
+        #expect(secondSegment.isMultiDayTimedEvent)
+        #expect(!secondSegment.isFirstSegment)
+        #expect(secondSegment.isLastSegment)
+        #expect(secondSegment.eventDateKey == "2026-06-11")
+        #expect(secondSegment.eventStartMin == 18 * 60)
+        #expect(secondSegment.eventDurationMinutes == 12 * 60)
+        #expect(unchangedSecondDayRange.start == start)
+        #expect(unchangedSecondDayRange.end == end)
+        #expect(movedSecondDayRange.start == movedStart)
+        #expect(movedSecondDayRange.end == movedEnd)
     }
 }
 #endif

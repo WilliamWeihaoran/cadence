@@ -108,7 +108,7 @@ struct TimelineDayCanvas: View {
                 onTap: resetCanvasSelection
             )
 
-            if showWorkHoursHighlight {
+            if showWorkHoursHighlight && CalendarWorkHoursPreferences.shouldShowHighlight(on: date) {
                 TimelineWorkHoursHighlightLayer(
                     width: width,
                     metrics: metrics,

@@ -424,16 +424,18 @@ private struct LifecycleButton: View {
     let tint: Color
     let action: () -> Void
 
+    @State private var isHovered = false
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(tint.opacity(0.16))
+                    .fill(tint.opacity(isHovered ? 0.24 : 0.16))
                     .frame(width: 30, height: 30)
                     .overlay {
                         Circle()
                             .fill(tint)
-                            .frame(width: 8, height: 8)
+                            .frame(width: isHovered ? 9 : 8, height: isHovered ? 9 : 8)
                     }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -450,14 +452,20 @@ private struct LifecycleButton: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surfaceElevated)
+            .background(Theme.surfaceElevated.opacity(isHovered ? 0.96 : 1))
+            .background(tint.opacity(isHovered ? 0.08 : 0.02))
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .stroke(tint.opacity(0.24), lineWidth: 1)
+                    .stroke(tint.opacity(isHovered ? 0.52 : 0.24), lineWidth: isHovered ? 1.2 : 1)
             )
+            .shadow(color: tint.opacity(isHovered ? 0.14 : 0), radius: 8, x: 0, y: 4)
+            .offset(y: isHovered ? -1 : 0)
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .animation(.easeOut(duration: 0.12), value: isHovered)
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
     }
 }
 

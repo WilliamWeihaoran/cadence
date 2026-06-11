@@ -53,17 +53,14 @@ enum macOSRootStateSupport {
         }
     }
 
-    static func clearCalendarLinkedTasks(modelContext: ModelContext) {
-        let descriptor = FetchDescriptor<AppTask>()
-        let tasks = (try? modelContext.fetch(descriptor)) ?? []
-        var changed = false
-        for task in tasks where !task.calendarEventID.isEmpty {
-            task.calendarEventID = ""
-            changed = true
-        }
-        if changed {
-            try? modelContext.save()
-        }
+    static func clearMissingCalendarLinkedTasks(
+        modelContext: ModelContext,
+        calendarManager: CalendarManager
+    ) {
+        CalendarLinkedTaskSupport.clearMissingEventLinks(
+            modelContext: modelContext,
+            calendarManager: calendarManager
+        )
     }
 
     static func makeCommandContext(

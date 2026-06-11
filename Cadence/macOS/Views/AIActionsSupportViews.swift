@@ -74,13 +74,12 @@ struct NoteActionMenu: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            actionButton
-
-            if showsPicker {
-                pickerCard
+        actionButton
+            .overlay(alignment: .topTrailing) {
+                if showsPicker {
+                    pickerCard
+                }
             }
-        }
         .zIndex(showsPicker ? 1_000 : 0)
         .sheet(item: $payload, content: reviewSheet)
         .alert("AI Action Failed", isPresented: Binding(

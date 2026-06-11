@@ -84,6 +84,9 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
     var calendarEventID: String = ""    // EKEvent identifier
     var recurrenceRaw: String = TaskRecurrenceRule.none.rawValue
     var recurrenceSpawnedTaskIDRaw: String = ""
+    var recurrenceSeriesIDRaw: String = ""
+    var recurrenceSourceTaskIDRaw: String = ""
+    var recurrenceOccurrenceIndex: Int = 0
     var sectionName: String = TaskSectionDefaults.defaultName
     var order: Int = 0
     var createdAt: Date = Date()
@@ -107,6 +110,19 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
     var recurrenceSpawnedTaskID: UUID? {
         get { UUID(uuidString: recurrenceSpawnedTaskIDRaw) }
         set { recurrenceSpawnedTaskIDRaw = newValue?.uuidString ?? "" }
+    }
+
+    var recurrenceSeriesID: UUID {
+        UUID(uuidString: recurrenceSeriesIDRaw) ?? id
+    }
+
+    var recurrenceSourceTaskID: UUID? {
+        get { UUID(uuidString: recurrenceSourceTaskIDRaw) }
+        set { recurrenceSourceTaskIDRaw = newValue?.uuidString ?? "" }
+    }
+
+    var isRecurrenceSeriesMember: Bool {
+        isRecurring || !recurrenceSeriesIDRaw.isEmpty || !recurrenceSourceTaskIDRaw.isEmpty
     }
 
     /// End time in minutes from midnight (start + duration, default 30min if no estimate)

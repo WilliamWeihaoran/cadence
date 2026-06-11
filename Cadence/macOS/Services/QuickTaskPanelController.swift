@@ -140,7 +140,7 @@ final class QuickTaskPanelController: NSObject {
         panel.isMovableByWindowBackground = true
         panel.isFloatingPanel = true
         panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .ignoresCycle]
         panel.hidesOnDeactivate = false
         panel.backgroundColor = .clear
         panel.isOpaque = false
@@ -158,8 +158,7 @@ final class QuickTaskPanelController: NSObject {
         // first show before SwiftUI has completed its initial layout pass.
         let w: CGFloat = max(panel.frame.width > 10 ? panel.frame.width : panelContentSize(for: Self.panelSurfaceSize).width, 280)
         let h: CGFloat = max(panel.frame.height > 10 ? panel.frame.height : panelContentSize(for: Self.panelSurfaceSize).height, 280)
-        let mouseLocation = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main
+        let screen = screenForPanelPlacement()
 
         guard let screen else { panel.center(); return }
 
@@ -168,6 +167,21 @@ final class QuickTaskPanelController: NSObject {
             x: visibleFrame.midX - w / 2,
             y: visibleFrame.midY - h / 2
         ))
+    }
+
+    private func screenForPanelPlacement() -> NSScreen? {
+        let validScreens = NSScreen.screens.filter { screen in
+            let frame = screen.frame
+            return frame.width.isFinite &&
+                frame.height.isFinite &&
+                frame.origin.x.isFinite &&
+                frame.origin.y.isFinite &&
+                !frame.isEmpty
+        }
+        let mouseLocation = NSEvent.mouseLocation
+        return validScreens.first { $0.frame.contains(mouseLocation) } ??
+            NSScreen.main ??
+            validScreens.first
     }
 
     private func setPanelContentSize(_ size: NSSize, for panel: NSPanel) {

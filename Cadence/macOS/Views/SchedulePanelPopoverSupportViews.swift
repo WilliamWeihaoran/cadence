@@ -38,6 +38,7 @@ struct TaskDetailHeaderSection: View {
                     font: .system(size: 16, weight: .bold),
                     previewFont: .system(size: 17, weight: .bold),
                     lineLimit: 1...8,
+                    suppressInitialSelection: true,
                     contexts: contexts,
                     areas: areas,
                     projects: projects,

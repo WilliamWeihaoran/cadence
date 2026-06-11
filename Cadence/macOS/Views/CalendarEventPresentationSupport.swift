@@ -9,8 +9,20 @@ struct CalendarEventItem: Identifiable {
     let dateKey: String
     let startMin: Int
     let durationMinutes: Int
+    let eventStartDate: Date
+    let eventEndDate: Date
+    let eventDateKey: String
+    let eventStartMin: Int
+    let eventDurationMinutes: Int
+    let isMultiDayTimedEvent: Bool
+    let isFirstSegment: Bool
+    let isLastSegment: Bool
     let calendarColor: Color
     let calendarTitle: String
+    let seriesIdentifier: String
+    let occurrenceDateKey: String
+    let occurrenceStartMin: Int
+    let isRecurringSeriesMember: Bool
     let ekEvent: EKEvent
 
     init(event: EKEvent) {
@@ -36,6 +48,9 @@ struct CalendarEventItem: Identifiable {
     }
 
     private init(event: EKEvent, segmentStart: Date, segmentEnd: Date, day: Date, calendar: Calendar = .current) {
+        let eventStart = event.startDate ?? event.occurrenceDate ?? segmentStart
+        let fallbackEventEnd = calendar.date(byAdding: .minute, value: 5, to: eventStart) ?? eventStart
+        let eventEnd = max(event.endDate ?? fallbackEventEnd, fallbackEventEnd)
         self.eventIdentifier = CalendarEventIdentity.rawIdentifier(for: event)
         self.id = CalendarEventIdentity.identifier(for: event)
         self.title = event.title ?? "Untitled"
@@ -45,9 +60,61 @@ struct CalendarEventItem: Identifiable {
         self.startMin = max(0, (comps.hour ?? 0) * 60 + (comps.minute ?? 0))
         let raw = max(5, Int(segmentEnd.timeIntervalSince(segmentStart) / 60))
         self.durationMinutes = min(raw, 24 * 60 - self.startMin)
+        self.eventStartDate = eventStart
+        self.eventEndDate = eventEnd
+        self.eventDateKey = DateFormatters.dateKey(from: eventStart)
+        self.eventStartMin = CalendarEventIdentity.startMinute(for: eventStart, calendar: calendar)
+        self.eventDurationMinutes = max(5, Int(eventEnd.timeIntervalSince(eventStart) / 60))
+        self.isMultiDayTimedEvent = !calendar.isDate(eventStart, inSameDayAs: eventEnd)
+        self.isFirstSegment = abs(segmentStart.timeIntervalSince(eventStart)) < 1
+        self.isLastSegment = abs(segmentEnd.timeIntervalSince(eventEnd)) < 1
         self.calendarColor = Color(cgColor: event.calendar?.cgColor ?? CGColor(gray: 0.5, alpha: 1))
         self.calendarTitle = event.calendar?.title ?? ""
+        self.seriesIdentifier = CalendarEventIdentity.lookupIdentifier(from: self.id)
+        self.occurrenceDateKey = DateFormatters.dateKey(from: event.startDate ?? event.occurrenceDate ?? dayStart)
+        self.occurrenceStartMin = CalendarEventIdentity.startMinute(for: event.startDate ?? event.occurrenceDate ?? segmentStart, calendar: calendar)
+        self.isRecurringSeriesMember = CalendarEventIdentity.isRecurringSeriesMember(event)
         self.ekEvent = event
+    }
+
+    func eventDateRangeForEditedSegment(
+        startMin editedStartMin: Int,
+        durationMinutes editedDurationMinutes: Int,
+        calendar: Calendar = .current
+    ) -> (start: Date, end: Date)? {
+        guard let segmentDay = DateFormatters.date(from: dateKey) else { return nil }
+        let segmentStart = calendar.date(byAdding: .minute, value: editedStartMin, to: segmentDay) ?? segmentDay
+        let segmentEnd = calendar.date(byAdding: .minute, value: max(5, editedDurationMinutes), to: segmentStart) ?? segmentStart
+
+        guard isMultiDayTimedEvent else {
+            return segmentEnd > segmentStart ? (segmentStart, segmentEnd) : nil
+        }
+
+        var nextStart = eventStartDate
+        var nextEnd = eventEndDate
+        if isFirstSegment {
+            nextStart = segmentStart
+        }
+        if isLastSegment {
+            nextEnd = segmentEnd
+        }
+        guard nextEnd > nextStart else { return nil }
+        return (nextStart, nextEnd)
+    }
+
+    func eventDateRangeForMovedSegment(startMin movedStartMin: Int, calendar: Calendar = .current) -> (start: Date, end: Date)? {
+        guard isMultiDayTimedEvent else {
+            return eventDateRangeForEditedSegment(
+                startMin: movedStartMin,
+                durationMinutes: durationMinutes,
+                calendar: calendar
+            )
+        }
+        let deltaMinutes = movedStartMin - startMin
+        let nextStart = calendar.date(byAdding: .minute, value: deltaMinutes, to: eventStartDate) ?? eventStartDate
+        let nextEnd = calendar.date(byAdding: .minute, value: deltaMinutes, to: eventEndDate) ?? eventEndDate
+        guard nextEnd > nextStart else { return nil }
+        return (nextStart, nextEnd)
     }
 }
 
@@ -60,6 +127,10 @@ struct CalendarBoardEventDisplayItem: Identifiable {
     let isAllDay: Bool
     let calendarColor: Color
     let calendarTitle: String
+    let seriesIdentifier: String
+    let occurrenceDateKey: String
+    let occurrenceStartMin: Int
+    let isRecurringSeriesMember: Bool
     let ekEvent: EKEvent
 
     init(timed item: CalendarEventItem) {
@@ -71,6 +142,10 @@ struct CalendarBoardEventDisplayItem: Identifiable {
         isAllDay = false
         calendarColor = item.calendarColor
         calendarTitle = item.calendarTitle
+        seriesIdentifier = item.seriesIdentifier
+        occurrenceDateKey = item.occurrenceDateKey
+        occurrenceStartMin = item.occurrenceStartMin
+        isRecurringSeriesMember = item.isRecurringSeriesMember
         ekEvent = item.ekEvent
     }
 
@@ -83,6 +158,11 @@ struct CalendarBoardEventDisplayItem: Identifiable {
         isAllDay = true
         calendarColor = Color(cgColor: event.calendar?.cgColor ?? CGColor(gray: 0.5, alpha: 1))
         calendarTitle = event.calendar?.title ?? ""
+        seriesIdentifier = CalendarEventIdentity.lookupIdentifier(from: id)
+        let sourceDate = event.startDate ?? event.occurrenceDate ?? date
+        occurrenceDateKey = DateFormatters.dateKey(from: sourceDate)
+        occurrenceStartMin = CalendarEventIdentity.startMinute(for: sourceDate, calendar: calendar)
+        isRecurringSeriesMember = CalendarEventIdentity.isRecurringSeriesMember(event)
         ekEvent = event
     }
 
@@ -150,15 +230,23 @@ enum CalendarEventIdentity {
         identifier == self.identifier(for: event) || identifier == rawIdentifier(for: event)
     }
 
+    static func isRecurringSeriesMember(_ event: EKEvent) -> Bool {
+        event.hasRecurrenceRules || event.isDetached || event.occurrenceDate != nil
+    }
+
+    static func startMinute(for date: Date, calendar: Calendar = .current) -> Int {
+        let components = calendar.dateComponents([.hour, .minute], from: date)
+        return ((components.hour ?? 0) * 60) + (components.minute ?? 0)
+    }
+
     private static func recurringOccurrenceDate(for event: EKEvent) -> Date? {
-        guard event.hasRecurrenceRules || event.isDetached else { return nil }
+        guard isRecurringSeriesMember(event) else { return nil }
         return event.occurrenceDate
     }
 
     private static func fallbackIdentifier(for event: EKEvent) -> String {
         let start = event.startDate ?? event.occurrenceDate ?? Date.distantPast
-        let components = Calendar.current.dateComponents([.hour, .minute], from: start)
-        let startMinute = ((components.hour ?? 0) * 60) + (components.minute ?? 0)
+        let startMinute = startMinute(for: start)
         let calendarID = event.calendar?.calendarIdentifier ?? "calendar"
         let title = (event.title ?? "untitled")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -197,9 +285,15 @@ enum CalendarEventPresentationDiagnostics {
         [
             "eventID=\(item.eventIdentifier)",
             "segmentID=\(item.id)",
+            "seriesID=\(item.seriesIdentifier)",
+            "recurring=\(item.isRecurringSeriesMember)",
+            "occurrence=\(item.occurrenceDateKey):\(item.occurrenceStartMin)",
             "date=\(item.dateKey)",
             "start=\(item.startMin)",
             "duration=\(item.durationMinutes)",
+            "eventDate=\(item.eventDateKey)",
+            "eventStart=\(item.eventStartMin)",
+            "eventDuration=\(item.eventDurationMinutes)",
             "title=\(item.title)"
         ].joined(separator: " ")
     }

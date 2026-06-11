@@ -4,13 +4,22 @@ import SwiftUI
 struct CadenceDatePicker: View {
     var label: String = ""
     @Binding var selection: Date
+    var showsClear: Bool = false
+    var onClear: (() -> Void)? = nil
 
     @State private var isOpen = false
     @State private var viewMonth: Date
 
-    init(label: String = "", selection: Binding<Date>) {
+    init(
+        label: String = "",
+        selection: Binding<Date>,
+        showsClear: Bool = false,
+        onClear: (() -> Void)? = nil
+    ) {
         self.label = label
         self._selection = selection
+        self.showsClear = showsClear
+        self.onClear = onClear
         var comps = Calendar.current.dateComponents([.year, .month], from: selection.wrappedValue)
         comps.day = 1
         self._viewMonth = State(initialValue: Calendar.current.date(from: comps) ?? Date())
@@ -39,7 +48,9 @@ struct CadenceDatePicker: View {
             CadenceQuickDatePopover(
                 selection: $selection,
                 viewMonth: $viewMonth,
-                isOpen: $isOpen
+                isOpen: $isOpen,
+                showsClear: showsClear && onClear != nil,
+                onClear: onClear
             )
         }
         .onChange(of: selection) {

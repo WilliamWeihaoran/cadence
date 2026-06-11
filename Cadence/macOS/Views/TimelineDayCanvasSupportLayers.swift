@@ -47,20 +47,15 @@ struct TimelineWorkHoursHighlightLayer: View {
     var body: some View {
         if let highlightFrame {
             RoundedRectangle(cornerRadius: 0, style: .continuous)
-                .fill(Theme.amber.opacity(0.075))
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(Theme.amber.opacity(0.28))
-                        .frame(width: 3)
-                }
+                .fill(Theme.amber.opacity(0.026))
                 .overlay(alignment: .top) {
                     Rectangle()
-                        .fill(Theme.amber.opacity(0.12))
+                        .fill(Theme.amber.opacity(0.055))
                         .frame(height: 1)
                 }
                 .overlay(alignment: .bottom) {
                     Rectangle()
-                        .fill(Theme.amber.opacity(0.1))
+                        .fill(Theme.amber.opacity(0.045))
                         .frame(height: 1)
                 }
                 .frame(width: width, height: highlightFrame.height)

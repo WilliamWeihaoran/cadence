@@ -90,6 +90,10 @@ enum CalendarWorkHoursPreferences {
         return HighlightFrame(y: y, height: height)
     }
 
+    static func shouldShowHighlight(on date: Date, calendar: Calendar = .current) -> Bool {
+        !calendar.isDateInWeekend(date)
+    }
+
     static func displayLabel(startMinute: Int, endMinute: Int) -> String {
         let range = normalizedRange(startMinute: startMinute, endMinute: endMinute)
         return TimeFormatters.timeRange(

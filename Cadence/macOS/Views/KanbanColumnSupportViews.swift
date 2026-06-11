@@ -191,7 +191,11 @@ struct KanbanSectionEditorPopover: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.dim)
 
-                CadenceDatePicker(selection: $editorDueDate)
+                CadenceDatePicker(
+                    selection: $editorDueDate,
+                    showsClear: editorHasDueDate,
+                    onClear: onClearDate
+                )
                     .onChange(of: editorDueDate) { _, _ in
                         editorHasDueDate = true
                         onDueDateChanged()

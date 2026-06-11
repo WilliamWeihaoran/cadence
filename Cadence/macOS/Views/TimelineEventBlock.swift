@@ -7,6 +7,11 @@ import SwiftData
 
 struct TimelineEventBlock: View {
     private enum ResizeEdge { case start, end }
+    private enum PendingEventMutation {
+        case move(startMin: Int)
+        case resize(startMin: Int, durationMinutes: Int)
+        case delete
+    }
 
     let item: CalendarEventItem
     let layout: TimelineEventLayout
@@ -28,6 +33,7 @@ struct TimelineEventBlock: View {
     @State private var resizeOriginStartMin: Int? = nil
     @State private var resizeOriginEndMin: Int? = nil
     @State private var isHovered = false
+    @State private var pendingMutation: PendingEventMutation?
 
     private let resizeHandleHeight: CGFloat = 8
 
@@ -63,7 +69,7 @@ struct TimelineEventBlock: View {
                             title: "Delete Calendar Event?",
                             message: "This will permanently delete \"\(item.title)\" from your calendar."
                         ) {
-                            calendarManager.deleteEvent(item.ekEvent)
+                            requestEventMutation(.delete)
                         }
                     }
                 } else {
@@ -92,10 +98,7 @@ struct TimelineEventBlock: View {
                     .onEnded { _ in
                         guard activeResizeEdge == nil else { return }
                         if let newStart = liveStartMin {
-                            calendarManager.updateEvent(item.ekEvent, title: item.title,
-                                                        startMin: newStart,
-                                                        durationMinutes: item.durationMinutes,
-                                                        dateKey: item.dateKey)
+                            requestEventMutation(.move(startMin: newStart))
                             // Keep liveStartMin set until item refreshes from iCal (onChange clears it)
                         }
                         dragGrabOffset = 0
@@ -113,20 +116,25 @@ struct TimelineEventBlock: View {
             ) {
                 CalendarEventEditPopover(
                     item: item,
-                    onSave: { title, startMin, duration, calendarID in
-                        calendarManager.updateEvent(item.ekEvent, title: title,
-                                                    startMin: startMin,
-                                                    durationMinutes: duration,
-                                                    dateKey: item.dateKey,
-                                                    calendarID: calendarID)
+                    onSave: { title, startMin, duration, calendarID, scope in
+                        if let range = item.eventDateRangeForEditedSegment(startMin: startMin, durationMinutes: duration) {
+                            calendarManager.updateEvent(
+                                item.ekEvent,
+                                title: title,
+                                startDate: range.start,
+                                endDate: range.end,
+                                calendarID: calendarID,
+                                scope: scope
+                            )
+                        }
                         selectedEventID = nil
                     },
-                    onDelete: {
+                    onDelete: { scope in
                         deleteConfirmationManager.present(
                             title: "Delete Calendar Event?",
                             message: "This will permanently delete \"\(item.title)\" from your calendar."
                         ) {
-                            calendarManager.deleteEvent(item.ekEvent)
+                            calendarManager.deleteEvent(item.ekEvent, scope: scope)
                             selectedEventID = nil
                         }
                     }
@@ -138,6 +146,26 @@ struct TimelineEventBlock: View {
                 liveStartMin = nil
                 liveDurationMinutes = nil
                 dragGrabOffset = 0
+            }
+            .confirmationDialog(
+                "Change recurring event?",
+                isPresented: Binding(
+                    get: { pendingMutation != nil },
+                    set: { if !$0 { cancelPendingEventMutation() } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button(CalendarRecurrenceEditScope.thisOccurrence.label) {
+                    applyPendingEventMutation(scope: .thisOccurrence)
+                }
+                Button(CalendarRecurrenceEditScope.futureOccurrences.label) {
+                    applyPendingEventMutation(scope: .futureOccurrences)
+                }
+                Button("Cancel", role: .cancel) {
+                    cancelPendingEventMutation()
+                }
+            } message: {
+                Text("Choose whether this calendar change applies only to this occurrence or to this and future events.")
             }
     }
 
@@ -200,14 +228,70 @@ struct TimelineEventBlock: View {
     private func endResize() {
         let finalStart    = liveStartMin        ?? effectiveStartMin
         let finalDuration = liveDurationMinutes ?? effectiveDuration
-        calendarManager.updateEvent(item.ekEvent, title: item.title,
-                                    startMin: finalStart,
-                                    durationMinutes: finalDuration,
-                                    dateKey: item.dateKey)
+        requestEventMutation(.resize(startMin: finalStart, durationMinutes: finalDuration))
         // Keep live state until item refreshes (onChange clears it)
         activeResizeEdge    = nil
         resizeOriginStartMin = nil
         resizeOriginEndMin   = nil
+    }
+
+    private func requestEventMutation(_ mutation: PendingEventMutation) {
+        if item.isRecurringSeriesMember {
+            pendingMutation = mutation
+        } else {
+            applyEventMutation(mutation, scope: .thisOccurrence)
+        }
+    }
+
+    private func applyPendingEventMutation(scope: CalendarRecurrenceEditScope) {
+        guard let pendingMutation else { return }
+        self.pendingMutation = nil
+        applyEventMutation(pendingMutation, scope: scope)
+    }
+
+    private func cancelPendingEventMutation() {
+        pendingMutation = nil
+        liveStartMin = nil
+        liveDurationMinutes = nil
+        dragGrabOffset = 0
+        activeResizeEdge = nil
+        resizeOriginStartMin = nil
+        resizeOriginEndMin = nil
+    }
+
+    private func applyEventMutation(_ mutation: PendingEventMutation, scope: CalendarRecurrenceEditScope) {
+        switch mutation {
+        case .move(let startMin):
+            updateEventRange(item.eventDateRangeForMovedSegment(startMin: startMin), scope: scope)
+        case .resize(let startMin, let durationMinutes):
+            updateEventRange(
+                item.eventDateRangeForEditedSegment(startMin: startMin, durationMinutes: durationMinutes),
+                scope: scope
+            )
+        case .delete:
+            deleteConfirmationManager.present(
+                title: "Delete Calendar Event?",
+                message: scope == .futureOccurrences
+                    ? "This will permanently delete \"\(item.title)\" and future events from your calendar."
+                    : "This will permanently delete \"\(item.title)\" from your calendar."
+            ) {
+                calendarManager.deleteEvent(item.ekEvent, scope: scope)
+            }
+        }
+    }
+
+    private func updateEventRange(_ range: (start: Date, end: Date)?, scope: CalendarRecurrenceEditScope) {
+        guard let range else {
+            cancelPendingEventMutation()
+            return
+        }
+        calendarManager.updateEvent(
+            item.ekEvent,
+            title: item.title,
+            startDate: range.start,
+            endDate: range.end,
+            scope: scope
+        )
     }
 
     // MARK: - Block Body
@@ -220,10 +304,17 @@ struct TimelineEventBlock: View {
                     .foregroundStyle(.white.opacity(0.78))
                     .lineLimit(1)
             }
-            Text(item.title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white)
-                .lineLimit(2)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(item.title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                if item.isRecurringSeriesMember {
+                    Image(systemName: "repeat")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+            }
             if frame.height >= 54 && !item.calendarTitle.isEmpty {
                 Text(item.calendarTitle)
                     .font(.system(size: 9))
@@ -283,8 +374,8 @@ struct TimelineEventBlock: View {
 
 struct CalendarEventEditPopover: View {
     let item: CalendarEventItem
-    let onSave: (String, Int, Int, String) -> Void
-    let onDelete: () -> Void
+    let onSave: (String, Int, Int, String, CalendarRecurrenceEditScope) -> Void
+    let onDelete: (CalendarRecurrenceEditScope) -> Void
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
@@ -296,8 +387,18 @@ struct CalendarEventEditPopover: View {
     @State private var endText: String
     @State private var selectedCalendarID: String
     @State private var presentedEventNote: Note?
+    @State private var pendingAction: PendingAction?
 
-    init(item: CalendarEventItem, onSave: @escaping (String, Int, Int, String) -> Void, onDelete: @escaping () -> Void) {
+    private enum PendingAction {
+        case save
+        case delete
+    }
+
+    init(
+        item: CalendarEventItem,
+        onSave: @escaping (String, Int, Int, String, CalendarRecurrenceEditScope) -> Void,
+        onDelete: @escaping (CalendarRecurrenceEditScope) -> Void
+    ) {
         self.item = item
         self.onSave = onSave
         self.onDelete = onDelete
@@ -353,6 +454,26 @@ struct CalendarEventEditPopover: View {
                 EventNoteEditorSheet(note: presentedEventNote, eventTitle: item.title, nativeEvent: item.ekEvent)
             }
         }
+        .confirmationDialog(
+            "Change recurring event?",
+            isPresented: Binding(
+                get: { pendingAction != nil },
+                set: { if !$0 { pendingAction = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(CalendarRecurrenceEditScope.thisOccurrence.label) {
+                applyPendingAction(scope: .thisOccurrence)
+            }
+            Button(CalendarRecurrenceEditScope.futureOccurrences.label) {
+                applyPendingAction(scope: .futureOccurrences)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingAction = nil
+            }
+        } message: {
+            Text("Choose whether this calendar change applies only to this occurrence or to this and future events.")
+        }
     }
 
     private var editorContent: some View {
@@ -401,14 +522,24 @@ struct CalendarEventEditPopover: View {
 
     @ViewBuilder
     private var calendarLabel: some View {
-        if !item.calendarTitle.isEmpty {
+        if !item.calendarTitle.isEmpty || item.isRecurringSeriesMember {
             HStack(spacing: 5) {
-                Circle()
-                    .fill(item.calendarColor)
-                    .frame(width: 7, height: 7)
-                Text(item.calendarTitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
+                if !item.calendarTitle.isEmpty {
+                    Circle()
+                        .fill(item.calendarColor)
+                        .frame(width: 7, height: 7)
+                    Text(item.calendarTitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                }
+                if item.isRecurringSeriesMember {
+                    Image(systemName: "repeat")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                    Text("Repeats")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                }
             }
         }
     }
@@ -475,7 +606,7 @@ struct CalendarEventEditPopover: View {
 
     private var actionButtons: some View {
         HStack(spacing: 10) {
-            Button { onSave(title, startMin, durationMinutes, selectedCalendarID) } label: {
+            Button { requestAction(.save) } label: {
                 Label("Save", systemImage: "checkmark.circle.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.blue)
@@ -486,7 +617,7 @@ struct CalendarEventEditPopover: View {
             }
             .buttonStyle(.cadencePlain)
 
-            Button { onDelete() } label: {
+            Button { requestAction(.delete) } label: {
                 Label("Delete", systemImage: "trash")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.red)
@@ -496,6 +627,29 @@ struct CalendarEventEditPopover: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.cadencePlain)
+        }
+    }
+
+    private func requestAction(_ action: PendingAction) {
+        if item.isRecurringSeriesMember {
+            pendingAction = action
+        } else {
+            applyAction(action, scope: .thisOccurrence)
+        }
+    }
+
+    private func applyPendingAction(scope: CalendarRecurrenceEditScope) {
+        guard let pendingAction else { return }
+        self.pendingAction = nil
+        applyAction(pendingAction, scope: scope)
+    }
+
+    private func applyAction(_ action: PendingAction, scope: CalendarRecurrenceEditScope) {
+        switch action {
+        case .save:
+            onSave(title, startMin, durationMinutes, selectedCalendarID, scope)
+        case .delete:
+            onDelete(scope)
         }
     }
 

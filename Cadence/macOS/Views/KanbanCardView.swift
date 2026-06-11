@@ -95,7 +95,7 @@ struct KanbanCard: View {
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .animation(nil, value: isHovered)
         .onTapGesture {
-            showTaskInspector = true
+            openTaskInspectorFromCardTap()
         }
         .overlay {
             RightClickActionTrigger {
@@ -169,8 +169,11 @@ struct KanbanCard: View {
     }
 
     private var listBoardMetadataRows: [[KanbanMetaItem]] {
-        let dateItem = concreteDueDateMetaItem ?? doDateMetaItem
-        return [[dateItem, contextMetaItem]]
+        var row = [doDateMetaItem]
+        if let dueDateMetaItem {
+            row.append(dueDateMetaItem)
+        }
+        return [row]
     }
 
     private var calendarBoardMetadataRows: [[KanbanMetaItem]] {
@@ -341,6 +344,11 @@ struct KanbanCard: View {
         showDurationPicker = true
         setAttributeFocused(true)
         syncInteractiveHoverState()
+    }
+
+    private func openTaskInspectorFromCardTap() {
+        guard !isAttributeFocused && !isPresentingInlinePopover else { return }
+        showTaskInspector = true
     }
 
     private func setAttributeFocused(_ focused: Bool) {

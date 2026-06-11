@@ -219,10 +219,10 @@ struct ContainerPickerBadge: View {
     private var groupedContainers: [(context: Context, areas: [Area], projects: [Project])] {
         contexts.compactMap { context in
             let matchingAreas = areas
-                .filter { $0.context?.id == context.id }
+                .filter { $0.isActive && $0.context?.id == context.id }
                 .sorted { $0.order < $1.order }
             let matchingProjects = projects
-                .filter { $0.context?.id == context.id }
+                .filter { $0.isActive && $0.context?.id == context.id }
                 .sorted { $0.order < $1.order }
             guard !matchingAreas.isEmpty || !matchingProjects.isEmpty else { return nil }
             return (context, matchingAreas, matchingProjects)
@@ -318,64 +318,67 @@ struct ContainerPickerBadge: View {
 
                 Divider().background(Theme.borderSubtle)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    if matches("Inbox") {
-                        ContainerPickerRow(
-                            icon: "tray",
-                            name: "Inbox",
-                            color: Theme.dim,
-                            isHighlighted: highlightedTag == .inbox,
-                            isSelected: selection == .inbox,
-                            action: {
-                                selection = .inbox
-                                showPicker = false
-                            }
-                        )
-                    }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        if matches("Inbox") {
+                            ContainerPickerRow(
+                                icon: "tray",
+                                name: "Inbox",
+                                color: Theme.dim,
+                                isHighlighted: highlightedTag == .inbox,
+                                isSelected: selection == .inbox,
+                                action: {
+                                    selection = .inbox
+                                    showPicker = false
+                                }
+                            )
+                        }
 
-                    if !filteredGroupedContainers.isEmpty {
-                        Divider().background(Theme.borderSubtle).padding(.vertical, 2)
+                        if !filteredGroupedContainers.isEmpty {
+                            Divider().background(Theme.borderSubtle).padding(.vertical, 2)
 
-                        ForEach(filteredGroupedContainers, id: \.context.id) { group in
-                            Text(group.context.name.uppercased())
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(Color(hex: group.context.colorHex))
-                                .kerning(0.6)
-                                .padding(.horizontal, 12)
-                                .padding(.top, 6)
-                                .padding(.bottom, 2)
+                            ForEach(filteredGroupedContainers, id: \.context.id) { group in
+                                Text(group.context.name.uppercased())
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(Color(hex: group.context.colorHex))
+                                    .kerning(0.6)
+                                    .padding(.horizontal, 12)
+                                    .padding(.top, 6)
+                                    .padding(.bottom, 2)
 
-                            ForEach(group.areas) { area in
-                                ContainerPickerRow(
-                                    icon: area.icon,
-                                    name: area.name,
-                                    color: Color(hex: area.colorHex),
-                                    isHighlighted: highlightedTag == .area(area.id),
-                                    isSelected: selection == .area(area.id),
-                                    action: {
-                                        selection = .area(area.id)
-                                        showPicker = false
-                                    }
-                                )
-                            }
+                                ForEach(group.areas) { area in
+                                    ContainerPickerRow(
+                                        icon: area.icon,
+                                        name: area.name,
+                                        color: Color(hex: area.colorHex),
+                                        isHighlighted: highlightedTag == .area(area.id),
+                                        isSelected: selection == .area(area.id),
+                                        action: {
+                                            selection = .area(area.id)
+                                            showPicker = false
+                                        }
+                                    )
+                                }
 
-                            ForEach(group.projects) { project in
-                                ContainerPickerRow(
-                                    icon: project.icon,
-                                    name: project.name,
-                                    color: Color(hex: project.colorHex),
-                                    isHighlighted: highlightedTag == .project(project.id),
-                                    isSelected: selection == .project(project.id),
-                                    action: {
-                                        selection = .project(project.id)
-                                        showPicker = false
-                                    }
-                                )
+                                ForEach(group.projects) { project in
+                                    ContainerPickerRow(
+                                        icon: project.icon,
+                                        name: project.name,
+                                        color: Color(hex: project.colorHex),
+                                        isHighlighted: highlightedTag == .project(project.id),
+                                        isSelected: selection == .project(project.id),
+                                        action: {
+                                            selection = .project(project.id)
+                                            showPicker = false
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
+                    .padding(.vertical, 6)
                 }
-                .padding(.vertical, 6)
+                .frame(maxHeight: 320)
             }
             .frame(minWidth: 190)
             .background(Theme.surfaceElevated)

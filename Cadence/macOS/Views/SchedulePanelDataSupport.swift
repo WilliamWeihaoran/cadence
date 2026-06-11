@@ -22,16 +22,14 @@ enum SchedulePanelDataSupport {
 
     static func syncLinkedTasks(
         allTasks: [AppTask],
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        calendarManager: CalendarManager
     ) {
-        var changed = false
-        for task in allTasks where !task.calendarEventID.isEmpty {
-            task.calendarEventID = ""
-            changed = true
-        }
-        if changed {
-            try? modelContext.save()
-        }
+        CalendarLinkedTaskSupport.clearMissingEventLinks(
+            in: allTasks,
+            modelContext: modelContext,
+            calendarManager: calendarManager
+        )
     }
 
     static func restoreScroll(
