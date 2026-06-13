@@ -6,6 +6,7 @@ import SwiftUI
 struct iOSCalendarQuickCreateSheet: View {
     let dateKey: String
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
@@ -75,25 +76,15 @@ struct iOSCalendarQuickCreateSheet: View {
         }
     }
 
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    header
-                    kindPicker
-                    titleSection
-                    if kind == .task {
-                        taskOptions
-                    }
-                    if kind == .event {
-                        calendarSection
-                    }
-                    timeSection
-                    if kind == .task || kind == .event {
-                        notesSection
-                    }
-                }
-                .padding(18)
+                formLayout
+                    .padding(isRegularWidth ? 20 : 18)
             }
             .background(Theme.bg)
             .navigationTitle("Add to Calendar")
@@ -114,6 +105,63 @@ struct iOSCalendarQuickCreateSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private var formLayout: some View {
+        if isRegularWidth {
+            regularFormLayout
+        } else {
+            compactFormLayout
+        }
+    }
+
+    private var compactFormLayout: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header
+            kindPicker
+            titleSection
+            formDetails
+            timeSection
+            formNotes
+        }
+    }
+
+    private var regularFormLayout: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                kindPicker
+                titleSection
+                timeSection
+            }
+            .frame(minWidth: 340, maxWidth: 440, alignment: .topLeading)
+
+            VStack(alignment: .leading, spacing: 16) {
+                formDetails
+                formNotes
+            }
+            .frame(minWidth: 360, maxWidth: 520, alignment: .topLeading)
+        }
+        .frame(maxWidth: 980, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    @ViewBuilder
+    private var formDetails: some View {
+        if kind == .task {
+            taskOptions
+        }
+        if kind == .event {
+            calendarSection
+        }
+    }
+
+    @ViewBuilder
+    private var formNotes: some View {
+        if kind == .task || kind == .event {
+            notesSection
+        }
     }
 
     private var header: some View {

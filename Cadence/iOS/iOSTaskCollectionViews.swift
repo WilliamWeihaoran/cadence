@@ -4,10 +4,12 @@ import SwiftUI
 
 struct iOSAllTasksView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @AppStorage("ios.allTasks.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
     @AppStorage("ios.allTasks.showCompleted") private var showCompleted = false
     @State private var newTitle = ""
+    @State private var saveError: String?
 
     private var sortMode: CadenceTaskSortMode {
         get { CadenceTaskSortMode(rawValue: sortModeRaw) ?? .listOrder }
@@ -26,6 +28,28 @@ struct iOSAllTasksView: View {
     }
 
     var body: some View {
+        Group {
+            if horizontalSizeClass == .compact {
+                iOSCompactAllTasksView(
+                    activeTasks: activeTasks,
+                    completedTasks: completedTasks,
+                    sortMode: Binding(
+                        get: { sortMode },
+                        set: { sortModeRaw = $0.rawValue }
+                    ),
+                    showCompleted: $showCompleted,
+                    newTitle: $newTitle,
+                    saveError: $saveError,
+                    captureTask: captureTask
+                )
+            } else {
+                allTasksPanel
+            }
+        }
+        .background(Theme.bg.ignoresSafeArea())
+    }
+
+    private var allTasksPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
             iOSPanelHeader(eyebrow: "Tasks", title: "All Tasks", count: activeTasks.count)
 
@@ -38,6 +62,14 @@ struct iOSAllTasksView: View {
             )
             .padding(.horizontal, 16)
             .padding(.top, 14)
+
+            if let saveError {
+                iOSInlineErrorBanner(message: saveError) {
+                    self.saveError = nil
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+            }
 
             iOSTaskViewOptionsBar(
                 sortMode: Binding(
@@ -88,12 +120,19 @@ struct iOSAllTasksView: View {
     }
 
     private func captureTask() {
-        guard (try? CadenceTaskMutationSupport.insertTask(
-            title: newTitle,
-            allTasks: allTasks,
-            modelContext: modelContext
-        )) != nil else { return }
-        newTitle = ""
+        let pendingTitle = newTitle
+        do {
+            _ = try CadenceTaskMutationSupport.insertTask(
+                title: newTitle,
+                allTasks: allTasks,
+                modelContext: modelContext
+            )
+            saveError = nil
+            newTitle = ""
+        } catch {
+            newTitle = pendingTitle
+            saveError = "Couldn't save this task. Try again in a moment."
+        }
     }
 }
 #endif

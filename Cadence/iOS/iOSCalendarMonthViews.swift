@@ -16,33 +16,40 @@ struct iOSCalendarMonthGrid: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                ForEach(calendar.shortWeekdaySymbols, id: \.self) { symbol in
-                    Text(symbol.uppercased())
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 9)
-                }
-            }
-            .background(Theme.surface)
+        GeometryReader { proxy in
+            let headerHeight: CGFloat = 36
+            let cellHeight = max(96, (proxy.size.height - headerHeight) / 6)
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
-                ForEach(monthDays, id: \.self) { date in
-                    let key = DateFormatters.dateKey(from: date)
-                    iOSCalendarMonthDayCell(
-                        date: date,
-                        displayMonth: monthDate,
-                        isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
-                        tasks: CadenceScheduleSupport.items(on: key, in: monthTasksByDate),
-                        bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
-                        events: CadenceScheduleSupport.items(on: key, in: eventsByDate)
-                    ) {
-                        selectedDate = date
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    ForEach(calendar.shortWeekdaySymbols, id: \.self) { symbol in
+                        Text(symbol.uppercased())
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: headerHeight)
+                    }
+                }
+                .background(Theme.surface)
+
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
+                    ForEach(monthDays, id: \.self) { date in
+                        let key = DateFormatters.dateKey(from: date)
+                        iOSCalendarMonthDayCell(
+                            date: date,
+                            displayMonth: monthDate,
+                            isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
+                            tasks: CadenceScheduleSupport.items(on: key, in: monthTasksByDate),
+                            bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
+                            events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
+                            minHeight: cellHeight
+                        ) {
+                            selectedDate = date
+                        }
                     }
                 }
             }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .background(Theme.bg)
     }
@@ -55,6 +62,7 @@ private struct iOSCalendarMonthDayCell: View {
     let tasks: [AppTask]
     let bundles: [TaskBundle]
     let events: [EKEvent]
+    let minHeight: CGFloat
     let action: () -> Void
 
     private let calendar = Calendar.current
@@ -110,7 +118,7 @@ private struct iOSCalendarMonthDayCell: View {
                 Spacer(minLength: 0)
             }
             .padding(7)
-            .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
             .background(isSelected ? Theme.blue.opacity(0.055) : isToday ? Theme.blue.opacity(0.035) : Theme.bg)
             .opacity(isCurrentMonth ? 1 : 0.52)
             .overlay(alignment: .trailing) {

@@ -36,6 +36,7 @@ struct iOSCalendarEventEditSheet: View {
     let event: EKEvent
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
@@ -96,6 +97,10 @@ struct iOSCalendarEventEditSheet: View {
         )
     }
 
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
+
     init(event: EKEvent) {
         self.event = event
         let start = event.startDate ?? Date()
@@ -112,15 +117,8 @@ struct iOSCalendarEventEditSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    titleCard
-                    scheduleCard
-                    calendarCard
-                    eventNoteCard
-                    notesCard
-                    deleteCard
-                }
-                .padding(18)
+                formLayout
+                    .padding(isRegularWidth ? 20 : 18)
             }
             .background(Theme.bg)
             .navigationTitle("Edit Event")
@@ -171,6 +169,46 @@ struct iOSCalendarEventEditSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private var formLayout: some View {
+        if isRegularWidth {
+            regularFormLayout
+        } else {
+            compactFormLayout
+        }
+    }
+
+    private var compactFormLayout: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            titleCard
+            scheduleCard
+            calendarCard
+            eventNoteCard
+            notesCard
+            deleteCard
+        }
+    }
+
+    private var regularFormLayout: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 16) {
+                titleCard
+                scheduleCard
+                calendarCard
+            }
+            .frame(minWidth: 340, maxWidth: 440, alignment: .topLeading)
+
+            VStack(alignment: .leading, spacing: 16) {
+                eventNoteCard
+                notesCard
+                deleteCard
+            }
+            .frame(minWidth: 360, maxWidth: 520, alignment: .topLeading)
+        }
+        .frame(maxWidth: 980, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private var titleCard: some View {

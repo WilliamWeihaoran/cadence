@@ -119,6 +119,226 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     }
 }
 
+struct iOSMarkdownPreview: View {
+    let markdown: String
+
+    private var trimmedMarkdown: String {
+        markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var renderedMarkdown: AttributedString {
+        if let rendered = try? AttributedString(markdown: markdown) {
+            return rendered
+        }
+        return AttributedString(markdown)
+    }
+
+    var body: some View {
+        ScrollView {
+            if trimmedMarkdown.isEmpty {
+                Text("Nothing to preview")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.dim.opacity(0.62))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 18)
+            } else {
+                Text(renderedMarkdown)
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundStyle(Theme.text)
+                    .lineSpacing(5)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 18)
+            }
+        }
+        .scrollIndicators(.hidden)
+        .background(Theme.surface)
+    }
+}
+
+enum iOSMarkdownEditorMode: String, CaseIterable, Identifiable {
+    case edit = "Edit"
+    case preview = "Preview"
+
+    var id: Self { self }
+
+    var systemImage: String {
+        switch self {
+        case .edit: return "pencil"
+        case .preview: return "doc.richtext"
+        }
+    }
+}
+
+struct iOSMarkdownModePicker: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Binding var mode: iOSMarkdownEditorMode
+    var compact = false
+
+    private var showsLabels: Bool {
+        horizontalSizeClass == .regular && !compact
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(iOSMarkdownEditorMode.allCases) { candidate in
+                Button {
+                    mode = candidate
+                } label: {
+                    modeLabel(for: candidate)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(candidate.rawValue)
+            }
+        }
+        .padding(2)
+        .background(Theme.surfaceElevated.opacity(0.56))
+        .clipShape(RoundedRectangle(cornerRadius: compact ? 8 : 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: compact ? 8 : 9, style: .continuous)
+                .strokeBorder(Theme.borderSubtle.opacity(0.46), lineWidth: 1)
+        }
+    }
+
+    @ViewBuilder
+    private func modeLabel(for candidate: iOSMarkdownEditorMode) -> some View {
+        if showsLabels {
+            Label(candidate.rawValue, systemImage: candidate.systemImage)
+                .labelStyle(.titleAndIcon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(mode == candidate ? Theme.text : Theme.dim)
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(mode == candidate ? Theme.blue.opacity(0.18) : Color.clear)
+                )
+        } else {
+            Image(systemName: candidate.systemImage)
+                .font(.system(size: compact ? 11 : 12, weight: .semibold))
+                .foregroundStyle(mode == candidate ? Theme.text : Theme.dim)
+                .frame(width: compact ? 27 : 30, height: compact ? 26 : 28)
+                .background(
+                    RoundedRectangle(cornerRadius: compact ? 6 : 7, style: .continuous)
+                        .fill(mode == candidate ? Theme.blue.opacity(0.18) : Color.clear)
+                )
+        }
+    }
+}
+
+struct iOSMarkdownEditingSurface: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    @Binding var mode: iOSMarkdownEditorMode
+    let placeholder: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if mode == .preview {
+                iOSMarkdownPreview(markdown: text)
+            } else {
+                ZStack(alignment: .topLeading) {
+                    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isFocused {
+                        iOSMarkdownEmptyPrompt(placeholder: placeholder)
+                    }
+
+                    iOSMarkdownEditor(text: $text, isFocused: $isFocused)
+                        .background(Color.clear)
+                }
+                .background(Theme.surface)
+            }
+
+            Divider().background(Theme.borderSubtle.opacity(0.65))
+
+            iOSMarkdownStatusBar(
+                wordCount: wordCount,
+                lineCount: lineCount,
+                isPreviewing: mode == .preview,
+                isRegularWidth: horizontalSizeClass == .regular
+            )
+        }
+        .background(Theme.surface)
+    }
+
+    private var wordCount: Int {
+        text
+            .split { $0.isWhitespace || $0.isNewline }
+            .count
+    }
+
+    private var lineCount: Int {
+        max(1, text.components(separatedBy: .newlines).count)
+    }
+}
+
+private struct iOSMarkdownEmptyPrompt: View {
+    let placeholder: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(placeholder)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.text.opacity(0.74))
+
+            VStack(alignment: .leading, spacing: 5) {
+                iOSMarkdownHintRow(text: "# Heading")
+                iOSMarkdownHintRow(text: "- [ ] Task")
+                iOSMarkdownHintRow(text: "**Bold** · [[Link]] · #tag")
+            }
+            .padding(.top, 2)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 18)
+    }
+}
+
+private struct iOSMarkdownHintRow: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            .foregroundStyle(Theme.dim.opacity(0.76))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Theme.surfaceElevated.opacity(0.38))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+private struct iOSMarkdownStatusBar: View {
+    let wordCount: Int
+    let lineCount: Int
+    let isPreviewing: Bool
+    let isRegularWidth: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Label(isPreviewing ? "Rendered" : "Markdown", systemImage: isPreviewing ? "doc.richtext" : "pencil")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(isPreviewing ? Theme.green : Theme.blue)
+
+            Spacer(minLength: 8)
+
+            if isRegularWidth {
+                Text("\(lineCount) \(lineCount == 1 ? "line" : "lines")")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+            }
+
+            Text("\(wordCount) \(wordCount == 1 ? "word" : "words")")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.dim)
+        }
+        .padding(.horizontal, isRegularWidth ? 14 : 12)
+        .frame(height: isRegularWidth ? 34 : 32)
+        .background(Theme.bg.opacity(0.34))
+    }
+}
+
 private enum iOSMarkdownStyler {
     static var baseFont: UIFont { .preferredFont(forTextStyle: .body) }
     static var monoFont: UIFont { .monospacedSystemFont(ofSize: 14, weight: .regular) }

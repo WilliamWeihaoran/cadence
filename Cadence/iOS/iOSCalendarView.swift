@@ -10,10 +10,13 @@ struct iOSCalendarView: View {
     @AppStorage("ios.calendar.viewMode") private var viewModeRaw = CadenceCalendarViewMode.week.rawValue
     @AppStorage("ios.calendar.presentation") private var presentationRaw = CadenceCalendarPresentation.timeline.rawValue
     @AppStorage("ios.calendar.zoomLevel") private var zoomLevel = 1
+    @AppStorage("ios.calendar.selectedDateKey") private var selectedDateKeyRaw = ""
+    @AppStorage("ios.calendar.anchorDateKey") private var anchorDateKeyRaw = ""
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var anchorDate = Calendar.current.startOfDay(for: Date())
     @State private var quickCreateSeed: iOSCalendarQuickCreateSeed?
+    @State private var didRestorePersistedDates = false
 
     private let calendar = Calendar.current
 
@@ -141,21 +144,35 @@ struct iOSCalendarView: View {
                 }
                 .scrollIndicators(.hidden)
             } else {
-                HStack(spacing: 0) {
-                    calendarContent
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                GeometryReader { proxy in
+                    HStack(spacing: 0) {
+                        calendarContent
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Theme.surface)
 
-                    Divider().background(Theme.borderSubtle)
+                        Divider().background(Theme.borderSubtle)
 
-                    dayInspector
-                        .frame(width: 360)
+                        dayInspector
+                            .frame(width: regularInspectorWidth(for: proxy.size.width))
+                    }
                 }
             }
         }
         .background(Theme.bg.ignoresSafeArea())
+        .onAppear(perform: restorePersistedCalendarDates)
+        .onChange(of: selectedDate) { _, newDate in
+            persistSelectedDate(newDate)
+        }
+        .onChange(of: anchorDate) { _, newDate in
+            persistAnchorDate(newDate)
+        }
         .sheet(item: $quickCreateSeed) { seed in
             iOSCalendarQuickCreateSheet(dateKey: seed.dateKey)
         }
+    }
+
+    private func regularInspectorWidth(for width: CGFloat) -> CGFloat {
+        min(max(width * 0.30, 340), 430)
     }
 
     @ViewBuilder
@@ -257,6 +274,29 @@ struct iOSCalendarView: View {
         selectedDate = today
         anchorDate = today
     }
+
+    private func restorePersistedCalendarDates() {
+        guard !didRestorePersistedDates else { return }
+        didRestorePersistedDates = true
+
+        if let restoredSelectedDate = DateFormatters.date(from: selectedDateKeyRaw) {
+            selectedDate = calendar.startOfDay(for: restoredSelectedDate)
+        }
+
+        if let restoredAnchorDate = DateFormatters.date(from: anchorDateKeyRaw) {
+            anchorDate = calendar.startOfDay(for: restoredAnchorDate)
+        } else {
+            anchorDate = selectedDate
+        }
+    }
+
+    private func persistSelectedDate(_ date: Date) {
+        selectedDateKeyRaw = DateFormatters.dateKey(from: calendar.startOfDay(for: date))
+    }
+
+    private func persistAnchorDate(_ date: Date) {
+        anchorDateKeyRaw = DateFormatters.dateKey(from: calendar.startOfDay(for: date))
+    }
 }
 
 private struct iOSCalendarQuickCreateSeed: Identifiable {
@@ -277,41 +317,48 @@ private struct iOSCalendarToolbar: View {
     var body: some View {
         Group {
             if horizontalSizeClass == .compact {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 10) {
-                        titleBlock
-                        Spacer(minLength: 10)
-                        navigationControls
-                    }
-
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 8) {
-                            modePicker
-                            zoomControls
-                        }
-                    }
-                    .scrollIndicators(.hidden)
-                }
+                compactToolbar
             } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 12) {
-                        titleBlock
-                        Spacer(minLength: 10)
-                        navigationControls
-                    }
-
-                    HStack(spacing: 12) {
-                        modePicker
-                            .frame(maxWidth: 420)
-                        Spacer(minLength: 10)
-                        zoomControls
-                    }
-                }
+                regularToolbar
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, horizontalSizeClass == .regular ? 12 : 10)
+        .padding(.horizontal, horizontalSizeClass == .regular ? 16 : 20)
+        .padding(.vertical, horizontalSizeClass == .regular ? 10 : 10)
         .background(Theme.surface)
+    }
+
+    private var compactToolbar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                titleBlock
+                Spacer(minLength: 10)
+                navigationControls
+            }
+
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    modePicker
+                    zoomControls
+                }
+            }
+            .scrollIndicators(.hidden)
+        }
+    }
+
+    private var regularToolbar: some View {
+        HStack(spacing: 14) {
+            titleBlock
+
+            modePicker
+                .frame(width: 390)
+
+            zoomControls
+
+            Spacer(minLength: 8)
+
+            navigationControls
+        }
+        .frame(minHeight: 42)
     }
 
     private var titleBlock: some View {
@@ -322,12 +369,12 @@ private struct iOSCalendarToolbar: View {
                 .textCase(.uppercase)
                 .kerning(0.8)
             Text(title)
-                .font(.system(size: horizontalSizeClass == .regular ? 22 : 17, weight: .bold))
+                .font(.system(size: horizontalSizeClass == .regular ? 20 : 17, weight: .bold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
         }
-        .frame(minWidth: horizontalSizeClass == .regular ? 176 : 116, idealWidth: 210, maxWidth: 260, alignment: .leading)
+        .frame(minWidth: horizontalSizeClass == .regular ? 170 : 116, idealWidth: 210, maxWidth: 260, alignment: .leading)
         .layoutPriority(1)
     }
 

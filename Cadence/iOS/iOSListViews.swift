@@ -9,9 +9,11 @@ enum iOSListRoute: Hashable {
 
 struct iOSListsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @State private var editorMode: iOSListEditorMode?
+    @State private var selectedRoute: iOSListRoute?
 
     private var activeAreas: [Area] {
         areas.filter(\.isActive)
@@ -29,36 +31,95 @@ struct iOSListsView: View {
         projects.filter(\.isArchived)
     }
 
+    private var isCompact: Bool {
+        horizontalSizeClass == .compact
+    }
+
+    private var firstActiveRoute: iOSListRoute? {
+        if let area = activeAreas.first {
+            return .area(area.id)
+        }
+        if let project = activeProjects.first {
+            return .project(project.id)
+        }
+        return nil
+    }
+
+    private var effectiveSelectedRoute: iOSListRoute? {
+        guard let selectedRoute, containsActive(route: selectedRoute) else {
+            return firstActiveRoute
+        }
+        return selectedRoute
+    }
+
     var body: some View {
+        Group {
+            if isCompact {
+                compactList
+            } else {
+                regularSplitLayout
+            }
+        }
+        .navigationTitle("Lists")
+        .toolbar { addToolbar }
+        .background(Theme.bg)
+        .sheet(item: $editorMode) { mode in
+            iOSListEditorSheet(mode: mode)
+        }
+        .navigationDestination(for: iOSListRoute.self) { route in
+            listDetail(for: route)
+        }
+        .onAppear(perform: selectDefaultListIfNeeded)
+        .onChange(of: activeRouteKey) { _, _ in
+            selectDefaultListIfNeeded()
+        }
+    }
+
+    private var compactList: some View {
         List {
             activeAreaSection
             activeProjectSection
             archivedSection
             emptyStateSection
         }
-        .navigationTitle("Lists")
-        .toolbar { addToolbar }
         .scrollContentBackground(.hidden)
         .background(Theme.bg)
-        .sheet(item: $editorMode) { mode in
-            iOSListEditorSheet(mode: mode)
-        }
-        .navigationDestination(for: iOSListRoute.self) { route in
-            switch route {
-            case .area(let id):
-                if let area = areas.first(where: { $0.id == id }) {
-                    iOSListDetailView(area: area)
-                } else {
-                    iOSMissingListView()
-                }
-            case .project(let id):
-                if let project = projects.first(where: { $0.id == id }) {
-                    iOSListDetailView(project: project)
-                } else {
-                    iOSMissingListView()
-                }
+    }
+
+    private var regularSplitLayout: some View {
+        HStack(spacing: 0) {
+            iOSListsRegularPane(
+                activeAreas: activeAreas,
+                activeProjects: activeProjects,
+                archivedAreas: archivedAreas,
+                archivedProjects: archivedProjects,
+                selectedRoute: $selectedRoute,
+                editorMode: $editorMode,
+                projectSubtitle: projectSubtitle,
+                archiveArea: archive,
+                archiveProject: archive,
+                restoreArea: restore,
+                restoreProject: restore
+            )
+                .frame(minWidth: 300, idealWidth: 340, maxWidth: 380)
+
+            Divider().background(Theme.borderSubtle)
+
+            if let route = effectiveSelectedRoute {
+                listDetail(for: route)
+                    .id(route)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                iOSEmptyPanel(
+                    systemImage: "folder",
+                    title: "No active lists",
+                    subtitle: "Create an area or project to start organizing tasks."
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.bg)
             }
         }
+        .background(Theme.bg.ignoresSafeArea())
     }
 
     @ViewBuilder
@@ -219,6 +280,46 @@ struct iOSListsView: View {
 
     private func projectSubtitle(_ project: Project) -> String {
         [project.context?.name, project.area?.name].compactMap { $0 }.joined(separator: " / ")
+    }
+
+    @ViewBuilder
+    private func listDetail(for route: iOSListRoute) -> some View {
+        switch route {
+        case .area(let id):
+            if let area = areas.first(where: { $0.id == id }) {
+                iOSListDetailView(area: area)
+            } else {
+                iOSMissingListView()
+            }
+        case .project(let id):
+            if let project = projects.first(where: { $0.id == id }) {
+                iOSListDetailView(project: project)
+            } else {
+                iOSMissingListView()
+            }
+        }
+    }
+
+    private var activeRouteKey: String {
+        let areaIDs = activeAreas.map { "a:\($0.id.uuidString)" }
+        let projectIDs = activeProjects.map { "p:\($0.id.uuidString)" }
+        return (areaIDs + projectIDs).joined(separator: "|")
+    }
+
+    private func containsActive(route: iOSListRoute) -> Bool {
+        switch route {
+        case .area(let id):
+            return activeAreas.contains { $0.id == id }
+        case .project(let id):
+            return activeProjects.contains { $0.id == id }
+        }
+    }
+
+    private func selectDefaultListIfNeeded() {
+        if let selectedRoute, containsActive(route: selectedRoute) {
+            return
+        }
+        selectedRoute = firstActiveRoute
     }
 
     private func archive(_ area: Area) {

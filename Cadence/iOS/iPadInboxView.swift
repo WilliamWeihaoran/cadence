@@ -30,25 +30,18 @@ struct iPadInboxView: View {
     var body: some View {
         Group {
             if horizontalSizeClass == .compact {
-                ScrollView {
-                    VStack(spacing: 16) {
-                        iOSCompactPageHeader(
-                            eyebrow: "Capture",
-                            title: "Inbox",
-                            subtitle: "Fast capture before you decide where things belong.",
-                            systemImage: "tray.fill",
-                            color: Theme.blue
-                        )
-
-                        inboxColumn
-                            .frame(minHeight: 520)
-                            .iOSCompactPanelCard()
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 18)
-                    .padding(.bottom, 18)
-                }
-                .scrollIndicators(.hidden)
+                iOSCompactInboxView(
+                    inboxTasks: inboxTasks,
+                    completedInboxTasks: completedInboxTasks,
+                    sortMode: Binding(
+                        get: { sortMode },
+                        set: { sortModeRaw = $0.rawValue }
+                    ),
+                    showCompleted: $showCompleted,
+                    newTitle: $newTitle,
+                    saveError: $saveError,
+                    captureInboxTask: captureInboxTask
+                )
             } else {
                 HStack(spacing: 0) {
                     inboxColumn

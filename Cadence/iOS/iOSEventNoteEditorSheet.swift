@@ -9,9 +9,11 @@ struct iOSEventNoteEditorSheet: View {
     let event: EKEvent?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @Environment(iOSCalendarManager.self) private var calendarManager
     @State private var isEditorFocused = false
+    @State private var editorMode: iOSMarkdownEditorMode = .edit
 
     private var title: String {
         note.displayTitle
@@ -22,16 +24,13 @@ struct iOSEventNoteEditorSheet: View {
         return trimmed.isEmpty ? "Linked event note" : trimmed
     }
 
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                header
-
-                Divider().background(Theme.borderSubtle)
-
-                iOSMarkdownEditor(text: $note.content, isFocused: $isEditorFocused)
-                    .background(Theme.surface)
-            }
+            editorLayout
             .background(Theme.surface.ignoresSafeArea())
             .navigationTitle("Meeting Note")
             .navigationBarTitleDisplayMode(.inline)
@@ -64,6 +63,45 @@ struct iOSEventNoteEditorSheet: View {
         .preferredColorScheme(.dark)
     }
 
+    @ViewBuilder
+    private var editorLayout: some View {
+        if isRegularWidth {
+            regularEditorLayout
+        } else {
+            compactEditorLayout
+        }
+    }
+
+    private var compactEditorLayout: some View {
+        VStack(spacing: 0) {
+            header
+
+            Divider().background(Theme.borderSubtle)
+
+            editorSurface
+        }
+    }
+
+    private var regularEditorLayout: some View {
+        HStack(spacing: 0) {
+            header
+                .frame(width: 320, alignment: .topLeading)
+
+            Divider().background(Theme.borderSubtle)
+
+            editorSurface
+        }
+    }
+
+    private var editorSurface: some View {
+        iOSMarkdownEditingSurface(
+            text: $note.content,
+            isFocused: $isEditorFocused,
+            mode: $editorMode,
+            placeholder: "Start writing..."
+        )
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(subtitle)
@@ -74,10 +112,17 @@ struct iOSEventNoteEditorSheet: View {
                 .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(2)
+
+            HStack {
+                Spacer()
+                iOSMarkdownModePicker(mode: $editorMode)
+            }
+            .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 14)
+        .frame(maxHeight: isRegularWidth ? .infinity : nil, alignment: .topLeading)
+        .padding(.horizontal, isRegularWidth ? 20 : 18)
+        .padding(.vertical, isRegularWidth ? 20 : 14)
         .background(Theme.surface)
     }
 

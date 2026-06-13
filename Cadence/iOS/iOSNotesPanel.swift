@@ -6,65 +6,50 @@ import SwiftUI
 struct iOSNotesPanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
-    @State private var activeTab: CadenceCoreNoteTab = .today
     @State private var todayNote: Note?
     @State private var weekNote: Note?
     @State private var permanentNote: Note?
+    @AppStorage("ios.notes.activeCoreTab") private var activeTabRaw = CadenceCoreNoteTab.today.rawValue
+    @AppStorage("ios.notes.editorMode") private var editorModeRaw = iOSMarkdownEditorMode.edit.rawValue
     @FocusState private var isEditorFocused: Bool
     var useStandardHeaderHeight = false
 
+    private var activeTab: CadenceCoreNoteTab {
+        get { CadenceCoreNoteTab(rawValue: activeTabRaw) ?? .today }
+        set { activeTabRaw = newValue.rawValue }
+    }
+
+    private var editorMode: iOSMarkdownEditorMode {
+        get { iOSMarkdownEditorMode(rawValue: editorModeRaw) ?? .edit }
+        set { editorModeRaw = newValue.rawValue }
+    }
+
+    private var editorModeBinding: Binding<iOSMarkdownEditorMode> {
+        Binding(
+            get: { editorMode },
+            set: { editorModeRaw = $0.rawValue }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                iOSPanelHeader(
-                    eyebrow: "Notes",
-                    title: activeTab.rawValue
-                )
-
-                HStack(spacing: 0) {
-                    ForEach(CadenceCoreNoteTab.allCases) { tab in
-                        iOSNotePanelTabButton(
-                            title: tab.rawValue,
-                            isSelected: activeTab == tab
-                        ) {
-                            activeTab = tab
-                        }
-                    }
-                    Spacer()
-
-                    if let note = selectedNote {
-                        iOSNoteTemplateMenu(kind: activeTab.noteKind) { template in
-                            apply(template, to: note)
-                        }
-                        .padding(.trailing, 12)
-                    }
-                }
-                .padding(.horizontal, 12)
-            }
-            .frame(height: useStandardHeaderHeight ? iOSPanelHeaderHeight : nil, alignment: .top)
+            notesHeader
 
             Divider().background(Theme.borderSubtle)
 
             if let note = selectedNote {
-                ZStack(alignment: .topLeading) {
-                    if note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isEditorFocused {
-                        Text("Start writing...")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Theme.dim.opacity(0.6))
-                            .padding(.horizontal, 17)
-                            .padding(.vertical, 16)
-                    }
-
-                    iOSMarkdownEditor(text: Binding(
+                iOSMarkdownEditingSurface(
+                    text: Binding(
                         get: { note.content },
                         set: { update(note, content: $0) }
-                    ), isFocused: Binding(
+                    ),
+                    isFocused: Binding(
                         get: { isEditorFocused },
                         set: { isEditorFocused = $0 }
-                    ))
-                    .background(Color.clear)
-                }
-                .background(Theme.surface)
+                    ),
+                    mode: editorModeBinding,
+                    placeholder: "Start writing..."
+                )
             } else {
                 ProgressView()
                     .tint(Theme.blue)
@@ -87,6 +72,104 @@ struct iOSNotesPanel: View {
                     isEditorFocused = false
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var notesHeader: some View {
+        if useStandardHeaderHeight {
+            regularNotesHeader
+        } else {
+            compactNotesHeader
+        }
+    }
+
+    private var regularNotesHeader: some View {
+        GeometryReader { proxy in
+            regularNotesHeaderContent(isNarrow: proxy.size.width < 320)
+        }
+        .frame(height: 124, alignment: .top)
+        .background(Theme.surface)
+    }
+
+    private func regularNotesHeaderContent(isNarrow: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Notes")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .textCase(.uppercase)
+                        .kerning(0.8)
+
+                    Text(activeTab.rawValue)
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+
+                    if !isNarrow {
+                        Text(activeTab.subtitle)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Theme.dim)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                iOSMarkdownModePicker(mode: editorModeBinding, compact: isNarrow)
+            }
+
+            HStack(spacing: 8) {
+                ForEach(CadenceCoreNoteTab.allCases) { tab in
+                    iOSNotePanelTabButton(
+                        title: tab.compactTitle,
+                        isSelected: activeTab == tab
+                    ) { activeTabRaw = tab.rawValue }
+                }
+
+                Spacer(minLength: 8)
+
+                if let note = selectedNote {
+                    iOSNoteTemplateMenu(kind: activeTab.noteKind, compact: true) { template in
+                        apply(template, to: note)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var compactNotesHeader: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            iOSPanelHeader(
+                eyebrow: "Notes",
+                title: activeTab.rawValue
+            )
+
+            HStack(spacing: 0) {
+                ForEach(CadenceCoreNoteTab.allCases) { tab in
+                    iOSNotePanelTabButton(
+                        title: tab.rawValue,
+                        isSelected: activeTab == tab
+                    ) { activeTabRaw = tab.rawValue }
+                }
+                Spacer()
+
+                iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
+                    .padding(.trailing, 8)
+
+                if let note = selectedNote {
+                    iOSNoteTemplateMenu(kind: activeTab.noteKind) { template in
+                        apply(template, to: note)
+                    }
+                    .padding(.trailing, 12)
+                }
+            }
+            .padding(.horizontal, 12)
         }
     }
 
@@ -124,6 +207,7 @@ struct iOSCompactNotesView: View {
     @State private var weekNote: Note?
     @State private var permanentNote: Note?
     @State private var selectedMeetingNote: Note?
+    @State private var editorMode: iOSMarkdownEditorMode = .edit
     @FocusState private var isEditorFocused: Bool
 
     var body: some View {
@@ -139,11 +223,16 @@ struct iOSCompactNotesView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
 
-            if let note = selectedCoreNote, let coreTab = activePage.coreTab {
+            if let coreTab = activePage.coreTab {
                 HStack {
+                    iOSMarkdownModePicker(mode: $editorMode)
+
                     Spacer()
-                    iOSNoteTemplateMenu(kind: coreTab.noteKind) { template in
-                        apply(template, to: note)
+
+                    if let note = selectedCoreNote {
+                        iOSNoteTemplateMenu(kind: coreTab.noteKind) { template in
+                            apply(template, to: note)
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
@@ -190,23 +279,18 @@ struct iOSCompactNotesView: View {
     @ViewBuilder
     private var coreEditor: some View {
         if let note = selectedCoreNote {
-            ZStack(alignment: .topLeading) {
-                if note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isEditorFocused {
-                    Text("Start writing...")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Theme.dim.opacity(0.62))
-                        .padding(.horizontal, 22)
-                        .padding(.vertical, 20)
-                }
-
-                iOSMarkdownEditor(text: Binding(
+            iOSMarkdownEditingSurface(
+                text: Binding(
                     get: { note.content },
                     set: { update(note, content: $0) }
-                ), isFocused: Binding(
+                ),
+                isFocused: Binding(
                     get: { isEditorFocused },
                     set: { isEditorFocused = $0 }
-                ))
-            }
+                ),
+                mode: $editorMode,
+                placeholder: "Start writing..."
+            )
         } else {
             ProgressView()
                 .tint(Theme.blue)
@@ -419,6 +503,7 @@ private struct iOSMeetingNoteRow: View {
 
 struct iOSNoteTemplateMenu: View {
     let kind: NoteKind
+    var compact = false
     let apply: (NoteTemplate) -> Void
     @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
 
@@ -436,6 +521,22 @@ struct iOSNoteTemplateMenu: View {
                 }
             }
         } label: {
+            templateLabel
+        }
+        .disabled(templates.isEmpty)
+        .opacity(templates.isEmpty ? 0.5 : 1)
+    }
+
+    @ViewBuilder
+    private var templateLabel: some View {
+        if compact {
+            Image(systemName: "doc.badge.plus")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.blue)
+                .frame(width: 34, height: 34)
+                .background(Theme.blue.opacity(0.11))
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        } else {
             Label("Template", systemImage: "doc.badge.plus")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.blue)
@@ -444,8 +545,6 @@ struct iOSNoteTemplateMenu: View {
                 .background(Theme.blue.opacity(0.11))
                 .clipShape(Capsule())
         }
-        .disabled(templates.isEmpty)
-        .opacity(templates.isEmpty ? 0.5 : 1)
     }
 }
 
@@ -457,18 +556,17 @@ private struct iOSNotePanelTabButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
-                .foregroundStyle(isSelected ? Theme.blue : Theme.dim)
-                .frame(minWidth: 78, minHeight: 30)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isSelected ? Theme.text : Theme.dim)
+                .frame(minWidth: 62, minHeight: 32)
                 .padding(.horizontal, 8)
-                .contentShape(Rectangle())
-                .overlay(alignment: .bottom) {
-                    if isSelected {
-                        Rectangle()
-                            .fill(Theme.blue.opacity(0.8))
-                            .frame(height: 1)
-                    }
+                .background(isSelected ? Theme.blue.opacity(0.16) : Theme.surfaceElevated.opacity(0.24))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(isSelected ? Theme.blue.opacity(0.28) : Theme.borderSubtle.opacity(0.28), lineWidth: 1)
                 }
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
     }

@@ -2,8 +2,14 @@
 import SwiftData
 import SwiftUI
 
+enum iOSTaskRowDensity {
+    case regular
+    case compact
+}
+
 struct iOSTaskRow: View {
     @Bindable var task: AppTask
+    var density: iOSTaskRowDensity = .regular
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
@@ -12,9 +18,14 @@ struct iOSTaskRow: View {
     @Query(sort: \Project.order) private var projects: [Project]
     @State private var showDetail = false
     @State private var showDeleteConfirmation = false
+    @State private var pendingRecurrenceRule: TaskRecurrenceRule?
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
+    }
+
+    private var isCompact: Bool {
+        density == .compact
     }
 
     private var activeAreas: [Area] {
@@ -27,13 +38,21 @@ struct iOSTaskRow: View {
 
     var body: some View {
         rowContent
-            .padding(.horizontal, isRegularWidth ? 14 : 11)
-            .padding(.vertical, isRegularWidth ? 12 : 9)
-            .background(Theme.surfaceElevated.opacity(0.34))
+            .padding(.horizontal, rowHorizontalPadding)
+            .padding(.vertical, rowVerticalPadding)
+            .background(
+                RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous)
+                    .fill(Theme.surfaceElevated.opacity(task.isDone ? 0.20 : 0.46))
+            )
             .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous)
-                    .stroke(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
+                    .stroke(rowTint.opacity(task.isDone ? 0.16 : 0.26), lineWidth: 1)
+            }
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 999, style: .continuous)
+                    .fill(rowTint.opacity(task.isDone ? 0.34 : 0.86))
+                    .frame(width: 3)
             }
             .contentShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
             .onTapGesture {
@@ -45,14 +64,30 @@ struct iOSTaskRow: View {
                 iOSTaskDetailSheet(task: task)
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                trailingSwipeActions
+                iOSTaskRowTrailingSwipeActions(
+                    task: task,
+                    showDeleteConfirmation: $showDeleteConfirmation
+                )
             }
             .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                leadingSwipeActions
+                iOSTaskRowLeadingSwipeActions(task: task)
             }
             .contextMenu {
-                taskContextMenu
+                iOSTaskRowContextMenu(
+                    task: task,
+                    allTasks: allTasks,
+                    activeAreas: activeAreas,
+                    activeProjects: activeProjects,
+                    showDetail: $showDetail,
+                    showDeleteConfirmation: $showDeleteConfirmation,
+                    pendingRecurrenceRule: $pendingRecurrenceRule
+                )
             }
+            .iOSTaskRowRecurrenceScopeDialog(
+                task: task,
+                allTasks: allTasks,
+                pendingRecurrenceRule: $pendingRecurrenceRule
+            )
             .alert("Delete Task?", isPresented: $showDeleteConfirmation) {
                 Button("Delete", role: .destructive, action: deleteTask)
                 Button("Cancel", role: .cancel) {}
@@ -66,15 +101,25 @@ struct iOSTaskRow: View {
     }
 
     private var rowContent: some View {
-        HStack(alignment: .top, spacing: isRegularWidth ? 12 : 9) {
+        HStack(alignment: .top, spacing: isCompact ? 9 : (isRegularWidth ? 12 : 9)) {
             completionButton
             taskSummary
 
             Image(systemName: "chevron.right")
-                .font(.system(size: isRegularWidth ? 12 : 10, weight: .semibold))
-                .foregroundStyle(Theme.dim.opacity(0.65))
+                .font(.system(size: isCompact ? 10 : (isRegularWidth ? 12 : 10), weight: .semibold))
+                .foregroundStyle(rowTint.opacity(0.62))
                 .padding(.top, 4)
         }
+    }
+
+    private var rowHorizontalPadding: CGFloat {
+        if isCompact { return 11 }
+        return isRegularWidth ? 14 : 11
+    }
+
+    private var rowVerticalPadding: CGFloat {
+        if isCompact { return 8 }
+        return isRegularWidth ? 12 : 9
     }
 
     private var completionButton: some View {
@@ -82,71 +127,128 @@ struct iOSTaskRow: View {
             toggleCompletion()
         } label: {
             Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: isRegularWidth ? 19 : 16, weight: .semibold))
+                .font(.system(size: isCompact ? 16 : (isRegularWidth ? 19 : 16), weight: .semibold))
                 .foregroundStyle(task.isDone ? Theme.green : Theme.dim.opacity(0.68))
-                .frame(width: isRegularWidth ? 24 : 20, height: isRegularWidth ? 24 : 20)
+                .frame(width: isCompact ? 20 : (isRegularWidth ? 24 : 20), height: isCompact ? 20 : (isRegularWidth ? 24 : 20))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(task.isDone ? "Mark task todo" : "Complete task")
     }
 
     private var taskSummary: some View {
-        VStack(alignment: .leading, spacing: isRegularWidth ? 8 : 6) {
+        VStack(alignment: .leading, spacing: isCompact ? 5 : (isRegularWidth ? 8 : 6)) {
             Text(task.title.isEmpty ? "Untitled" : task.title)
-                .font(.system(size: isRegularWidth ? 15 : 13, weight: .semibold))
+                .font(.system(size: titleFontSize, weight: .semibold))
                 .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                 .strikethrough(task.isDone, color: Theme.dim)
-                .lineLimit(2)
+                .lineLimit(isCompact ? 1 : 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            if let secondaryLine {
+                Text(secondaryLine)
+                    .font(.system(size: secondaryFontSize, weight: .medium))
+                    .foregroundStyle(Theme.dim.opacity(task.isDone ? 0.58 : 0.82))
+                    .lineLimit(isCompact ? 1 : (isRegularWidth ? 2 : 1))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             taskBadges
-            tagScroller
+
+            if !isCompact {
+                tagScroller
+            }
         }
     }
 
+    private var titleFontSize: CGFloat {
+        if isCompact { return 13 }
+        return isRegularWidth ? 15 : 13
+    }
+
+    private var secondaryFontSize: CGFloat {
+        if isCompact { return 10.5 }
+        return isRegularWidth ? 12 : 11
+    }
+
     private var taskBadges: some View {
-        HStack(spacing: 6) {
-            if task.status == .inProgress {
-                taskBadge(
-                    systemImage: "play.fill",
-                    text: "In Progress",
-                    color: Theme.blue
-                )
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: isCompact ? 4 : (isRegularWidth ? 6 : 5)) {
+                taskBadgeContent
             }
+            .padding(.trailing, 1)
+        }
+    }
 
+    private var secondaryLine: String? {
+        let container = task.containerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let notes = iOSTaskPreviewText.plainText(from: task.notes)
+        let previewLimit = isCompact ? 80 : (isRegularWidth ? 120 : 64)
+        let preview = notes.isEmpty ? "" : String(notes.prefix(previewLimit))
+
+        if !container.isEmpty && !preview.isEmpty {
+            return "\(container) - \(preview)"
+        }
+        if !container.isEmpty {
+            return container
+        }
+        if !preview.isEmpty {
+            return preview
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private var taskBadgeContent: some View {
+        if task.status == .inProgress {
+            taskBadge(
+                systemImage: "play.fill",
+                text: "In Progress",
+                color: Theme.blue
+            )
+        }
+
+        if task.priority != .none || !isCompact {
             priorityBadge
+        }
 
-            if let goal = task.goal {
-                taskBadge(
-                    systemImage: "flag.fill",
-                    text: goal.title.isEmpty ? "Milestone" : goal.title,
-                    color: Color(hex: goal.colorHex)
-                )
-            }
+        if task.recurrenceRule != .none {
+            taskBadge(
+                systemImage: task.recurrenceRule.systemImage,
+                text: task.recurrenceRule.shortLabel,
+                color: Theme.purple
+            )
+        }
 
-            if !task.scheduledDate.isEmpty {
-                taskBadge(
-                    systemImage: task.scheduledStartMin >= 0 ? "clock.fill" : "sun.max.fill",
-                    text: scheduledDateLabel,
-                    color: task.scheduledDate == DateFormatters.todayKey() ? Theme.amber : Theme.dim
-                )
-            }
+        if let goal = task.goal {
+            taskBadge(
+                systemImage: "flag.fill",
+                text: goal.title.isEmpty ? "Milestone" : goal.title,
+                color: Color(hex: goal.colorHex)
+            )
+        }
 
-            if !task.dueDate.isEmpty {
-                taskBadge(
-                    systemImage: "flag.fill",
-                    text: DateFormatters.relativeDate(from: task.dueDate),
-                    color: isOverdue ? Theme.red : Theme.dim
-                )
-            }
+        if !task.scheduledDate.isEmpty {
+            taskBadge(
+                systemImage: task.scheduledStartMin >= 0 ? "clock.fill" : "sun.max.fill",
+                text: scheduledDateLabel,
+                color: task.scheduledDate == DateFormatters.todayKey() ? Theme.amber : Theme.dim
+            )
+        }
 
-            if task.estimatedMinutes > 0 {
-                taskBadge(
-                    systemImage: "clock",
-                    text: estimateLabel,
-                    color: Theme.dim
-                )
-            }
+        if !task.dueDate.isEmpty {
+            taskBadge(
+                systemImage: "flag.fill",
+                text: DateFormatters.relativeDate(from: task.dueDate),
+                color: isOverdue ? Theme.red : Theme.dim
+            )
+        }
+
+        if task.estimatedMinutes > 0 {
+            taskBadge(
+                systemImage: "clock",
+                text: estimateLabel,
+                color: Theme.dim
+            )
         }
     }
 
@@ -173,236 +275,28 @@ struct iOSTaskRow: View {
         }
     }
 
-    @ViewBuilder
-    private var trailingSwipeActions: some View {
-        Button {
-            toggleCompletion()
-        } label: {
-            Label(task.isDone ? "Todo" : "Done",
-                  systemImage: task.isDone ? "circle" : "checkmark.circle.fill")
-        }
-        .tint(task.isDone ? Theme.blue : Theme.green)
-
-        Button(role: .destructive) {
-            showDeleteConfirmation = true
-        } label: {
-            Label("Delete", systemImage: "trash")
-        }
-    }
-
-    @ViewBuilder
-    private var leadingSwipeActions: some View {
-        Button {
-            scheduleToday()
-        } label: {
-            Label("Today", systemImage: "sun.max.fill")
-        }
-        .tint(Theme.amber)
-
-        Button {
-            scheduleTomorrow()
-        } label: {
-            Label("Tomorrow", systemImage: "calendar")
-        }
-        .tint(Theme.blue)
-
-        Button {
-            dueToday()
-        } label: {
-            Label("Due", systemImage: "flag.fill")
-        }
-        .tint(Theme.red)
-
-        if !task.scheduledDate.isEmpty {
-            Button {
-                clearScheduledDate()
-            } label: {
-                Label("Clear", systemImage: "xmark.circle")
-            }
-            .tint(Theme.dim)
-        }
-    }
-
-    @ViewBuilder
-    private var taskContextMenu: some View {
-        Button {
-            showDetail = true
-        } label: {
-            Label("Edit", systemImage: "square.and.pencil")
-        }
-
-        statusMenu
-        priorityMenu
-        doDateMenu
-        dueDateMenu
-        sectionMenu
-        moveToListMenu
-
-        Button {
-            duplicateTask()
-        } label: {
-            Label("Duplicate", systemImage: "plus.square.on.square")
-        }
-
-        Button(role: .destructive) {
-            showDeleteConfirmation = true
-        } label: {
-            Label("Delete Task", systemImage: "trash")
-        }
-    }
-
-    private var statusMenu: some View {
-        Menu {
-            ForEach(TaskStatus.allCases, id: \.self) { status in
-                Button {
-                    setStatus(status)
-                } label: {
-                    Label(status.label, systemImage: status.systemImage)
-                }
-            }
-        } label: {
-            Label(task.status.label, systemImage: task.status.systemImage)
-        }
-    }
-
-    private var priorityMenu: some View {
-        Menu {
-            ForEach(TaskPriority.allCases, id: \.self) { priority in
-                Button {
-                    setPriority(priority)
-                } label: {
-                    Label(priority.label, systemImage: priority == task.priority ? "checkmark.circle.fill" : "circle")
-                }
-            }
-        } label: {
-            Label("Priority: \(task.priority.label)", systemImage: "flag.fill")
-        }
-    }
-
-    private var doDateMenu: some View {
-        Menu {
-            Button {
-                scheduleToday()
-            } label: {
-                Label("Today", systemImage: "sun.max.fill")
-            }
-
-            Button {
-                scheduleTomorrow()
-            } label: {
-                Label("Tomorrow", systemImage: "calendar")
-            }
-
-            Button {
-                scheduleNextWeek()
-            } label: {
-                Label("Next Week", systemImage: "calendar.badge.clock")
-            }
-
-            if !task.scheduledDate.isEmpty {
-                Button {
-                    clearScheduledDate()
-                } label: {
-                    Label("Clear Do Date", systemImage: "xmark.circle")
-                }
-            }
-        } label: {
-            Label("Do Date", systemImage: "sun.max.fill")
-        }
-    }
-
-    private var dueDateMenu: some View {
-        Menu {
-            Button {
-                dueToday()
-            } label: {
-                Label("Today", systemImage: "flag.fill")
-            }
-
-            Button {
-                dueTomorrow()
-            } label: {
-                Label("Tomorrow", systemImage: "calendar")
-            }
-
-            Button {
-                dueNextWeek()
-            } label: {
-                Label("Next Week", systemImage: "calendar.badge.clock")
-            }
-
-            if !task.dueDate.isEmpty {
-                Button {
-                    clearDueDate()
-                } label: {
-                    Label("Clear Due Date", systemImage: "xmark.circle")
-                }
-            }
-        } label: {
-            Label("Due Date", systemImage: "flag.fill")
-        }
-    }
-
-    @ViewBuilder
-    private var sectionMenu: some View {
-        let names = availableSectionNames
-        if names.count > 1 {
-            Menu {
-                ForEach(names, id: \.self) { section in
-                    Button {
-                        moveToSection(section)
-                    } label: {
-                        Label(section, systemImage: section.caseInsensitiveCompare(task.resolvedSectionName) == .orderedSame ? "checkmark.circle.fill" : "rectangle.split.3x1")
-                    }
-                }
-            } label: {
-                Label("Move Section", systemImage: "rectangle.split.3x1.fill")
-            }
-        }
-    }
-
-    private var moveToListMenu: some View {
-        Menu {
-            Button {
-                moveToContainer(area: nil, project: nil)
-            } label: {
-                Label("Inbox", systemImage: task.area == nil && task.project == nil ? "checkmark.circle.fill" : "tray.fill")
-            }
-
-            if !activeAreas.isEmpty {
-                Divider()
-
-                ForEach(activeAreas) { area in
-                    Button {
-                        moveToContainer(area: area, project: nil)
-                    } label: {
-                        Label(area.name.isEmpty ? "Untitled Area" : area.name, systemImage: task.area?.id == area.id && task.project == nil ? "checkmark.circle.fill" : area.icon)
-                    }
-                }
-            }
-
-            if !activeProjects.isEmpty {
-                Divider()
-
-                ForEach(activeProjects) { project in
-                    Button {
-                        moveToContainer(area: nil, project: project)
-                    } label: {
-                        Label(project.name.isEmpty ? "Untitled Project" : project.name, systemImage: task.project?.id == project.id ? "checkmark.circle.fill" : project.icon)
-                    }
-                }
-            }
-        } label: {
-            Label("Move to List", systemImage: "folder.fill")
-        }
-    }
-
     private var priorityBadge: some View {
         taskBadge(
             systemImage: "circle.fill",
             text: task.priority.label,
             color: Theme.priorityColor(task.priority)
         )
+    }
+
+    private var rowTint: Color {
+        switch task.priority {
+        case .high:
+            return Theme.red
+        case .medium:
+            return Theme.amber
+        case .low:
+            return Theme.blue
+        case .none:
+            if !task.containerName.isEmpty {
+                return Color(hex: task.containerColor)
+            }
+            return Theme.blue
+        }
     }
 
     private var isOverdue: Bool {
@@ -426,91 +320,23 @@ struct iOSTaskRow: View {
         return DateFormatters.relativeDate(from: task.scheduledDate)
     }
 
-    private var availableSectionNames: [String] {
-        let rawNames = task.area?.sectionNames ?? task.project?.sectionNames ?? []
-        let names = rawNames.isEmpty ? [TaskSectionDefaults.defaultName] : rawNames
-        if names.contains(where: { $0.caseInsensitiveCompare(task.resolvedSectionName) == .orderedSame }) {
-            return names
-        }
-        return names + [task.resolvedSectionName]
-    }
-
     private func taskBadge(systemImage: String, text: String, color: Color) -> some View {
         HStack(spacing: 4) {
             Image(systemName: systemImage)
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: isCompact ? 8 : 9, weight: .semibold))
             Text(text)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: isCompact ? 9 : 10, weight: .medium))
                 .lineLimit(1)
         }
         .foregroundStyle(color)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
+        .padding(.horizontal, isCompact ? 5 : 6)
+        .padding(.vertical, isCompact ? 2 : 3)
         .background(color.opacity(0.11))
         .clipShape(Capsule())
     }
 
     private func toggleCompletion() {
         CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
-    }
-
-    private func setStatus(_ status: TaskStatus) {
-        CadenceTaskMutationSupport.setStatus(status, for: task, modelContext: modelContext)
-    }
-
-    private func setPriority(_ priority: TaskPriority) {
-        CadenceTaskMutationSupport.setPriority(priority, for: task, modelContext: modelContext)
-    }
-
-    private func scheduleToday() {
-        CadenceTaskMutationSupport.scheduleToday(task, modelContext: modelContext)
-    }
-
-    private func scheduleTomorrow() {
-        CadenceTaskMutationSupport.scheduleTomorrow(task, modelContext: modelContext)
-    }
-
-    private func scheduleNextWeek() {
-        CadenceTaskMutationSupport.scheduleNextWeek(task, modelContext: modelContext)
-    }
-
-    private func clearScheduledDate() {
-        CadenceTaskMutationSupport.clearScheduledDate(task, modelContext: modelContext)
-    }
-
-    private func dueToday() {
-        CadenceTaskMutationSupport.dueToday(task, modelContext: modelContext)
-    }
-
-    private func dueTomorrow() {
-        CadenceTaskMutationSupport.dueTomorrow(task, modelContext: modelContext)
-    }
-
-    private func dueNextWeek() {
-        CadenceTaskMutationSupport.dueNextWeek(task, modelContext: modelContext)
-    }
-
-    private func clearDueDate() {
-        CadenceTaskMutationSupport.clearDueDate(task, modelContext: modelContext)
-    }
-
-    private func moveToSection(_ section: String) {
-        CadenceTaskMutationSupport.moveToSection(section, task: task, modelContext: modelContext)
-    }
-
-    private func moveToContainer(area: Area?, project: Project?) {
-        CadenceTaskMutationSupport.moveToContainer(
-            task,
-            area: area,
-            project: project,
-            sectionName: task.resolvedSectionName,
-            allTasks: allTasks,
-            modelContext: modelContext
-        )
-    }
-
-    private func duplicateTask() {
-        _ = try? CadenceTaskMutationSupport.duplicate(task, allTasks: allTasks, modelContext: modelContext)
     }
 
     private func deleteTask() {
@@ -521,6 +347,29 @@ struct iOSTaskRow: View {
         guard deepLinkManager.pendingTaskID == task.id else { return }
         showDetail = true
         deepLinkManager.clearPendingTask(task.id)
+    }
+}
+
+private enum iOSTaskPreviewText {
+    static func plainText(from markdown: String) -> String {
+        markdown
+            .split(whereSeparator: \.isNewline)
+            .map { line in
+                var text = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+                text = text.replacingOccurrences(of: #"^#{1,6}\s+"#, with: "", options: .regularExpression)
+                text = text.replacingOccurrences(of: #"^>\s?"#, with: "", options: .regularExpression)
+                text = text.replacingOccurrences(of: #"^[-*+]\s+\[[ xX]\]\s+"#, with: "", options: .regularExpression)
+                text = text.replacingOccurrences(of: #"^[-*+]\s+"#, with: "", options: .regularExpression)
+                text = text.replacingOccurrences(of: #"^\d+\.\s+"#, with: "", options: .regularExpression)
+                text = text.replacingOccurrences(of: #"\*\*([^*]+)\*\*"#, with: "$1", options: .regularExpression)
+                text = text.replacingOccurrences(of: #"__([^_]+)__"#, with: "$1", options: .regularExpression)
+                text = text.replacingOccurrences(of: #"`([^`]+)`"#, with: "$1", options: .regularExpression)
+                text = text.replacingOccurrences(of: #"\[([^\]]+)\]\([^)]+\)"#, with: "$1", options: .regularExpression)
+                return text
+            }
+            .filter { !$0.isEmpty && !$0.hasPrefix("```") }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

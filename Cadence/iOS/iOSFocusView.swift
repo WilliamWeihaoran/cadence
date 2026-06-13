@@ -4,6 +4,7 @@ import SwiftUI
 
 struct iOSFocusView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var selectedTaskID: UUID?
     @State private var timerState = CadenceFocusTimerState()
@@ -25,129 +26,196 @@ struct iOSFocusView: View {
         timerState.elapsedSeconds()
     }
 
+    private var isCompact: Bool {
+        horizontalSizeClass == .compact
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                iOSPanelHeader(eyebrow: "Focus", title: "Focus", count: readyTasks.count)
-                Divider().background(Theme.borderSubtle)
-
-                if readyTasks.isEmpty {
-                    iOSEmptyPanel(
-                        systemImage: "timer",
-                        title: "No focus tasks",
-                        subtitle: "Schedule a task for today to focus it here."
-                    )
-                } else {
-                    List(readyTasks) { task in
-                        Button {
-                            selectedTaskID = task.id
-                            resetTimer()
-                        } label: {
-                            iOSFeatureTaskSummaryRow(
-                                title: task.title.isEmpty ? "Untitled Task" : task.title,
-                                subtitle: CadenceFocusSupport.sidebarDetail(for: task, todayKey: todayKey),
-                                detail: task.estimatedMinutes > 0 ? "\(task.estimatedMinutes)m" : task.priority.label,
-                                icon: task.priority == .high ? "exclamationmark.circle.fill" : "circle",
-                                color: Theme.priorityColor(task.priority),
-                                isSelected: selectedTask?.id == task.id
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                    }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                }
+        Group {
+            if isCompact {
+                compactLayout
+            } else {
+                horizontalLayout
             }
-            .frame(minWidth: 300, idealWidth: 360)
-            .background(Theme.surface)
-
-            Divider().background(Theme.borderSubtle)
-
-            VStack(spacing: 22) {
-                if let task = selectedTask {
-                    VStack(spacing: 6) {
-                        Text(task.title.isEmpty ? "Untitled Task" : task.title)
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundStyle(Theme.text)
-                            .multilineTextAlignment(.center)
-                        Text(task.containerName.isEmpty ? task.priority.label : task.containerName)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Theme.dim)
-                    }
-
-                    TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        Text(CadenceFocusSupport.clockDisplay(elapsedSeconds: elapsedSeconds))
-                            .font(.system(size: 62, weight: .bold, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.text)
-                    }
-
-                    HStack(spacing: 12) {
-                        Button {
-                            toggleTimer()
-                        } label: {
-                            Label(timerState.isRunning ? "Pause" : "Start", systemImage: timerState.isRunning ? "pause.fill" : "play.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 18)
-                                .padding(.vertical, 10)
-                                .background(timerState.isRunning ? Theme.amber : Theme.blue)
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-
-                        Button {
-                            resetTimer()
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Theme.text)
-                                .frame(width: 40, height: 38)
-                                .background(Theme.surfaceElevated)
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-
-                        Button {
-                            complete(task)
-                        } label: {
-                            Label("Done", systemImage: "checkmark")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Theme.green)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                                .background(Theme.green.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    if !task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(task.notes)
-                            .font(.system(size: 14))
-                            .foregroundStyle(Theme.dim)
-                            .frame(maxWidth: 520, alignment: .leading)
-                            .padding(14)
-                            .background(Theme.surfaceElevated.opacity(0.45))
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }
-                } else {
-                    iOSEmptyPanel(
-                        systemImage: "timer",
-                        title: "Ready when you are",
-                        subtitle: "Today tasks will appear here."
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(24)
-            .background(Theme.bg)
         }
+        .background(Theme.bg.ignoresSafeArea())
         .onAppear {
             selectedTaskID = selectedTaskID ?? readyTasks.first?.id
         }
+    }
+
+    private var horizontalLayout: some View {
+        HStack(spacing: 0) {
+            taskListPane
+                .frame(minWidth: 300, idealWidth: 360)
+
+            Divider().background(Theme.borderSubtle)
+
+            focusDetailPane
+        }
+    }
+
+    private var compactLayout: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                iOSCompactPageHeader(
+                    eyebrow: "Focus",
+                    title: "Focus",
+                    subtitle: "Pick one scheduled task and keep the timer close.",
+                    systemImage: "timer",
+                    color: Theme.red
+                )
+
+                taskListPane
+                    .frame(minHeight: 280, maxHeight: 360)
+                    .iOSCompactPanelCard()
+
+                focusDetailPane
+                    .frame(minHeight: 430)
+                    .iOSCompactPanelCard()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 18)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private var taskListPane: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            iOSPanelHeader(eyebrow: "Focus", title: "Focus", count: readyTasks.count)
+            Divider().background(Theme.borderSubtle)
+
+            if readyTasks.isEmpty {
+                iOSEmptyPanel(
+                    systemImage: "timer",
+                    title: "No focus tasks",
+                    subtitle: "Schedule a task for today to focus it here."
+                )
+            } else {
+                List(readyTasks) { task in
+                    Button {
+                        select(task)
+                    } label: {
+                        iOSFeatureTaskSummaryRow(
+                            title: task.title.isEmpty ? "Untitled Task" : task.title,
+                            subtitle: CadenceFocusSupport.sidebarDetail(for: task, todayKey: todayKey),
+                            detail: task.estimatedMinutes > 0 ? "\(task.estimatedMinutes)m" : task.priority.label,
+                            icon: task.priority == .high ? "exclamationmark.circle.fill" : "circle",
+                            color: Theme.priorityColor(task.priority),
+                            isSelected: selectedTask?.id == task.id
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+            }
+        }
+        .background(Theme.surface)
+    }
+
+    private var focusDetailPane: some View {
+        VStack(spacing: isCompact ? 18 : 22) {
+            if let task = selectedTask {
+                selectedTaskHeader(task)
+                focusClock
+                focusControls(for: task)
+                taskNotes(task)
+            } else {
+                iOSEmptyPanel(
+                    systemImage: "timer",
+                    title: "Ready when you are",
+                    subtitle: "Today tasks will appear here."
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(isCompact ? 18 : 24)
+        .background(Theme.bg)
+    }
+
+    private func selectedTaskHeader(_ task: AppTask) -> some View {
+        VStack(spacing: 6) {
+            Text(task.title.isEmpty ? "Untitled Task" : task.title)
+                .font(.system(size: isCompact ? 22 : 24, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .multilineTextAlignment(.center)
+            Text(task.containerName.isEmpty ? task.priority.label : task.containerName)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.dim)
+        }
+    }
+
+    private var focusClock: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            Text(CadenceFocusSupport.clockDisplay(elapsedSeconds: elapsedSeconds))
+                .font(.system(size: isCompact ? 54 : 62, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Theme.text)
+        }
+    }
+
+    private func focusControls(for task: AppTask) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                toggleTimer()
+            } label: {
+                Label(timerState.isRunning ? "Pause" : "Start", systemImage: timerState.isRunning ? "pause.fill" : "play.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(timerState.isRunning ? Theme.amber : Theme.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                resetTimer()
+            } label: {
+                Image(systemName: "arrow.counterclockwise")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .frame(width: 40, height: 38)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                complete(task)
+            } label: {
+                Label("Done", systemImage: "checkmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.green)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Theme.green.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private func taskNotes(_ task: AppTask) -> some View {
+        if !task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Text(task.notes)
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.dim)
+                .frame(maxWidth: 520, alignment: .leading)
+                .padding(14)
+                .background(Theme.surfaceElevated.opacity(0.45))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
+    private func select(_ task: AppTask) {
+        selectedTaskID = task.id
+        resetTimer()
     }
 
     private func toggleTimer() {
