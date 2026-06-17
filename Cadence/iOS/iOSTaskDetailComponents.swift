@@ -15,15 +15,15 @@ struct iOSTaskEditorTitleCard: View {
             HStack(alignment: .center, spacing: 11) {
                 Image(systemName: task.status.systemImage)
                     .font(.system(size: isRegularWidth ? 17 : 15, weight: .semibold))
-                    .foregroundStyle(statusColor)
+                    .foregroundStyle(CadenceTaskPresentationSupport.statusColor(task.status))
                     .frame(width: isRegularWidth ? 38 : 34, height: isRegularWidth ? 38 : 34)
-                    .background(statusColor.opacity(0.13))
+                    .background(CadenceTaskPresentationSupport.statusColor(task.status).opacity(0.13))
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(task.status.label)
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(statusColor)
+                        .foregroundStyle(CadenceTaskPresentationSupport.statusColor(task.status))
                         .textCase(.uppercase)
                         .kerning(0.8)
 
@@ -53,7 +53,7 @@ struct iOSTaskEditorTitleCard: View {
 
                     if !task.dueDate.isEmpty {
                         iOSTaskEditorContextChip(
-                            title: "Due \(DateFormatters.relativeDate(from: task.dueDate))",
+                            title: "Due \(CadenceTaskPresentationSupport.dueDateLabel(for: task))",
                             systemImage: "flag.fill",
                             color: task.dueDate < DateFormatters.todayKey() ? Theme.red : Theme.blue
                         )
@@ -85,19 +85,135 @@ struct iOSTaskEditorTitleCard: View {
         }
     }
 
-    private var statusColor: Color {
-        switch task.status {
-        case .todo: return Theme.blue
-        case .inProgress: return Theme.amber
-        case .done: return Theme.green
-        case .cancelled: return Theme.red
+    private var estimateLabel: String {
+        CadenceTaskPresentationSupport.estimateLabel(for: task)
+    }
+}
+
+struct iOSTaskEditorOverviewCard: View {
+    @Bindable var task: AppTask
+    let containerTitle: String
+    let goalTitle: String?
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
+
+    private var completedSubtasks: Int {
+        CadenceTaskPresentationSupport.subtaskProgress(for: task)?.completed ?? 0
+    }
+
+    private var totalSubtasks: Int {
+        CadenceTaskPresentationSupport.subtaskProgress(for: task)?.total ?? 0
+    }
+
+    private var hasNotes: Bool {
+        CadenceTaskPresentationSupport.hasNotes(task)
+    }
+
+    private var tagCount: Int {
+        (task.tags ?? []).filter { !$0.isArchived }.count
+    }
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 8) {
+            iOSTaskOverviewMetric(
+                title: "List",
+                value: containerTitle,
+                systemImage: "tray.full.fill",
+                color: Theme.blue
+            )
+            iOSTaskOverviewMetric(
+                title: "Subtasks",
+                value: totalSubtasks == 0 ? "None" : "\(completedSubtasks)/\(totalSubtasks)",
+                systemImage: "checklist",
+                color: totalSubtasks == 0 ? Theme.dim : Theme.green
+            )
+            iOSTaskOverviewMetric(
+                title: "Logged",
+                value: loggedLabel,
+                systemImage: "timer",
+                color: task.actualMinutes == 0 ? Theme.dim : Theme.green
+            )
+            iOSTaskOverviewMetric(
+                title: "Milestone",
+                value: goalTitle ?? "None",
+                systemImage: goalTitle == nil ? "circle.dashed" : "flag.fill",
+                color: goalTitle == nil ? Theme.dim : Theme.amber
+            )
+            iOSTaskOverviewMetric(
+                title: "Notes",
+                value: hasNotes ? "Ready" : "Empty",
+                systemImage: hasNotes ? "doc.text.fill" : "doc.text",
+                color: hasNotes ? Theme.purple : Theme.dim
+            )
+            iOSTaskOverviewMetric(
+                title: "Tags",
+                value: tagCount == 0 ? "None" : "\(tagCount)",
+                systemImage: "tag.fill",
+                color: tagCount == 0 ? Theme.dim : Theme.amber
+            )
+        }
+        .padding(isRegularWidth ? 12 : 10)
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
         }
     }
 
-    private var estimateLabel: String {
-        if task.estimatedMinutes < 60 { return "\(task.estimatedMinutes)m" }
-        if task.estimatedMinutes % 60 == 0 { return "\(task.estimatedMinutes / 60)h" }
-        return String(format: "%.1fh", Double(task.estimatedMinutes) / 60.0)
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: isRegularWidth ? 122 : 108), spacing: 8)]
+    }
+
+    private var loggedLabel: String {
+        if task.actualMinutes == 0 { return "None" }
+        return CadenceTaskPresentationSupport.estimateLabel(minutes: task.actualMinutes)
+    }
+}
+
+private struct iOSTaskOverviewMetric: View {
+    let title: String
+    let value: String
+    let systemImage: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 24, height: 24)
+                .background(color.opacity(0.11))
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .textCase(.uppercase)
+                    .kerning(0.5)
+                    .lineLimit(1)
+
+                Text(value)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .background(Theme.surfaceElevated.opacity(0.34))
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Theme.borderSubtle.opacity(0.30), lineWidth: 1)
+        }
     }
 }
 
@@ -213,11 +329,13 @@ struct iOSTaskEditorDivider: View {
 struct iOSSubtaskRow: View {
     @Bindable var subtask: Subtask
     let delete: () -> Void
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         HStack(spacing: 9) {
             Button {
                 subtask.isDone.toggle()
+                save()
             } label: {
                 Image(systemName: subtask.isDone ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 15, weight: .semibold))
@@ -225,11 +343,17 @@ struct iOSSubtaskRow: View {
             }
             .buttonStyle(.plain)
 
-            Text(subtask.title)
+            TextField("Subtask", text: $subtask.title, axis: .vertical)
+                .textFieldStyle(.plain)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(subtask.isDone ? Theme.dim : Theme.text)
                 .strikethrough(subtask.isDone, color: Theme.dim)
                 .lineLimit(2)
+                .submitLabel(.done)
+                .onSubmit(save)
+                .onChange(of: subtask.title) { _, _ in
+                    save()
+                }
 
             Spacer(minLength: 8)
 
@@ -251,6 +375,10 @@ struct iOSSubtaskRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Theme.borderSubtle.opacity(0.4), lineWidth: 1)
         }
+    }
+
+    private func save() {
+        try? modelContext.save()
     }
 }
 

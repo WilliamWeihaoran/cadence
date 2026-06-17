@@ -69,15 +69,15 @@ struct iOSSearchView: View {
     }
 
     private var pageResults: [iOSSearchResult] {
-        let candidates = iOSSearchFeatureDestination.allCases.map { destination in
+        let candidates = searchableFeatureDestinations.map { destination in
             iOSSearchFeatureCandidate(
                 title: destination.title,
                 subtitle: destination.subtitle,
-                detail: destination.detail,
-                icon: destination.icon,
-                color: destination.color,
+                detail: destination.searchSummary,
+                icon: destination.systemImage,
+                color: destination.tint,
                 destination: destination,
-                fields: [destination.title, destination.subtitle, destination.detail, destination.aliases]
+                fields: [destination.title, destination.subtitle, destination.searchSummary, destination.searchAliases]
             )
         }
 
@@ -214,7 +214,7 @@ struct iOSSearchView: View {
                 icon: "flag.fill",
                 color: Color(hex: goal.colorHex),
                 score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [goal.title, goal.desc, goal.pursuit?.title ?? "", goal.context?.name ?? ""]) ?? 0,
-                featureDestination: .milestones
+                featureDestination: .goals
             )
         } + habits.map { habit in
             iOSSearchResult(
@@ -369,28 +369,30 @@ struct iOSSearchView: View {
                 }
             }
         }
-        .navigationDestination(for: iOSSearchFeatureDestination.self) { destination in
+        .navigationDestination(for: CadenceFeatureDestination.self) { destination in
             switch destination {
             case .today:
                 iPadTodayView()
             case .allTasks:
                 iOSAllTasksView()
-            case .inbox:
-                iPadInboxView()
-            case .notes:
-                iOSCompactNotesView()
             case .focus:
                 iOSFocusView()
+            case .inbox:
+                iPadInboxView()
             case .calendar:
                 iOSCalendarView()
+            case .notes:
+                iOSCompactNotesView()
+            case .lists:
+                iOSListsView()
             case .pursuits:
                 iOSPursuitsView()
-            case .milestones:
+            case .goals:
                 iOSMilestonesView()
             case .habits:
                 iOSHabitsView()
-            case .lists:
-                iOSListsView()
+            case .search:
+                iOSSearchView()
             case .settings:
                 iOSSettingsView()
             }
@@ -461,6 +463,10 @@ struct iOSSearchView: View {
         (!showsNotes || noteResults.isEmpty) &&
         (!showsEvents || eventResults.isEmpty) &&
         (!showsProgress || pageResults.isEmpty && progressResults.isEmpty)
+    }
+
+    private var searchableFeatureDestinations: [CadenceFeatureDestination] {
+        CadenceFeatureDestination.allCases.filter { $0 != .search }
     }
 
     @ViewBuilder
@@ -534,10 +540,10 @@ struct iOSSearchView: View {
             parts.append("Do \(DateFormatters.relativeDate(from: task.scheduledDate))")
         }
         if !task.dueDate.isEmpty {
-            parts.append("Due \(DateFormatters.relativeDate(from: task.dueDate))")
+            parts.append("Due \(CadenceTaskPresentationSupport.dueDateLabel(for: task))")
         }
         if task.estimatedMinutes > 0 {
-            parts.append(task.estimatedMinutes < 60 ? "\(task.estimatedMinutes)m" : "\(task.estimatedMinutes / 60)h")
+            parts.append(CadenceTaskPresentationSupport.estimateLabel(for: task))
         }
         return parts.joined(separator: " · ")
     }
@@ -604,11 +610,7 @@ struct iOSSearchView: View {
     }
 
     private func excerpt(_ value: String) -> String {
-        let trimmed = value
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count > 120 else { return trimmed }
-        return String(trimmed.prefix(117)) + "..."
+        CadenceMarkdownPresentationSupport.plainPreviewText(from: value, limit: 120)
     }
 
 }

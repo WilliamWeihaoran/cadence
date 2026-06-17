@@ -2,12 +2,6 @@
 import SwiftUI
 import AppKit
 
-enum TaskContainerSelection: Hashable {
-    case inbox
-    case area(UUID)
-    case project(UUID)
-}
-
 struct TaskCreationSeed {
     var title: String = ""
     var notes: String = ""

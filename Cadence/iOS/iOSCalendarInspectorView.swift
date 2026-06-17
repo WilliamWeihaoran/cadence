@@ -32,14 +32,12 @@ struct iOSCalendarDayInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(
-                eyebrow: DateFormatters.longDate.string(from: date),
-                title: "Schedule",
-                count: totalCount
+            iOSCalendarInspectorHeader(
+                date: date,
+                count: totalCount,
+                addItem: addItem
             )
             Divider().background(Theme.borderSubtle)
-
-            iOSCalendarInspectorActionBar(addItem: addItem)
 
             if !hasItems {
                 VStack(alignment: .leading, spacing: 12) {
@@ -98,7 +96,7 @@ struct iOSCalendarDayInspector: View {
                         if !timedTasks.isEmpty {
                             iOSCalendarInspectorSection(title: "Timed", color: Theme.blue) {
                                 ForEach(timedTasks) { task in
-                                    iOSTaskRow(task: task)
+                                    iOSTaskRow(task: task, density: .compact)
                                 }
                             }
                         }
@@ -106,7 +104,7 @@ struct iOSCalendarDayInspector: View {
                         if !unscheduledTasks.isEmpty {
                             iOSCalendarInspectorSection(title: "Do Date", color: Theme.purple) {
                                 ForEach(unscheduledTasks) { task in
-                                    iOSTaskRow(task: task)
+                                    iOSTaskRow(task: task, density: .compact)
                                 }
                             }
                         }
@@ -114,7 +112,7 @@ struct iOSCalendarDayInspector: View {
                         if !dueOnlyTasks.isEmpty {
                             iOSCalendarInspectorSection(title: "Due", color: Theme.red) {
                                 ForEach(dueOnlyTasks) { task in
-                                    iOSTaskRow(task: task)
+                                    iOSTaskRow(task: task, density: .compact)
                                 }
                             }
                         }
@@ -135,13 +133,100 @@ struct iOSCalendarDayInspector: View {
     }
 }
 
+private struct iOSCalendarInspectorHeader: View {
+    let date: Date
+    let count: Int
+    let addItem: () -> Void
+
+    private var dayLabel: String {
+        DateFormatters.dayOfWeek.string(from: date)
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(spacing: 1) {
+                Text(DateFormatters.dayOfWeek.string(from: date).prefix(3).uppercased())
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Theme.blue)
+                    .lineLimit(1)
+
+                Text(DateFormatters.dayNumber.string(from: date))
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .monospacedDigit()
+            }
+            .frame(width: 38, height: 38)
+            .background(Theme.blue.opacity(0.13))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Theme.blue.opacity(0.22), lineWidth: 1)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(DateFormatters.longDate.string(from: date))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .textCase(.uppercase)
+                    .kerning(0.8)
+
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("Schedule")
+                        .font(.system(size: 21, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+
+                    Text(dayLabel)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.blue)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Theme.blue.opacity(0.10))
+                        .clipShape(Capsule())
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Button(action: addItem) {
+                Image(systemName: "plus")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Theme.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(alignment: .topTrailing) {
+                        if count > 0 {
+                            Text("\(count)")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.white)
+                                .monospacedDigit()
+                                .padding(.horizontal, 5)
+                                .frame(minWidth: 18)
+                                .frame(height: 17)
+                                .background(Theme.green)
+                                .clipShape(Capsule())
+                                .offset(x: 6, y: -6)
+                        }
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add calendar item")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+        .padding(.bottom, 11)
+        .background(Theme.surface)
+    }
+}
+
 private struct iOSCalendarInspectorSummaryStrip: View {
     let blockCount: Int
     let eventCount: Int
     let taskCount: Int
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             iOSCalendarInspectorMetric(
                 value: blockCount,
                 label: "Blocks",
@@ -171,14 +256,14 @@ private struct iOSCalendarInspectorMetric: View {
     let tint: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 6) {
             Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(tint)
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("\(value)")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Theme.text)
                     .monospacedDigit()
                 Text(label)
@@ -188,12 +273,13 @@ private struct iOSCalendarInspectorMetric: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(tint.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.5), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(tint.opacity(0.15), lineWidth: 1)
         }
     }
 }
@@ -247,7 +333,7 @@ private struct iOSCalendarInspectorEmptyState: View {
             .accessibilityLabel("Add calendar item")
         }
         .padding(14)
-        .background(Theme.surface)
+        .background(Theme.surfaceElevated.opacity(0.34))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -275,25 +361,6 @@ private struct iOSCalendarEventSummaryRow: View {
             icon: event.isAllDay ? "calendar" : "calendar.badge.clock",
             color: color
         )
-    }
-}
-
-private struct iOSCalendarInspectorActionBar: View {
-    let addItem: () -> Void
-
-    var body: some View {
-        HStack {
-            Button(action: addItem) {
-                Label("Add", systemImage: "plus")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Theme.blue)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Theme.surface.opacity(0.7))
     }
 }
 #endif

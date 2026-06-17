@@ -98,6 +98,53 @@ struct iOSCalendarView: View {
         CadenceScheduleSupport.dueOnlyTasks(on: selectedKey, from: allTasks)
     }
 
+    private var selectedUniqueTaskCount: Int {
+        Set((selectedTasks + selectedUnscheduledTasks + selectedDueOnlyTasks).map(\.id)).count
+    }
+
+    private var selectedTimedTaskCount: Int {
+        selectedTasks.filter { $0.scheduledDate == selectedKey && $0.scheduledStartMin >= 0 }.count
+    }
+
+    private var selectedTotalCount: Int {
+        selectedUniqueTaskCount + selectedBundles.count + selectedEvents.count
+    }
+
+    private var activePresentationLabel: String {
+        if presentation == .board {
+            return "Board"
+        }
+        return viewMode.rawValue
+    }
+
+    private var selectedLeadItem: iOSCalendarLeadItem? {
+        if let bundle = selectedBundles.first {
+            return iOSCalendarLeadItem(
+                title: bundle.displayTitle,
+                detail: CadenceScheduleSupport.timeRangeLabel(startMinute: bundle.startMin, endMinute: bundle.endMin),
+                systemImage: "tray.full.fill",
+                tint: Theme.amber
+            )
+        }
+        if let event = selectedEvents.first {
+            return iOSCalendarLeadItem(
+                title: iOSCalendarEventSupport.title(for: event),
+                detail: iOSCalendarEventSupport.timeRangeLabel(for: event),
+                systemImage: event.isAllDay ? "calendar" : "calendar.badge.clock",
+                tint: iOSCalendarEventSupport.color(for: event.calendar)
+            )
+        }
+        if let task = (selectedTasks + selectedUnscheduledTasks + selectedDueOnlyTasks).first {
+            return iOSCalendarLeadItem(
+                title: task.title.isEmpty ? "Untitled Task" : task.title,
+                detail: task.containerName.isEmpty ? "Inbox" : task.containerName,
+                systemImage: task.isDone ? "checkmark.circle.fill" : "circle.fill",
+                tint: Color(hex: task.containerColor)
+            )
+        }
+        return nil
+    }
+
     private var titleLabel: String {
         if presentation == .board {
             return CalendarBoardPlannerSupport.title(for: anchorDate, calendar: calendar)
@@ -110,8 +157,12 @@ struct iOSCalendarView: View {
     }
 
     private var compactCalendarHeight: CGFloat {
-        if presentation == .board { return 620 }
-        return presentation == .timeline && viewMode != .month ? 620 : 470
+        if presentation == .board { return 520 }
+        return presentation == .timeline && viewMode != .month ? 430 : 420
+    }
+
+    private var compactInspectorMinHeight: CGFloat {
+        selectedTotalCount == 0 ? 260 : 320
     }
 
     var body: some View {
@@ -126,21 +177,44 @@ struct iOSCalendarView: View {
                 today: jumpToToday
             )
 
+            iOSCalendarContextStrip(
+                selectedDate: selectedDate,
+                presentationLabel: activePresentationLabel,
+                totalCount: selectedTotalCount,
+                timedCount: selectedTimedTaskCount,
+                taskCount: selectedUniqueTaskCount,
+                eventCount: selectedEvents.count,
+                bundleCount: selectedBundles.count,
+                leadItem: selectedLeadItem
+            )
+
             Divider().background(Theme.borderSubtle)
 
             if isCompact {
                 ScrollView {
-                    VStack(spacing: 0) {
+                    VStack(spacing: 10) {
+                        dayInspector
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: compactInspectorMinHeight)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(Theme.borderSubtle.opacity(0.42), lineWidth: 1)
+                            }
+
                         calendarContent
                             .frame(maxWidth: .infinity)
                             .frame(height: compactCalendarHeight)
-
-                        Divider().background(Theme.borderSubtle)
-
-                        dayInspector
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 390)
+                            .background(Theme.surface)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(Theme.borderSubtle.opacity(0.42), lineWidth: 1)
+                            }
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 128)
                 }
                 .scrollIndicators(.hidden)
             } else {
@@ -167,7 +241,7 @@ struct iOSCalendarView: View {
             persistAnchorDate(newDate)
         }
         .sheet(item: $quickCreateSeed) { seed in
-            iOSCalendarQuickCreateSheet(dateKey: seed.dateKey)
+            iOSCalendarQuickCreateSheet(dateKey: seed.dateKey, initialStartMinute: seed.startMinute)
         }
     }
 
@@ -203,7 +277,8 @@ struct iOSCalendarView: View {
                 unscheduledTasksByDate: unscheduledTasksByDate,
                 bundlesByDate: bundlesByDate,
                 eventsByDate: visibleEventsByDate,
-                zoomLevel: zoomLevel
+                zoomLevel: zoomLevel,
+                onCreateAt: openQuickCreate
             )
         }
     }
@@ -234,6 +309,13 @@ struct iOSCalendarView: View {
 
     private func openQuickCreate(on dateKey: String) {
         quickCreateSeed = iOSCalendarQuickCreateSeed(dateKey: dateKey)
+    }
+
+    private func openQuickCreate(on dateKey: String, startMinute: Int) {
+        if let date = DateFormatters.date(from: dateKey) {
+            selectedDate = calendar.startOfDay(for: date)
+        }
+        quickCreateSeed = iOSCalendarQuickCreateSeed(dateKey: dateKey, startMinute: startMinute)
     }
 
     private func setViewMode(_ newMode: CadenceCalendarViewMode) {
@@ -301,141 +383,13 @@ struct iOSCalendarView: View {
 
 private struct iOSCalendarQuickCreateSeed: Identifiable {
     let dateKey: String
-    var id: String { dateKey }
+    var startMinute: Int? = nil
+    var id: String {
+        if let startMinute {
+            return "\(dateKey)-\(startMinute)"
+        }
+        return dateKey
+    }
 }
 
-private struct iOSCalendarToolbar: View {
-    let title: String
-    @Binding var viewMode: CadenceCalendarViewMode
-    @Binding var presentation: CadenceCalendarPresentation
-    @Binding var zoomLevel: Int
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    let previous: () -> Void
-    let next: () -> Void
-    let today: () -> Void
-
-    var body: some View {
-        Group {
-            if horizontalSizeClass == .compact {
-                compactToolbar
-            } else {
-                regularToolbar
-            }
-        }
-        .padding(.horizontal, horizontalSizeClass == .regular ? 16 : 20)
-        .padding(.vertical, horizontalSizeClass == .regular ? 10 : 10)
-        .background(Theme.surface)
-    }
-
-    private var compactToolbar: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                titleBlock
-                Spacer(minLength: 10)
-                navigationControls
-            }
-
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    modePicker
-                    zoomControls
-                }
-            }
-            .scrollIndicators(.hidden)
-        }
-    }
-
-    private var regularToolbar: some View {
-        HStack(spacing: 14) {
-            titleBlock
-
-            modePicker
-                .frame(width: 390)
-
-            zoomControls
-
-            Spacer(minLength: 8)
-
-            navigationControls
-        }
-        .frame(minHeight: 42)
-    }
-
-    private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Calendar")
-                .font(.system(size: horizontalSizeClass == .regular ? 10 : 9, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .textCase(.uppercase)
-                .kerning(0.8)
-            Text(title)
-                .font(.system(size: horizontalSizeClass == .regular ? 20 : 17, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-        }
-        .frame(minWidth: horizontalSizeClass == .regular ? 170 : 116, idealWidth: 210, maxWidth: 260, alignment: .leading)
-        .layoutPriority(1)
-    }
-
-    private var modePicker: some View {
-        Picker("", selection: calendarModeSelection) {
-            ForEach(CadenceCalendarViewMode.pickerCases, id: \.self) { mode in
-                Text(mode.rawValue).tag("mode:\(mode.rawValue)")
-            }
-
-            Text("Board").tag("presentation:\(CadenceCalendarPresentation.board.rawValue)")
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .tint(Theme.blue)
-    }
-
-    private var calendarModeSelection: Binding<String> {
-        Binding(
-            get: {
-                presentation == .board
-                    ? "presentation:\(CadenceCalendarPresentation.board.rawValue)"
-                    : "mode:\(viewMode.rawValue)"
-            },
-            set: { selection in
-                if selection == "presentation:\(CadenceCalendarPresentation.board.rawValue)" {
-                    presentation = .board
-                } else if selection.hasPrefix("mode:") {
-                    let rawValue = String(selection.dropFirst("mode:".count))
-                    if let mode = CadenceCalendarViewMode(rawValue: rawValue) {
-                        presentation = .timeline
-                        viewMode = mode
-                    }
-                }
-            }
-        )
-    }
-
-    @ViewBuilder
-    private var zoomControls: some View {
-        if presentation == .timeline && viewMode != .month {
-            HStack(spacing: 6) {
-                iOSFeatureIconButton(systemImage: "minus") {
-                    zoomLevel = max(1, zoomLevel - 1)
-                }
-                Text("\(zoomLevel)x")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(minWidth: 24)
-                iOSFeatureIconButton(systemImage: "plus") {
-                    zoomLevel = min(3, zoomLevel + 1)
-                }
-            }
-        }
-    }
-
-    private var navigationControls: some View {
-        HStack(spacing: 6) {
-            iOSFeatureIconButton(systemImage: "chevron.left", action: previous)
-            iOSFeatureIconButton(systemImage: "location.fill", action: today)
-            iOSFeatureIconButton(systemImage: "chevron.right", action: next)
-        }
-    }
-}
 #endif

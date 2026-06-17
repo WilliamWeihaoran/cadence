@@ -40,6 +40,7 @@ struct iOSCalendarEventEditSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var title: String
     @State private var startDate: Date
     @State private var durationMinutes: Int
@@ -47,7 +48,11 @@ struct iOSCalendarEventEditSheet: View {
     @State private var isAllDay: Bool
     @State private var selectedCalendarID: String
     @State private var notes: String
+    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var notesEditorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
+    @State private var notesEditorFocused = false
     @State private var presentedEventNote: Note?
+    @State private var selectedReferenceNote: Note?
+    @State private var selectedReferenceTask: AppTask?
     @State private var confirmDelete = false
     @State private var pendingAction: PendingAction?
 
@@ -99,6 +104,10 @@ struct iOSCalendarEventEditSheet: View {
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
+    }
+
+    private var notesEditorModeBinding: Binding<iOSMarkdownEditorMode> {
+        iOSMarkdownEditorPreferences.binding(for: $notesEditorModeRaw)
     }
 
     init(event: EKEvent) {
@@ -168,6 +177,12 @@ struct iOSCalendarEventEditSheet: View {
                 iOSEventNoteEditorSheet(note: note, eventTitle: title, event: event)
             }
         }
+        .iOSMarkdownReferenceSheets(
+            selectedNote: $selectedReferenceNote,
+            selectedTask: $selectedReferenceTask,
+            referenceNotes: allNotes,
+            referenceTasks: allTasks
+        )
         .preferredColorScheme(.dark)
     }
 
@@ -311,11 +326,34 @@ struct iOSCalendarEventEditSheet: View {
 
     private var notesCard: some View {
         iOSCalendarEventEditorSection(title: "Notes") {
-            TextField("Optional notes", text: $notes, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.text)
-                .lineLimit(3...8)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Apple Calendar note")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+
+                    Spacer(minLength: 0)
+
+                    iOSMarkdownModePicker(mode: notesEditorModeBinding, compact: true)
+                }
+
+                iOSMarkdownEditingSurface(
+                    text: $notes,
+                    isFocused: $notesEditorFocused,
+                    mode: notesEditorModeBinding,
+                    placeholder: "Add markdown notes...",
+                    referenceNotes: allNotes,
+                    referenceTasks: allTasks,
+                    onOpenReference: openMarkdownReference,
+                    allowsEmbeddedTaskCreation: false
+                )
+                .frame(minHeight: isRegularWidth ? 300 : 240)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Theme.borderSubtle.opacity(0.68), lineWidth: 1)
+                }
+            }
         }
     }
 
@@ -334,6 +372,15 @@ struct iOSCalendarEventEditSheet: View {
 
         try? modelContext.save()
         presentedEventNote = note
+    }
+
+    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
+        switch target.kind {
+        case .note:
+            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
+        case .task:
+            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
+        }
     }
 
     private var deleteCard: some View {

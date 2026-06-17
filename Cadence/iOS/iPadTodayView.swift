@@ -11,6 +11,7 @@ struct iPadTodayView: View {
     @AppStorage("ios.today.sortMode") private var sortModeRaw = CadenceTaskSortMode.priority.rawValue
     @AppStorage("ios.today.showCompleted") private var showCompleted = false
     @AppStorage("ios.today.sidePanel") private var sidePanelRaw = iPadTodaySidePanel.notes.rawValue
+    @AppStorage("ios.today.layoutMode") private var layoutModeRaw = iPadTodayLayoutMode.focus.rawValue
     #if DEBUG
     @State private var sampleDataStatus: String?
     #endif
@@ -51,14 +52,34 @@ struct iPadTodayView: View {
         CadenceTaskQuerySupport.todayGroups(from: todayTasks, todayKey: todayKey)
     }
 
+    private var todaySummary: CadenceTodaySummary {
+        CadenceTodayPresentationSupport.summary(
+            activeTasks: todayTasks,
+            timedTasks: compactScheduleTasks,
+            completedTasks: completedTodayTasks
+        )
+    }
+
     private var sidePanel: iPadTodaySidePanel {
         iPadTodaySidePanel(rawValue: sidePanelRaw) ?? .notes
+    }
+
+    private var layoutMode: iPadTodayLayoutMode {
+        get { iPadTodayLayoutMode(rawValue: layoutModeRaw) ?? .focus }
+        set { layoutModeRaw = newValue.rawValue }
     }
 
     private var sidePanelBinding: Binding<iPadTodaySidePanel> {
         Binding(
             get: { sidePanel },
             set: { sidePanelRaw = $0.rawValue }
+        )
+    }
+
+    private var layoutModeBinding: Binding<iPadTodayLayoutMode> {
+        Binding(
+            get: { layoutMode },
+            set: { layoutModeRaw = $0.rawValue }
         )
     }
 
@@ -74,7 +95,7 @@ struct iPadTodayView: View {
 
     @ViewBuilder
     private func todayLayout(width: CGFloat) -> some View {
-        if isRegularWidth && width >= 1_100 {
+        if isRegularWidth && layoutMode == .mac && width >= 1_500 {
             threePaneTodayLayout(width: width)
         } else if isRegularWidth {
             twoPaneTodayLayout(width: width)
@@ -84,8 +105,8 @@ struct iPadTodayView: View {
     }
 
     private func threePaneTodayLayout(width: CGFloat) -> some View {
-        let notesWidth = min(max(width * 0.25, 260), 330)
-        let scheduleWidth = min(max(width * 0.25, 280), 360)
+        let notesWidth = min(max(width * 0.23, 280), 340)
+        let scheduleWidth = min(max(width * 0.24, 300), 360)
 
         return HStack(spacing: 0) {
             iOSNotesPanel(useStandardHeaderHeight: true)
@@ -126,7 +147,7 @@ struct iPadTodayView: View {
             .frame(
                 minWidth: sidePanelMinWidth(for: width),
                 idealWidth: sidePanelIdealWidth(for: width),
-                maxWidth: 520
+                maxWidth: 540
             )
             .layoutPriority(0.42)
         }
@@ -135,16 +156,16 @@ struct iPadTodayView: View {
     private func taskPaneWidth(for width: CGFloat) -> CGFloat {
         let inspectorFloor = sidePanelMinWidth(for: width)
         let maximumTaskWidth = max(420, width - inspectorFloor)
-        let proposedWidth = width * 0.58
-        return min(max(proposedWidth, 520), min(maximumTaskWidth, 740))
+        let proposedWidth = width * 0.60
+        return min(max(proposedWidth, 520), min(maximumTaskWidth, 760))
     }
 
     private func sidePanelMinWidth(for width: CGFloat) -> CGFloat {
-        width < 900 ? 300 : 380
+        width < 900 ? 320 : 370
     }
 
     private func sidePanelIdealWidth(for width: CGFloat) -> CGFloat {
-        min(max(width * 0.42, sidePanelMinWidth(for: width)), 620)
+        min(max(width * 0.40, sidePanelMinWidth(for: width)), 540)
     }
 
     @ViewBuilder
@@ -196,10 +217,11 @@ struct iPadTodayView: View {
 
     private var todayTaskColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(
+            iPadTodayTaskHeader(
                 eyebrow: DateFormatters.longDate.string(from: Date()),
                 title: "Today",
-                count: todayTasks.count
+                summary: todaySummary,
+                layoutMode: layoutModeBinding
             )
 
             Divider().background(Theme.borderSubtle)
@@ -214,13 +236,7 @@ struct iPadTodayView: View {
     }
 
     private var todayPlanningDeck: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            iPadTodaySummaryStrip(
-                activeCount: todayTasks.count,
-                timedCount: compactScheduleTasks.count,
-                completedCount: completedTodayTasks.count
-            )
-
+        VStack(alignment: .leading, spacing: 11) {
             iOSTaskCaptureBar(
                 placeholder: "Add a task for today...",
                 title: $newTitle,
@@ -233,17 +249,43 @@ struct iPadTodayView: View {
                 }
             }
 
-            iOSTaskViewOptionsBar(
-                sortMode: Binding(
-                    get: { sortMode },
-                    set: { sortModeRaw = $0.rawValue }
-                ),
-                showCompleted: $showCompleted,
-                completedCount: completedTodayTasks.count
-            )
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 12) {
+                    todaySummaryStrip
+                        .layoutPriority(1)
+
+                    iOSTaskViewOptionsBar(
+                        sortMode: Binding(
+                            get: { sortMode },
+                            set: { sortModeRaw = $0.rawValue }
+                        ),
+                        showCompleted: $showCompleted,
+                        completedCount: completedTodayTasks.count
+                    )
+                    .frame(width: 232)
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    todaySummaryStrip
+
+                    iOSTaskViewOptionsBar(
+                        sortMode: Binding(
+                            get: { sortMode },
+                            set: { sortModeRaw = $0.rawValue }
+                        ),
+                        showCompleted: $showCompleted,
+                        completedCount: completedTodayTasks.count
+                    )
+                }
+            }
         }
-        .padding(14)
-        .background(Theme.bg.opacity(0.42))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .background(Theme.bg.opacity(0.36))
+    }
+
+    private var todaySummaryStrip: some View {
+        iPadTodaySummaryStrip(summary: todaySummary)
     }
 
     @ViewBuilder
@@ -252,20 +294,27 @@ struct iPadTodayView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     #if DEBUG
-                    iPadTodayEmptyStateCard(
+                    iPadTodayEmptyReviewDeck(
+                        timedCount: compactScheduleTasks.count,
+                        completedCount: completedTodayTasks.count,
+                        selectedPanel: sidePanelBinding,
                         sampleDataStatus: sampleDataStatus,
                         seedSampleData: seedSampleData
                     )
                     #else
-                    iPadTodayEmptyStateCard()
+                    iPadTodayEmptyReviewDeck(
+                        timedCount: compactScheduleTasks.count,
+                        completedCount: completedTodayTasks.count,
+                        selectedPanel: sidePanelBinding
+                    )
                     #endif
 
                     iPadTodayStarterHints()
                 }
-                .frame(maxWidth: 620, alignment: .leading)
+                .frame(maxWidth: 680, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
+                .padding(.horizontal, 18)
+                .padding(.top, 18)
                 .padding(.bottom, 20)
             }
             .scrollIndicators(.hidden)
@@ -275,10 +324,13 @@ struct iPadTodayView: View {
                 LazyVStack(alignment: .leading, spacing: 15) {
                     ForEach(todayTaskGroups, id: \.title) { group in
                         VStack(alignment: .leading, spacing: 8) {
-                            iOSTaskSectionHeader(title: group.title, color: color(for: group.kind))
+                            iOSTaskSectionHeader(
+                                title: group.title,
+                                color: CadenceTodayPresentationSupport.accent(for: group.kind)
+                            )
 
                             ForEach(group.tasks) { task in
-                                iOSTaskRow(task: task, density: .compact)
+                                iOSTaskRow(task: task, density: todayRowDensity)
                             }
                         }
                     }
@@ -288,7 +340,7 @@ struct iPadTodayView: View {
                             iOSTaskSectionHeader(title: "Completed Today", color: Theme.green)
 
                             ForEach(completedTodayTasks.prefix(12)) { task in
-                                iOSTaskRow(task: task, density: .compact)
+                                iOSTaskRow(task: task, density: todayRowDensity)
                                     .opacity(0.62)
                             }
                         }
@@ -322,12 +374,8 @@ struct iPadTodayView: View {
         }
     }
 
-    private func color(for groupKind: CadenceTodayTaskGroupKind) -> Color {
-        switch groupKind {
-        case .overdue: return Theme.red
-        case .dueToday: return Theme.amber
-        case .plannedToday: return Theme.blue
-        }
+    private var todayRowDensity: iOSTaskRowDensity {
+        isRegularWidth ? .regular : .compact
     }
 
     #if DEBUG
@@ -343,293 +391,6 @@ struct iPadTodayView: View {
         }
     }
     #endif
-}
-
-private struct iPadTodayInspectorSwitcher: View {
-    @Binding var selection: iPadTodaySidePanel
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(selection.title)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-
-                Text(selection.subtitle)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
-
-            iPadTodaySidePanelPicker(selection: $selection)
-                .frame(width: 192)
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 58)
-        .background(Theme.bg)
-    }
-}
-
-private enum iPadTodaySidePanel: String, CaseIterable, Identifiable {
-    case notes
-    case timeline
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .notes: return "Notes"
-        case .timeline: return "Timeline"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .notes: return "note.text"
-        case .timeline: return "clock"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .notes: return "Today, week, and notepad"
-        case .timeline: return "Timed tasks and schedule"
-        }
-    }
-
-    var compactTitle: String {
-        switch self {
-        case .notes: return "Notes"
-        case .timeline: return "Timeline"
-        }
-    }
-}
-
-private struct iPadTodaySidePanelPicker: View {
-    @Binding var selection: iPadTodaySidePanel
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(iPadTodaySidePanel.allCases) { panel in
-                Button {
-                    selection = panel
-                } label: {
-                    Label(panel.compactTitle, systemImage: panel.icon)
-                        .labelStyle(.titleAndIcon)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(selection == panel ? Theme.text : Theme.dim)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.82)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 30)
-                        .background(selection == panel ? Color.white.opacity(0.16) : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(panel.title)
-            }
-        }
-        .padding(3)
-        .background(Theme.surfaceElevated.opacity(0.84))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.5), lineWidth: 1)
-        }
-    }
-}
-
-private struct iPadTodaySummaryStrip: View {
-    let activeCount: Int
-    let timedCount: Int
-    let completedCount: Int
-
-    var body: some View {
-        HStack(spacing: 8) {
-            iPadTodaySummaryChip(
-                value: activeCount,
-                label: "Active",
-                systemImage: "checklist",
-                tint: Theme.blue
-            )
-            iPadTodaySummaryChip(
-                value: timedCount,
-                label: "Timed",
-                systemImage: "clock.fill",
-                tint: Theme.purple
-            )
-            iPadTodaySummaryChip(
-                value: completedCount,
-                label: "Done",
-                systemImage: "checkmark.circle.fill",
-                tint: Theme.green
-            )
-        }
-    }
-}
-
-private struct iPadTodaySummaryChip: View {
-    let value: Int
-    let label: String
-    let systemImage: String
-    let tint: Color
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(tint)
-
-            Text("\(value)")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .monospacedDigit()
-
-            Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 10)
-        .frame(maxWidth: .infinity)
-        .frame(height: 34)
-        .background(Theme.surfaceElevated.opacity(0.45))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.46), lineWidth: 1)
-        }
-    }
-}
-
-private struct iPadTodayEmptyStateCard: View {
-    #if DEBUG
-    let sampleDataStatus: String?
-    let seedSampleData: () -> Void
-
-    init(sampleDataStatus: String? = nil, seedSampleData: @escaping () -> Void = {}) {
-        self.sampleDataStatus = sampleDataStatus
-        self.seedSampleData = seedSampleData
-    }
-    #else
-    init() {}
-    #endif
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "checkmark.circle")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(Theme.blue.opacity(0.86))
-                    .frame(width: 38, height: 38)
-                    .background(Theme.blue.opacity(0.11))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Nothing planned for today")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-
-                    Text("Add a task above, schedule one from Inbox, or seed review tasks to check the layout.")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 0)
-
-                #if DEBUG
-                Button(action: seedSampleData) {
-                    Label("Samples", systemImage: "wand.and.stars")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .padding(.horizontal, 10)
-                        .frame(height: 30)
-                        .background(Theme.blue.opacity(0.16))
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .strokeBorder(Theme.blue.opacity(0.24), lineWidth: 1)
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Seed sample tasks")
-                #endif
-            }
-
-            #if DEBUG
-            if let sampleDataStatus {
-                Text(sampleDataStatus)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-                    .padding(.leading, 50)
-            }
-            #endif
-        }
-        .padding(14)
-        .background(Theme.surfaceElevated.opacity(0.36))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
-        }
-    }
-}
-
-private struct iPadTodayStarterHints: View {
-    var body: some View {
-        HStack(spacing: 10) {
-            iPadTodayHint(
-                title: "Capture",
-                detail: "Quick-add a task and it lands on today.",
-                systemImage: "plus"
-            )
-            iPadTodayHint(
-                title: "Plan",
-                detail: "Use the inspector to switch notes and timeline.",
-                systemImage: "sidebar.right"
-            )
-        }
-    }
-}
-
-private struct iPadTodayHint: View {
-    let title: String
-    let detail: String
-    let systemImage: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .frame(width: 24, height: 24)
-                .background(Theme.surfaceElevated.opacity(0.36))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                Text(detail)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .padding(12)
-        .background(Theme.surfaceElevated.opacity(0.22))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.38), lineWidth: 1)
-        }
-    }
 }
 
 #endif

@@ -16,106 +16,40 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    var sharedKind: CadenceSettingsCategoryKind {
         switch self {
-        case .appearance: return "Appearance"
-        case .account: return "Account"
-        case .dataSafety: return "Data Safety"
-        case .navigation: return "Navigation"
-        case .sidebar: return "Sidebar"
-        case .templates: return "Templates"
-        case .contexts: return "Contexts"
-        case .tags: return "Tags"
-        case .lists: return "Lists"
-        case .ai: return "AI"
-        case .calendar: return "Calendar"
+        case .appearance: return .appearance
+        case .navigation: return .navigation
+        case .sidebar: return .sidebar
+        case .templates: return .templates
+        case .contexts: return .contexts
+        case .lists: return .lists
+        case .tags: return .tags
+        case .calendar: return .calendar
+        case .ai: return .ai
+        case .dataSafety: return .dataSafety
+        case .account: return .account
         }
+    }
+
+    var title: String {
+        sharedKind.title
     }
 
     var subtitle: String {
-        switch self {
-        case .appearance:
-            return "Theme and visual tone."
-        case .account:
-            return "Apple identity status."
-        case .dataSafety:
-            return "Backups and restores."
-        case .navigation:
-            return "Default list behavior."
-        case .sidebar:
-            return "Tabs, order, and visibility."
-        case .templates:
-            return "Reusable note scaffolds."
-        case .contexts:
-            return "Active and archived contexts."
-        case .tags:
-            return "Task and note labels."
-        case .lists:
-            return "Completed and archived lists."
-        case .ai:
-            return "OpenAI key and model."
-        case .calendar:
-            return "Access and linked calendars."
-        }
+        sharedKind.subtitle
     }
 
     var detailDescription: String {
-        switch self {
-        case .appearance:
-            return "Choose the palette Cadence uses across the app."
-        case .account:
-            return "Use Sign in with Apple for your Cadence identity. The app still works when signed out."
-        case .dataSafety:
-            return "Create backups, review restore points, and stage a restore for the next launch."
-        case .navigation:
-            return "Choose the first page Cadence opens for lists without a saved page."
-        case .sidebar:
-            return "Arrange the main sidebar tabs and decide which ones stay visible."
-        case .templates:
-            return "Edit the templates available from the note sidebar. Defaults stay recoverable."
-        case .contexts:
-            return "Manage the top-level groups that organize your areas, projects, tasks, and habits."
-        case .tags:
-            return "Create, edit, archive, and restore the tags used by tasks and notes."
-        case .lists:
-            return "Review lists that are no longer active and decide what to restore or remove."
-        case .ai:
-            return "Store your OpenAI API key in Keychain and choose the model for AI actions."
-        case .calendar:
-            return "Connect Apple Calendar and choose which calendar each area or project uses."
-        }
+        sharedKind.detailDescription
     }
 
     var icon: String {
-        switch self {
-        case .appearance: return "paintpalette.fill"
-        case .account: return "person.crop.circle.fill"
-        case .dataSafety: return "externaldrive.fill.badge.timemachine"
-        case .navigation: return "rectangle.stack.fill"
-        case .sidebar: return "sidebar.left"
-        case .templates: return "doc.text.fill"
-        case .contexts: return "square.stack.3d.up.fill"
-        case .tags: return "tag.fill"
-        case .lists: return "archivebox.fill"
-        case .ai: return "sparkles"
-        case .calendar: return "calendar"
-        }
+        sharedKind.icon
     }
 
     var tint: Color {
-        switch self {
-        case .appearance: return Theme.blue
-        case .account: return Theme.green
-        case .dataSafety: return Theme.amber
-        case .navigation: return Theme.green
-        case .sidebar: return Theme.amber
-        case .templates: return Theme.blue
-        case .contexts: return Theme.red
-        case .tags: return Theme.green
-        case .lists: return Theme.amber
-        case .ai: return Theme.blue
-        case .calendar: return Theme.purple
-        }
+        sharedKind.tint
     }
 }
 

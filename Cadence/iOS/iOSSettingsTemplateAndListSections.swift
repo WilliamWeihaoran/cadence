@@ -6,6 +6,11 @@ struct iOSTemplatesSettingsSection: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedTemplateID = "project-brief"
     @State private var bodyEditorFocused = false
+    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var bodyEditorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
+
+    private var bodyEditorModeBinding: Binding<iOSMarkdownEditorMode> {
+        iOSMarkdownEditorPreferences.binding(for: $bodyEditorModeRaw)
+    }
 
     private var templates: [NoteTemplate] {
         NoteTemplateLibrary.editableTemplates(overridesRaw: templateOverridesRaw)
@@ -141,10 +146,11 @@ struct iOSTemplatesSettingsSection: View {
                         .foregroundStyle(Theme.text)
                 }
 
-                iOSTemplateEditorField(title: "Body") {
-                    iOSMarkdownEditor(text: bodyBinding(for: selectedTemplate), isFocused: $bodyEditorFocused)
-                        .frame(minHeight: 260)
-                }
+                iOSTemplateBodyEditor(
+                    mode: bodyEditorModeBinding,
+                    isFocused: $bodyEditorFocused,
+                    text: bodyBinding(for: selectedTemplate)
+                )
 
                 HStack {
                     Spacer()
@@ -543,6 +549,41 @@ private struct iOSTemplateIcon: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(isSelected ? Theme.blue : Theme.dim)
             }
+    }
+}
+
+private struct iOSTemplateBodyEditor: View {
+    @Binding var mode: iOSMarkdownEditorMode
+    @Binding var isFocused: Bool
+    @Binding var text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .center, spacing: 10) {
+                Text("BODY")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.dim)
+                    .tracking(0.8)
+
+                Spacer(minLength: 0)
+
+                iOSMarkdownModePicker(mode: $mode, compact: true)
+            }
+
+            iOSMarkdownEditingSurface(
+                text: $text,
+                isFocused: $isFocused,
+                mode: $mode,
+                placeholder: "Write the reusable note template...",
+                allowsEmbeddedTaskCreation: false
+            )
+            .frame(minHeight: 340)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Theme.borderSubtle.opacity(0.74), lineWidth: 1)
+            }
+        }
     }
 }
 

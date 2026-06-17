@@ -181,9 +181,8 @@ struct iOSTaskRow: View {
 
     private var secondaryLine: String? {
         let container = task.containerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let notes = iOSTaskPreviewText.plainText(from: task.notes)
         let previewLimit = isCompact ? 80 : (isRegularWidth ? 120 : 64)
-        let preview = notes.isEmpty ? "" : String(notes.prefix(previewLimit))
+        let preview = CadenceTaskPresentationSupport.plainPreviewText(from: task.notes, limit: previewLimit)
 
         if !container.isEmpty && !preview.isEmpty {
             return "\(container) - \(preview)"
@@ -219,6 +218,22 @@ struct iOSTaskRow: View {
             )
         }
 
+        if CadenceTaskPresentationSupport.hasNotes(task) {
+            taskBadge(
+                systemImage: "doc.text",
+                text: "Notes",
+                color: Theme.dim
+            )
+        }
+
+        if let subtaskProgress = CadenceTaskPresentationSupport.subtaskProgress(for: task) {
+            taskBadge(
+                systemImage: "checklist",
+                text: isCompact ? subtaskProgress.compactLabel : subtaskProgress.label,
+                color: subtaskProgress.completed == subtaskProgress.total ? Theme.green : Theme.dim
+            )
+        }
+
         if let goal = task.goal {
             taskBadge(
                 systemImage: "flag.fill",
@@ -238,7 +253,7 @@ struct iOSTaskRow: View {
         if !task.dueDate.isEmpty {
             taskBadge(
                 systemImage: "flag.fill",
-                text: DateFormatters.relativeDate(from: task.dueDate),
+                text: CadenceTaskPresentationSupport.dueDateLabel(for: task),
                 color: isOverdue ? Theme.red : Theme.dim
             )
         }
@@ -304,20 +319,11 @@ struct iOSTaskRow: View {
     }
 
     private var estimateLabel: String {
-        if task.estimatedMinutes < 60 { return "\(task.estimatedMinutes)m" }
-        if task.estimatedMinutes % 60 == 0 { return "\(task.estimatedMinutes / 60)h" }
-        return String(format: "%.1fh", Double(task.estimatedMinutes) / 60.0)
+        CadenceTaskPresentationSupport.estimateLabel(minutes: task.estimatedMinutes)
     }
 
     private var scheduledDateLabel: String {
-        if task.scheduledStartMin >= 0 {
-            let time = TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledEndMin)
-            if task.scheduledDate == DateFormatters.todayKey() {
-                return time
-            }
-            return "\(DateFormatters.relativeDate(from: task.scheduledDate)) at \(time)"
-        }
-        return DateFormatters.relativeDate(from: task.scheduledDate)
+        CadenceTaskPresentationSupport.scheduledDateLabel(for: task)
     }
 
     private func taskBadge(systemImage: String, text: String, color: Color) -> some View {
@@ -347,29 +353,6 @@ struct iOSTaskRow: View {
         guard deepLinkManager.pendingTaskID == task.id else { return }
         showDetail = true
         deepLinkManager.clearPendingTask(task.id)
-    }
-}
-
-private enum iOSTaskPreviewText {
-    static func plainText(from markdown: String) -> String {
-        markdown
-            .split(whereSeparator: \.isNewline)
-            .map { line in
-                var text = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
-                text = text.replacingOccurrences(of: #"^#{1,6}\s+"#, with: "", options: .regularExpression)
-                text = text.replacingOccurrences(of: #"^>\s?"#, with: "", options: .regularExpression)
-                text = text.replacingOccurrences(of: #"^[-*+]\s+\[[ xX]\]\s+"#, with: "", options: .regularExpression)
-                text = text.replacingOccurrences(of: #"^[-*+]\s+"#, with: "", options: .regularExpression)
-                text = text.replacingOccurrences(of: #"^\d+\.\s+"#, with: "", options: .regularExpression)
-                text = text.replacingOccurrences(of: #"\*\*([^*]+)\*\*"#, with: "$1", options: .regularExpression)
-                text = text.replacingOccurrences(of: #"__([^_]+)__"#, with: "$1", options: .regularExpression)
-                text = text.replacingOccurrences(of: #"`([^`]+)`"#, with: "$1", options: .regularExpression)
-                text = text.replacingOccurrences(of: #"\[([^\]]+)\]\([^)]+\)"#, with: "$1", options: .regularExpression)
-                return text
-            }
-            .filter { !$0.isEmpty && !$0.hasPrefix("```") }
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -472,26 +455,26 @@ struct iOSTaskCaptureBar: View {
         HStack(spacing: 10) {
             TextField(placeholder, text: $title)
                 .textFieldStyle(.plain)
-                .font(.system(size: isRegularWidth ? 15 : 13))
+                .font(.system(size: isRegularWidth ? 15 : 15))
                 .foregroundStyle(Theme.text)
                 .submitLabel(.done)
                 .onSubmit(action)
-                .padding(.horizontal, isRegularWidth ? 13 : 10)
-                .frame(minHeight: isRegularWidth ? 44 : 34)
+                .padding(.horizontal, isRegularWidth ? 13 : 12)
+                .frame(minHeight: isRegularWidth ? 44 : 42)
                 .background(Theme.surfaceElevated.opacity(0.72))
-                .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 11, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 11, style: .continuous)
                         .stroke(Theme.borderSubtle.opacity(0.7), lineWidth: 1)
                 }
 
             Button(action: action) {
                 Image(systemName: "plus")
-                    .font(.system(size: isRegularWidth ? 16 : 13, weight: .bold))
+                    .font(.system(size: isRegularWidth ? 16 : 15, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: isRegularWidth ? 44 : 34, height: isRegularWidth ? 44 : 34)
+                    .frame(width: isRegularWidth ? 44 : 42, height: isRegularWidth ? 44 : 42)
                     .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 11, style: .continuous))
             }
             .disabled(TaskTitleSupport.isEmpty(title))
             .opacity(TaskTitleSupport.isEmpty(title) ? 0.45 : 1)

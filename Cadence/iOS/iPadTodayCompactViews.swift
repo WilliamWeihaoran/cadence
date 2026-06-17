@@ -1,4 +1,5 @@
 #if os(iOS)
+import SwiftData
 import SwiftUI
 
 struct iOSCompactTodayView: View {
@@ -16,47 +17,58 @@ struct iOSCompactTodayView: View {
     let seedSampleData: () -> Void
     #endif
 
+    private var summary: CadenceTodaySummary {
+        CadenceTodayPresentationSupport.summary(
+            activeTasks: todayTasks,
+            timedTasks: compactScheduleTasks,
+            completedTasks: completedTodayTasks
+        )
+    }
+
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 11) {
+            LazyVStack(alignment: .leading, spacing: 10) {
                 header
-                stats
                 captureCard
+                stats
                 taskSections
+                iOSCompactTodayNotesCard()
 
                 if !compactScheduleTasks.isEmpty {
                     iOSCompactTodaySchedulePreview(tasks: compactScheduleTasks)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 96)
+            .frame(maxWidth: 520, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 132)
         }
         .scrollIndicators(.hidden)
         .background(Theme.bg.ignoresSafeArea())
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 11) {
+        HStack(alignment: .center, spacing: 12) {
             Image(systemName: "sun.max.fill")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.amber)
-                .frame(width: 32, height: 32)
+                .frame(width: 36, height: 36)
                 .background(Theme.amber.opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .strokeBorder(Theme.amber.opacity(0.22), lineWidth: 1)
                 }
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(DateFormatters.longDate.string(from: Date()))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .textCase(.uppercase)
                     .kerning(0.8)
                 Text("Today")
-                    .font(.system(size: 25, weight: .bold))
+                    .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
             }
@@ -71,42 +83,15 @@ struct iOSCompactTodayView: View {
                 .background(Theme.blue.opacity(0.12))
                 .clipShape(Capsule())
         }
+        .padding(.top, 2)
+        .padding(.bottom, 1)
     }
 
     private var stats: some View {
-        HStack(spacing: 10) {
-            iOSCompactTodayMetric(
-                value: "\(todayTasks.count)",
-                label: "Active",
-                systemImage: "checklist",
-                tint: Theme.blue
-            )
-            Divider()
-                .frame(height: 22)
-                .overlay(Theme.borderSubtle.opacity(0.6))
-            iOSCompactTodayMetric(
-                value: "\(compactScheduleTasks.count)",
-                label: "Timed",
-                systemImage: "clock.fill",
-                tint: Theme.purple
-            )
-            Divider()
-                .frame(height: 22)
-                .overlay(Theme.borderSubtle.opacity(0.6))
-            iOSCompactTodayMetric(
-                value: "\(completedTodayTasks.count)",
-                label: "Done",
-                systemImage: "checkmark.circle.fill",
-                tint: Theme.green
-            )
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
+        HStack(spacing: 7) {
+            ForEach(summary.metrics) { metric in
+                iOSCompactTodayMetric(metric: metric)
+            }
         }
     }
 
@@ -130,24 +115,17 @@ struct iOSCompactTodayView: View {
                 completedCount: completedTodayTasks.count
             )
         }
-        .padding(.vertical, 2)
+        .padding(10)
+        .background(Theme.surface.opacity(0.94))
+        .compactTodayCard()
     }
 
     @ViewBuilder
     private var taskSections: some View {
         if todayTasks.isEmpty && (!showCompleted || completedTodayTasks.isEmpty) {
-            iOSEmptyPanel(
-                systemImage: "checkmark.circle",
-                title: "Nothing planned",
-                subtitle: "Add a task above or schedule one from Inbox."
-            )
-            .frame(minHeight: 190)
+            iOSCompactTodayEmptyState()
             .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-            }
+            .compactTodayCard()
 
             #if DEBUG
             iOSCompactSampleDataCard(
@@ -160,7 +138,7 @@ struct iOSCompactTodayView: View {
                 ForEach(todayTaskGroups, id: \.title) { group in
                     iOSCompactTodayTaskGroup(
                         group: group,
-                        color: color(for: group.kind)
+                        color: CadenceTodayPresentationSupport.accent(for: group.kind)
                     )
                 }
 
@@ -170,20 +148,156 @@ struct iOSCompactTodayView: View {
             }
             .padding(12)
             .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
+            .compactTodayCard()
+        }
+    }
+
+}
+
+private struct iOSCompactTodayNotesCard: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @State private var todayNote: Note?
+    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
+    @FocusState private var isEditorFocused: Bool
+
+    private var editorMode: iOSMarkdownEditorMode {
+        iOSMarkdownEditorPreferences.mode(from: editorModeRaw)
+    }
+
+    private var editorModeBinding: Binding<iOSMarkdownEditorMode> {
+        iOSMarkdownEditorPreferences.binding(for: $editorModeRaw)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+
+            Divider().background(Theme.borderSubtle.opacity(0.65))
+
+            if let todayNote {
+                iOSMarkdownEditingSurface(
+                    text: Binding(
+                        get: { todayNote.content },
+                        set: { update(todayNote, content: $0) }
+                    ),
+                    isFocused: Binding(
+                        get: { isEditorFocused },
+                        set: { isEditorFocused = $0 }
+                    ),
+                    mode: editorModeBinding,
+                    placeholder: "Start today's note...",
+                    referenceNotes: allNotes,
+                    referenceTasks: allTasks
+                )
+                .frame(height: editorMode == .live ? 280 : 260)
+            } else {
+                ProgressView()
+                    .tint(Theme.blue)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 260)
+            }
+        }
+        .background(Theme.surface)
+        .compactTodayCard()
+        .onAppear(perform: loadTodayNote)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            loadTodayNote()
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    isEditorFocused = false
+                }
             }
         }
     }
 
-    private func color(for groupKind: CadenceTodayTaskGroupKind) -> Color {
-        switch groupKind {
-        case .overdue: return Theme.red
-        case .dueToday: return Theme.amber
-        case .plannedToday: return Theme.blue
+    private var header: some View {
+        HStack(alignment: .center, spacing: 11) {
+            Image(systemName: "note.text")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.purple)
+                .frame(width: 34, height: 34)
+                .background(Theme.purple.opacity(0.13))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Theme.purple.opacity(0.20), lineWidth: 1)
+                }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Today Note")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+
+                Text("Quick daily context")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
+
+            if let todayNote {
+                iOSNoteTemplateMenu(kind: .daily, compact: true) { template in
+                    apply(template, to: todayNote)
+                }
+            }
         }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 12)
+    }
+
+    private func loadTodayNote() {
+        todayNote = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext).today
+    }
+
+    private func update(_ note: Note, content: String) {
+        CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
+    }
+
+    private func apply(_ template: NoteTemplate, to note: Note) {
+        CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
+    }
+}
+
+private struct iOSCompactTodayEmptyState: View {
+    var body: some View {
+        HStack(alignment: .center, spacing: 13) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .frame(width: 42, height: 42)
+                .background(Theme.surfaceElevated.opacity(0.54))
+                .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .strokeBorder(Theme.borderSubtle.opacity(0.42), lineWidth: 1)
+                }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(CadenceTodayPresentationSupport.emptyCompactTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+
+                Text(CadenceTodayPresentationSupport.emptySubtitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
     }
 }
 
@@ -227,41 +341,44 @@ private struct iOSCompactSampleDataCard: View {
         }
         .padding(12)
         .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-        }
+        .compactTodayCard()
     }
 }
 #endif
 
 private struct iOSCompactTodayMetric: View {
-    let value: String
-    let label: String
-    let systemImage: String
-    let tint: Color
+    let metric: CadenceTodaySummaryMetric
 
     var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: systemImage)
+        HStack(alignment: .center, spacing: 7) {
+            Image(systemName: metric.systemImage)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(tint)
+                .foregroundStyle(metric.tint)
+                .frame(width: 20, height: 20)
+                .background(metric.tint.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(value)
-                    .font(.system(size: 14, weight: .bold))
+            VStack(alignment: .leading, spacing: 0) {
+                Text("\(metric.value)")
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.text)
                     .monospacedDigit()
-                Text(label)
-                    .font(.system(size: 11, weight: .semibold))
+                Text(metric.label)
+                    .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.82)
             }
-
-            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surfaceElevated.opacity(0.36))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Theme.borderSubtle.opacity(0.34), lineWidth: 1)
+        }
     }
 }
 
@@ -285,7 +402,7 @@ private struct iOSCompactTodayTaskGroup: View {
 
             VStack(spacing: 7) {
                 ForEach(group.tasks) { task in
-                    iOSTaskRow(task: task)
+                    iOSTaskRow(task: task, density: .compact)
                 }
             }
         }
@@ -311,7 +428,7 @@ private struct iOSCompactCompletedTasks: View {
 
             VStack(spacing: 7) {
                 ForEach(tasks) { task in
-                    iOSTaskRow(task: task)
+                    iOSTaskRow(task: task, density: .compact)
                         .opacity(0.62)
                 }
             }
@@ -355,11 +472,7 @@ private struct iOSCompactTodaySchedulePreview: View {
         }
         .padding(14)
         .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-        }
+        .compactTodayCard()
     }
 }
 
@@ -416,6 +529,25 @@ private struct iOSCompactScheduleTaskRow: View {
     private var endLabel: String {
         guard task.scheduledEndMin > task.scheduledStartMin else { return "" }
         return TimeFormatters.timeString(from: task.scheduledEndMin)
+    }
+}
+
+private struct CompactTodayCardModifier: ViewModifier {
+    var cornerRadius: CGFloat = 12
+
+    func body(content: Content) -> some View {
+        content
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Theme.borderSubtle.opacity(0.42), lineWidth: 1)
+            }
+    }
+}
+
+private extension View {
+    func compactTodayCard(cornerRadius: CGFloat = 12) -> some View {
+        modifier(CompactTodayCardModifier(cornerRadius: cornerRadius))
     }
 }
 #endif

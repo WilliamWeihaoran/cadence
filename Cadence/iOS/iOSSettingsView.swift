@@ -10,6 +10,11 @@ struct iOSSettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
+    @AppStorage("ios.today.layoutMode") private var todayLayoutModeRaw = iPadTodayLayoutMode.focus.rawValue
+    @AppStorage("ios.calendar.viewMode") private var calendarViewModeRaw = CadenceCalendarViewMode.week.rawValue
+    @AppStorage("ios.calendar.presentation") private var calendarPresentationRaw = CadenceCalendarPresentation.timeline.rawValue
+    @AppStorage("ios.calendar.zoomLevel") private var calendarZoomLevel = 1
+    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var notesEditorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
     @Query private var tasks: [AppTask]
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query private var areas: [Area]
@@ -21,7 +26,7 @@ struct iOSSettingsView: View {
     @State private var isCheckingAccount = false
     @State private var lastChecked: Date?
     @State private var contextEditorMode: iOSContextEditorMode?
-    @State private var selectedCategory: iOSSettingsCategory = .sync
+    @State private var selectedCategory: iOSSettingsCategory = .appearance
     @State private var aiAPIKeyDraft = ""
     #if DEBUG
     @State private var sampleDataStatus: String?
@@ -37,6 +42,22 @@ struct iOSSettingsView: View {
 
     private var bundleID: String {
         Bundle.main.bundleIdentifier ?? "Unknown"
+    }
+
+    private var todayLayoutMode: iPadTodayLayoutMode {
+        iPadTodayLayoutMode(rawValue: todayLayoutModeRaw) ?? .focus
+    }
+
+    private var calendarViewMode: CadenceCalendarViewMode {
+        CadenceCalendarViewMode(rawValue: calendarViewModeRaw) ?? .week
+    }
+
+    private var calendarPresentation: CadenceCalendarPresentation {
+        CadenceCalendarPresentation(rawValue: calendarPresentationRaw) ?? .timeline
+    }
+
+    private var notesEditorMode: iOSMarkdownEditorMode {
+        iOSMarkdownEditorPreferences.mode(from: notesEditorModeRaw)
     }
 
     var body: some View {
@@ -70,41 +91,15 @@ struct iOSSettingsView: View {
     }
 
     private var settingsRegularLayout: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            settingsHeaderBand
+        HStack(spacing: 0) {
+            iOSSettingsRail(selectedCategory: $selectedCategory)
 
-            Divider().background(Theme.borderSubtle)
+            Divider()
+                .background(Theme.borderSubtle)
 
             settingsDetailScroll
         }
-    }
-
-    private var settingsHeaderBand: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Settings")
-                        .font(.system(size: 24, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-
-                    Text("Preferences, organization, sync, and TestFlight diagnostics.")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 16)
-
-                iOSSettingsCurrentCategoryPill(category: selectedCategory)
-            }
-
-            iOSSettingsCategoryStrip(selectedCategory: $selectedCategory)
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 20)
-        .padding(.bottom, 16)
-        .background(Theme.surface)
+        .background(Theme.bg)
     }
 
     private var settingsDetailScroll: some View {
@@ -113,9 +108,9 @@ struct iOSSettingsView: View {
                 settingsHeader
                 selectedSectionContent
             }
-            .frame(maxWidth: 980, alignment: .topLeading)
-            .padding(.horizontal, 24)
-            .padding(.top, 22)
+            .frame(maxWidth: 920, alignment: .topLeading)
+            .padding(.horizontal, 28)
+            .padding(.top, 24)
             .padding(.bottom, 32)
         }
         .scrollIndicators(.hidden)
@@ -132,6 +127,8 @@ struct iOSSettingsView: View {
             switch selectedCategory {
             case .appearance:
                 CadenceSettingsStatusBadge(title: themeManager.selectedTheme.title, isActive: true)
+            case .navigation:
+                CadenceSettingsStatusBadge(title: todayLayoutMode.title, isActive: true)
             case .sync:
                 CadenceSettingsStatusBadge(
                     title: cloudStatusPresentation.title,
@@ -166,6 +163,26 @@ struct iOSSettingsView: View {
             iOSAppearanceSettingsSection(
                 selectedTheme: themeManager.selectedTheme,
                 onSelectTheme: { themeManager.selectedTheme = $0 }
+            )
+        case .navigation:
+            iOSNavigationSettingsSection(
+                todayLayoutMode: Binding(
+                    get: { todayLayoutMode },
+                    set: { todayLayoutModeRaw = $0.rawValue }
+                ),
+                calendarViewMode: Binding(
+                    get: { calendarViewMode },
+                    set: { calendarViewModeRaw = $0.rawValue }
+                ),
+                calendarPresentation: Binding(
+                    get: { calendarPresentation },
+                    set: { calendarPresentationRaw = $0.rawValue }
+                ),
+                calendarZoomLevel: $calendarZoomLevel,
+                notesEditorMode: Binding(
+                    get: { notesEditorMode },
+                    set: { notesEditorModeRaw = $0.rawValue }
+                )
             )
         case .sync:
             iOSSyncSettingsSection(

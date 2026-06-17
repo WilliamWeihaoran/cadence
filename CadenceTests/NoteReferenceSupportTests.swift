@@ -121,6 +121,7 @@ struct NoteReferenceSupportTests {
         #expect(info.cardHeight > MarkdownTaskEmbedRenderInfo.compactCardHeight)
     }
 
+    #if os(macOS)
     @Test func taskEmbedSubtaskHitHelperSeparatesCheckboxTextAndWhitespace() throws {
         let subtaskID = try #require(UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))
         let rect = MarkdownTaskEmbedSubtaskHitRect.subtask(
@@ -134,6 +135,7 @@ struct NoteReferenceSupportTests {
         #expect(MarkdownTaskEmbedSubtaskHitTesting.hit(at: NSPoint(x: 36, y: 12), in: [rect]) == .openInspector)
         #expect(MarkdownTaskEmbedSubtaskHitTesting.hit(at: NSPoint(x: 112, y: 12), in: [rect]) == nil)
     }
+    #endif
 
     @Test func checklistMarkerHelperAcceptsOnlyMarkerCharacter() {
         let line = "    ○ Draft task"
@@ -205,6 +207,44 @@ struct NoteReferenceSupportTests {
 
         #expect(NoteReferenceParser.noteReferenceMarkdown(for: note).hasSuffix("|Plan - (Draft)]]"))
         #expect(NoteReferenceParser.taskReferenceMarkdown(for: task).hasSuffix("|Ship - (Beta)]]"))
+    }
+
+    @Test func referenceCompletionContextDetectsNoteQueryOnCurrentLine() {
+        let text = "Before [[Old]]\nSee [[Proj"
+        let context = MarkdownReferenceCompletionSupport.context(
+            in: text,
+            selection: NSRange(location: (text as NSString).length, length: 0)
+        )
+
+        #expect(context?.kind == .note)
+        #expect(context?.query == "Proj")
+        #expect(context?.range == NSRange(location: 19, length: 6))
+    }
+
+    @Test func referenceCompletionContextDetectsTaskQueryPrefix() {
+        let text = "See [[task:Ship"
+        let context = MarkdownReferenceCompletionSupport.context(
+            in: text,
+            selection: NSRange(location: (text as NSString).length, length: 0)
+        )
+
+        #expect(context?.kind == .task)
+        #expect(context?.query == "Ship")
+        #expect(context?.range == NSRange(location: 4, length: 11))
+    }
+
+    @Test func referenceCompletionContextIgnoresClosedAndMultilineTokens() {
+        let closed = "See [[Project]]"
+        let multiline = "See [[Project\nNext"
+
+        #expect(MarkdownReferenceCompletionSupport.context(
+            in: closed,
+            selection: NSRange(location: (closed as NSString).length, length: 0)
+        ) == nil)
+        #expect(MarkdownReferenceCompletionSupport.context(
+            in: multiline,
+            selection: NSRange(location: (multiline as NSString).length, length: 0)
+        ) == nil)
     }
 
     @Test func markdownOutlineExtractsHeadingLocations() {

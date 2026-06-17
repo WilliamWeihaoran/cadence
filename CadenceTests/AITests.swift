@@ -71,6 +71,7 @@ struct OpenAIResponsesProviderTests {
     }
 }
 
+#if os(macOS)
 @MainActor
 struct AIActionServiceTests {
     @Test func noteContextOnlyIncludesSelectedNoteAndContainerName() throws {
@@ -149,3 +150,4 @@ struct AIActionServiceTests {
         #expect(try modelContext.fetch(descriptor).isEmpty)
     }
 }
+#endif

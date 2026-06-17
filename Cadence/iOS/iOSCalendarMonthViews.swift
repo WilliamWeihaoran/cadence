@@ -18,13 +18,13 @@ struct iOSCalendarMonthGrid: View {
     var body: some View {
         GeometryReader { proxy in
             let headerHeight: CGFloat = 36
-            let cellHeight = max(96, (proxy.size.height - headerHeight) / 6)
+            let cellHeight = max(104, (proxy.size.height - headerHeight) / 6)
 
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
                     ForEach(calendar.shortWeekdaySymbols, id: \.self) { symbol in
-                        Text(symbol.uppercased())
-                            .font(.system(size: 10, weight: .semibold))
+                        Text(symbol)
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Theme.dim)
                             .frame(maxWidth: .infinity)
                             .frame(height: headerHeight)
@@ -68,23 +68,56 @@ private struct iOSCalendarMonthDayCell: View {
     private let calendar = Calendar.current
     private var isToday: Bool { calendar.isDateInToday(date) }
     private var isCurrentMonth: Bool { calendar.isDate(date, equalTo: displayMonth, toGranularity: .month) }
-    private var visibleBundles: [TaskBundle] { Array(bundles.prefix(2)) }
-    private var visibleEvents: [EKEvent] { Array(events.prefix(max(0, 2 - visibleBundles.count))) }
-    private var visibleTasks: [AppTask] { Array(tasks.prefix(max(0, 4 - visibleBundles.count - visibleEvents.count))) }
+    private var isFirstDayOfMonth: Bool { calendar.component(.day, from: date) == 1 }
+    private var visibleBundles: [TaskBundle] { Array(bundles.prefix(3)) }
+    private var visibleEvents: [EKEvent] { Array(events.prefix(max(0, 4 - visibleBundles.count))) }
+    private var visibleTasks: [AppTask] { Array(tasks.prefix(max(0, 5 - visibleBundles.count - visibleEvents.count))) }
     private var overflow: Int { max(0, tasks.count + bundles.count + events.count - visibleTasks.count - visibleBundles.count - visibleEvents.count) }
+
+    private var dateLabelColor: Color {
+        if isToday { return .white }
+        if isSelected { return Theme.blue }
+        return isCurrentMonth ? Theme.text : Theme.dim.opacity(0.58)
+    }
+
+    private var dateLabelWeight: Font.Weight {
+        if isToday || isSelected { return .bold }
+        return isCurrentMonth ? .medium : .regular
+    }
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    if isFirstDayOfMonth {
+                        Text(DateFormatters.monthAbbrev.string(from: date))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(dateLabelColor)
+                            .lineLimit(1)
+                    }
+
                     Text(DateFormatters.dayNumber.string(from: date))
-                        .font(.system(size: 12, weight: isToday || isSelected ? .bold : .regular))
-                        .foregroundStyle(isToday ? .white : isCurrentMonth ? Theme.text : Theme.dim.opacity(0.55))
-                        .frame(width: 24, height: 24)
-                        .background(isToday ? Theme.blue : isSelected ? Theme.blue.opacity(0.18) : Color.clear)
+                        .font(.system(size: 12, weight: dateLabelWeight))
+                        .foregroundStyle(dateLabelColor)
+                        .frame(width: 25, height: 25)
+                        .background(dateBadgeFill)
                         .clipShape(Circle())
-                    Spacer()
+
+                    Spacer(minLength: 0)
+
+                    if !tasks.isEmpty || !bundles.isEmpty || !events.isEmpty {
+                        Text("\(tasks.count + bundles.count + events.count)")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Theme.dim)
+                            .monospacedDigit()
+                            .padding(.horizontal, 6)
+                            .frame(height: 18)
+                            .background(Theme.surfaceElevated.opacity(0.52))
+                            .clipShape(Capsule())
+                    }
                 }
+                .padding(.top, 6)
+                .padding(.horizontal, 7)
 
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach(visibleBundles) { bundle in
@@ -110,29 +143,49 @@ private struct iOSCalendarMonthDayCell: View {
                     }
                     if overflow > 0 {
                         Text("+ \(overflow) more")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(Theme.dim)
+                            .padding(.horizontal, 5)
                     }
                 }
+                .padding(.horizontal, 6)
 
                 Spacer(minLength: 0)
             }
-            .padding(7)
             .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
-            .background(isSelected ? Theme.blue.opacity(0.055) : isToday ? Theme.blue.opacity(0.035) : Theme.bg)
+            .background(cellBackground)
             .opacity(isCurrentMonth ? 1 : 0.52)
+            .overlay {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Theme.blue.opacity(0.65), lineWidth: 1.5)
+                        .padding(4)
+                }
+            }
             .overlay(alignment: .trailing) {
                 Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.48))
+                    .fill(Theme.borderSubtle.opacity(0.30))
                     .frame(width: 0.5)
             }
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.48))
+                    .fill(Theme.borderSubtle.opacity(0.42))
                     .frame(height: 0.5)
             }
         }
         .buttonStyle(.plain)
+    }
+
+    private var cellBackground: Color {
+        if isSelected { return Theme.blue.opacity(0.075) }
+        if isToday { return Theme.blue.opacity(0.045) }
+        return Theme.bg
+    }
+
+    private var dateBadgeFill: Color {
+        if isToday { return Theme.blue }
+        if isSelected { return Theme.blue.opacity(0.16) }
+        return Theme.surfaceElevated.opacity(isCurrentMonth ? 0.18 : 0.08)
     }
 }
 
@@ -144,27 +197,27 @@ struct iOSCalendarMiniChip: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 7, weight: .semibold))
+                .font(.system(size: 8, weight: .semibold))
                 .foregroundStyle(color)
             Text(title)
-                .font(.system(size: 9, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
         }
         .padding(.horizontal, 5)
-        .padding(.vertical, 3)
+        .padding(.vertical, 2.5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(Theme.surfaceElevated)
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(color.opacity(0.12))
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Theme.surfaceElevated.opacity(0.82))
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(color.opacity(0.14))
             }
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .strokeBorder(color.opacity(0.18), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(color.opacity(0.16), lineWidth: 1)
         }
     }
 }

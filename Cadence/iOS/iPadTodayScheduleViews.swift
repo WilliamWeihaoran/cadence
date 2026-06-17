@@ -4,8 +4,12 @@ import SwiftUI
 
 struct iOSSchedulePanel: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query private var allBundles: [TaskBundle]
+    @State private var quickCreateStartMin: Int?
+    @State private var quickCreateTitle = ""
+    @State private var quickCreateError: String?
 
     private var todayKey: String {
         DateFormatters.todayKey()
@@ -41,6 +45,20 @@ struct iOSSchedulePanel: View {
                 Divider().background(Theme.borderSubtle.opacity(0.72))
             }
 
+            if let quickCreateStartMin {
+                iOSScheduleQuickCreateBar(
+                    startMin: quickCreateStartMin,
+                    title: $quickCreateTitle,
+                    errorMessage: quickCreateError,
+                    create: createScheduledTask,
+                    cancel: cancelQuickCreate
+                )
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+
+                Divider().background(Theme.borderSubtle.opacity(0.72))
+            }
+
             ZStack {
                 ScrollView {
                     VStack(spacing: 0) {
@@ -49,7 +67,9 @@ struct iOSSchedulePanel: View {
                                 hour: hour,
                                 tasks: tasks(in: hour),
                                 bundles: bundles(in: hour),
-                                rowHeight: horizontalSizeClass == .regular ? 58 : 48
+                                rowHeight: horizontalSizeClass == .regular ? 58 : 48,
+                                selectedStartMin: quickCreateStartMin,
+                                onSelectStart: selectQuickCreateStart
                             )
                         }
                     }
@@ -73,6 +93,137 @@ struct iOSSchedulePanel: View {
     private func bundles(in hour: Int) -> [TaskBundle] {
         CadenceScheduleSupport.bundles(in: hour, from: todayBundles)
     }
+
+    private func selectQuickCreateStart(_ startMin: Int) {
+        quickCreateStartMin = startMin
+        quickCreateError = nil
+    }
+
+    private func cancelQuickCreate() {
+        quickCreateStartMin = nil
+        quickCreateTitle = ""
+        quickCreateError = nil
+    }
+
+    private func createScheduledTask() {
+        guard let startMin = quickCreateStartMin else { return }
+        let pendingTitle = quickCreateTitle
+        do {
+            guard (try CadenceTaskMutationSupport.insertScheduledTask(
+                title: pendingTitle,
+                allTasks: allTasks,
+                modelContext: modelContext,
+                scheduledDate: todayKey,
+                scheduledStartMin: startMin,
+                estimatedMinutes: 30
+            )) != nil else {
+                quickCreateError = "Add a title first."
+                return
+            }
+            cancelQuickCreate()
+        } catch {
+            quickCreateTitle = pendingTitle
+            quickCreateError = "Couldn't save this timed task."
+        }
+    }
+}
+
+private struct iOSScheduleQuickCreateBar: View {
+    let startMin: Int
+    @Binding var title: String
+    let errorMessage: String?
+    let create: () -> Void
+    let cancel: () -> Void
+    @FocusState private var isFocused: Bool
+
+    private var trimmedTitle: String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "clock.badge.plus")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+                    .frame(width: 28, height: 28)
+                    .background(Theme.blue.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Create at \(TimeFormatters.timeString(from: startMin))")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+
+                    Text("Adds a 30 minute task to Today.")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 6)
+
+                Button(action: cancel) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.dim)
+                        .frame(width: 26, height: 26)
+                        .background(Theme.surfaceElevated.opacity(0.38))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Cancel timed task")
+            }
+
+            HStack(spacing: 7) {
+                TextField("Timed task title...", text: $title)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .focused($isFocused)
+                    .submitLabel(.done)
+                    .onSubmit(create)
+                    .padding(.horizontal, 10)
+                    .frame(height: 34)
+                    .background(Theme.surface.opacity(0.86))
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .strokeBorder(Theme.borderSubtle.opacity(0.52), lineWidth: 1)
+                    }
+
+                Button(action: create) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .frame(width: 34, height: 34)
+                        .background(trimmedTitle.isEmpty ? Theme.surfaceElevated.opacity(0.42) : Theme.blue.opacity(0.78))
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(trimmedTitle.isEmpty)
+                .accessibilityLabel("Create timed task")
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.red)
+                    .lineLimit(2)
+            }
+        }
+        .padding(10)
+        .background(Theme.surfaceElevated.opacity(0.36))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Theme.blue.opacity(0.20), lineWidth: 1)
+        }
+        .onAppear {
+            isFocused = true
+        }
+    }
 }
 
 private struct iOSScheduleHourRow: View {
@@ -80,23 +231,33 @@ private struct iOSScheduleHourRow: View {
     let tasks: [AppTask]
     let bundles: [TaskBundle]
     let rowHeight: CGFloat
+    let selectedStartMin: Int?
+    let onSelectStart: (Int) -> Void
 
     private var hasItems: Bool {
         !tasks.isEmpty || !bundles.isEmpty
+    }
+
+    private var startMin: Int {
+        hour * 60
+    }
+
+    private var isSelectedForCreate: Bool {
+        selectedStartMin == startMin
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             Text(hourLabel)
                 .font(.system(size: rowHeight > 50 ? 11 : 10, weight: .medium))
-                .foregroundStyle(Theme.dim.opacity(hour % 3 == 0 ? 0.9 : 0.45))
+                .foregroundStyle(isSelectedForCreate ? Theme.blue : Theme.dim.opacity(hour % 3 == 0 ? 0.9 : 0.45))
                 .frame(width: rowHeight > 50 ? 50 : 42, alignment: .trailing)
                 .padding(.trailing, rowHeight > 50 ? 9 : 7)
                 .padding(.top, -6)
 
             VStack(alignment: .leading, spacing: 5) {
                 Rectangle()
-                    .fill(Theme.borderSubtle.opacity(hour % 3 == 0 ? 0.55 : 0.25))
+                    .fill(isSelectedForCreate ? Theme.blue.opacity(0.58) : Theme.borderSubtle.opacity(hour % 3 == 0 ? 0.55 : 0.25))
                     .frame(height: 1)
 
                 if hasItems {
@@ -113,6 +274,25 @@ private struct iOSScheduleHourRow: View {
                             iOSScheduleTaskBlock(task: task)
                         }
                     }
+                    .padding(.top, 5)
+                } else {
+                    Button {
+                        onSelectStart(startMin)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: isSelectedForCreate ? "plus.circle.fill" : "plus")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(isSelectedForCreate ? "Creating here" : "Add")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .foregroundStyle(isSelectedForCreate ? Theme.blue : Theme.dim.opacity(0.58))
+                        .padding(.horizontal, 8)
+                        .frame(height: 24)
+                        .background(isSelectedForCreate ? Theme.blue.opacity(0.12) : Theme.surfaceElevated.opacity(0.18))
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Create timed task at \(hourLabel)")
                     .padding(.top, 5)
                 }
             }
@@ -369,9 +549,7 @@ private struct iOSScheduleReadyTaskRow: View {
     }
 
     private var estimateLabel: String {
-        if task.estimatedMinutes < 60 { return "\(task.estimatedMinutes)m estimate" }
-        if task.estimatedMinutes % 60 == 0 { return "\(task.estimatedMinutes / 60)h estimate" }
-        return String(format: "%.1fh estimate", Double(task.estimatedMinutes) / 60.0)
+        "\(CadenceTaskPresentationSupport.estimateLabel(for: task)) estimate"
     }
 }
 

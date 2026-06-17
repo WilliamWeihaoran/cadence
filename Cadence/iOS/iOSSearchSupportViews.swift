@@ -36,97 +36,6 @@ enum iOSSearchScope: String, CaseIterable, Identifiable {
     }
 }
 
-enum iOSSearchFeatureDestination: String, CaseIterable, Hashable {
-    case today
-    case allTasks
-    case inbox
-    case notes
-    case focus
-    case calendar
-    case pursuits
-    case milestones
-    case habits
-    case lists
-    case settings
-
-    var title: String {
-        switch self {
-        case .today: return "Today"
-        case .allTasks: return "All Tasks"
-        case .inbox: return "Inbox"
-        case .notes: return "Notes"
-        case .focus: return "Focus"
-        case .calendar: return "Calendar"
-        case .pursuits: return "Pursuits"
-        case .milestones: return "Milestones"
-        case .habits: return "Habits"
-        case .lists: return "Lists"
-        case .settings: return "Settings"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .today: return "Plan the day"
-        case .allTasks: return "Full task index"
-        case .inbox: return "Capture and triage"
-        case .notes: return "Workspace notes"
-        case .focus: return "Timer and current work"
-        case .calendar: return "Timeline and month"
-        case .pursuits: return "Long-running directions"
-        case .milestones: return "Goals and progress"
-        case .habits: return "Repeating commitments"
-        case .lists: return "Areas and projects"
-        case .settings: return "Preferences and diagnostics"
-        }
-    }
-
-    var detail: String {
-        switch self {
-        case .today: return "tasks notes schedule"
-        case .allTasks: return "tasks completed active"
-        case .inbox: return "capture unsorted tasks"
-        case .notes: return "daily weekly notepad markdown"
-        case .focus: return "timer pomodoro session"
-        case .calendar: return "calendar schedule timeline month"
-        case .pursuits: return "pursuits aspirations directions"
-        case .milestones: return "goals milestones progress"
-        case .habits: return "habits streaks routines"
-        case .lists: return "areas projects lists"
-        case .settings: return "settings preferences sync tags themes"
-        }
-    }
-
-    var aliases: String { "\(rawValue) \(title) \(subtitle) \(detail)" }
-
-    var icon: String {
-        switch self {
-        case .today: return "sun.max.fill"
-        case .allTasks: return "checklist"
-        case .inbox: return "tray.fill"
-        case .notes: return "note.text"
-        case .focus: return "timer"
-        case .calendar: return "calendar"
-        case .pursuits: return "sparkles"
-        case .milestones: return "flag.fill"
-        case .habits: return "flame.fill"
-        case .lists: return "folder.fill"
-        case .settings: return "gearshape.fill"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .today: return Theme.amber
-        case .allTasks, .inbox, .settings: return Theme.blue
-        case .notes, .calendar, .pursuits: return Theme.purple
-        case .focus: return Theme.red
-        case .milestones, .lists: return Theme.green
-        case .habits: return Theme.amber
-        }
-    }
-}
-
 struct iOSSearchListCandidate {
     let title: String
     let subtitle: String
@@ -156,7 +65,7 @@ struct iOSSearchFeatureCandidate {
     let detail: String
     let icon: String
     let color: Color
-    let destination: iOSSearchFeatureDestination
+    let destination: CadenceFeatureDestination
     let fields: [String]
 
     func result(score: Int) -> iOSSearchResult {
@@ -195,7 +104,7 @@ struct iOSSearchResult: Identifiable {
     var note: Note?
     var event: EKEvent?
     var listRoute: iOSListRoute?
-    var featureDestination: iOSSearchFeatureDestination?
+    var featureDestination: CadenceFeatureDestination?
 }
 
 struct iOSSearchScopePicker: View {
@@ -296,13 +205,32 @@ struct iOSNoteDetailSheet: View {
     @Bindable var note: Note
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var isEditorFocused = false
+    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
+    @State private var selectedReferenceNote: Note?
+    @State private var selectedReferenceTask: AppTask?
+
+    private var editorModeBinding: Binding<iOSMarkdownEditorMode> {
+        iOSMarkdownEditorPreferences.binding(for: $editorModeRaw)
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                iOSMarkdownEditor(text: $note.content, isFocused: $isEditorFocused)
-                    .background(Theme.surface)
+                iOSMarkdownEditingSurface(
+                    text: Binding(
+                        get: { note.content },
+                        set: { updateContent($0) }
+                    ),
+                    isFocused: $isEditorFocused,
+                    mode: editorModeBinding,
+                    placeholder: "Start writing...",
+                    referenceNotes: allNotes,
+                    referenceTasks: allTasks,
+                    onOpenReference: openMarkdownReference
+                )
             }
             .background(Theme.surface.ignoresSafeArea())
             .navigationTitle(note.displayTitle)
@@ -315,6 +243,10 @@ struct iOSNoteDetailSheet: View {
                         try? modelContext.save()
                         dismiss()
                     }
+                }
+
+                ToolbarItem(placement: .primaryAction) {
+                    iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
                 }
             }
             .onChange(of: note.content) { _, _ in
@@ -330,7 +262,28 @@ struct iOSNoteDetailSheet: View {
                 }
             }
         }
+        .iOSMarkdownReferenceSheets(
+            selectedNote: $selectedReferenceNote,
+            selectedTask: $selectedReferenceTask,
+            referenceNotes: allNotes,
+            referenceTasks: allTasks
+        )
         .preferredColorScheme(.dark)
+    }
+
+    private func updateContent(_ content: String) {
+        note.content = content
+        note.updatedAt = Date()
+        try? modelContext.save()
+    }
+
+    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
+        switch target.kind {
+        case .note:
+            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
+        case .task:
+            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
+        }
     }
 }
 #endif

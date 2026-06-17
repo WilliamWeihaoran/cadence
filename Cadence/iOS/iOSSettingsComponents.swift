@@ -3,155 +3,203 @@ import SwiftUI
 
 enum iOSSettingsCategory: String, CaseIterable, Identifiable {
     case appearance
+    case navigation
     case sync
+    case data
     case calendar
     case organization
+    case lists
     case tags
     case templates
-    case lists
     case ai
-    case data
     case coverage
     case about
 
     var id: String { rawValue }
 
-    var title: String {
+    var sharedKind: CadenceSettingsCategoryKind {
         switch self {
-        case .appearance: return "Appearance"
-        case .sync: return "Sync"
-        case .calendar: return "Calendar"
-        case .organization: return "Organization"
-        case .tags: return "Tags"
-        case .templates: return "Templates"
-        case .lists: return "Lists"
-        case .ai: return "AI"
-        case .data: return "Local Data"
-        case .coverage: return "Coverage"
-        case .about: return "About"
+        case .appearance: return .appearance
+        case .navigation: return .navigation
+        case .sync: return .sync
+        case .data: return .dataSafety
+        case .calendar: return .calendar
+        case .organization: return .contexts
+        case .lists: return .lists
+        case .tags: return .tags
+        case .templates: return .templates
+        case .ai: return .ai
+        case .coverage: return .coverage
+        case .about: return .about
         }
+    }
+
+    var title: String {
+        sharedKind.title
     }
 
     var subtitle: String {
-        switch self {
-        case .appearance: return "Themes."
-        case .sync: return "iCloud status."
-        case .calendar: return "Apple Calendar."
-        case .organization: return "Contexts and groups."
-        case .tags: return "Task and note tags."
-        case .templates: return "Note templates."
-        case .lists: return "List lifecycle."
-        case .ai: return "OpenAI key."
-        case .data: return "Counts and storage."
-        case .coverage: return "Mobile feature surface."
-        case .about: return "Version and bundle."
-        }
+        sharedKind.subtitle
     }
 
     var detailDescription: String {
-        switch self {
-        case .appearance:
-            return "Choose the same Cadence color themes available on Mac."
-        case .sync:
-            return "Check whether this device can use iCloud and CloudKit for Cadence sync."
-        case .calendar:
-            return "Connect Apple Calendar and choose which calendars are visible or linked to lists."
-        case .organization:
-            return "Manage the top-level contexts shared by areas, projects, tasks, and habits."
-        case .tags:
-            return "Create, archive, restore, and seed tags shared by tasks and notes."
-        case .templates:
-            return "Customize the note templates used by Today, lists, meetings, and permanent notes."
-        case .lists:
-            return "Review completed and archived areas or projects and return them to active work."
-        case .ai:
-            return "Store your OpenAI API key in Keychain and choose the model for AI note actions."
-        case .data:
-            return "Review the local workspace counts currently visible on this device."
-        case .coverage:
-            return "Track which companion app workflows are currently implemented on iPhone and iPad."
-        case .about:
-            return "Review the installed app version and bundle details for TestFlight diagnostics."
-        }
+        sharedKind.detailDescription
     }
 
     var icon: String {
-        switch self {
-        case .appearance: return "paintpalette.fill"
-        case .sync: return "icloud.fill"
-        case .calendar: return "calendar"
-        case .organization: return "square.stack.3d.up.fill"
-        case .tags: return "tag.fill"
-        case .templates: return "doc.text.fill"
-        case .lists: return "archivebox.fill"
-        case .ai: return "sparkles"
-        case .data: return "chart.bar.doc.horizontal.fill"
-        case .coverage: return "iphone.and.arrow.forward"
-        case .about: return "info.circle.fill"
-        }
+        sharedKind.icon
     }
 
     var tint: Color {
+        sharedKind.tint
+    }
+}
+
+private struct iOSSettingsCategoryGroup: Identifiable {
+    let title: String
+    let categories: [iOSSettingsCategory]
+
+    var id: String { title }
+
+    static let all: [iOSSettingsCategoryGroup] = [
+        iOSSettingsCategoryGroup(
+            title: "Interface",
+            categories: [.appearance, .navigation]
+        ),
+        iOSSettingsCategoryGroup(
+            title: "Organization",
+            categories: [.organization, .lists, .tags, .templates]
+        ),
+        iOSSettingsCategoryGroup(
+            title: "Connections",
+            categories: [.calendar, .sync, .ai]
+        ),
+        iOSSettingsCategoryGroup(
+            title: "Mobile",
+            categories: [.data, .coverage, .about]
+        )
+    ]
+}
+
+enum iOSMobileCapabilityStatus: String, CaseIterable, Identifiable {
+    case ready
+    case partial
+    case later
+
+    var id: String { rawValue }
+
+    var title: String {
         switch self {
-        case .appearance: return Theme.purple
-        case .sync: return Theme.blue
-        case .calendar: return Theme.purple
-        case .organization: return Theme.red
-        case .tags: return Theme.amber
-        case .templates: return Theme.purple
-        case .lists: return Theme.green
-        case .ai: return Theme.blue
-        case .data: return Theme.green
-        case .coverage: return Theme.purple
-        case .about: return Theme.amber
+        case .ready: return "Ready"
+        case .partial: return "Partial"
+        case .later: return "Later"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .ready: return "checkmark.circle.fill"
+        case .partial: return "wrench.and.screwdriver.fill"
+        case .later: return "clock.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .ready: return Theme.green
+        case .partial: return Theme.amber
+        case .later: return Theme.dim
         }
     }
 }
 
-enum iOSMobileCapability {
-    static let readyCapabilities = [
-        "Today planning",
-        "All Tasks",
-        "Inbox capture",
-        "Theme selection",
-        "Apple Calendar access and list links",
-        "Create/edit/archive contexts",
-        "Create/edit/archive lists",
-        "Create/archive/restore tags",
-        "Customize note templates",
-        "Restore completed/archived lists",
-        "AI key/model settings",
-        "Search",
-        "Markdown notes",
-        "List Kanban",
-        "List planning",
-        "List saved links",
-        "Completed task review",
-        "Calendar timeline",
-        "Focus timer",
-        "Pursuits",
-        "Milestones",
-        "Habits"
+struct iOSMobileCapability: Identifiable, Hashable {
+    let title: String
+    let detail: String
+    let status: iOSMobileCapabilityStatus
+
+    var id: String { title }
+
+    static let all: [iOSMobileCapability] = [
+        iOSMobileCapability(title: "Today planning", detail: "Capture, sort, complete, notes, samples, and timeline inspector.", status: .ready),
+        iOSMobileCapability(title: "All Tasks", detail: "Review active/completed work, edit tasks, and use shared task presentation.", status: .ready),
+        iOSMobileCapability(title: "Inbox capture", detail: "Quick add, triage, completion, and scheduling basics.", status: .ready),
+        iOSMobileCapability(title: "Lists", detail: "Areas/projects, list detail, planning, Kanban, links, and lifecycle restore.", status: .ready),
+        iOSMobileCapability(title: "Search", detail: "Find tasks, notes, and feature destinations from mobile.", status: .ready),
+        iOSMobileCapability(title: "Markdown notes", detail: "Live rendering, raw edit, preview, formatting, images, references, tables, and templates.", status: .ready),
+        iOSMobileCapability(title: "Settings", detail: "Theme, navigation defaults, calendar, tags, templates, sync, AI, data, and about.", status: .ready),
+        iOSMobileCapability(title: "Focus timer", detail: "Mobile focus surface exists, but still needs deeper desktop parity testing.", status: .partial),
+        iOSMobileCapability(title: "Calendar", detail: "Timeline/month/board, quick create, event editing, and empty-slot creation exist; drag/resize parity remains.", status: .partial),
+        iOSMobileCapability(title: "Pursuits", detail: "Create/edit and inspect pursuit-linked milestones and habits.", status: .partial),
+        iOSMobileCapability(title: "Milestones", detail: "Create/edit and inspect goal progress; desktop timeline parity still needs polish.", status: .partial),
+        iOSMobileCapability(title: "Habits", detail: "Create/edit and toggle habits; deeper analytics and Mac polish remain.", status: .partial),
+        iOSMobileCapability(title: "CloudKit sync", detail: "Uses the shared container, but needs manual device/relaunch verification before TestFlight.", status: .partial),
+        iOSMobileCapability(title: "App Store metadata", detail: "Icons and public support/privacy links are present; screenshots and final review notes remain.", status: .partial),
+        iOSMobileCapability(title: "Desktop editor parity", detail: "The AppKit editor cannot be reused directly; mobile now shares markdown behavior through SwiftUI/UIKit surfaces.", status: .partial),
+        iOSMobileCapability(title: "Global desktop commands", detail: "Global hotkeys, hover affordances, and macOS command surfaces are intentionally desktop-only.", status: .later)
     ]
+
+    static func count(for status: iOSMobileCapabilityStatus) -> Int {
+        all.filter { $0.status == status }.count
+    }
+
+    static func items(for status: iOSMobileCapabilityStatus) -> [iOSMobileCapability] {
+        all.filter { $0.status == status }
+    }
 }
 
 struct iOSSettingsRail: View {
     @Binding var selectedCategory: iOSSettingsCategory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Settings")
-                    .font(.system(size: 26, weight: .bold))
+                    .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(Theme.text)
-                Text("Preferences, organization, sync, and TestFlight diagnostics.")
-                    .font(.system(size: 13))
+                Text("Preferences and workspace controls.")
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.dim)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            VStack(spacing: 8) {
-                ForEach(iOSSettingsCategory.allCases) { category in
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(iOSSettingsCategoryGroup.all) { group in
+                        iOSSettingsRailGroup(
+                            group: group,
+                            selectedCategory: $selectedCategory
+                        )
+                    }
+                }
+                .padding(.bottom, 10)
+            }
+            .scrollIndicators(.hidden)
+
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 18)
+        .frame(width: 232)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(Theme.surface.opacity(0.72))
+    }
+}
+
+private struct iOSSettingsRailGroup: View {
+    let group: iOSSettingsCategoryGroup
+    @Binding var selectedCategory: iOSSettingsCategory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(group.title.uppercased())
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Theme.dim.opacity(0.78))
+                .tracking(1.1)
+                .padding(.horizontal, 10)
+
+            VStack(spacing: 6) {
+                ForEach(group.categories) { category in
                     iOSSettingsRailButton(
                         category: category,
                         isSelected: selectedCategory == category
@@ -160,105 +208,7 @@ struct iOSSettingsRail: View {
                     }
                 }
             }
-
-            Spacer()
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 22)
-        .frame(width: 260)
-        .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(Theme.surface.opacity(0.58))
-    }
-}
-
-struct iOSSettingsCurrentCategoryPill: View {
-    let category: iOSSettingsCategory
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: category.icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(category.tint)
-                .frame(width: 28, height: 28)
-                .background(category.tint.opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(category.title)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-
-                Text(category.subtitle)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Theme.surfaceElevated.opacity(0.58))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(category.tint.opacity(0.22), lineWidth: 1)
-        }
-    }
-}
-
-struct iOSSettingsCategoryStrip: View {
-    @Binding var selectedCategory: iOSSettingsCategory
-
-    var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 8) {
-                ForEach(iOSSettingsCategory.allCases) { category in
-                    iOSSettingsCategoryStripButton(
-                        category: category,
-                        isSelected: selectedCategory == category
-                    ) {
-                        selectedCategory = category
-                    }
-                }
-            }
-            .padding(.horizontal, 1)
-            .padding(.vertical, 1)
-        }
-        .scrollIndicators(.hidden)
-    }
-}
-
-private struct iOSSettingsCategoryStripButton: View {
-    let category: iOSSettingsCategory
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: category.icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isSelected ? category.tint : Theme.dim)
-                    .frame(width: 24, height: 24)
-                    .background(isSelected ? category.tint.opacity(0.14) : Theme.surfaceElevated.opacity(0.32))
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-
-                Text(category.title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isSelected ? Theme.text : Theme.dim)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 38)
-            .background(isSelected ? category.tint.opacity(0.12) : Theme.surfaceElevated.opacity(0.28))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(isSelected ? category.tint.opacity(0.28) : Theme.borderSubtle.opacity(0.32), lineWidth: 1)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(category.title)
     }
 }
 
@@ -270,12 +220,12 @@ private struct iOSSettingsRailButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(category.tint.opacity(isSelected ? 0.22 : 0.14))
-                    .frame(width: 34, height: 34)
+                    .frame(width: 30, height: 30)
                     .overlay {
                         Image(systemName: category.icon)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(category.tint)
                     }
 
@@ -283,26 +233,28 @@ private struct iOSSettingsRailButton: View {
                     Text(category.title)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(isSelected ? Theme.text : Theme.text.opacity(0.92))
+                        .lineLimit(1)
                     Text(category.subtitle)
-                        .font(.system(size: 11))
+                        .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(Theme.dim)
-                        .lineLimit(2)
+                        .lineLimit(1)
                 }
 
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(isSelected ? Theme.surfaceElevated : Color.clear)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(isSelected ? category.tint.opacity(0.36) : Theme.borderSubtle.opacity(0.001), lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("settings.category.\(category.rawValue)")
     }
 }
 
@@ -512,19 +464,42 @@ struct iOSSettingsInfoRow: View {
 }
 
 struct iOSSettingsCapabilityRow: View {
-    let title: String
-    let isReady: Bool
+    let capability: iOSMobileCapability
 
     var body: some View {
-        HStack {
-            Text(title)
-                .foregroundStyle(Theme.text)
-            Spacer()
-            Label(isReady ? "Ready" : "Later",
-                  systemImage: isReady ? "checkmark.circle.fill" : "clock")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(isReady ? Theme.green : Theme.dim)
+        HStack(alignment: .top, spacing: 11) {
+            Image(systemName: capability.status.systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(capability.status.color)
+                .frame(width: 28, height: 28)
+                .background(capability.status.color.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(capability.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+
+                Text(capability.detail)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Text(capability.status.title)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(capability.status.color)
+                .lineLimit(1)
+                .padding(.horizontal, 7)
+                .frame(height: 22)
+                .background(capability.status.color.opacity(0.12))
+                .clipShape(Capsule())
         }
+        .padding(.horizontal, 10)
         .padding(.vertical, 10)
     }
 }

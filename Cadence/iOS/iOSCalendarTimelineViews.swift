@@ -11,6 +11,7 @@ struct iOSCalendarTimelineGrid: View {
     let bundlesByDate: [String: [TaskBundle]]
     let eventsByDate: [String: [EKEvent]]
     let zoomLevel: Int
+    let onCreateAt: (String, Int) -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -65,7 +66,8 @@ struct iOSCalendarTimelineGrid: View {
                                         bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
                                         events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
                                         colWidth: colWidth,
-                                        hourHeight: hourHeight
+                                        hourHeight: hourHeight,
+                                        onCreateAt: onCreateAt
                                     )
                                     .offset(x: CGFloat(index) * colWidth)
                                 }
@@ -239,9 +241,20 @@ private struct iOSCalendarTimelineDayBlocks: View {
     let events: [EKEvent]
     let colWidth: CGFloat
     let hourHeight: CGFloat
+    let onCreateAt: (String, Int) -> Void
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(Color.clear)
+                .contentShape(Rectangle())
+                .gesture(
+                    SpatialTapGesture()
+                        .onEnded { value in
+                            onCreateAt(DateFormatters.dateKey(from: date), minute(for: value.location.y))
+                        }
+                )
+
             if Calendar.current.isDateInToday(date) {
                 Rectangle()
                     .fill(Theme.blue.opacity(0.025))
@@ -292,6 +305,14 @@ private struct iOSCalendarTimelineDayBlocks: View {
 
     private func blockHeight(start: Int, end: Int) -> CGFloat {
         max(24, CGFloat(end - start) / 60.0 * hourHeight - 4)
+    }
+
+    private func minute(for yPosition: CGFloat) -> Int {
+        let rawMinute = CadenceScheduleSupport.calendarStartHour * 60 + Int((max(0, yPosition) / hourHeight) * 60)
+        let snapped = (rawMinute / 15) * 15
+        let minimum = CadenceScheduleSupport.calendarStartHour * 60
+        let maximum = CadenceScheduleSupport.calendarEndHour * 60 - 15
+        return min(max(snapped, minimum), maximum)
     }
 }
 

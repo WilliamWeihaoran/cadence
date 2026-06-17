@@ -1,32 +1,24 @@
 #if os(iOS)
+import SwiftData
 import SwiftUI
 
 struct iOSMoreView: View {
-    private let featureSections: [iOSMoreFeatureSection] = [
-        iOSMoreFeatureSection(
-            title: "Plan",
-            rows: [
-                iOSMoreFeatureRow(title: "All Tasks", subtitle: "Review every active and completed task.", icon: "checklist", color: Theme.blue, destination: .allTasks),
-                iOSMoreFeatureRow(title: "Lists", subtitle: "Browse areas, projects, and custom task lists.", icon: "folder.fill", color: Theme.green, destination: .lists),
-                iOSMoreFeatureRow(title: "Calendar", subtitle: "Review schedule, month, and board views.", icon: "calendar", color: Theme.purple, destination: .calendar)
-            ]
-        ),
-        iOSMoreFeatureSection(
-            title: "Progress",
-            rows: [
-                iOSMoreFeatureRow(title: "Focus", subtitle: "Work through today's scheduled tasks.", icon: "timer", color: Theme.red, destination: .focus),
-                iOSMoreFeatureRow(title: "Pursuits", subtitle: "See pursuits with linked milestones and habits.", icon: "sparkles", color: Theme.purple, destination: .pursuits),
-                iOSMoreFeatureRow(title: "Milestones", subtitle: "Track goal progress and linked work.", icon: "flag.fill", color: Theme.green, destination: .milestones),
-                iOSMoreFeatureRow(title: "Habits", subtitle: "Check habit status and mark today complete.", icon: "flame.fill", color: Theme.amber, destination: .habits)
-            ]
-        ),
-        iOSMoreFeatureSection(
-            title: "Workspace",
-            rows: [
-                iOSMoreFeatureRow(title: "Settings", subtitle: "Manage workspace lists, sync, and app options.", icon: "gearshape.fill", color: Theme.blue, destination: .settings)
-            ]
+    @Query private var allTasks: [AppTask]
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
+    @Query private var habits: [Habit]
+    @Query(filter: #Predicate<Pursuit> { $0.statusRaw == "active" }) private var activePursuits: [Pursuit]
+    @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
+
+    private var badgeSnapshot: CadenceFeatureBadgeSupport.Snapshot {
+        CadenceFeatureBadgeSupport.Snapshot(
+            tasks: allTasks,
+            activePursuitCount: activePursuits.count,
+            activeGoalCount: activeGoals.count,
+            habitCount: habits.count,
+            activeListCount: areas.filter(\.isActive).count + projects.filter(\.isActive).count
         )
-    ]
+    }
 
     var body: some View {
         ScrollView {
@@ -40,8 +32,8 @@ struct iOSMoreView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 14) {
-                    ForEach(featureSections) { section in
-                        iOSMoreFeatureSectionView(section: section)
+                    ForEach(CadenceFeatureDestination.compactMoreSections) { section in
+                        iOSMoreFeatureSectionView(section: section, badgeSnapshot: badgeSnapshot)
                     }
                 }
             }
@@ -50,22 +42,30 @@ struct iOSMoreView: View {
             .padding(.bottom, 18)
         }
         .scrollIndicators(.hidden)
-        .navigationDestination(for: iOSMoreDestination.self) { destination in
+        .navigationDestination(for: CadenceFeatureDestination.self) { destination in
             switch destination {
+            case .today:
+                iPadTodayView()
             case .allTasks:
                 iOSAllTasksView()
-            case .lists:
-                iOSListsView()
             case .focus:
                 iOSFocusView()
+            case .inbox:
+                iPadInboxView()
             case .calendar:
                 iOSCalendarView()
+            case .notes:
+                iOSCompactNotesView()
+            case .lists:
+                iOSListsView()
             case .pursuits:
                 iOSPursuitsView()
-            case .milestones:
+            case .goals:
                 iOSMilestonesView()
             case .habits:
                 iOSHabitsView()
+            case .search:
+                iOSSearchView()
             case .settings:
                 iOSSettingsView()
             }
@@ -74,25 +74,20 @@ struct iOSMoreView: View {
     }
 }
 
-private struct iOSMoreFeatureSection: Identifiable {
-    let title: String
-    let rows: [iOSMoreFeatureRow]
-
-    var id: String { title }
-}
-
 private struct iOSMoreFeatureRow: Identifiable {
-    let title: String
-    let subtitle: String
-    let icon: String
-    let color: Color
-    let destination: iOSMoreDestination
+    let destination: CadenceFeatureDestination
+    let count: Int?
 
-    var id: iOSMoreDestination { destination }
+    var id: CadenceFeatureDestination { destination }
+    var title: String { destination.title }
+    var subtitle: String { destination.subtitle }
+    var icon: String { destination.systemImage }
+    var color: Color { destination.tint }
 }
 
 private struct iOSMoreFeatureSectionView: View {
-    let section: iOSMoreFeatureSection
+    let section: CadenceFeatureSection
+    let badgeSnapshot: CadenceFeatureBadgeSupport.Snapshot
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -100,17 +95,16 @@ private struct iOSMoreFeatureSectionView: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Theme.dim)
                 .textCase(.uppercase)
-                .kerning(0.8)
                 .padding(.horizontal, 2)
 
             VStack(spacing: 0) {
-                ForEach(section.rows) { row in
+                ForEach(rows) { row in
                     NavigationLink(value: row.destination) {
                         iOSMoreFeatureNavigationRow(row: row)
                     }
                     .buttonStyle(.plain)
 
-                    if row.id != section.rows.last?.id {
+                    if row.id != section.destinations.last {
                         Divider()
                             .background(Theme.borderSubtle.opacity(0.72))
                             .padding(.leading, 54)
@@ -123,6 +117,15 @@ private struct iOSMoreFeatureSectionView: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
             }
+        }
+    }
+
+    private var rows: [iOSMoreFeatureRow] {
+        section.destinations.map { destination in
+            iOSMoreFeatureRow(
+                destination: destination,
+                count: badgeSnapshot.count(for: destination)
+            )
         }
     }
 }
@@ -138,6 +141,10 @@ private struct iOSMoreFeatureNavigationRow: View {
                 .frame(width: 31, height: 31)
                 .background(row.color.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(row.color.opacity(0.18), lineWidth: 1)
+                }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(row.title)
@@ -152,6 +159,17 @@ private struct iOSMoreFeatureNavigationRow: View {
 
             Spacer(minLength: 8)
 
+            if let count = row.count {
+                Text("\(count)")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(row.color)
+                    .monospacedDigit()
+                    .padding(.horizontal, 7)
+                    .frame(height: 22)
+                    .background(row.color.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+
             Image(systemName: "chevron.right")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.dim.opacity(0.72))
@@ -160,16 +178,5 @@ private struct iOSMoreFeatureNavigationRow: View {
         .padding(.vertical, 10)
         .contentShape(Rectangle())
     }
-}
-
-private enum iOSMoreDestination: Hashable {
-    case allTasks
-    case lists
-    case focus
-    case calendar
-    case pursuits
-    case milestones
-    case habits
-    case settings
 }
 #endif

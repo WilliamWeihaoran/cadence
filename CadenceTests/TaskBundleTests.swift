@@ -2,6 +2,7 @@ import SwiftData
 import Testing
 @testable import Cadence
 
+#if os(macOS)
 @MainActor
 struct TaskBundleTests {
     @Test func addingTaskToBundleUsesBundleDateWithoutTaskTime() throws {
@@ -271,3 +272,4 @@ struct TaskBundleTests {
         #expect(long.actualMinutes == 20)
     }
 }
+#endif

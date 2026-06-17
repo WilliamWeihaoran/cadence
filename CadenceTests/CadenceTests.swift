@@ -20,6 +20,7 @@ struct CadenceTests {
         // Write your test here and use APIs like `#expect(...)` to check expected conditions.
     }
 
+#if os(macOS)
     @Test func appleAccountDefaultsStorageRoundTripsProfile() throws {
         let suiteName = "CadenceTests.appleAccount.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -80,6 +81,7 @@ struct CadenceTests {
         #expect(missing.isConfigured == false)
         #expect(missing.title == "Missing")
     }
+#endif
 
     @Test func automaticBackupRetentionThinsStartupAndPreRestoreSnapshots() throws {
         var calendar = Calendar(identifier: .gregorian)
@@ -174,6 +176,7 @@ struct CadenceTests {
         ))
     }
 
+#if os(macOS)
     @Test func calendarHeaderVisibleRangeClampsOverscroll() {
         let range = calendarTimelineHeaderVisibleRange(
             headerOffset: -3_700,
@@ -358,6 +361,7 @@ struct CadenceTests {
         #expect(visibleMonthIdx == 61)
         #expect(monthGridResetNonce == 1)
     }
+#endif
 
     @Test func calendarBoardSummaryLimitsMarkersAndCountsOverflow() {
         let dateKey = "2026-05-27"
@@ -416,6 +420,7 @@ struct CadenceTests {
         #expect(DateFormatters.dateKey(from: nextMonth) == "2026-06-27")
     }
 
+#if os(macOS)
     @Test func calendarBoardMonthNavigationClampsToValidDay() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? calendar.timeZone
@@ -462,6 +467,7 @@ struct CadenceTests {
         #expect(boardAnchorKey == "2026-06-18")
         #expect(returnDay == 48)
     }
+#endif
 
 #if os(macOS)
     @MainActor

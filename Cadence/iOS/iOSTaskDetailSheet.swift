@@ -7,6 +7,7 @@ struct iOSTaskDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -21,8 +22,10 @@ struct iOSTaskDetailSheet: View {
     @State private var containerSelection = "inbox"
     @State private var showDeleteConfirmation = false
     @State private var isNotesFocused = false
-    @State private var notesEditorMode: iOSMarkdownEditorMode = .edit
+    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var notesEditorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
+    @State private var selectedReferenceNote: Note?
+    @State private var selectedReferenceTask: AppTask?
 
     private var sortedSubtasks: [Subtask] {
         (task.subtasks ?? []).sorted { $0.order < $1.order }
@@ -72,12 +75,44 @@ struct iOSTaskDetailSheet: View {
         task.goal
     }
 
+    private var currentContainerTitle: String {
+        if let selectedArea {
+            return selectedArea.name.isEmpty ? "Untitled Area" : selectedArea.name
+        }
+        if let selectedProject {
+            return selectedProject.name.isEmpty ? "Untitled Project" : selectedProject.name
+        }
+        if let area = task.area {
+            return area.name.isEmpty ? "Untitled Area" : area.name
+        }
+        if let project = task.project {
+            return project.name.isEmpty ? "Untitled Project" : project.name
+        }
+        return "Inbox"
+    }
+
+    private var currentGoalTitle: String? {
+        guard let selectedGoal else { return nil }
+        return selectedGoal.title.isEmpty ? "Untitled Milestone" : selectedGoal.title
+    }
+
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
     }
 
+    private var notesEditorMode: iOSMarkdownEditorMode {
+        iOSMarkdownEditorPreferences.mode(from: notesEditorModeRaw)
+    }
+
+    private var notesEditorModeBinding: Binding<iOSMarkdownEditorMode> {
+        iOSMarkdownEditorPreferences.binding(for: $notesEditorModeRaw)
+    }
+
     private var notesEditorMinHeight: CGFloat {
-        isRegularWidth ? 240 : 170
+        if notesEditorMode == .live {
+            return isRegularWidth ? 360 : 340
+        }
+        return isRegularWidth ? 240 : 170
     }
 
     var body: some View {
@@ -136,6 +171,12 @@ struct iOSTaskDetailSheet: View {
         } message: {
             Text("Choose whether this repeat change applies only here or to this task and future instances.")
         }
+        .iOSMarkdownReferenceSheets(
+            selectedNote: $selectedReferenceNote,
+            selectedTask: $selectedReferenceTask,
+            referenceNotes: allNotes,
+            referenceTasks: allTasks
+        )
     }
 
     private var editorScrollView: some View {
@@ -162,6 +203,11 @@ struct iOSTaskDetailSheet: View {
     private var compactTaskForm: some View {
         VStack(alignment: .leading, spacing: 14) {
             iOSTaskEditorTitleCard(task: task)
+            iOSTaskEditorOverviewCard(
+                task: task,
+                containerTitle: currentContainerTitle,
+                goalTitle: currentGoalTitle
+            )
             taskPropertiesSection
             organizeSection
             milestoneSection
@@ -177,6 +223,11 @@ struct iOSTaskDetailSheet: View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 14) {
                 iOSTaskEditorTitleCard(task: task)
+                iOSTaskEditorOverviewCard(
+                    task: task,
+                    containerTitle: currentContainerTitle,
+                    goalTitle: currentGoalTitle
+                )
                 taskPropertiesSection
                 organizeSection
                 milestoneSection
@@ -439,7 +490,7 @@ struct iOSTaskDetailSheet: View {
         iOSTaskEditorSection(title: "Notes") {
             HStack {
                 Spacer()
-                iOSMarkdownModePicker(mode: $notesEditorMode)
+                iOSMarkdownModePicker(mode: notesEditorModeBinding)
             }
 
             iOSMarkdownEditingSurface(
@@ -451,8 +502,11 @@ struct iOSTaskDetailSheet: View {
                     }
                 ),
                 isFocused: $isNotesFocused,
-                mode: $notesEditorMode,
-                placeholder: "Add notes..."
+                mode: notesEditorModeBinding,
+                placeholder: "Add notes...",
+                referenceNotes: allNotes,
+                referenceTasks: allTasks,
+                onOpenReference: openMarkdownReference
             )
                 .frame(minHeight: notesEditorMinHeight)
                 .background(Theme.surfaceElevated.opacity(0.35))
@@ -637,9 +691,7 @@ struct iOSTaskDetailSheet: View {
     }
 
     private var estimateLabel: String {
-        if task.estimatedMinutes < 60 { return "\(task.estimatedMinutes)m" }
-        if task.estimatedMinutes % 60 == 0 { return "\(task.estimatedMinutes / 60)h" }
-        return String(format: "%.1fh", Double(task.estimatedMinutes) / 60.0)
+        CadenceTaskPresentationSupport.estimateLabel(for: task)
     }
 
     private var actualTimeLabel: String {
@@ -704,6 +756,15 @@ struct iOSTaskDetailSheet: View {
 
     private func saveTask() {
         CadenceTaskMutationSupport.normalizeCompletionState(for: task, modelContext: modelContext)
+    }
+
+    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
+        switch target.kind {
+        case .note:
+            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
+        case .task:
+            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
+        }
     }
 
     private func applyContainerSelection() {
@@ -785,12 +846,7 @@ struct iOSTaskDetailSheet: View {
     }
 
     private func statusColor(_ status: TaskStatus) -> Color {
-        switch status {
-        case .todo: return Theme.dim
-        case .inProgress: return Theme.blue
-        case .done: return Theme.green
-        case .cancelled: return Theme.red
-        }
+        CadenceTaskPresentationSupport.statusColor(status)
     }
 }
 

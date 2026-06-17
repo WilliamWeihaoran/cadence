@@ -6,11 +6,16 @@ import SwiftUI
 struct iOSNotesPanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var todayNote: Note?
     @State private var weekNote: Note?
     @State private var permanentNote: Note?
+    @State private var selectedReferenceNote: Note?
+    @State private var selectedReferenceTask: AppTask?
     @AppStorage("ios.notes.activeCoreTab") private var activeTabRaw = CadenceCoreNoteTab.today.rawValue
-    @AppStorage("ios.notes.editorMode") private var editorModeRaw = iOSMarkdownEditorMode.edit.rawValue
+    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
+    @AppStorage(iOSMarkdownEditorPreferences.didMigrateLiveDefaultKey) private var didMigrateLiveEditorDefault = false
     @FocusState private var isEditorFocused: Bool
     var useStandardHeaderHeight = false
 
@@ -20,7 +25,7 @@ struct iOSNotesPanel: View {
     }
 
     private var editorMode: iOSMarkdownEditorMode {
-        get { iOSMarkdownEditorMode(rawValue: editorModeRaw) ?? .edit }
+        get { iOSMarkdownEditorMode(rawValue: editorModeRaw) ?? iOSMarkdownEditorPreferences.defaultMode }
         set { editorModeRaw = newValue.rawValue }
     }
 
@@ -48,8 +53,12 @@ struct iOSNotesPanel: View {
                         set: { isEditorFocused = $0 }
                     ),
                     mode: editorModeBinding,
-                    placeholder: "Start writing..."
+                    placeholder: "Start writing...",
+                    referenceNotes: allNotes,
+                    referenceTasks: allTasks,
+                    onOpenReference: openMarkdownReference
                 )
+                .id(note.id)
             } else {
                 ProgressView()
                     .tint(Theme.blue)
@@ -57,7 +66,10 @@ struct iOSNotesPanel: View {
             }
         }
         .background(Theme.surface)
-        .onAppear(perform: loadNotes)
+        .onAppear {
+            migrateLiveEditorDefaultIfNeeded()
+            loadNotes()
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             loadNotes()
@@ -65,6 +77,12 @@ struct iOSNotesPanel: View {
         .onChange(of: activeTab) { _, _ in
             isEditorFocused = false
         }
+        .iOSMarkdownReferenceSheets(
+            selectedNote: $selectedReferenceNote,
+            selectedTask: $selectedReferenceTask,
+            referenceNotes: allNotes,
+            referenceTasks: allTasks
+        )
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -188,12 +206,29 @@ struct iOSNotesPanel: View {
         permanentNote = snapshot.notepad
     }
 
+    private func migrateLiveEditorDefaultIfNeeded() {
+        guard !didMigrateLiveEditorDefault else { return }
+        if editorModeRaw == iOSMarkdownEditorMode.edit.rawValue {
+            editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
+        }
+        didMigrateLiveEditorDefault = true
+    }
+
     private func update(_ note: Note, content: String) {
         CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
     }
 
     private func apply(_ template: NoteTemplate, to note: Note) {
         CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
+    }
+
+    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
+        switch target.kind {
+        case .note:
+            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
+        case .task:
+            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
+        }
     }
 }
 
@@ -202,13 +237,29 @@ struct iOSCompactNotesView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var activePage: iOSCompactNotesPage = .today
     @State private var todayNote: Note?
     @State private var weekNote: Note?
     @State private var permanentNote: Note?
     @State private var selectedMeetingNote: Note?
-    @State private var editorMode: iOSMarkdownEditorMode = .edit
+    @State private var selectedReferenceNote: Note?
+    @State private var selectedReferenceTask: AppTask?
+    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
+    @AppStorage(iOSMarkdownEditorPreferences.didMigrateLiveDefaultKey) private var didMigrateLiveEditorDefault = false
     @FocusState private var isEditorFocused: Bool
+
+    private var editorMode: iOSMarkdownEditorMode {
+        get { iOSMarkdownEditorMode(rawValue: editorModeRaw) ?? iOSMarkdownEditorPreferences.defaultMode }
+        set { editorModeRaw = newValue.rawValue }
+    }
+
+    private var editorModeBinding: Binding<iOSMarkdownEditorMode> {
+        Binding(
+            get: { editorMode },
+            set: { editorModeRaw = $0.rawValue }
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -225,7 +276,7 @@ struct iOSCompactNotesView: View {
 
             if let coreTab = activePage.coreTab {
                 HStack {
-                    iOSMarkdownModePicker(mode: $editorMode)
+                    iOSMarkdownModePicker(mode: editorModeBinding)
 
                     Spacer()
 
@@ -250,7 +301,10 @@ struct iOSCompactNotesView: View {
             }
         }
         .background(Theme.surface.ignoresSafeArea())
-        .onAppear(perform: loadNotes)
+        .onAppear {
+            migrateLiveEditorDefaultIfNeeded()
+            loadNotes()
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             loadNotes()
@@ -266,6 +320,12 @@ struct iOSCompactNotesView: View {
                 event: event
             )
         }
+        .iOSMarkdownReferenceSheets(
+            selectedNote: $selectedReferenceNote,
+            selectedTask: $selectedReferenceTask,
+            referenceNotes: allNotes,
+            referenceTasks: allTasks
+        )
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -288,9 +348,13 @@ struct iOSCompactNotesView: View {
                     get: { isEditorFocused },
                     set: { isEditorFocused = $0 }
                 ),
-                mode: $editorMode,
-                placeholder: "Start writing..."
+                mode: editorModeBinding,
+                placeholder: "Start writing...",
+                referenceNotes: allNotes,
+                referenceTasks: allTasks,
+                onOpenReference: openMarkdownReference
             )
+            .id(note.id)
         } else {
             ProgressView()
                 .tint(Theme.blue)
@@ -358,12 +422,29 @@ struct iOSCompactNotesView: View {
         permanentNote = snapshot.notepad
     }
 
+    private func migrateLiveEditorDefaultIfNeeded() {
+        guard !didMigrateLiveEditorDefault else { return }
+        if editorModeRaw == iOSMarkdownEditorMode.edit.rawValue {
+            editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
+        }
+        didMigrateLiveEditorDefault = true
+    }
+
     private func update(_ note: Note, content: String) {
         CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
     }
 
     private func apply(_ template: NoteTemplate, to note: Note) {
         CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
+    }
+
+    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
+        switch target.kind {
+        case .note:
+            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
+        case .task:
+            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
+        }
     }
 }
 
@@ -456,8 +537,8 @@ private struct iOSMeetingNoteRow: View {
     }
 
     private var preview: String {
-        note.content.components(separatedBy: "\n")
-            .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? "Empty note"
+        let preview = CadenceMarkdownPresentationSupport.plainPreviewText(from: note.content, limit: 140)
+        return preview.isEmpty ? "Empty note" : preview
     }
 
     var body: some View {

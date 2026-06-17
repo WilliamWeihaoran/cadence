@@ -1,6 +1,11 @@
-#if os(macOS)
 import Foundation
 import SwiftData
+
+enum TaskContainerSelection: Hashable {
+    case inbox
+    case area(UUID)
+    case project(UUID)
+}
 
 struct TaskCreationDraft {
     let title: String
@@ -118,4 +123,3 @@ struct TaskCreationService {
         }
     }
 }
-#endif

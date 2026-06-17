@@ -7,22 +7,27 @@ struct iPadMacStyleRootShell<Content: View>: View {
     @ViewBuilder let detail: () -> Content
 
     var body: some View {
-        HStack(spacing: 0) {
-            iOSSidebar(selection: $selection)
-                .frame(width: iOSSidebarMetrics.railWidth)
-                .background(Theme.bg)
-                .overlay(alignment: .trailing) {
-                    Rectangle()
-                        .fill(Theme.borderSubtle.opacity(0.72))
-                        .frame(width: 0.5)
-                }
-                .zIndex(1)
+        GeometryReader { proxy in
+            let sidebarStyle = iOSSidebarStyle.style(for: proxy.size.width)
 
-            detail()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Theme.bg)
-                .clipped()
-                .zIndex(0)
+            HStack(spacing: 0) {
+                iOSSidebar(selection: $selection, style: sidebarStyle)
+                    .frame(width: sidebarStyle.width)
+                    .background(Theme.surface)
+                    .overlay(alignment: .trailing) {
+                        Rectangle()
+                            .fill(Theme.borderSubtle.opacity(0.58))
+                            .frame(width: 0.5)
+                    }
+                    .zIndex(1)
+
+                detail()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Theme.bg)
+                    .clipped()
+                    .zIndex(0)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .background(Theme.bg.ignoresSafeArea())
         .ignoresSafeArea(.container)
@@ -31,143 +36,156 @@ struct iPadMacStyleRootShell<Content: View>: View {
 
 struct iOSSidebar: View {
     @Binding var selection: iOSSidebarItem?
+    let style: iOSSidebarStyle
     @Query private var allTasks: [AppTask]
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
+    @Query private var habits: [Habit]
+    @Query(filter: #Predicate<Pursuit> { $0.statusRaw == "active" }) private var activePursuits: [Pursuit]
+    @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
+    @State private var isWorkspaceDrawerPresented = false
+
+    private var activeListCount: Int {
+        areas.filter(\.isActive).count + projects.filter(\.isActive).count
+    }
+
+    private var badgeSnapshot: CadenceFeatureBadgeSupport.Snapshot {
+        CadenceFeatureBadgeSupport.Snapshot(
+            tasks: allTasks,
+            activePursuitCount: activePursuits.count,
+            activeGoalCount: activeGoals.count,
+            habitCount: habits.count,
+            activeListCount: activeListCount
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSSidebarRailBrand()
-                .padding(.horizontal, 10)
-                .padding(.top, 14)
-                .padding(.bottom, 14)
+            iOSSidebarBrand(style: style) {
+                isWorkspaceDrawerPresented = true
+            }
+            .padding(.horizontal, style.horizontalPadding)
+            .padding(.top, style == .expanded ? 18 : 14)
+            .padding(.bottom, style == .expanded ? 18 : 14)
 
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(iOSStaticSidebarDestination.primaryCases) { destination in
-                    railButton(for: destination)
+            if style == .expanded {
+                expandedNavigation
+            } else {
+                railNavigation
+            }
+        }
+        .background(Theme.bg)
+        .popover(isPresented: $isWorkspaceDrawerPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .leading) {
+            iOSWorkspaceDrawer(selection: $selection)
+                .frame(width: 342, height: 640)
+                .presentationCompactAdaptation(.sheet)
+        }
+    }
+
+    private var expandedNavigation: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 15) {
+                    iOSSidebarSection(title: "Plan") {
+                        ForEach(CadenceFeatureDestination.primaryOrder) { destination in
+                            navButton(for: destination)
+                        }
+                    }
+
+                    iOSSidebarSection(title: "Workspace") {
+                        ForEach([CadenceFeatureDestination.notes, .lists]) { destination in
+                            navButton(for: destination)
+                        }
+                    }
+
+                    iOSSidebarSection(title: "Progress") {
+                        ForEach([CadenceFeatureDestination.focus, .pursuits, .goals, .habits]) { destination in
+                            navButton(for: destination)
+                        }
+                    }
+                }
+                .padding(.horizontal, style.horizontalPadding)
+                .padding(.bottom, 12)
+            }
+            .scrollIndicators(.hidden)
+
+            HStack(spacing: 7) {
+                ForEach(CadenceFeatureDestination.utilityOrder) { destination in
+                    navButton(for: destination)
+                        .frame(maxWidth: destination == .search ? .infinity : 42)
+                        .layoutPriority(destination == .search ? 1 : 0)
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, style.horizontalPadding)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
+            .overlay(alignment: .top) {
+                iOSSidebarRailDivider()
+                    .padding(.horizontal, style.horizontalPadding)
+            }
+        }
+    }
+
+    private var railNavigation: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(CadenceFeatureDestination.primaryOrder) { destination in
+                    navButton(for: destination)
+                }
+            }
+            .padding(.horizontal, style.horizontalPadding - 1)
             .padding(.bottom, 10)
 
             iOSSidebarRailDivider()
-                .padding(.horizontal, 10)
+                .padding(.horizontal, style.horizontalPadding)
                 .padding(.bottom, 8)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(iOSStaticSidebarDestination.secondaryCases) { destination in
-                        railButton(for: destination)
+                    ForEach(CadenceFeatureDestination.secondaryOrder) { destination in
+                        navButton(for: destination)
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, style.horizontalPadding - 1)
                 .padding(.vertical, 2)
             }
             .scrollIndicators(.hidden)
 
             iOSSidebarRailDivider()
-                .padding(.horizontal, 10)
+                .padding(.horizontal, style.horizontalPadding)
                 .padding(.top, 8)
                 .padding(.bottom, 8)
 
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(iOSStaticSidebarDestination.utilityCases) { destination in
-                    railButton(for: destination)
+                ForEach(CadenceFeatureDestination.utilityOrder) { destination in
+                    navButton(for: destination)
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, style.horizontalPadding - 1)
             .padding(.bottom, 14)
         }
-        .background(Theme.bg)
     }
 
-    private func railButton(for destination: iOSStaticSidebarDestination) -> some View {
-        iOSSidebarRailButton(
-            title: destination.shortTitle,
+    private func navButton(for destination: CadenceFeatureDestination) -> some View {
+        iOSSidebarButton(
+            title: destination.compactTitle,
             systemImage: destination.systemImage,
             tint: destination.tint,
             count: count(for: destination),
-            isSelected: selection == destination.item
+            isSelected: selection == destination.item,
+            style: style
         ) {
             selection = destination.item
         }
     }
 
-    private var todayCount: Int? {
-        CadenceTaskQuerySupport.badgeCount(
-            CadenceTaskQuerySupport.scheduledOrDueTodayCount(
-                from: allTasks,
-                todayKey: DateFormatters.todayKey()
-            )
-        )
-    }
-
-    private var inboxCount: Int? {
-        CadenceTaskQuerySupport.badgeCount(
-            CadenceTaskQuerySupport.openInboxTaskCount(from: allTasks)
-        )
-    }
-
-    private var allTaskCount: Int? {
-        CadenceTaskQuerySupport.badgeCount(
-            CadenceTaskQuerySupport.openTaskCount(from: allTasks)
-        )
-    }
-
-    private func count(for destination: iOSStaticSidebarDestination) -> Int? {
-        switch destination {
-        case .today: return todayCount
-        case .allTasks: return allTaskCount
-        case .focus: return nil
-        case .inbox: return inboxCount
-        case .calendar: return nil
-        case .pursuits: return nil
-        case .goals: return nil
-        case .habits: return nil
-        case .notes: return nil
-        case .lists: return nil
-        case .search: return nil
-        case .settings: return nil
-        }
+    private func count(for destination: CadenceFeatureDestination) -> Int? {
+        badgeSnapshot.count(for: destination)
     }
 }
 
-private enum iOSStaticSidebarDestination: CaseIterable, Identifiable {
-    case today
-    case allTasks
-    case focus
-    case inbox
-    case calendar
-    case pursuits
-    case goals
-    case habits
-    case notes
-    case lists
-    case search
-    case settings
-
-    var id: String { title }
-
-    static let primaryCases: [iOSStaticSidebarDestination] = [
-        .today,
-        .allTasks,
-        .inbox,
-        .calendar
-    ]
-
-    static let secondaryCases: [iOSStaticSidebarDestination] = [
-        .notes,
-        .focus,
-        .lists,
-        .pursuits,
-        .goals,
-        .habits
-    ]
-
-    static let utilityCases: [iOSStaticSidebarDestination] = [
-        .search,
-        .settings
-    ]
-
+extension CadenceFeatureDestination {
     var item: iOSSidebarItem {
         switch self {
         case .today: return .today
@@ -184,82 +202,38 @@ private enum iOSStaticSidebarDestination: CaseIterable, Identifiable {
         case .settings: return .settings
         }
     }
+}
 
-    var title: String {
+enum iOSSidebarStyle: Equatable {
+    case rail
+    case expanded
+
+    static func style(for width: CGFloat) -> iOSSidebarStyle {
+        width >= 1_420 ? .expanded : .rail
+    }
+
+    var width: CGFloat {
         switch self {
-        case .today: return "Today"
-        case .allTasks: return "All Tasks"
-        case .focus: return "Focus"
-        case .inbox: return "Inbox"
-        case .calendar: return "Calendar"
-        case .pursuits: return "Pursuits"
-        case .goals: return "Milestones"
-        case .habits: return "Habits"
-        case .notes: return "Notes"
-        case .lists: return "Lists"
-        case .search: return "Search"
-        case .settings: return "Settings"
+        case .rail: return iOSSidebarMetrics.railWidth
+        case .expanded: return iOSSidebarMetrics.expandedWidth
         }
     }
 
-    var shortTitle: String {
+    var horizontalPadding: CGFloat {
         switch self {
-        case .today: return "Today"
-        case .allTasks: return "Tasks"
-        case .focus: return "Focus"
-        case .inbox: return "Inbox"
-        case .calendar: return "Calendar"
-        case .pursuits: return "Pursuits"
-        case .goals: return "Goals"
-        case .habits: return "Habits"
-        case .notes: return "Notes"
-        case .lists: return "Lists"
-        case .search: return "Search"
-        case .settings: return "Settings"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .today: return "sun.max.fill"
-        case .allTasks: return "checklist"
-        case .focus: return "timer"
-        case .inbox: return "tray.fill"
-        case .calendar: return "calendar"
-        case .pursuits: return "sparkles"
-        case .goals: return "flag.fill"
-        case .habits: return "flame.fill"
-        case .notes: return "note.text"
-        case .lists: return "folder.fill"
-        case .search: return "magnifyingglass"
-        case .settings: return "gearshape.fill"
-        }
-    }
-
-    var tint: Color {
-        switch self {
-        case .today: return Color(hex: "#FFB84D")
-        case .allTasks: return Color(hex: "#5AA2FF")
-        case .focus: return Color(hex: "#FF6B6B")
-        case .inbox: return Color(hex: "#5AA2FF")
-        case .calendar: return Color(hex: "#9E8CFF")
-        case .pursuits: return Color(hex: "#A78BFA")
-        case .goals: return Color(hex: "#4ECB71")
-        case .habits: return Color(hex: "#FFB84D")
-        case .notes: return Color(hex: "#9E8CFF")
-        case .lists: return Color(hex: "#4ECB71")
-        case .search: return Color(hex: "#9E8CFF")
-        case .settings: return Color(hex: "#5AA2FF")
+        case .rail: return 10
+        case .expanded: return 12
         }
     }
 }
 
-private enum iOSSidebarMetrics {
-    static let railWidth: CGFloat = 128
+enum iOSSidebarMetrics {
+    static let railWidth: CGFloat = 58
+    static let expandedWidth: CGFloat = 188
     static let buttonHeight: CGFloat = 40
     static let iconSize: CGFloat = 14
-    static let iconBoxSize: CGFloat = 26
-    static let selectedCornerRadius: CGFloat = 10
+    static let iconBoxSize: CGFloat = 30
+    static let selectedCornerRadius: CGFloat = 9
 }
 
 struct iOSSidebarRailDivider: View {
@@ -271,92 +245,202 @@ struct iOSSidebarRailDivider: View {
     }
 }
 
-struct iOSSidebarRailBrand: View {
-    var body: some View {
-        HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Theme.blue.opacity(0.13))
-                .frame(width: 28, height: 28)
-                .overlay {
-                    Image(systemName: "checklist.checked")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.blue)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(Theme.blue.opacity(0.18), lineWidth: 1)
-                }
+struct iOSSidebarBrand: View {
+    let style: iOSSidebarStyle
+    let action: () -> Void
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Cadence")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.text)
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(Theme.blue.opacity(0.13))
+                    .frame(width: 32, height: 32)
+                    .overlay {
+                        Image(systemName: "sidebar.leading")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.blue)
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .strokeBorder(Theme.blue.opacity(0.18), lineWidth: 1)
+                    }
+
+                if style == .expanded {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Cadence")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+
+                        Text("Workspace")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Theme.dim)
+                    }
                     .lineLimit(1)
+
+                    Spacer(minLength: 0)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: style == .expanded ? .leading : .center)
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("Cadence")
     }
 }
 
-struct iOSSidebarRailButton: View {
+struct iOSSidebarSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Theme.dim.opacity(0.78))
+                .textCase(.uppercase)
+                .kerning(0.8)
+                .padding(.horizontal, 4)
+
+            VStack(alignment: .leading, spacing: 5) {
+                content()
+            }
+        }
+    }
+}
+
+struct iOSSidebarButton: View {
     let title: String
     let systemImage: String
     let tint: Color
     let count: Int?
     let isSelected: Bool
+    let style: iOSSidebarStyle
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.system(size: iOSSidebarMetrics.iconSize, weight: .semibold))
-                    .foregroundStyle(isSelected ? tint : Theme.muted.opacity(0.76))
-                    .frame(width: iOSSidebarMetrics.iconBoxSize, height: iOSSidebarMetrics.iconBoxSize)
-                    .background(isSelected ? tint.opacity(0.16) : Theme.surfaceElevated.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isSelected ? Theme.text : Theme.muted.opacity(0.86))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-
-                Spacer(minLength: 0)
-
-                if let count, count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(isSelected ? Theme.text : tint)
-                        .monospacedDigit()
-                        .padding(.horizontal, 5)
-                        .frame(minWidth: 18)
-                        .frame(height: 17)
-                        .background(isSelected ? Color.white.opacity(0.15) : tint.opacity(0.12))
-                        .clipShape(Capsule())
-                }
+            if style == .expanded {
+                expandedLabel
+            } else {
+                railLabel
             }
-            .padding(.horizontal, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: iOSSidebarMetrics.buttonHeight)
-            .background(isSelected ? tint.opacity(0.13) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous)
-                    .strokeBorder(isSelected ? tint.opacity(0.26) : Color.clear, lineWidth: 1)
-            }
-            .overlay(alignment: .leading) {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(tint)
-                        .frame(width: 3, height: 18)
-                        .offset(x: -7)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
+    }
+
+    private var expandedLabel: some View {
+        HStack(spacing: 9) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isSelected ? tint : tint.opacity(0.84))
+                .frame(width: 26, height: 26)
+                .background(tint.opacity(isSelected ? 0.18 : 0.10))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(tint.opacity(isSelected ? 0.30 : 0.13), lineWidth: 1)
+                }
+
+            Text(title)
+                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? Theme.text : Theme.text.opacity(0.78))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+
+            Spacer(minLength: 4)
+
+            if let count, count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(isSelected ? tint : Theme.dim)
+                    .monospacedDigit()
+                    .padding(.horizontal, 6)
+                    .frame(height: 19)
+                    .background(isSelected ? tint.opacity(0.14) : Theme.surfaceElevated.opacity(0.55))
+                    .clipShape(Capsule())
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 38)
+        .padding(.horizontal, 8)
+        .background(isSelected ? tint.opacity(0.11) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(isSelected ? tint.opacity(0.22) : Color.clear, lineWidth: 1)
+        }
+        .overlay(alignment: .leading) {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(tint)
+                    .frame(width: 3, height: 20)
+                    .offset(x: -2)
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var railLabel: some View {
+        ZStack(alignment: .topTrailing) {
+            Image(systemName: systemImage)
+                .font(.system(size: iOSSidebarMetrics.iconSize, weight: .semibold))
+                .foregroundStyle(isSelected ? Theme.text : tint.opacity(0.86))
+                .frame(width: iOSSidebarMetrics.iconBoxSize, height: iOSSidebarMetrics.iconBoxSize)
+                .background(
+                    RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous)
+                        .fill(iconFill)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous)
+                        .strokeBorder(iconBorder, lineWidth: 1)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: iOSSidebarMetrics.buttonHeight)
+
+            if let count, count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .monospacedDigit()
+                    .padding(.horizontal, 5)
+                    .frame(minWidth: 18)
+                    .frame(height: 17)
+                    .background(tint.opacity(0.95))
+                    .clipShape(Capsule())
+                    .offset(x: -1, y: 1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(height: iOSSidebarMetrics.buttonHeight)
+        .background(isSelected ? tint.opacity(0.10) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous)
+                .strokeBorder(isSelected ? tint.opacity(0.22) : Color.clear, lineWidth: 1)
+        }
+        .overlay(alignment: .leading) {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(tint)
+                    .frame(width: 3, height: 22)
+                    .offset(x: -4)
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+    }
+
+    private var iconFill: Color {
+        if isSelected {
+            return tint.opacity(0.24)
+        }
+        return Color.clear
+    }
+
+    private var iconBorder: Color {
+        if isSelected {
+            return tint.opacity(0.34)
+        }
+        return Color.clear
     }
 }
 

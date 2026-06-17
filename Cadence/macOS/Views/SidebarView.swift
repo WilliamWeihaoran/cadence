@@ -27,29 +27,30 @@ struct SidebarView: View {
         }
     }
 
+    private var fullBadgeSnapshot: CadenceFeatureBadgeSupport.Snapshot {
+        CadenceFeatureBadgeSupport.Snapshot(
+            tasks: allTasks,
+            activePursuitCount: activePursuits.count,
+            activeGoalCount: activeGoals.count,
+            habitCount: habits.count
+        )
+    }
+
+    private var activeContainerBadgeSnapshot: CadenceFeatureBadgeSupport.Snapshot {
+        CadenceFeatureBadgeSupport.Snapshot(
+            tasks: tasksInActiveContainers,
+            activePursuitCount: activePursuits.count,
+            activeGoalCount: activeGoals.count,
+            habitCount: habits.count
+        )
+    }
+
     private func count(for destination: SidebarStaticDestination) -> Int? {
         switch destination {
-        case .today:
-            return CadenceTaskQuerySupport.badgeCount(
-                CadenceTaskQuerySupport.scheduledOrDueTodayCount(
-                    from: allTasks,
-                    todayKey: DateFormatters.todayKey()
-                )
-            )
         case .allTasks:
-            return CadenceTaskQuerySupport.badgeCount(
-                CadenceTaskQuerySupport.openTaskCount(from: tasksInActiveContainers)
-            )
-        case .inbox:
-            return CadenceTaskQuerySupport.badgeCount(
-                CadenceTaskQuerySupport.openInboxTaskCount(from: allTasks)
-            )
-        case .pursuits:
-            return activePursuits.isEmpty ? nil : activePursuits.count
-        case .goals:
-            return activeGoals.isEmpty ? nil : activeGoals.count
-        case .habits:
-            return habits.isEmpty ? nil : habits.count
+            return activeContainerBadgeSnapshot.count(for: destination.feature)
+        case .today, .inbox, .pursuits, .goals, .habits:
+            return fullBadgeSnapshot.count(for: destination.feature)
         case .focus, .calendar:
             return nil
         }

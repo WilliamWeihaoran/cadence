@@ -12,8 +12,16 @@ struct iOSEventNoteEditorSheet: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @Environment(iOSCalendarManager.self) private var calendarManager
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var isEditorFocused = false
-    @State private var editorMode: iOSMarkdownEditorMode = .edit
+    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
+    @State private var selectedReferenceNote: Note?
+    @State private var selectedReferenceTask: AppTask?
+
+    private var editorModeBinding: Binding<iOSMarkdownEditorMode> {
+        iOSMarkdownEditorPreferences.binding(for: $editorModeRaw)
+    }
 
     private var title: String {
         note.displayTitle
@@ -60,6 +68,12 @@ struct iOSEventNoteEditorSheet: View {
                 }
             }
         }
+        .iOSMarkdownReferenceSheets(
+            selectedNote: $selectedReferenceNote,
+            selectedTask: $selectedReferenceTask,
+            referenceNotes: allNotes,
+            referenceTasks: allTasks
+        )
         .preferredColorScheme(.dark)
     }
 
@@ -97,8 +111,11 @@ struct iOSEventNoteEditorSheet: View {
         iOSMarkdownEditingSurface(
             text: $note.content,
             isFocused: $isEditorFocused,
-            mode: $editorMode,
-            placeholder: "Start writing..."
+            mode: editorModeBinding,
+            placeholder: "Start writing...",
+            referenceNotes: allNotes,
+            referenceTasks: allTasks,
+            onOpenReference: openMarkdownReference
         )
     }
 
@@ -115,7 +132,7 @@ struct iOSEventNoteEditorSheet: View {
 
             HStack {
                 Spacer()
-                iOSMarkdownModePicker(mode: $editorMode)
+                iOSMarkdownModePicker(mode: editorModeBinding)
             }
             .padding(.top, 8)
         }
@@ -147,6 +164,15 @@ struct iOSEventNoteEditorSheet: View {
             calendarManager.updateEventNotes(event, notes: note.content)
         } else if !note.calendarEventID.isEmpty {
             calendarManager.updateEventNotes(calendarEventID: note.calendarEventID, notes: note.content)
+        }
+    }
+
+    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
+        switch target.kind {
+        case .note:
+            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
+        case .task:
+            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
         }
     }
 }

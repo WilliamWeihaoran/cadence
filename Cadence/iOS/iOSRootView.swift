@@ -28,6 +28,7 @@ struct iOSRootView: View {
     @Query(sort: \Project.order) private var projects: [Project]
     @State private var selection: iOSSidebarItem? = .today
     @State private var compactTabSelection: iOSRootTab = .today
+    @State private var compactMorePath: [CadenceFeatureDestination] = []
 
     var body: some View {
         let _ = themeManager.selectedTheme
@@ -38,7 +39,10 @@ struct iOSRootView: View {
                     detailView(for: selection ?? .today)
                 }
             } else {
-                iOSCompactRootShell(selection: $compactTabSelection)
+                iOSCompactRootShell(
+                    selection: $compactTabSelection,
+                    morePath: $compactMorePath
+                )
             }
         }
         .background(Theme.bg)
@@ -116,9 +120,9 @@ private enum iOSRootTab: Hashable {
 
     var title: String {
         switch self {
-        case .today: return "Today"
-        case .inbox: return "Inbox"
-        case .notes: return "Notes"
+        case .today: return CadenceFeatureDestination.today.compactTitle
+        case .inbox: return CadenceFeatureDestination.inbox.compactTitle
+        case .notes: return CadenceFeatureDestination.notes.compactTitle
         case .search: return "Search"
         case .more: return "More"
         }
@@ -126,10 +130,10 @@ private enum iOSRootTab: Hashable {
 
     var systemImage: String {
         switch self {
-        case .today: return "sun.max.fill"
-        case .inbox: return "tray.fill"
-        case .notes: return "note.text"
-        case .search: return "magnifyingglass"
+        case .today: return CadenceFeatureDestination.today.systemImage
+        case .inbox: return CadenceFeatureDestination.inbox.systemImage
+        case .notes: return CadenceFeatureDestination.notes.systemImage
+        case .search: return CadenceFeatureDestination.search.systemImage
         case .more: return "ellipsis"
         }
     }
@@ -137,6 +141,7 @@ private enum iOSRootTab: Hashable {
 
 private struct iOSCompactRootShell: View {
     @Binding var selection: iOSRootTab
+    @Binding var morePath: [CadenceFeatureDestination]
 
     var body: some View {
         TabView(selection: $selection) {
@@ -162,7 +167,7 @@ private struct iOSCompactRootShell: View {
             .tag(iOSRootTab.search)
             .tabItem { Label(iOSRootTab.search.title, systemImage: iOSRootTab.search.systemImage) }
 
-            NavigationStack {
+            NavigationStack(path: $morePath) {
                 iOSMoreView()
                     .toolbar(.hidden, for: .navigationBar)
             }
@@ -184,15 +189,19 @@ private extension iOSRootView {
         case .today, .task:
             selection = .today
             compactTabSelection = .today
+            compactMorePath = []
         case .habits:
             selection = .habits
             compactTabSelection = .more
+            compactMorePath = [.habits]
         case .goals:
             selection = .goals
             compactTabSelection = .more
+            compactMorePath = [.goals]
         case .calendar:
             selection = .calendar
             compactTabSelection = .more
+            compactMorePath = [.calendar]
         }
     }
 }

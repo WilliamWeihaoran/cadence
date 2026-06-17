@@ -5,10 +5,12 @@ import SwiftUI
 
 struct iOSCalendarQuickCreateSheet: View {
     let dateKey: String
+    let initialStartMinute: Int?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -17,12 +19,23 @@ struct iOSCalendarQuickCreateSheet: View {
     @State private var priority: TaskPriority = .none
     @State private var estimatedMinutes = 30
     @State private var notes = ""
-    @State private var hasTime = false
+    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var notesEditorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
+    @State private var notesEditorFocused = false
+    @State private var selectedReferenceNote: Note?
+    @State private var selectedReferenceTask: AppTask?
+    @State private var hasTime: Bool
     @State private var eventIsAllDay = false
-    @State private var startTime = iOSCalendarQuickCreateSheet.defaultStartTime()
+    @State private var startTime: Date
     @State private var containerSelection = "inbox"
     @State private var sectionName = TaskSectionDefaults.defaultName
     @State private var selectedCalendarID = ""
+
+    init(dateKey: String, initialStartMinute: Int? = nil) {
+        self.dateKey = dateKey
+        self.initialStartMinute = initialStartMinute
+        _hasTime = State(initialValue: initialStartMinute != nil)
+        _startTime = State(initialValue: iOSCalendarQuickCreateSheet.defaultStartTime(dateKey: dateKey, startMinute: initialStartMinute))
+    }
 
     private var activeAreas: [Area] {
         areas.filter(\.isActive)
@@ -80,6 +93,10 @@ struct iOSCalendarQuickCreateSheet: View {
         horizontalSizeClass == .regular
     }
 
+    private var notesEditorModeBinding: Binding<iOSMarkdownEditorMode> {
+        iOSMarkdownEditorPreferences.binding(for: $notesEditorModeRaw)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -104,6 +121,12 @@ struct iOSCalendarQuickCreateSheet: View {
                 normalizeCalendarSelection()
             }
         }
+        .iOSMarkdownReferenceSheets(
+            selectedNote: $selectedReferenceNote,
+            selectedTask: $selectedReferenceTask,
+            referenceNotes: allNotes,
+            referenceTasks: allTasks
+        )
         .preferredColorScheme(.dark)
     }
 
@@ -177,7 +200,7 @@ struct iOSCalendarQuickCreateSheet: View {
                 Text(DateFormatters.relativeDate(from: dateKey))
                     .font(.system(size: 19, weight: .bold))
                     .foregroundStyle(Theme.text)
-                Text("Create a planned task, block, or Apple Calendar event.")
+                Text(headerSubtitle)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.dim)
             }
@@ -363,11 +386,43 @@ struct iOSCalendarQuickCreateSheet: View {
 
     private var notesSection: some View {
         iOSCalendarQuickCreateSection(title: "Notes") {
-            TextField("Optional notes", text: $notes, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.text)
-                .lineLimit(3...8)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(kind == .event ? "Apple Calendar note" : "Task note")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+
+                    Spacer(minLength: 0)
+
+                    iOSMarkdownModePicker(mode: notesEditorModeBinding, compact: true)
+                }
+
+                iOSMarkdownEditingSurface(
+                    text: $notes,
+                    isFocused: $notesEditorFocused,
+                    mode: notesEditorModeBinding,
+                    placeholder: "Add markdown notes...",
+                    referenceNotes: allNotes,
+                    referenceTasks: allTasks,
+                    onOpenReference: openMarkdownReference,
+                    allowsEmbeddedTaskCreation: false
+                )
+                .frame(minHeight: isRegularWidth ? 280 : 230)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Theme.borderSubtle.opacity(0.68), lineWidth: 1)
+                }
+            }
+        }
+    }
+
+    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
+        switch target.kind {
+        case .note:
+            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
+        case .task:
+            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
         }
     }
 
@@ -472,12 +527,25 @@ struct iOSCalendarQuickCreateSheet: View {
         return String(format: "%.1fh", Double(minutes) / 60.0)
     }
 
-    private static func defaultStartTime() -> Date {
-        var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-        let hour = Calendar.current.component(.hour, from: Date())
-        components.hour = min(max(hour + 1, CadenceScheduleSupport.calendarStartHour), CadenceScheduleSupport.calendarEndHour - 1)
-        components.minute = 0
-        return Calendar.current.date(from: components) ?? Date()
+    private var headerSubtitle: String {
+        if let initialStartMinute {
+            return "Create around \(CadenceScheduleSupport.timeRangeLabel(startMinute: initialStartMinute, endMinute: initialStartMinute + estimatedMinutes))."
+        }
+        return "Create a planned task, block, or Apple Calendar event."
+    }
+
+    private static func defaultStartTime(dateKey: String, startMinute: Int?) -> Date {
+        let baseDate = DateFormatters.date(from: dateKey) ?? Date()
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: baseDate)
+        if let startMinute {
+            components.hour = startMinute / 60
+            components.minute = startMinute % 60
+        } else {
+            let hour = Calendar.current.component(.hour, from: Date())
+            components.hour = min(max(hour + 1, CadenceScheduleSupport.calendarStartHour), CadenceScheduleSupport.calendarEndHour - 1)
+            components.minute = 0
+        }
+        return Calendar.current.date(from: components) ?? baseDate
     }
 }
 

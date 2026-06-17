@@ -15,7 +15,6 @@ enum iOSSampleDataSupport {
         var existingTitles = Set(allTasks.map { $0.title })
         var inserted = 0
         let workspace = try reviewWorkspace(modelContext: modelContext)
-        inserted += seedReviewNotes(modelContext: modelContext)
 
         inserted += try insertIfMissing(
             title: "[Sample] Review iPad Today layout",
@@ -143,12 +142,26 @@ enum iOSSampleDataSupport {
             task.notes = "Used to verify completed rows, counters, and uncomplete behavior."
         }
 
+        inserted += seedReviewNotes(tasks: taskSnapshot, modelContext: modelContext)
+
         return inserted
     }
 
-    private static func seedReviewNotes(modelContext: ModelContext) -> Int {
+    private static func seedReviewNotes(tasks: [AppTask], modelContext: ModelContext) -> Int {
         let notes = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext)
         var inserted = 0
+        let layoutTaskReference = taskReference(
+            titled: "[Sample] Review iPad Today layout",
+            in: tasks
+        )
+        let editorTaskReference = taskReference(
+            titled: "[Sample] Polish notes markdown editor",
+            in: tasks
+        )
+        let testFlightTaskReference = taskReference(
+            titled: "[Sample] Write TestFlight review notes",
+            in: tasks
+        )
 
         if let today = notes.today, shouldReplaceSampleNoteContent(today.content) {
             CadenceCoreNoteSupport.update(
@@ -156,12 +169,29 @@ enum iOSSampleDataSupport {
                 content: """
                 # [Sample Note] Today review
 
-                - Check iPad landscape spacing with the task list populated.
-                - Tap a scheduled task and confirm the detail sheet still feels native.
-                - Try switching this note between edit and preview mode.
+                > iPad should feel like Cadence in landscape: calm, dense, and usable without becoming cramped.
+
+                - [ ] Check iPad landscape spacing with the task list populated.
+                - [ ] Tap a scheduled task and confirm the detail sheet still feels native.
+                - [ ] Try switching this note between Live, Edit, and Preview mode.
+                - [ ] Open a markdown link: [Cadence repo](https://github.com/WilliamWeihaoran/cadence)
+
+                ## Linked review tasks
+                \(layoutTaskReference)
+                \(editorTaskReference)
+
+                | Surface | What to check | Status |
+                | --- | --- | --- |
+                | Today | tasks, notes, timeline | reviewing |
+                | Notes | live markdown, preview, keyboard | active |
+                | iPhone | vertical layout and tab bar | pending |
 
                 ## Friction
-                Capture anything that still feels unlike the Mac app.
+                Capture anything that still feels unlike the Mac app:
+
+                ```
+                Paste exact UI notes here while testing.
+                ```
                 """,
                 in: modelContext
             )
@@ -175,10 +205,19 @@ enum iOSSampleDataSupport {
                 # [Sample Note] This week
 
                 ## Mobile parity
-                - Today: task capture, notes, and timeline
-                - Inbox: capture and schedule
-                - Lists: sample area and project
-                - Calendar: month selection and day schedule
+                1. Today: task capture, notes, and timeline
+                2. Inbox: capture and schedule
+                3. Lists: sample area and project
+                4. Calendar: month selection and day schedule
+
+                ## Markdown QA
+                - **Bold** and *italic* should render live.
+                - Inline code like `scheduledDate == today` should stand out.
+                - ==Highlights== and ~~completed ideas~~ should be readable.
+                - Nested quotes should preserve visual depth:
+
+                > Level one note
+                >> Level two follow-up
 
                 ## Decision
                 Keep iPad horizontal first; keep iPhone vertical and focused.
@@ -200,6 +239,21 @@ enum iOSSampleDataSupport {
                 - Keyboard gets in the way when...
                 - Missing Mac behavior I expected...
                 - Interaction that feels better on iPad...
+
+                ## Ship checklist
+                \(testFlightTaskReference)
+
+                | Build area | Pass? | Notes |
+                | --- | --- | --- |
+                | Today |  |  |
+                | Inbox |  |  |
+                | Lists |  |  |
+                | Calendar |  |  |
+                | Notes |  |  |
+
+                ---
+
+                > Leave this note in Live mode while testing so markdown rendering problems are obvious immediately.
                 """,
                 in: modelContext
             )
@@ -212,6 +266,13 @@ enum iOSSampleDataSupport {
     private static func shouldReplaceSampleNoteContent(_ content: String) -> Bool {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty || trimmed == "N" || trimmed.contains("[Sample Note]")
+    }
+
+    private static func taskReference(titled title: String, in tasks: [AppTask]) -> String {
+        guard let task = tasks.first(where: { $0.title == title }) else {
+            return "- \(title)"
+        }
+        return NoteReferenceParser.taskReferenceMarkdown(for: task)
     }
 
     private struct ReviewWorkspace {

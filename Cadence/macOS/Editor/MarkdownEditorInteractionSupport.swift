@@ -1373,10 +1373,7 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
                cadenceTextView.deleteEmbeddedMarkdownTaskForCommand(backward: true) {
                 return true
             }
-            if deleteBackwardToPlainTextListItem(in: textView) {
-                return true
-            }
-            return deleteBackwardFromEmptyListItem(in: textView)
+            return deleteBackwardFromListPrefix(in: textView)
         }
 
         if commandSelector == #selector(NSResponder.deleteForward(_:)) {
@@ -1406,121 +1403,25 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
             return true
         }
 
-        guard let prefixMatch = MarkdownListSupport.listPrefixMatch(in: line) else { return false }
-
-        let contentAfterPrefix = String(line.dropFirst(prefixMatch.prefix.count)).trimmingCharacters(in: .whitespaces)
-        if contentAfterPrefix.isEmpty {
-            let deleteRange = NSRange(location: lineRange.location,
-                                      length: min(lineRange.length, nsText.length - lineRange.location))
-            guard textView.shouldChangeText(in: deleteRange, replacementString: "\n") else { return false }
-            textView.textStorage?.replaceCharacters(in: deleteRange, with: "\n")
-            textView.setSelectedRange(NSRange(location: lineRange.location + 1, length: 0))
-            textView.typingAttributes = MarkdownStylist.baseAttributes
-            textView.didChangeText()
-            return true
-        }
-
-        let continuedPrefix: String
-        switch prefixMatch.kind {
-        case .ordered:
-            continuedPrefix = prefixMatch.indentation + MarkdownListSupport.nextOrderedMarker(after: prefixMatch.marker) + " "
-        case .todo, .done:
-            continuedPrefix = prefixMatch.indentation + "○ "
-        default:
-            continuedPrefix = prefixMatch.prefix
-        }
-
-        let insertedString = "\n" + continuedPrefix
-        guard textView.shouldChangeText(in: selection, replacementString: insertedString) else { return false }
-        textView.textStorage?.replaceCharacters(in: selection, with: insertedString)
-        let newPosition = selection.location + (insertedString as NSString).length
-        textView.setSelectedRange(NSRange(location: newPosition, length: 0))
+        guard let mutation = MarkdownLineBreakSupport.mutation(in: textView.string, selection: selection) else { return false }
+        guard textView.shouldChangeText(in: mutation.replacementRange, replacementString: mutation.replacement) else { return false }
+        textView.textStorage?.replaceCharacters(in: mutation.replacementRange, with: mutation.replacement)
+        textView.setSelectedRange(mutation.selection)
         textView.typingAttributes = MarkdownStylist.baseAttributes
         textView.didChangeText()
         return true
     }
 
     private func adjustIndentation(in textView: NSTextView, increase: Bool) -> Bool {
-        let nsText = textView.string as NSString
-        let selection = textView.selectedRange()
-        let isCaretOnlySelection = selection.length == 0
-        let targetRange = effectiveLineRange(for: selection, in: nsText)
-        let original = nsText.substring(with: targetRange)
-        let lines = original.components(separatedBy: "\n")
+        guard let result = MarkdownListSupport.adjustedListIndentation(
+            in: textView.string,
+            selection: textView.selectedRange(),
+            increase: increase
+        ) else { return false }
 
-        var changed = false
-        let updatedLines = lines.map { line -> String in
-            if increase {
-                guard let prefixMatch = MarkdownListSupport.listPrefixMatch(in: line) else { return line }
-                changed = true
-                let indentedLine = String(repeating: " ", count: 4) + line
-                return MarkdownListSupport.remapOrderedMarkerIfNeeded(in: indentedLine, originalMatch: prefixMatch)
-            }
-
-            let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
-            let normalizedIndentWidth = indentation.reduce(into: 0) { width, character in
-                width += character == "\t" ? 4 : 1
-            }
-            guard let prefixMatch = MarkdownListSupport.listPrefixMatch(in: line) else { return line }
-
-            if normalizedIndentWidth == 0 {
-                changed = true
-                return String(line.dropFirst(prefixMatch.prefix.count))
-            }
-
-            let charactersToDrop: Int
-            if indentation.first == "\t" {
-                charactersToDrop = 1
-            } else {
-                charactersToDrop = min(4, indentation.count)
-            }
-
-            changed = true
-            let outdentedLine = String(line.dropFirst(charactersToDrop))
-            return MarkdownListSupport.remapOrderedMarkerIfNeeded(in: outdentedLine, originalMatch: prefixMatch)
-        }
-
-        guard changed else { return false }
-
-        let replacement = updatedLines.joined(separator: "\n")
-        guard textView.shouldChangeText(in: targetRange, replacementString: replacement) else { return true }
-        let replacementLength = (replacement as NSString).length
-        let locationOffset = increase ? 4 : -min(4, selection.location - targetRange.location)
-        let lengthDelta = replacementLength - targetRange.length
-
-        textView.textStorage?.replaceCharacters(in: targetRange, with: replacement)
-
-        let newSelection: NSRange
-        if isCaretOnlySelection {
-            let originalCaretOffset = max(0, selection.location - targetRange.location)
-            let adjustedCaretOffset: Int
-            let originalContentLine = String(original.split(separator: "\n", omittingEmptySubsequences: false).first ?? "")
-            let replacementContentLine = String(replacement.split(separator: "\n", omittingEmptySubsequences: false).first ?? "")
-
-            if !originalContentLine.isEmpty,
-               let originalPrefixMatch = MarkdownListSupport.listPrefixMatch(in: originalContentLine),
-               let updatedPrefixMatch = MarkdownListSupport.listPrefixMatch(in: replacementContentLine) {
-                let originalPrefixLength = originalPrefixMatch.prefix.count
-                let updatedPrefixLength = updatedPrefixMatch.prefix.count
-                if originalCaretOffset <= originalPrefixLength {
-                    adjustedCaretOffset = updatedPrefixLength
-                } else {
-                    adjustedCaretOffset = min(
-                        replacementLength,
-                        max(updatedPrefixLength, originalCaretOffset + (replacementLength - targetRange.length))
-                    )
-                }
-            } else {
-                adjustedCaretOffset = max(0, min(replacementLength, originalCaretOffset + locationOffset))
-            }
-            newSelection = NSRange(location: targetRange.location + adjustedCaretOffset, length: 0)
-        } else {
-            newSelection = NSRange(
-                location: max(targetRange.location, selection.location + locationOffset),
-                length: max(0, selection.length + lengthDelta)
-            )
-        }
-        textView.setSelectedRange(newSelection)
+        guard textView.shouldChangeText(in: result.replacementRange, replacementString: result.replacement) else { return true }
+        textView.textStorage?.replaceCharacters(in: result.replacementRange, with: result.replacement)
+        textView.setSelectedRange(result.selection)
         textView.typingAttributes = MarkdownStylist.baseAttributes
         textView.didChangeText()
         return true
@@ -1531,33 +1432,9 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         let cursor = textView.selectedRange().location
         guard cursor > 0 else { return }
 
-        if cursor >= 2 {
-            let range = NSRange(location: cursor - 2, length: 2)
-            let snippet = nsText.substring(with: range)
-            if snippet == "* ", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
-                return replaceText(in: textView, range: range, with: "• ")
-            }
-            if snippet == "- ", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
-                return replaceText(in: textView, range: range, with: "• ")
-            }
-            if snippet == "+ ", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
-                return replaceText(in: textView, range: range, with: "• ")
-            }
-        }
-
         if cursor >= 4 {
             let range = NSRange(location: cursor - 4, length: 4)
             let snippet = nsText.substring(with: range)
-            if snippet == "[ ] ", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
-                replaceText(in: textView, range: range, with: "○ ")
-                textView.setSelectedRange(NSRange(location: range.location + 2, length: 0))
-                return
-            }
-            if snippet.lowercased() == "[x] ", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
-                replaceText(in: textView, range: range, with: "✓ ")
-                textView.setSelectedRange(NSRange(location: range.location + 2, length: 0))
-                return
-            }
             if snippet == "( ) ",
                MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil,
                createUntitledEmbeddedTask(fromTriggerRange: range, in: textView) {
@@ -1568,38 +1445,16 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         if cursor >= 3 {
             let range = NSRange(location: cursor - 3, length: 3)
             let snippet = nsText.substring(with: range)
-            if snippet == "[] ", MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil {
-                replaceText(in: textView, range: range, with: "○ ")
-                textView.setSelectedRange(NSRange(location: range.location + 2, length: 0))
-                return
-            }
             if snippet == "() ",
                MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil,
                createUntitledEmbeddedTask(fromTriggerRange: range, in: textView) {
                 return
             }
-            if snippet == "1. ", let indentation = MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) {
-                let marker = MarkdownListSupport.orderedMarker(forIndentation: indentation)
-                replaceText(in: textView, range: range, with: marker + " ")
-                textView.setSelectedRange(NSRange(location: range.location + marker.count + 1, length: 0))
-                return
-            }
         }
 
-        if let orderedInput = typedOrderedPrefixMatch(in: nsText, cursor: cursor) {
-            let level = MarkdownListSupport.orderedLevel(forIndentation: orderedInput.indentation)
-            let typedIndex = MarkdownListSupport.orderedIndex(for: orderedInput.marker) ?? 1
-            let normalizedMarker = MarkdownStylist.orderedMarker(for: level, index: typedIndex)
-            let replacement = orderedInput.indentation + normalizedMarker + " "
-            replaceText(in: textView, range: orderedInput.range, with: replacement)
-            textView.setSelectedRange(NSRange(location: orderedInput.range.location + replacement.count, length: 0))
-            return
-        }
-
-        if let slashCommand = typedSlashCommandMatch(in: nsText, cursor: cursor) {
-            replaceText(in: textView, range: slashCommand.range, with: slashCommand.replacement)
-            let caretLocation = slashCommand.range.location + slashCommand.caretOffset
-            textView.setSelectedRange(NSRange(location: caretLocation, length: 0))
+        if let mutation = MarkdownTypingTransformSupport.mutation(in: textView.string, cursor: cursor) {
+            replaceText(in: textView, range: mutation.replacementRange, with: mutation.replacement)
+            textView.setSelectedRange(mutation.selection)
             return
         }
     }
@@ -1806,26 +1661,18 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
     }
 
     private func applySlashCommand(_ command: MarkdownSlashCommand, context: MarkdownSlashCommandContext, in textView: NSTextView) {
-        switch command.action {
-        case let .insertText(_, text, caretOffset):
-            let replacement = context.indentation + text
-            guard textView.shouldChangeText(in: context.range, replacementString: replacement) else {
-                slashCommandPicker.close()
-                return
-            }
-            textView.textStorage?.replaceCharacters(in: context.range, with: replacement)
-            textView.setSelectedRange(NSRange(location: context.range.location + context.indentation.count + caretOffset, length: 0))
-            textView.typingAttributes = MarkdownStylist.baseAttributes
-            textView.didChangeText()
-        case .chooseImage:
-            guard textView.shouldChangeText(in: context.range, replacementString: context.indentation) else {
-                slashCommandPicker.close()
-                return
-            }
-            textView.textStorage?.replaceCharacters(in: context.range, with: context.indentation)
-            textView.setSelectedRange(NSRange(location: context.range.location + context.indentation.count, length: 0))
-            textView.typingAttributes = MarkdownStylist.baseAttributes
-            textView.didChangeText()
+        let mutation = MarkdownSlashCommandMutationSupport.mutation(for: command, context: context)
+        guard textView.shouldChangeText(in: mutation.replacementRange, replacementString: mutation.replacement) else {
+            slashCommandPicker.close()
+            return
+        }
+
+        textView.textStorage?.replaceCharacters(in: mutation.replacementRange, with: mutation.replacement)
+        textView.setSelectedRange(mutation.selection)
+        textView.typingAttributes = MarkdownStylist.baseAttributes
+        textView.didChangeText()
+
+        if mutation.followUp == .chooseImage {
             DispatchQueue.main.async { [parent] in
                 if let cadenceTextView = textView as? CadenceTextView {
                     cadenceTextView.chooseMarkdownImages()
@@ -1838,45 +1685,7 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
     }
 
     private func currentReferenceCompletionContext(in textView: NSTextView) -> MarkdownReferenceCompletionContext? {
-        let selection = textView.selectedRange()
-        guard selection.length == 0 else { return nil }
-        let nsText = textView.string as NSString
-        let safeCursor = min(max(selection.location, 0), nsText.length)
-        let lineRange = nsText.lineRange(for: NSRange(location: max(0, safeCursor - 1), length: 0))
-        guard safeCursor >= lineRange.location else { return nil }
-
-        let prefixRange = NSRange(location: lineRange.location, length: safeCursor - lineRange.location)
-        let prefix = nsText.substring(with: prefixRange)
-        let nsPrefix = prefix as NSString
-        let openRange = nsPrefix.range(of: "[[", options: .backwards)
-        guard openRange.location != NSNotFound else { return nil }
-
-        let tokenStart = NSMaxRange(openRange)
-        let token = nsPrefix.substring(with: NSRange(location: tokenStart, length: max(0, nsPrefix.length - tokenStart)))
-        guard token.count <= 80,
-              !token.contains("["),
-              !token.contains("]"),
-              !token.contains("\n") else { return nil }
-
-        let kind: MarkdownReferenceKind
-        let query: String
-        if token.lowercased().hasPrefix("task:") {
-            kind = .task
-            query = String(token.dropFirst(5))
-        } else if token.lowercased().hasPrefix("note:") {
-            kind = .note
-            query = String(token.dropFirst(5))
-        } else {
-            kind = .note
-            query = token
-        }
-
-        return MarkdownReferenceCompletionContext(
-            range: NSRange(location: lineRange.location + openRange.location, length: safeCursor - lineRange.location - openRange.location),
-            kind: kind,
-            query: query,
-            cursorLocation: safeCursor
-        )
+        MarkdownReferenceCompletionSupport.context(in: textView.string, selection: textView.selectedRange())
     }
 
     private func applyReferenceSuggestion(_ suggestion: MarkdownReferenceSuggestion, context: MarkdownReferenceCompletionContext, in textView: NSTextView) {
@@ -1948,32 +1757,6 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         return true
     }
 
-    private func typedOrderedPrefixMatch(in text: NSString, cursor: Int) -> (range: NSRange, indentation: String, marker: String)? {
-        let safeCursor = min(max(cursor, 0), text.length)
-        let lineRange = text.lineRange(for: NSRange(location: max(0, safeCursor - 1), length: 0))
-        let prefixRange = NSRange(location: lineRange.location, length: safeCursor - lineRange.location)
-        let prefix = text.substring(with: prefixRange)
-        guard let regex = try? NSRegularExpression(pattern: #"^([ \t]*)(\d+\.) $"#),
-              let match = regex.firstMatch(in: prefix, range: NSRange(location: 0, length: (prefix as NSString).length)) else {
-            return nil
-        }
-
-        let indentation = (prefix as NSString).substring(with: match.range(at: 1))
-        let marker = (prefix as NSString).substring(with: match.range(at: 2))
-        let replacementRange = NSRange(location: lineRange.location, length: prefixRange.length)
-        return (replacementRange, indentation, marker)
-    }
-
-    private func typedSlashCommandMatch(in text: NSString, cursor: Int) -> (range: NSRange, replacement: String, caretOffset: Int)? {
-        let safeCursor = min(max(cursor, 0), text.length)
-        guard let token = MarkdownSlashCommandTokenSupport.token(in: text, cursor: safeCursor, requiresTrailingSpace: true) else { return nil }
-        let command = token.query
-        guard let commandConfig = MarkdownSlashCommand.all.first(where: { $0.id == command }) else { return nil }
-        guard case let .insertText(_, text, caretOffset) = commandConfig.action else { return nil }
-        let replacement = token.indentation + text
-        return (token.range, replacement, token.indentation.count + caretOffset)
-    }
-
     private func effectiveLineRange(for selection: NSRange, in text: NSString) -> NSRange {
         guard text.length > 0 else { return NSRange(location: 0, length: 0) }
 
@@ -1998,52 +1781,15 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         return NSUnionRange(startLine, endLine)
     }
 
-    private func deleteBackwardToPlainTextListItem(in textView: NSTextView) -> Bool {
+    private func deleteBackwardFromListPrefix(in textView: NSTextView) -> Bool {
         let selection = textView.selectedRange()
-        guard selection.length == 0 else { return false }
+        guard let mutation = MarkdownBackspaceSupport.listPrefixMutation(in: textView.string, selection: selection) else {
+            return false
+        }
 
-        let nsText = textView.string as NSString
-        guard nsText.length > 0 else { return false }
-
-        let caretLocation = min(selection.location, max(nsText.length - 1, 0))
-        let lineRange = nsText.lineRange(for: NSRange(location: caretLocation, length: 0))
-        let rawLine = nsText.substring(with: NSRange(location: lineRange.location, length: min(lineRange.length, nsText.length - lineRange.location)))
-        let line = rawLine.trimmingCharacters(in: .newlines)
-        guard let prefixMatch = MarkdownListSupport.listPrefixMatch(in: line) else { return false }
-
-        let prefixEnd = lineRange.location + prefixMatch.prefix.count
-        guard selection.location == prefixEnd else { return false }
-
-        let deleteRange = NSRange(location: lineRange.location, length: prefixMatch.prefix.count)
-        guard textView.shouldChangeText(in: deleteRange, replacementString: "") else { return true }
-        textView.textStorage?.replaceCharacters(in: deleteRange, with: "")
-        textView.setSelectedRange(NSRange(location: lineRange.location, length: 0))
-        textView.typingAttributes = MarkdownStylist.baseAttributes
-        textView.didChangeText()
-        return true
-    }
-
-    private func deleteBackwardFromEmptyListItem(in textView: NSTextView) -> Bool {
-        let selection = textView.selectedRange()
-        guard selection.length == 0 else { return false }
-
-        let nsText = textView.string as NSString
-        let lineRange = nsText.lineRange(for: NSRange(location: selection.location, length: 0))
-        let rawLine = nsText.substring(with: NSRange(location: lineRange.location, length: min(lineRange.length, nsText.length - lineRange.location)))
-        let line = rawLine.trimmingCharacters(in: .newlines)
-        guard let prefixMatch = MarkdownListSupport.listPrefixMatch(in: line) else { return false }
-
-        let contentAfterPrefix = String(line.dropFirst(prefixMatch.prefix.count)).trimmingCharacters(in: .whitespaces)
-        guard contentAfterPrefix.isEmpty else { return false }
-
-        let prefixLocation = lineRange.location
-        let prefixLength = min(prefixMatch.prefix.count, max(0, selection.location - prefixLocation))
-        guard prefixLength > 0 else { return false }
-
-        let deleteRange = NSRange(location: prefixLocation, length: prefixLength)
-        guard textView.shouldChangeText(in: deleteRange, replacementString: "") else { return true }
-        textView.textStorage?.replaceCharacters(in: deleteRange, with: "")
-        textView.setSelectedRange(NSRange(location: prefixLocation, length: 0))
+        guard textView.shouldChangeText(in: mutation.replacementRange, replacementString: mutation.replacement) else { return true }
+        textView.textStorage?.replaceCharacters(in: mutation.replacementRange, with: mutation.replacement)
+        textView.setSelectedRange(mutation.selection)
         textView.typingAttributes = MarkdownStylist.baseAttributes
         textView.didChangeText()
         return true
@@ -2084,7 +1830,7 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
             counters[level] = nextIndex
             previousOrderedLevel = level
 
-            let expectedMarker = MarkdownStylist.orderedMarker(for: level, index: nextIndex)
+            let expectedMarker = MarkdownListSupport.orderedMarker(for: level, index: nextIndex)
             if match.marker == expectedMarker {
                 rebuiltLines.append(line)
                 continue

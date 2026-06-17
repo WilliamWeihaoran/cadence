@@ -1,8 +1,11 @@
-#if os(macOS)
-import AppKit
 import Foundation
 import SwiftData
 import UniformTypeIdentifiers
+#if os(macOS)
+import AppKit
+#elseif os(iOS)
+import UIKit
+#endif
 
 struct MarkdownImageReference: Equatable {
     let id: UUID
@@ -10,12 +13,21 @@ struct MarkdownImageReference: Equatable {
     let range: NSRange
 }
 
+#if os(macOS)
 struct MarkdownImageRenderAsset {
     let id: UUID
     let image: NSImage
     let displayWidth: CGFloat
     let pixelSize: CGSize
 }
+#elseif os(iOS)
+struct MarkdownImageRenderAsset {
+    let id: UUID
+    let image: UIImage
+    let displayWidth: CGFloat
+    let pixelSize: CGSize
+}
+#endif
 
 enum MarkdownImageAssetService {
     static let urlScheme = "cadence-image"
@@ -57,6 +69,7 @@ enum MarkdownImageAssetService {
         return allAssets.filter { !referenced.contains($0.id) }
     }
 
+#if os(macOS)
     @discardableResult
     static func createAsset(
         from image: NSImage,
@@ -98,11 +111,50 @@ enum MarkdownImageAssetService {
     static func images(from pasteboard: NSPasteboard) -> [NSImage] {
         pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage] ?? []
     }
+#elseif os(iOS)
+    @discardableResult
+    static func createAsset(
+        from image: UIImage,
+        originalFilename: String = "",
+        altText: String = "",
+        in modelContext: ModelContext
+    ) -> MarkdownImageAsset? {
+        guard let normalized = normalizedImageData(from: image) else { return nil }
+        let displayWidth = min(defaultDisplayWidth, normalized.pixelSize.width)
+        let asset = MarkdownImageAsset(
+            data: normalized.data,
+            mimeType: normalized.mimeType,
+            originalFilename: originalFilename,
+            altText: altText,
+            pixelWidth: Int(normalized.pixelSize.width.rounded()),
+            pixelHeight: Int(normalized.pixelSize.height.rounded()),
+            displayWidth: Double(max(minDisplayWidth, displayWidth))
+        )
+        modelContext.insert(asset)
+        return asset
+    }
+
+    @discardableResult
+    static func createAsset(
+        fromImageData data: Data,
+        originalFilename: String = "",
+        altText: String = "",
+        in modelContext: ModelContext
+    ) -> MarkdownImageAsset? {
+        guard let image = UIImage(data: data) else { return nil }
+        return createAsset(from: image, originalFilename: originalFilename, altText: altText, in: modelContext)
+    }
+#endif
 
     static func renderAsset(for id: UUID, in assets: [MarkdownImageAsset]) -> MarkdownImageRenderAsset? {
-        guard let asset = assets.first(where: { $0.id == id }),
-              let image = NSImage(data: asset.data)
-        else { return nil }
+        guard let asset = assets.first(where: { $0.id == id }) else { return nil }
+#if os(macOS)
+        guard let image = NSImage(data: asset.data) else { return nil }
+#elseif os(iOS)
+        guard let image = UIImage(data: asset.data) else { return nil }
+#else
+        return nil
+#endif
         return MarkdownImageRenderAsset(
             id: asset.id,
             image: image,
@@ -120,7 +172,11 @@ enum MarkdownImageAssetService {
 
     private static func isImageFile(_ url: URL) -> Bool {
         guard let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType else {
+#if os(macOS)
             return NSImage(contentsOf: url) != nil
+#else
+            return false
+#endif
         }
         return type.conforms(to: .image)
     }
@@ -133,6 +189,7 @@ enum MarkdownImageAssetService {
         value.replacingOccurrences(of: "]", with: "\\]")
     }
 
+#if os(macOS)
     private static func normalizedImageData(from image: NSImage) -> (data: Data, mimeType: String, pixelSize: CGSize)? {
         guard let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         let sourceSize = CGSize(width: source.width, height: source.height)
@@ -167,5 +224,42 @@ enum MarkdownImageAssetService {
         }
         return (jpeg, "image/jpeg", outputSize)
     }
-}
+#elseif os(iOS)
+    private static func normalizedImageData(from image: UIImage) -> (data: Data, mimeType: String, pixelSize: CGSize)? {
+        guard let source = image.cgImage else { return nil }
+        let sourceSize = CGSize(width: source.width, height: source.height)
+        let scale = min(1, maxLongEdge / max(sourceSize.width, sourceSize.height))
+        let outputSize = CGSize(
+            width: max(1, floor(sourceSize.width * scale)),
+            height: max(1, floor(sourceSize.height * scale))
+        )
+
+        let outputImage: UIImage
+        if scale < 1 {
+            let renderer = UIGraphicsImageRenderer(size: outputSize)
+            outputImage = renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: outputSize))
+            }
+        } else {
+            outputImage = image
+        }
+
+        if hasAlpha(source), let png = outputImage.pngData() {
+            return (png, "image/png", outputSize)
+        }
+        guard let jpeg = outputImage.jpegData(compressionQuality: 0.88) else {
+            return nil
+        }
+        return (jpeg, "image/jpeg", outputSize)
+    }
+
+    private static func hasAlpha(_ image: CGImage) -> Bool {
+        switch image.alphaInfo {
+        case .first, .last, .premultipliedFirst, .premultipliedLast:
+            return true
+        default:
+            return false
+        }
+    }
 #endif
+}

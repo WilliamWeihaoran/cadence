@@ -3,6 +3,7 @@ import Foundation
 import Testing
 @testable import Cadence
 
+#if os(macOS)
 @MainActor
 struct GoalTimelineDateMathTests {
     private let calendar: Calendar = {
@@ -108,3 +109,4 @@ struct GoalTimelineDateMathTests {
         DateFormatters.date(from: key) ?? Date()
     }
 }
+#endif

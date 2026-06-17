@@ -37,7 +37,7 @@ struct CadenceMilestoneWidgetSnapshot: Hashable {
 }
 
 enum CadenceMilestoneWidgetSupport {
-    nonisolated static func snapshot(
+    static func snapshot(
         modelContext: ModelContext,
         limit: Int
     ) throws -> CadenceMilestoneWidgetSnapshot {
@@ -46,7 +46,7 @@ enum CadenceMilestoneWidgetSupport {
         return snapshot(from: goals, now: Date(), limit: limit)
     }
 
-    nonisolated static func snapshot(
+    static func snapshot(
         from goals: [Goal],
         now: Date = Date(),
         limit: Int
@@ -94,7 +94,7 @@ enum CadenceMilestoneWidgetSupport {
         }
     }
 
-    nonisolated static func prioritizedGoals(
+    static func prioritizedGoals(
         from goals: [Goal],
         now: Date = Date()
     ) -> [Goal] {
@@ -129,7 +129,7 @@ enum CadenceMilestoneWidgetSupport {
             }
     }
 
-    private nonisolated static func widgetGoal(
+    private static func widgetGoal(
         _ goal: Goal,
         now: Date
     ) -> CadenceMilestoneWidgetGoal {

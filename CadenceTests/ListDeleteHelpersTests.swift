@@ -3,6 +3,7 @@ import SwiftData
 import Testing
 @testable import Cadence
 
+#if os(macOS)
 @MainActor
 struct ListDeleteHelpersTests {
     @Test func deleteContextRemovesDescendantsAndSavesCleanly() throws {
@@ -172,3 +173,4 @@ struct ListDeleteHelpersTests {
         #expect(try modelContext.fetch(FetchDescriptor<Subtask>()).isEmpty)
     }
 }
+#endif

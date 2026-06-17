@@ -106,10 +106,19 @@ struct iOSArchivedListRow: View {
 
 struct iOSListNotesPanel: View {
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     let area: Area?
     let project: Project?
     @State private var note: Note?
     @State private var isEditorFocused = false
+    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
+    @State private var selectedReferenceNote: Note?
+    @State private var selectedReferenceTask: AppTask?
+
+    private var editorModeBinding: Binding<iOSMarkdownEditorMode> {
+        iOSMarkdownEditorPreferences.binding(for: $editorModeRaw)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -117,7 +126,10 @@ struct iOSListNotesPanel: View {
 
             if let note {
                 HStack {
+                    iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
+
                     Spacer()
+
                     iOSNoteTemplateMenu(kind: .list) { template in
                         apply(template, to: note)
                     }
@@ -129,11 +141,20 @@ struct iOSListNotesPanel: View {
             Divider().background(Theme.borderSubtle)
 
             if let note {
-                iOSMarkdownEditor(text: Binding(
-                    get: { note.content },
-                    set: { update(note, content: $0) }
-                ), isFocused: $isEditorFocused)
-                .background(Theme.surface)
+                iOSMarkdownEditingSurface(
+                    text: Binding(
+                        get: { note.content },
+                        set: { update(note, content: $0) }
+                    ),
+                    isFocused: $isEditorFocused,
+                    mode: editorModeBinding,
+                    placeholder: "Start writing...",
+                    referenceNotes: allNotes,
+                    referenceTasks: allTasks,
+                    onOpenReference: openMarkdownReference,
+                    embeddedTaskArea: area,
+                    embeddedTaskProject: project
+                )
             } else {
                 ProgressView()
                     .tint(Theme.blue)
@@ -142,6 +163,12 @@ struct iOSListNotesPanel: View {
         }
         .background(Theme.surface)
         .onAppear(perform: loadOrCreateNote)
+        .iOSMarkdownReferenceSheets(
+            selectedNote: $selectedReferenceNote,
+            selectedTask: $selectedReferenceTask,
+            referenceNotes: allNotes,
+            referenceTasks: allTasks
+        )
     }
 
     private func loadOrCreateNote() {
@@ -154,6 +181,15 @@ struct iOSListNotesPanel: View {
 
     private func apply(_ template: NoteTemplate, to note: Note) {
         CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
+    }
+
+    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
+        switch target.kind {
+        case .note:
+            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
+        case .task:
+            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
+        }
     }
 }
 

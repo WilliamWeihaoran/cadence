@@ -26,30 +26,25 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         }
     }
 
-    var icon: String {
+    var feature: CadenceFeatureDestination {
         switch self {
-        case .today: return "sun.max.fill"
-        case .allTasks: return "checklist"
-        case .focus: return "timer"
-        case .inbox: return "tray.fill"
-        case .calendar: return "calendar"
-        case .pursuits: return "sparkles"
-        case .goals: return "flag.fill"
-        case .habits: return "flame.fill"
+        case .today: return .today
+        case .allTasks: return .allTasks
+        case .focus: return .focus
+        case .inbox: return .inbox
+        case .calendar: return .calendar
+        case .pursuits: return .pursuits
+        case .goals: return .goals
+        case .habits: return .habits
         }
     }
 
+    var icon: String {
+        feature.systemImage
+    }
+
     var label: String {
-        switch self {
-        case .today: return "Today"
-        case .allTasks: return "All Tasks"
-        case .focus: return "Focus"
-        case .inbox: return "Inbox"
-        case .calendar: return "Calendar"
-        case .pursuits: return "Pursuits"
-        case .goals: return "Milestones"
-        case .habits: return "Habits"
-        }
+        feature.title
     }
 
     var color: Color {
@@ -57,35 +52,21 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
     }
 
     var defaultColorHex: String {
-        switch self {
-        case .today: return "#FFB84D"
-        case .allTasks: return "#5AA2FF"
-        case .focus: return "#FF6B6B"
-        case .inbox: return "#5AA2FF"
-        case .calendar: return "#9E8CFF"
-        case .pursuits: return "#A78BFA"
-        case .goals: return "#4ECB71"
-        case .habits: return "#FFB84D"
-        }
+        feature.defaultColorHex
     }
 }
 
 extension SidebarStaticDestination {
     static var defaultOrder: [SidebarStaticDestination] {
-        [.today, .allTasks, .focus, .inbox, .calendar, .pursuits, .goals, .habits]
+        CadenceFeatureDestination.desktopSidebarOrder.compactMap { SidebarStaticDestination(rawValue: $0.rawValue) }
     }
 
     var isPrimaryNavigation: Bool {
-        switch self {
-        case .today, .allTasks, .focus, .inbox, .calendar:
-            return true
-        case .pursuits, .goals, .habits:
-            return false
-        }
+        feature.isPrimaryNavigation
     }
 
     var isTrackingNavigation: Bool {
-        !isPrimaryNavigation
+        feature.isTrackingNavigation
     }
 
     static func orderedDestinations(from raw: String) -> [SidebarStaticDestination] {

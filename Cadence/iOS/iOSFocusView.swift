@@ -5,8 +5,12 @@ import SwiftUI
 struct iOSFocusView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
     @State private var selectedTaskID: UUID?
+    @State private var selectedReferenceNote: Note?
+    @State private var selectedReferenceTask: AppTask?
     @State private var timerState = CadenceFocusTimerState()
 
     private var todayKey: String { DateFormatters.todayKey() }
@@ -42,6 +46,12 @@ struct iOSFocusView: View {
         .onAppear {
             selectedTaskID = selectedTaskID ?? readyTasks.first?.id
         }
+        .iOSMarkdownReferenceSheets(
+            selectedNote: $selectedReferenceNote,
+            selectedTask: $selectedReferenceTask,
+            referenceNotes: allNotes,
+            referenceTasks: allTasks
+        )
     }
 
     private var horizontalLayout: some View {
@@ -203,13 +213,33 @@ struct iOSFocusView: View {
     @ViewBuilder
     private func taskNotes(_ task: AppTask) -> some View {
         if !task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Text(task.notes)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.dim)
-                .frame(maxWidth: 520, alignment: .leading)
-                .padding(14)
-                .background(Theme.surfaceElevated.opacity(0.45))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            iOSMarkdownPreview(
+                markdown: task.notes,
+                imageAssets: imageAssets,
+                taskEmbeds: taskEmbedInfos,
+                onOpenReference: openMarkdownReference
+            )
+            .frame(maxWidth: 560, minHeight: 140, maxHeight: isCompact ? 260 : 320, alignment: .topLeading)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Theme.borderSubtle.opacity(0.52), lineWidth: 1)
+            }
+        }
+    }
+
+    private var taskEmbedInfos: [UUID: MarkdownTaskEmbedRenderInfo] {
+        Dictionary(uniqueKeysWithValues: allTasks.map { task in
+            (task.id, MarkdownTaskEmbedRenderInfo.task(task))
+        })
+    }
+
+    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
+        switch target.kind {
+        case .note:
+            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
+        case .task:
+            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
         }
     }
 
