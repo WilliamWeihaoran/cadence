@@ -44,6 +44,44 @@ struct AppStoreReviewReadinessTests {
         #expect(FileManager.default.fileExists(atPath: repositoryRoot().appendingPathComponent("docs/support.html").path))
     }
 
+    @Test func appleReleaseReadinessDocsCoverBothDistributionTracks() throws {
+        let readiness = try textFile(at: "docs/apple-release-readiness.md")
+        let appStorePacket = try textFile(at: "docs/app-store-submission-packet.md")
+        let directRunbook = try textFile(at: "docs/direct-distribution-runbook.md")
+        let docsIndex = try textFile(at: "docs/index.html")
+
+        #expect(readiness.contains("Primary channel: Mac App Store."))
+        #expect(readiness.contains("Secondary channel: direct Developer ID distribution with notarization."))
+        #expect(readiness.contains("Minimum macOS version: 26.1."))
+        #expect(readiness.contains("Privacy Label Source Of Truth"))
+        #expect(readiness.contains("Entitlement Justifications"))
+        #expect(readiness.contains("Third-Party SDK And Package Audit"))
+        #expect(readiness.contains("App Store Reviewer Script"))
+        #expect(readiness.contains("CadenceMCPServer"))
+        #expect(appStorePacket.contains("Do not answer \"Data Not Collected\""))
+        #expect(appStorePacket.contains("Minimum OS: macOS 26.1"))
+        #expect(appStorePacket.contains("Confirm `CadenceMCPServer`"))
+        #expect(directRunbook.contains("Developer ID"))
+        #expect(directRunbook.contains("xcrun notarytool submit"))
+        #expect(directRunbook.contains("xcrun stapler staple"))
+        #expect(directRunbook.contains("spctl -a -vv --type execute"))
+        #expect(docsIndex.contains("apple-release-readiness.md"))
+        #expect(docsIndex.contains("app-store-submission-packet.md"))
+        #expect(docsIndex.contains("direct-distribution-runbook.md"))
+    }
+
+    @Test func appReviewNotesDocumentCurrentSubmissionPosture() throws {
+        let reviewNotes = try textFile(at: "docs/app-review-notes.md")
+
+        #expect(reviewNotes.contains("macOS 26.1 or later"))
+        #expect(reviewNotes.contains("no in-app purchases or subscriptions"))
+        #expect(reviewNotes.contains("does not contain ads, third-party analytics, or tracking"))
+        #expect(reviewNotes.contains("widgets that read Cadence snapshots from the app group container"))
+        #expect(reviewNotes.contains("AI features are optional"))
+        #expect(reviewNotes.contains("Calendar access is optional"))
+        #expect(reviewNotes.contains("private iCloud database"))
+    }
+
     @Test func accountDeletionIsExplicitInSettingsAndReviewDocs() throws {
         let accountSettings = try String(
             contentsOf: repositoryRoot().appendingPathComponent("Cadence/macOS/Views/SettingsSectionViews.swift"),
@@ -101,6 +139,33 @@ struct AppStoreReviewReadinessTests {
 
         #expect(project.contains("ENABLE_USER_SELECTED_FILES = readwrite;"))
         #expect(!project.contains("ENABLE_USER_SELECTED_FILES = readonly;"))
+    }
+
+    @Test func deploymentTargetIsExplicitlyMacOS261ForCurrentRelease() throws {
+        let project = try textFile(at: "Cadence.xcodeproj/project.pbxproj")
+        let readiness = try textFile(at: "docs/apple-release-readiness.md")
+        let appStorePacket = try textFile(at: "docs/app-store-submission-packet.md")
+
+        #expect(project.contains("MACOSX_DEPLOYMENT_TARGET = 26.1;"))
+        #expect(readiness.contains("Minimum macOS version: 26.1. This is intentional"))
+        #expect(appStorePacket.contains("Minimum OS: macOS 26.1"))
+    }
+
+    @Test func appTargetDoesNotEmbedMCPServerOrMCPPackage() throws {
+        let project = try textFile(at: "Cadence.xcodeproj/project.pbxproj")
+        let targetBlock = try #require(
+            project.range(of: "8850FF1E2F75C94900A80F43 /* Cadence */ = {").flatMap { start in
+                project.range(
+                    of: "\n\t\t};",
+                    range: start.upperBound..<project.endIndex
+                ).map { end in String(project[start.lowerBound..<end.upperBound]) }
+            }
+        )
+
+        #expect(targetBlock.contains("B10000002FCE00000000010F /* PBXTargetDependency */"))
+        #expect(targetBlock.contains("packageProductDependencies = (\n\t\t\t);"))
+        #expect(!targetBlock.contains("CadenceMCPServer"))
+        #expect(!targetBlock.contains("MCP"))
     }
 
     @Test func appStartupMigratesLegacyStoreIntoAppGroupWhenNeeded() throws {
@@ -191,6 +256,13 @@ struct AppStoreReviewReadinessTests {
         let data = try Data(contentsOf: repositoryRoot().appendingPathComponent(relativePath))
         let value = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
         return try #require(value as? [String: Any])
+    }
+
+    private func textFile(at relativePath: String) throws -> String {
+        try String(
+            contentsOf: repositoryRoot().appendingPathComponent(relativePath),
+            encoding: .utf8
+        )
     }
 
     private func repositoryRoot() -> URL {

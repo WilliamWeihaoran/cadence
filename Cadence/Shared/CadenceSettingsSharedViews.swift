@@ -9,12 +9,12 @@ struct CadenceSettingsCard<Content: View>: View {
 
     var body: some View {
         content
-            .padding(16)
+            .padding(14)
             .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Theme.borderSubtle, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
             }
     }
 }
@@ -73,13 +73,13 @@ struct CadenceSettingsHeader<TrailingContent: View>: View {
 
     var body: some View {
         CadenceSettingsCard {
-            HStack(alignment: .top, spacing: 16) {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+            HStack(alignment: .top, spacing: 14) {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(tint.opacity(0.18))
-                    .frame(width: 48, height: 48)
+                    .frame(width: 42, height: 42)
                     .overlay {
                         Image(systemName: icon)
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(tint)
                     }
 

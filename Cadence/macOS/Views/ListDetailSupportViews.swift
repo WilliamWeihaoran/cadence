@@ -146,25 +146,18 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
 
     var body: some View {
         Button(action: { if isToggleEnabled { onToggle() } }) {
-            HStack(spacing: 11) {
-                Capsule()
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(accent)
-                    .frame(width: 4, height: 24)
-                    .shadow(color: accent.opacity(0.28), radius: 6, x: 0, y: 0)
+                    .frame(width: 3, height: 22)
 
                 if isToggleEnabled {
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(isCollapsed ? Theme.dim : accent)
-                        .frame(width: 22, height: 22)
-                        .background(Theme.surfaceElevated.opacity(0.7))
-                        .clipShape(Circle())
-                        .overlay {
-                            Circle()
-                                .strokeBorder(Theme.borderSubtle.opacity(0.8), lineWidth: 1)
-                        }
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .frame(width: 16, height: 20)
                 } else {
-                    Color.clear.frame(width: 22, height: 22)
+                    Color.clear.frame(width: 16, height: 20)
                 }
 
                 leadingContent()
@@ -198,29 +191,29 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
                         .foregroundStyle(Theme.dim)
                 }
                 .foregroundStyle(accent)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(Theme.surfaceElevated.opacity(0.7))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(accent.opacity(0.11))
                 .clipShape(Capsule())
                 .overlay {
                     Capsule()
-                        .strokeBorder(Theme.borderSubtle.opacity(0.75), lineWidth: 1)
+                        .strokeBorder(accent.opacity(0.2), lineWidth: 1)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+            .padding(.horizontal, 6)
             .padding(.vertical, 4)
             .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(Theme.surface.opacity(0.24))
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isToggleEnabled && !isCollapsed ? Theme.surface.opacity(0.28) : Color.clear)
             )
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.72))
+                    .fill(Theme.borderSubtle.opacity(0.52))
                     .frame(height: 1)
-                    .padding(.leading, 42)
+                    .padding(.leading, 34)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 7))
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.cadencePlain)
         .onTapGesture(count: 2) {

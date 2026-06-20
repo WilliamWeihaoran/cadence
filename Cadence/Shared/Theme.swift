@@ -67,6 +67,15 @@ enum ThemeOption: String, CaseIterable, Identifiable {
         return [palette.bg, palette.surface, palette.blue, palette.amber]
     }
 
+    var preferredColorScheme: ColorScheme {
+        switch self {
+        case .daylight, .sage:
+            return .light
+        case .midnight, .graphite, .ember, .ocean, .aurora:
+            return .dark
+        }
+    }
+
     var colors: ThemeColors {
         switch self {
         case .midnight:
@@ -264,6 +273,10 @@ struct Theme {
     static var amberLight: Color { palette.amberLight }
 
     static var purple: Color { palette.purple }
+
+    static var preferredColorScheme: ColorScheme {
+        ThemeManager.shared.selectedTheme.preferredColorScheme
+    }
 
     static func priorityColor(_ priority: TaskPriority) -> Color {
         switch priority {

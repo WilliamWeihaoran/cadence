@@ -4,6 +4,9 @@ Use these notes as the starting point for the App Store Connect "Notes for Revie
 
 Cadence is a native productivity app for tasks, notes, calendars, goals, habits, and focus planning.
 
+Platform:
+- Cadence currently targets macOS 26.1 or later.
+
 Calendar access:
 - Cadence requests Calendar access to show Apple Calendar events and to create, update, or delete scheduled task events when the user asks it to.
 - Calendar access is optional, but calendar features are limited when permission is not granted.
@@ -32,3 +35,9 @@ Push notifications:
 
 Purchases:
 - Cadence currently has no in-app purchases or subscriptions.
+
+Ads and tracking:
+- Cadence does not contain ads, third-party analytics, or tracking.
+
+Widgets:
+- Cadence includes widgets that read Cadence snapshots from the app group container.

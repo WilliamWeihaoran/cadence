@@ -178,43 +178,48 @@ struct SidebarCardButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 8) {
                     Image(systemName: destination.icon)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(isSelected ? .white : tint)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(tint)
+                        .frame(width: 20, height: 20)
 
                     Spacer()
 
                     if let count {
                         Text("\(count)")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(isSelected ? .white : tint)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(tint)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(tint.opacity(isSelected ? 0.18 : 0.12))
+                            .clipShape(Capsule())
                     }
                 }
-                .padding(.top, 10)
-                .padding(.horizontal, 10)
 
-                Spacer(minLength: 6)
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(isSelected ? tint : Color.clear)
+                        .frame(width: 3, height: 14)
 
-                Text(destination.label)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isSelected ? .white : Theme.text)
-                    .lineLimit(1)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 9)
+                    Text(destination.label)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isSelected ? Theme.text : Theme.text.opacity(0.88))
+                        .lineLimit(1)
+                }
             }
-            .frame(maxWidth: .infinity, minHeight: 68)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isSelected
-                        ? destination.color
-                        : destination.color.opacity(isHovered ? 0.22 : 0.14))
+                    .fill(backgroundFill)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(
-                        isSelected ? destination.color.opacity(0.5) : destination.color.opacity(isHovered ? 0.3 : 0.18),
+                        isSelected ? tint.opacity(0.34) : Theme.borderSubtle.opacity(isHovered ? 0.55 : 0.28),
                         lineWidth: 1
                     )
             }
@@ -222,6 +227,16 @@ struct SidebarCardButton: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("sidebar.destination.\(destination.rawValue)")
         .onHover { isHovered = $0 }
+    }
+
+    private var backgroundFill: Color {
+        if isSelected {
+            return tint.opacity(0.14)
+        }
+        if isHovered {
+            return Theme.surfaceElevated.opacity(0.7)
+        }
+        return Theme.surfaceElevated.opacity(0.42)
     }
 }
 

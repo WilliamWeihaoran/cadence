@@ -3,6 +3,113 @@ import SwiftUI
 import SwiftData
 import AppKit
 
+struct DesktopPageHeader<TrailingContent: View>: View {
+    let eyebrow: String?
+    let title: String
+    let subtitle: String?
+    let count: Int?
+    @ViewBuilder let trailingContent: TrailingContent
+
+    init(
+        eyebrow: String? = nil,
+        title: String,
+        subtitle: String? = nil,
+        count: Int? = nil,
+        @ViewBuilder trailingContent: () -> TrailingContent = { EmptyView() }
+    ) {
+        self.eyebrow = eyebrow
+        self.title = title
+        self.subtitle = subtitle
+        self.count = count
+        self.trailingContent = trailingContent()
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                if let eyebrow {
+                    Text(eyebrow.uppercased())
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .tracking(0.8)
+                }
+
+                HStack(alignment: .firstTextBaseline, spacing: 9) {
+                    Text(title)
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(Theme.text)
+
+                    if let count, count > 0 {
+                        Text("\(count)")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.blue)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Theme.blue.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+                }
+
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer(minLength: 16)
+            trailingContent
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 18)
+        .padding(.bottom, 12)
+        .background(Theme.surface)
+    }
+}
+
+struct DesktopControlBar<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            content
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 9)
+        .background(Theme.surface.opacity(0.92))
+    }
+}
+
+struct DesktopPrimaryActionButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 13)
+            .frame(height: 34)
+            .contentShape(Rectangle())
+            .background(Theme.blue)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.cadencePlain)
+    }
+}
+
 struct RootSidebarToggleButton: View {
     let isSidebarHidden: Bool
     let action: () -> Void
@@ -403,69 +510,36 @@ struct AllTasksPageView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 12) {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("All Tasks")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(Theme.text)
-                        Text("Browse everything by do date or by list, then open the full task creator from here.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.dim)
-                    }
-                    Spacer()
-                    Button {
-                        taskCreationManager.present()
-                    } label: {
-                        HStack(spacing: 7) {
-                            Image(systemName: "plus")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("New Task")
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .frame(height: 36)
-                        .contentShape(Rectangle())
-                        .background(Theme.blue)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    .buttonStyle(.cadencePlain)
-                }
-
-                HStack(spacing: 0) {
-                    HStack(spacing: 4) {
-                        ForEach(AllTasksViewMode.allCases, id: \.self) { viewMode in
-                            allTasksTabButton(viewMode)
-                        }
-                    }
-                    .padding(4)
-                    .background(Theme.surfaceElevated.opacity(0.38))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                    Spacer(minLength: 12)
-
-                    HStack(spacing: 6) {
-                        CadenceEnumPickerBadge(title: "Sort", selection: $sortField)
-                        CadenceEnumPickerBadge(title: "Order", selection: $sortDirection)
-                        if mode == .list {
-                            CadenceEnumPickerBadge(title: "Group", selection: $groupingMode)
-                        }
-                    }
-                    .padding(.trailing, 4)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Theme.surfaceElevated.opacity(0.32))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Theme.borderSubtle, lineWidth: 1)
+            DesktopPageHeader(
+                eyebrow: "Tasks",
+                title: "All Tasks",
+                subtitle: "Browse everything by do date, list, or board."
+            ) {
+                DesktopPrimaryActionButton(title: "New Task", systemImage: "plus") {
+                    taskCreationManager.present()
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
-            .background(Theme.surface)
+
+            Divider().background(Theme.borderSubtle)
+
+            DesktopControlBar {
+                HStack(spacing: 4) {
+                    ForEach(AllTasksViewMode.allCases, id: \.self) { viewMode in
+                        allTasksTabButton(viewMode)
+                    }
+                }
+                .padding(4)
+                .background(Theme.surfaceElevated.opacity(0.38))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                Spacer(minLength: 12)
+
+                CadenceEnumPickerBadge(title: "Sort", selection: $sortField)
+                CadenceEnumPickerBadge(title: "Order", selection: $sortDirection)
+                if mode == .list {
+                    CadenceEnumPickerBadge(title: "Group", selection: $groupingMode)
+                }
+            }
 
             Divider().background(Theme.borderSubtle)
 

@@ -5,6 +5,8 @@ import SwiftData
 struct KanbanCard: View {
     @Bindable var task: AppTask
     var presentation: KanbanCardPresentation = .listBoard
+    var showsEmptyDoDate = false
+    var showsContainerMetadata = false
 
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
@@ -61,10 +63,12 @@ struct KanbanCard: View {
 
                 CompactTagStrip(tags: task.sortedTags, limit: 3)
 
-                KanbanMetadataRows(
-                    rows: metadataRows,
-                    chipContent: { item in AnyView(metaChip(item)) }
-                )
+                if !metadataRows.isEmpty {
+                    KanbanMetadataRows(
+                        rows: metadataRows,
+                        chipContent: { item in AnyView(metaChip(item)) }
+                    )
+                }
 
                 let sortedSubtasks = (task.subtasks ?? []).sorted { $0.order < $1.order }
                 if !sortedSubtasks.isEmpty {
@@ -145,8 +149,9 @@ struct KanbanCard: View {
         }
     }
 
-    private var doDateMetaItem: KanbanMetaItem {
-        KanbanMetaItem(
+    private var doDateMetaItem: KanbanMetaItem? {
+        guard showsEmptyDoDate || !task.scheduledDate.isEmpty else { return nil }
+        return KanbanMetaItem(
             id: "do-date",
             icon: "sun.max.fill",
             text: task.scheduledDate.isEmpty ? "Do" : DateFormatters.relativeDate(from: task.scheduledDate),
@@ -169,11 +174,17 @@ struct KanbanCard: View {
     }
 
     private var listBoardMetadataRows: [[KanbanMetaItem]] {
-        var row = [doDateMetaItem]
+        var row: [KanbanMetaItem] = []
+        if let doDateMetaItem {
+            row.append(doDateMetaItem)
+        }
         if let dueDateMetaItem {
             row.append(dueDateMetaItem)
         }
-        return [row]
+        if showsContainerMetadata {
+            row.append(contextMetaItem)
+        }
+        return row.isEmpty ? [] : [row]
     }
 
     private var calendarBoardMetadataRows: [[KanbanMetaItem]] {

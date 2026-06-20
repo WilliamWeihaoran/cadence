@@ -7,7 +7,7 @@ let kanbanSectionColorOptions: [String] = [
 ]
 let kanbanColumnReorderAnimation = Animation.spring(response: 0.34, dampingFraction: 0.82, blendDuration: 0.12)
 let kanbanColumnStateAnimation = Animation.spring(response: 0.26, dampingFraction: 0.88, blendDuration: 0.08)
-let kanbanColumnWidth: CGFloat = 310
+let kanbanColumnWidth: CGFloat = 236
 
 struct KanbanDateBucket: Identifiable {
     let title: String

@@ -13,45 +13,14 @@ struct InboxHeaderView: View {
     let onNewTask: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("TASKS")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .kerning(0.8)
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("Inbox")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                    if activeTaskCount > 0 {
-                        Text("\(activeTaskCount)")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Theme.blue)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Theme.blue.opacity(0.12))
-                            .clipShape(Capsule())
-                    }
-                }
-            }
-            Spacer()
-            Button(action: onNewTask) {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus").font(.system(size: 11, weight: .semibold))
-                    Text("New Task").font(.system(size: 13, weight: .semibold))
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Theme.blue)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.cadencePlain)
+        DesktopPageHeader(
+            eyebrow: "Tasks",
+            title: "Inbox",
+            subtitle: "Tasks without a list land here.",
+            count: activeTaskCount
+        ) {
+            DesktopPrimaryActionButton(title: "New Task", systemImage: "plus", action: onNewTask)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 20)
-        .padding(.bottom, 12)
-        .background(Theme.surface)
     }
 }
 
@@ -61,15 +30,11 @@ struct InboxControlsBarView: View {
     @Binding var groupingMode: TaskGroupingMode
 
     var body: some View {
-        HStack(spacing: 8) {
+        DesktopControlBar {
             CadenceEnumPickerBadge(title: "Sort", selection: $sortField)
             CadenceEnumPickerBadge(title: "Order", selection: $sortDirection)
             CadenceEnumPickerBadge(title: "Group", selection: $groupingMode)
-            Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Theme.surface)
     }
 }
 

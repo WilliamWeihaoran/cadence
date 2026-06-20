@@ -59,7 +59,7 @@ struct SidebarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 13) {
                     HStack(spacing: 9) {
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
                             .fill(Theme.surfaceElevated)
@@ -128,7 +128,7 @@ struct SidebarView: View {
                         SidebarRow(item: .notes, icon: "doc.text", label: "Notes", color: Theme.purple, selection: $selection)
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 12)
                 .padding(.top, 12)
                 .padding(.bottom, 12)
             }
@@ -146,7 +146,7 @@ struct SidebarView: View {
 
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
             .padding(.top, 4)
             .padding(.bottom, 12)
         }

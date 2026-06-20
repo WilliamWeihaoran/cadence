@@ -21,18 +21,7 @@ struct macOSRootMainShell<Content: View>: View {
                 SidebarView(selection: $selection)
                     .frame(width: CGFloat(clampedSidebarWidth))
                     .contentShape(Rectangle())
-                    .background(
-                        LinearGradient(
-                            colors: [Theme.surface.opacity(0.98), Theme.surfaceElevated.opacity(0.98)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .overlay(alignment: .trailing) {
-                        Rectangle()
-                            .fill(Theme.borderSubtle.opacity(0.85))
-                            .frame(width: 1)
-                    }
+                    .background(Theme.surface)
                     .overlay(alignment: .trailing) {
                         SidebarResizeHandle(
                             width: $sidebarWidth,
@@ -60,7 +49,7 @@ struct macOSRootMainShell<Content: View>: View {
             .clipped()
             .zIndex(0)
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(Theme.preferredColorScheme)
         .overlay(alignment: .top) {
             WindowTopDragRegion()
                 .frame(height: 10)

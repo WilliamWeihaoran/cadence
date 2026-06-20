@@ -114,10 +114,10 @@ struct SettingsRail: View {
     @Binding var selectedCategory: SettingsCategory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Settings")
-                    .font(.system(size: 26, weight: .bold))
+                    .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(Theme.text)
                 Text("Preferences, organization, integrations, and safety.")
                     .font(.system(size: 13))
@@ -126,7 +126,7 @@ struct SettingsRail: View {
             }
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 16) {
                     ForEach(SettingsCategoryGroup.all) { group in
                         SettingsRailGroup(
                             group: group,
@@ -139,9 +139,9 @@ struct SettingsRail: View {
 
             Spacer()
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 16)
         .padding(.vertical, 22)
-        .frame(width: 260)
+        .frame(width: 248)
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.surface.opacity(0.58))
     }
@@ -152,7 +152,7 @@ private struct SettingsRailGroup: View {
     @Binding var selectedCategory: SettingsCategory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(group.title.uppercased())
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(Theme.dim.opacity(0.78))
@@ -180,12 +180,12 @@ private struct SettingsRailButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(category.tint.opacity(isSelected ? 0.22 : 0.14))
-                    .frame(width: 34, height: 34)
+                    .frame(width: 30, height: 30)
                     .overlay {
                         Image(systemName: category.icon)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(category.tint)
                     }
 
@@ -201,14 +201,14 @@ private struct SettingsRailButton: View {
 
                 Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(isSelected ? Theme.surfaceElevated : Color.clear)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(isSelected ? category.tint.opacity(0.36) : Theme.borderSubtle.opacity(0.001), lineWidth: 1)
             }
         }
