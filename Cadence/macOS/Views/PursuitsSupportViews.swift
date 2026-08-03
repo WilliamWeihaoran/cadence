@@ -19,9 +19,7 @@ struct PursuitUnassignedReviewCard: View {
                 Image(systemName: "tray.full.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.amber)
-                Text("UNASSIGNED")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.dim)
+                SectionEyebrowLabel(text: "Unassigned")
                 Spacer()
             }
 

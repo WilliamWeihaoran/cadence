@@ -143,7 +143,7 @@ struct TimelineTaskBlock: View {
             TimelineTaskBundleDropShelf(
                 targetTask: task,
                 allTasks: allTasks,
-                height: min(max(30, frame.height * 0.38), 46),
+                height: max(12, min(max(30, frame.height * 0.38), 46, frame.height - 10)),
                 activeDragTaskID: $activeDragTaskID,
                 isTargeted: $isBundleDropTargeted,
                 onDropAccepted: onBundleDropAccepted,

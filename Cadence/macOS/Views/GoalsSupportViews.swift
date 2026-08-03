@@ -215,27 +215,6 @@ struct GoalProgressBar: View {
     }
 }
 
-struct GoalMetricChip: View {
-    let icon: String
-    let label: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 10, weight: .semibold))
-            Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .lineLimit(1)
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(color.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-    }
-}
-
 struct GoalSignalTile: View {
     let title: String
     let value: String

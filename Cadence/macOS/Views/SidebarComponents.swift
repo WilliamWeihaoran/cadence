@@ -162,7 +162,7 @@ struct ContextSection: View {
                         Spacer()
                     }
                     .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)

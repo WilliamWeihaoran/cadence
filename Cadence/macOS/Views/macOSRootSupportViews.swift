@@ -171,7 +171,7 @@ struct RootTimelineSidebarPane: View {
                 .fill(Theme.borderSubtle.opacity(0.85))
                 .frame(width: 1)
         }
-        .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+        .shadow(color: Theme.sidePanelShadow, radius: 18, y: 8)
     }
 }
 
@@ -223,7 +223,7 @@ struct SuccessToastLayerView: View {
                         .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16))
-                .shadow(color: .black.opacity(0.28), radius: 30, y: 12)
+                .shadow(color: Theme.overlayCardShadow, radius: 30, y: 12)
                 .padding(.bottom, 36)
             }
             .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -409,7 +409,7 @@ struct HoveredTaskDatePickerOverlay: View {
                     .fill(Theme.surface)
                     .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.borderSubtle))
             )
-            .shadow(color: .black.opacity(0.28), radius: 24, x: 0, y: 14)
+            .shadow(color: Theme.overlayCardShadow, radius: 24, x: 0, y: 14)
         }
     }
 }
@@ -490,7 +490,7 @@ struct DeleteConfirmationOverlay: View {
                             .stroke(.white.opacity(0.08), lineWidth: 1)
                     )
             )
-            .shadow(color: .black.opacity(0.32), radius: 28, x: 0, y: 16)
+            .shadow(color: Theme.overlayCardShadow, radius: 28, x: 0, y: 16)
         }
     }
 }

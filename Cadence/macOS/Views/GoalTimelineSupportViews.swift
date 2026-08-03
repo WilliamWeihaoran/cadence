@@ -285,9 +285,7 @@ struct GoalTimelineFilterPopover: View {
             .overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.borderSubtle, lineWidth: 1))
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("STATUS")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
+                SectionEyebrowLabel(text: "Status")
 
                 CommitmentFilterBar(
                     items: GoalStatusFilter.allCases,

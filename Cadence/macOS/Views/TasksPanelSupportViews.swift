@@ -540,7 +540,7 @@ private struct ContainerPickerRow: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 16)
-                Text(name).font(.system(size: 13)).foregroundStyle(Theme.text)
+                Text(name).font(.system(size: 13)).foregroundStyle(Theme.text).lineLimit(1)
                 Spacer()
                 if isHighlighted {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)
@@ -579,7 +579,7 @@ private struct SectionPickerRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
                     .frame(width: 16)
-                Text(section).font(.system(size: 13)).foregroundStyle(Theme.text)
+                Text(section).font(.system(size: 13)).foregroundStyle(Theme.text).lineLimit(1)
                 Spacer()
                 if isHighlighted {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)

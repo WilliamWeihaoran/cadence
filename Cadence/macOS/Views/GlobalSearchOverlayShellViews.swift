@@ -62,7 +62,7 @@ struct GlobalSearchOverlayShell<Content: View>: View {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .stroke(Theme.borderSubtle.opacity(0.95), lineWidth: 1)
                 }
-                .shadow(color: .black.opacity(0.32), radius: 36, x: 0, y: 20)
+                .shadow(color: Theme.overlayCardShadow, radius: 36, x: 0, y: 20)
         }
     }
 }

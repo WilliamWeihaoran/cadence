@@ -8,7 +8,7 @@ private struct FocusSurfaceHeader<Metadata: View>: View {
     @ViewBuilder let metadata: () -> Metadata
 
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 7) {
                 Text(eyebrow)
                     .font(.system(size: 10, weight: .semibold))

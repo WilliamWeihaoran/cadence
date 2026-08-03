@@ -32,7 +32,7 @@ struct KanbanCard: View {
                 .fill(priorityBarColor)
                 .frame(width: 3.5)
                 .padding(.leading, 10)
-                .padding(.vertical, 12)
+                .padding(.vertical, 8)
 
             VStack(alignment: .leading, spacing: hasScheduleTopRow ? 7 : 10) {
                 if hasScheduleTopRow {
@@ -83,7 +83,7 @@ struct KanbanCard: View {
             }
             .padding(.leading, 10)
             .padding(.trailing, 12)
-            .padding(.vertical, 12)
+            .padding(.vertical, 8)
         }
         .background(cardBackground)
         .overlay {

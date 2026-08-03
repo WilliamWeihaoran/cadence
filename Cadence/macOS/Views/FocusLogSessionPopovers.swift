@@ -198,8 +198,12 @@ struct BundleLogSessionPopover: View {
             HStack {
                 Button("Discard", action: onDiscard)
                     .buttonStyle(.cadencePlain)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.dim)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.muted)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
                 Spacer()
                 Button {
                     onLog(logHours, logMinutes)

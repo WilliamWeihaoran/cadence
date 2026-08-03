@@ -32,7 +32,7 @@ struct MacTaskRow: View {
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(task.isDone ? Theme.dim.opacity(0.4) : Theme.priorityColor(task.priority))
                 .frame(width: 3)
-                .padding(.leading, 8)
+                .padding(.leading, 12)
                 .padding(.vertical, 3)
 
             TaskCompletionButton(task: task)

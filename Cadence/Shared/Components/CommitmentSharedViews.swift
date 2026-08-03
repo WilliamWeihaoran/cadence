@@ -141,10 +141,15 @@ struct CommitmentGroupHeader: View {
     }
 }
 
+/// Shared small metadata chip used across kanban cards, goal/habit detail rows,
+/// planning cards, and timeline bundle inspectors. Prefer this over a local
+/// one-off chip struct so tint/padding/shape stay consistent app-wide.
 struct CommitmentMetaChip: View {
     let label: String
     let color: Color
     var systemImage: String? = nil
+    /// Filled/high-contrast treatment for a chip that should read as the primary metric (e.g. a time range).
+    var prominent: Bool = false
 
     var body: some View {
         HStack(spacing: 4) {
@@ -154,11 +159,12 @@ struct CommitmentMetaChip: View {
             }
             Text(label)
                 .font(.system(size: 10, weight: .semibold))
+                .lineLimit(1)
         }
-        .foregroundStyle(color)
+        .foregroundStyle(prominent ? Theme.bg : color)
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(color.opacity(0.12))
+        .background(prominent ? color : color.opacity(0.12))
         .clipShape(Capsule())
     }
 }

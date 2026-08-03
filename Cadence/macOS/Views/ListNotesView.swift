@@ -209,8 +209,11 @@ struct ListNotesView: View {
 
     private var notesList: some View {
         VStack(spacing: 0) {
-            notesListHeader
-            notesSearchField
+            ListNotesHeaderView(
+                onNewNote: { addNote() },
+                onNewNoteInFolder: { folderSheetRequest = NoteFolderSheetRequest(mode: .newNote) }
+            )
+            ListNotesSearchField(searchText: $searchText, hasTagFilters: !filterableTags.isEmpty)
             TagFilterBar(tags: filterableTags, selectedSlugs: $selectedTagFilterSlugs)
 
             Divider().background(Theme.borderSubtle)
@@ -218,53 +221,6 @@ struct ListNotesView: View {
             notesScroll
             notesListEmptyState
         }
-    }
-
-    private var notesListHeader: some View {
-        HStack {
-            Text("Notes")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.muted)
-            Spacer()
-            Menu {
-                Button("New Note") {
-                    addNote()
-                }
-                Button("New Note in Folder...") {
-                    folderSheetRequest = NoteFolderSheetRequest(mode: .newNote)
-                }
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-    }
-
-    private var notesSearchField: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-            TextField("Search notes", text: $searchText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.text)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(Theme.bg.opacity(0.45))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.borderSubtle.opacity(0.8), lineWidth: 1)
-        )
-        .padding(.horizontal, 10)
-        .padding(.bottom, filterableTags.isEmpty ? 10 : 6)
     }
 
     private var notesScroll: some View {
@@ -281,78 +237,42 @@ struct ListNotesView: View {
     @ViewBuilder
     private var listNoteSection: some View {
         if !filteredListNoteGroups.isEmpty {
-            collapsibleNoteSection(
+            CollapsibleNoteSection(
                 title: "Notes",
                 count: filteredListNotes.count,
                 isCollapsed: $isListNotesCollapsed
             ) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(filteredListNoteGroups) { group in
-                        listNoteGroup(group)
+                        ListNoteFolderGroupView(
+                            group: group,
+                            selectedNoteID: selectedListNoteID,
+                            folderNames: listNoteFolderNames,
+                            onSelect: openListNote,
+                            onCopyLink: { NoteActionSupport.copyMarkdownLink(to: $0) },
+                            onMoveToFolder: { note, folder in note.folderPath = folder },
+                            onNewFolder: { note in folderSheetRequest = NoteFolderSheetRequest(mode: .moveNote(note.id)) },
+                            onDelete: deleteNote
+                        )
                     }
                 }
             }
         }
-    }
-
-    private func listNoteGroup(_ group: ListNoteFolderGroup) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if !group.folderPath.isEmpty {
-                Text(group.displayName)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 12)
-            }
-            ForEach(group.notes) { note in
-                listNoteRow(note)
-            }
-        }
-    }
-
-    private func listNoteRow(_ note: Note) -> some View {
-        ListNoteRow(note: note, isSelected: selectedListNoteID == note.id)
-            .onTapGesture {
-                openListNote(note)
-            }
-            .contextMenu {
-                Button("Copy Note Link") {
-                    NoteActionSupport.copyMarkdownLink(to: note)
-                }
-                Menu("Move to Folder") {
-                    Button("No Folder") {
-                        note.folderPath = ""
-                    }
-                    ForEach(listNoteFolderNames, id: \.self) { folder in
-                        Button(folder) {
-                            note.folderPath = folder
-                        }
-                    }
-                    Button("New Folder...") {
-                        folderSheetRequest = NoteFolderSheetRequest(mode: .moveNote(note.id))
-                    }
-                }
-                Button(role: .destructive) {
-                    deleteNote(note)
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-            }
     }
 
     @ViewBuilder
     private var eventNoteSection: some View {
         if !filteredEventNotes.isEmpty {
-            collapsibleNoteSection(
+            CollapsibleNoteSection(
                 title: "Event Notes",
                 count: filteredEventNotes.count,
                 isCollapsed: $isEventNotesCollapsed
             ) {
-                ForEach(filteredEventNotes) { note in
-                    MeetingNoteListRow(note: note, isSelected: selectedEventNoteID == note.id, showsPreview: false)
-                        .onTapGesture {
-                            select(.event(note.id))
-                        }
-                }
+                ListEventNoteSectionRows(
+                    notes: filteredEventNotes,
+                    selectedNoteID: selectedEventNoteID,
+                    onSelect: { select(.event($0.id)) }
+                )
             }
         }
     }
@@ -360,98 +280,29 @@ struct ListNotesView: View {
     @ViewBuilder
     private var taskNoteSection: some View {
         if !filteredTaskNotes.isEmpty {
-            collapsibleNoteSection(
+            CollapsibleNoteSection(
                 title: "Task Notes",
                 count: filteredTaskNotes.count,
                 isCollapsed: $isTaskNotesCollapsed
             ) {
-                ForEach(filteredTaskNotes) { task in
-                    TaskNoteListRow(task: task, isSelected: selectedTaskNoteID == task.id)
-                        .onTapGesture {
-                            select(.task(task.id))
-                        }
-                }
+                ListTaskNoteSectionRows(
+                    tasks: filteredTaskNotes,
+                    selectedTaskID: selectedTaskNoteID,
+                    onSelect: { select(.task($0.id)) }
+                )
             }
         }
     }
 
-    @ViewBuilder
     private var notesListEmptyState: some View {
-        if listNotes.isEmpty && eventNotes.isEmpty && taskNotes.isEmpty {
-            Spacer()
-            EmptyStateView(
-                message: "No notes",
-                subtitle: "Tap + to create one",
-                icon: "doc.text"
-            )
-            Spacer()
-        } else if filteredListNotes.isEmpty && filteredEventNotes.isEmpty && filteredTaskNotes.isEmpty {
-            Spacer()
-            EmptyStateView(
-                message: "No matches",
-                subtitle: "Try a different search",
-                icon: "magnifyingglass"
-            )
-            Spacer()
-        }
-    }
-
-    private func collapsibleNoteSection<Content: View>(
-        title: String,
-        count: Int,
-        isCollapsed: Binding<Bool>,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button {
-                isCollapsed.wrappedValue.toggle()
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: isCollapsed.wrappedValue ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(width: 12)
-                    Text(title)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.muted)
-                        .textCase(.uppercase)
-                    Spacer()
-                    Text("\(count)")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Theme.surfaceElevated.opacity(0.75))
-                        .clipShape(Capsule())
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.cadencePlain)
-            .cadenceHoverHighlight(
-                cornerRadius: 7,
-                fillColor: Theme.surfaceElevated.opacity(0.55),
-                strokeColor: Theme.borderSubtle.opacity(0.8)
-            )
-
-            if !isCollapsed.wrappedValue {
-                content()
-            }
-        }
+        ListNotesEmptyState(
+            hasAnyNotes: !(listNotes.isEmpty && eventNotes.isEmpty && taskNotes.isEmpty),
+            hasAnyFilteredMatches: !(filteredListNotes.isEmpty && filteredEventNotes.isEmpty && filteredTaskNotes.isEmpty)
+        )
     }
 
     private var noteEditorPlaceholder: some View {
-        ZStack {
-            Theme.bg
-            VStack(spacing: 8) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 32))
-                    .foregroundStyle(Theme.dim)
-                Text("Select a note")
-                    .foregroundStyle(Theme.dim)
-            }
-        }
+        ListNotesEditorPlaceholder()
     }
 
     private func addNote(folderPath: String = "") {

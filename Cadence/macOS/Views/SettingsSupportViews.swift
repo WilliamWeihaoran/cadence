@@ -107,16 +107,10 @@ struct ContextSettingsRow: View {
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                         .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.borderSubtle))
 
-                    Text("COLOR")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .kerning(0.8)
+                    SectionEyebrowLabel(text: "Color")
                     ColorGrid(selected: $editColor)
 
-                    Text("ICON")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .kerning(0.8)
+                    SectionEyebrowLabel(text: "Icon")
                     IconGrid(selected: $editIcon)
 
                     HStack {

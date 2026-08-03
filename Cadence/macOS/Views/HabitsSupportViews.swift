@@ -288,8 +288,8 @@ struct HabitDetailView: View {
                     .foregroundStyle(Theme.muted)
 
                 HStack(spacing: 8) {
-                    DetailMetaChip(label: habit.isDueToday ? "Due today" : "Not due today", color: habit.isDueToday ? Theme.blue : Theme.dim.opacity(0.8))
-                    DetailMetaChip(label: isDoneToday ? "Checked in" : "Pending", color: isDoneToday ? Theme.green : Theme.amber)
+                    CommitmentMetaChip(label: habit.isDueToday ? "Due today" : "Not due today", color: habit.isDueToday ? Theme.blue : Theme.dim.opacity(0.8))
+                    CommitmentMetaChip(label: isDoneToday ? "Checked in" : "Pending", color: isDoneToday ? Theme.green : Theme.amber)
                 }
             }
 
@@ -541,15 +541,6 @@ struct HabitMiniProgress: View {
                 .foregroundStyle(Theme.dim)
                 .multilineTextAlignment(.trailing)
         }
-    }
-}
-
-struct DetailMetaChip: View {
-    let label: String
-    let color: Color
-
-    var body: some View {
-        CommitmentMetaChip(label: label, color: color)
     }
 }
 

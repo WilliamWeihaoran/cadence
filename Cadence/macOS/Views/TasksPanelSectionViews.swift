@@ -80,6 +80,7 @@ struct TasksPanelGroupSectionView: View {
                 Text(group.listName)
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.text)
+                    .lineLimit(1)
 
                 Spacer()
 

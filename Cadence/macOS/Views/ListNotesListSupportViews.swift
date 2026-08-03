@@ -78,7 +78,7 @@ struct NoteFolderSheet: View {
                     dismiss()
                 }
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.white)
+                .foregroundStyle(Theme.text)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(Theme.blue.opacity(folderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.35 : 0.95))

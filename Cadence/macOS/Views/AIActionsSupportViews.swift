@@ -378,7 +378,7 @@ private struct NoteActionPickerCard<Content: View>: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(Theme.borderSubtle.opacity(0.95), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.24), radius: 22, x: 0, y: 14)
+        .shadow(color: Theme.overlayCardShadow, radius: 22, x: 0, y: 14)
     }
 }
 

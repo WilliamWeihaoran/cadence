@@ -97,7 +97,7 @@ struct MonthDayCell: View {
                         RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
                             .stroke(.white.opacity(0.045), lineWidth: 1)
                     )
-                    .shadow(color: Color.black.opacity(0.06), radius: 3, y: 1)
+                    .shadow(color: Theme.chipShadow, radius: 3, y: 1)
                 }
                 ForEach(taskChips) { task in
                     HStack(spacing: 3) {
@@ -124,7 +124,7 @@ struct MonthDayCell: View {
                         RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
                             .stroke(.white.opacity(0.045), lineWidth: 1)
                     )
-                    .shadow(color: Color.black.opacity(0.06), radius: 3, y: 1)
+                    .shadow(color: Theme.chipShadow, radius: 3, y: 1)
                 }
                 ForEach(eventChips) { event in
                     Text(event.title)
@@ -146,7 +146,7 @@ struct MonthDayCell: View {
                             RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
                                 .stroke(event.calendarColor.opacity(CalendarEventVisualStyle.chipBorderOpacity()), lineWidth: 1)
                         )
-                        .shadow(color: Color.black.opacity(0.06), radius: 3, y: 1)
+                        .shadow(color: Theme.chipShadow, radius: 3, y: 1)
                 }
                 if overflow > 0 {
                     Text("+ \(overflow) more")
@@ -261,7 +261,7 @@ struct AllDayTaskChip: View {
             RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
                 .stroke(.white.opacity(0.05), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.07), radius: 4, y: 1)
+        .shadow(color: Theme.chipShadow, radius: 4, y: 1)
         .contentShape(Rectangle())
         .onTapGesture { showInspector = true }
         .overlay {
@@ -304,7 +304,7 @@ struct AllDayEventChip: View {
             RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
                 .stroke(eventColor.opacity(CalendarEventVisualStyle.chipBorderOpacity()), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.06), radius: 3, y: 1)
+        .shadow(color: Theme.chipShadow, radius: 3, y: 1)
         .draggable(CalendarEventDragPayload.string(for: event))
     }
 }

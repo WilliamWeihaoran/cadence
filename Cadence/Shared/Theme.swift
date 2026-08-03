@@ -295,6 +295,20 @@ struct Theme {
         case .todo:       return muted
         }
     }
+
+    // MARK: - Shadow presets
+    // Named to replace one-off `Color.black.opacity(...)` shadow values scattered across
+    // surfaces. Radius/offset stay call-site-specific since elevation depth genuinely varies;
+    // these only centralize the color/opacity for jobs that are doing the same kind of lift.
+
+    /// Hairline shadow for small chips/pills (calendar day-cell chips, all-day banner chips).
+    static let chipShadow = Color.black.opacity(0.06)
+    /// Shadow for an edge-attached floating panel with no dimming scrim behind it
+    /// (e.g. Today's right-hand timeline sidebar).
+    static let sidePanelShadow = Color.black.opacity(0.18)
+    /// Shadow for centered modal cards, popovers, toasts, and overlay shells presented
+    /// above a dimming scrim.
+    static let overlayCardShadow = Color.black.opacity(0.3)
 }
 
 extension Color {
