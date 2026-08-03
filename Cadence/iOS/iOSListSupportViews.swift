@@ -2,6 +2,95 @@
 import SwiftData
 import SwiftUI
 
+/// Page-level header for the Lists page. Mirrors `iOSPanelHeader`'s sizing/spacing
+/// (so it fits comfortably in the iPad split pane) while adding the icon-square
+/// treatment used by other top-level pages (Today/Inbox/Focus), so the Lists page
+/// reads as a first-class page rather than a plain nav-bar title. Used identically
+/// by both the compact (iPhone) and regular (iPad) Lists layouts so the two look
+/// like the same page rather than a shrunk/expanded variant of each other.
+struct iOSListsPageHeader: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    let count: Int
+
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: isRegularWidth ? 12 : 10) {
+            Image(systemName: "folder.fill")
+                .font(.system(size: isRegularWidth ? 16 : 15, weight: .semibold))
+                .foregroundStyle(Theme.blue)
+                .frame(width: isRegularWidth ? 36 : 32, height: isRegularWidth ? 36 : 32)
+                .background(Theme.blue.opacity(0.13))
+                .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 9, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 9, style: .continuous)
+                        .strokeBorder(Theme.blue.opacity(0.20), lineWidth: 1)
+                }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Workspace")
+                    .font(.system(size: isRegularWidth ? 10 : 9, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .textCase(.uppercase)
+                    .kerning(0.8)
+                Text("Lists")
+                    .font(.system(size: isRegularWidth ? 21 : 17, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 4)
+
+            if count > 0 {
+                Text("\(count)")
+                    .font(.system(size: isRegularWidth ? 13 : 12, weight: .bold))
+                    .foregroundStyle(Theme.blue)
+                    .padding(.horizontal, isRegularWidth ? 10 : 8)
+                    .padding(.vertical, isRegularWidth ? 6 : 4)
+                    .background(Theme.blue.opacity(0.11))
+                    .clipShape(Capsule())
+            }
+        }
+        .padding(.horizontal, isRegularWidth ? 20 : 16)
+        .padding(.top, isRegularWidth ? 16 : 13)
+        .padding(.bottom, isRegularWidth ? 11 : 7)
+    }
+}
+
+/// Shared "New Area / New Project" action row for the Lists page. Used by both the
+/// compact and regular layouts so list creation doesn't rely on a native nav-bar
+/// toolbar menu (which disappears once the plain nav bar is hidden in favor of
+/// `iOSListsPageHeader`).
+struct iOSListCreateButtonsRow: View {
+    @Binding var editorMode: iOSListEditorMode?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                editorMode = .newArea
+            } label: {
+                Label("Area", systemImage: "folder.badge.plus")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.blue)
+
+            Button {
+                editorMode = .newProject
+            } label: {
+                Label("Project", systemImage: "checklist")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.green)
+        }
+    }
+}
+
 struct iOSListDetailPagePicker: View {
     @Binding var page: iOSListDetailPage
 

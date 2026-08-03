@@ -86,7 +86,7 @@ struct iOSMarkdownModePicker: View {
         Image(systemName: candidate.systemImage)
             .font(.system(size: compact ? 11 : 12, weight: .semibold))
             .foregroundStyle(mode == candidate ? Theme.text : Theme.dim)
-            .frame(width: compact ? 27 : 30, height: compact ? 26 : 28)
+            .frame(width: compact ? 32 : 34, height: compact ? 30 : 32)
             .background(
                 RoundedRectangle(cornerRadius: compact ? 6 : 7, style: .continuous)
                     .fill(mode == candidate ? Theme.blue.opacity(0.18) : Color.clear)

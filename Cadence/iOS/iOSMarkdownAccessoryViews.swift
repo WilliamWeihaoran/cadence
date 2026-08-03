@@ -547,7 +547,7 @@ struct iOSMarkdownFormatToolbar: View {
                     Image(systemName: "photo")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                        .frame(width: 32, height: 30)
+                        .frame(width: 38, height: 36)
                         .background(Theme.surface.opacity(0.78))
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .overlay {
@@ -574,66 +574,72 @@ struct iOSMarkdownFormatToolbar: View {
     }
 
     private var compactToolbar: some View {
-        HStack(spacing: 6) {
-            ForEach(compactItems) { item in
-                iOSMarkdownFormatButton(item: item) {
-                    apply(item.command)
-                }
-            }
-
-            Button(action: chooseImages) {
-                Image(systemName: "photo")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .frame(width: 32, height: 30)
-                    .background(Theme.surface.opacity(0.78))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(Theme.borderSubtle.opacity(0.44), lineWidth: 1)
-                    }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Image")
-
-            Menu {
-                ForEach(compactMoreItems) { item in
-                    Button {
+        // Wrapped in a horizontal ScrollView (matching fullToolbar) so the
+        // row can never clip on smaller phones or larger Dynamic Type sizes
+        // instead of silently hiding trailing buttons.
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                ForEach(compactItems) { item in
+                    iOSMarkdownFormatButton(item: item) {
                         apply(item.command)
-                    } label: {
-                        if let systemImage = item.systemImage {
-                            Label(item.title, systemImage: systemImage)
-                        } else {
-                            Label(item.id, systemImage: item.menuSystemImage)
+                    }
+                }
+
+                Button(action: chooseImages) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .frame(width: 38, height: 36)
+                        .background(Theme.surface.opacity(0.78))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(Theme.borderSubtle.opacity(0.44), lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Image")
+
+                Menu {
+                    ForEach(compactMoreItems) { item in
+                        Button {
+                            apply(item.command)
+                        } label: {
+                            if let systemImage = item.systemImage {
+                                Label(item.title, systemImage: systemImage)
+                            } else {
+                                Label(item.id, systemImage: item.menuSystemImage)
+                            }
                         }
                     }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .frame(width: 38, height: 36)
+                        .background(Theme.surface.opacity(0.78))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(Theme.borderSubtle.opacity(0.44), lineWidth: 1)
+                        }
                 }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .frame(width: 34, height: 30)
-                    .background(Theme.surface.opacity(0.78))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(Theme.borderSubtle.opacity(0.44), lineWidth: 1)
-                    }
+                .buttonStyle(.plain)
+                .accessibilityLabel("More formatting")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("More formatting")
+            .padding(6)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Theme.surfaceElevated.opacity(0.46))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Theme.borderSubtle.opacity(0.5), lineWidth: 1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
         }
-        .padding(6)
-        .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Theme.surfaceElevated.opacity(0.46))
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.5), lineWidth: 1)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .scrollIndicators(.hidden)
     }
 }
 
@@ -679,7 +685,7 @@ private struct iOSMarkdownFormatButton: View {
                 }
             }
             .foregroundStyle(Theme.text)
-            .frame(width: 32, height: 30)
+            .frame(width: 38, height: 36)
             .background(Theme.surface.opacity(0.78))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay {

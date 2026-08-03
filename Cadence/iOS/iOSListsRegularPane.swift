@@ -16,13 +16,11 @@ struct iOSListsRegularPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(
-                eyebrow: "Workspace",
-                title: "Lists",
-                count: activeAreas.count + activeProjects.count
-            )
+            iOSListsPageHeader(count: activeAreas.count + activeProjects.count)
 
-            newListButtons
+            iOSListCreateButtonsRow(editorMode: $editorMode)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
 
             Divider().background(Theme.borderSubtle)
 
@@ -47,32 +45,6 @@ struct iOSListsRegularPane: View {
             .scrollIndicators(.hidden)
         }
         .background(Theme.surface)
-    }
-
-    private var newListButtons: some View {
-        HStack(spacing: 8) {
-            Button {
-                editorMode = .newArea
-            } label: {
-                Label("Area", systemImage: "folder.badge.plus")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Theme.blue)
-
-            Button {
-                editorMode = .newProject
-            } label: {
-                Label("Project", systemImage: "checklist")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Theme.green)
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
     }
 
     @ViewBuilder

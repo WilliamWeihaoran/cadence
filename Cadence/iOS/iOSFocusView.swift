@@ -76,13 +76,26 @@ struct iOSFocusView: View {
                     color: Theme.red
                 )
 
-                taskListPane
-                    .frame(minHeight: 280, maxHeight: 360)
+                if readyTasks.isEmpty {
+                    // A single consolidated empty state avoids showing two
+                    // near-duplicate "nothing here" messages stacked on top
+                    // of each other (task list pane + focus detail pane).
+                    iOSEmptyPanel(
+                        systemImage: "timer",
+                        title: "No focus tasks",
+                        subtitle: "Schedule a task for today and it will appear here, ready to focus on."
+                    )
+                    .frame(minHeight: 360)
                     .iOSCompactPanelCard()
+                } else {
+                    taskListPane
+                        .frame(minHeight: 280, maxHeight: 360)
+                        .iOSCompactPanelCard()
 
-                focusDetailPane
-                    .frame(minHeight: 430)
-                    .iOSCompactPanelCard()
+                    focusDetailPane
+                        .frame(minHeight: 430)
+                        .iOSCompactPanelCard()
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 18)

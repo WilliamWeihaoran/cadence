@@ -148,10 +148,12 @@ struct iOSCalendarContextStrip: View {
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(Theme.text)
                     .monospacedDigit()
+                    .fixedSize(horizontal: true, vertical: false)
                 Text(label)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
 
             Spacer(minLength: 0)
@@ -362,7 +364,7 @@ struct iOSCalendarToolbar: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .monospacedDigit()
-                    .frame(minWidth: 26, minHeight: 28)
+                    .frame(minWidth: 26, minHeight: 34)
 
                 iOSCalendarToolbarIconButton(systemImage: "plus", isEnabled: zoomLevel < 3) {
                     zoomLevel = min(3, zoomLevel + 1)
@@ -414,7 +416,7 @@ private struct iOSCalendarToolbarPill: View {
             }
             .foregroundStyle(isSelected ? Theme.text : Theme.dim)
             .frame(minWidth: 60)
-            .frame(height: 28)
+            .frame(height: 34)
             .padding(.horizontal, 6)
             .background(isSelected ? Theme.blue.opacity(0.16) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -436,11 +438,12 @@ private struct iOSCalendarToolbarIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(isEnabled ? Theme.text : Theme.dim.opacity(0.38))
-                .frame(width: 28, height: 28)
+                .frame(width: 34, height: 34)
                 .background(isEnabled ? Theme.surfaceElevated.opacity(0.36) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)

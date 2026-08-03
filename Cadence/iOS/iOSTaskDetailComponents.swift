@@ -340,8 +340,11 @@ struct iOSSubtaskRow: View {
                 Image(systemName: subtask.isDone ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(subtask.isDone ? Theme.green : Theme.dim)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(subtask.isDone ? "Mark subtask todo" : "Complete subtask")
 
             TextField("Subtask", text: $subtask.title, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -364,8 +367,10 @@ struct iOSSubtaskRow: View {
                     .frame(width: 28, height: 28)
                     .background(Theme.surfaceElevated.opacity(0.45))
                     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Delete subtask")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

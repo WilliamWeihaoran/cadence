@@ -180,6 +180,8 @@ struct iOSCalendarBoardTaskCard: View {
                         Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
                             .font(.system(size: isRegularWidth ? 17 : 15, weight: .semibold))
                             .foregroundStyle(task.isDone ? Theme.green : Theme.dim.opacity(0.72))
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
 

@@ -209,7 +209,13 @@ enum iOSSidebarStyle: Equatable {
     case expanded
 
     static func style(for width: CGFloat) -> iOSSidebarStyle {
-        width >= 1_420 ? .expanded : .rail
+        // Full window width (not the sidebar's own column width). iPad portrait
+        // widths run from ~744pt (mini) to ~1032pt (13"); landscape is comfortably
+        // wider on every model. 820pt activates the labeled `.expanded` sidebar for
+        // portrait on 10.9"+ iPads and for both orientations on 11"/13" iPads, while
+        // still falling back to `.rail` for genuinely narrow contexts (iPad mini
+        // portrait, Slide Over/Split View compact widths).
+        width >= 820 ? .expanded : .rail
     }
 
     var width: CGFloat {

@@ -130,6 +130,7 @@ struct iOSTaskRow: View {
                 .font(.system(size: isCompact ? 16 : (isRegularWidth ? 19 : 16), weight: .semibold))
                 .foregroundStyle(task.isDone ? Theme.green : Theme.dim.opacity(0.68))
                 .frame(width: isCompact ? 20 : (isRegularWidth ? 24 : 20), height: isCompact ? 20 : (isRegularWidth ? 24 : 20))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(task.isDone ? "Mark task todo" : "Complete task")

@@ -55,13 +55,12 @@ struct iOSListsView: View {
     var body: some View {
         Group {
             if isCompact {
-                compactList
+                compactLayout
             } else {
                 regularSplitLayout
             }
         }
-        .navigationTitle("Lists")
-        .toolbar { addToolbar }
+        .toolbar(.hidden, for: .navigationBar)
         .background(Theme.bg)
         .sheet(item: $editorMode) { mode in
             iOSListEditorSheet(mode: mode)
@@ -73,6 +72,21 @@ struct iOSListsView: View {
         .onChange(of: activeRouteKey) { _, _ in
             selectDefaultListIfNeeded()
         }
+    }
+
+    private var compactLayout: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            iOSListsPageHeader(count: activeAreas.count + activeProjects.count)
+
+            iOSListCreateButtonsRow(editorMode: $editorMode)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+
+            Divider().background(Theme.borderSubtle)
+
+            compactList
+        }
+        .background(Theme.bg)
     }
 
     private var compactList: some View {
@@ -238,27 +252,6 @@ struct iOSListsView: View {
                 subtitle: "Create an area or project here, or restore one from Archived."
             )
             .listRowBackground(Color.clear)
-        }
-    }
-
-    @ToolbarContentBuilder
-    private var addToolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            Menu {
-                Button {
-                    editorMode = .newArea
-                } label: {
-                    Label("New Area", systemImage: "folder.badge.plus")
-                }
-
-                Button {
-                    editorMode = .newProject
-                } label: {
-                    Label("New Project", systemImage: "checklist")
-                }
-            } label: {
-                Image(systemName: "plus")
-            }
         }
     }
 

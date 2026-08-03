@@ -50,7 +50,7 @@ struct iOSCalendarDayInspector: View {
                     iOSCalendarInspectorEmptyState(addItem: addItem)
                 }
                 .padding(14)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .background(Theme.bg)
             } else {
                 ScrollView {

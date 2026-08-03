@@ -650,7 +650,7 @@ private struct iOSTagSettingsRow: View {
                 Image(systemName: isArchivedList ? "arrow.uturn.backward" : "archivebox")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(isArchivedList ? Theme.blue : Theme.amber)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 36, height: 36)
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             }

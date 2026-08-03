@@ -399,8 +399,11 @@ struct iOSTaskDetailSheet: View {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(Theme.dim)
+                            .frame(width: 30, height: 30)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Remove milestone")
                 }
             } else if availableGoals.isEmpty {
                 Text("Create a milestone first, then attach tasks here.")

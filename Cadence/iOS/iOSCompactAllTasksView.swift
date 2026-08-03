@@ -70,7 +70,7 @@ struct iOSCompactAllTasksView: View {
     private var captureCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             iOSTaskCaptureBar(
-                placeholder: "Add an inbox task...",
+                placeholder: "Add a task...",
                 title: $newTitle,
                 action: captureTask
             )

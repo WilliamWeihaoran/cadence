@@ -57,14 +57,7 @@ struct iOSPursuitsView: View {
     }
 
     private var compactLayout: some View {
-        VStack(spacing: 0) {
-            listPane
-                .frame(maxHeight: 360)
-
-            Divider().background(Theme.borderSubtle)
-
-            detailPane
-        }
+        compactListPane
     }
 
     private var listPane: some View {
@@ -83,32 +76,64 @@ struct iOSPursuitsView: View {
                 Button {
                     selectedID = pursuit.id
                 } label: {
-                    iOSFeatureSummaryRow(
-                        title: pursuit.title.isEmpty ? "Untitled Pursuit" : pursuit.title,
-                        subtitle: pursuit.context?.name ?? pursuit.kind.label,
-                        detail: pursuitSummaryLabel(for: pursuit),
-                        icon: pursuit.icon,
-                        color: Color(hex: pursuit.colorHex),
-                        isSelected: selected?.id == pursuit.id
-                    )
+                    pursuitRow(pursuit, isSelected: selected?.id == pursuit.id)
                 }
                 .buttonStyle(.plain)
             }
         }
     }
 
+    private var compactListPane: some View {
+        iOSFeatureListPane(
+            eyebrow: "Pursuits",
+            title: "Pursuits",
+            count: activePursuits.count,
+            emptyTitle: "No pursuits yet",
+            emptySubtitle: "Create a direction for related milestones and habits.",
+            emptyIcon: "sparkles",
+            actionTitle: "New Pursuit",
+            actionSystemImage: "plus",
+            action: { editorMode = .new }
+        ) {
+            ForEach(activePursuits) { pursuit in
+                NavigationLink {
+                    detailView(for: pursuit)
+                } label: {
+                    pursuitRow(pursuit, isSelected: false)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func pursuitRow(_ pursuit: Pursuit, isSelected: Bool) -> some View {
+        iOSFeatureSummaryRow(
+            title: pursuit.title.isEmpty ? "Untitled Pursuit" : pursuit.title,
+            subtitle: pursuit.context?.name ?? pursuit.kind.label,
+            detail: pursuitSummaryLabel(for: pursuit),
+            icon: pursuit.icon,
+            color: Color(hex: pursuit.colorHex),
+            isSelected: isSelected
+        )
+    }
+
+    @ViewBuilder
+    private func detailView(for pursuit: Pursuit) -> some View {
+        let summary = CadencePursuitSupport.summary(for: pursuit)
+        iOSPursuitDetail(
+            pursuit: pursuit,
+            goals: summary.goals,
+            habits: summary.habits,
+            onEdit: { editorMode = .edit(pursuit) },
+            onNewGoal: { goalEditorMode = .new(pursuit) },
+            onNewHabit: { habitEditorMode = .new(pursuit) }
+        )
+    }
+
     @ViewBuilder
     private var detailPane: some View {
         if let pursuit = selected {
-            let summary = CadencePursuitSupport.summary(for: pursuit)
-            iOSPursuitDetail(
-                pursuit: pursuit,
-                goals: summary.goals,
-                habits: summary.habits,
-                onEdit: { editorMode = .edit(pursuit) },
-                onNewGoal: { goalEditorMode = .new(pursuit) },
-                onNewHabit: { habitEditorMode = .new(pursuit) }
-            )
+            detailView(for: pursuit)
         } else {
             iOSFeatureEmptyDetail(systemImage: "sparkles", title: "No pursuit selected")
         }
@@ -167,14 +192,7 @@ struct iOSMilestonesView: View {
     }
 
     private var compactLayout: some View {
-        VStack(spacing: 0) {
-            listPane
-                .frame(maxHeight: 360)
-
-            Divider().background(Theme.borderSubtle)
-
-            detailPane
-        }
+        compactListPane
     }
 
     private var listPane: some View {
@@ -193,25 +211,56 @@ struct iOSMilestonesView: View {
                 Button {
                     selectedID = goal.id
                 } label: {
-                    let summary = GoalContributionResolver.summary(for: goal)
-                    iOSFeatureSummaryRow(
-                        title: goal.title.isEmpty ? "Untitled Milestone" : goal.title,
-                        subtitle: goal.pursuit?.title ?? goal.context?.name ?? goal.status.rawValue.capitalized,
-                        detail: "\(Int((summary.progress * 100).rounded()))%",
-                        icon: "flag.fill",
-                        color: Color(hex: goal.colorHex),
-                        isSelected: selected?.id == goal.id
-                    )
+                    goalRow(goal, isSelected: selected?.id == goal.id)
                 }
                 .buttonStyle(.plain)
             }
         }
     }
 
+    private var compactListPane: some View {
+        iOSFeatureListPane(
+            eyebrow: "Milestones",
+            title: "Milestones",
+            count: activeGoals.count,
+            emptyTitle: "No milestones yet",
+            emptySubtitle: "Create milestones under a pursuit to track outcomes.",
+            emptyIcon: "flag.fill",
+            actionTitle: "New Milestone",
+            actionSystemImage: "plus",
+            action: { editorMode = .new(nil) }
+        ) {
+            ForEach(activeGoals) { goal in
+                NavigationLink {
+                    detailView(for: goal)
+                } label: {
+                    goalRow(goal, isSelected: false)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func goalRow(_ goal: Goal, isSelected: Bool) -> some View {
+        let summary = GoalContributionResolver.summary(for: goal)
+        return iOSFeatureSummaryRow(
+            title: goal.title.isEmpty ? "Untitled Milestone" : goal.title,
+            subtitle: goal.pursuit?.title ?? goal.context?.name ?? goal.status.rawValue.capitalized,
+            detail: "\(Int((summary.progress * 100).rounded()))%",
+            icon: "flag.fill",
+            color: Color(hex: goal.colorHex),
+            isSelected: isSelected
+        )
+    }
+
+    private func detailView(for goal: Goal) -> some View {
+        iOSMilestoneDetail(goal: goal, onEdit: { editorMode = .edit(goal) })
+    }
+
     @ViewBuilder
     private var detailPane: some View {
         if let goal = selected {
-            iOSMilestoneDetail(goal: goal, onEdit: { editorMode = .edit(goal) })
+            detailView(for: goal)
         } else {
             iOSFeatureEmptyDetail(systemImage: "flag.fill", title: "No milestone selected")
         }
@@ -268,14 +317,7 @@ struct iOSHabitsView: View {
     }
 
     private var compactLayout: some View {
-        VStack(spacing: 0) {
-            listPane
-                .frame(maxHeight: 360)
-
-            Divider().background(Theme.borderSubtle)
-
-            detailPane
-        }
+        compactListPane
     }
 
     private var listPane: some View {
@@ -306,15 +348,47 @@ struct iOSHabitsView: View {
         }
     }
 
+    private var compactListPane: some View {
+        iOSFeatureListPane(
+            eyebrow: "Habits",
+            title: "Habits",
+            count: habits.count,
+            emptyTitle: "No habits yet",
+            emptySubtitle: "Create repeating commitments and track today.",
+            emptyIcon: "flame.fill",
+            actionTitle: "New Habit",
+            actionSystemImage: "plus",
+            action: { editorMode = .new(nil) }
+        ) {
+            ForEach(habits) { habit in
+                NavigationLink {
+                    detailView(for: habit)
+                } label: {
+                    iOSHabitSummaryRow(
+                        habit: habit,
+                        todayKey: todayKey,
+                        isSelected: false,
+                        toggle: { toggle(habit) }
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func detailView(for habit: Habit) -> some View {
+        iOSHabitDetail(
+            habit: habit,
+            todayKey: todayKey,
+            toggle: { toggle(habit) },
+            onEdit: { editorMode = .edit(habit) }
+        )
+    }
+
     @ViewBuilder
     private var detailPane: some View {
         if let habit = selected {
-            iOSHabitDetail(
-                habit: habit,
-                todayKey: todayKey,
-                toggle: { toggle(habit) },
-                onEdit: { editorMode = .edit(habit) }
-            )
+            detailView(for: habit)
         } else {
             iOSFeatureEmptyDetail(systemImage: "flame.fill", title: "No habit selected")
         }

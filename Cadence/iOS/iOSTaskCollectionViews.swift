@@ -56,7 +56,7 @@ struct iOSAllTasksView: View {
             Divider().background(Theme.borderSubtle)
 
             iOSTaskCaptureBar(
-                placeholder: "Add an inbox task...",
+                placeholder: "Add a task...",
                 title: $newTitle,
                 action: captureTask
             )
