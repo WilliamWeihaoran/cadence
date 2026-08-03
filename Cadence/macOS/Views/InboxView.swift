@@ -1,9 +1,12 @@
 #if os(macOS)
+import AppKit
 import SwiftUI
 import SwiftData
 
 struct InboxView: View {
     @Environment(TaskCreationManager.self) private var taskCreationManager
+    @Environment(RemindersManager.self) private var remindersManager
+    @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order)    private var areas:    [Area]
@@ -25,6 +28,17 @@ struct InboxView: View {
         return applyFrozenTaskOrder(sorted, frozen: frozenTaskOrder)
     }
     private var doneTasks: [AppTask] { inboxTasks.filter { $0.isDone || $0.isCancelled }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) } }
+    private var inboxItemCount: Int { activeTasks.count + remindersManager.reminders.count }
+    private var shouldShowRemindersSection: Bool {
+        !remindersManager.isAuthorized || remindersManager.isLoading || !remindersManager.reminders.isEmpty
+    }
+    private var isInboxEmpty: Bool {
+        activeTasks.isEmpty &&
+            doneTasks.isEmpty &&
+            remindersManager.reminders.isEmpty &&
+            remindersManager.isAuthorized &&
+            !remindersManager.isLoading
+    }
     private var groupedActiveTasks: [InboxTaskGroup] {
         if let frozenGroups = resolveFrozenTaskGroups(frozenGroups, from: allTasks) {
             return frozenGroups.map { group in
@@ -48,18 +62,18 @@ struct InboxView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            InboxHeaderView(activeTaskCount: activeTasks.count) {
+            InboxHeaderView(activeTaskCount: inboxItemCount) {
                 taskCreationManager.present()
             }
             Divider().background(Theme.borderSubtle)
             InboxControlsBarView(sortField: $sortField, sortDirection: $sortDirection, groupingMode: $groupingMode)
             Divider().background(Theme.borderSubtle)
 
-            if activeTasks.isEmpty && doneTasks.isEmpty {
+            if isInboxEmpty {
                 emptyState
             } else {
                 List {
-                    ForEach(groupedActiveTasks) { group in
+                    ForEach(groupedActiveTasks.filter { !$0.tasks.isEmpty }) { group in
                         InboxTaskGroupSectionView(
                             group: group,
                             contexts: contexts,
@@ -68,6 +82,18 @@ struct InboxView: View {
                             allTasks: allTasks,
                             dragOverTaskID: $dragOverTaskID,
                             onReorderTask: reorderTask
+                        )
+                    }
+
+                    if shouldShowRemindersSection {
+                        InboxAppleRemindersSectionView(
+                            reminders: remindersManager.reminders,
+                            isAuthorized: remindersManager.isAuthorized,
+                            isDenied: remindersManager.isDenied,
+                            isLoading: remindersManager.isLoading,
+                            onRequestAccess: requestRemindersAccess,
+                            onOpenSettings: openRemindersPrivacySettings,
+                            onComplete: remindersManager.completeReminder
                         )
                     }
 
@@ -88,6 +114,7 @@ struct InboxView: View {
                 .cadenceSoftPageBounce()
                 .background(Theme.bg)
                 .animation(.easeOut(duration: 0.26), value: activeTasks.map(\.id))
+                .animation(.easeOut(duration: 0.26), value: remindersManager.reminders.map(\.id))
             }
         }
         .background(
@@ -96,6 +123,11 @@ struct InboxView: View {
         .background(Theme.bg)
         .onAppear {
             isCompletedCollapsed = true
+            remindersManager.refreshAuthorizationState()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            remindersManager.refreshAuthorizationState()
         }
         .background {
             TaskGroupFreezeObserver(
@@ -126,6 +158,15 @@ struct InboxView: View {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
             for (i, t) in sorted.enumerated() { t.order = i }
         }
+    }
+
+    private func requestRemindersAccess() {
+        Task { await remindersManager.requestAccess() }
+    }
+
+    private func openRemindersPrivacySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders") else { return }
+        NSWorkspace.shared.open(url)
     }
 
 }

@@ -14,13 +14,13 @@ struct PanelHeader: View {
                 .foregroundStyle(Theme.dim)
                 .kerning(0.8)
             Text(title)
-                .font(.system(size: 21, weight: .bold))
+                .font(.system(size: CadenceDesktopMetrics.pageTitleSize, weight: .bold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 17)
-        .padding(.bottom, 9)
+        .padding(.horizontal, CadenceDesktopMetrics.pageHorizontalPadding)
+        .padding(.top, CadenceDesktopMetrics.pageHeaderTopPadding)
+        .padding(.bottom, CadenceDesktopMetrics.pageHeaderBottomPadding)
     }
 }
 #endif

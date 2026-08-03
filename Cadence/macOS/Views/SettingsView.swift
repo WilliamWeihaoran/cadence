@@ -37,6 +37,7 @@ struct SettingsView: View {
                     detailHeader
                     selectedSectionContent
                 }
+                .frame(maxWidth: 1040, alignment: .leading)
                 .padding(.horizontal, 28)
                 .padding(.top, 24)
                 .padding(.bottom, 32)

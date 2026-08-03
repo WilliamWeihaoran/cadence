@@ -4,20 +4,20 @@ import SwiftUI
 struct CommitmentPageHeader<Accessory: View, Controls: View>: View {
     let title: String
     let subtitle: String
-    var titleSize: CGFloat = 28
+    var titleSize: CGFloat = CadenceDesktopMetrics.pageTitleSize
     @ViewBuilder let accessory: Accessory
     @ViewBuilder let controls: Controls
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(.system(size: titleSize, weight: .bold))
                         .foregroundStyle(Theme.text)
                     Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.muted)
+                        .font(.system(size: CadenceDesktopMetrics.secondaryTextSize))
+                        .foregroundStyle(Theme.dim)
                 }
 
                 Spacer(minLength: 20)
@@ -27,7 +27,9 @@ struct CommitmentPageHeader<Accessory: View, Controls: View>: View {
 
             controls
         }
-        .padding(20)
+        .padding(.horizontal, CadenceDesktopMetrics.pageHorizontalPadding)
+        .padding(.top, CadenceDesktopMetrics.pageHeaderTopPadding)
+        .padding(.bottom, CadenceDesktopMetrics.pageHeaderBottomPadding)
         .background(Theme.surface)
     }
 }
@@ -65,11 +67,14 @@ struct CommitmentSearchField: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.text)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(Theme.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+        .padding(.horizontal, 11)
+        .frame(minHeight: CadenceDesktopMetrics.regularControlHeight)
+        .background(Theme.surfaceElevated.opacity(0.82))
+        .clipShape(RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius, style: .continuous)
+                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
+        }
         .frame(maxWidth: .infinity)
     }
 }
@@ -95,10 +100,13 @@ struct CommitmentFilterBar<Item: Hashable>: View {
                 }
             }
         }
-        .padding(4)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.borderSubtle, lineWidth: 1))
+        .padding(3)
+        .background(Theme.surfaceElevated.opacity(0.46))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
+        }
     }
 }
 

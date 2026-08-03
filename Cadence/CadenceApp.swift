@@ -22,6 +22,7 @@ struct CadenceApp: App {
                 .environment(ThemeManager.shared)
                 .environment(CadenceDeepLinkManager.shared)
                 .environment(CalendarManager.shared)
+                .environment(RemindersManager.shared)
                 .environment(AISettingsManager.shared)
                 .environment(AppleAccountManager.shared)
                 .environment(FocusManager.shared)

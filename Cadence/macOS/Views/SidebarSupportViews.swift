@@ -30,34 +30,36 @@ struct SidebarRow: View {
             .padding(.vertical, 8)
             .background(backgroundFillShape)
             .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(borderColor, lineWidth: selection == item ? 1 : 0.8)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(.easeOut(duration: 0.12), value: selection == item)
     }
 
     private var borderColor: Color {
-        selection == item ? Theme.blue.opacity(0.34) : Theme.borderSubtle.opacity(isHovered ? 0.75 : 0.4)
+        selection == item ? color.opacity(0.34) : Theme.borderSubtle.opacity(isHovered ? 0.72 : 0.28)
     }
 
     private var backgroundFill: Color {
         if selection == item {
-            return Theme.blue.opacity(0.22)
+            return color.opacity(0.16)
         }
         if isHovered {
             return Theme.surfaceElevated.opacity(0.9)
         }
-        return Theme.surfaceElevated.opacity(0.45)
+        return Theme.surfaceElevated.opacity(0.34)
     }
 }
 
 private extension SidebarRow {
     @ViewBuilder
     var backgroundFillShape: some View {
-        RoundedRectangle(cornerRadius: 11, style: .continuous)
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(backgroundFill)
     }
 }
@@ -127,11 +129,11 @@ struct SidebarListRow: View {
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selection == item ? Theme.blue.opacity(0.16) : (isHovered ? Theme.surfaceElevated.opacity(0.78) : Color.clear))
+                    .fill(selection == item ? color.opacity(0.14) : (isHovered ? Theme.surfaceElevated.opacity(0.72) : Color.clear))
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(selection == item ? Theme.blue.opacity(0.3) : Theme.borderSubtle.opacity(isHovered ? 0.75 : 0), lineWidth: 1)
+                    .strokeBorder(selection == item ? color.opacity(0.3) : Theme.borderSubtle.opacity(isHovered ? 0.68 : 0), lineWidth: 1)
             }
             .contentShape(Rectangle())
         }
@@ -149,6 +151,8 @@ struct SidebarListRow: View {
                 hoveredEditableManager.endHovering(id: hoverID)
             }
         }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(.easeOut(duration: 0.12), value: selection == item)
     }
 
     @ViewBuilder

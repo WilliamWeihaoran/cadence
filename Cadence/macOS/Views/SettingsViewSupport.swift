@@ -180,6 +180,10 @@ private struct SettingsRailButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(isSelected ? category.tint : Color.clear)
+                    .frame(width: 3, height: 22)
+
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(category.tint.opacity(isSelected ? 0.22 : 0.14))
                     .frame(width: 30, height: 30)
@@ -202,14 +206,14 @@ private struct SettingsRailButton: View {
                 Spacer()
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(isSelected ? Theme.surfaceElevated : Color.clear)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isSelected ? category.tint.opacity(0.36) : Theme.borderSubtle.opacity(0.001), lineWidth: 1)
+                    .stroke(isSelected ? category.tint.opacity(0.18) : Theme.borderSubtle.opacity(0.001), lineWidth: 1)
             }
         }
         .buttonStyle(.cadencePlain)

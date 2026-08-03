@@ -8,6 +8,8 @@ struct DesktopPageHeader<TrailingContent: View>: View {
     let title: String
     let subtitle: String?
     let count: Int?
+    let systemImage: String?
+    let tint: Color
     @ViewBuilder let trailingContent: TrailingContent
 
     init(
@@ -15,55 +17,70 @@ struct DesktopPageHeader<TrailingContent: View>: View {
         title: String,
         subtitle: String? = nil,
         count: Int? = nil,
+        systemImage: String? = nil,
+        tint: Color = Theme.blue,
         @ViewBuilder trailingContent: () -> TrailingContent = { EmptyView() }
     ) {
         self.eyebrow = eyebrow
         self.title = title
         self.subtitle = subtitle
         self.count = count
+        self.systemImage = systemImage
+        self.tint = tint
         self.trailingContent = trailingContent()
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                if let eyebrow {
-                    Text(eyebrow.uppercased())
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .tracking(0.8)
+            HStack(alignment: .top, spacing: 11) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(tint)
+                        .frame(width: 32, height: 32)
+                        .background(tint.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius, style: .continuous))
                 }
 
-                HStack(alignment: .firstTextBaseline, spacing: 9) {
-                    Text(title)
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(Theme.text)
-
-                    if let count, count > 0 {
-                        Text("\(count)")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Theme.blue)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Theme.blue.opacity(0.12))
-                            .clipShape(Capsule())
+                VStack(alignment: .leading, spacing: 4) {
+                    if let eyebrow {
+                        Text(eyebrow.uppercased())
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                            .tracking(0.8)
                     }
-                }
 
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(2)
+                    HStack(alignment: .firstTextBaseline, spacing: 9) {
+                        Text(title)
+                            .font(.system(size: CadenceDesktopMetrics.pageTitleSize, weight: .bold))
+                            .foregroundStyle(Theme.text)
+
+                        if let count, count > 0 {
+                            Text("\(count)")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(tint)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(tint.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+                    }
+
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.system(size: CadenceDesktopMetrics.secondaryTextSize))
+                            .foregroundStyle(Theme.dim)
+                            .lineLimit(2)
+                    }
                 }
             }
 
             Spacer(minLength: 16)
             trailingContent
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 18)
-        .padding(.bottom, 12)
+        .padding(.horizontal, CadenceDesktopMetrics.pageHorizontalPadding)
+        .padding(.top, CadenceDesktopMetrics.pageHeaderTopPadding)
+        .padding(.bottom, CadenceDesktopMetrics.pageHeaderBottomPadding)
         .background(Theme.surface)
     }
 }
@@ -80,7 +97,7 @@ struct DesktopControlBar<Content: View>: View {
             content
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, CadenceDesktopMetrics.pageHorizontalPadding)
         .padding(.vertical, 9)
         .background(Theme.surface.opacity(0.92))
     }
@@ -92,21 +109,13 @@ struct DesktopPrimaryActionButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 11, weight: .semibold))
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 13)
-            .frame(height: 34)
-            .contentShape(Rectangle())
-            .background(Theme.blue)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.cadencePlain)
+        CadenceActionButton(
+            title: title,
+            systemImage: systemImage,
+            role: .primary,
+            size: .regular,
+            action: action
+        )
     }
 }
 
@@ -115,20 +124,14 @@ struct RootSidebarToggleButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: isSidebarHidden ? "sidebar.left" : "sidebar.leading")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .frame(width: 30, height: 30)
-                .background(Theme.surfaceElevated.opacity(0.9))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Theme.borderSubtle, lineWidth: 1)
-                )
-        }
-        .buttonStyle(.cadencePlain)
-        .help(isSidebarHidden ? "Show Sidebar (Cmd+O)" : "Hide Sidebar (Cmd+O)")
+        CadenceIconButton(
+            systemImage: isSidebarHidden ? "sidebar.left" : "sidebar.leading",
+            accessibilityLabel: isSidebarHidden ? "Show Sidebar (Cmd+O)" : "Hide Sidebar (Cmd+O)",
+            tint: Theme.blue,
+            size: CadenceDesktopMetrics.compactControlHeight,
+            iconSize: 12,
+            action: action
+        )
     }
 }
 
@@ -142,15 +145,13 @@ struct RootTimelineSidebarPane: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                 Spacer()
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(width: 20, height: 20)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.cadencePlain)
+                CadenceIconButton(
+                    systemImage: "xmark",
+                    accessibilityLabel: "Close timeline",
+                    size: 24,
+                    iconSize: 10,
+                    action: onClose
+                )
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)

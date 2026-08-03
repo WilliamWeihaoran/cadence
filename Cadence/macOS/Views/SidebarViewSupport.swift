@@ -178,7 +178,7 @@ struct SidebarCardButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 7) {
                 HStack(alignment: .center, spacing: 8) {
                     Image(systemName: destination.icon)
                         .font(.system(size: 15, weight: .semibold))
@@ -210,14 +210,14 @@ struct SidebarCardButton: View {
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(backgroundFill)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(
                         isSelected ? tint.opacity(0.34) : Theme.borderSubtle.opacity(isHovered ? 0.55 : 0.28),
                         lineWidth: 1
@@ -227,6 +227,8 @@ struct SidebarCardButton: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("sidebar.destination.\(destination.rawValue)")
         .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(.easeOut(duration: 0.12), value: isSelected)
     }
 
     private var backgroundFill: Color {
@@ -236,7 +238,7 @@ struct SidebarCardButton: View {
         if isHovered {
             return Theme.surfaceElevated.opacity(0.7)
         }
-        return Theme.surfaceElevated.opacity(0.42)
+        return Theme.surfaceElevated.opacity(0.34)
     }
 }
 
@@ -293,6 +295,8 @@ struct SidebarTrackingButton: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("sidebar.destination.\(destination.rawValue)")
         .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(.easeOut(duration: 0.12), value: isSelected)
     }
 
     private var backgroundFill: Color {

@@ -14,6 +14,7 @@ enum macOSRootLifecycleSupport {
         TaskCompletionAnimationManager.shared.modelContext = modelContext
         installKeyMonitorIfNeeded()
         CalendarManager.shared.refreshAuthorizationState()
+        RemindersManager.shared.refreshAuthorizationState()
     }
 
     static func handleDisappear(removeKeyMonitor: () -> Void) {

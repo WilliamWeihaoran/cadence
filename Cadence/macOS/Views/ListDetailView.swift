@@ -263,42 +263,32 @@ private struct ListDetailChromeView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color(hex: colorHex))
-            Text(name)
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(Theme.text)
-            Spacer()
-
-            if let project = project, !project.dueDate.isEmpty {
-                HStack(spacing: 4) {
-                    Image(systemName: "calendar").font(.system(size: 10))
-                    Text(DateFormatters.shortDateString(from: project.dueDate)).font(.system(size: 11))
-                }
-                .foregroundStyle(Theme.dim)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
-
-            Button {
-                showEdit = true
-            } label: {
-                Image(systemName: "pencil")
-                    .font(.system(size: 13))
+        DesktopPageHeader(
+            title: name,
+            systemImage: icon,
+            tint: Color(hex: colorHex)
+        ) {
+            HStack(spacing: 8) {
+                if let project = project, !project.dueDate.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar").font(.system(size: 10))
+                        Text(DateFormatters.shortDateString(from: project.dueDate)).font(.system(size: 11))
+                    }
                     .foregroundStyle(Theme.dim)
-                    .frame(width: 28, height: 28)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
                     .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+
+                CadenceIconButton(
+                    systemImage: "pencil",
+                    accessibilityLabel: "Edit \(name)",
+                    tint: Color(hex: colorHex),
+                    action: { showEdit = true }
+                )
             }
-            .buttonStyle(.cadencePlain)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 14)
         .contentShape(Rectangle())
         .onHover { hovering in
             if hovering {

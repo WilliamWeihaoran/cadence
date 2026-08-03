@@ -17,14 +17,14 @@ struct CalendarPageToolbar: View {
         HStack(spacing: 12) {
             HStack(spacing: 6) {
                 Text("Calendar")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Theme.dim)
+                    .font(.system(size: CadenceDesktopMetrics.pageTitleSize, weight: .bold))
+                    .foregroundStyle(Theme.text)
                 Text("·")
                     .font(.system(size: 16))
                     .foregroundStyle(Theme.dim.opacity(0.5))
                 Text(calendarTitleLabel)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Theme.text)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.muted)
                     .animation(.none, value: calendarTitleLabel)
             }
             Spacer()
@@ -44,9 +44,15 @@ struct CalendarPageToolbar: View {
                 setPresentation: setPresentation
             )
 
-            CalendarGhostButton(title: "Today", systemImage: "location.fill", action: scrollToToday)
+            CadenceActionButton(
+                title: "Today",
+                systemImage: "location.fill",
+                role: .secondary,
+                size: .compact,
+                action: scrollToToday
+            )
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, CadenceDesktopMetrics.pageHorizontalPadding)
         .padding(.vertical, 12)
         .background(Theme.surface)
     }
@@ -65,15 +71,15 @@ private struct CalendarViewModeControl: View {
                     Text(mode.rawValue)
                         .font(.system(size: 11, weight: presentation == .timeline && viewMode == mode ? .semibold : .medium))
                         .foregroundStyle(presentation == .timeline && viewMode == mode ? Theme.blue : Theme.dim)
-                        .frame(minWidth: 68, minHeight: 28)
+                        .frame(minWidth: 68, minHeight: CadenceDesktopMetrics.compactControlHeight)
                         .padding(.horizontal, 8)
                         .contentShape(Rectangle())
                         .background(
-                            RoundedRectangle(cornerRadius: 7)
+                            RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius)
                                 .fill(presentation == .timeline && viewMode == mode ? Theme.blue.opacity(0.10) : Color.clear)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 7)
+                            RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius)
                                 .stroke(presentation == .timeline && viewMode == mode ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
                         )
                 }
@@ -84,15 +90,15 @@ private struct CalendarViewModeControl: View {
                 Text("Board")
                     .font(.system(size: 11, weight: presentation == .board ? .semibold : .medium))
                     .foregroundStyle(presentation == .board ? Theme.blue : Theme.dim)
-                    .frame(minWidth: 68, minHeight: 28)
+                    .frame(minWidth: 68, minHeight: CadenceDesktopMetrics.compactControlHeight)
                     .padding(.horizontal, 8)
                     .contentShape(Rectangle())
                     .background(
-                        RoundedRectangle(cornerRadius: 7)
+                        RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius)
                             .fill(presentation == .board ? Theme.blue.opacity(0.10) : Color.clear)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 7)
+                        RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius)
                             .stroke(presentation == .board ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
                     )
             }
@@ -104,7 +110,7 @@ private struct CalendarViewModeControl: View {
                 .fill(Color.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 9)
-                        .stroke(Theme.borderSubtle.opacity(0.18), lineWidth: 1)
+                        .stroke(Theme.borderSubtle.opacity(0.56), lineWidth: 1)
                 )
         )
     }
@@ -132,7 +138,7 @@ private struct CalendarBoardWindowNavigationControl: View {
                 .fill(Color.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 9)
-                        .stroke(Theme.borderSubtle.opacity(0.18), lineWidth: 1)
+                        .stroke(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
                 )
         )
     }
@@ -170,39 +176,9 @@ private struct CalendarToolbarZoomControl: View {
                 .fill(Color.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 9)
-                        .stroke(Theme.borderSubtle.opacity(0.18), lineWidth: 1)
+                        .stroke(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
                 )
         )
-    }
-}
-
-private struct CalendarGhostButton: View {
-    let title: String
-    let systemImage: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 10, weight: .semibold))
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-            }
-            .foregroundStyle(Theme.blue)
-            .frame(minHeight: 28)
-            .padding(.horizontal, 12)
-            .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 9)
-                    .fill(Theme.blue.opacity(0.06))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 9)
-                    .stroke(Theme.blue.opacity(0.24), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.cadencePlain)
     }
 }
 
@@ -212,23 +188,25 @@ private struct CalendarIconGhostButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(isEnabled ? Theme.dim : Theme.dim.opacity(0.32))
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-                .background(
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(Color.clear)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7)
-                        .stroke(Theme.borderSubtle.opacity(isEnabled ? 0.18 : 0.08), lineWidth: 1)
-                )
+        CadenceIconButton(
+            systemImage: systemImage,
+            accessibilityLabel: accessibilityLabel,
+            tint: Theme.blue,
+            isEnabled: isEnabled,
+            size: 24,
+            iconSize: 10,
+            action: action
+        )
+    }
+
+    private var accessibilityLabel: String {
+        switch systemImage {
+        case "minus": return "Zoom out"
+        case "plus": return "Zoom in"
+        case "chevron.left": return "Previous"
+        case "chevron.right": return "Next"
+        default: return "Calendar action"
         }
-        .buttonStyle(.cadencePlain)
-        .disabled(!isEnabled)
     }
 }
 

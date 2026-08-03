@@ -1,6 +1,19 @@
 #if os(macOS)
 import SwiftUI
 
+enum CadenceDesktopMetrics {
+    static let pageHorizontalPadding: CGFloat = 18
+    static let pageHeaderTopPadding: CGFloat = 18
+    static let pageHeaderBottomPadding: CGFloat = 12
+    static let pageTitleSize: CGFloat = 22
+    static let bodyTextSize: CGFloat = 13
+    static let secondaryTextSize: CGFloat = 12
+    static let compactControlHeight: CGFloat = 30
+    static let regularControlHeight: CGFloat = 34
+    static let controlCornerRadius: CGFloat = 8
+    static let panelCornerRadius: CGFloat = 12
+}
+
 enum CadenceActionButtonRole {
     case primary
     case secondary
@@ -35,16 +48,69 @@ enum CadenceActionButtonSize {
 
     var minHeight: CGFloat {
         switch self {
-        case .compact: 30
-        case .regular: 34
+        case .compact: CadenceDesktopMetrics.compactControlHeight
+        case .regular: CadenceDesktopMetrics.regularControlHeight
         }
     }
 
     var cornerRadius: CGFloat {
         switch self {
-        case .compact: 8
+        case .compact: CadenceDesktopMetrics.controlCornerRadius
         case .regular: 10
         }
+    }
+}
+
+struct CadenceIconButton: View {
+    let systemImage: String
+    let accessibilityLabel: String
+    var tint: Color = Theme.dim
+    var isSelected = false
+    var isEnabled = true
+    var size: CGFloat = CadenceDesktopMetrics.compactControlHeight
+    var iconSize: CGFloat = 11
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius, style: .continuous)
+
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: iconSize, weight: .semibold))
+                .foregroundStyle(isEnabled ? (isSelected ? tint : Theme.muted) : Theme.dim.opacity(0.36))
+                .frame(width: size, height: size)
+                .background(shape.fill(backgroundFill))
+                .overlay(shape.strokeBorder(borderColor, lineWidth: 1))
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .accessibilityLabel(accessibilityLabel)
+        .help(accessibilityLabel)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+    }
+
+    private var backgroundFill: Color {
+        if isSelected {
+            return tint.opacity(0.14)
+        }
+        if isHovered && isEnabled {
+            return Theme.surfaceElevated.opacity(0.9)
+        }
+        return Color.clear
+    }
+
+    private var borderColor: Color {
+        if isSelected {
+            return tint.opacity(0.28)
+        }
+        if isHovered && isEnabled {
+            return Theme.borderSubtle.opacity(0.72)
+        }
+        return Theme.borderSubtle.opacity(0.28)
     }
 }
 

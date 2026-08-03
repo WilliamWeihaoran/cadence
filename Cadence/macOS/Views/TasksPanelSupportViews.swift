@@ -726,23 +726,29 @@ struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>
 
     var body: some View {
         Button { showPicker.toggle() } label: {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                Text(selection.rawValue)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.text)
-                Image(systemName: "chevron.down")
+            HStack(spacing: 4) {
+                Image(systemName: titleIcon)
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(Theme.dim)
+
+                Text(selection.rawValue)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
             }
-            .padding(.horizontal, 10)
-            .frame(height: 32)
+            .padding(.horizontal, 7)
+            .frame(height: CadenceDesktopMetrics.compactControlHeight)
             .background(Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.cadencePlain)
+        .accessibilityLabel("\(title), \(selection.rawValue)")
+        .help("\(title): \(selection.rawValue)")
         .popover(isPresented: $showPicker) {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(availableCases, id: \.id) { value in
@@ -772,6 +778,19 @@ struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>
             .padding(.vertical, 6)
             .frame(minWidth: 170)
             .background(Theme.surfaceElevated)
+        }
+    }
+
+    private var titleIcon: String {
+        switch title {
+        case "Sort":
+            return "arrow.up.arrow.down"
+        case "Order":
+            return "arrow.up"
+        case "Group":
+            return "square.3.layers.3d"
+        default:
+            return "slider.horizontal.3"
         }
     }
 }

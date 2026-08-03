@@ -21,6 +21,8 @@
 	<string>public.app-category.productivity</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Cadence uses Calendar to show events and create, update, or delete scheduled task events when you ask it to.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Cadence uses Reminders to show your active reminders in Inbox and mark them complete when you check them off.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
