@@ -14,8 +14,8 @@ extension ModelContext {
         cancelTaskState(for: taskIDs)
 
         let descriptor = FetchDescriptor<AppTask>()
-        let tasks = ((try? fetch(descriptor)) ?? [])
-            .filter { taskIDs.contains($0.id) }
+        let allTasks = (try? fetch(descriptor)) ?? []
+        let tasks = allTasks.filter { taskIDs.contains($0.id) }
         guard !tasks.isEmpty else { return }
 
         let subtasks = ((try? fetch(FetchDescriptor<Subtask>())) ?? [])
@@ -30,15 +30,39 @@ extension ModelContext {
         }
 
         let touchedBundles = uniqueBundles(from: tasks.compactMap(\.bundle))
+        breakDanglingRecurrenceLinks(forDeleted: tasks, allTasks: allTasks)
 
         for task in tasks {
             detachRelationships(for: task)
             delete(task)
         }
 
-        deleteEmptyBundles(touchedBundles)
+        let deletedBundleIDs = deleteEmptyBundles(touchedBundles)
+        if let activeBundle = FocusManager.shared.activeBundle,
+           deletedBundleIDs.contains(activeBundle.id) {
+            FocusManager.shared.activeSession = nil
+            FocusManager.shared.reset()
+        }
         processPendingChanges()
         try? save()
+    }
+
+    /// If a deleted task was the "tip" of a recurring series (i.e. it hadn't itself spawned a
+    /// successor yet), any predecessor that recorded this task as its spawned occurrence would
+    /// otherwise believe the series already has a live next occurrence forever — even though that
+    /// occurrence no longer exists. That silently kills the series: the predecessor can never spawn
+    /// a replacement, including if it's later reopened and completed again. Clear the stale pointer
+    /// so the series can recover.
+    private func breakDanglingRecurrenceLinks(forDeleted deletedTasks: [AppTask], allTasks: [AppTask]) {
+        let deletedIDs = Set(deletedTasks.map(\.id))
+        let deletedTipIDs = Set(deletedTasks.filter { $0.recurrenceSpawnedTaskID == nil }.map(\.id))
+        guard !deletedTipIDs.isEmpty else { return }
+
+        for task in allTasks where !deletedIDs.contains(task.id) {
+            if let spawnedID = task.recurrenceSpawnedTaskID, deletedTipIDs.contains(spawnedID) {
+                task.recurrenceSpawnedTaskID = nil
+            }
+        }
     }
 
     private func cancelTaskState(for taskIDs: Set<UUID>) {
@@ -99,10 +123,14 @@ extension ModelContext {
         task.subtasks = []
     }
 
-    private func deleteEmptyBundles(_ bundles: [TaskBundle]) {
+    @discardableResult
+    private func deleteEmptyBundles(_ bundles: [TaskBundle]) -> Set<UUID> {
+        var deletedIDs = Set<UUID>()
         for bundle in bundles where (bundle.tasks ?? []).isEmpty {
+            deletedIDs.insert(bundle.id)
             delete(bundle)
         }
+        return deletedIDs
     }
 
     private func uniqueBundles(from bundles: [TaskBundle]) -> [TaskBundle] {
