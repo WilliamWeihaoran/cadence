@@ -7,6 +7,7 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
     case sync
     case dataSafety
     case calendar
+    case notifications
     case contexts
     case lists
     case tags
@@ -26,6 +27,7 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
         case .sync: return "Account & Sync"
         case .dataSafety: return "Data Safety"
         case .calendar: return "Calendar"
+        case .notifications: return "Notifications"
         case .contexts: return "Contexts"
         case .lists: return "Lists"
         case .tags: return "Tags"
@@ -51,6 +53,8 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
             return "Backups, counts, and storage."
         case .calendar:
             return "Access and linked calendars."
+        case .notifications:
+            return "Task and habit reminders."
         case .contexts:
             return "Active and archived contexts."
         case .lists:
@@ -84,6 +88,8 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
             return "Review workspace counts, local storage, backups, and restore points."
         case .calendar:
             return "Connect Apple Calendar and choose which calendar each area or project uses."
+        case .notifications:
+            return "Enable local reminders for scheduled task starts, due dates, and daily habit check-ins."
         case .contexts:
             return "Manage the top-level groups that organize areas, projects, tasks, milestones, and habits."
         case .lists:
@@ -111,6 +117,7 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
         case .sync: return "icloud.fill"
         case .dataSafety: return "externaldrive.fill.badge.timemachine"
         case .calendar: return "calendar"
+        case .notifications: return "bell.fill"
         case .contexts: return "square.stack.3d.up.fill"
         case .lists: return CadenceFeatureDestination.lists.systemImage
         case .tags: return "tag.fill"
@@ -136,6 +143,8 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
             return Theme.amber
         case .calendar:
             return Theme.purple
+        case .notifications:
+            return Theme.amber
         case .contexts:
             return Theme.red
         case .lists:

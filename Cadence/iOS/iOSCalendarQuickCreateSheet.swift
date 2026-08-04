@@ -443,6 +443,7 @@ struct iOSCalendarQuickCreateSheet: View {
             estimatedMinutes: estimatedMinutes,
             configure: configureTask
         )) != nil else { return }
+        HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
         dismiss()
     }
 

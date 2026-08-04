@@ -7,7 +7,9 @@ struct iOSSettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
     @Environment(AISettingsManager.self) private var aiSettingsManager
     @Environment(iOSCalendarManager.self) private var calendarManager
+    @Environment(NotificationManager.self) private var notificationManager
     @Environment(\.modelContext) private var modelContext
+    @AppStorage(NotificationManager.notificationsEnabledDefaultsKey) private var notificationsEnabled = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
     @AppStorage("ios.today.layoutMode") private var todayLayoutModeRaw = iPadTodayLayoutMode.focus.rawValue
@@ -136,6 +138,11 @@ struct iOSSettingsView: View {
                 )
             case .calendar:
                 CadenceSettingsStatusBadge(title: calendarManager.isAuthorized ? "Connected" : "Not connected", isActive: calendarManager.isAuthorized)
+            case .notifications:
+                CadenceSettingsStatusBadge(
+                    title: notificationManager.isAuthorized && notificationsEnabled ? "Enabled" : "Off",
+                    isActive: notificationManager.isAuthorized && notificationsEnabled
+                )
             case .organization:
                 CadenceSettingsStatusBadge(title: "\(activeContextCount) contexts", isActive: activeContextCount > 0)
             case .tags:
@@ -198,6 +205,11 @@ struct iOSSettingsView: View {
                 areas: areas,
                 projects: projects,
                 modelContext: modelContext
+            )
+        case .notifications:
+            iOSNotificationsSettingsSection(
+                notificationManager: notificationManager,
+                notificationsEnabled: $notificationsEnabled
             )
         case .organization:
             organizationSection

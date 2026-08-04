@@ -348,6 +348,8 @@ struct iOSHabitEditorSheet: View {
     @State private var contextID: UUID?
     @State private var pursuitID: UUID?
     @State private var goalID: UUID?
+    @State private var hasReminder: Bool
+    @State private var reminderMinuteOfDay: Int
 
     init(mode: iOSHabitEditorMode, onSave: @escaping (Habit) -> Void = { _ in }) {
         self.mode = mode
@@ -366,6 +368,8 @@ struct iOSHabitEditorSheet: View {
             _contextID = State(initialValue: habit.context?.id)
             _pursuitID = State(initialValue: habit.pursuit?.id)
             _goalID = State(initialValue: habit.goal?.id)
+            _hasReminder = State(initialValue: habit.reminderMinuteOfDay != nil)
+            _reminderMinuteOfDay = State(initialValue: habit.reminderMinuteOfDay ?? 9 * 60)
         case .new(let pursuit):
             _title = State(initialValue: "")
             _icon = State(initialValue: "star.fill")
@@ -377,6 +381,8 @@ struct iOSHabitEditorSheet: View {
             _contextID = State(initialValue: pursuit?.context?.id)
             _pursuitID = State(initialValue: pursuit?.id)
             _goalID = State(initialValue: nil)
+            _hasReminder = State(initialValue: false)
+            _reminderMinuteOfDay = State(initialValue: 9 * 60)
         }
     }
 
@@ -414,6 +420,23 @@ struct iOSHabitEditorSheet: View {
 
     private var canSave: Bool {
         PursuitAssignmentRules.canSaveHabit(title: title, pursuitID: pursuitID)
+    }
+
+    private var reminderTimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                Calendar.current.date(
+                    bySettingHour: reminderMinuteOfDay / 60,
+                    minute: reminderMinuteOfDay % 60,
+                    second: 0,
+                    of: Date()
+                ) ?? Date()
+            },
+            set: { newDate in
+                let comps = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                reminderMinuteOfDay = ((comps.hour ?? 9) * 60) + (comps.minute ?? 0)
+            }
+        )
     }
 
     var body: some View {
@@ -479,6 +502,20 @@ struct iOSHabitEditorSheet: View {
                 .padding(.top, 10)
             }
 
+            iOSTrackingPickerSection(title: "Reminder") {
+                Toggle("Remind me daily", isOn: $hasReminder)
+                if hasReminder {
+                    DatePicker(
+                        "Reminder time",
+                        selection: reminderTimeBinding,
+                        displayedComponents: .hourAndMinute
+                    )
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
+                    .padding(.top, 8)
+                }
+            }
+
             iOSTrackingPickerSection(title: "Icon") {
                 iOSTrackingIconGrid(selection: $icon)
             }
@@ -506,6 +543,9 @@ struct iOSHabitEditorSheet: View {
             allHabits: allHabits,
             modelContext: modelContext
         ) else { return }
+        habit.reminderMinuteOfDay = hasReminder ? reminderMinuteOfDay : nil
+        try? modelContext.save()
+        HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
         onSave(habit)
         dismiss()
     }

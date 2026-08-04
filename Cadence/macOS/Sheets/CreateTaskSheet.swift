@@ -362,6 +362,9 @@ struct CreateTaskSheet: View {
         guard TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: modelContext) != nil else {
             return
         }
+        // Fast-path reconcile so a newly-created scheduled/due task's notification is picked up
+        // immediately, instead of waiting for the next scenePhase checkpoint.
+        HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
 
         if let successAction {
             successAction()

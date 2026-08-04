@@ -26,6 +26,8 @@ struct iOSRootView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
+    @Query private var allTasksForNotifications: [AppTask]
+    @Query private var allHabitsForNotifications: [Habit]
     @State private var selection: iOSSidebarItem? = .today
     @State private var compactTabSelection: iOSRootTab = .today
     @State private var compactMorePath: [CadenceFeatureDestination] = []
@@ -57,6 +59,9 @@ struct iOSRootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active {
                 CadenceWidgetRefreshCenter.reloadAllWidgets()
+                let tasks = allTasksForNotifications
+                let habits = allHabitsForNotifications
+                Task { await NotificationManager.shared.reconcile(tasks: tasks, habits: habits) }
             }
         }
     }

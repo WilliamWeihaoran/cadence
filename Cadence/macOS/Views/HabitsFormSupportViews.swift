@@ -11,6 +11,8 @@ struct HabitFormFields: View {
     @Binding var monthlyDay: Int
     @Binding var selectedContextID: UUID?
     @Binding var selectedPursuitID: UUID?
+    @Binding var hasReminder: Bool
+    @Binding var reminderMinuteOfDay: Int
 
     let contexts: [Context]
     let pursuits: [Pursuit]
@@ -57,6 +59,13 @@ struct HabitFormFields: View {
             HabitFrequencyPicker(selection: $frequencyType, tintHex: selectedColor)
 
             frequencyDetails
+
+            HabitFormLabel("Reminder")
+            HabitReminderPicker(
+                hasReminder: $hasReminder,
+                reminderMinuteOfDay: $reminderMinuteOfDay,
+                tintHex: selectedColor
+            )
         }
     }
 
@@ -272,6 +281,67 @@ private struct HabitNumberStepper: View {
         }
         .buttonStyle(.cadencePlain)
         .disabled(isDisabled)
+    }
+}
+
+/// Daily reminder time-of-day toggle + picker. Setting a time IS the per-habit reminder opt-in —
+/// there's no separate enabled flag on the model, `reminderMinuteOfDay == nil` means "off."
+private struct HabitReminderPicker: View {
+    @Binding var hasReminder: Bool
+    @Binding var reminderMinuteOfDay: Int
+    let tintHex: String
+
+    private var reminderDate: Binding<Date> {
+        Binding(
+            get: {
+                Calendar.current.date(
+                    bySettingHour: reminderMinuteOfDay / 60,
+                    minute: reminderMinuteOfDay % 60,
+                    second: 0,
+                    of: Date()
+                ) ?? Date()
+            },
+            set: { newDate in
+                let comps = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                reminderMinuteOfDay = ((comps.hour ?? 9) * 60) + (comps.minute ?? 0)
+            }
+        )
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Remind me")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text("A daily local notification at this time.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                }
+                Spacer()
+                Toggle("", isOn: $hasReminder)
+                    .labelsHidden()
+                    .tint(Color(hex: tintHex))
+            }
+
+            if hasReminder {
+                Divider()
+                    .background(Theme.borderSubtle)
+                    .padding(.vertical, 10)
+                DatePicker(
+                    "Reminder time",
+                    selection: reminderDate,
+                    displayedComponents: .hourAndMinute
+                )
+                .labelsHidden()
+                .datePickerStyle(.field)
+            }
+        }
+        .padding(12)
+        .background(Theme.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
     }
 }
 
