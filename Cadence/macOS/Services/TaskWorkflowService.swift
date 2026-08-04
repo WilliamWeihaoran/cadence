@@ -19,6 +19,10 @@ enum TaskWorkflowService {
         CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: context)
     }
 
+    static func markCancelled(_ task: AppTask, in context: ModelContext) {
+        CadenceTaskRecurrenceWorkflowSupport.markCancelled(task, in: context)
+    }
+
     static func markTodo(_ task: AppTask) {
         CadenceTaskRecurrenceWorkflowSupport.markTodo(task)
     }

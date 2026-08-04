@@ -262,7 +262,7 @@ struct CalendarBehaviorRegressionTests {
         let context = ModelContext(container)
         let task = AppTask(title: "Daily review")
         task.recurrenceRule = .daily
-        task.scheduledDate = "2026-06-08"
+        task.scheduledDate = DateFormatters.todayKey()
         task.scheduledStartMin = 540
         context.insert(task)
 
@@ -274,11 +274,15 @@ struct CalendarBehaviorRegressionTests {
         let tasks = try context.fetch(descriptor)
         let next = try #require(tasks.first { $0.id == spawnedID })
 
+        let expectedNextDate = DateFormatters.dateKey(
+            from: Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+        )
+
         #expect(task.recurrenceSeriesID == task.id)
         #expect(next.recurrenceSeriesID == task.recurrenceSeriesID)
         #expect(next.recurrenceSourceTaskID == task.id)
         #expect(next.recurrenceOccurrenceIndex == 1)
-        #expect(next.scheduledDate == "2026-06-09")
+        #expect(next.scheduledDate == expectedNextDate)
     }
 
     @Test func recurrenceRuleScopeCanTargetOnlyCurrentOrFutureTasks() {

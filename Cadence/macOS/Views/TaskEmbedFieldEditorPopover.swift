@@ -316,8 +316,7 @@ struct TaskEmbedFieldEditorPopover: View {
             task.completedAt = nil
             task.status = .inProgress
         case .cancelled:
-            task.completedAt = nil
-            task.status = .cancelled
+            TaskWorkflowService.markCancelled(task, in: modelContext)
         }
         persist()
     }

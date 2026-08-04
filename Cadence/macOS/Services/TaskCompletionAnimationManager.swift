@@ -133,7 +133,11 @@ final class TaskCompletionAnimationManager {
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
-                    task.status = .cancelled
+                    if let context = self.modelContext {
+                        TaskWorkflowService.markCancelled(task, in: context)
+                    } else {
+                        task.status = .cancelled
+                    }
                 }
             }
         }

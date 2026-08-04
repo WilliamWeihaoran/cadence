@@ -403,7 +403,9 @@ enum CadenceTaskMutationSupport {
         switch status {
         case .done:
             CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
-        case .todo, .inProgress, .cancelled:
+        case .cancelled:
+            CadenceTaskRecurrenceWorkflowSupport.markCancelled(task, in: modelContext)
+        case .todo, .inProgress:
             task.status = status
             task.completedAt = nil
         }
@@ -831,20 +833,31 @@ enum CadenceTaskRecurrenceEditScope: String, CaseIterable, Hashable {
 }
 
 enum CadenceTaskRecurrenceWorkflowSupport {
-    static func markDone(_ task: AppTask, in context: ModelContext) {
-        task.completedAt = Date()
+    static func markDone(_ task: AppTask, in context: ModelContext, now: Date = Date()) {
+        task.completedAt = now
         task.status = .done
+        spawnNextOccurrenceIfNeeded(from: task, in: context, now: now)
+    }
 
-        guard task.isRecurring, task.recurrenceSpawnedTaskID == nil else { return }
-        ensureRecurrenceSeriesMetadata(for: task)
-        let nextTask = makeNextRecurringTask(from: task)
-        context.insert(nextTask)
-        task.recurrenceSpawnedTaskID = nextTask.id
+    /// Cancelling a single occurrence skips it, but the recurring series must keep going —
+    /// otherwise the whole future series silently dies the first time anyone cancels instead of completes.
+    static func markCancelled(_ task: AppTask, in context: ModelContext, now: Date = Date()) {
+        task.completedAt = nil
+        task.status = .cancelled
+        spawnNextOccurrenceIfNeeded(from: task, in: context, now: now)
     }
 
     static func markTodo(_ task: AppTask) {
         task.completedAt = nil
         task.status = .todo
+    }
+
+    private static func spawnNextOccurrenceIfNeeded(from task: AppTask, in context: ModelContext, now: Date) {
+        guard task.isRecurring, task.recurrenceSpawnedTaskID == nil else { return }
+        ensureRecurrenceSeriesMetadata(for: task)
+        let nextTask = makeNextRecurringTask(from: task, now: now)
+        context.insert(nextTask)
+        task.recurrenceSpawnedTaskID = nextTask.id
     }
 
     static func ensureRecurrenceSeriesMetadata(for task: AppTask) {
@@ -906,7 +919,7 @@ enum CadenceTaskRecurrenceWorkflowSupport {
         }
     }
 
-    private static func makeNextRecurringTask(from task: AppTask) -> AppTask {
+    private static func makeNextRecurringTask(from task: AppTask, now: Date) -> AppTask {
         let nextTask = AppTask(title: task.title)
         nextTask.notes = task.notes
         nextTask.priority = task.priority
@@ -916,15 +929,17 @@ enum CadenceTaskRecurrenceWorkflowSupport {
         nextTask.area = task.area
         nextTask.project = task.project
         nextTask.context = task.context
+        nextTask.goal = task.goal
         nextTask.recurrenceSeriesIDRaw = task.recurrenceSeriesID.uuidString
         nextTask.recurrenceSourceTaskID = task.id
         nextTask.recurrenceOccurrenceIndex = task.recurrenceOccurrenceIndex + 1
 
+        let todayKey = DateFormatters.dateKey(from: now)
         if !task.dueDate.isEmpty {
-            nextTask.dueDate = shiftedDateKey(task.dueDate, recurrence: task.recurrenceRule) ?? task.dueDate
+            nextTask.dueDate = nextRecurrenceDateKey(from: task.dueDate, todayKey: todayKey, recurrence: task.recurrenceRule) ?? task.dueDate
         }
         if !task.scheduledDate.isEmpty {
-            nextTask.scheduledDate = shiftedDateKey(task.scheduledDate, recurrence: task.recurrenceRule) ?? task.scheduledDate
+            nextTask.scheduledDate = nextRecurrenceDateKey(from: task.scheduledDate, todayKey: todayKey, recurrence: task.recurrenceRule) ?? task.scheduledDate
             nextTask.scheduledStartMin = task.scheduledStartMin
         }
 
@@ -955,6 +970,16 @@ enum CadenceTaskRecurrenceWorkflowSupport {
             task.createdAt.ISO8601Format(),
             task.id.uuidString
         ].joined(separator: "|")
+    }
+
+    /// Shifts one recurrence period forward from whichever is later: the occurrence's own date or today.
+    /// A daily/weekly/etc. task completed long after it was last due (e.g. a week-stale daily task)
+    /// should catch up to today rather than advancing by one period from its stale date, which would
+    /// just produce another still-overdue occurrence.
+    private static func nextRecurrenceDateKey(from key: String, todayKey: String, recurrence: TaskRecurrenceRule) -> String? {
+        guard recurrence != .none else { return nil }
+        let anchorKey = max(key, todayKey)
+        return shiftedDateKey(anchorKey, recurrence: recurrence)
     }
 
     private static func shiftedDateKey(_ key: String, recurrence: TaskRecurrenceRule) -> String? {
