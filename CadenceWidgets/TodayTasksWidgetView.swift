@@ -108,13 +108,14 @@ struct TodayTasksWidgetView: View {
                         .frame(width: 132)
                 }
 
-                taskStackCard(
-                    title: "Actionable queue",
-                    subtitle: queueSubtitle,
-                    tasks: Array(entry.snapshot.tasks.prefix(6))
-                )
-
-                footerBar(label: "Open Today")
+                let queueTasks = Array(entry.snapshot.tasks.dropFirst().prefix(1))
+                if !queueTasks.isEmpty {
+                    taskStackCard(
+                        title: "Actionable queue",
+                        subtitle: queueSubtitle,
+                        tasks: queueTasks
+                    )
+                }
             }
         }
         .padding(scale.outerPadding)

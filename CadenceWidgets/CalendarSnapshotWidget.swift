@@ -132,7 +132,7 @@ struct CalendarSnapshotWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                dayStrip(days: Array(entry.snapshot.days.prefix(4)), compact: true)
+                dayStrip(days: Array(entry.snapshot.days.prefix(3)), compact: true)
                 agendaLabel
             }
         }
@@ -166,16 +166,13 @@ struct CalendarSnapshotWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                HStack(alignment: .top, spacing: scale.sectionSpacing) {
-                    twoWeekGrid(days: Array(entry.snapshot.days.prefix(14)))
-                    VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
-                        CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)")
-                        CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)")
-                        CadenceWidgetMetricCard(title: "Due", value: "\(dueCount)")
-                        footerLink
-                    }
-                    .frame(width: 110)
+                twoWeekGrid(days: Array(entry.snapshot.days.prefix(14)))
+                HStack(spacing: scale.compactSectionSpacing) {
+                    CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)")
+                    CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)")
+                    CadenceWidgetMetricCard(title: "Due", value: "\(dueCount)")
                 }
+                footerLink
             }
         }
         .padding(scale.outerPadding)
@@ -246,15 +243,22 @@ struct CalendarSnapshotWidgetView: View {
             Text(day.weekdayLabel)
                 .font(.system(size: scale.captionFontSize, weight: .semibold))
                 .foregroundStyle(day.isToday ? Color(red: 0.48, green: 0.77, blue: 1.0) : .white.opacity(0.58))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
 
             Text(day.dayNumberLabel)
                 .font(.system(size: compact ? scale.metricValueSize : scale.metricValueSize + 1, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .monospacedDigit()
 
             if day.totalCount == 0 {
                 Text("clear")
                     .font(.system(size: scale.captionFontSize, weight: .medium))
                     .foregroundStyle(.white.opacity(0.5))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             } else {
                 VStack(alignment: .leading, spacing: compact ? 3 : 4) {
                     if day.dueCount > 0 {
