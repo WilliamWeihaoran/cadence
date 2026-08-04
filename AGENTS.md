@@ -4,7 +4,7 @@ This file is the first stop for coding agents. `CLAUDE.md` has a longer product 
 
 ## Project Snapshot
 
-Cadence is a native SwiftUI productivity app with a fully built macOS surface, shared SwiftData models, CloudKit sync, Apple Calendar/EventKit integration, and early/stub iOS views.
+Cadence is a native SwiftUI productivity app with a fully built macOS surface, shared SwiftData models, CloudKit sync, Apple Calendar/EventKit integration, and a large, actively-developed iOS/iPadOS surface (not a stub — see `Cadence/iOS/AGENTS.md`).
 
 Primary target:
 - `Cadence.xcodeproj`
@@ -27,7 +27,7 @@ Useful build command:
 - `Cadence/macOS/Views/` - macOS feature screens and support views.
 - `Cadence/macOS/Services/` - macOS-only managers for focus, calendar, hotkeys, task creation, hover state, deletion, scheduling.
 - `Cadence/macOS/Editor/` - AppKit-backed markdown editor. High risk; preserve NSTextView behavior carefully.
-- `Cadence/iOS/` - mostly stub/early UI. Do not assume feature parity with macOS.
+- `Cadence/iOS/` - large, real iOS/iPadOS surface (~55 files: Today, Calendar, Tasks, Focus, Goals/Pursuits, Habits, Notes, Lists, Search, Settings). Do not assume feature parity with macOS.
 - `CadenceMCPServer/` and `plugins/cadence-mcp/` - MCP server/plugin surfaces. Treat as separate integration boundaries.
 - `CadenceTests/`, `CadenceUITests/` - test targets.
 
@@ -39,7 +39,7 @@ Read the nearest scoped `AGENTS.md` before editing under that tree:
 - `Cadence/Models/AGENTS.md` - SwiftData relationship and persistence rules.
 - `Cadence/Services/AGENTS.md` - service/migration boundaries.
 - `Cadence/Shared/AGENTS.md` - shared UI/utilities rules.
-- `Cadence/iOS/AGENTS.md` - iOS stub boundary.
+- `Cadence/iOS/AGENTS.md` - iOS surface boundary (large, real UI — not a stub; parity with macOS is not guaranteed).
 - `Cadence/macOS/AGENTS.md` - macOS feature architecture.
 - `Cadence/macOS/Services/AGENTS.md` - macOS manager/service boundaries.
 - `Cadence/macOS/Editor/AGENTS.md` - AppKit-backed markdown editor cautions.
@@ -53,7 +53,7 @@ Do not add an agent guide to every folder by default. Add one when a subtree has
 - All persisted dates are `yyyy-MM-dd` strings unless an existing model says otherwise.
 - Use `DateFormatters` and `TimeFormatters`; do not create ad hoc `DateFormatter()` instances in views.
 - SwiftData/CloudKit to-many relationships must be optional arrays (`[Type]?`). Read optional relationships with `?? []`, and append by assigning a new array.
-- macOS is the real app surface; iOS is not feature-complete.
+- macOS is the primary, most fully-featured app surface; iOS is large and actively developed but not guaranteed to be at full feature parity.
 - Keep SwiftUI view roots thin. Prefer dedicated subview structs and support files over long computed `some View` fragments.
 - Preserve shared hover behavior. Do not turn task/event/bundle hover states gray; preserve original color and use brightness/lift style treatments from shared hover helpers.
 - Avoid broad refactors in markdown editor files unless you are intentionally working on editor behavior.

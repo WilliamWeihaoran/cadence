@@ -12,14 +12,14 @@ The user does not write code. Claude handles all implementation. When something 
 ## Tech Stack
 - SwiftUI + SwiftData (no UIKit, no third-party dependencies)
 - CloudKit sync via SwiftData (`cloudKitDatabase: .private("iCloud.com.haoranwei.Cadence")`)
-- Targets: macOS (fully built), iOS/iPadOS (stub — "coming soon"), watchOS (not started)
-- Apple Calendar integration via `CalendarManager.swift` (EventKit). Apple Reminders: not implemented.
+- Targets: macOS (fully built, primary surface), iOS/iPadOS (large, actively-developed surface — see "What's Built (iOS)"), watchOS (not started)
+- Apple Calendar integration via `CalendarManager.swift` (EventKit). Apple Reminders integration via `RemindersManager.swift` (EventKit reminders).
 - Bundle ID: `com.haoranwei.Cadence`
 - Deployment: TestFlight for personal use
 
 ## Platform Strategy
-- **macOS**: purpose-built sidebar + multi-column layout (`macOS/`). Fully featured.
-- **iOS + iPadOS**: stub only (`iOS/iOSRootView.swift` shows "coming soon"). No views built yet.
+- **macOS**: purpose-built sidebar + multi-column layout (`macOS/`). Fully featured, the primary product surface.
+- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, ~55 files), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a `TabView` shell on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals/Milestones/Pursuits, Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
 - **watchOS**: not started
 - Use `#if os(macOS)` / `#if os(iOS)` for platform-specific branches
 
@@ -53,8 +53,8 @@ Cadence/
 │       ├── EmptyStateView.swift     # Reusable empty state (message, subtitle, icon)
 │       ├── FilterPill.swift         # Tappable filter tag pill
 │       └── StatCard.swift           # Tinted stat card (label, value, color, icon)
-├── iOS/
-│   └── iOSRootView.swift          # Stub — "coming soon" placeholder
+├── iOS/                          # Large adaptive iOS/iPadOS surface (~55 files) — see "What's Built (iOS)" below
+│   └── iOSRootView.swift          # Adaptive root shell: iPad regular-width sidebar shell + compact TabView shell; deep links, widget-refresh on scenePhase change
 └── macOS/
     ├── macOSRootView.swift        # Root shell/state; delegates command routing, overlays, lifecycle, and shell fragments to support files
     ├── CadenceCalendarPicker.swift  # macOS-specific calendar date picker variant
@@ -141,9 +141,20 @@ Several large macOS surfaces are now intentionally split into companion support 
 ## Data Models
 All SwiftData `@Model` classes. **Critical CloudKit rule: all to-many relationships must be optional arrays (`[Type]?`).**
 
+> This list is not exhaustive of every model in `Cadence/Models/` — `Pursuit` and `TaskBundle` are included below since they're directly relevant to calendar/scheduling work, but `Note`/`Tag` (which appear to consolidate/supersede `DailyNote`/`WeeklyNote`/`PermNote`/`Document` and add tagging) haven't had a full documentation pass yet. Check `Cadence/Models/` directly rather than assuming this list is complete.
+
 ```
 Context:   id, name, colorHex, icon, order
            → areas:[Area]?, projects:[Project]?, tasks:[AppTask]?, goals:[Goal]?, habits:[Habit]?
+
+Pursuit:   id, title, desc, icon, colorHex, kind("ongoing"|...), status("active"|...), order, createdAt
+           → context:Context?, goals:[Goal]?, habits:[Habit]?
+           (directional effort under a Context; holds milestones/recurring habits)
+
+TaskBundle: id, title, dateKey(yyyy-MM-dd), startMin, durationMinutes, createdAt
+           → tasks:[AppTask]? (nullify delete rule)
+           computed: displayTitle, endMin, sortedTasks
+           (groups multiple tasks into one timeline block)
 
 Area:      id, name, desc, status("active"|"done"|"archived"), colorHex, icon, order, linkedCalendarID, hideDueDateIfEmpty,
            hideSectionDueDateIfEmpty (hides Kanban column due date UI when the column has no due date)
@@ -173,8 +184,9 @@ AppTask:   id, title, notes, priority("none"|"low"|"medium"|"high"),
 Subtask:   id, title, isDone, order, createdAt → parentTask:AppTask?
 
 Habit:     id, title, icon, colorHex, frequencyType("daily"|"daysOfWeek"|"timesPerWeek"|"monthly"),
-           frequencyDaysRaw(JSON [Int]), targetCount, order, createdAt
-           → context:Context?, completions:[HabitCompletion]?
+           frequencyDaysRaw(JSON [Int]), targetCount, order, createdAt,
+           reminderMinuteOfDay(Int?, minutes-from-midnight; nil = no daily reminder set)
+           → context:Context?, pursuit:Pursuit?, goal:Goal?, completions:[HabitCompletion]?
            computed: frequencyDays (JSON get/set), currentStreak
 
 HabitCompletion: id, date(yyyy-MM-dd), count, createdAt → habit:Habit?
@@ -426,7 +438,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Timeline drag-to-reposition existing tasks (with grab-offset preserved)
 - [x] Unscheduled task drop preview on timeline (shows block before release)
 - [x] Calendar page view: Week / 2-Week / Month modes, infinite scroll
-- [x] Month view (scroll/header edge cases may still need attention)
+- [x] Month view: Week / 2-Week / Month modes, infinite scroll; header-sync race conditions and window-boundary clamping fixed (shared `CalendarMonthGridMetrics`, settle-delay-guarded scroll sync in `CalendarMonthGridInteractionSupport`)
 - [x] Remembered scroll position for Today timeline and calendar
 - [x] Goals view: Gantt-style timeline, 2W/Month/Quarter/Year/5Y scales
 - [x] Habits: list, detail, 52-week heatmap, streak tracking, create sheet
@@ -455,11 +467,28 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Multiple dark themes selectable in Settings
 - [x] CloudKit sync
 - [x] Category-based Settings shell with contexts reordering, calendar linking, sidebar tab visibility, and archived/completed list management
+- [x] Local notification scheduling (iOS + macOS): task scheduled-start and due-date reminders, plus daily habit reminders (`Habit.reminderMinuteOfDay`). Excludes Apple Calendar/EventKit events (those already have native OS alarms). See "Notifications" below for the reconciliation-based design — this is **not** an imperative schedule-on-every-mutation system, so don't assume every task/habit mutation site needs an explicit notification hook.
+- [x] Widget extensions (`CadenceWidgets` target): calendar/today/habit/milestone widgets with app-intent support and a refresh checkpoint (`CadenceWidgetRefreshCenter`) triggered on scenePhase changes — not documented further here yet; check `Cadence/Services/Cadence*WidgetSupport.swift` and `CadenceWidgets/` directly
+
+## What's Built (iOS)
+`Cadence/iOS/` is a large, actively-developed surface (~55 files), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), tab-bar shell on compact width — covering:
+- [x] Today (`iPadTodayView` + compact/schedule/support variants)
+- [x] Tasks (task rows/detail, All Tasks compact view, Inbox)
+- [x] Calendar (EventKit-backed via `iOSCalendarManager`): board view, month/timeline views, event edit/quick-create sheets, inspector
+- [x] Focus timer
+- [x] Goals/Milestones/Pursuits
+- [x] Habits
+- [x] Notes with its own markdown editor stack (styling, preview, slash commands, task/wiki references)
+- [x] Lists (Area/Project detail, editors)
+- [x] Search
+- [x] Settings (including the new Notifications category)
+- [x] Notification scheduling wiring (see "What's Built (macOS)" above — shared logic, not iOS-specific)
+
+Not guaranteed to have full feature parity with macOS by design — check the actual view file before assuming a macOS feature exists on iOS.
+
+## Notifications
+Local notification scheduling (`Cadence/Services/NotificationScheduling.swift` + `NotificationManager.swift`) uses **stateless reconciliation**, not imperative schedule-on-mutation: a pure planner computes the desired notification set from current SwiftData state (tasks with a future scheduled-start/due date, habits with `reminderMinuteOfDay` set), and `NotificationManager.reconcile(tasks:habits:)` diffs that against what's actually pending and converges. This mirrors `CadenceWidgetRefreshCenter`'s existing pattern. Reconciliation runs from the `scenePhase` checkpoint in both root views (safety net) plus fast-path calls at task/habit create, complete/cancel/reopen, and delete for instant feedback. Authorization is requested from exactly one place — the Settings → Notifications section — never at cold launch. A single global `@AppStorage("notificationsEnabled")` toggle controls all reminders; there's no per-notification-type or per-item toggle beyond "task has a date" / "habit has a reminder time set."
 
 ## What's Not Built Yet
-- [ ] iOS app (stub only)
 - [ ] watchOS target
-- [ ] Apple Reminders integration
-- [ ] Notification scheduling
-- [ ] Widget extensions
-- [ ] WeeklyNote / PermNote UI (models exist, no views yet)
+- [ ] WeeklyNote / PermNote UI (unclear if still current — `Note`/`Tag` models may have superseded `DailyNote`/`WeeklyNote`/`PermNote`/`Document`; needs a dedicated doc pass, see note in "Data Models" above)
