@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 #if os(macOS)
 import SwiftUI
@@ -294,6 +295,70 @@ struct TimelineMetricsTests {
         #expect(result.tasks.count == 1)
         #expect(result.tasks[0].column == 0)
         #expect(result.tasks[0].totalColumns == 1)
+    }
+
+    // MARK: - 8. Repositioning an existing scheduled task across a day boundary
+
+    @Test func droppingScheduledTaskOnADifferentDayColumnUpdatesBothDateAndStartMinute() throws {
+        // Simulates dragging a task block from one day column to another in the
+        // Week/2W calendar view: `CalDayColumn.onDropTaskAtMinute` forwards straight
+        // to `SchedulingActions.dropTask(task, to: <target column's dateKey>, startMin:)`.
+        // The task must land on the *new* day, not just move within its original day.
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Write report")
+        task.scheduledDate = "2026-06-01"
+        task.scheduledStartMin = 540 // 9:00 AM on the 1st
+        task.estimatedMinutes = 45
+        context.insert(task)
+
+        // Dropped onto the Wednesday (6/3) column at a new time.
+        SchedulingActions.dropTask(task, to: "2026-06-03", startMin: 780)
+
+        #expect(task.scheduledDate == "2026-06-03")
+        #expect(task.scheduledDate != "2026-06-01")
+        #expect(task.scheduledStartMin == 780)
+        // Duration/estimate must be preserved across the move — only the slot changes.
+        #expect(task.estimatedMinutes == 45)
+    }
+
+    @Test func droppingTaskNearMidnightOnANewDayClampsStartMinuteWithoutCrossingIntoTheFollowingDay() throws {
+        // A drop very close to the bottom of the target day's timeline must clamp to a
+        // valid in-range minute for *that* day rather than silently rolling into day+1.
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Late task")
+        task.scheduledDate = "2026-06-01"
+        task.scheduledStartMin = 60
+        task.estimatedMinutes = 30
+        context.insert(task)
+
+        SchedulingActions.dropTask(task, to: "2026-06-02", startMin: 1438)
+
+        #expect(task.scheduledDate == "2026-06-02")
+        #expect(task.scheduledStartMin < 1440)
+        #expect(task.scheduledStartMin >= 0)
+    }
+
+    @Test func droppingABundledTaskOntoAnotherDayColumnMovesItAndClearsBundleMembership() throws {
+        // Cross-day reposition must also detach the task from any bundle it was part
+        // of on the origin day — otherwise it would visually move while the bundle
+        // (still pinned to the old day) kept a stale reference to it.
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Bundled follow-up")
+        let bundle = TaskBundle(title: "Morning sweep", dateKey: "2026-06-01", startMin: 540, durationMinutes: 30)
+        context.insert(task)
+        context.insert(bundle)
+        SchedulingActions.addTask(task, to: bundle)
+        #expect(task.scheduledDate == "2026-06-01")
+
+        SchedulingActions.dropTask(task, to: "2026-06-05", startMin: 900)
+
+        #expect(task.bundle == nil)
+        #expect(bundle.sortedTasks.isEmpty)
+        #expect(task.scheduledDate == "2026-06-05")
+        #expect(task.scheduledStartMin == 900)
     }
 }
 #endif
