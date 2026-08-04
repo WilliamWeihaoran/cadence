@@ -221,7 +221,7 @@ struct iOSCalendarView: View {
                         Divider().background(Theme.borderSubtle)
 
                         dayInspector
-                            .frame(width: regularInspectorWidth(for: proxy.size.width))
+                            .frame(width: regularInspectorWidth(for: proxy.size.width), height: proxy.size.height)
                     }
                 }
             }

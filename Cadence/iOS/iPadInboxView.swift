@@ -168,7 +168,7 @@ private struct iPadInboxStatusPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: "Workspace", title: "Inbox")
+            iOSPanelHeader(eyebrow: "Workspace", title: "Overview")
 
             Divider().background(Theme.borderSubtle)
 

@@ -126,8 +126,8 @@ struct iOSListsView: View {
             } else {
                 iOSEmptyPanel(
                     systemImage: "folder",
-                    title: "No active lists",
-                    subtitle: "Create an area or project to start organizing tasks."
+                    title: "Nothing to show yet",
+                    subtitle: "Once you add an area or project, it'll open here."
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Theme.bg)
