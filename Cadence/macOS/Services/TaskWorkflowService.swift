@@ -17,14 +17,23 @@ enum TaskRecurrenceEditScope: String, CaseIterable, Hashable {
 enum TaskWorkflowService {
     static func markDone(_ task: AppTask, in context: ModelContext) {
         CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: context)
+        // Fast-path reconcile so a just-completed task's pending "starting now"/"due today"
+        // notification is promptly cleared — a stale nudge firing after completion would be a
+        // visibly broken behavior. The scenePhase checkpoint is the correctness safety net for
+        // any site that doesn't call this.
+        HabitNotificationReconcileSupport.scheduleReconcile(in: context)
     }
 
     static func markCancelled(_ task: AppTask, in context: ModelContext) {
         CadenceTaskRecurrenceWorkflowSupport.markCancelled(task, in: context)
+        HabitNotificationReconcileSupport.scheduleReconcile(in: context)
     }
 
     static func markTodo(_ task: AppTask) {
         CadenceTaskRecurrenceWorkflowSupport.markTodo(task)
+        if let context = task.modelContext {
+            HabitNotificationReconcileSupport.scheduleReconcile(in: context)
+        }
     }
 
     static func ensureRecurrenceSeriesMetadata(for task: AppTask) {

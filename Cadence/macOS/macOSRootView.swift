@@ -36,6 +36,8 @@ struct macOSRootView: View {
     @Environment(CalendarNavigationManager.self) private var calendarNavigationManager
     @Environment(TaskSubtaskEntryManager.self) private var taskSubtaskEntryManager
     @Environment(\.modelContext) private var modelContext
+    @Query private var allTasksForNotifications: [AppTask]
+    @Query private var allHabitsForNotifications: [Habit]
     @State private var activeModelContext: ModelContext?
     @State private var dataRefreshID = UUID()
     @State private var mcpRefreshCoordinator = CadenceMCPRefreshCoordinator()
@@ -113,6 +115,9 @@ struct macOSRootView: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else {
                 CadenceWidgetRefreshCenter.reloadAllWidgets()
+                let tasks = allTasksForNotifications
+                let habits = allHabitsForNotifications
+                Task { await NotificationManager.shared.reconcile(tasks: tasks, habits: habits) }
                 return
             }
             if hasPendingExternalDataRefresh || mcpRefreshCoordinator.shouldRefreshForCurrentMarker() {

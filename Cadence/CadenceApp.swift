@@ -12,6 +12,10 @@ struct CadenceApp: App {
 #if os(macOS)
         CadenceRemoteNotificationRegistrar.registerIfNeeded()
 #endif
+        // Touch the singleton now so its init runs and registers the UNUserNotificationCenterDelegate
+        // early. Deliberately does NOT call requestAuthorization() here — that stays gated behind an
+        // explicit Settings button so there's no jarring cold-launch permission prompt.
+        _ = NotificationManager.shared
         sharedModelContainer = PersistenceController.shared.container
     }
 
@@ -23,6 +27,7 @@ struct CadenceApp: App {
                 .environment(CadenceDeepLinkManager.shared)
                 .environment(CalendarManager.shared)
                 .environment(RemindersManager.shared)
+                .environment(NotificationManager.shared)
                 .environment(AISettingsManager.shared)
                 .environment(AppleAccountManager.shared)
                 .environment(FocusManager.shared)
@@ -47,6 +52,7 @@ struct CadenceApp: App {
                 .environment(CadenceDeepLinkManager.shared)
                 .environment(AISettingsManager.shared)
                 .environment(iOSCalendarManager.shared)
+                .environment(NotificationManager.shared)
 #endif
         }
         .modelContainer(sharedModelContainer)

@@ -7,6 +7,7 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
     case sync
     case data
     case calendar
+    case notifications
     case organization
     case lists
     case tags
@@ -24,6 +25,7 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
         case .sync: return .sync
         case .data: return .dataSafety
         case .calendar: return .calendar
+        case .notifications: return .notifications
         case .organization: return .contexts
         case .lists: return .lists
         case .tags: return .tags
@@ -72,7 +74,7 @@ private struct iOSSettingsCategoryGroup: Identifiable {
         ),
         iOSSettingsCategoryGroup(
             title: "Connections",
-            categories: [.calendar, .sync, .ai]
+            categories: [.calendar, .notifications, .sync, .ai]
         ),
         iOSSettingsCategoryGroup(
             title: "Mobile",

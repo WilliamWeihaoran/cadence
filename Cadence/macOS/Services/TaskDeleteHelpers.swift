@@ -39,6 +39,9 @@ extension ModelContext {
         deleteEmptyBundles(touchedBundles)
         processPendingChanges()
         try? save()
+
+        // Cheaper than a full reconcile since we already know exactly which tasks were removed.
+        Task { await NotificationManager.shared.cancel(taskIDs: Array(taskIDs)) }
     }
 
     private func cancelTaskState(for taskIDs: Set<UUID>) {

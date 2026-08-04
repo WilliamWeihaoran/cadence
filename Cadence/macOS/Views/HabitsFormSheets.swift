@@ -19,6 +19,8 @@ struct CreateHabitSheet: View {
     @State private var selectedContextID: UUID? = nil
     @State private var selectedPursuitID: UUID? = nil
     @State private var showCreatePursuit = false
+    @State private var hasReminder = false
+    @State private var reminderMinuteOfDay = 9 * 60
 
     private let initialPursuit: Pursuit?
 
@@ -68,6 +70,8 @@ struct CreateHabitSheet: View {
                 monthlyDay: $monthlyDay,
                 selectedContextID: $selectedContextID,
                 selectedPursuitID: $selectedPursuitID,
+                hasReminder: $hasReminder,
+                reminderMinuteOfDay: $reminderMinuteOfDay,
                 contexts: allContexts,
                 pursuits: pursuitChoices,
                 onCreatePursuit: { showCreatePursuit = true }
@@ -93,8 +97,10 @@ struct CreateHabitSheet: View {
         )
         habit.assignContext(selectedContextID: selectedContextID, contexts: allContexts, fallbackPursuit: selectedPursuit)
         habit.pursuit = selectedPursuit
+        habit.reminderMinuteOfDay = hasReminder ? reminderMinuteOfDay : nil
 
         modelContext.insert(habit)
+        HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
         dismiss()
     }
 }
@@ -116,6 +122,8 @@ struct EditHabitSheet: View {
     @State private var selectedContextID: UUID?
     @State private var selectedPursuitID: UUID?
     @State private var showCreatePursuit = false
+    @State private var hasReminder: Bool
+    @State private var reminderMinuteOfDay: Int
 
     init(habit: Habit) {
         self.habit = habit
@@ -131,6 +139,8 @@ struct EditHabitSheet: View {
         _monthlyDay = State(initialValue: frequency == .monthly ? min(max(storedDays.first ?? 1, 1), 31) : 1)
         _selectedContextID = State(initialValue: habit.context?.id)
         _selectedPursuitID = State(initialValue: habit.pursuit?.id)
+        _hasReminder = State(initialValue: habit.reminderMinuteOfDay != nil)
+        _reminderMinuteOfDay = State(initialValue: habit.reminderMinuteOfDay ?? 9 * 60)
     }
 
     private var pursuitChoices: [Pursuit] {
@@ -173,6 +183,8 @@ struct EditHabitSheet: View {
                 monthlyDay: $monthlyDay,
                 selectedContextID: $selectedContextID,
                 selectedPursuitID: $selectedPursuitID,
+                hasReminder: $hasReminder,
+                reminderMinuteOfDay: $reminderMinuteOfDay,
                 contexts: allContexts,
                 pursuits: pursuitChoices,
                 onCreatePursuit: { showCreatePursuit = true }
@@ -197,6 +209,10 @@ struct EditHabitSheet: View {
         )
         habit.assignContext(selectedContextID: selectedContextID, contexts: allContexts, fallbackPursuit: selectedPursuit)
         habit.pursuit = selectedPursuit
+        habit.reminderMinuteOfDay = hasReminder ? reminderMinuteOfDay : nil
+        if let context = habit.modelContext {
+            HabitNotificationReconcileSupport.scheduleReconcile(in: context)
+        }
         dismiss()
     }
 }

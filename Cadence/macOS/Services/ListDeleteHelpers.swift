@@ -53,6 +53,13 @@ extension ModelContext {
         delete(projects)
         delete(areas)
         delete(context)
+
+        // deleteTasks(withIDs:) already cancels task notifications above; habits deleted via this
+        // context cascade need the same cheap direct cancellation for their reminder notifications.
+        let habitIDs = habits.map(\.id)
+        if !habitIDs.isEmpty {
+            Task { await NotificationManager.shared.cancel(habitIDs: habitIDs) }
+        }
     }
 
     func deleteProject(_ project: Project) {

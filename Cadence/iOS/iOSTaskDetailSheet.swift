@@ -745,10 +745,12 @@ struct iOSTaskDetailSheet: View {
             for: task,
             modelContext: modelContext
         )
+        HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
     }
 
     private func saveTask() {
         CadenceTaskMutationSupport.normalizeCompletionState(for: task, modelContext: modelContext)
+        HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
     }
 
     private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {

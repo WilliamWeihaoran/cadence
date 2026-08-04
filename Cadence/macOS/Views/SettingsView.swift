@@ -7,7 +7,9 @@ struct SettingsView: View {
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(AISettingsManager.self) private var aiSettingsManager
     @Environment(AppleAccountManager.self) private var appleAccountManager
+    @Environment(NotificationManager.self) private var notificationManager
     @Environment(\.modelContext) private var modelContext
+    @AppStorage(NotificationManager.notificationsEnabledDefaultsKey) private var notificationsEnabled = false
     @AppStorage("listDetailDefaultPage") private var listDetailDefaultPage = ListDetailPage.tasks.rawValue
     @AppStorage("sidebarHiddenTabs") private var sidebarHiddenTabsRaw = ""
     @AppStorage("sidebarTabOrder") private var sidebarTabOrderRaw = ""
@@ -124,6 +126,11 @@ struct SettingsView: View {
             switch selectedCategory {
             case .calendar:
                 SettingsStatusBadge(title: calendarManager.isAuthorized ? "Connected" : "Not connected", isActive: calendarManager.isAuthorized)
+            case .notifications:
+                SettingsStatusBadge(
+                    title: notificationManager.isAuthorized && notificationsEnabled ? "Enabled" : "Off",
+                    isActive: notificationManager.isAuthorized && notificationsEnabled
+                )
             case .account:
                 SettingsStatusBadge(title: appleAccountManager.isSignedIn ? "Signed in" : "Signed out", isActive: appleAccountManager.isSignedIn)
             case .dataSafety:
@@ -203,6 +210,11 @@ struct SettingsView: View {
                 areas: areas,
                 projects: projects,
                 modelContext: modelContext
+            )
+        case .notifications:
+            SettingsNotificationsSection(
+                notificationManager: notificationManager,
+                notificationsEnabled: $notificationsEnabled
             )
         }
     }
