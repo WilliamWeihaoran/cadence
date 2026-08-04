@@ -214,12 +214,7 @@ private struct iOSScheduleQuickCreateBar: View {
             }
         }
         .padding(10)
-        .background(Theme.surfaceElevated.opacity(0.36))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.blue.opacity(0.20), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.36), cornerRadius: Theme.radiusCard)
         .onAppear {
             isFocused = true
         }
@@ -325,13 +320,12 @@ private struct iOSScheduleBlock: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.18))
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 999, style: .continuous)
                 .fill(tint.opacity(0.9))
                 .frame(width: 3)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .cadenceCard(background: tint.opacity(0.18), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
     }
 }
 
@@ -377,13 +371,12 @@ private struct iOSScheduleTaskBlock: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.18))
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 999, style: .continuous)
                 .fill(tint.opacity(0.9))
                 .frame(width: 3)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .cadenceCard(background: tint.opacity(0.18), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
         .sheet(isPresented: $showDetail) {
             iOSTaskDetailSheet(task: task)
         }
@@ -519,12 +512,7 @@ private struct iOSScheduleReadyTaskRow: View {
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface.opacity(0.82))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(rowTint.opacity(0.22), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surface.opacity(0.82), cornerRadius: Theme.radiusCard)
         .sheet(isPresented: $showDetail) {
             iOSTaskDetailSheet(task: task)
         }
@@ -589,12 +577,7 @@ private struct iOSScheduleEmptyHint: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity)
-        .background(Theme.surface.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.44), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surface.opacity(0.72), cornerRadius: Theme.radiusCard)
     }
 }
 #endif

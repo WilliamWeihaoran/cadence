@@ -309,6 +309,20 @@ struct Theme {
     /// Shadow for centered modal cards, popovers, toasts, and overlay shells presented
     /// above a dimming scrim.
     static let overlayCardShadow = Color.black.opacity(0.3)
+    /// Soft lift for in-flow content cards (task rows, stat cards, list rows) that
+    /// replaces a hard border with gentle elevation. Paired with `radiusCard`.
+    static let cardElevationShadow = Color.black.opacity(0.22)
+
+    // MARK: - Corner radius scale
+    // A shared radius scale so card-like surfaces read as one family instead of each
+    // picking its own value (previously scattered 8/10/12/14/16 with no clear pattern).
+
+    /// Small in-card controls: icon badges, compact buttons, inline pickers.
+    static let radiusControl: CGFloat = 10
+    /// Standard content cards: task rows, stat tiles, list rows, kanban cards.
+    static let radiusCard: CGFloat = 18
+    /// Large surfaces: page headers, sheets, popovers, modal shells.
+    static let radiusPanel: CGFloat = 22
 }
 
 extension Color {

@@ -62,7 +62,7 @@ struct LinksView: View {
                 Spacer()
             } else {
                 ScrollView {
-                    VStack(spacing: 6) {
+                    VStack(spacing: 10) {
                         ForEach(links) { link in
                             LinkRow(link: link) {
                                 deleteConfirmationManager.present(
@@ -113,17 +113,17 @@ private struct AddLinkBar: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.text)
-                .padding(8)
+                .padding(9)
                 .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             TextField("URL", text: $url)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.text)
-                .padding(8)
+                .padding(9)
                 .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 .onSubmit { onSave() }
 
             HStack {
@@ -203,11 +203,10 @@ private struct LinkRow: View {
                 .buttonStyle(.cadencePlain)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .cadenceHoverHighlight(cornerRadius: 8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
+        .cadenceHoverHighlight(cornerRadius: Theme.radiusCard)
         .onHover { isHovering = $0 }
         .onTapGesture {
             if let url = URL(string: link.url) {

@@ -118,7 +118,7 @@ struct iOSSettingsView: View {
     }
 
     private var settingsHeader: some View {
-        CadenceSettingsHeader(
+        iOSSettingsPageHeader(
             title: selectedCategory.title,
             subtitle: selectedCategory.detailDescription,
             icon: selectedCategory.icon,
@@ -273,7 +273,7 @@ struct iOSSettingsView: View {
                 .tint(Theme.blue)
             }
 
-            CadenceSettingsCard {
+            iOSSettingsCard {
                 VStack(spacing: 0) {
                     if activeContexts.isEmpty {
                         iOSSettingsEmptyRow(
@@ -312,7 +312,7 @@ struct iOSSettingsView: View {
 
             if !archivedContexts.isEmpty {
                 CadenceSettingsSectionLabel(text: "Archived Contexts")
-                CadenceSettingsCard {
+                iOSSettingsCard {
                     VStack(spacing: 0) {
                         ForEach(archivedContexts) { context in
                             iOSSettingsArchivedContextRow(context: context) {
@@ -472,7 +472,7 @@ private struct iOSTagsSettingsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             CadenceSettingsSectionLabel(text: "Create Tag")
-            CadenceSettingsCard {
+            iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 12) {
                     TextField("Name", text: $newName)
                         .textInputAutocapitalization(.never)
@@ -527,7 +527,7 @@ private struct iOSTagsSettingsSection: View {
             }
 
             CadenceSettingsSectionLabel(text: "Active Tags")
-            CadenceSettingsCard {
+            iOSSettingsCard {
                 if activeTags.isEmpty {
                     iOSSettingsEmptyRow(title: "No active tags", subtitle: "Create one or add the default set.")
                 } else {
@@ -537,7 +537,7 @@ private struct iOSTagsSettingsSection: View {
 
             if !archivedTags.isEmpty {
                 CadenceSettingsSectionLabel(text: "Archived Tags")
-                CadenceSettingsCard {
+                iOSSettingsCard {
                     iOSTagList(tags: archivedTags, isArchivedList: true, archive: archive(_:), restore: restore(_:))
                 }
             }

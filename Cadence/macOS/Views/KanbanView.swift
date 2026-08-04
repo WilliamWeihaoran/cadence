@@ -246,17 +246,10 @@ struct ListSectionKanbanColumn: View {
             }
             .foregroundStyle(Theme.dim)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Theme.surface.opacity(0.5))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.75))
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .cadenceCard(background: Theme.surface.opacity(0.5), cornerRadius: Theme.radiusControl, shadowRadius: 8, shadowY: 3)
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
         }
         .buttonStyle(.cadencePlain)
         .frame(maxWidth: .infinity, alignment: .leading)

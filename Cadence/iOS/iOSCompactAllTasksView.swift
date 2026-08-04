@@ -59,12 +59,7 @@ struct iOSCompactAllTasksView: View {
             )
         }
         .padding(4)
-        .background(Theme.surface.opacity(0.68))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surface.opacity(0.68), shadowRadius: 10, shadowY: 4)
     }
 
     private var captureCard: some View {
@@ -88,12 +83,7 @@ struct iOSCompactAllTasksView: View {
             )
         }
         .padding(12)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-        }
+        .cadenceCard()
     }
 
     @ViewBuilder
@@ -105,12 +95,7 @@ struct iOSCompactAllTasksView: View {
                 subtitle: "Tasks you create on iPhone, iPad, or Mac will collect here."
             )
             .frame(minHeight: 220)
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-            }
+            .cadenceCard()
         } else {
             VStack(alignment: .leading, spacing: 14) {
                 if !activeTasks.isEmpty {
@@ -148,7 +133,7 @@ private struct iOSCompactTaskCollectionStat: View {
                 .foregroundStyle(tint)
                 .frame(width: 26, height: 26)
                 .background(tint.opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(value)
@@ -168,7 +153,7 @@ private struct iOSCompactTaskCollectionStat: View {
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surfaceElevated.opacity(0.36))
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 }
 

@@ -303,11 +303,7 @@ private struct iOSCalendarBoardDayColumn: View {
             .padding(.horizontal, 12)
             .frame(height: 36)
             .background(Theme.surfaceElevated.opacity(0.70))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.50), lineWidth: 1)
-            }
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -355,11 +351,7 @@ private struct iOSCalendarBoardDayColumn: View {
                     .padding(.horizontal, 10)
                     .frame(height: 34)
                     .background(Theme.surfaceElevated.opacity(0.42))
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(Theme.borderSubtle.opacity(0.35), lineWidth: 1)
-                    }
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 }
                 .buttonStyle(.plain)
 

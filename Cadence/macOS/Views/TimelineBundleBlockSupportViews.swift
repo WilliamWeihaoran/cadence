@@ -43,7 +43,7 @@ struct TaskBundleDetailPopover: View {
             confirmationSection
             actionDeck
         }
-        .padding(18)
+        .padding(20)
         .frame(width: 376)
         .background(
             ZStack {
@@ -55,6 +55,8 @@ struct TaskBundleDetailPopover: View {
                 )
             }
         )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
+        .shadow(color: Theme.cardElevationShadow, radius: 14, x: 0, y: 6)
     }
 
     private var headerSection: some View {
@@ -324,14 +326,9 @@ private struct BundleInspectorConfirmationCard: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.09))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(tint.opacity(0.15), lineWidth: 1)
-        }
+        .cadenceCard(background: tint.opacity(0.09), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
     }
 }
 
@@ -349,14 +346,9 @@ private struct BundleInspectorEmptyTasksView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 18)
-        .padding(.horizontal, 12)
-        .background(Theme.surfaceElevated.opacity(0.42))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.38), lineWidth: 1)
-        }
+        .padding(.vertical, 20)
+        .padding(.horizontal, 14)
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.42), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
     }
 }
 
@@ -401,14 +393,9 @@ private struct BundleTaskPopoverRow: View {
 
             rowIconButton("xmark", label: "Remove task", isDisabled: false, tint: Theme.red, action: onRemove)
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 10)
-        .background(Theme.surfaceElevated.opacity(0.62))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.28), lineWidth: 1)
-        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.62), cornerRadius: Theme.radiusCard, shadowRadius: 6, shadowY: 2)
     }
 
     private func rowIconButton(

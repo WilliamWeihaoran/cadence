@@ -125,12 +125,7 @@ private struct iOSMarkdownPreviewBlockView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(12)
-            .background(Theme.surfaceElevated.opacity(0.5))
-            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
-            }
+            .cadenceCard(background: Theme.surfaceElevated.opacity(0.5), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
 
         case .image(let reference):
             iOSMarkdownPreviewImageBlock(
@@ -199,12 +194,7 @@ private struct iOSMarkdownPreviewTableBlock: View {
                     }
                 }
             }
-            .background(Theme.surfaceElevated.opacity(0.38))
-            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.54), lineWidth: 1)
-            }
+            .cadenceCard(background: Theme.surfaceElevated.opacity(0.38), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
         }
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -269,12 +259,8 @@ private struct iOSMarkdownPreviewQuoteBlock: View {
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
         .padding(.leading, CGFloat(normalizedDepth - 1) * 12)
-        .background(tint.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(tint.opacity(0.13), lineWidth: 1)
-        }
+        .background(tint.opacity(0.07))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
     }
 }
 
@@ -321,12 +307,7 @@ private struct iOSMarkdownPreviewImageBlock: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surfaceElevated.opacity(0.38))
-            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
-            }
+            .cadenceCard(background: Theme.surfaceElevated.opacity(0.38), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
         }
     }
 }
@@ -416,12 +397,13 @@ private struct iOSMarkdownPreviewTaskEmbedBlock: View {
         .padding(13)
         .frame(maxWidth: min(MarkdownTaskEmbedRenderInfo.maxCardWidth, 640), alignment: .leading)
         .background(Theme.surfaceElevated.opacity(task.isMissing ? 0.34 : 0.54))
-        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(borderTint, lineWidth: 1)
+            RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                .strokeBorder(borderTint, lineWidth: task.isMissing ? 1.4 : 1)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .shadow(color: Theme.cardElevationShadow, radius: 8, x: 0, y: 3)
+        .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
         .onTapGesture {
             guard !task.isMissing else { return }
             openTask()

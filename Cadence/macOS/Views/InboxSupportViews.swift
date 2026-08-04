@@ -237,13 +237,8 @@ private struct AppleRemindersAccessRow: View {
                 action: action
             )
         }
-        .padding(12)
-        .background(Theme.surface.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Theme.purple.opacity(0.16), lineWidth: 1)
-        }
+        .padding(16)
+        .cadenceCard(background: Theme.surface.opacity(0.72), cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
     }
 }
 

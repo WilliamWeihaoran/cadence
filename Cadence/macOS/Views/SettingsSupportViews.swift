@@ -381,14 +381,9 @@ struct SidebarTabEditorSheet: View {
 
             accessory()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Theme.borderSubtle, lineWidth: 1)
-        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .cadenceCard(cornerRadius: Theme.radiusCard)
     }
 }
 

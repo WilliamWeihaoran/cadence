@@ -46,11 +46,7 @@ struct ListNotesSearchField: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(Theme.bg.opacity(0.45))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.borderSubtle.opacity(0.8), lineWidth: 1)
-        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .padding(.horizontal, 10)
         .padding(.bottom, hasTagFilters ? 6 : 10)
     }

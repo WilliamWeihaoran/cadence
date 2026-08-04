@@ -109,10 +109,6 @@ struct iOSListDetailPagePicker: View {
                             .padding(.vertical, 8)
                             .background(page == item ? Theme.blue.opacity(0.18) : Theme.surface)
                             .clipShape(Capsule())
-                            .overlay {
-                                Capsule()
-                                    .strokeBorder(page == item ? Theme.blue.opacity(0.42) : Theme.borderSubtle.opacity(0.58), lineWidth: 1)
-                            }
                     }
                     .buttonStyle(.plain)
                 }
@@ -427,14 +423,9 @@ private struct iOSListKanbanColumn: View {
                 iOSTaskRow(task: task)
             }
         }
-        .padding(12)
+        .padding(14)
         .frame(width: 300, alignment: .topLeading)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.6), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
     }
 }
 

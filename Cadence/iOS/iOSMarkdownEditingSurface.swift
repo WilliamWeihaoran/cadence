@@ -74,9 +74,9 @@ struct iOSMarkdownModePicker: View {
         }
         .padding(2)
         .background(Theme.surfaceElevated.opacity(0.56))
-        .clipShape(RoundedRectangle(cornerRadius: compact ? 8 : 9, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: compact ? 8 : 9, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                 .strokeBorder(Theme.borderSubtle.opacity(0.46), lineWidth: 1)
         }
     }

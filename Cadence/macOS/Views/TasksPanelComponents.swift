@@ -97,7 +97,7 @@ struct MacTaskRow: View {
         }
         .background(TaskRowBackground(task: task, isHovered: isHovered, urgencyTint: urgencyBackgroundTint))
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.radiusCard)
                 .stroke(
                     TaskHoverVisuals.borderColor(for: task, isHovered: isHovered, opacity: 0.34),
                     lineWidth: 1
@@ -479,11 +479,11 @@ private struct TaskRowBackground: View {
     @Environment(TaskCompletionAnimationManager.self) private var manager
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 8)
+        RoundedRectangle(cornerRadius: Theme.radiusCard)
             .fill(Color.clear)
             .overlay {
                 if urgencyTint != .clear {
-                    RoundedRectangle(cornerRadius: 8).fill(urgencyTint)
+                    RoundedRectangle(cornerRadius: Theme.radiusCard).fill(urgencyTint)
                 }
             }
             .overlay {
@@ -492,7 +492,7 @@ private struct TaskRowBackground: View {
                         TaskCompletionPendingOverlay(
                             progress: manager.progress(for: task, now: context.date),
                             tint: Theme.green,
-                            cornerRadius: 8
+                            cornerRadius: Theme.radiusCard
                         )
                     }
                 } else if manager.isPendingCancel(task) {
@@ -500,7 +500,7 @@ private struct TaskRowBackground: View {
                         TaskCompletionPendingOverlay(
                             progress: manager.cancelProgress(for: task, now: context.date),
                             tint: Theme.dim,
-                            cornerRadius: 8
+                            cornerRadius: Theme.radiusCard
                         )
                     }
                 }

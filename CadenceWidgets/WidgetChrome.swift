@@ -21,6 +21,8 @@ struct CadenceWidgetScale {
     let controlFontSize: CGFloat
     let panelCornerRadius: CGFloat
     let cardCornerRadius: CGFloat
+    let elevationRadius: CGFloat
+    let elevationY: CGFloat
 
     static func forFamily(_ family: WidgetFamily) -> CadenceWidgetScale {
         switch family {
@@ -43,8 +45,10 @@ struct CadenceWidgetScale {
                 bodyFontSize: 10,
                 captionFontSize: 9,
                 controlFontSize: 10,
-                panelCornerRadius: 15,
-                cardCornerRadius: 14
+                panelCornerRadius: 16,
+                cardCornerRadius: 15,
+                elevationRadius: 5,
+                elevationY: 2
             )
         case .systemMedium:
             return CadenceWidgetScale(
@@ -65,8 +69,10 @@ struct CadenceWidgetScale {
                 bodyFontSize: 10,
                 captionFontSize: 9,
                 controlFontSize: 10,
-                panelCornerRadius: 15,
-                cardCornerRadius: 15
+                panelCornerRadius: 17,
+                cardCornerRadius: 16,
+                elevationRadius: 6,
+                elevationY: 2
             )
         case .systemLarge:
             return CadenceWidgetScale(
@@ -87,8 +93,10 @@ struct CadenceWidgetScale {
                 bodyFontSize: 10.5,
                 captionFontSize: 9.5,
                 controlFontSize: 10.5,
-                panelCornerRadius: 16,
-                cardCornerRadius: 16
+                panelCornerRadius: 18,
+                cardCornerRadius: 17,
+                elevationRadius: 7,
+                elevationY: 3
             )
         default:
             return CadenceWidgetScale(
@@ -109,10 +117,22 @@ struct CadenceWidgetScale {
                 bodyFontSize: 10.5,
                 captionFontSize: 9.5,
                 controlFontSize: 10.5,
-                panelCornerRadius: 16,
-                cardCornerRadius: 17
+                panelCornerRadius: 18,
+                cardCornerRadius: 18,
+                elevationRadius: 8,
+                elevationY: 3
             )
         }
+    }
+}
+
+/// Shared elevation shadow for widget cards/panels — soft depth instead of a flat fill,
+/// matching the app-wide move away from hard-bordered cards. Kept as a plain `.shadow`
+/// (not a background-affecting modifier) so it never changes a view's layout footprint,
+/// which matters inside WidgetKit's fixed, non-scrolling family sizes.
+extension View {
+    func cadenceWidgetElevation(_ scale: CadenceWidgetScale) -> some View {
+        shadow(color: .black.opacity(0.25), radius: scale.elevationRadius, x: 0, y: scale.elevationY)
     }
 }
 
@@ -142,7 +162,7 @@ struct CadenceWidgetBadge: View {
             .minimumScaleFactor(0.85)
             .padding(.horizontal, scale.badgeHorizontalPadding)
             .padding(.vertical, scale.badgeVerticalPadding)
-            .background(tint.opacity(0.16))
+            .background(tint.opacity(0.20))
             .clipShape(Capsule())
     }
 }
@@ -167,8 +187,9 @@ struct CadenceWidgetMetricCard: View {
         }
         .padding(scale.panelPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.07))
+        .background(Color.white.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
+        .cadenceWidgetElevation(scale)
     }
 }
 
@@ -187,8 +208,9 @@ struct CadenceWidgetFooterLink: View {
                 .minimumScaleFactor(0.85)
                 .padding(.horizontal, scale.panelPadding)
                 .padding(.vertical, max(scale.panelPadding - 4, 5))
-                .background(Color.white.opacity(0.10))
+                .background(Color.white.opacity(0.13))
                 .clipShape(Capsule())
+                .cadenceWidgetElevation(scale)
         }
     }
 }
@@ -241,8 +263,9 @@ struct CadenceWidgetPanel<Content: View>: View {
         let scale = CadenceWidgetScale.forFamily(widgetFamily)
         content
             .padding(scale.panelPadding)
-            .background(Color.white.opacity(0.07))
+            .background(Color.white.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
+            .cadenceWidgetElevation(scale)
     }
 }
 

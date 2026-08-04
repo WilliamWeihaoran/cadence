@@ -254,7 +254,7 @@ struct CalendarSnapshotWidgetView: View {
             if day.totalCount == 0 {
                 Text("clear")
                     .font(.system(size: scale.captionFontSize, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(.white.opacity(0.5))
             } else {
                 VStack(alignment: .leading, spacing: compact ? 3 : 4) {
                     if day.dueCount > 0 {
@@ -278,6 +278,7 @@ struct CalendarSnapshotWidgetView: View {
         .frame(maxWidth: .infinity, minHeight: compact ? 68 : 74, alignment: .topLeading)
         .background(dayBackground(for: day))
         .clipShape(RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous))
+        .cadenceWidgetElevation(scale)
     }
 
     private var agendaLabel: some View {
@@ -351,7 +352,7 @@ struct CalendarSnapshotWidgetView: View {
                 )
             )
         }
-        return AnyShapeStyle(Color.white.opacity(0.06))
+        return AnyShapeStyle(Color.white.opacity(0.08))
     }
 
     private var scheduledCount: Int {

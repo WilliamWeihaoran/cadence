@@ -74,11 +74,7 @@ struct CalendarEventEditPopover: View {
     var body: some View {
         editorContent
         .frame(width: 320)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Theme.surface)
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.borderSubtle, lineWidth: 1))
-        )
+        .cadenceCard(cornerRadius: Theme.radiusPanel)
         .sheet(isPresented: Binding(
             get: { presentedEventNote != nil },
             set: { if !$0 { presentedEventNote = nil } }
@@ -118,7 +114,7 @@ struct CalendarEventEditPopover: View {
                 linkedNoteCard
                 actionButtons
             }
-            .padding(18)
+            .padding(20)
         }
     }
 
@@ -307,10 +303,8 @@ struct CalendarEventEditPopover: View {
         VStack(alignment: .leading, spacing: 12) {
             content()
         }
-        .padding(14)
-        .background(Theme.surface.opacity(0.85))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.borderSubtle, lineWidth: 1))
+        .padding(16)
+        .cadenceCard(background: Theme.surface.opacity(0.85), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
     }
 
     /// Parses a time string like "4:55 PM", "16:55", "4 PM" → minutes from midnight.

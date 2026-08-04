@@ -77,12 +77,7 @@ struct iOSTaskEditorTitleCard: View {
             }
         }
         .padding(isRegularWidth ? 18 : 16)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusPanel)
     }
 
     private var estimateLabel: String {
@@ -156,12 +151,7 @@ struct iOSTaskEditorOverviewCard: View {
             )
         }
         .padding(isRegularWidth ? 12 : 10)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusPanel)
     }
 
     private var columns: [GridItem] {
@@ -208,12 +198,7 @@ private struct iOSTaskOverviewMetric: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 8)
-        .background(Theme.surfaceElevated.opacity(0.34))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.30), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.34), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
     }
 }
 
@@ -239,12 +224,7 @@ struct iOSTaskEditorSection<Content: View>: View {
             }
             .padding(isRegularWidth ? 14 : 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.5), lineWidth: 1)
-            }
+            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusPanel)
         }
     }
 }
@@ -296,10 +276,6 @@ private struct iOSTaskEditorContextChip: View {
             .frame(height: 28)
             .background(color.opacity(0.12))
             .clipShape(Capsule())
-            .overlay {
-                Capsule()
-                    .strokeBorder(color.opacity(0.18), lineWidth: 1)
-            }
     }
 }
 
@@ -374,12 +350,7 @@ struct iOSSubtaskRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(Theme.surfaceElevated.opacity(0.34))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.4), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.34), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
     }
 
     private func save() {
@@ -465,12 +436,7 @@ struct iOSTaskTagEditorSection: View {
                     .textInputAutocapitalization(.never)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 9)
-                    .background(Theme.surfaceElevated.opacity(0.55))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
-                    }
+                    .cadenceCard(background: Theme.surfaceElevated.opacity(0.55), cornerRadius: Theme.radiusControl, shadowRadius: 8, shadowY: 3)
                     .onSubmit(addTag)
 
                 Button(action: addTag) {

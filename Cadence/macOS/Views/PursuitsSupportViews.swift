@@ -35,10 +35,8 @@ struct PursuitUnassignedReviewCard: View {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(Theme.amber)
         }
-        .padding(12)
-        .background(Theme.surfaceElevated.opacity(0.55))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.amber.opacity(0.22), lineWidth: 1))
+        .padding(14)
+        .cadenceCard(background: Theme.amber.opacity(0.1), cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
     }
 }
 
@@ -110,12 +108,17 @@ struct PursuitListCard: View {
 
                 Spacer()
             }
-            .padding(12)
-            .background(isSelected ? Theme.surfaceElevated : Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(14)
+            .cadenceCard(
+                background: isSelected ? Theme.surfaceElevated : Theme.surface,
+                cornerRadius: Theme.radiusCard,
+                shadowRadius: 12,
+                shadowY: 5
+            )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? Color(hex: pursuit.colorHex).opacity(0.65) : Theme.borderSubtle, lineWidth: isSelected ? 1.5 : 1)
+                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                    .stroke(Color(hex: pursuit.colorHex).opacity(0.65), lineWidth: 1.5)
+                    .opacity(isSelected ? 1 : 0)
             )
         }
         .buttonStyle(.plain)
@@ -216,10 +219,8 @@ struct PursuitDetailView: View {
                 )
             }
         }
-        .padding(18)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(hex: pursuit.colorHex).opacity(0.24), lineWidth: 1))
+        .padding(20)
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusPanel, shadowRadius: 16, shadowY: 6)
     }
 
     private var signalRow: some View {
@@ -312,11 +313,9 @@ private struct PursuitSignalTile: View {
             }
             Spacer()
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.borderSubtle, lineWidth: 1))
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
     }
 }
 
@@ -337,10 +336,8 @@ private struct PursuitSection<Content: View>: View {
             )
             content
         }
-        .padding(16)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.borderSubtle, lineWidth: 1))
+        .padding(18)
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
     }
 }
 

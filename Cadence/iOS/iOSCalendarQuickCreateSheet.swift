@@ -207,13 +207,8 @@ struct iOSCalendarQuickCreateSheet: View {
 
             Spacer()
         }
-        .padding(14)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-        }
+        .padding(16)
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
     }
 
     private var kindPicker: some View {
@@ -596,14 +591,9 @@ private struct iOSCalendarQuickCreateSection<Content: View>: View {
             VStack(alignment: .leading, spacing: 10) {
                 content()
             }
-            .padding(12)
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.5), lineWidth: 1)
-            }
+            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
         }
     }
 }

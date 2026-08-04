@@ -184,14 +184,14 @@ private struct iOSListSelectionRow: View {
                 colorHex: colorHex,
                 count: count
             )
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .background(isSelected ? accent.opacity(0.15) : Theme.surfaceElevated.opacity(0.32))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(isSelected ? accent.opacity(0.36) : Theme.borderSubtle.opacity(0.42), lineWidth: 1)
-            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .cadenceCard(
+                background: isSelected ? accent.opacity(0.15) : Theme.surfaceElevated.opacity(0.32),
+                cornerRadius: Theme.radiusCard,
+                shadowRadius: 10,
+                shadowY: 4
+            )
             .overlay(alignment: .leading) {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -220,10 +220,14 @@ private struct iOSArchivedListSelectionRow: View {
             colorHex: colorHex,
             restore: restore
         )
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Theme.surfaceElevated.opacity(0.22))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .cadenceCard(
+            background: Theme.surfaceElevated.opacity(0.22),
+            cornerRadius: Theme.radiusCard,
+            shadowRadius: 8,
+            shadowY: 3
+        )
     }
 }
 #endif

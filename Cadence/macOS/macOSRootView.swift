@@ -292,16 +292,16 @@ private struct RootStartupIssueBanner: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .frame(maxWidth: 620)
         .background(.ultraThinMaterial)
         .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Theme.amber.opacity(0.35), lineWidth: 1)
+            RoundedRectangle(cornerRadius: Theme.radiusPanel)
+                .stroke(Theme.amber.opacity(0.22), lineWidth: 1)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: Color.black.opacity(0.18), radius: 18, x: 0, y: 10)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel))
+        .shadow(color: Theme.overlayCardShadow, radius: 22, x: 0, y: 10)
     }
 }
 

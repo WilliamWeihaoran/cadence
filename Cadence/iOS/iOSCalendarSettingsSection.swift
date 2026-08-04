@@ -247,11 +247,7 @@ private struct iOSCalendarSettingsRow: View {
                 .foregroundStyle(Theme.text)
                 .frame(width: 32, height: 32)
                 .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .stroke(Theme.borderSubtle.opacity(0.7), lineWidth: 1)
-                }
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         }
     }
 

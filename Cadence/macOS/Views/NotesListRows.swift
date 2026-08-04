@@ -28,14 +28,14 @@ struct DailyNoteListRow: View {
                 .lineLimit(1)
             CompactTagStrip(tags: note.sortedTags, limit: 3)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isSelected ? Theme.blue.opacity(0.12) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .contentShape(Rectangle())
         .cadenceHoverHighlight(
-            cornerRadius: 6,
+            cornerRadius: Theme.radiusControl,
             fillColor: Theme.blue.opacity(isSelected ? 0.14 : 0.06),
             strokeColor: Theme.blue.opacity(isSelected ? 0.22 : 0.12)
         )
@@ -65,14 +65,14 @@ struct WeeklyNoteListRow: View {
                 .lineLimit(1)
             CompactTagStrip(tags: note.sortedTags, limit: 3)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isSelected ? Theme.blue.opacity(0.12) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .contentShape(Rectangle())
         .cadenceHoverHighlight(
-            cornerRadius: 6,
+            cornerRadius: Theme.radiusControl,
             fillColor: Theme.blue.opacity(isSelected ? 0.14 : 0.06),
             strokeColor: Theme.blue.opacity(isSelected ? 0.22 : 0.12)
         )
@@ -117,14 +117,14 @@ struct MeetingNoteListRow: View {
             }
             CompactTagStrip(tags: note.sortedTags, limit: 3)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isSelected ? Theme.blue.opacity(0.12) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .contentShape(Rectangle())
         .cadenceHoverHighlight(
-            cornerRadius: 6,
+            cornerRadius: Theme.radiusControl,
             fillColor: Theme.blue.opacity(isSelected ? 0.14 : 0.06),
             strokeColor: Theme.blue.opacity(isSelected ? 0.22 : 0.12)
         )

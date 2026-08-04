@@ -471,14 +471,9 @@ private struct iOSCalendarEventEditorSection<Content: View>: View {
             VStack(alignment: .leading, spacing: 10) {
                 content()
             }
-            .padding(12)
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.5), lineWidth: 1)
-            }
+            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
         }
     }
 }

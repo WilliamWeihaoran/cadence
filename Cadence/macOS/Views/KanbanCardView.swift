@@ -81,13 +81,13 @@ struct KanbanCard: View {
                     .padding(.top, 2)
                 }
             }
-            .padding(.leading, 10)
-            .padding(.trailing, 12)
-            .padding(.vertical, 8)
+            .padding(.leading, 14)
+            .padding(.trailing, 16)
+            .padding(.vertical, 10)
         }
         .background(cardBackground)
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.radiusCard)
                 .stroke(
                     isCardVisuallyFocused
                         ? TaskHoverVisuals.borderColor(for: task, isHovered: isCardVisuallyFocused, opacity: 0.56)
@@ -95,8 +95,8 @@ struct KanbanCard: View {
                     lineWidth: isCardVisuallyFocused ? 1.35 : 1
                 )
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard))
+        .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard))
         .animation(nil, value: isHovered)
         .onTapGesture {
             openTaskInspectorFromCardTap()

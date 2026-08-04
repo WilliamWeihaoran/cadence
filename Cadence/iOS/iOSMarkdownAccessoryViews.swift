@@ -549,9 +549,9 @@ struct iOSMarkdownFormatToolbar: View {
                         .foregroundStyle(Theme.text)
                         .frame(width: 38, height: 36)
                         .background(Theme.surface.opacity(0.78))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                                 .strokeBorder(Theme.borderSubtle.opacity(0.44), lineWidth: 1)
                         }
                 }
@@ -559,14 +559,7 @@ struct iOSMarkdownFormatToolbar: View {
                 .accessibilityLabel("Image")
             }
             .padding(6)
-            .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Theme.surfaceElevated.opacity(0.46))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.5), lineWidth: 1)
-            }
+            .cadenceCard(background: Theme.surfaceElevated.opacity(0.46), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
         }
@@ -591,9 +584,9 @@ struct iOSMarkdownFormatToolbar: View {
                         .foregroundStyle(Theme.text)
                         .frame(width: 38, height: 36)
                         .background(Theme.surface.opacity(0.78))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                                 .strokeBorder(Theme.borderSubtle.opacity(0.44), lineWidth: 1)
                         }
                 }
@@ -618,9 +611,9 @@ struct iOSMarkdownFormatToolbar: View {
                         .foregroundStyle(Theme.text)
                         .frame(width: 38, height: 36)
                         .background(Theme.surface.opacity(0.78))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                                 .strokeBorder(Theme.borderSubtle.opacity(0.44), lineWidth: 1)
                         }
                 }
@@ -628,14 +621,7 @@ struct iOSMarkdownFormatToolbar: View {
                 .accessibilityLabel("More formatting")
             }
             .padding(6)
-            .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Theme.surfaceElevated.opacity(0.46))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.5), lineWidth: 1)
-            }
+            .cadenceCard(background: Theme.surfaceElevated.opacity(0.46), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
         }
@@ -687,9 +673,9 @@ private struct iOSMarkdownFormatButton: View {
             .foregroundStyle(Theme.text)
             .frame(width: 38, height: 36)
             .background(Theme.surface.opacity(0.78))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                     .strokeBorder(Theme.borderSubtle.opacity(0.44), lineWidth: 1)
             }
         }

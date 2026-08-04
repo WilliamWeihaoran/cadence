@@ -23,11 +23,9 @@ struct HabitTodayCockpit: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.blue)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(Theme.surfaceElevated.opacity(0.65))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.65), cornerRadius: Theme.radiusControl, shadowRadius: 8, shadowY: 3)
     }
 }
 
@@ -65,12 +63,10 @@ struct HabitInlineMetric: View {
                 .foregroundStyle(Theme.dim)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.bg.opacity(0.34))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+        .cadenceCard(background: Theme.bg.opacity(0.34), cornerRadius: Theme.radiusControl, shadowRadius: 6, shadowY: 2)
     }
 }
 
@@ -105,10 +101,8 @@ struct HabitNextUpBanner: View {
             }
             .buttonStyle(.cadencePlain)
         }
-        .padding(11)
-        .background(Color(hex: habit.colorHex).opacity(0.09))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: habit.colorHex).opacity(0.22), lineWidth: 1))
+        .padding(13)
+        .cadenceCard(background: Color(hex: habit.colorHex).opacity(0.1), cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
     }
 }
 
@@ -196,15 +190,18 @@ struct HabitListCard: View {
                 }
                 .buttonStyle(.cadencePlain)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(isSelected ? Theme.surfaceElevated : Theme.surface)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+            .cadenceCard(
+                background: isSelected ? Theme.surfaceElevated : Theme.surface,
+                cornerRadius: Theme.radiusCard,
+                shadowRadius: 12,
+                shadowY: 5
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(isSelected ? Color(hex: habit.pursuit?.colorHex ?? habit.colorHex).opacity(0.75) : Theme.borderSubtle, lineWidth: isSelected ? 1.5 : 1)
+                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                    .stroke(Color(hex: habit.pursuit?.colorHex ?? habit.colorHex).opacity(0.75), lineWidth: 1.5)
+                    .opacity(isSelected ? 1 : 0)
             )
         }
         .buttonStyle(.plain)
@@ -321,10 +318,8 @@ struct HabitDetailView: View {
                 )
             }
         }
-        .padding(20)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(hex: habit.colorHex).opacity(0.24), lineWidth: 1))
+        .padding(22)
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusPanel, shadowRadius: 16, shadowY: 6)
     }
 }
 
@@ -444,14 +439,9 @@ struct HabitSummaryTile: View {
             }
             Spacer()
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Theme.borderSubtle, lineWidth: 1)
-        )
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
     }
 }
 
@@ -479,14 +469,9 @@ struct HabitDetailStatCard: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.muted)
         }
-        .padding(16)
+        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Theme.borderSubtle, lineWidth: 1)
-        )
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
     }
 }
 
@@ -502,14 +487,9 @@ struct HabitInfoCard<Content: View>: View {
                 .kerning(0.8)
             content
         }
-        .padding(18)
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Theme.borderSubtle, lineWidth: 1)
-        )
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
     }
 }
 

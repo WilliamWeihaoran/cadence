@@ -136,21 +136,18 @@ struct iOSCalendarBoardEventCard: View {
                 }
             }
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Theme.surfaceElevated.opacity(0.80))
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(item.color.opacity(0.08))
+                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                    .fill(Theme.surfaceElevated.opacity(0.85))
+                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                    .fill(item.color.opacity(0.10))
             }
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(item.color.opacity(0.28), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .shadow(color: Theme.cardElevationShadow, radius: 10, x: 0, y: 4)
     }
 }
 
@@ -203,13 +200,10 @@ struct iOSCalendarBoardTaskCard: View {
             .padding(.trailing, 12)
             .padding(.vertical, 12)
         }
-        .background(Theme.surfaceElevated.opacity(0.72))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Theme.surfaceElevated.opacity(0.78))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .shadow(color: Theme.cardElevationShadow, radius: 10, x: 0, y: 4)
+        .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
         .onTapGesture {
             showDetail = true
         }
@@ -304,22 +298,25 @@ struct iOSCalendarBoardBundleCard: View {
                 }
             }
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Theme.surfaceElevated.opacity(0.78))
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Theme.amber.opacity(isTargeted ? 0.18 : 0.07))
+                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                    .fill(Theme.surfaceElevated.opacity(0.82))
+                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                    .fill(Theme.amber.opacity(isTargeted ? 0.20 : 0.09))
             }
         )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Theme.amber.opacity(isTargeted ? 0.74 : 0.24), lineWidth: isTargeted ? 1.25 : 1)
+            if isTargeted {
+                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                    .strokeBorder(Theme.amber.opacity(0.74), lineWidth: 1.5)
+            }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .shadow(color: Theme.cardElevationShadow, radius: 10, x: 0, y: 4)
         .onTapGesture {
             showDetail = true
         }
@@ -369,11 +366,11 @@ private struct iOSCalendarBoardMetadataChip: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 7)
+        .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surface.opacity(0.66))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 }
 #endif

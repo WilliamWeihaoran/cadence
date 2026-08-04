@@ -209,19 +209,20 @@ struct SidebarCardButton: View {
                         .lineLimit(1)
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(backgroundFill)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+            .cadenceCard(
+                background: backgroundFill,
+                cornerRadius: Theme.radiusCard,
+                shadowRadius: isHovered ? 12 : 7,
+                shadowY: isHovered ? 5 : 3
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(
-                        isSelected ? tint.opacity(0.34) : Theme.borderSubtle.opacity(isHovered ? 0.55 : 0.28),
-                        lineWidth: 1
-                    )
+                if isSelected {
+                    RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                        .strokeBorder(tint.opacity(0.3), lineWidth: 1)
+                }
             }
         }
         .buttonStyle(.plain)

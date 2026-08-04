@@ -69,12 +69,7 @@ struct iOSCompactInboxView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
-        }
+        .cadenceCard(shadowRadius: 10, shadowY: 4)
     }
 
     private var captureCard: some View {
@@ -109,12 +104,7 @@ struct iOSCompactInboxView: View {
                 subtitle: "Capture tasks here before scheduling or filing them."
             )
             .frame(minHeight: 190)
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-            }
+            .cadenceCard()
         } else {
             VStack(alignment: .leading, spacing: 14) {
                 if !inboxTasks.isEmpty {
@@ -136,12 +126,7 @@ struct iOSCompactInboxView: View {
                 }
             }
             .padding(12)
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-            }
+            .cadenceCard()
         }
     }
 }

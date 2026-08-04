@@ -215,15 +215,14 @@ struct SuccessToastLayerView: View {
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(Theme.text)
                 }
-                .padding(.horizontal, 28)
-                .padding(.vertical, 18)
-                .background(Theme.surfaceElevated.opacity(0.98))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .shadow(color: Theme.overlayCardShadow, radius: 30, y: 12)
+                .padding(.horizontal, 30)
+                .padding(.vertical, 20)
+                .cadenceCard(
+                    background: Theme.surfaceElevated.opacity(0.98),
+                    cornerRadius: Theme.radiusPanel,
+                    shadowRadius: 30,
+                    shadowY: 12
+                )
                 .padding(.bottom, 36)
             }
             .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -405,9 +404,9 @@ struct HoveredTaskDatePickerOverlay: View {
             }
             .frame(width: 360)
             .background(
-                RoundedRectangle(cornerRadius: 22)
+                RoundedRectangle(cornerRadius: Theme.radiusPanel)
                     .fill(Theme.surface)
-                    .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.borderSubtle))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.radiusPanel).stroke(Theme.borderSubtle.opacity(0.4)))
             )
             .shadow(color: Theme.overlayCardShadow, radius: 24, x: 0, y: 14)
         }
@@ -483,10 +482,10 @@ struct DeleteConfirmationOverlay: View {
             }
             .frame(width: 420)
             .background(
-                RoundedRectangle(cornerRadius: 22)
+                RoundedRectangle(cornerRadius: Theme.radiusPanel)
                     .fill(Theme.surface)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 22)
+                        RoundedRectangle(cornerRadius: Theme.radiusPanel)
                             .stroke(.white.opacity(0.08), lineWidth: 1)
                     )
             )

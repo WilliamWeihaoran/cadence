@@ -40,21 +40,18 @@ struct iOSTaskRow: View {
         rowContent
             .padding(.horizontal, rowHorizontalPadding)
             .padding(.vertical, rowVerticalPadding)
-            .background(
-                RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous)
-                    .fill(Theme.surfaceElevated.opacity(task.isDone ? 0.20 : 0.46))
+            .cadenceCard(
+                background: Theme.surfaceElevated.opacity(task.isDone ? 0.20 : 0.46),
+                cornerRadius: Theme.radiusCard,
+                shadowRadius: 10,
+                shadowY: 4
             )
-            .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous)
-                    .stroke(rowTint.opacity(task.isDone ? 0.16 : 0.26), lineWidth: 1)
-            }
             .overlay(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 999, style: .continuous)
                     .fill(rowTint.opacity(task.isDone ? 0.34 : 0.86))
                     .frame(width: 3)
             }
-            .contentShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 7, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
             .onTapGesture {
                 showDetail = true
             }
@@ -406,14 +403,10 @@ struct iOSTaskViewOptionsBar: View {
                 Label(sortMode.title, systemImage: "arrow.up.arrow.down")
                     .font(.system(size: isRegularWidth ? 13 : 12, weight: .semibold))
                     .foregroundStyle(Theme.blue)
-                    .padding(.horizontal, isRegularWidth ? 11 : 9)
+                    .padding(.horizontal, isRegularWidth ? 12 : 10)
                     .padding(.vertical, isRegularWidth ? 7 : 5)
                     .background(Theme.blue.opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 9 : 7, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: isRegularWidth ? 9 : 7, style: .continuous)
-                            .strokeBorder(Theme.blue.opacity(0.18), lineWidth: 1)
-                    }
+                    .clipShape(Capsule())
             }
             .buttonStyle(.plain)
 
@@ -425,14 +418,10 @@ struct iOSTaskViewOptionsBar: View {
                 Text(completedCount > 0 ? "Completed \(completedCount)" : "Completed")
                     .font(.system(size: isRegularWidth ? 13 : 12, weight: .semibold))
                     .foregroundStyle(showCompleted ? Theme.text : Theme.dim)
-                    .padding(.horizontal, isRegularWidth ? 11 : 9)
+                    .padding(.horizontal, isRegularWidth ? 12 : 10)
                     .padding(.vertical, isRegularWidth ? 7 : 5)
                     .background(showCompleted ? Theme.surfaceElevated.opacity(0.72) : Theme.surfaceElevated.opacity(0.36))
-                    .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 9 : 7, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: isRegularWidth ? 9 : 7, style: .continuous)
-                            .strokeBorder(Theme.borderSubtle.opacity(showCompleted ? 0.54 : 0.28), lineWidth: 1)
-                    }
+                    .clipShape(Capsule())
             }
             .buttonStyle(.plain)
             .disabled(completedCount == 0)

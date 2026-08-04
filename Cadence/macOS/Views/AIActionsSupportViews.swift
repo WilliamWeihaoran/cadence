@@ -371,13 +371,10 @@ private struct NoteActionPickerCard<Content: View>: View {
         .frame(width: NoteActionPickerMetrics.width)
         .frame(maxHeight: NoteActionPickerMetrics.maxHeight, alignment: .top)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous)
                 .fill(Theme.surfaceElevated.opacity(0.98))
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Theme.borderSubtle.opacity(0.95), lineWidth: 1)
-        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
         .shadow(color: Theme.overlayCardShadow, radius: 22, x: 0, y: 14)
     }
 }

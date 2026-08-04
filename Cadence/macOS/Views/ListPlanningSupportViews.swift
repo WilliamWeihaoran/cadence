@@ -53,12 +53,7 @@ struct PlanningWindowControl: View {
             }
         }
         .padding(4)
-        .background(Theme.surfaceElevated.opacity(0.92))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.92), cornerRadius: Theme.radiusControl, shadowRadius: 8, shadowY: 3)
     }
 }
 
@@ -81,14 +76,9 @@ struct PlanningMetricPill: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(Theme.surfaceElevated.opacity(0.86))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(Theme.borderSubtle.opacity(0.58), lineWidth: 1)
-        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.86), cornerRadius: Theme.radiusControl, shadowRadius: 8, shadowY: 3)
     }
 }
 

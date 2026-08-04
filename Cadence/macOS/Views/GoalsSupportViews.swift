@@ -71,11 +71,9 @@ struct GoalHeaderMetric: View {
                     .foregroundStyle(Theme.dim)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Theme.surfaceElevated.opacity(0.7))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.7), cornerRadius: Theme.radiusControl, shadowRadius: 8, shadowY: 3)
     }
 }
 
@@ -160,13 +158,13 @@ struct GoalMissionCard: View {
                         .padding(.top, 1)
                 }
             }
-            .padding(14)
+            .padding(16)
             .frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 14, shadowY: 6)
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? Theme.blue.opacity(0.75) : Theme.borderSubtle, lineWidth: isSelected ? 1.5 : 1)
+                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                    .stroke(Theme.blue.opacity(0.75), lineWidth: 1.5)
+                    .opacity(isSelected ? 1 : 0)
             )
         }
         .buttonStyle(.cadencePlain)
@@ -235,10 +233,8 @@ struct GoalSignalTile: View {
                 .foregroundStyle(Theme.dim)
         }
         .frame(maxWidth: .infinity, minHeight: 78, alignment: .topLeading)
-        .padding(11)
-        .background(Theme.surfaceElevated.opacity(0.65))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+        .padding(14)
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.65), cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
     }
 }
 
@@ -293,9 +289,9 @@ struct GoalLinkedListRow: View {
             }
             .buttonStyle(.cadencePlain)
         }
-        .padding(9)
+        .padding(10)
         .background(Theme.surfaceElevated.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 }
 
@@ -329,9 +325,9 @@ struct GoalTaskContributorRow: View {
                 .buttonStyle(.cadencePlain)
             }
         }
-        .padding(9)
+        .padding(10)
         .background(Theme.surfaceElevated.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 }
 
@@ -365,10 +361,9 @@ struct AttachListCandidateRow: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(isAttached ? Theme.green : Theme.blue)
             }
-            .padding(10)
-            .background(isAttached ? Theme.green.opacity(0.08) : Theme.surfaceElevated.opacity(0.58))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(isAttached ? Theme.green.opacity(0.22) : Theme.borderSubtle, lineWidth: 1))
+            .padding(11)
+            .background(isAttached ? Theme.green.opacity(0.1) : Theme.surfaceElevated.opacity(0.58))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         }
         .buttonStyle(.cadencePlain)
     }

@@ -81,13 +81,8 @@ struct TodayOverdueListCard: View {
                     .background(Theme.red.opacity(0.12))
                     .clipShape(Capsule())
             }
-            .padding(12)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Theme.red.opacity(0.24), lineWidth: 1)
-            }
+            .padding(16)
+            .cadenceCard(background: Theme.red.opacity(0.08), cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
         }
         .buttonStyle(.cadencePlain)
     }
@@ -133,13 +128,8 @@ struct TodayOverdueSectionCard: View {
                     }
                 }
             }
-            .padding(12)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Theme.red.opacity(0.24), lineWidth: 1)
-            }
+            .padding(16)
+            .cadenceCard(background: Theme.red.opacity(0.08), cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
         }
         .buttonStyle(.cadencePlain)
     }
@@ -650,17 +640,10 @@ struct CollapsibleTaskGroupHeader: View {
             }
             .foregroundStyle(Theme.dim)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Theme.surface.opacity(0.35))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.55))
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .cadenceCard(background: Theme.surface.opacity(0.35), cornerRadius: Theme.radiusControl, shadowRadius: 8, shadowY: 3)
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
         }
         .buttonStyle(.cadencePlain)
         .onTapGesture(count: 2, perform: onToggle)
@@ -684,7 +667,7 @@ struct CompletedSectionHeader: View {
         .allowsHitTesting(onToggle != nil)
         .overlay {
             if onToggle == nil {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: Theme.radiusControl)
                     .fill(Color.clear)
                     .allowsHitTesting(false)
             }
@@ -707,7 +690,7 @@ struct StaticTaskGroupHeader: View {
         )
         .allowsHitTesting(false)
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.radiusControl)
                 .fill(Color.clear)
                 .allowsHitTesting(false)
         }

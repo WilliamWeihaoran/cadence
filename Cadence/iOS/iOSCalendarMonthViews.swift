@@ -209,16 +209,13 @@ struct iOSCalendarMiniChip: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                     .fill(Theme.surfaceElevated.opacity(0.82))
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(color.opacity(0.14))
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                    .fill(color.opacity(0.16))
             }
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(color.opacity(0.16), lineWidth: 1)
-        }
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 }
 #endif

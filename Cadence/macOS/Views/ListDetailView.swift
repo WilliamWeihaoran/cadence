@@ -420,15 +420,8 @@ private struct ListDetailTabBarView: View {
             trailingControls
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Theme.surface.opacity(0.82))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Theme.borderSubtle.opacity(0.85))
-        }
+        .padding(.vertical, 10)
+        .cadenceCard(background: Theme.surface.opacity(0.82), cornerRadius: Theme.radiusControl, shadowRadius: 10, shadowY: 4)
         .padding(.horizontal, 16)
         .padding(.bottom, 2)
     }

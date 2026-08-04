@@ -196,21 +196,15 @@ struct iOSCalendarView: View {
                         dayInspector
                             .frame(maxWidth: .infinity)
                             .frame(minHeight: compactInspectorMinHeight)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .strokeBorder(Theme.borderSubtle.opacity(0.42), lineWidth: 1)
-                            }
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+                            .shadow(color: Theme.cardElevationShadow, radius: 12, x: 0, y: 5)
 
                         calendarContent
                             .frame(maxWidth: .infinity)
                             .frame(height: compactCalendarHeight)
                             .background(Theme.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .strokeBorder(Theme.borderSubtle.opacity(0.42), lineWidth: 1)
-                            }
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+                            .shadow(color: Theme.cardElevationShadow, radius: 12, x: 0, y: 5)
                     }
                     .padding(.horizontal, 12)
                     .padding(.top, 10)

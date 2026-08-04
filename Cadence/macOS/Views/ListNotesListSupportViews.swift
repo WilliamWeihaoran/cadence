@@ -126,13 +126,13 @@ struct TaskNoteListRow: View {
             }
             Spacer()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 8)
         .background(isSelected ? Theme.blue.opacity(0.15) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .contentShape(Rectangle())
         .cadenceHoverHighlight(
-            cornerRadius: 6,
+            cornerRadius: Theme.radiusControl,
             fillColor: Theme.blue.opacity(isSelected ? 0.16 : 0.06),
             strokeColor: Theme.blue.opacity(isSelected ? 0.24 : 0.12)
         )
@@ -169,13 +169,13 @@ struct ListNoteRow: View {
             }
             Spacer()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 8)
         .background(isSelected ? Theme.blue.opacity(0.15) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .contentShape(Rectangle())
         .cadenceHoverHighlight(
-            cornerRadius: 6,
+            cornerRadius: Theme.radiusControl,
             fillColor: Theme.blue.opacity(isSelected ? 0.16 : 0.06),
             strokeColor: Theme.blue.opacity(isSelected ? 0.24 : 0.12)
         )

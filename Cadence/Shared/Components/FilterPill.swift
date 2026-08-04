@@ -9,35 +9,26 @@ struct FilterPill: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: 7) {
                 Text(label)
                     .font(.system(size: 12, weight: .semibold))
                 if count > 0 {
                     Text("\(count)")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(isSelected ? color : Theme.dim)
-                        .padding(.horizontal, 5)
+                        .padding(.horizontal, 6)
                         .padding(.vertical, 1)
-                        .background(isSelected ? color.opacity(0.2) : Theme.dim.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .background(isSelected ? color.opacity(0.24) : Theme.dim.opacity(0.14))
+                        .clipShape(Capsule())
                 }
             }
             .foregroundStyle(isSelected ? color : Theme.dim)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .frame(minHeight: 32)
-            .background(
-                RoundedRectangle(cornerRadius: 9)
-                    .fill(isSelected ? color.opacity(0.1) : Color.clear)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 9)
-                            .strokeBorder(
-                                isSelected ? color.opacity(0.3) : Theme.borderSubtle,
-                                lineWidth: 1
-                            )
-                    )
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 9))
+            .frame(minHeight: 34)
+            .background(isSelected ? color.opacity(0.16) : Theme.surface)
+            .clipShape(Capsule())
+            .contentShape(Capsule())
         }
         .buttonStyle(.cadencePlain)
     }

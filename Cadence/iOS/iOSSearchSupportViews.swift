@@ -174,7 +174,7 @@ struct iOSSearchResultRow: View {
                 .foregroundStyle(result.color)
                 .frame(width: 30, height: 30)
                 .background(result.color.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(result.title)
@@ -196,8 +196,11 @@ struct iOSSearchResultRow: View {
                         .lineLimit(2)
                 }
             }
+
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 5)
+        .padding(12)
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
     }
 }
 

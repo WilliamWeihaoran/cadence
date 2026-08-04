@@ -116,16 +116,14 @@ struct iOSCompactTodayView: View {
             )
         }
         .padding(10)
-        .background(Theme.surface.opacity(0.94))
-        .compactTodayCard()
+        .cadenceCard(background: Theme.surface.opacity(0.94), cornerRadius: Theme.radiusCard)
     }
 
     @ViewBuilder
     private var taskSections: some View {
         if todayTasks.isEmpty && (!showCompleted || completedTodayTasks.isEmpty) {
             iOSCompactTodayEmptyState()
-            .background(Theme.surface)
-            .compactTodayCard()
+                .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
 
             #if DEBUG
             iOSCompactSampleDataCard(
@@ -147,8 +145,7 @@ struct iOSCompactTodayView: View {
                 }
             }
             .padding(12)
-            .background(Theme.surface)
-            .compactTodayCard()
+            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
         }
     }
 
@@ -200,8 +197,7 @@ private struct iOSCompactTodayNotesCard: View {
                     .frame(height: 260)
             }
         }
-        .background(Theme.surface)
-        .compactTodayCard()
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
         .onAppear(perform: loadTodayNote)
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
@@ -340,8 +336,7 @@ private struct iOSCompactSampleDataCard: View {
             .accessibilityLabel("Seed sample tasks")
         }
         .padding(12)
-        .background(Theme.surface)
-        .compactTodayCard()
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
     }
 }
 #endif
@@ -374,11 +369,7 @@ private struct iOSCompactTodayMetric: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surfaceElevated.opacity(0.36))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.34), lineWidth: 1)
-        }
+        .clipShape(Capsule())
     }
 }
 
@@ -471,8 +462,7 @@ private struct iOSCompactTodaySchedulePreview: View {
             }
         }
         .padding(14)
-        .background(Theme.surface)
-        .compactTodayCard()
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
     }
 }
 
@@ -513,13 +503,12 @@ private struct iOSCompactScheduleTaskRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
-        .background(Theme.surfaceElevated.opacity(0.42))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 999, style: .continuous)
                 .fill(Theme.purple)
                 .frame(width: 3)
         }
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.42), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
     }
 
     private var startLabel: String {
@@ -532,22 +521,4 @@ private struct iOSCompactScheduleTaskRow: View {
     }
 }
 
-private struct CompactTodayCardModifier: ViewModifier {
-    var cornerRadius: CGFloat = 12
-
-    func body(content: Content) -> some View {
-        content
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.42), lineWidth: 1)
-            }
-    }
-}
-
-private extension View {
-    func compactTodayCard(cornerRadius: CGFloat = 12) -> some View {
-        modifier(CompactTodayCardModifier(cornerRadius: cornerRadius))
-    }
-}
 #endif

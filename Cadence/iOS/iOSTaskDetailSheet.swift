@@ -512,12 +512,7 @@ struct iOSTaskDetailSheet: View {
                 onOpenReference: openMarkdownReference
             )
                 .frame(minHeight: notesEditorMinHeight)
-                .background(Theme.surfaceElevated.opacity(0.35))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
-                }
+                .cadenceCard(background: Theme.surfaceElevated.opacity(0.35), cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
         }
     }
 
@@ -564,12 +559,7 @@ struct iOSTaskDetailSheet: View {
                 .foregroundStyle(Theme.text)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 9)
-                .background(Theme.surfaceElevated.opacity(0.55))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
-                }
+                .cadenceCard(background: Theme.surfaceElevated.opacity(0.55), cornerRadius: Theme.radiusControl, shadowRadius: 8, shadowY: 3)
                 .onSubmit(addSubtask)
 
             Button(action: addSubtask) {

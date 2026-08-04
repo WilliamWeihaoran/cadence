@@ -83,7 +83,7 @@ struct iOSSyncSettingsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             CadenceSettingsSectionLabel(text: "iCloud")
-            CadenceSettingsCard {
+            iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 12) {
                         Image(systemName: presentation.icon)
@@ -150,7 +150,7 @@ struct iOSLocalDataSettingsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             CadenceSettingsSectionLabel(text: "Local Data")
-            CadenceSettingsCard {
+            iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 14) {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
                         iOSSettingsMetricTile(title: "Active tasks", value: "\(activeTaskCount)", icon: "checklist", color: Theme.blue)
@@ -216,7 +216,7 @@ struct iOSNavigationSettingsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             CadenceSettingsSectionLabel(text: "Defaults")
-            CadenceSettingsCard {
+            iOSSettingsCard {
                 VStack(spacing: 0) {
                     iOSSettingsControlRow(
                         title: "iPad Today",
@@ -349,7 +349,7 @@ struct iOSMobileCoverageSettingsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             CadenceSettingsSectionLabel(text: "Mobile Coverage")
-            CadenceSettingsCard {
+            iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 16) {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
                         iOSSettingsMetricTile(
@@ -420,7 +420,7 @@ struct iOSAboutSettingsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             CadenceSettingsSectionLabel(text: "Build")
-            CadenceSettingsCard {
+            iOSSettingsCard {
                 VStack(spacing: 0) {
                     iOSSettingsInfoRow(title: "Version", value: appVersion)
                     Divider().background(Theme.borderSubtle)
@@ -431,7 +431,7 @@ struct iOSAboutSettingsSection: View {
             }
 
             CadenceSettingsSectionLabel(text: "Review Links")
-            CadenceSettingsCard {
+            iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 13) {
                     HStack(alignment: .top, spacing: 11) {
                         Image(systemName: "hand.raised.fill")

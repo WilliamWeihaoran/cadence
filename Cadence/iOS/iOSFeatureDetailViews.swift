@@ -175,14 +175,11 @@ struct iOSHabitSummaryRow: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(Color(hex: habit.colorHex))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .background(isSelected ? Color(hex: habit.colorHex).opacity(0.15) : Theme.surfaceElevated.opacity(0.38))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(isSelected ? Color(hex: habit.colorHex).opacity(0.32) : Theme.borderSubtle.opacity(0.45), lineWidth: 1)
-        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .background(isSelected ? Color(hex: habit.colorHex).opacity(0.16) : Theme.surfaceElevated.opacity(0.42))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .shadow(color: Theme.cardElevationShadow, radius: 6, x: 0, y: 2)
     }
 }
 

@@ -281,8 +281,7 @@ struct GoalTimelineFilterPopover: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 9))
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.borderSubtle, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             VStack(alignment: .leading, spacing: 8) {
                 SectionEyebrowLabel(text: "Status")

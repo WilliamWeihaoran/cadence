@@ -342,22 +342,20 @@ private struct iOSCalendarEventBlock: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                     .fill(Theme.surfaceElevated)
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(color.opacity(0.12))
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                    .fill(color.opacity(0.14))
             }
         )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(color)
                 .frame(width: 3)
                 .padding(.vertical, 5)
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(color.opacity(0.24), lineWidth: 1)
-        }
+        .shadow(color: Theme.chipShadow, radius: 3, x: 0, y: 1)
     }
 }
 
@@ -390,22 +388,20 @@ private struct iOSCalendarTaskBlock: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(
                 ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                         .fill(Theme.surfaceElevated)
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(color.opacity(task.isDone ? 0.06 : 0.16))
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                        .fill(color.opacity(task.isDone ? 0.07 : 0.18))
                 }
             )
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             .overlay(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(color)
                     .frame(width: 3)
                     .padding(.vertical, 5)
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(color.opacity(0.24), lineWidth: 1)
-            }
+            .shadow(color: Theme.chipShadow, radius: 3, x: 0, y: 1)
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $showDetail) {
@@ -442,16 +438,14 @@ private struct iOSCalendarBundleBlock: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(
                 ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                         .fill(Theme.surfaceElevated)
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Theme.amber.opacity(0.14))
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                        .fill(Theme.amber.opacity(0.16))
                 }
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(Theme.amber.opacity(0.28), lineWidth: 1)
-            }
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+            .shadow(color: Theme.chipShadow, radius: 3, x: 0, y: 1)
         }
         .buttonStyle(.plain)
         .contextMenu {

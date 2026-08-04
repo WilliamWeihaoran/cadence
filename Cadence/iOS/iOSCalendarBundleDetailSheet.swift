@@ -92,7 +92,7 @@ struct iOSCalendarBundleDetailSheet: View {
                 .padding(.horizontal, 12)
                 .frame(minHeight: 52)
                 .background(Theme.surfaceElevated.opacity(0.65))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             HStack(spacing: 8) {
                 Label(
@@ -224,14 +224,9 @@ private struct iOSCalendarBundleEditorSection<Content: View>: View {
             VStack(alignment: .leading, spacing: 0) {
                 content
             }
-            .padding(12)
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-            }
+            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
         }
     }
 }
@@ -302,15 +297,12 @@ private struct iOSCalendarBundleTaskRow: View {
                     .frame(width: 30, height: 30)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
-        .background(Theme.surfaceElevated.opacity(0.54))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.42), lineWidth: 1)
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 11)
+        .padding(.vertical, 11)
+        .background(Theme.surfaceElevated.opacity(0.58))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .shadow(color: Theme.cardElevationShadow, radius: 8, x: 0, y: 3)
+        .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
         .onTapGesture(perform: open)
     }
 }

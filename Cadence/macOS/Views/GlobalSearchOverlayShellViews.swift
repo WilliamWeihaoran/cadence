@@ -57,10 +57,10 @@ struct GlobalSearchOverlayShell<Content: View>: View {
             content()
                 .frame(width: 760, height: 620)
                 .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(Theme.borderSubtle.opacity(0.95), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous)
+                        .stroke(Theme.borderSubtle.opacity(0.4), lineWidth: 1)
                 }
                 .shadow(color: Theme.overlayCardShadow, radius: 36, x: 0, y: 20)
         }

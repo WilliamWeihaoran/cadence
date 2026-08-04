@@ -309,8 +309,11 @@ struct iOSSearchView: View {
                         .tint(Theme.blue)
                     }
                 }
+                .padding(14)
+                .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
             }
-            .listRowBackground(Theme.surface)
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .listRowBackground(Color.clear)
 
             if showsProgress {
                 resultSection("Pages", results: pageResults)
@@ -451,9 +454,11 @@ struct iOSSearchView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(Theme.blue)
                 }
-                .padding(.vertical, 6)
+                .padding(14)
+                .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
             }
-            .listRowBackground(Theme.surface)
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .listRowBackground(Color.clear)
         }
     }
 
@@ -475,9 +480,9 @@ struct iOSSearchView: View {
             Section(title) {
                 ForEach(results.prefix(isSearching ? 24 : 8)) { result in
                     searchResultRow(result)
-                        .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
+                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                         .listRowSeparator(.hidden)
-                        .listRowBackground(Theme.surface)
+                        .listRowBackground(Color.clear)
                 }
             }
         }

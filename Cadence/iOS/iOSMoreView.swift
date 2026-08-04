@@ -111,12 +111,7 @@ private struct iOSMoreFeatureSectionView: View {
                     }
                 }
             }
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
-            }
+            .cadenceCard(cornerRadius: Theme.radiusCard)
         }
     }
 
@@ -140,11 +135,7 @@ private struct iOSMoreFeatureNavigationRow: View {
                 .foregroundStyle(row.color)
                 .frame(width: 31, height: 31)
                 .background(row.color.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(row.color.opacity(0.18), lineWidth: 1)
-                }
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(row.title)

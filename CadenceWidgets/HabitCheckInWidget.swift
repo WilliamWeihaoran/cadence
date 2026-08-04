@@ -278,16 +278,17 @@ struct HabitCheckInWidgetView: View {
                     RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous)
                         .fill(habitBackground(for: habit))
                 )
+                .cadenceWidgetElevation(scale)
             }
             .buttonStyle(.plain)
         } else {
             RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous)
-                .fill(Color.white.opacity(0.04))
+                .fill(Color.white.opacity(0.05))
                 .frame(minHeight: compact ? 66 : 74)
                 .overlay {
                     Image(systemName: "plus")
                         .font(.system(size: scale.bodyFontSize + 1, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.28))
+                        .foregroundStyle(.white.opacity(0.32))
                 }
         }
     }

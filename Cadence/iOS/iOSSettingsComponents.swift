@@ -379,7 +379,7 @@ struct iOSSettingsEmptyRow: View {
                 .foregroundStyle(Theme.dim)
                 .frame(width: 32, height: 32)
                 .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
@@ -411,7 +411,7 @@ struct iOSSettingsMetricTile: View {
                     .foregroundStyle(color)
                     .frame(width: 30, height: 30)
                     .background(color.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
                 Spacer(minLength: 0)
             }
@@ -432,12 +432,7 @@ struct iOSSettingsMetricTile: View {
         }
         .padding(13)
         .frame(minHeight: 104, alignment: .topLeading)
-        .background(Theme.surfaceElevated.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(color.opacity(0.18), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.72), cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
     }
 }
 
@@ -473,7 +468,7 @@ struct iOSSettingsCapabilityRow: View {
                 .foregroundStyle(capability.status.color)
                 .frame(width: 28, height: 28)
                 .background(capability.status.color.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(capability.title)
@@ -501,6 +496,79 @@ struct iOSSettingsCapabilityRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
+    }
+}
+
+// MARK: - Soft-elevation card shell
+
+/// Local stand-in for the shared `CadenceSettingsCard` (`Shared/CadenceSettingsSharedViews.swift`).
+/// The shared component keeps its original hard-border treatment because other surfaces
+/// (macOS settings, `iOSCalendarSettingsSection`, `iPadInboxView`) still rely on it as-is.
+/// Settings surfaces in this file's scope use this instead so they can pick up the shared
+/// `.cadenceCard` soft-elevation styling (bigger radius, shadow instead of a hairline border).
+struct iOSSettingsCard<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .padding(16)
+            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 14, shadowY: 6)
+    }
+}
+
+/// Local stand-in for the shared `CadenceSettingsHeader`, same layout, riding on
+/// `iOSSettingsCard`'s soft-elevation styling instead of the shared hard-border card.
+struct iOSSettingsPageHeader<TrailingContent: View>: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let tint: Color
+    @ViewBuilder let trailingContent: TrailingContent
+
+    init(
+        title: String,
+        subtitle: String,
+        icon: String,
+        tint: Color,
+        @ViewBuilder trailingContent: () -> TrailingContent = { EmptyView() }
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.icon = icon
+        self.tint = tint
+        self.trailingContent = trailingContent()
+    }
+
+    var body: some View {
+        iOSSettingsCard {
+            HStack(alignment: .top, spacing: 14) {
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                    .fill(tint.opacity(0.18))
+                    .frame(width: 42, height: 42)
+                    .overlay {
+                        Image(systemName: icon)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(tint)
+                    }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+                trailingContent
+            }
+        }
     }
 }
 #endif

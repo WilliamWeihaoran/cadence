@@ -261,14 +261,15 @@ struct TodayTasksWidgetView: View {
         .background(
             LinearGradient(
                 colors: [
-                    Color.white.opacity(0.10),
-                    Color(red: 0.21, green: 0.31, blue: 0.42).opacity(0.26),
+                    Color.white.opacity(0.12),
+                    Color(red: 0.21, green: 0.31, blue: 0.42).opacity(0.30),
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         )
         .clipShape(RoundedRectangle(cornerRadius: compact ? scale.cardCornerRadius : scale.cardCornerRadius + 1, style: .continuous))
+        .cadenceWidgetElevation(scale)
     }
 
     private func taskStackCard(
@@ -352,8 +353,9 @@ struct TodayTasksWidgetView: View {
         }
         .padding(.horizontal, scale.panelPadding)
         .padding(.vertical, dense ? max(scale.panelPadding - 2, 6) : max(scale.panelPadding - 1, 7))
-        .background(Color.white.opacity(dense ? 0.05 : 0.07))
+        .background(Color.white.opacity(dense ? 0.07 : 0.09))
         .clipShape(RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous))
+        .cadenceWidgetElevation(scale)
     }
 
     private func footerBar(label: String) -> some View {
@@ -423,6 +425,8 @@ struct TodayTasksWidgetView: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: size, weight: .semibold))
                 .foregroundStyle(Color(red: 0.35, green: 0.89, blue: 0.56))
+                .padding(3)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -439,7 +443,7 @@ struct TodayTasksWidgetView: View {
             .minimumScaleFactor(0.85)
             .padding(.horizontal, scale.badgeHorizontalPadding)
             .padding(.vertical, scale.badgeVerticalPadding)
-            .background(Color.white.opacity(0.08))
+            .background(Color.white.opacity(0.10))
             .clipShape(Capsule())
     }
 

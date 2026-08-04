@@ -273,14 +273,9 @@ private struct iOSCalendarInspectorMetric: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(tint.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(tint.opacity(0.15), lineWidth: 1)
-        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .cadenceCard(background: tint.opacity(0.09), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
     }
 }
 
@@ -332,13 +327,8 @@ private struct iOSCalendarInspectorEmptyState: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Add calendar item")
         }
-        .padding(14)
-        .background(Theme.surfaceElevated.opacity(0.34))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.5), lineWidth: 1)
-        }
+        .padding(16)
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.4), cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
     }
 }
 

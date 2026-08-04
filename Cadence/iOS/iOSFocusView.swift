@@ -233,11 +233,8 @@ struct iOSFocusView: View {
                 onOpenReference: openMarkdownReference
             )
             .frame(maxWidth: 560, minHeight: 140, maxHeight: isCompact ? 260 : 320, alignment: .topLeading)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.52), lineWidth: 1)
-            }
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+            .shadow(color: Theme.cardElevationShadow, radius: 10, x: 0, y: 4)
         }
     }
 

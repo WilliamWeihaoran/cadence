@@ -129,12 +129,7 @@ struct iOSCalendarContextStrip: View {
         }
         .padding(.horizontal, 10)
         .frame(height: isCompact ? 54 : 48)
-        .background(Theme.surfaceElevated.opacity(0.34))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.42), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.42), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
     }
 
     private func metric(value: Int, label: String, systemImage: String, tint: Color) -> some View {
@@ -161,12 +156,7 @@ struct iOSCalendarContextStrip: View {
         .padding(.horizontal, 10)
         .frame(maxWidth: .infinity)
         .frame(height: isCompact ? 54 : 48)
-        .background(tint.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(tint.opacity(0.16), lineWidth: 1)
-        }
+        .cadenceCard(background: tint.opacity(0.10), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
     }
 
     @ViewBuilder
@@ -195,12 +185,7 @@ struct iOSCalendarContextStrip: View {
             }
             .padding(.horizontal, 10)
             .frame(height: isCompact ? 54 : 48)
-            .background(Theme.surfaceElevated.opacity(0.28))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.38), lineWidth: 1)
-            }
+            .cadenceCard(background: Theme.surfaceElevated.opacity(0.36), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
         } else {
             HStack(spacing: 9) {
                 Image(systemName: "plus")
@@ -223,12 +208,7 @@ struct iOSCalendarContextStrip: View {
             }
             .padding(.horizontal, 10)
             .frame(height: isCompact ? 54 : 48)
-            .background(Theme.surfaceElevated.opacity(0.18))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.3), lineWidth: 1)
-            }
+            .cadenceCard(background: Theme.surfaceElevated.opacity(0.24), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
         }
     }
 }

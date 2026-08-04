@@ -79,7 +79,7 @@ struct iOSTrackingTextField: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 11)
                 .background(Theme.surfaceElevated.opacity(0.62))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         }
     }
 
@@ -110,14 +110,9 @@ struct iOSTrackingPickerSection<Content: View>: View {
             VStack(alignment: .leading, spacing: 0) {
                 content
             }
-            .padding(12)
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-            }
+            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
         }
     }
 }

@@ -331,12 +331,7 @@ private struct iPadTodayReviewTile: View {
         }
         .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
         .padding(12)
-        .background(Theme.surfaceElevated.opacity(0.26))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.4), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.26), cornerRadius: Theme.radiusCard)
     }
 }
 
@@ -359,11 +354,7 @@ private struct iPadTodayHeaderMiniSummary: View {
                 .padding(.horizontal, 8)
                 .frame(height: 28)
                 .background(Theme.surfaceElevated.opacity(0.44))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Theme.borderSubtle.opacity(0.36), lineWidth: 1)
-                }
+                .clipShape(Capsule())
             }
         }
     }
@@ -402,9 +393,9 @@ private struct iPadTodayLayoutPicker: View {
         .padding(3)
         .frame(maxWidth: showsLabels ? 166 : 82)
         .background(Theme.surfaceElevated.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                 .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
         }
     }
@@ -436,9 +427,9 @@ private struct iPadTodaySidePanelPicker: View {
         }
         .padding(3)
         .background(Theme.surfaceElevated.opacity(0.84))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                 .strokeBorder(Theme.borderSubtle.opacity(0.5), lineWidth: 1)
         }
     }
@@ -467,11 +458,7 @@ private struct iPadTodaySummaryChip: View {
         .frame(maxWidth: .infinity)
         .frame(height: 34)
         .background(Theme.surfaceElevated.opacity(0.45))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.46), lineWidth: 1)
-        }
+        .clipShape(Capsule())
     }
 }
 
@@ -541,12 +528,7 @@ private struct iPadTodayEmptyStateCard: View {
             #endif
         }
         .padding(14)
-        .background(Theme.surfaceElevated.opacity(0.36))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.36), cornerRadius: Theme.radiusCard)
     }
 }
 
@@ -576,12 +558,7 @@ private struct iPadTodayHint: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(12)
-        .background(Theme.surfaceElevated.opacity(0.22))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.38), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.22), cornerRadius: Theme.radiusCard)
     }
 }
 

@@ -280,11 +280,11 @@ struct KanbanCardBackground: View {
     let cancelProgress: CGFloat
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 8)
+        RoundedRectangle(cornerRadius: Theme.radiusCard)
             .fill(isHovered ? Theme.surfaceElevated.opacity(1.0) : Theme.surfaceElevated)
             .overlay {
                 if urgencyBackgroundTint != .clear {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: Theme.radiusCard)
                         .fill(urgencyBackgroundTint)
                 }
             }
@@ -293,26 +293,23 @@ struct KanbanCardBackground: View {
                     TaskCompletionPendingOverlay(
                         progress: Double(completionProgress),
                         tint: Theme.green,
-                        cornerRadius: 8
+                        cornerRadius: Theme.radiusCard
                     )
                 } else if isPendingCancel {
                     TaskCompletionPendingOverlay(
                         progress: Double(cancelProgress),
                         tint: Theme.dim,
-                        cornerRadius: 8
+                        cornerRadius: Theme.radiusCard
                     )
                 }
             }
             .overlay {
                 if isDone {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: Theme.radiusCard)
                         .fill(Theme.surface.opacity(0.18))
                 }
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(.white.opacity(0.04))
-            }
+            .shadow(color: Theme.cardElevationShadow, radius: 10, x: 0, y: 4)
     }
 }
 #endif

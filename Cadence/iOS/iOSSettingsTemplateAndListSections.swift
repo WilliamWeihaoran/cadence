@@ -24,7 +24,7 @@ struct iOSTemplatesSettingsSection: View {
         VStack(alignment: .leading, spacing: 12) {
             CadenceSettingsSectionLabel(text: "Note Templates")
 
-            CadenceSettingsCard {
+            iOSSettingsCard {
                 if horizontalSizeClass == .regular {
                     HStack(alignment: .top, spacing: 14) {
                         templateList
@@ -43,7 +43,7 @@ struct iOSTemplatesSettingsSection: View {
                 }
             }
 
-            CadenceSettingsCard {
+            iOSSettingsCard {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "info.circle.fill")
                         .font(.system(size: 14, weight: .semibold))
@@ -225,7 +225,7 @@ struct iOSListsLifecycleSettingsSection: View {
         VStack(alignment: .leading, spacing: 12) {
             if completedAreas.isEmpty && archivedAreas.isEmpty && completedProjects.isEmpty && archivedProjects.isEmpty {
                 CadenceSettingsSectionLabel(text: "Inactive Lists")
-                CadenceSettingsCard {
+                iOSSettingsCard {
                     iOSSettingsEmptyInlineRow(
                         systemImage: "archivebox",
                         title: "No completed or archived lists",
@@ -254,7 +254,7 @@ struct iOSListsLifecycleSettingsSection: View {
     }
 
     private func lifecycleCard(areas: [Area] = [], projects: [Project] = []) -> some View {
-        CadenceSettingsCard {
+        iOSSettingsCard {
             VStack(spacing: 0) {
                 ForEach(Array(areas.enumerated()), id: \.element.id) { index, area in
                     iOSListLifecycleSettingsRow(
@@ -305,7 +305,7 @@ struct iOSAISettingsSection: View {
         VStack(alignment: .leading, spacing: 12) {
             CadenceSettingsSectionLabel(text: "OpenAI")
 
-            CadenceSettingsCard {
+            iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 15) {
                     HStack(alignment: .top, spacing: 13) {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)

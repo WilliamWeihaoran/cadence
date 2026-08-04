@@ -548,7 +548,7 @@ private struct iOSMeetingNoteRow: View {
                 .foregroundStyle(Theme.purple)
                 .frame(width: 34, height: 34)
                 .background(Theme.purple.opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(note.displayTitle)
@@ -571,14 +571,9 @@ private struct iOSMeetingNoteRow: View {
                 .foregroundStyle(Theme.dim.opacity(0.7))
                 .padding(.top, 9)
         }
-        .padding(12)
+        .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.55), lineWidth: 1)
-        }
+        .cadenceCard(background: Theme.surfaceElevated, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
     }
 }
 

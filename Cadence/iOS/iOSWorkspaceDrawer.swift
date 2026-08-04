@@ -58,17 +58,13 @@ struct iOSWorkspaceDrawer: View {
 
     private var drawerHeader: some View {
         HStack(spacing: 11) {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                 .fill(Theme.blue.opacity(0.16))
                 .frame(width: 34, height: 34)
                 .overlay {
                     Image(systemName: "checklist.checked")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.blue)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(Theme.blue.opacity(0.2), lineWidth: 1)
                 }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -90,7 +86,7 @@ struct iOSWorkspaceDrawer: View {
                     .foregroundStyle(Theme.dim)
                     .frame(width: 28, height: 28)
                     .background(Theme.surfaceElevated.opacity(0.68))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             }
             .buttonStyle(.plain)
         }
@@ -190,12 +186,7 @@ private struct iOSWorkspaceDrawerSection<Content: View>: View {
             VStack(spacing: 0) {
                 content()
             }
-            .background(Theme.surface.opacity(0.72))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.46), lineWidth: 1)
-            }
+            .cadenceCard(background: Theme.surface.opacity(0.72), cornerRadius: Theme.radiusCard)
         }
     }
 }
@@ -217,11 +208,7 @@ private struct iOSWorkspaceDrawerRow: View {
                     .foregroundStyle(isSelected ? Theme.text : color)
                     .frame(width: 28, height: 28)
                     .background(isSelected ? color.opacity(0.30) : color.opacity(0.11))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(color.opacity(isSelected ? 0.45 : 0.18), lineWidth: 1)
-                    }
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -271,7 +258,7 @@ private struct iOSWorkspaceDrawerEmptyRow: View {
                 .foregroundStyle(Theme.dim)
                 .frame(width: 30, height: 30)
                 .background(Theme.surfaceElevated.opacity(0.54))
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("No active lists")

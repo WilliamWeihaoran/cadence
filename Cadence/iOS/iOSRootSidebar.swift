@@ -239,7 +239,7 @@ enum iOSSidebarMetrics {
     static let buttonHeight: CGFloat = 40
     static let iconSize: CGFloat = 14
     static let iconBoxSize: CGFloat = 30
-    static let selectedCornerRadius: CGFloat = 9
+    static let selectedCornerRadius: CGFloat = Theme.radiusControl
 }
 
 struct iOSSidebarRailDivider: View {
@@ -258,17 +258,13 @@ struct iOSSidebarBrand: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 9) {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                     .fill(Theme.blue.opacity(0.13))
                     .frame(width: 32, height: 32)
                     .overlay {
                         Image(systemName: "sidebar.leading")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Theme.blue)
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .strokeBorder(Theme.blue.opacity(0.18), lineWidth: 1)
                     }
 
                 if style == .expanded {
@@ -341,11 +337,7 @@ struct iOSSidebarButton: View {
                 .foregroundStyle(isSelected ? tint : tint.opacity(0.84))
                 .frame(width: 26, height: 26)
                 .background(tint.opacity(isSelected ? 0.18 : 0.10))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(tint.opacity(isSelected ? 0.30 : 0.13), lineWidth: 1)
-                }
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             Text(title)
                 .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
@@ -370,11 +362,7 @@ struct iOSSidebarButton: View {
         .frame(height: 38)
         .padding(.horizontal, 8)
         .background(isSelected ? tint.opacity(0.11) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(isSelected ? tint.opacity(0.22) : Color.clear, lineWidth: 1)
-        }
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .overlay(alignment: .leading) {
             if isSelected {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -396,10 +384,6 @@ struct iOSSidebarButton: View {
                     RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous)
                         .fill(iconFill)
                 )
-                .overlay {
-                    RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous)
-                        .strokeBorder(iconBorder, lineWidth: 1)
-                }
                 .frame(maxWidth: .infinity)
                 .frame(height: iOSSidebarMetrics.buttonHeight)
 
@@ -420,10 +404,6 @@ struct iOSSidebarButton: View {
         .frame(height: iOSSidebarMetrics.buttonHeight)
         .background(isSelected ? tint.opacity(0.10) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous)
-                .strokeBorder(isSelected ? tint.opacity(0.22) : Color.clear, lineWidth: 1)
-        }
         .overlay(alignment: .leading) {
             if isSelected {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -438,13 +418,6 @@ struct iOSSidebarButton: View {
     private var iconFill: Color {
         if isSelected {
             return tint.opacity(0.24)
-        }
-        return Color.clear
-    }
-
-    private var iconBorder: Color {
-        if isSelected {
-            return tint.opacity(0.34)
         }
         return Color.clear
     }

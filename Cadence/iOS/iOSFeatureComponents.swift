@@ -105,12 +105,8 @@ struct iOSCompactPageHeader: View {
 struct iOSCompactPanelCardModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.52), lineWidth: 1)
-            }
-            .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 8)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+            .shadow(color: Theme.cardElevationShadow, radius: 16, x: 0, y: 8)
     }
 }
 
@@ -157,14 +153,11 @@ struct iOSFeatureSummaryRow: View {
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(isSelected ? color.opacity(0.12) : Theme.surfaceElevated.opacity(0.30))
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(isSelected ? color.opacity(0.26) : Theme.borderSubtle.opacity(0.35), lineWidth: 1)
-        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(isSelected ? color.opacity(0.14) : Theme.surfaceElevated.opacity(0.36))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .shadow(color: Theme.cardElevationShadow, radius: 6, x: 0, y: 2)
         .overlay(alignment: .leading) {
             if isSelected {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -316,13 +309,8 @@ struct iOSMetricTile: View {
                 .kerning(0.6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Theme.surfaceElevated.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
-        }
+        .padding(14)
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.55), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
     }
 }
 

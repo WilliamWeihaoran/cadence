@@ -288,14 +288,15 @@ struct MilestoneMomentumWidgetView: View {
             .background(
                 LinearGradient(
                     colors: [
-                        Color(hex: goal.colorHex).opacity(0.28),
-                        Color.white.opacity(0.06),
+                        Color(hex: goal.colorHex).opacity(0.32),
+                        Color.white.opacity(0.07),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
             .clipShape(RoundedRectangle(cornerRadius: compact ? scale.cardCornerRadius : scale.cardCornerRadius + 1, style: .continuous))
+            .cadenceWidgetElevation(scale)
         }
     }
 
@@ -340,8 +341,9 @@ struct MilestoneMomentumWidgetView: View {
             .padding(.horizontal, scale.panelPadding)
             .padding(.vertical, compact ? max(scale.panelPadding - 2, 6) : max(scale.panelPadding - 1, 7))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.07))
+            .background(Color.white.opacity(0.09))
             .clipShape(RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous))
+            .cadenceWidgetElevation(scale)
         }
     }
 
@@ -371,7 +373,7 @@ struct MilestoneMomentumWidgetView: View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.white.opacity(0.08))
+                    .fill(Color.white.opacity(0.10))
                 Capsule()
                     .fill(tint)
                     .frame(width: max(8, proxy.size.width * max(0, min(progress, 1))))
