@@ -286,12 +286,11 @@ struct ContainerPickerBadge: View {
                         .focused($isSearchFocused)
                         .onSubmit { selectHighlighted() }
                         .onKeyPress(.upArrow) {
-                            highlightIdx = max(highlightIdx - 1, 0)
+                            highlightIdx = TaskPickerHighlightSupport.clampedMovedIndex(highlightIdx, by: -1, count: flatFiltered.count)
                             return .handled
                         }
                         .onKeyPress(.downArrow) {
-                            let count = flatFiltered.count
-                            if count > 0 { highlightIdx = min(highlightIdx + 1, count - 1) }
+                            highlightIdx = TaskPickerHighlightSupport.clampedMovedIndex(highlightIdx, by: 1, count: flatFiltered.count)
                             return .handled
                         }
                     if !searchQuery.isEmpty {
@@ -461,12 +460,11 @@ struct TaskSectionPickerBadge: View {
                             }
                         }
                         .onKeyPress(.upArrow) {
-                            highlightIdx = max(highlightIdx - 1, 0)
+                            highlightIdx = TaskPickerHighlightSupport.clampedMovedIndex(highlightIdx, by: -1, count: filteredSections.count)
                             return .handled
                         }
                         .onKeyPress(.downArrow) {
-                            let count = filteredSections.count
-                            if count > 0 { highlightIdx = min(highlightIdx + 1, count - 1) }
+                            highlightIdx = TaskPickerHighlightSupport.clampedMovedIndex(highlightIdx, by: 1, count: filteredSections.count)
                             return .handled
                         }
                     if !searchQuery.isEmpty {

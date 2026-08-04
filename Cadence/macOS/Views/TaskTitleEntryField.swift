@@ -507,13 +507,11 @@ struct TaskTitleEntryField: View {
     }
 
     private func movedHighlightIndex(_ current: Int, by offset: Int, count: Int) -> Int {
-        guard count > 0 else { return 0 }
-        return (clampedHighlightIndex(current, count: count) + offset + count) % count
+        TaskPickerHighlightSupport.wrappedMovedIndex(current, by: offset, count: count)
     }
 
     private func clampedHighlightIndex(_ index: Int, count: Int) -> Int {
-        guard count > 0 else { return 0 }
-        return min(max(index, 0), count - 1)
+        TaskPickerHighlightSupport.clampedIndex(index, count: count)
     }
 
     private func createInlineTag() {
