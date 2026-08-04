@@ -31,11 +31,12 @@ struct MonthGridView: View {
     @Binding var visibleMonthIdx: Int
     let scrollToTodayTrigger: Bool
 
-    private let totalMonths = 120
-    private let todayMonthIdx = 60
-    private let cellHeight: CGFloat = 130
+    private let totalMonths = CalendarMonthGridMetrics.totalMonths
+    private let todayMonthIdx = CalendarMonthGridMetrics.todayMonthIndex
+    private let cellHeight = CalendarMonthGridMetrics.cellHeight
     private let cal = Calendar.current
     @State private var didInitialPosition = false
+    @State private var isProgrammaticScroll = false
 
     private var currentMonthStart: Date {
         CalendarMonthGridSupport.currentMonthStart(calendar: cal)
@@ -84,7 +85,8 @@ struct MonthGridView: View {
                         offsets: offsets,
                         totalMonths: totalMonths,
                         visibleMonthIdx: &visibleMonthIdx,
-                        didInitialPosition: didInitialPosition
+                        didInitialPosition: didInitialPosition,
+                        isProgrammaticScroll: isProgrammaticScroll
                     )
                 }
                 .onAppear {
@@ -92,14 +94,16 @@ struct MonthGridView: View {
                         proxy: proxy,
                         visibleMonthIdx: $visibleMonthIdx,
                         todayMonthIdx: todayMonthIdx,
-                        setDidInitialPosition: { didInitialPosition = $0 }
+                        setDidInitialPosition: { didInitialPosition = $0 },
+                        setProgrammaticScroll: { isProgrammaticScroll = $0 }
                     )
                 }
                 .onChange(of: scrollToTodayTrigger) {
                     CalendarMonthGridInteractionSupport.handleTodayTrigger(
                         proxy: proxy,
                         todayMonthIdx: todayMonthIdx,
-                        todayKey: DateFormatters.todayKey()
+                        todayKey: DateFormatters.todayKey(),
+                        setProgrammaticScroll: { isProgrammaticScroll = $0 }
                     )
                 }
             }

@@ -20,7 +20,7 @@ struct CalendarPageView: View {
     @AppStorage("calendarZoomLevel") private var zoomLevel: Int = 1
     @AppStorage("calendarRememberedTimelineHour") private var rememberedScrollHour: Int = -1
     @AppStorage("calendarRememberedTimelineDateKey") private var anchorDateKey: String = ""
-    @State private var visibleMonthIdx: Int = 60  // index into MonthGridView's 120-month window
+    @State private var visibleMonthIdx: Int = CalendarMonthGridMetrics.todayMonthIndex  // index into MonthGridView's month window (CalendarMonthGridMetrics.totalMonths months wide)
     @State private var monthGridResetNonce: Int = 0
     @State private var isRestoringVerticalScroll = true
     @State private var isRestoringHorizontalScroll = true
@@ -300,7 +300,7 @@ struct CalendarPageView: View {
             isRestoringVerticalScroll = true
         }
         if viewMode == .month || presentation == .board {
-            visibleMonthIdx = 60
+            visibleMonthIdx = CalendarMonthGridMetrics.todayMonthIndex
         }
         scrollToTodayTrigger.toggle()
     }

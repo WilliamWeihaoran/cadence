@@ -2,7 +2,7 @@
 import SwiftUI
 
 struct CalendarPageStateSupport {
-    static let todayMonthIndex = 60
+    static let todayMonthIndex = CalendarMonthGridMetrics.todayMonthIndex
 
     static func visibleMonthLabel(visibleMonthIdx: Int, calendar: Calendar) -> String {
         let currentMonthStart: Date = {

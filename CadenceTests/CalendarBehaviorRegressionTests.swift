@@ -463,5 +463,119 @@ struct CalendarBehaviorRegressionTests {
         #expect(movedSecondDayRange.start == movedStart)
         #expect(movedSecondDayRange.end == movedEnd)
     }
+
+    @Test func monthIndexForOffsetClampsAtBoundariesAndPastTheEnd() {
+        let offsets: [CGFloat] = [0, 100, 250, 400, 600]
+        let totalMonths = offsets.count
+
+        // Just before a boundary stays on the earlier month.
+        #expect(monthIndexForOffset(y: 99, offsets: offsets, totalMonths: totalMonths) == 0)
+        #expect(monthIndexForOffset(y: 99.9, offsets: offsets, totalMonths: totalMonths) == 0)
+        // Exactly on a boundary advances to the new month.
+        #expect(monthIndexForOffset(y: 0, offsets: offsets, totalMonths: totalMonths) == 0)
+        #expect(monthIndexForOffset(y: 100, offsets: offsets, totalMonths: totalMonths) == 1)
+        #expect(monthIndexForOffset(y: 250, offsets: offsets, totalMonths: totalMonths) == 2)
+        // Past the last recorded offset clamps to the final month instead of crashing.
+        #expect(monthIndexForOffset(y: 10_000, offsets: offsets, totalMonths: totalMonths) == totalMonths - 1)
+        // Negative offsets (e.g. rubber-band overscroll) clamp to the first month.
+        #expect(monthIndexForOffset(y: -50, offsets: offsets, totalMonths: totalMonths) == 0)
+    }
+
+    @Test func monthIndexClampsFarOutOfWindowAnchorDatesToSharedWindowBounds() throws {
+        let calendar = Calendar.current
+        let currentMonthStart = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 1)))
+        let farPast = try #require(calendar.date(from: DateComponents(year: 1990, month: 1, day: 1)))
+        let farFuture = try #require(calendar.date(from: DateComponents(year: 2200, month: 1, day: 1)))
+
+        let pastIndex = monthIndex(
+            for: farPast,
+            currentMonthStart: currentMonthStart,
+            todayMonthIdx: CalendarMonthGridMetrics.todayMonthIndex,
+            calendar: calendar
+        )
+        let futureIndex = monthIndex(
+            for: farFuture,
+            currentMonthStart: currentMonthStart,
+            todayMonthIdx: CalendarMonthGridMetrics.todayMonthIndex,
+            calendar: calendar
+        )
+
+        #expect(pastIndex == 0)
+        #expect(futureIndex == CalendarMonthGridMetrics.totalMonths - 1)
+
+        // An anchor date inside the window should never be clamped.
+        let insideIndex = monthIndex(
+            for: currentMonthStart,
+            currentMonthStart: currentMonthStart,
+            todayMonthIdx: CalendarMonthGridMetrics.todayMonthIndex,
+            calendar: calendar
+        )
+        #expect(insideIndex == CalendarMonthGridMetrics.todayMonthIndex)
+    }
+
+    @Test func cumulativeOffsetsTableMatchesPerMonthWeekHeights() {
+        let calendar = Calendar.current
+        let currentMonthStart = CalendarMonthGridSupport.currentMonthStart(calendar: calendar)
+        let totalMonths = 6
+        let todayMonthIdx = 0
+        let cellHeight = CalendarMonthGridMetrics.cellHeight
+
+        let offsets = CalendarMonthGridSupport.cumulativeOffsets(
+            totalMonths: totalMonths,
+            todayMonthIdx: todayMonthIdx,
+            currentMonthStart: currentMonthStart,
+            cellHeight: cellHeight,
+            calendar: calendar
+        )
+
+        #expect(offsets.count == totalMonths)
+        #expect(offsets[0] == 0)
+
+        for idx in 0..<(totalMonths - 1) {
+            let month = calendar.date(byAdding: .month, value: idx - todayMonthIdx, to: currentMonthStart) ?? currentMonthStart
+            let expectedHeight = CGFloat(CalendarMonthGridSupport.weeksInMonth(month, calendar: calendar)) * cellHeight
+            #expect(offsets[idx + 1] - offsets[idx] == expectedHeight)
+        }
+    }
+
+    @Test func handleScrollLeavesVisibleMonthIdxUntouchedUntilSettledOrDuringProgrammaticJump() {
+        var visibleMonthIdx = CalendarMonthGridMetrics.todayMonthIndex
+        let offsets: [CGFloat] = stride(from: CGFloat(0), through: CGFloat(1200), by: 100).map { $0 }
+
+        // Before the initial scroll position has settled, scroll-geometry callbacks must not
+        // move visibleMonthIdx (this is what let the header show the wrong month transiently).
+        CalendarMonthGridInteractionSupport.handleScroll(
+            y: 500,
+            offsets: offsets,
+            totalMonths: offsets.count,
+            visibleMonthIdx: &visibleMonthIdx,
+            didInitialPosition: false,
+            isProgrammaticScroll: false
+        )
+        #expect(visibleMonthIdx == CalendarMonthGridMetrics.todayMonthIndex)
+
+        // While a programmatic scroll (e.g. a "Today" jump) is in flight, callbacks reflecting
+        // the stale pre-jump offset must not stomp the value the jump just set.
+        CalendarMonthGridInteractionSupport.handleScroll(
+            y: 500,
+            offsets: offsets,
+            totalMonths: offsets.count,
+            visibleMonthIdx: &visibleMonthIdx,
+            didInitialPosition: true,
+            isProgrammaticScroll: true
+        )
+        #expect(visibleMonthIdx == CalendarMonthGridMetrics.todayMonthIndex)
+
+        // Once settled and no programmatic scroll is in flight, user scrolling updates normally.
+        CalendarMonthGridInteractionSupport.handleScroll(
+            y: 500,
+            offsets: offsets,
+            totalMonths: offsets.count,
+            visibleMonthIdx: &visibleMonthIdx,
+            didInitialPosition: true,
+            isProgrammaticScroll: false
+        )
+        #expect(visibleMonthIdx == 5)
+    }
 }
 #endif
