@@ -263,257 +263,64 @@ struct iOSTaskDetailSheet: View {
     }
 
     private var taskPropertiesSection: some View {
-        iOSTaskEditorSection(title: "Task") {
-            iOSTaskEditorRow(label: "Status", systemImage: task.status.systemImage, color: statusColor(task.status)) {
-                Picker("Status", selection: $task.status) {
-                    ForEach(TaskStatus.allCases, id: \.self) { status in
-                        Text(status.label).tag(status)
-                    }
-                }
-                .labelsHidden()
-                .tint(statusColor(task.status))
-            }
-
-            iOSTaskEditorDivider()
-
-            iOSTaskEditorRow(label: "Priority", systemImage: "flag.fill", color: Theme.priorityColor(task.priority)) {
-                Picker("Priority", selection: $task.priority) {
-                    ForEach(TaskPriority.allCases, id: \.self) { priority in
-                        Text(priority.label).tag(priority)
-                    }
-                }
-                .labelsHidden()
-                .tint(Theme.priorityColor(task.priority))
-            }
-
-            iOSTaskEditorDivider()
-
-            iOSTaskEditorRow(label: "Repeat", systemImage: task.recurrenceRule.systemImage, color: Theme.purple) {
-                Picker("Repeat", selection: recurrenceSelection) {
-                    ForEach(TaskRecurrenceRule.allCases, id: \.self) { recurrence in
-                        Text(recurrence.label).tag(recurrence)
-                    }
-                }
-                .labelsHidden()
-                .tint(Theme.purple)
-            }
-
-            iOSTaskEditorDivider()
-
-            iOSTaskEditorRow(label: "Estimate", systemImage: "clock.fill", color: Theme.blue) {
-                Stepper(value: $task.estimatedMinutes, in: 5...480, step: 5) {
-                    Text(estimateLabel)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                }
-            }
-
-            iOSTaskEditorDivider()
-
-            iOSTaskEditorRow(label: "Logged", systemImage: "timer", color: Theme.green) {
-                Stepper(value: $task.actualMinutes, in: 0...1440, step: 5) {
-                    Text(actualTimeLabel)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                }
-            }
-        }
+        iOSTaskPropertiesSection(
+            task: task,
+            recurrenceSelection: recurrenceSelection,
+            estimateLabel: estimateLabel,
+            actualTimeLabel: actualTimeLabel
+        )
     }
 
     private var organizeSection: some View {
-        iOSTaskEditorSection(title: "Organize") {
-            iOSTaskEditorRow(label: "List", systemImage: "tray.full.fill", color: Theme.blue) {
-                Picker("List", selection: $containerSelection) {
-                    Text("Inbox").tag("inbox")
-                    areaPickerSection
-                    projectPickerSection
-                }
-                .labelsHidden()
-            }
-
-            iOSTaskEditorDivider()
-
-            iOSTaskEditorRow(label: "Section", systemImage: "rectangle.split.3x1.fill", color: Theme.purple) {
-                Picker("Section", selection: $task.sectionName) {
-                    ForEach(availableSectionNames, id: \.self) { section in
-                        Text(section).tag(section)
-                    }
-                }
-                .labelsHidden()
-                .disabled(containerSelection == "inbox")
-                .opacity(containerSelection == "inbox" ? 0.45 : 1)
-            }
-        }
+        iOSTaskOrganizeSection(
+            task: task,
+            containerSelection: $containerSelection,
+            activeAreas: activeAreas,
+            activeProjects: activeProjects,
+            availableSectionNames: availableSectionNames
+        )
     }
 
     private var milestoneSection: some View {
-        iOSTaskEditorSection(title: "Milestone") {
-            iOSTaskEditorRow(
-                label: "Linked milestone",
-                systemImage: selectedGoal == nil ? "circle.dashed" : "flag.fill",
-                color: selectedGoal.map { Color(hex: $0.colorHex) } ?? Theme.dim
-            ) {
-                Picker("Milestone", selection: goalSelection) {
-                    Text("None").tag(Optional<UUID>.none)
-                    if !availableGoals.isEmpty {
-                        Section("Milestones") {
-                            ForEach(availableGoals) { goal in
-                                Text(goal.title.isEmpty ? "Untitled Milestone" : goal.title)
-                                    .tag(Optional(goal.id))
-                            }
-                        }
-                    }
-                }
-                .labelsHidden()
-                .tint(selectedGoal.map { Color(hex: $0.colorHex) } ?? Theme.blue)
+        iOSTaskMilestoneSection(
+            selectedGoal: selectedGoal,
+            availableGoals: availableGoals,
+            goalSelection: goalSelection,
+            onRemoveGoal: {
+                CadenceTaskMutationSupport.setGoal(nil, for: task, modelContext: modelContext)
             }
-
-            if let selectedGoal {
-                iOSTaskEditorDivider()
-
-                HStack(spacing: 10) {
-                    Image(systemName: "flag.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color(hex: selectedGoal.colorHex))
-                        .frame(width: 28, height: 28)
-                        .background(Color(hex: selectedGoal.colorHex).opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(selectedGoal.title.isEmpty ? "Untitled Milestone" : selectedGoal.title)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(1)
-
-                        Text(selectedGoal.pursuit?.title ?? selectedGoal.context?.name ?? selectedGoal.status.rawValue.capitalized)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Theme.dim)
-                            .lineLimit(1)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    Button {
-                        CadenceTaskMutationSupport.setGoal(nil, for: task, modelContext: modelContext)
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
-                            .frame(width: 30, height: 30)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Remove milestone")
-                }
-            } else if availableGoals.isEmpty {
-                Text("Create a milestone first, then attach tasks here.")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var areaPickerSection: some View {
-        if !activeAreas.isEmpty {
-            Section("Areas") {
-                ForEach(activeAreas) { area in
-                    Text(area.name.isEmpty ? "Untitled Area" : area.name)
-                        .tag("area:\(area.id.uuidString)")
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var projectPickerSection: some View {
-        if !activeProjects.isEmpty {
-            Section("Projects") {
-                ForEach(activeProjects) { project in
-                    Text(project.name.isEmpty ? "Untitled Project" : project.name)
-                        .tag("project:\(project.id.uuidString)")
-                }
-            }
-        }
+        )
     }
 
     private var datesSection: some View {
-        iOSTaskEditorSection(title: "Dates") {
-            dateToggleSection(
-                label: "Do date",
-                systemImage: "sun.max.fill",
-                color: Theme.amber,
-                isOn: $hasScheduledDate,
-                date: $scheduledDate,
-                pickerLabel: "Do"
-            )
-
-            if hasScheduledDate {
-                iOSTaskEditorDivider()
-                scheduledTimeSection
-            }
-
-            iOSTaskEditorDivider()
-
-            dateToggleSection(
-                label: "Due date",
-                systemImage: "flag.fill",
-                color: Theme.red,
-                isOn: $hasDueDate,
-                date: $dueDate,
-                pickerLabel: "Due"
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func dateToggleSection(
-        label: String,
-        systemImage: String,
-        color: Color,
-        isOn: Binding<Bool>,
-        date: Binding<Date>,
-        pickerLabel: String
-    ) -> some View {
-        iOSTaskEditorToggleRow(
-            label: label,
-            systemImage: systemImage,
-            color: color,
-            isOn: isOn
+        iOSTaskDatesSection(
+            hasScheduledDate: $hasScheduledDate,
+            scheduledDate: $scheduledDate,
+            hasDueDate: $hasDueDate,
+            dueDate: $dueDate,
+            hasScheduledStartMin: task.scheduledStartMin >= 0,
+            scheduledTimeEnabled: scheduledTimeEnabled,
+            scheduledStartSelection: scheduledStartSelection,
+            scheduledTimeLabel: scheduledTimeLabel
         )
-        if isOn.wrappedValue {
-            DatePicker(pickerLabel, selection: date, displayedComponents: .date)
-                .datePickerStyle(.compact)
-                .tint(color)
-        }
     }
 
     private var notesSection: some View {
-        iOSTaskEditorSection(title: "Notes") {
-            HStack {
-                Spacer()
-                iOSMarkdownModePicker(mode: notesEditorModeBinding)
-            }
-
-            iOSMarkdownEditingSurface(
-                text: Binding(
-                    get: { task.notes },
-                    set: {
-                        task.notes = $0
-                        try? modelContext.save()
-                    }
-                ),
-                isFocused: $isNotesFocused,
-                mode: notesEditorModeBinding,
-                placeholder: "Add notes...",
-                referenceNotes: allNotes,
-                referenceTasks: allTasks,
-                onOpenReference: openMarkdownReference
-            )
-                .frame(minHeight: notesEditorMinHeight)
-                .cadenceCard(background: Theme.surfaceElevated.opacity(0.35), cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
-        }
+        iOSTaskNotesSection(
+            notesText: Binding(
+                get: { task.notes },
+                set: {
+                    task.notes = $0
+                    try? modelContext.save()
+                }
+            ),
+            isFocused: $isNotesFocused,
+            notesEditorModeBinding: notesEditorModeBinding,
+            minHeight: notesEditorMinHeight,
+            referenceNotes: allNotes,
+            referenceTasks: allTasks,
+            onOpenReference: openMarkdownReference
+        )
     }
 
     private var tagsSection: some View {
@@ -527,98 +334,25 @@ struct iOSTaskDetailSheet: View {
     }
 
     private var subtasksSection: some View {
-        iOSTaskEditorSection(title: "Subtasks") {
-            subtaskList
-            subtaskComposer
-        }
-    }
-
-    @ViewBuilder
-    private var subtaskList: some View {
-        if sortedSubtasks.isEmpty {
-            Text("No subtasks")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.dim)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            VStack(spacing: 7) {
-                ForEach(sortedSubtasks) { subtask in
-                    iOSSubtaskRow(subtask: subtask) {
-                        deleteSubtask(subtask)
-                    }
-                }
-            }
-        }
-    }
-
-    private var subtaskComposer: some View {
-        HStack(spacing: 8) {
-            TextField("Add subtask", text: $newSubtaskTitle)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.text)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 9)
-                .cadenceCard(background: Theme.surfaceElevated.opacity(0.55), cornerRadius: Theme.radiusControl, shadowRadius: 8, shadowY: 3)
-                .onSubmit(addSubtask)
-
-            Button(action: addSubtask) {
-                Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(canAddSubtask ? Theme.blue : Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .disabled(!canAddSubtask)
-        }
+        iOSTaskSubtasksSection(
+            subtasks: sortedSubtasks,
+            newSubtaskTitle: $newSubtaskTitle,
+            canAddSubtask: canAddSubtask,
+            onAdd: addSubtask,
+            onDelete: deleteSubtask
+        )
     }
 
     private var actionsSection: some View {
-        iOSTaskEditorSection(title: "Actions") {
-            Button(action: toggleCompletion) {
-                Label(task.isDone ? "Mark Todo" : "Mark Done",
-                      systemImage: task.isDone ? "circle" : "checkmark.circle.fill")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(task.isDone ? Theme.blue : Theme.green)
-
-            iOSTaskEditorDivider()
-
-            Button(role: .destructive) {
-                showDeleteConfirmation = true
-            } label: {
-                Label("Delete Task", systemImage: "trash")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Theme.red)
-        }
+        iOSTaskActionsSection(
+            isDone: task.isDone,
+            onToggleCompletion: toggleCompletion,
+            onDeleteRequested: { showDeleteConfirmation = true }
+        )
     }
 
     private var canAddSubtask: Bool {
         !newSubtaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var scheduledTimeSection: some View {
-        iOSTaskEditorRow(label: "Time", systemImage: "clock.fill", color: Theme.blue) {
-            Toggle("Time", isOn: scheduledTimeEnabled)
-                .labelsHidden()
-                .tint(Theme.blue)
-
-            Stepper(value: scheduledStartSelection, in: 0...1425, step: 15) {
-                Text(scheduledTimeLabel)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(task.scheduledStartMin >= 0 ? Theme.text : Theme.dim)
-                    .monospacedDigit()
-            }
-            .labelsHidden()
-            .disabled(task.scheduledStartMin < 0)
-            .opacity(task.scheduledStartMin < 0 ? 0.45 : 1)
-            .frame(width: 92)
-        }
     }
 
     private var recurrenceSelection: Binding<TaskRecurrenceRule> {
@@ -838,10 +572,6 @@ struct iOSTaskDetailSheet: View {
         )
         self.pendingRecurrenceRule = nil
         try? modelContext.save()
-    }
-
-    private func statusColor(_ status: TaskStatus) -> Color {
-        CadenceTaskPresentationSupport.statusColor(status)
     }
 }
 
