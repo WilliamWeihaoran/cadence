@@ -17,6 +17,9 @@ import Foundation
     var targetCount: Int = 1
     var order: Int = 0
     var createdAt: Date = Date()
+    /// Minutes from midnight for a daily reminder notification; nil = no reminder set.
+    /// Matches the `scheduledStartMin` minutes-from-midnight convention used elsewhere.
+    var reminderMinuteOfDay: Int? = nil
 
     var context: Context? = nil
     var pursuit: Pursuit? = nil
