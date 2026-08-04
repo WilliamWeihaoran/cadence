@@ -141,7 +141,7 @@ enum SchedulingActions {
             task.scheduledDate = bundle.dateKey
             task.scheduledStartMin = -1
         }
-        bundle.tasks?.removeAll { $0.id == task.id }
+        bundle.tasks = (bundle.tasks ?? []).filter { $0.id != task.id }
         task.bundle = nil
         task.bundleOrder = 0
         normalizeBundleOrder(bundle)
@@ -203,11 +203,9 @@ enum SchedulingActions {
     }
 
     private static func ensureTask(_ task: AppTask, isLinkedIn bundle: TaskBundle) {
-        if bundle.tasks == nil {
-            bundle.tasks = []
-        }
-        if bundle.tasks?.contains(where: { $0.id == task.id }) != true {
-            bundle.tasks?.append(task)
+        let existing = bundle.tasks ?? []
+        if !existing.contains(where: { $0.id == task.id }) {
+            bundle.tasks = existing + [task]
         }
     }
 
