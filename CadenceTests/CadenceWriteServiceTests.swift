@@ -108,19 +108,40 @@ struct CadenceWriteServiceTests {
         let fixture = try Fixture()
         let task = AppTask(title: "Daily standup")
         task.recurrenceRule = .daily
-        task.dueDate = "2026-04-28"
-        task.scheduledDate = "2026-04-28"
+        task.dueDate = DateFormatters.todayKey()
+        task.scheduledDate = DateFormatters.todayKey()
         task.scheduledStartMin = 540
         fixture.modelContext.insert(task)
         try fixture.modelContext.save()
 
         let result = try fixture.writeService.completeTask(taskID: task.id.uuidString)
 
+        let expectedNextDate = DateFormatters.dateKey(
+            from: Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+        )
+
         #expect(result.task.summary.isDone)
         #expect(result.spawnedRecurringTask?.summary.title == "Daily standup")
-        #expect(result.spawnedRecurringTask?.summary.dueDate == "2026-04-29")
-        #expect(result.spawnedRecurringTask?.summary.scheduledDate == "2026-04-29")
+        #expect(result.spawnedRecurringTask?.summary.dueDate == expectedNextDate)
+        #expect(result.spawnedRecurringTask?.summary.scheduledDate == expectedNextDate)
         #expect(result.spawnedRecurringTask?.summary.scheduledStartMin == 540)
+    }
+
+    @Test func cancellingRecurringTaskViaWriteServiceSpawnsNextOccurrenceWithSeriesMetadata() throws {
+        let fixture = try Fixture()
+        let task = AppTask(title: "Daily standup")
+        task.recurrenceRule = .daily
+        task.scheduledDate = DateFormatters.todayKey()
+        fixture.modelContext.insert(task)
+        try fixture.modelContext.save()
+
+        let cancelled = try fixture.writeService.cancelTask(taskID: task.id.uuidString)
+        #expect(cancelled.summary.isCancelled)
+
+        let spawnedID = try #require(task.recurrenceSpawnedTaskID)
+        let next = try fixture.readService.getTask(taskID: spawnedID.uuidString)
+        #expect(next.summary.status == "todo")
+        #expect(next.summary.title == "Daily standup")
     }
 
     @Test func scheduleTaskClearAndInvalidTime() throws {
