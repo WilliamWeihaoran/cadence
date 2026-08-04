@@ -134,9 +134,11 @@ struct InboxView: View {
                 frozenOrder: $frozenTaskOrder,
                 frozenGroups: $frozenGroups,
                 naturalTasks: inboxTasks.filter { !$0.isDone }.taskSorted(by: sortField, direction: sortDirection),
-                groupSnapshot: groupedActiveTasks.map {
-                    FrozenTaskGroupSnapshot(id: $0.id, title: $0.title, accent: $0.color, taskIDs: $0.tasks.map(\.id))
-                }
+                // Intentional: Inbox has no real multi-list grouping (byList here is always a
+                // single "Inbox" bucket), and date/priority buckets must stay live while hovering
+                // — freezing them swaps the section tree under the pointer and causes jitter.
+                // Row order is still preserved separately via frozenTaskOrder.
+                groupSnapshot: []
             )
         }
     }

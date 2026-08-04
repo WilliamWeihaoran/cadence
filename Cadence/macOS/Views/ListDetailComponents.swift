@@ -125,14 +125,20 @@ struct ListTasksView: View {
                 frozenOrder: $frozenTaskOrder,
                 frozenGroups: $frozenGroupedTasks,
                 naturalTasks: tasks.filter { !$0.isDone && !$0.isCancelled }.taskSorted(by: sortField, direction: sortDirection),
-                groupSnapshot: groupedActiveTasks.map { group in
-                    FrozenTaskGroupSnapshot(
-                        id: group.id,
-                        title: group.title,
-                        accent: group.accent,
-                        taskIDs: group.tasks.map(\.id)
-                    )
-                }
+                // Intentional: only freeze the group snapshot for byList (section) grouping.
+                // Date/priority section trees must stay live while hovering — capturing those
+                // snapshots swaps the row tree under the pointer and causes visible jitter.
+                // Row order is still preserved separately via frozenTaskOrder.
+                groupSnapshot: groupingMode == .byList
+                    ? groupedActiveTasks.map { group in
+                        FrozenTaskGroupSnapshot(
+                            id: group.id,
+                            title: group.title,
+                            accent: group.accent,
+                            taskIDs: group.tasks.map(\.id)
+                        )
+                    }
+                    : []
             )
         }
     }

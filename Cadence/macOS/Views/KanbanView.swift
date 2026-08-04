@@ -42,10 +42,7 @@ struct ListSectionKanbanColumn: View {
     }
 
     private var activeTasks: [AppTask] {
-        guard let frozen = frozenTasks else { return unfrozenActiveTasks }
-        let activeFrozen = frozen.filter { !$0.isDone }
-        let frozenIDs = Set(activeFrozen.map(\.id))
-        return activeFrozen + unfrozenActiveTasks.filter { !frozenIDs.contains($0.id) }
+        applyFrozenTaskOrder(unfrozenActiveTasks, frozen: frozenTasks)
     }
 
     private var completedTasks: [AppTask] {

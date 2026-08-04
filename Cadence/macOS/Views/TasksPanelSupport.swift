@@ -67,6 +67,38 @@ enum MacTaskRowStyle {
     case list
 }
 
+/// Shared, pure index math for the inline "picker badge" style controls
+/// (`ContainerPickerBadge`, `TaskSectionPickerBadge`, the CreateTaskSheet tilde
+/// list/section pickers). Kept separate from any specific view so the
+/// highlight-index arithmetic can be unit tested without SwiftUI.
+enum TaskPickerHighlightSupport {
+    /// Clamps `index` into the valid `0..<count` range. Returns 0 when `count <= 0`
+    /// (an empty filtered list), which callers should additionally treat as "no
+    /// selection" rather than a real highlighted row.
+    static func clampedIndex(_ index: Int, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        return min(max(index, 0), count - 1)
+    }
+
+    /// Moves `index` by `offset` and clamps at the ends (arrow key navigation stops
+    /// at the first/last row). Used by `ContainerPickerBadge` / `TaskSectionPickerBadge`.
+    ///
+    /// The starting `index` is clamped into range *before* the offset is applied.
+    /// This matters when a fast-typed search query has just shrunk the filtered
+    /// list out from under a stale `highlightIdx`: without pre-clamping, the very
+    /// next arrow press could land on the same edge row twice before recovering.
+    static func clampedMovedIndex(_ index: Int, by offset: Int, count: Int) -> Int {
+        clampedIndex(clampedIndex(index, count: count) + offset, count: count)
+    }
+
+    /// Moves `index` by `offset`, wrapping around at the ends (cycling navigation).
+    /// Used by the CreateTaskSheet tilde (`~`) inline list/section pickers.
+    static func wrappedMovedIndex(_ index: Int, by offset: Int, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        return (clampedIndex(index, count: count) + offset + count) % count
+    }
+}
+
 enum TasksPanelSupport {
     static func sidebarListOrder(contexts: [Context]) -> [String] {
         var order: [String] = ["inbox"]
