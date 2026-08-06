@@ -88,6 +88,10 @@ struct TaskDeleteHelpersScenarioTests {
             let area = Area(name: "Health", context: context)
             let goal = Goal(title: "Get fit", context: context)
             goal.progressType = progressType
+            // Only meaningful for `.hours`; harmless for `.subtasks`. 60-minute target so the
+            // 30-minute-per-task actuals below produce a clean, checkable ratio.
+            goal.targetHours = 1
+
             let link = GoalListLink(goal: goal, area: area)
 
             let doneTask = AppTask(title: "Workout 1")
@@ -95,10 +99,12 @@ struct TaskDeleteHelpersScenarioTests {
             doneTask.goal = goal
             doneTask.status = .done
             doneTask.completedAt = Date()
+            doneTask.actualMinutes = 30
 
             let openTask = AppTask(title: "Workout 2")
             openTask.area = area
             openTask.goal = goal
+            openTask.actualMinutes = 30
 
             modelContext.insert(context)
             modelContext.insert(area)
@@ -121,7 +127,15 @@ struct TaskDeleteHelpersScenarioTests {
             let after = GoalContributionResolver.summary(for: goal)
             #expect(after.totalTasks == 1)
             #expect(after.completedTasks == 1)
-            #expect(after.progress == 1.0)
+            switch progressType {
+            case .subtasks:
+                // 1/1 remaining tasks done.
+                #expect(after.progress == 1.0)
+            case .hours:
+                // Deleting the open task also removes the 30 logged minutes it carried, so
+                // only the done task's 30 minutes count against the 60-minute target.
+                #expect(after.progress == 0.5)
+            }
 
             // Now delete the remaining (done) task too — progress must not crash on an empty set.
             modelContext.deleteTask(doneTask)

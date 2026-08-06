@@ -1,6 +1,8 @@
 import Foundation
 
 struct GoalContributionSummary {
+    let progressType: GoalProgressType
+    let targetHours: Double
     let totalTasks: Int
     let completedTasks: Int
     let directTaskCount: Int
@@ -10,9 +12,21 @@ struct GoalContributionSummary {
     let recentCompletedCount: Int
     let nextActionTitle: String?
 
+    /// Bug fix: this previously ignored `progressType` entirely and always computed a
+    /// subtask completion ratio, even for goals configured with `progressType == .hours`.
+    /// That meant an "hours" goal's progress bar (GoalsView/GoalInspectorView/widgets, all of
+    /// which read `summary.progress`) never reflected `loggedHours`/`targetHours` at all.
     var progress: Double {
-        guard totalTasks > 0 else { return 0 }
-        return Double(completedTasks) / Double(totalTasks)
+        switch progressType {
+        case .hours:
+            guard targetHours > 0 else { return 0 }
+            let targetMinutes = targetHours * 60
+            guard targetMinutes > 0 else { return 0 }
+            return min(1.0, Double(focusMinutes) / targetMinutes)
+        case .subtasks:
+            guard totalTasks > 0 else { return 0 }
+            return min(1.0, Double(completedTasks) / Double(totalTasks))
+        }
     }
 
     var percentLabel: String {
@@ -119,6 +133,8 @@ enum GoalContributionResolver {
         }.count
 
         return GoalContributionSummary(
+            progressType: goal.progressType,
+            targetHours: goal.targetHours,
             totalTasks: tasks.count,
             completedTasks: tasks.filter(\.isDone).count,
             directTaskCount: 0,
