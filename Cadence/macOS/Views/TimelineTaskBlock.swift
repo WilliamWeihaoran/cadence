@@ -52,23 +52,36 @@ struct TimelineTaskBlock: View {
         taskCompletionAnimationManager.isPending(task)
     }
 
-    var body: some View {
-        TimelineView(.animation) { context in
-            timelineBlockBody(
-                task: task,
-                durationMinutes: task.estimatedMinutes,
-                timeRangeLabel: timeRangeLabel,
-                frame: frame,
-                style: style,
-                showSelection: selectedTaskID == task.id,
-                showHover: isHovered,
-                isPendingCompletion: isPendingCompletion,
-                completionProgress: taskCompletionAnimationManager.progress(for: task, now: context.date),
-                onToggleDone: { taskCompletionAnimationManager.toggleCompletion(for: task) }
-            )
-            .frame(width: frame.width, height: frame.height)
-            .contentShape(Rectangle())
+    @ViewBuilder
+    private var coreBlock: some View {
+        if isPendingCompletion {
+            TimelineView(.animation) { context in
+                blockContent(now: context.date)
+            }
+        } else {
+            blockContent(now: nil)
         }
+    }
+
+    private func blockContent(now: Date?) -> some View {
+        timelineBlockBody(
+            task: task,
+            durationMinutes: task.estimatedMinutes,
+            timeRangeLabel: timeRangeLabel,
+            frame: frame,
+            style: style,
+            showSelection: selectedTaskID == task.id,
+            showHover: isHovered,
+            isPendingCompletion: isPendingCompletion,
+            completionProgress: now.map { taskCompletionAnimationManager.progress(for: task, now: $0) } ?? 0,
+            onToggleDone: { taskCompletionAnimationManager.toggleCompletion(for: task) }
+        )
+        .frame(width: frame.width, height: frame.height)
+        .contentShape(Rectangle())
+    }
+
+    var body: some View {
+        coreBlock
         .onHover { hovering in
             isHovered = hovering
             if hovering {

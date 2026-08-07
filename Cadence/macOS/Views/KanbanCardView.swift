@@ -39,21 +39,7 @@ struct KanbanCard: View {
                     )
                 }
 
-                TimelineView(.animation) { context in
-                    KanbanCardHeader(
-                        title: task.title,
-                        titleColor: task.isDone || task.isCancelled ? Theme.dim : Theme.text,
-                        isStruckThrough: task.isDone || isPendingCancel,
-                        durationBadge: headerDurationBadge,
-                        onDurationTap: openDurationPicker,
-                        isDurationFocused: showDurationPicker,
-                        onDurationHoverChanged: setAttributeFocused,
-                        completionButtonIcon: completionButtonIcon,
-                        completionButtonColor: completionButtonColor,
-                        completionProgress: pendingCompletionProgress(now: context.date),
-                        onCompletionTap: handleCompletionTap
-                    )
-                }
+                cardHeader
 
                 CompactTagStrip(tags: task.sortedTags, limit: 3)
 
@@ -442,16 +428,63 @@ struct KanbanCard: View {
     }
 
     @ViewBuilder
+    private var cardHeader: some View {
+        if isPendingCompletion || isPendingCancel {
+            TimelineView(.animation) { context in
+                KanbanCardHeader(
+                    title: task.title,
+                    titleColor: task.isDone || task.isCancelled ? Theme.dim : Theme.text,
+                    isStruckThrough: task.isDone || isPendingCancel,
+                    durationBadge: headerDurationBadge,
+                    onDurationTap: openDurationPicker,
+                    isDurationFocused: showDurationPicker,
+                    onDurationHoverChanged: setAttributeFocused,
+                    completionButtonIcon: completionButtonIcon,
+                    completionButtonColor: completionButtonColor,
+                    completionProgress: pendingCompletionProgress(now: context.date),
+                    onCompletionTap: handleCompletionTap
+                )
+            }
+        } else {
+            KanbanCardHeader(
+                title: task.title,
+                titleColor: task.isDone || task.isCancelled ? Theme.dim : Theme.text,
+                isStruckThrough: task.isDone || isPendingCancel,
+                durationBadge: headerDurationBadge,
+                onDurationTap: openDurationPicker,
+                isDurationFocused: showDurationPicker,
+                onDurationHoverChanged: setAttributeFocused,
+                completionButtonIcon: completionButtonIcon,
+                completionButtonColor: completionButtonColor,
+                completionProgress: nil,
+                onCompletionTap: handleCompletionTap
+            )
+        }
+    }
+
+    @ViewBuilder
     private var cardBackground: some View {
-        TimelineView(.animation) { context in
+        if isPendingCompletion || isPendingCancel {
+            TimelineView(.animation) { context in
+                KanbanCardBackground(
+                    isHovered: isCardVisuallyFocused,
+                    isDone: task.isDone,
+                    isPendingCompletion: isPendingCompletion,
+                    isPendingCancel: isPendingCancel,
+                    urgencyBackgroundTint: urgencyBackgroundTint,
+                    completionProgress: taskCompletionAnimationManager.progress(for: task, now: context.date),
+                    cancelProgress: taskCompletionAnimationManager.cancelProgress(for: task, now: context.date)
+                )
+            }
+        } else {
             KanbanCardBackground(
                 isHovered: isCardVisuallyFocused,
                 isDone: task.isDone,
-                isPendingCompletion: isPendingCompletion,
-                isPendingCancel: isPendingCancel,
+                isPendingCompletion: false,
+                isPendingCancel: false,
                 urgencyBackgroundTint: urgencyBackgroundTint,
-                completionProgress: taskCompletionAnimationManager.progress(for: task, now: context.date),
-                cancelProgress: taskCompletionAnimationManager.cancelProgress(for: task, now: context.date)
+                completionProgress: 0,
+                cancelProgress: 0
             )
         }
     }

@@ -37,6 +37,7 @@ struct CalendarPageBoardView: View {
     }
 
     var body: some View {
+        let tasksByDate = boardTasksByDate
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: Self.columnSpacing) {
@@ -47,7 +48,7 @@ struct CalendarPageBoardView: View {
                             dayIndex: dayIndex,
                             date: date,
                             dateKey: dateKey,
-                            tasks: boardTasksByDate[dateKey] ?? [],
+                            tasks: tasksByDate[dateKey] ?? [],
                             bundles: bundlesByDate[dateKey] ?? [],
                             events: calendarDisplayItems(for: date),
                             allTasks: allTasks,
