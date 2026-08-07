@@ -180,7 +180,7 @@ func timelineBlockBody(
                 Button(action: onToggleDone) {
                     TaskCompletionProgressGlyph(
                         icon: task.isDone ? "checkmark.circle.fill" : "circle",
-                        color: task.isDone || isPendingCompletion ? Theme.green : Theme.dim,
+                        color: task.isDone || isPendingCompletion ? Theme.green : Theme.priorityColor(task.priority),
                         progress: isPendingCompletion ? clampedProgress : nil,
                         size: 13,
                         lineWidth: 1.6

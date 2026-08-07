@@ -1,7 +1,22 @@
 #if os(macOS)
 import SwiftUI
+import AppKit
 import EventKit
 import SwiftData
+
+// MARK: - Muted event fill
+
+/// Calendar events are read-only, so their block uses a SOLID but desaturated/darkened
+/// version of the calendar's own (often bright) color rather than the raw hue — this keeps
+/// a busy day from turning into a wall of saturated color while still being color-coded.
+private extension Color {
+    func mutedEventFill() -> Color {
+        let ns = NSColor(self).usingColorSpace(.deviceRGB) ?? NSColor(self)
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        ns.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        return Color(NSColor(hue: hue, saturation: saturation * 0.5, brightness: min(brightness, 0.4), alpha: 1))
+    }
+}
 
 // MARK: - Timeline Event Block
 
@@ -305,6 +320,9 @@ struct TimelineEventBlock: View {
                     .lineLimit(1)
             }
             HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.75))
                 Text(item.title)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white)
@@ -329,7 +347,7 @@ struct TimelineEventBlock: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(item.calendarColor.opacity(CalendarEventVisualStyle.blockFillOpacity(isSelected: isSelected, isHovered: isHovered)))
+                    .fill(item.calendarColor.mutedEventFill())
                 RoundedRectangle(cornerRadius: style.cornerRadius)
                     .fill(TimelineHoverVisuals.hoverFill(tint: .white, isHovered: isHovered && !isSelected, opacity: 0.04))
                 RoundedRectangle(cornerRadius: style.cornerRadius)

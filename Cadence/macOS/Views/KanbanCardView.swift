@@ -28,12 +28,6 @@ struct KanbanCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(priorityBarColor)
-                .frame(width: 3.5)
-                .padding(.leading, 10)
-                .padding(.vertical, 8)
-
             VStack(alignment: .leading, spacing: hasScheduleTopRow ? 7 : 10) {
                 if hasScheduleTopRow {
                     KanbanCardScheduleTopRow(
@@ -390,10 +384,6 @@ struct KanbanCard: View {
 
     private var isDoToday: Bool {
         KanbanCardComputedSupport.isDoToday(task: task)
-    }
-
-    private var priorityBarColor: Color {
-        KanbanCardComputedSupport.priorityBarColor(task: task)
     }
 
     private var isPendingCompletion: Bool {

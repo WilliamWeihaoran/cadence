@@ -151,10 +151,26 @@ struct TimelineBundleBlock: View {
             .position(x: frame.centerX, y: frame.centerY)
     }
 
+    /// Bundle-complete mirrors a single task's "done" look: once every member task is
+    /// checked off, the whole block should read as done rather than as a distinct state.
+    private var isBundleComplete: Bool {
+        let members = bundle.sortedTasks
+        return !members.isEmpty && members.allSatisfy(\.isDone)
+    }
+
+    private var bundleAccent: Color {
+        isBundleComplete ? Theme.green : Theme.amber
+    }
+
+    private var bundleIcon: String {
+        isBundleComplete ? "checkmark.circle.fill" : "square.stack"
+    }
+
     private var bundleBlockBody: some View {
         let memberCount = bundle.sortedTasks.count
+        let accent = bundleAccent
         return HStack(alignment: .top, spacing: 0) {
-            Theme.amber
+            accent
                 .frame(width: 3)
                 .clipShape(UnevenRoundedRectangle(
                     topLeadingRadius: style.cornerRadius,
@@ -165,21 +181,41 @@ struct TimelineBundleBlock: View {
                 if frame.height >= 54 {
                     Text(timeRangeLabel)
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Theme.amber)
+                        .foregroundStyle(accent)
                         .lineLimit(1)
                 }
 
                 HStack(spacing: 5) {
-                    Image(systemName: "tray.full")
+                    Image(systemName: bundleIcon)
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.amber)
+                        .foregroundStyle(accent)
                     Text(bundle.displayTitle)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.text)
+                        .foregroundStyle(isBundleComplete ? Theme.dim : Theme.text)
+                        .strikethrough(isBundleComplete, color: Theme.dim)
                         .lineLimit(frame.height >= 42 ? 2 : 1)
                 }
 
-                if frame.height >= 42 {
+                if frame.height >= 58 {
+                    ForEach(Array(bundle.sortedTasks.prefix(2)), id: \.id) { member in
+                        HStack(spacing: 5) {
+                            Circle()
+                                .strokeBorder(member.isDone ? Color.clear : Theme.dim, lineWidth: 1)
+                                .background(Circle().fill(member.isDone ? accent : Color.clear))
+                                .frame(width: 6, height: 6)
+                            Text(member.title.isEmpty ? "Untitled" : member.title)
+                                .font(.system(size: 9))
+                                .foregroundStyle(member.isDone ? Theme.dim : Theme.muted)
+                                .strikethrough(member.isDone, color: Theme.dim)
+                                .lineLimit(1)
+                        }
+                    }
+                    if memberCount > 2 {
+                        Text("+\(memberCount - 2) more")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Theme.dim)
+                    }
+                } else if frame.height >= 42 {
                     Text("\(memberCount) task\(memberCount == 1 ? "" : "s")")
                         .font(.system(size: 10))
                         .foregroundStyle(Theme.dim)
@@ -196,13 +232,13 @@ struct TimelineBundleBlock: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: style.cornerRadius).fill(Theme.surfaceElevated)
-                RoundedRectangle(cornerRadius: style.cornerRadius).fill(Theme.amber.opacity(0.16))
+                RoundedRectangle(cornerRadius: style.cornerRadius).fill(accent.opacity(0.16))
                 if isDropTargeted {
-                    RoundedRectangle(cornerRadius: style.cornerRadius).fill(Theme.amber.opacity(0.16))
+                    RoundedRectangle(cornerRadius: style.cornerRadius).fill(accent.opacity(0.16))
                 }
                 if isHovered {
                     RoundedRectangle(cornerRadius: style.cornerRadius)
-                        .fill(TimelineHoverVisuals.hoverFill(tint: Theme.amber, isHovered: isHovered, opacity: 0.08))
+                        .fill(TimelineHoverVisuals.hoverFill(tint: accent, isHovered: isHovered, opacity: 0.08))
                 }
             }
         )
@@ -210,9 +246,9 @@ struct TimelineBundleBlock: View {
             RoundedRectangle(cornerRadius: style.cornerRadius)
                 .stroke(
                     selectedBundleID == bundle.id || isDropTargeted
-                        ? Theme.amber.opacity(0.62)
+                        ? accent.opacity(0.62)
                         : TimelineHoverVisuals.borderColor(
-                            tint: Theme.amber,
+                            tint: accent,
                             isSelected: false,
                             isHovered: isHovered,
                             selectedOpacity: 0.62,
@@ -226,6 +262,7 @@ struct TimelineBundleBlock: View {
             radius: TimelineHoverVisuals.shadowRadius(isActive: isHovered || selectedBundleID == bundle.id),
             y: TimelineHoverVisuals.shadowY(isActive: isHovered || selectedBundleID == bundle.id)
         )
+        .opacity(isBundleComplete ? 0.7 : 1.0)
     }
 
     private func resizeHandle(edge: ResizeEdge) -> some View {

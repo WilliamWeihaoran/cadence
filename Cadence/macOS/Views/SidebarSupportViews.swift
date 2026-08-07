@@ -22,7 +22,7 @@ struct SidebarRow: View {
 
                 Text(label)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.text)
+                    .foregroundStyle(selection == item ? Theme.text : Theme.muted)
 
                 Spacer(minLength: 0)
             }
@@ -31,7 +31,12 @@ struct SidebarRow: View {
             .background(backgroundFillShape)
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(borderColor, lineWidth: selection == item ? 1 : 0.8)
+                    .strokeBorder(borderColor, lineWidth: 0.8)
+            }
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(selection == item ? color : Color.clear)
+                    .frame(width: 2)
             }
             .contentShape(Rectangle())
         }
@@ -42,13 +47,10 @@ struct SidebarRow: View {
     }
 
     private var borderColor: Color {
-        selection == item ? color.opacity(0.34) : Theme.borderSubtle.opacity(isHovered ? 0.72 : 0.28)
+        Theme.borderSubtle.opacity(isHovered ? 0.72 : 0.28)
     }
 
     private var backgroundFill: Color {
-        if selection == item {
-            return color.opacity(0.16)
-        }
         if isHovered {
             return Theme.surfaceElevated.opacity(0.9)
         }
@@ -112,7 +114,7 @@ struct SidebarListRow: View {
                 Label {
                     Text(label)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.text)
+                        .foregroundStyle(selection == item ? Theme.text : Theme.muted)
                 } icon: {
                     Image(systemName: icon)
                         .foregroundStyle(color)
@@ -125,15 +127,21 @@ struct SidebarListRow: View {
                     dueDateBadge(dueDateKey)
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.leading, 10)
+            .padding(.trailing, 10)
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selection == item ? color.opacity(0.14) : (isHovered ? Theme.surfaceElevated.opacity(0.72) : Color.clear))
+                    .fill(selection == item ? Color.clear : (isHovered ? Theme.surfaceElevated.opacity(0.72) : Color.clear))
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(selection == item ? color.opacity(0.3) : Theme.borderSubtle.opacity(isHovered ? 0.68 : 0), lineWidth: 1)
+                    .strokeBorder(selection == item ? Color.clear : Theme.borderSubtle.opacity(isHovered ? 0.68 : 0), lineWidth: 1)
+            }
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(selection == item ? color : Color.clear)
+                    .frame(width: 2)
             }
             .contentShape(Rectangle())
         }

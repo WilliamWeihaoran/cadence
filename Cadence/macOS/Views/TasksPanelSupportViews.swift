@@ -176,6 +176,9 @@ struct ContainerPickerBadge: View {
     let areas: [Area]
     let projects: [Project]
     var compact: Bool = false
+    /// Renders as plain icon+text with no pill background or chevron — used where the row
+    /// itself already provides enough affordance (e.g. MacTaskRow's trailing metadata).
+    var flat: Bool = false
 
     @State private var showPicker = false
     @State private var searchQuery = ""
@@ -259,18 +262,20 @@ struct ContainerPickerBadge: View {
                 Image(systemName: labelIcon).font(.system(size: compact ? 9 : 10)).foregroundStyle(labelColor)
                 Text(label)
                     .font(.system(size: compact ? 10 : 11))
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(flat ? Theme.dim : Theme.muted)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: compact ? 60 : 80, alignment: .leading)
-                Image(systemName: "chevron.down").font(.system(size: compact ? 7 : 8, weight: .semibold)).foregroundStyle(Theme.dim)
+                if !flat {
+                    Image(systemName: "chevron.down").font(.system(size: compact ? 7 : 8, weight: .semibold)).foregroundStyle(Theme.dim)
+                }
             }
-            .padding(.horizontal, compact ? 6 : 8)
-            .padding(.vertical, compact ? 3 : 6)
-            .frame(minHeight: compact ? 21 : 28)
+            .padding(.horizontal, flat ? 0 : (compact ? 6 : 8))
+            .padding(.vertical, flat ? 0 : (compact ? 3 : 6))
+            .frame(minHeight: flat ? 0 : (compact ? 21 : 28))
             .contentShape(Rectangle())
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: compact ? 6 : 7))
+            .background(flat ? AnyShapeStyle(Color.clear) : AnyShapeStyle(Theme.surfaceElevated))
+            .clipShape(RoundedRectangle(cornerRadius: flat ? 0 : (compact ? 6 : 7)))
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker) {

@@ -244,22 +244,29 @@ struct CreateTaskSheet: View {
 
             Spacer(minLength: 0)
 
-            CadenceActionButton(
-                title: "Cancel",
-                role: .ghost,
-                size: .regular
-            ) {
-                dismiss()
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
             }
-            CadenceActionButton(
-                title: "Create Task",
-                role: .primary,
-                size: .regular,
-                isDisabled: trimmedTitle.isEmpty,
-                shortcut: KeyboardShortcut(.return, modifiers: [.command])
-            ) {
-                createTask()
+            .buttonStyle(.cadencePlain)
+            .accessibilityLabel("Cancel")
+
+            Button(action: createTask) {
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 26, height: 26)
+                    .background(Theme.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
+            .buttonStyle(.cadencePlain)
+            .disabled(trimmedTitle.isEmpty)
+            .opacity(trimmedTitle.isEmpty ? 0.5 : 1)
+            .keyboardShortcut(.return, modifiers: [.command])
+            .accessibilityLabel("Create Task")
             .padding(.trailing, 12)
         }
         .padding(.vertical, 2)
@@ -275,18 +282,12 @@ struct CreateTaskSheet: View {
 
     private var priorityMarkButton: some View {
         Button { showPriorityPicker.toggle() } label: {
-            Text(TaskTitleSupport.priorityMark(for: selectedPriority))
-                .font(.system(size: 14, weight: .bold))
+            Image(systemName: "flag.fill")
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(selectedPriority == .none ? Theme.dim : Theme.priorityColor(selectedPriority))
-                .frame(width: 28, height: 28)
-                .background(selectedPriority == .none ? Theme.surface.opacity(0.6) : Theme.priorityColor(selectedPriority).opacity(0.12))
-                .clipShape(Circle())
-                .contentShape(Circle())
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
                 .accessibilityLabel("Priority")
-            .overlay(
-                Circle()
-                    .stroke(selectedPriority == .none ? Theme.borderSubtle : Theme.priorityColor(selectedPriority).opacity(0.35), lineWidth: 1)
-            )
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPriorityPicker, arrowEdge: .top) {

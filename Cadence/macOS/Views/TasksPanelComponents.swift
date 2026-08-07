@@ -29,14 +29,9 @@ struct MacTaskRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(task.isDone ? Theme.dim.opacity(0.4) : Theme.priorityColor(task.priority))
-                .frame(width: 3)
-                .padding(.leading, 12)
-                .padding(.vertical, 3)
-
             TaskCompletionButton(task: task)
-                .padding(.horizontal, 8)
+                .padding(.leading, 14)
+                .padding(.trailing, 8)
 
             if style != .todayGrouped && !task.scheduledDate.isEmpty {
                 doDatePill
@@ -81,7 +76,8 @@ struct MacTaskRow: View {
                     contexts: contexts,
                     areas: areas,
                     projects: projects,
-                    compact: true
+                    compact: true,
+                    flat: true
                 )
                 .padding(.leading, 6)
                 .padding(.trailing, 6)
@@ -277,17 +273,13 @@ struct MacTaskRow: View {
 
     private func taskBundleBadge(_ bundle: TaskBundle) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: "tray.full")
+            Image(systemName: "square.stack")
                 .font(.system(size: 9, weight: .semibold))
             Text(TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin))
                 .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
         }
-        .foregroundStyle(Theme.amber)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
-        .background(Theme.amber.opacity(0.12))
-        .clipShape(Capsule())
+        .foregroundStyle(Theme.amber.opacity(0.85))
         .padding(.leading, 6)
     }
 
@@ -447,7 +439,7 @@ private struct TaskCompletionButton: View {
     private var color: Color {
         if task.isCancelled || isPendingCancel { return Theme.dim }
         if task.isDone || isPendingCompletion   { return Theme.green }
-        return Theme.dim
+        return Theme.priorityColor(task.priority)
     }
 
     private func handleTap() {

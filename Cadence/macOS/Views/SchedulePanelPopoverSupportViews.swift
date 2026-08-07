@@ -116,82 +116,56 @@ struct TaskDetailCompactOverviewSection: View {
 
     var body: some View {
         TaskInspectorInfoCard {
+            // Single narrow column — reads top to bottom like the inspector metaphor
+            // rather than a 2-up form grid.
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .center, spacing: 8) {
-                    compactControl {
-                        TaskInspectorDateControl(
-                            label: "Set do",
-                            icon: "calendar",
-                            activeColor: Theme.blue,
-                            isOn: Binding(
-                                get: { !task.scheduledDate.isEmpty },
-                                set: { isOn in
-                                    if !isOn { task.scheduledDate = "" }
-                                }
-                            ),
-                            date: Binding(
-                                get: { DateFormatters.date(from: task.scheduledDate) ?? Date() },
-                                set: { task.scheduledDate = DateFormatters.dateKey(from: $0) }
-                            )
-                        )
-                    }
-
-                    compactControl {
-                        TaskInspectorDateControl(
-                            label: "Set due",
-                            icon: "calendar.badge.exclamationmark",
-                            activeColor: Theme.red,
-                            isOn: Binding(
-                                get: { !task.dueDate.isEmpty },
-                                set: { isOn in
-                                    if !isOn { task.dueDate = "" }
-                                }
-                            ),
-                            date: Binding(
-                                get: { DateFormatters.date(from: task.dueDate) ?? Date() },
-                                set: { task.dueDate = DateFormatters.dateKey(from: $0) }
-                            )
-                        )
-                    }
-                }
-
-                HStack(alignment: .center, spacing: 8) {
-                    compactControl {
-                        EstimatePickerControl(value: $task.estimatedMinutes)
-                    }
-
-                    compactControl {
-                        TaskInspectorRecurrenceControl(task: task)
-                    }
-
-                    if task.actualMinutes > 0 {
-                        compactControl {
-                            MinutesField(value: $task.actualMinutes)
+                TaskInspectorDateControl(
+                    label: "Set do",
+                    icon: "calendar",
+                    activeColor: Theme.blue,
+                    isOn: Binding(
+                        get: { !task.scheduledDate.isEmpty },
+                        set: { isOn in
+                            if !isOn { task.scheduledDate = "" }
                         }
-                    }
+                    ),
+                    date: Binding(
+                        get: { DateFormatters.date(from: task.scheduledDate) ?? Date() },
+                        set: { task.scheduledDate = DateFormatters.dateKey(from: $0) }
+                    )
+                )
+
+                TaskInspectorDateControl(
+                    label: "Set due",
+                    icon: "calendar.badge.exclamationmark",
+                    activeColor: Theme.red,
+                    isOn: Binding(
+                        get: { !task.dueDate.isEmpty },
+                        set: { isOn in
+                            if !isOn { task.dueDate = "" }
+                        }
+                    ),
+                    date: Binding(
+                        get: { DateFormatters.date(from: task.dueDate) ?? Date() },
+                        set: { task.dueDate = DateFormatters.dateKey(from: $0) }
+                    )
+                )
+
+                EstimatePickerControl(value: $task.estimatedMinutes)
+
+                TaskInspectorRecurrenceControl(task: task)
+
+                if task.actualMinutes > 0 {
+                    MinutesField(value: $task.actualMinutes)
                 }
 
                 Divider().background(Theme.borderSubtle.opacity(0.75))
 
-                HStack(alignment: .center, spacing: 8) {
-                    compactControl {
-                        ContainerPickerBadge(selection: taskContainerBinding, contexts: contexts, areas: areas, projects: projects)
-                    }
+                ContainerPickerBadge(selection: taskContainerBinding, contexts: contexts, areas: areas, projects: projects)
 
-                    compactControl {
-                        TaskSectionPickerBadge(selection: $task.sectionName, sections: availableSections)
-                    }
-                }
+                TaskSectionPickerBadge(selection: $task.sectionName, sections: availableSections)
             }
         }
-    }
-
-    @ViewBuilder
-    private func compactControl<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        HStack(spacing: 0) {
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

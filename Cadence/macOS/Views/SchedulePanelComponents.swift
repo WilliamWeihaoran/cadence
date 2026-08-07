@@ -141,7 +141,7 @@ struct TaskDetailPopover: View {
             }
             .padding(14)
         }
-        .frame(width: presentationMode == .subtasksOnly ? 332 : 360)
+        .frame(width: presentationMode == .subtasksOnly ? 332 : 300)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Theme.surface)

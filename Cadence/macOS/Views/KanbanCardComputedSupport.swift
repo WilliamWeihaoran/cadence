@@ -17,10 +17,6 @@ enum KanbanCardComputedSupport {
         return task.scheduledDate == DateFormatters.todayKey()
     }
 
-    static func priorityBarColor(task: AppTask) -> Color {
-        task.isDone ? Theme.dim.opacity(0.4) : Theme.priorityColor(task.priority)
-    }
-
     static func completionButtonIcon(
         task: AppTask,
         isPendingCompletion: Bool,
@@ -40,7 +36,7 @@ enum KanbanCardComputedSupport {
     ) -> Color {
         if task.isCancelled || isPendingCancel { return Theme.dim }
         if task.isDone || isPendingCompletion { return Theme.green }
-        return Theme.dim
+        return Theme.priorityColor(task.priority)
     }
 
     static func handleCompletionTap(

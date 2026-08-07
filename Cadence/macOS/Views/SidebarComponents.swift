@@ -104,29 +104,32 @@ struct ContextSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+            HStack(spacing: 7) {
                 Image(systemName: context.icon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color(hex: context.colorHex))
-                    .frame(width: 14)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color(hex: context.colorHex).opacity(0.75))
+                    .frame(width: 12)
 
                 Text(context.name.uppercased())
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Theme.text.opacity(0.68))
-                    .kerning(1.1)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .kerning(0.8)
 
-                Spacer()
+                Rectangle()
+                    .fill(Theme.borderSubtle.opacity(0.5))
+                    .frame(height: 1)
 
                 Button(action: onAddList) {
                     Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.text.opacity(0.62))
-                        .frame(width: 18, height: 18)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.dim.opacity(0.8))
+                        .frame(width: 16, height: 16)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
             }
             .padding(.horizontal, 2)
+            .padding(.top, 3)
 
             if hasLists {
                 VStack(alignment: .leading, spacing: 3) {

@@ -36,7 +36,7 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(section.name)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(section.isDefault ? Theme.muted : columnColor.opacity(0.85))
 
                 if !section.dueDate.isEmpty || !hideColumnDueDateIfEmpty {
                     Button(action: onOpenDueDatePicker) {
