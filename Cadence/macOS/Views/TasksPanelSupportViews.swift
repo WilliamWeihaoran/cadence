@@ -179,6 +179,9 @@ struct ContainerPickerBadge: View {
     /// Renders as plain icon+text with no pill background or chevron — used where the row
     /// itself already provides enough affordance (e.g. MacTaskRow's trailing metadata).
     var flat: Bool = false
+    /// Renders as a bordered, unfilled chip with no chevron — used in toolbar rows
+    /// (e.g. CreateTaskSheet) alongside other outlined chips.
+    var outlined: Bool = false
 
     @State private var showPicker = false
     @State private var searchQuery = ""
@@ -266,7 +269,7 @@ struct ContainerPickerBadge: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: compact ? 60 : 80, alignment: .leading)
-                if !flat {
+                if !flat && !outlined {
                     Image(systemName: "chevron.down").font(.system(size: compact ? 7 : 8, weight: .semibold)).foregroundStyle(Theme.dim)
                 }
             }
@@ -274,8 +277,14 @@ struct ContainerPickerBadge: View {
             .padding(.vertical, flat ? 0 : (compact ? 3 : 6))
             .frame(minHeight: flat ? 0 : (compact ? 21 : 28))
             .contentShape(Rectangle())
-            .background(flat ? AnyShapeStyle(Color.clear) : AnyShapeStyle(Theme.surfaceElevated))
+            .background(flat || outlined ? AnyShapeStyle(Color.clear) : AnyShapeStyle(Theme.surfaceElevated))
             .clipShape(RoundedRectangle(cornerRadius: flat ? 0 : (compact ? 6 : 7)))
+            .overlay {
+                if outlined {
+                    RoundedRectangle(cornerRadius: compact ? 6 : 7)
+                        .stroke(Theme.borderSubtle, lineWidth: 1)
+                }
+            }
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker) {
@@ -396,6 +405,7 @@ struct ContainerPickerBadge: View {
 struct TaskSectionPickerBadge: View {
     @Binding var selection: String
     let sections: [String]
+    var compact: Bool = false
 
     @State private var showPicker = false
     @State private var searchQuery = ""
@@ -427,24 +437,29 @@ struct TaskSectionPickerBadge: View {
         Button { showPicker.toggle() } label: {
             HStack(spacing: 4) {
                 Image(systemName: "square.split.2x1")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: compact ? 9 : 10, weight: .semibold))
                     .foregroundStyle(Theme.dim)
-                    .frame(width: 13)
+                    .frame(width: compact ? 11 : 13)
                 Text(label)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: compact ? 10 : 11, weight: .medium))
                     .foregroundStyle(Theme.muted)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 90, alignment: .leading)
+                    .frame(maxWidth: compact ? 70 : 90, alignment: .leading)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.system(size: compact ? 7 : 8, weight: .semibold))
                     .foregroundStyle(Theme.dim)
             }
-            .padding(.horizontal, 10)
-            .frame(height: 32)
+            .padding(.horizontal, compact ? 6 : 10)
+            .frame(height: compact ? 22 : 32)
             .contentShape(Rectangle())
-            .background(Theme.surfaceElevated)
+            .background(compact ? Color.clear : Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: 7))
+            .overlay {
+                if compact {
+                    RoundedRectangle(cornerRadius: 7).stroke(Theme.borderSubtle, lineWidth: 1)
+                }
+            }
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker) {

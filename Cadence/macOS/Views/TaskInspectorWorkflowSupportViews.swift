@@ -18,21 +18,16 @@ struct TaskInspectorRecurrenceControl: View {
                 }
             }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: task.recurrenceRule.systemImage)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11))
                     .foregroundStyle(task.isRecurring ? Theme.blue : Theme.dim)
                 Text(recurrenceLabel)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(task.isRecurring ? Theme.text : Theme.dim)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.dim.opacity(0.7))
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .background(Theme.surfaceElevated.opacity(0.85))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.cadencePlain)
         .confirmationDialog(

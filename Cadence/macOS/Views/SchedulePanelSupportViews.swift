@@ -52,34 +52,26 @@ struct TaskInspectorDateControl: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Button { showPicker.toggle() } label: {
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
                     Image(systemName: effectiveIcon)
-                        .font(.system(size: 12))
+                        .font(.system(size: 11))
                         .foregroundStyle(isOn ? effectiveIconColor : Theme.dim)
 
                     Text(displayLabel)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(
                             isOn
                                 ? (isDoDate && cal.isDateInToday(date) ? .yellow : activeColor)
                                 : Theme.dim
                         )
                         .lineLimit(1)
-
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(minHeight: 30)
+                .padding(.vertical, 2)
                 .contentShape(Rectangle())
-                .background(isHovered ? activeColor.opacity(0.08) : Theme.surface.opacity(0.45))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .background(isHovered ? activeColor.opacity(0.08) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
             }
             .buttonStyle(.cadencePlain)
             .onHover { isHovered = $0 }
@@ -87,16 +79,18 @@ struct TaskInspectorDateControl: View {
                 pickerPopover
             }
 
-            Button {
-                isOn = false
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim.opacity(isOn ? 0.65 : 0))
-                    .frame(width: 16, height: 16)
+            if isOn {
+                Button {
+                    isOn = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.dim.opacity(0.6))
+                }
+                .buttonStyle(.cadencePlain)
             }
-            .buttonStyle(.cadencePlain)
-            .disabled(!isOn)
+
+            Spacer(minLength: 0)
         }
         .onAppear {
             var comps = cal.dateComponents([.year, .month], from: isOn ? date : Date())

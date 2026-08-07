@@ -212,21 +212,13 @@ struct TaskDateChip: View {
                 HStack(spacing: 5) {
                     Image(systemName: effectiveIcon)
                         .font(.system(size: 11))
-                        .foregroundStyle(isOn ? effectiveIconColor : Theme.dim)
-                    ZStack(alignment: .leading) {
-                        Text(label).font(.system(size: 12)).opacity(0)
-                        Text("Tomorrow").font(.system(size: 12, weight: .semibold)).opacity(0)
-                        if isOn {
-                            Text(displayLabel)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(isDoDate && cal.isDateInToday(date) ? .yellow : activeColor)
-                        } else {
-                            Text(label)
-                                .font(.system(size: 12))
-                                .foregroundStyle(Theme.dim)
-                        }
+                        .foregroundStyle(isOn ? effectiveIconColor : (isHovered ? Theme.muted : Theme.dim))
+                    if isOn {
+                        Text(displayLabel)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(isDoDate && cal.isDateInToday(date) ? .yellow : activeColor)
+                            .fixedSize()
                     }
-                    .fixedSize()
                 }
                 .padding(.leading, 8)
                 .padding(.trailing, 8)
@@ -234,11 +226,11 @@ struct TaskDateChip: View {
                 .background(
                     isOn
                         ? activeColor.opacity(isDoDate && cal.isDateInToday(date) ? 0.0 : 0.1)
-                        : (isHovered ? activeColor.opacity(0.06) : Color.clear)
+                        : Color.clear
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 7)
-                        .stroke(isOn ? activeColor.opacity(0.25) : Theme.borderSubtle.opacity(isHovered ? 0.8 : 0), lineWidth: 1)
+                        .stroke(isOn ? activeColor.opacity(0.25) : Theme.borderSubtle, lineWidth: 1)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 7))
             }

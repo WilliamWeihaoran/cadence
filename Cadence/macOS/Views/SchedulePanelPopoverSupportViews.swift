@@ -151,7 +151,7 @@ struct TaskDetailCompactOverviewSection: View {
                     )
                 )
 
-                EstimatePickerControl(value: $task.estimatedMinutes)
+                EstimatePickerControl(value: $task.estimatedMinutes, compact: true)
 
                 TaskInspectorRecurrenceControl(task: task)
 
@@ -161,9 +161,9 @@ struct TaskDetailCompactOverviewSection: View {
 
                 Divider().background(Theme.borderSubtle.opacity(0.75))
 
-                ContainerPickerBadge(selection: taskContainerBinding, contexts: contexts, areas: areas, projects: projects)
+                ContainerPickerBadge(selection: taskContainerBinding, contexts: contexts, areas: areas, projects: projects, compact: true, outlined: true)
 
-                TaskSectionPickerBadge(selection: $task.sectionName, sections: availableSections)
+                TaskSectionPickerBadge(selection: $task.sectionName, sections: availableSections, compact: true)
             }
         }
     }

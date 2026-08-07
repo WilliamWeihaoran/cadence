@@ -527,10 +527,10 @@ struct ListSectionKanbanColumn: View {
     @ViewBuilder
     private var columnBackground: some View {
         RoundedRectangle(cornerRadius: 10)
-            .fill(columnColor.opacity(isHovered ? (section.isDefault ? 0.2 : 0.3) : (section.isDefault ? 0.14 : 0.24)))
+            .fill(Theme.surface.opacity(section.isDefault ? 0.6 : 0.55))
             .overlay {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Theme.surface.opacity(section.isDefault ? 0.78 : 0.7))
+                    .fill(columnColor.opacity(isHovered ? (section.isDefault ? 0.05 : 0.09) : (section.isDefault ? 0.03 : 0.06)))
             }
             .overlay {
                 if isPendingCompletion {

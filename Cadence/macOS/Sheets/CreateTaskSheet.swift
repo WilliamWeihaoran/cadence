@@ -64,11 +64,7 @@ struct CreateTaskSheet: View {
 
             Divider().background(Theme.borderSubtle)
 
-            pickerStrip
-
-            Divider().background(Theme.borderSubtle)
-
-            footer
+            toolbarRow
         }
         .frame(width: 600)
         .background(Theme.surface)
@@ -197,13 +193,14 @@ struct CreateTaskSheet: View {
         .padding(.bottom, 4)
     }
 
-    private var pickerStrip: some View {
-        HStack(spacing: 4) {
+    private var toolbarRow: some View {
+        HStack(spacing: 8) {
             ContainerPickerBadge(
                 selection: $selectedContainer,
                 contexts: contexts,
                 areas: areas,
-                projects: projects
+                projects: projects,
+                outlined: true
             )
 
             if showsSectionPicker {
@@ -212,8 +209,6 @@ struct CreateTaskSheet: View {
                     sections: availableSections
                 )
             }
-
-            Spacer(minLength: 0)
 
             TaskDateChip(label: "Do Date",
                          icon: "calendar",
@@ -226,21 +221,13 @@ struct CreateTaskSheet: View {
                          activeColor: Theme.red,
                          isOn: $hasDueDate, date: $dueDate,
                          showPicker: $showDuePicker)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(Theme.surfaceElevated)
-    }
 
-    private var footer: some View {
-        HStack(spacing: 8) {
             TagPickerControl(
                 selectedTags: $selectedTags,
                 allTags: tags,
                 onCreateTag: createTag,
                 showsLabel: true
             )
-            .layoutPriority(1)
 
             Spacer(minLength: 0)
 
@@ -267,9 +254,9 @@ struct CreateTaskSheet: View {
             .opacity(trimmedTitle.isEmpty ? 0.5 : 1)
             .keyboardShortcut(.return, modifiers: [.command])
             .accessibilityLabel("Create Task")
-            .padding(.trailing, 12)
         }
-        .padding(.vertical, 2)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(Theme.surfaceElevated)
     }
 

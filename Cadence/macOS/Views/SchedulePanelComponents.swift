@@ -76,10 +76,7 @@ struct TaskDetailPopover: View {
                         onCreateTag: createTag
                     )
 
-                    TaskInspectorSectionGroup(
-                        title: "Overview",
-                        subtitle: "Schedule, placement, and workflow in one compact view."
-                    ) {
+                    TaskInspectorSectionGroup(title: "Overview") {
                         TaskDetailCompactOverviewSection(
                             task: task,
                             contexts: contexts,
@@ -90,10 +87,7 @@ struct TaskDetailPopover: View {
                         )
                     }
 
-                    TaskInspectorSectionGroup(
-                        title: "Notes",
-                        subtitle: "Context and details."
-                    ) {
+                    TaskInspectorSectionGroup(title: "Notes") {
                         TagPickerControl(
                             selectedTags: taskTagsBinding,
                             allTags: tags,
@@ -113,10 +107,7 @@ struct TaskDetailPopover: View {
                     }
                 }
 
-                TaskInspectorSectionGroup(
-                    title: "Subtasks",
-                    subtitle: "Checklist for this task."
-                ) {
+                TaskInspectorSectionGroup(title: "Subtasks") {
                     TaskDetailSubtasksSection(
                         task: task,
                         newSubtaskTitle: $newSubtaskTitle,
