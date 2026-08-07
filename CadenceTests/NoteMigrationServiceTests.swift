@@ -149,4 +149,88 @@ struct NoteMigrationServiceTests {
         #expect(health.meetingNoteMissingCalendarIDCount == 1)
         #expect(health.issueCount == 5)
     }
+
+    // MARK: - Deferred-save / partial-failure safety
+    //
+    // `PersistenceController.performStartupMaintenance` deliberately calls
+    // `NoteMigrationService.migrateIfNeeded(..., saveChanges: false)` and only issues a single
+    // `context.save()` afterward (batched together with tag seeding and integrity repair). These
+    // tests lock in the resulting crash-safety contract: if the process dies before that final save,
+    // no partially-migrated `Note` data should have leaked into the persistent store, the legacy
+    // records must still be intact for a retry, and a subsequent migration attempt must converge to
+    // exactly one `Note` per legacy record with no duplicates.
+    @Test func deferredSaveMigrationLeavesNoPartialStateIfNeverSaved() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let writerContext = ModelContext(container)
+        let daily = DailyNote(date: "2026-05-01")
+        daily.content = "Daily content"
+        let weekly = WeeklyNote(weekKey: "2026-W19")
+        let permanent = PermNote()
+        let document = Document(title: "List note")
+        let eventNote = EventNote(calendarEventID: "event-9", eventTitle: "Standup")
+        writerContext.insert(daily)
+        writerContext.insert(weekly)
+        writerContext.insert(permanent)
+        writerContext.insert(document)
+        writerContext.insert(eventNote)
+        try writerContext.save()
+
+        // Simulate an app-startup migration pass that never reaches the final save (e.g. the
+        // process is killed immediately after this call, before `context.save()` runs).
+        let deferredReport = try NoteMigrationService.migrateIfNeeded(
+            in: writerContext,
+            source: "startup-sim-crash",
+            saveChanges: false
+        )
+        #expect(deferredReport.insertedTotal == 5)
+
+        // A brand-new context against the same underlying store models the next launch after the
+        // crash: it must see none of the unsaved `Note` inserts, and all legacy records must still
+        // be present so the next migration attempt can retry cleanly.
+        let relaunchContext = ModelContext(container)
+        #expect(try relaunchContext.fetch(FetchDescriptor<Note>()).isEmpty)
+        #expect(try relaunchContext.fetch(FetchDescriptor<DailyNote>()).count == 1)
+        #expect(try relaunchContext.fetch(FetchDescriptor<WeeklyNote>()).count == 1)
+        #expect(try relaunchContext.fetch(FetchDescriptor<PermNote>()).count == 1)
+        #expect(try relaunchContext.fetch(FetchDescriptor<Document>()).count == 1)
+        #expect(try relaunchContext.fetch(FetchDescriptor<EventNote>()).count == 1)
+
+        // The retried migration (this time saved, as a real relaunch would do) must fully recover
+        // with no duplicates and no data loss.
+        let retryReport = try NoteMigrationService.migrateIfNeeded(in: relaunchContext, source: "startup-sim-retry")
+        #expect(retryReport.insertedTotal == 5)
+        #expect(retryReport.skippedAlreadyMigrated == 0)
+
+        let verifyContext = ModelContext(container)
+        let notes = try verifyContext.fetch(FetchDescriptor<Note>())
+        #expect(notes.count == 5)
+        #expect(notes.first { $0.kind == .daily }?.content == "Daily content")
+    }
+
+    @Test func repeatedDeferredSaveCallsBeforeAnyCommitDoNotDuplicatePendingNotes() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let daily = DailyNote(date: "2026-05-02")
+        let weekly = WeeklyNote(weekKey: "2026-W20")
+        context.insert(daily)
+        context.insert(weekly)
+        try context.save()
+
+        // Mirrors `PersistenceController.performStartupMaintenance`, which can invoke multiple
+        // maintenance passes against the same context with `saveChanges: false` before a single
+        // trailing `context.save()`. Calling the migration step twice back-to-back without an
+        // intervening save must not create duplicate pending `Note` inserts.
+        let firstPass = try NoteMigrationService.migrateIfNeeded(in: context, source: "pass-1", saveChanges: false)
+        let secondPass = try NoteMigrationService.migrateIfNeeded(in: context, source: "pass-2", saveChanges: false)
+        #expect(firstPass.insertedTotal == 2)
+        #expect(secondPass.insertedTotal == 0)
+        #expect(secondPass.skippedAlreadyMigrated == 2)
+
+        #expect(try context.fetch(FetchDescriptor<Note>()).count == 2)
+
+        try context.save()
+
+        let verifyContext = ModelContext(container)
+        #expect(try verifyContext.fetch(FetchDescriptor<Note>()).count == 2)
+    }
 }
