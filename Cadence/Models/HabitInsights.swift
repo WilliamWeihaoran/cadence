@@ -13,24 +13,6 @@ extension Habit {
         isDue(on: Calendar.current.startOfDay(for: Date()))
     }
 
-    func isDue(on date: Date, calendar: Calendar = .current) -> Bool {
-        let cal = calendar
-        switch frequencyType {
-        case .daily:
-            return true
-        case .daysOfWeek:
-            return frequencyDays.contains(Self.weekdayIndex(for: date, calendar: cal))
-        case .timesPerWeek:
-            return true
-        case .monthly:
-            let day = cal.component(.day, from: date)
-            let target = frequencyDays.first ?? 1
-            let range = cal.range(of: .day, in: .month, for: date)
-            let lastDay = range?.upperBound.advanced(by: -1) ?? 31
-            return day == min(max(1, target), lastDay)
-        }
-    }
-
     var frequencySummary: String {
         switch frequencyType {
         case .daily:

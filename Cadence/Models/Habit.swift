@@ -199,4 +199,24 @@ import Foundation
         let weekday = calendar.component(.weekday, from: date)
         return weekday == 1 ? 7 : weekday - 1
     }
+
+    /// Lives here (not in `HabitInsights.swift`) so this file has no cross-file dependency:
+    /// `HabitInsights.swift` isn't included in every target that compiles `Habit.swift` (e.g.
+    /// `CadenceMCPServer`), but `currentStreak(asOf:calendar:)` above needs this.
+    func isDue(on date: Date, calendar: Calendar = .current) -> Bool {
+        switch frequencyType {
+        case .daily:
+            return true
+        case .daysOfWeek:
+            return frequencyDays.contains(Self.weekdayIndex(for: date, calendar: calendar))
+        case .timesPerWeek:
+            return true
+        case .monthly:
+            let day = calendar.component(.day, from: date)
+            let target = frequencyDays.first ?? 1
+            let range = calendar.range(of: .day, in: .month, for: date)
+            let lastDay = range?.upperBound.advanced(by: -1) ?? 31
+            return day == min(max(1, target), lastDay)
+        }
+    }
 }
