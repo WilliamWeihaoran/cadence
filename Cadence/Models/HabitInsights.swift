@@ -13,8 +13,8 @@ extension Habit {
         isDue(on: Calendar.current.startOfDay(for: Date()))
     }
 
-    func isDue(on date: Date) -> Bool {
-        let cal = Calendar.current
+    func isDue(on date: Date, calendar: Calendar = .current) -> Bool {
+        let cal = calendar
         switch frequencyType {
         case .daily:
             return true
