@@ -140,10 +140,10 @@ enum CadenceHabitWidgetSupport {
                 if lhsDone != rhsDone {
                     return !lhsDone && rhsDone
                 }
-                let lhsHasPursuit = lhs.pursuit != nil
-                let rhsHasPursuit = rhs.pursuit != nil
-                if lhsHasPursuit != rhsHasPursuit {
-                    return lhsHasPursuit && !rhsHasPursuit
+                let lhsHasGoal = lhs.goal != nil
+                let rhsHasGoal = rhs.goal != nil
+                if lhsHasGoal != rhsHasGoal {
+                    return lhsHasGoal && !rhsHasGoal
                 }
                 if lhs.currentStreak != rhs.currentStreak {
                     return lhs.currentStreak > rhs.currentStreak

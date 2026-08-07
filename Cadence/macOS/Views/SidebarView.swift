@@ -7,7 +7,6 @@ struct SidebarView: View {
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query private var allTasks: [AppTask]
     @Query private var habits: [Habit]
-    @Query(filter: #Predicate<Pursuit> { $0.statusRaw == "active" }) private var activePursuits: [Pursuit]
     @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
     @AppStorage("sidebarHiddenTabs") private var sidebarHiddenTabsRaw = ""
     @AppStorage("sidebarTabOrder") private var sidebarTabOrderRaw = ""
@@ -30,7 +29,6 @@ struct SidebarView: View {
     private var fullBadgeSnapshot: CadenceFeatureBadgeSupport.Snapshot {
         CadenceFeatureBadgeSupport.Snapshot(
             tasks: allTasks,
-            activePursuitCount: activePursuits.count,
             activeGoalCount: activeGoals.count,
             habitCount: habits.count
         )
@@ -39,7 +37,6 @@ struct SidebarView: View {
     private var activeContainerBadgeSnapshot: CadenceFeatureBadgeSupport.Snapshot {
         CadenceFeatureBadgeSupport.Snapshot(
             tasks: tasksInActiveContainers,
-            activePursuitCount: activePursuits.count,
             activeGoalCount: activeGoals.count,
             habitCount: habits.count
         )
@@ -49,7 +46,7 @@ struct SidebarView: View {
         switch destination {
         case .allTasks:
             return activeContainerBadgeSnapshot.count(for: destination.feature)
-        case .today, .inbox, .pursuits, .goals, .habits:
+        case .today, .inbox, .goals, .habits:
             return fullBadgeSnapshot.count(for: destination.feature)
         case .focus, .calendar:
             return nil

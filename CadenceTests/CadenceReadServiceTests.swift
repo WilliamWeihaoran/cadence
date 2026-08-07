@@ -102,17 +102,17 @@ struct CadenceReadServiceTests {
             title: "Knowledge Hub",
             content: "[[note:\(note.id.uuidString)|Design Note]]"
         )
-        let pursuit = Pursuit(title: "Ship Cadence MCP", context: fixture.context)
-        goal.pursuit = pursuit
+        let parentGoal = Goal(title: "Cadence Platform", context: fixture.context)
+        parentGoal.kind = .ongoing
+        goal.parentGoal = parentGoal
         let habit = Habit(title: "Write daily", context: fixture.context, goal: goal)
-        habit.pursuit = pursuit
         let completion = HabitCompletion(date: DateFormatters.todayKey(), habit: habit)
         let savedLink = SavedLink(title: "Goal Spec", url: "https://example.com/spec")
         savedLink.project = fixture.project
         let goalLink = GoalListLink(goal: goal, project: fixture.project)
 
         fixture.modelContext.insert(goal)
-        fixture.modelContext.insert(pursuit)
+        fixture.modelContext.insert(parentGoal)
         fixture.modelContext.insert(task)
         fixture.modelContext.insert(bundle)
         fixture.modelContext.insert(note)
@@ -136,10 +136,12 @@ struct CadenceReadServiceTests {
         #expect(try fixture.service.listGoals(options: .init(query: "Ship")).map(\.id) == [goal.id.uuidString])
         #expect(goalDetail.linkedContainers.map(\.id) == [fixture.project.id.uuidString])
         #expect(goalDetail.directTasks.map(\.id) == [task.id.uuidString])
-        #expect(goalDetail.summary.pursuitId == pursuit.id.uuidString)
-        #expect(goalDetail.summary.pursuitTitle == pursuit.title)
+        #expect(goalDetail.summary.parentGoalId == parentGoal.id.uuidString)
+        #expect(goalDetail.summary.parentGoalTitle == parentGoal.title)
+        #expect(goalDetail.summary.isTopLevel == false)
+        #expect(goalDetail.summary.kind == GoalKind.completable.rawValue)
         #expect(try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString)).first?.completedToday == true)
-        #expect(try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString)).first?.pursuitId == pursuit.id.uuidString)
+        #expect(try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString)).first?.goal?.id == goal.id.uuidString)
         #expect(try fixture.service.listLinks(options: .init(containerKind: "project", containerId: fixture.project.id.uuidString)).map(\.id) == [savedLink.id.uuidString])
         #expect(try fixture.service.listTaskBundles(options: .init(dateKey: "2026-05-01")).map(\.id) == [bundle.id.uuidString])
         #expect(bundleDetail.tasks.map(\.id) == [task.id.uuidString])
@@ -148,15 +150,20 @@ struct CadenceReadServiceTests {
         #expect(try fixture.service.search(query: "Ship Goals", scopes: ["goals"]).first?.entityType == "goal")
         #expect(try fixture.service.search(query: "feature", scopes: ["tags"]).first?.entityType == "tag")
 
-        let pursuitList = try fixture.service.listPursuits(options: .init(contextId: fixture.context.id.uuidString))
-        #expect(pursuitList.map(\.id) == [pursuit.id.uuidString])
-        #expect(pursuitList.first?.goalCount == 1)
-        #expect(pursuitList.first?.habitCount == 1)
+        // What used to be a pursuit is now a top-level ongoing goal owning the milestone.
+        let parentSummary = try #require(try fixture.service.listGoals(options: .init(
+            contextId: fixture.context.id.uuidString,
+            query: "Cadence Platform"
+        )).first)
+        #expect(parentSummary.id == parentGoal.id.uuidString)
+        #expect(parentSummary.isTopLevel)
+        #expect(parentSummary.kind == GoalKind.ongoing.rawValue)
+        #expect(parentSummary.subGoalCount == 1)
 
         let contexts = try fixture.service.listContexts()
-        #expect(contexts.first { $0.id == fixture.context.id.uuidString }?.pursuitCount == 1)
+        #expect(contexts.first { $0.id == fixture.context.id.uuidString }?.goalCount == 2)
 
-        #expect(try fixture.service.search(query: "Ship Cadence MCP", scopes: ["pursuits"]).first?.entityType == "pursuit")
+        #expect(try fixture.service.search(query: "Cadence Platform", scopes: ["goals"]).first?.entityType == "goal")
     }
 
     @Test func readServiceMigratesLegacyListDocumentsOnInit() throws {

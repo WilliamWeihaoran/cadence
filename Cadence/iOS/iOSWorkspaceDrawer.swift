@@ -9,7 +9,6 @@ struct iOSWorkspaceDrawer: View {
     @Query(sort: \Project.order) private var projects: [Project]
     @Query private var allTasks: [AppTask]
     @Query private var habits: [Habit]
-    @Query(filter: #Predicate<Pursuit> { $0.statusRaw == "active" }) private var activePursuits: [Pursuit]
     @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
 
     private var activeAreas: [Area] {
@@ -23,7 +22,6 @@ struct iOSWorkspaceDrawer: View {
     private var badgeSnapshot: CadenceFeatureBadgeSupport.Snapshot {
         CadenceFeatureBadgeSupport.Snapshot(
             tasks: allTasks,
-            activePursuitCount: activePursuits.count,
             activeGoalCount: activeGoals.count,
             habitCount: habits.count,
             activeListCount: activeAreas.count + activeProjects.count

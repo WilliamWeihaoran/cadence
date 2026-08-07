@@ -11,7 +11,11 @@ import Foundation
     var targetHours: Double = 0
     var loggedHours: Double = 0     // manual + future timer data
     var colorHex: String = "#4a9eff"
+    var icon: String = "flag.fill"
     var statusRaw: String = "active"
+    /// Defaults to `.completable` so every pre-existing goal keeps reading as a milestone.
+    /// Goals migrated up from the retired `Pursuit` model carry their original kind.
+    var kindRaw: String = "completable"
 
     var progressType: GoalProgressType {
         get { GoalProgressType(rawValue: progressTypeRaw) ?? .subtasks }
@@ -21,6 +25,13 @@ import Foundation
         get { GoalStatus(rawValue: statusRaw) ?? .active }
         set { statusRaw = newValue.rawValue }
     }
+    var kind: GoalKind {
+        get { GoalKind(rawValue: kindRaw) ?? .completable }
+        set { kindRaw = newValue.rawValue }
+    }
+
+    /// A goal with no parent is a top-level direction; nested goals read as its milestones.
+    var isTopLevel: Bool { parentGoal == nil }
     var order: Int = 0
     var createdAt: Date = Date()
     // Dependency IDs stored as JSON array of UUID strings (finish-to-start: this goal depends on listed goals)

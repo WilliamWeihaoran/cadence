@@ -2,158 +2,30 @@
 import SwiftData
 import SwiftUI
 
-enum iOSPursuitEditorMode: Identifiable {
-    case new
-    case edit(Pursuit)
-
-    var id: String {
-        switch self {
-        case .new: return "new-pursuit"
-        case .edit(let pursuit): return "edit-pursuit-\(pursuit.id.uuidString)"
-        }
-    }
-}
-
 enum iOSGoalEditorMode: Identifiable {
-    case new(Pursuit?)
+    /// `.new(nil)` creates a top-level goal (a direction); passing a parent nests the new
+    /// goal underneath it as one of that goal's milestones.
+    case new(Goal?)
     case edit(Goal)
 
     var id: String {
         switch self {
-        case .new(let pursuit): return "new-goal-\(pursuit?.id.uuidString ?? "none")"
+        case .new(let parent): return "new-goal-\(parent?.id.uuidString ?? "root")"
         case .edit(let goal): return "edit-goal-\(goal.id.uuidString)"
         }
     }
 }
 
 enum iOSHabitEditorMode: Identifiable {
-    case new(Pursuit?)
+    /// `.new(goal)` pre-links the habit to `goal`; `nil` leaves it unlinked.
+    case new(Goal?)
     case edit(Habit)
 
     var id: String {
         switch self {
-        case .new(let pursuit): return "new-habit-\(pursuit?.id.uuidString ?? "none")"
+        case .new(let goal): return "new-habit-\(goal?.id.uuidString ?? "none")"
         case .edit(let habit): return "edit-habit-\(habit.id.uuidString)"
         }
-    }
-}
-
-struct iOSPursuitEditorSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Pursuit.order) private var allPursuits: [Pursuit]
-    @Query(sort: \Context.order) private var contexts: [Context]
-
-    let mode: iOSPursuitEditorMode
-    let onSave: (Pursuit) -> Void
-
-    @State private var title: String
-    @State private var desc: String
-    @State private var icon: String
-    @State private var colorHex: String
-    @State private var kind: PursuitKind
-    @State private var status: PursuitStatus
-    @State private var contextID: UUID?
-
-    init(mode: iOSPursuitEditorMode, onSave: @escaping (Pursuit) -> Void = { _ in }) {
-        self.mode = mode
-        self.onSave = onSave
-
-        if case .edit(let pursuit) = mode {
-            _title = State(initialValue: pursuit.title)
-            _desc = State(initialValue: pursuit.desc)
-            _icon = State(initialValue: pursuit.icon)
-            _colorHex = State(initialValue: pursuit.colorHex)
-            _kind = State(initialValue: pursuit.kind)
-            _status = State(initialValue: pursuit.status)
-            _contextID = State(initialValue: pursuit.context?.id)
-        } else {
-            _title = State(initialValue: "")
-            _desc = State(initialValue: "")
-            _icon = State(initialValue: "sparkles")
-            _colorHex = State(initialValue: "#a78bfa")
-            _kind = State(initialValue: .ongoing)
-            _status = State(initialValue: .active)
-            _contextID = State(initialValue: nil)
-        }
-    }
-
-    private var editingPursuit: Pursuit? {
-        if case .edit(let pursuit) = mode { return pursuit }
-        return nil
-    }
-
-    private var selectedContext: Context? {
-        contextID.flatMap { id in contexts.first { $0.id == id } }
-    }
-
-    private var canSave: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    var body: some View {
-        iOSTrackingEditorShell(
-            title: editingPursuit == nil ? "New Pursuit" : "Edit Pursuit",
-            canSave: canSave,
-            tint: Color(hex: colorHex),
-            save: save
-        ) {
-            iOSTrackingTextField(title: "Title", placeholder: "e.g. Become more knowledgeable", text: $title)
-            iOSTrackingTextField(title: "Direction", placeholder: "What are you trying to cultivate?", text: $desc, axis: .vertical)
-
-            iOSTrackingPickerSection(title: "Context") {
-                Picker("Context", selection: $contextID) {
-                    Text("None").tag(Optional<UUID>.none)
-                    ForEach(contexts) { context in
-                        Label(context.name, systemImage: context.icon).tag(Optional(context.id))
-                    }
-                }
-                .pickerStyle(.menu)
-            }
-
-            iOSTrackingPickerSection(title: "Kind") {
-                Picker("Kind", selection: $kind) {
-                    ForEach(PursuitKind.allCases, id: \.self) { kind in
-                        Label(kind.label, systemImage: kind.systemImage).tag(kind)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
-
-            iOSTrackingPickerSection(title: "Status") {
-                Picker("Status", selection: $status) {
-                    ForEach(PursuitStatus.allCases, id: \.self) { status in
-                        Text(status.label).tag(status)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
-
-            iOSTrackingPickerSection(title: "Icon") {
-                iOSTrackingIconGrid(selection: $icon)
-            }
-
-            iOSTrackingPickerSection(title: "Color") {
-                iOSTrackingColorGrid(selection: $colorHex)
-            }
-        }
-    }
-
-    private func save() {
-        guard let pursuit = CadenceTrackingMutationSupport.savePursuit(
-            editingPursuit,
-            title: title,
-            desc: desc,
-            icon: icon,
-            colorHex: colorHex,
-            kind: kind,
-            status: status,
-            context: selectedContext,
-            allPursuits: allPursuits,
-            modelContext: modelContext
-        ) else { return }
-        onSave(pursuit)
-        dismiss()
     }
 }
 
@@ -161,7 +33,6 @@ struct iOSGoalEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Goal.order) private var allGoals: [Goal]
-    @Query(sort: \Pursuit.order) private var allPursuits: [Pursuit]
     @Query(sort: \Context.order) private var contexts: [Context]
 
     let mode: iOSGoalEditorMode
@@ -173,10 +44,12 @@ struct iOSGoalEditorSheet: View {
     @State private var endDate: Date
     @State private var progressType: GoalProgressType
     @State private var targetHours: Double
+    @State private var icon: String
     @State private var colorHex: String
+    @State private var kind: GoalKind
     @State private var status: GoalStatus
     @State private var contextID: UUID?
-    @State private var pursuitID: UUID?
+    @State private var parentGoalID: UUID?
 
     init(mode: iOSGoalEditorMode, onSave: @escaping (Goal) -> Void = { _ in }) {
         self.mode = mode
@@ -190,11 +63,13 @@ struct iOSGoalEditorSheet: View {
             _endDate = State(initialValue: DateFormatters.date(from: goal.endDate) ?? Date())
             _progressType = State(initialValue: goal.progressType)
             _targetHours = State(initialValue: goal.targetHours)
+            _icon = State(initialValue: goal.icon)
             _colorHex = State(initialValue: goal.colorHex)
+            _kind = State(initialValue: goal.kind)
             _status = State(initialValue: goal.status)
             _contextID = State(initialValue: goal.context?.id)
-            _pursuitID = State(initialValue: goal.pursuit?.id)
-        case .new(let pursuit):
+            _parentGoalID = State(initialValue: goal.parentGoal?.id)
+        case .new(let parent):
             let start = Date()
             let end = Calendar.current.date(byAdding: .month, value: 1, to: start) ?? start
             _title = State(initialValue: "")
@@ -203,10 +78,14 @@ struct iOSGoalEditorSheet: View {
             _endDate = State(initialValue: end)
             _progressType = State(initialValue: .subtasks)
             _targetHours = State(initialValue: 0)
-            _colorHex = State(initialValue: pursuit?.colorHex ?? "#4a9eff")
+            // A goal created underneath another one reads as a milestone with a finish line;
+            // a fresh top-level goal reads as a long-running direction.
+            _icon = State(initialValue: parent == nil ? "sparkles" : "flag.fill")
+            _colorHex = State(initialValue: parent?.colorHex ?? "#4a9eff")
+            _kind = State(initialValue: parent == nil ? .ongoing : .completable)
             _status = State(initialValue: .active)
-            _contextID = State(initialValue: pursuit?.context?.id)
-            _pursuitID = State(initialValue: pursuit?.id)
+            _contextID = State(initialValue: parent?.context?.id)
+            _parentGoalID = State(initialValue: parent?.id)
         }
     }
 
@@ -215,9 +94,20 @@ struct iOSGoalEditorSheet: View {
         return nil
     }
 
-    private var pursuitChoices: [Pursuit] {
-        var choices = allPursuits.filter { $0.status == .active }
-        if let current = editingGoal?.pursuit,
+    /// A top-level goal that already owns milestones stays top-level — nesting it would push
+    /// its own milestones to a third level the Goals list does not render. Goals that are
+    /// already nested keep their picker so an existing parent can still be changed or cleared.
+    private var mustStayTopLevel: Bool {
+        guard let editingGoal else { return false }
+        return editingGoal.parentGoal == nil && !(editingGoal.subGoals ?? []).isEmpty
+    }
+
+    private var parentChoices: [Goal] {
+        guard !mustStayTopLevel else { return [] }
+        var choices = GoalAssignmentRules
+            .topLevelGoals(from: allGoals)
+            .filter { $0.status == .active && $0.id != editingGoal?.id }
+        if let current = editingGoal?.parentGoal,
            !choices.contains(where: { $0.id == current.id }) {
             choices.insert(current, at: 0)
         }
@@ -228,43 +118,64 @@ struct iOSGoalEditorSheet: View {
         contextID.flatMap { id in contexts.first { $0.id == id } }
     }
 
-    private var selectedPursuit: Pursuit? {
-        pursuitID.flatMap { id in allPursuits.first { $0.id == id } }
+    private var selectedParentGoal: Goal? {
+        parentGoalID.flatMap { id in allGoals.first { $0.id == id } }
     }
 
     private var canSave: Bool {
-        PursuitAssignmentRules.canSaveMilestone(title: title, pursuitID: pursuitID)
+        GoalAssignmentRules.canSaveGoal(title: title)
     }
 
     var body: some View {
         iOSTrackingEditorShell(
-            title: editingGoal == nil ? "New Milestone" : "Edit Milestone",
+            title: editingGoal == nil ? "New Goal" : "Edit Goal",
             canSave: canSave,
             tint: Color(hex: colorHex),
             save: save
         ) {
-            iOSTrackingTextField(title: "Title", placeholder: "e.g. Pass Exam P", text: $title)
+            iOSTrackingTextField(title: "Title", placeholder: "e.g. Become more knowledgeable", text: $title)
             iOSTrackingTextField(title: "Definition of Done", placeholder: "What does done look like?", text: $desc, axis: .vertical)
 
-            iOSTrackingPickerSection(title: "Pursuit") {
-                Picker("Pursuit", selection: $pursuitID) {
-                    Text("Choose Pursuit").tag(Optional<UUID>.none)
-                    ForEach(pursuitChoices) { pursuit in
-                        Label(pursuit.title.isEmpty ? "Untitled Pursuit" : pursuit.title, systemImage: pursuit.icon)
-                            .tag(Optional(pursuit.id))
+            iOSTrackingPickerSection(title: "Parent Goal") {
+                if mustStayTopLevel {
+                    Text("This goal has milestones of its own, so it stays top-level.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Picker("Parent Goal", selection: $parentGoalID) {
+                        Text("None — top-level goal").tag(Optional<UUID>.none)
+                        ForEach(parentChoices) { goal in
+                            Label(goal.title.isEmpty ? "Untitled Goal" : goal.title, systemImage: goal.icon)
+                                .tag(Optional(goal.id))
+                        }
                     }
+                    .pickerStyle(.menu)
                 }
-                .pickerStyle(.menu)
             }
 
             iOSTrackingPickerSection(title: "Context") {
                 Picker("Context", selection: $contextID) {
-                    Text("Use Pursuit Context").tag(Optional<UUID>.none)
+                    Text("Use Parent Context").tag(Optional<UUID>.none)
                     ForEach(contexts) { context in
                         Label(context.name, systemImage: context.icon).tag(Optional(context.id))
                     }
                 }
                 .pickerStyle(.menu)
+            }
+
+            iOSTrackingPickerSection(title: "Kind") {
+                Picker("Kind", selection: $kind) {
+                    ForEach(GoalKind.allCases, id: \.self) { kind in
+                        Label(kind.label, systemImage: kind.systemImage).tag(kind)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(kind.detail)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .padding(.top, 8)
             }
 
             iOSTrackingDateRangeSection(startDate: $startDate, endDate: $endDate)
@@ -293,10 +204,14 @@ struct iOSGoalEditorSheet: View {
             iOSTrackingPickerSection(title: "Status") {
                 Picker("Status", selection: $status) {
                     ForEach(GoalStatus.allCases, id: \.self) { status in
-                        Text(status.trackingLabel).tag(status)
+                        Text(status.label).tag(status)
                     }
                 }
                 .pickerStyle(.segmented)
+            }
+
+            iOSTrackingPickerSection(title: "Icon") {
+                iOSTrackingIconGrid(selection: $icon)
             }
 
             iOSTrackingPickerSection(title: "Color") {
@@ -306,7 +221,6 @@ struct iOSGoalEditorSheet: View {
     }
 
     private func save() {
-        guard let selectedPursuit else { return }
         guard let goal = CadenceTrackingMutationSupport.saveGoal(
             editingGoal,
             title: title,
@@ -315,10 +229,12 @@ struct iOSGoalEditorSheet: View {
             endDate: DateFormatters.dateKey(from: max(startDate, endDate)),
             progressType: progressType,
             targetHours: targetHours,
+            icon: icon,
             colorHex: colorHex,
+            kind: kind,
             status: status,
             context: selectedContext,
-            pursuit: selectedPursuit,
+            parentGoal: selectedParentGoal,
             allGoals: allGoals,
             modelContext: modelContext
         ) else { return }
@@ -331,7 +247,6 @@ struct iOSHabitEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Habit.order) private var allHabits: [Habit]
-    @Query(sort: \Pursuit.order) private var allPursuits: [Pursuit]
     @Query(sort: \Goal.order) private var allGoals: [Goal]
     @Query(sort: \Context.order) private var contexts: [Context]
 
@@ -346,7 +261,6 @@ struct iOSHabitEditorSheet: View {
     @State private var timesPerWeek: Int
     @State private var monthlyDay: Int
     @State private var contextID: UUID?
-    @State private var pursuitID: UUID?
     @State private var goalID: UUID?
     @State private var hasReminder: Bool
     @State private var reminderMinuteOfDay: Int
@@ -366,21 +280,19 @@ struct iOSHabitEditorSheet: View {
             _timesPerWeek = State(initialValue: habit.frequencyType == .timesPerWeek ? max(1, habit.targetCount) : 3)
             _monthlyDay = State(initialValue: habit.frequencyType == .monthly ? min(max(storedDays.first ?? 1, 1), 31) : 1)
             _contextID = State(initialValue: habit.context?.id)
-            _pursuitID = State(initialValue: habit.pursuit?.id)
             _goalID = State(initialValue: habit.goal?.id)
             _hasReminder = State(initialValue: habit.reminderMinuteOfDay != nil)
             _reminderMinuteOfDay = State(initialValue: habit.reminderMinuteOfDay ?? 9 * 60)
-        case .new(let pursuit):
+        case .new(let goal):
             _title = State(initialValue: "")
             _icon = State(initialValue: "star.fill")
-            _colorHex = State(initialValue: pursuit?.colorHex ?? "#4a9eff")
+            _colorHex = State(initialValue: goal?.colorHex ?? "#4a9eff")
             _frequencyType = State(initialValue: .daily)
             _selectedDays = State(initialValue: [])
             _timesPerWeek = State(initialValue: 3)
             _monthlyDay = State(initialValue: 1)
-            _contextID = State(initialValue: pursuit?.context?.id)
-            _pursuitID = State(initialValue: pursuit?.id)
-            _goalID = State(initialValue: nil)
+            _contextID = State(initialValue: goal?.context?.id)
+            _goalID = State(initialValue: goal?.id)
             _hasReminder = State(initialValue: false)
             _reminderMinuteOfDay = State(initialValue: 9 * 60)
         }
@@ -391,27 +303,23 @@ struct iOSHabitEditorSheet: View {
         return nil
     }
 
-    private var pursuitChoices: [Pursuit] {
-        var choices = allPursuits.filter { $0.status == .active }
-        if let current = editingHabit?.pursuit,
+    /// Top-level goals first, each immediately followed by its own milestones, so the menu
+    /// reads as the same outline the Goals screen shows.
+    private var goalChoices: [Goal] {
+        var choices: [Goal] = []
+        for goal in GoalAssignmentRules.topLevelGoals(from: allGoals) where goal.status == .active {
+            choices.append(goal)
+            choices.append(contentsOf: GoalAssignmentRules.milestones(of: goal).filter { $0.status == .active })
+        }
+        if let current = editingHabit?.goal,
            !choices.contains(where: { $0.id == current.id }) {
             choices.insert(current, at: 0)
         }
         return choices
     }
 
-    private var goalChoices: [Goal] {
-        allGoals.filter { goal in
-            goal.status == .active && (pursuitID == nil || goal.pursuit?.id == pursuitID)
-        }
-    }
-
     private var selectedContext: Context? {
         contextID.flatMap { id in contexts.first { $0.id == id } }
-    }
-
-    private var selectedPursuit: Pursuit? {
-        pursuitID.flatMap { id in allPursuits.first { $0.id == id } }
     }
 
     private var selectedGoal: Goal? {
@@ -419,7 +327,7 @@ struct iOSHabitEditorSheet: View {
     }
 
     private var canSave: Bool {
-        PursuitAssignmentRules.canSaveHabit(title: title, pursuitID: pursuitID)
+        GoalAssignmentRules.canSaveHabit(title: title)
     }
 
     private var reminderTimeBinding: Binding<Date> {
@@ -448,27 +356,11 @@ struct iOSHabitEditorSheet: View {
         ) {
             iOSTrackingTextField(title: "Title", placeholder: "e.g. Read for 20 minutes", text: $title)
 
-            iOSTrackingPickerSection(title: "Pursuit") {
-                Picker("Pursuit", selection: $pursuitID) {
-                    Text("Choose Pursuit").tag(Optional<UUID>.none)
-                    ForEach(pursuitChoices) { pursuit in
-                        Label(pursuit.title.isEmpty ? "Untitled Pursuit" : pursuit.title, systemImage: pursuit.icon)
-                            .tag(Optional(pursuit.id))
-                    }
-                }
-                .pickerStyle(.menu)
-                .onChange(of: pursuitID) { _, _ in
-                    if let goalID, !goalChoices.contains(where: { $0.id == goalID }) {
-                        self.goalID = nil
-                    }
-                }
-            }
-
             iOSTrackingPickerSection(title: "Goal") {
                 Picker("Goal", selection: $goalID) {
                     Text("None").tag(Optional<UUID>.none)
                     ForEach(goalChoices) { goal in
-                        Label(goal.title.isEmpty ? "Untitled Milestone" : goal.title, systemImage: "flag.fill")
+                        Label(goalMenuTitle(for: goal), systemImage: goal.icon)
                             .tag(Optional(goal.id))
                     }
                 }
@@ -477,7 +369,7 @@ struct iOSHabitEditorSheet: View {
 
             iOSTrackingPickerSection(title: "Context") {
                 Picker("Context", selection: $contextID) {
-                    Text("Use Pursuit Context").tag(Optional<UUID>.none)
+                    Text("Use Goal Context").tag(Optional<UUID>.none)
                     ForEach(contexts) { context in
                         Label(context.name, systemImage: context.icon).tag(Optional(context.id))
                     }
@@ -526,8 +418,14 @@ struct iOSHabitEditorSheet: View {
         }
     }
 
+    private func goalMenuTitle(for goal: Goal) -> String {
+        let name = goal.title.isEmpty ? "Untitled Goal" : goal.title
+        guard let parent = goal.parentGoal else { return name }
+        let parentName = parent.title.isEmpty ? "Untitled Goal" : parent.title
+        return "\(parentName) › \(name)"
+    }
+
     private func save() {
-        guard let selectedPursuit else { return }
         let frequency = resolvedFrequency()
         guard let habit = CadenceTrackingMutationSupport.saveHabit(
             editingHabit,
@@ -538,7 +436,6 @@ struct iOSHabitEditorSheet: View {
             frequencyDays: frequency.days,
             targetCount: frequency.targetCount,
             context: selectedContext,
-            pursuit: selectedPursuit,
             goal: selectedGoal,
             allHabits: allHabits,
             modelContext: modelContext

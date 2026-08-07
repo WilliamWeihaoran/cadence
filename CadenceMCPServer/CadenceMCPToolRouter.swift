@@ -152,14 +152,6 @@ struct CadenceMCPToolRouter {
                 limit: try arguments.strictInt("limit") ?? 50
             )))
 
-        case "list_pursuits":
-            return try encode(readService.listPursuits(options: CadencePursuitListOptions(
-                contextId: arguments.string("contextId"),
-                status: arguments.string("status"),
-                query: arguments.string("query"),
-                limit: try arguments.strictInt("limit") ?? 50
-            )))
-
         case "list_links":
             return try encode(readService.listLinks(options: CadenceSavedLinkListOptions(
                 containerKind: arguments.string("containerKind"),

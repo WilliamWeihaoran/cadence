@@ -7,7 +7,6 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
     case focus
     case inbox
     case calendar
-    case pursuits
     case goals
     case habits
 
@@ -20,7 +19,6 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .focus: return .focus
         case .inbox: return .inbox
         case .calendar: return .calendar
-        case .pursuits: return .pursuits
         case .goals: return .goals
         case .habits: return .habits
         }
@@ -33,7 +31,6 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .focus: return .focus
         case .inbox: return .inbox
         case .calendar: return .calendar
-        case .pursuits: return .pursuits
         case .goals: return .goals
         case .habits: return .habits
         }
@@ -158,7 +155,6 @@ private func identifierFragment(for item: SidebarItem) -> String {
     case .inbox: return "inbox"
     case .area(let id): return "area.\(id.uuidString)"
     case .project(let id): return "project.\(id.uuidString)"
-    case .pursuits: return "pursuits"
     case .goals: return "goals"
     case .habits: return "habits"
     case .notes: return "notes"

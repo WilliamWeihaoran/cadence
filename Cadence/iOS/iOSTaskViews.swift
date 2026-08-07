@@ -221,8 +221,8 @@ struct iOSTaskRow: View {
 
         if let goal = task.goal {
             taskBadge(
-                systemImage: "flag.fill",
-                text: goal.title.isEmpty ? "Milestone" : goal.title,
+                systemImage: goal.icon,
+                text: goal.title.isEmpty ? "Goal" : goal.title,
                 color: Color(hex: goal.colorHex)
             )
         }

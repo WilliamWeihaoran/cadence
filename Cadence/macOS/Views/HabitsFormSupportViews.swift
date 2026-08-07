@@ -10,13 +10,12 @@ struct HabitFormFields: View {
     @Binding var timesPerWeek: Int
     @Binding var monthlyDay: Int
     @Binding var selectedContextID: UUID?
-    @Binding var selectedPursuitID: UUID?
+    @Binding var selectedGoalID: UUID?
     @Binding var hasReminder: Bool
     @Binding var reminderMinuteOfDay: Int
 
     let contexts: [Context]
-    let pursuits: [Pursuit]
-    let onCreatePursuit: () -> Void
+    let goals: [Goal]
 
     private let dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -40,14 +39,15 @@ struct HabitFormFields: View {
                 )
             }
 
-            HabitFormLabel("Pursuit")
-            CadencePursuitPickerButton(
-                pursuits: pursuits,
-                selectedID: $selectedPursuitID,
-                allowNone: false,
-                onCreate: onCreatePursuit
+            HabitFormLabel("Goal")
+            GoalLinkPickerButton(
+                goals: goals,
+                selectedID: $selectedGoalID,
+                noneTitle: "No goal",
+                noneSubtitle: "Track this habit independently",
+                searchPlaceholder: "Search goals",
+                emptyText: "No matching goals"
             )
-            CadencePursuitRequiredHint(hasSelection: selectedPursuitID != nil)
 
             HabitFormLabel("Icon")
             IconGrid(selected: $selectedIcon)

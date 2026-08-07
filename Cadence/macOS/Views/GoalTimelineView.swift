@@ -104,8 +104,8 @@ struct GoalTimelineView: View {
 
             if rows.isEmpty {
                 EmptyStateView(
-                    message: searchText.isEmpty ? "No milestones yet" : "No matching milestones",
-                    subtitle: searchText.isEmpty ? "Create a milestone, then set its date range." : "Try a different filter.",
+                    message: searchText.isEmpty ? "No goals yet" : "No matching goals",
+                    subtitle: searchText.isEmpty ? "Create a goal, then set its date range." : "Try a different filter.",
                     icon: "chart.bar.xaxis"
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -135,7 +135,7 @@ struct GoalTimelineView: View {
 
     private var toolbar: some View {
         HStack(spacing: 12) {
-            Text("Milestones")
+            Text("Goals")
                 .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(Theme.text)
 
@@ -201,7 +201,7 @@ struct GoalTimelineView: View {
             }
 
             CadenceActionButton(
-                title: "New Milestone",
+                title: "New Goal",
                 systemImage: "plus",
                 role: .primary,
                 size: .compact,
@@ -216,7 +216,7 @@ struct GoalTimelineView: View {
     private var leftRail: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Milestones")
+                Text("Goals")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                 Spacer()

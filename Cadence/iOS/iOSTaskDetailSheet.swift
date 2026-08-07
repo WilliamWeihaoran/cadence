@@ -93,7 +93,7 @@ struct iOSTaskDetailSheet: View {
 
     private var currentGoalTitle: String? {
         guard let selectedGoal else { return nil }
-        return selectedGoal.title.isEmpty ? "Untitled Milestone" : selectedGoal.title
+        return selectedGoal.title.isEmpty ? "Untitled Goal" : selectedGoal.title
     }
 
     private var isRegularWidth: Bool {
@@ -206,7 +206,7 @@ struct iOSTaskDetailSheet: View {
             )
             taskPropertiesSection
             organizeSection
-            milestoneSection
+            goalSection
             datesSection
             notesSection
             tagsSection
@@ -249,8 +249,8 @@ struct iOSTaskDetailSheet: View {
         )
     }
 
-    private var milestoneSection: some View {
-        iOSTaskMilestoneSection(
+    private var goalSection: some View {
+        iOSTaskGoalSection(
             selectedGoal: selectedGoal,
             availableGoals: availableGoals,
             goalSelection: goalSelection,

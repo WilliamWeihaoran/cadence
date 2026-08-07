@@ -247,14 +247,4 @@ struct iOSTrackingColorGrid: View {
         }
     }
 }
-
-extension GoalStatus {
-    var trackingLabel: String {
-        switch self {
-        case .active: return "Active"
-        case .done: return "Done"
-        case .paused: return "Paused"
-        }
-    }
-}
 #endif

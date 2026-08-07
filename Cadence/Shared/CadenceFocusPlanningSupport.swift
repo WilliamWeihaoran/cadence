@@ -89,7 +89,9 @@ enum CadenceFocusSupport {
     }
 }
 
-struct CadencePursuitSummary {
+/// Rollup for a top-level goal and everything hanging off it — its milestones (`subGoals`)
+/// and habits. Formerly `CadencePursuitSummary`, back when that grouping was its own model.
+struct CadenceGoalGroupSummary {
     let goals: [Goal]
     let habits: [Habit]
 
@@ -115,17 +117,18 @@ struct CadencePursuitSummary {
     }
 }
 
-enum CadencePursuitSupport {
-    static func goals(for pursuit: Pursuit) -> [Goal] {
-        (pursuit.goals ?? []).sorted { $0.order < $1.order }
+enum CadenceGoalGroupSupport {
+    /// Milestones nested directly under this goal.
+    static func milestones(for goal: Goal) -> [Goal] {
+        (goal.subGoals ?? []).sorted { $0.order < $1.order }
     }
 
-    static func habits(for pursuit: Pursuit) -> [Habit] {
-        (pursuit.habits ?? []).sorted { $0.order < $1.order }
+    static func habits(for goal: Goal) -> [Habit] {
+        (goal.habits ?? []).sorted { $0.order < $1.order }
     }
 
-    static func summary(for pursuit: Pursuit) -> CadencePursuitSummary {
-        CadencePursuitSummary(goals: goals(for: pursuit), habits: habits(for: pursuit))
+    static func summary(for goal: Goal) -> CadenceGoalGroupSummary {
+        CadenceGoalGroupSummary(goals: milestones(for: goal), habits: habits(for: goal))
     }
 }
 

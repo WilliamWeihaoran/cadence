@@ -27,7 +27,7 @@ Useful build command:
 - `Cadence/macOS/Views/` - macOS feature screens and support views.
 - `Cadence/macOS/Services/` - macOS-only managers for focus, calendar, hotkeys, task creation, hover state, deletion, scheduling.
 - `Cadence/macOS/Editor/` - AppKit-backed markdown editor. High risk; preserve NSTextView behavior carefully.
-- `Cadence/iOS/` - large, real iOS/iPadOS surface (~55 files: Today, Calendar, Tasks, Focus, Goals/Pursuits, Habits, Notes, Lists, Search, Settings). Do not assume feature parity with macOS.
+- `Cadence/iOS/` - large, real iOS/iPadOS surface (~55 files: Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings). Do not assume feature parity with macOS.
 - `CadenceMCPServer/` and `plugins/cadence-mcp/` - MCP server/plugin surfaces. Treat as separate integration boundaries.
 - `CadenceTests/`, `CadenceUITests/` - test targets.
 

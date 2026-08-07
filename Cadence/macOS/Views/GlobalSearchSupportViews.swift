@@ -9,8 +9,7 @@ enum GlobalSearchCategory: String, CaseIterable {
     case tasks = "Tasks"
     case events = "Calendar Events"
     case meetingNotes = "Meeting Notes"
-    case pursuits = "Pursuits"
-    case goals = "Milestones"
+    case goals = "Goals"
     case habits = "Habits"
 }
 
@@ -22,7 +21,6 @@ enum GlobalSearchDestination: Hashable {
     case task(UUID)
     case event(String)
     case eventNote(UUID)
-    case pursuits
     case goals
     case habits
 }
@@ -171,8 +169,7 @@ extension GlobalSearchPageDefinition {
             .init(label: "Inbox", item: .inbox, icon: "tray.fill", tintHex: Theme.blue.globalSearchHexString() ?? "#5AA2FF", baseSubtitle: "Unsorted capture tasks", aliases: "inbox capture", toggleable: .inbox),
             .init(label: "Focus", item: .focus, icon: "timer", tintHex: Theme.red.globalSearchHexString() ?? "#FF6B6B", baseSubtitle: "Focus timer and active task", aliases: "focus timer pomodoro", toggleable: .focus),
             .init(label: "Calendar", item: .calendar, icon: "calendar", tintHex: Theme.purple.globalSearchHexString() ?? "#9E8CFF", baseSubtitle: "Full calendar and time blocks", aliases: "calendar schedule events", toggleable: .calendar),
-            .init(label: "Pursuits", item: .pursuits, icon: "sparkles", tintHex: "#A78BFA", baseSubtitle: "Directions that hold milestones and habits", aliases: "pursuits aspirations directions", toggleable: .pursuits),
-            .init(label: "Milestones", item: .goals, icon: "flag.fill", tintHex: Theme.green.globalSearchHexString() ?? "#4ECB71", baseSubtitle: "Milestones and progress", aliases: "milestones goals targets stages", toggleable: .goals),
+            .init(label: "Goals", item: .goals, icon: "flag.fill", tintHex: Theme.green.globalSearchHexString() ?? "#4ECB71", baseSubtitle: "Directions, milestones, and progress", aliases: "goals milestones targets stages directions", toggleable: .goals),
             .init(label: "Habits", item: .habits, icon: "flame.fill", tintHex: Theme.amber.globalSearchHexString() ?? "#FFB84D", baseSubtitle: "Habits and streaks", aliases: "habits streaks", toggleable: .habits),
             .init(label: "Notes", item: .notes, icon: "doc.text", tintHex: Theme.purple.globalSearchHexString() ?? "#9E8CFF", baseSubtitle: "Workspace notes", aliases: "notes docs", toggleable: nil),
             .init(label: "Settings", item: .settings, icon: "gearshape.fill", tintHex: Theme.dim.globalSearchHexString() ?? "#7B8492", baseSubtitle: "Appearance, calendar, and sidebar preferences", aliases: "settings preferences", toggleable: nil)
@@ -225,7 +222,7 @@ struct GlobalSearchEmptyState: View {
             Text(query.isEmpty ? "Start typing to search or run a command" : "No matches found")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.text)
-            Text(query.isEmpty ? "Pages, lists, tasks, events, milestones, habits, and quick commands all show up here." : "Try a cleaner title, list name, or command like new task.")
+            Text(query.isEmpty ? "Pages, lists, tasks, events, goals, habits, and quick commands all show up here." : "Try a cleaner title, list name, or command like new task.")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
         }

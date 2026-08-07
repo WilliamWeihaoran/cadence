@@ -59,6 +59,10 @@ struct PersistenceController {
     }
 
     private static func performStartupMaintenance(in context: ModelContext) {
+        // Folds any surviving `Pursuit` rows into `Goal`. Self-guarding and idempotent, and
+        // manages its own saves because it deletes rows rather than just inserting them.
+        PursuitToGoalMigration.runIfNeeded(modelContext: context)
+
         let migrationReport = NoteMigrationService.migrateAndRecordFailure(in: context, source: "app-startup", saveChanges: false)
         let seededDefaultTags = TagSupport.seedDefaultTags(in: context, saveChanges: false)
         let syncedNoteTags = TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)

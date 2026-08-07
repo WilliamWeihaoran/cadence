@@ -7,13 +7,11 @@ struct iOSMoreView: View {
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query private var habits: [Habit]
-    @Query(filter: #Predicate<Pursuit> { $0.statusRaw == "active" }) private var activePursuits: [Pursuit]
     @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
 
     private var badgeSnapshot: CadenceFeatureBadgeSupport.Snapshot {
         CadenceFeatureBadgeSupport.Snapshot(
             tasks: allTasks,
-            activePursuitCount: activePursuits.count,
             activeGoalCount: activeGoals.count,
             habitCount: habits.count,
             activeListCount: areas.filter(\.isActive).count + projects.filter(\.isActive).count
@@ -58,10 +56,8 @@ struct iOSMoreView: View {
                 iOSCompactNotesView()
             case .lists:
                 iOSListsView()
-            case .pursuits:
-                iOSPursuitsView()
             case .goals:
-                iOSMilestonesView()
+                iOSGoalsView()
             case .habits:
                 iOSHabitsView()
             case .search:

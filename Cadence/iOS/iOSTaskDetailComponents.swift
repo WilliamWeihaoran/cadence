@@ -130,7 +130,7 @@ struct iOSTaskEditorOverviewCard: View {
                 color: task.actualMinutes == 0 ? Theme.dim : Theme.green
             )
             iOSTaskOverviewMetric(
-                title: "Milestone",
+                title: "Goal",
                 value: goalTitle ?? "None",
                 systemImage: goalTitle == nil ? "circle.dashed" : "flag.fill",
                 color: goalTitle == nil ? Theme.dim : Theme.amber

@@ -112,12 +112,6 @@ enum GoalStatus: String, Codable, CaseIterable, Hashable {
     case active = "active"
     case done   = "done"
     case paused = "paused"
-}
-
-enum PursuitStatus: String, Codable, CaseIterable, Hashable {
-    case active = "active"
-    case done   = "done"
-    case paused = "paused"
 
     var label: String {
         switch self {
@@ -128,7 +122,10 @@ enum PursuitStatus: String, Codable, CaseIterable, Hashable {
     }
 }
 
-enum PursuitKind: String, Codable, CaseIterable, Hashable {
+/// Shape of a goal. Top-level goals are typically `.ongoing` — a long-running direction,
+/// which is what the retired `Pursuit` model used to represent — while nested goals are
+/// typically `.completable`, a milestone with a finish line.
+enum GoalKind: String, Codable, CaseIterable, Hashable {
     case ongoing = "ongoing"
     case completable = "completable"
     case maintenance = "maintenance"

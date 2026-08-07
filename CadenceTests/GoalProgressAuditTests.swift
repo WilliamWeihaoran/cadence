@@ -3,15 +3,15 @@ import SwiftData
 import Testing
 @testable import Cadence
 
-// Targeted regression coverage for a deep audit of Goal/Pursuit progress calculation
-// (Cadence/Models/GoalContributionSummary.swift, Goal.swift, Pursuit.swift) plus the pure
-// Gantt date/position math in Cadence/macOS/Views/GoalTimelineDateMath.swift. See commit message
+// Targeted regression coverage for a deep audit of Goal progress calculation
+// (Cadence/Models/GoalContributionSummary.swift, Goal.swift) plus the pure Gantt
+// date/position math in Cadence/macOS/Views/GoalTimelineDateMath.swift. See commit message
 // for the concrete bug found and fixed: `GoalContributionSummary.progress` (read by every UI
 // surface via `summary.progress`, and by `Goal.progress`) previously ignored `progressType`
 // entirely and always computed a subtask completion ratio, even for goals configured with
 // `progressType == .hours`.
 @MainActor
-struct GoalPursuitProgressAuditTests {
+struct GoalProgressAuditTests {
     // MARK: - 1. Cancelled tasks are excluded from both the numerator and denominator
 
     @Test func cancelledListLinkedTaskIsExcludedFromSubtaskProgressEntirely() throws {
@@ -174,56 +174,56 @@ struct GoalPursuitProgressAuditTests {
         #expect(goalB.progress == 1.0)
     }
 
-    // MARK: - 5. Deleting a linked Goal or Habit leaves no dangling reference on its Pursuit
+    // MARK: - 5. Deleting a milestone or habit leaves no dangling reference on its parent goal
 
-    @Test func deletingLinkedGoalOrHabitLeavesNoDanglingPursuitReference() throws {
+    @Test func deletingSubGoalOrHabitLeavesNoDanglingParentGoalReference() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
 
         let context = Context(name: "Personal")
-        let pursuit = Pursuit(title: "Get healthy", context: context)
+        let parentGoal = Goal(title: "Get healthy", context: context)
+        parentGoal.kind = .ongoing
 
         let keepGoal = Goal(title: "Keep", context: context)
-        keepGoal.pursuit = pursuit
+        keepGoal.parentGoal = parentGoal
         let deleteGoal = Goal(title: "Delete me", context: context)
-        deleteGoal.pursuit = pursuit
+        deleteGoal.parentGoal = parentGoal
 
-        let keepHabit = Habit(title: "Keep habit", context: context)
-        keepHabit.pursuit = pursuit
-        let deleteHabit = Habit(title: "Delete me habit", context: context)
-        deleteHabit.pursuit = pursuit
+        let keepHabit = Habit(title: "Keep habit", context: context, goal: parentGoal)
+        let deleteHabit = Habit(title: "Delete me habit", context: context, goal: parentGoal)
 
         modelContext.insert(context)
-        modelContext.insert(pursuit)
+        modelContext.insert(parentGoal)
         modelContext.insert(keepGoal)
         modelContext.insert(deleteGoal)
         modelContext.insert(keepHabit)
         modelContext.insert(deleteHabit)
         try modelContext.save()
 
-        #expect((pursuit.goals ?? []).count == 2)
-        #expect((pursuit.habits ?? []).count == 2)
+        #expect((parentGoal.subGoals ?? []).count == 2)
+        #expect((parentGoal.habits ?? []).count == 2)
 
         modelContext.delete(deleteGoal)
         modelContext.delete(deleteHabit)
         try modelContext.save()
 
-        let refetchedPursuit = try #require(try modelContext.fetch(FetchDescriptor<Pursuit>()).first)
-        let remainingGoalIDs = (refetchedPursuit.goals ?? []).map(\.id)
-        let remainingHabitIDs = (refetchedPursuit.habits ?? []).map(\.id)
+        let refetchedGoal = try #require(try modelContext.fetch(FetchDescriptor<Goal>()).first { $0.id == parentGoal.id })
+        let remainingGoalIDs = (refetchedGoal.subGoals ?? []).map(\.id)
+        let remainingHabitIDs = (refetchedGoal.habits ?? []).map(\.id)
 
         #expect(remainingGoalIDs == [keepGoal.id])
         #expect(remainingHabitIDs == [keepHabit.id])
         #expect(!remainingGoalIDs.contains(deleteGoal.id))
         #expect(!remainingHabitIDs.contains(deleteHabit.id))
 
-        // Aggregate views over the pursuit's remaining goals/habits must not crash after the
-        // deletion (e.g. PursuitDetailView's nextActionTitle / dueHabitsToday-style rollups).
-        for goal in refetchedPursuit.goals ?? [] {
+        // Aggregate views over the goal's remaining milestones/habits must not crash after the
+        // deletion (e.g. goal-detail nextActionTitle / dueHabitsToday-style rollups).
+        _ = GoalContributionResolver.summary(for: refetchedGoal)
+        for goal in refetchedGoal.subGoals ?? [] {
             _ = GoalContributionResolver.summary(for: goal)
             _ = GoalHabitMomentumResolver.summary(for: goal)
         }
-        for habit in refetchedPursuit.habits ?? [] {
+        for habit in refetchedGoal.habits ?? [] {
             _ = habit.isDueToday
         }
     }

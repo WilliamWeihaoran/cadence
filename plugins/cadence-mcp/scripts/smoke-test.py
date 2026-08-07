@@ -46,7 +46,6 @@ EXPECTED_TOOLS = {
     "list_goals",
     "get_goal",
     "list_habits",
-    "list_pursuits",
     "list_links",
     "search_cadence",
     "get_recent_mcp_writes",
@@ -460,19 +459,6 @@ def main() -> int:
             if response["result"].get("isError", False):
                 raise AssertionError(response["result"]["content"][0]["text"])
             json.loads(response["result"]["content"][0]["text"])
-
-        send(
-            {
-                "jsonrpc": "2.0",
-                "id": 31,
-                "method": "tools/call",
-                "params": {"name": "list_pursuits", "arguments": {"limit": 3}},
-            }
-        )
-        list_pursuits_response = read_response(31)
-        if list_pursuits_response["result"].get("isError", False):
-            raise AssertionError(list_pursuits_response["result"]["content"][0]["text"])
-        json.loads(list_pursuits_response["result"]["content"][0]["text"])
 
         send(
             {

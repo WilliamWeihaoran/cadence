@@ -8,7 +8,6 @@ enum iOSSidebarItem: Hashable {
     case focus
     case inbox
     case calendar
-    case pursuits
     case goals
     case habits
     case notes
@@ -76,10 +75,8 @@ struct iOSRootView: View {
             iPadInboxView()
         case .calendar:
             iOSCalendarView()
-        case .pursuits:
-            iOSPursuitsView()
         case .goals:
-            iOSMilestonesView()
+            iOSGoalsView()
         case .habits:
             iOSHabitsView()
         case .notes:

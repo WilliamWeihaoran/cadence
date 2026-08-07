@@ -23,7 +23,7 @@ area.tasks = (area.tasks ?? []) + [task]
 - `Area` / `Project` - list containers; both own tasks and list metadata.
 - `AppTask` / `Subtask` - schedulable work and nested checklist items.
 - `TaskBundle` if present in this tree in future changes - scheduled grouped work; verify bundle/task deletion order carefully.
-- `Goal`, `Habit`, `HabitCompletion`, `Pursuit` - long-running progress and recurring behavior.
+- `Goal`, `Habit`, `HabitCompletion` - long-running progress and recurring behavior. `Goal` nests via `parentGoal`/`subGoals`: a top-level goal is a direction (usually `kind == .ongoing`), its sub-goals read as milestones. The retired `Pursuit` model was merged into `Goal`; `Pursuit.swift`, `Goal.pursuit`, `Habit.pursuit`, and `Context.pursuits` exist only for `PursuitToGoalMigration` - do not read or write them anywhere else.
 - `Note`, `DailyNote`, `WeeklyNote`, `PermNote`, `EventNote`, `MarkdownImageAsset` - notes and linked editor assets.
 
 ## Before Finishing

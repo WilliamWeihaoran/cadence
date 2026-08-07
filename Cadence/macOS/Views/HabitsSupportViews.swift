@@ -200,7 +200,7 @@ struct HabitListCard: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                    .stroke(Color(hex: habit.pursuit?.colorHex ?? habit.colorHex).opacity(0.75), lineWidth: 1.5)
+                    .stroke(Color(hex: habit.goal?.colorHex ?? habit.colorHex).opacity(0.75), lineWidth: 1.5)
                     .opacity(isSelected ? 1 : 0)
             )
         }
@@ -243,8 +243,8 @@ struct HabitDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 habitHero
 
-                HabitInfoCard(title: "Pursuit") {
-                    HabitPursuitSupportCard(habit: habit)
+                HabitInfoCard(title: "Goal") {
+                    HabitGoalSupportCard(habit: habit)
                 }
 
                 HabitQuietMetrics(habit: habit, totalCompletions: totalCompletions)
@@ -349,25 +349,25 @@ struct HabitQuietMetrics: View {
     }
 }
 
-struct HabitPursuitSupportCard: View {
+struct HabitGoalSupportCard: View {
     let habit: Habit
 
     var body: some View {
-        if let pursuit = habit.pursuit {
+        if let goal = habit.goal {
             HStack(spacing: 12) {
-                Image(systemName: pursuit.icon)
+                Image(systemName: goal.icon)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color(hex: pursuit.colorHex))
+                    .foregroundStyle(Color(hex: goal.colorHex))
                     .frame(width: 36, height: 36)
-                    .background(Color(hex: pursuit.colorHex).opacity(0.13))
+                    .background(Color(hex: goal.colorHex).opacity(0.13))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(pursuit.title)
+                    Text(goal.title)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
-                    Text(pursuit.desc.isEmpty ? "Recurring practice in this pursuit" : pursuit.desc)
+                    Text(goal.desc.isEmpty ? "Recurring practice behind this goal" : goal.desc)
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.muted)
                         .lineLimit(2)
@@ -383,7 +383,7 @@ struct HabitPursuitSupportCard: View {
                     .background(Theme.surfaceElevated.opacity(0.75))
                     .clipShape(RoundedRectangle(cornerRadius: 9))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("No pursuit")
+                    Text("No goal")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Theme.text)
                     Text("This habit is tracked independently.")

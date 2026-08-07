@@ -108,7 +108,7 @@ struct GoalInspectorView: View {
                     Text("No lists attached")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                    Text("Attach one area or project. Its active tasks will count toward this milestone.")
+                    Text("Attach one area or project. Its active tasks will count toward this goal.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)

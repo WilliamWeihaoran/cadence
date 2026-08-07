@@ -4,7 +4,6 @@ import SwiftData
 
 struct GoalsView: View {
     @Query(sort: \Goal.order) private var allGoals: [Goal]
-    @Query(sort: \Pursuit.order) private var pursuits: [Pursuit]
     @Query(sort: \Context.order) private var allContexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -19,57 +18,74 @@ struct GoalsView: View {
     @State private var searchText = ""
     @State private var statusFilter: GoalStatusFilter = .active
 
-    private var filteredGoals: [Goal] {
-        allGoals.filter { goal in
-            guard statusFilter.matches(goal.status) else { return false }
-            let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            guard !q.isEmpty else { return true }
-            let summary = GoalContributionResolver.summary(for: goal)
-            return goal.title.lowercased().contains(q)
-                || goal.desc.lowercased().contains(q)
-                || goal.rangeLabel.lowercased().contains(q)
-                || (goal.context?.name.lowercased().contains(q) ?? false)
-                || (goal.pursuit?.title.lowercased().contains(q) ?? false)
-                || ((summary.nextActionTitle ?? "").lowercased().contains(q))
-        }
+    private var trimmedQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
+    private func matchesFilters(_ goal: Goal) -> Bool {
+        guard statusFilter.matches(goal.status) else { return false }
+        let q = trimmedQuery
+        guard !q.isEmpty else { return true }
+        let summary = GoalContributionResolver.summary(for: goal)
+        return goal.title.lowercased().contains(q)
+            || goal.desc.lowercased().contains(q)
+            || goal.rangeLabel.lowercased().contains(q)
+            || goal.kind.label.lowercased().contains(q)
+            || (goal.context?.name.lowercased().contains(q) ?? false)
+            || (goal.parentGoal?.title.lowercased().contains(q) ?? false)
+            || ((summary.nextActionTitle ?? "").lowercased().contains(q))
+    }
+
+    private var filteredGoals: [Goal] {
+        allGoals.filter(matchesFilters)
+    }
+
+    /// Top-level goals become groups; everything nested beneath one is shown as its milestones.
+    /// Descendants are flattened depth-first so a deeper chain can never hide a goal entirely.
     private var goalGroups: [GoalMissionGroup] {
-        var groups: [GoalMissionGroup] = []
-        for pursuit in pursuits {
-            let goals = filteredGoals.filter { $0.pursuit?.id == pursuit.id }
-            if !goals.isEmpty {
-                groups.append(
-                    GoalMissionGroup(
-                        id: pursuit.id.uuidString,
-                        title: pursuit.title,
-                        icon: pursuit.icon,
-                        colorHex: pursuit.colorHex,
-                        goals: goals
-                    )
+        GoalAssignmentRules
+            .topLevelGoals(from: allGoals)
+            .compactMap { parent in
+                let milestones = nestedGoals(under: parent).filter(matchesFilters)
+                guard matchesFilters(parent) || !milestones.isEmpty else { return nil }
+                return GoalMissionGroup(
+                    id: parent.id.uuidString,
+                    title: parent.title,
+                    icon: parent.icon,
+                    colorHex: parent.colorHex,
+                    parentGoal: parent,
+                    goals: milestones
                 )
             }
+    }
+
+    private func nestedGoals(under goal: Goal) -> [Goal] {
+        var visited: Set<UUID> = [goal.id]
+        var result: [Goal] = []
+
+        func walk(_ parent: Goal) {
+            for child in GoalAssignmentRules.milestones(of: parent) where !visited.contains(child.id) {
+                visited.insert(child.id)
+                result.append(child)
+                walk(child)
+            }
         }
-        let unassigned = PursuitAssignmentRules.unassignedMilestones(from: filteredGoals)
-        if !unassigned.isEmpty {
-            groups.append(
-                GoalMissionGroup(
-                    id: "unassigned",
-                    title: "Unassigned",
-                    icon: "tray.full.fill",
-                    colorHex: "#6b7a99",
-                    goals: unassigned
-                )
-            )
+
+        walk(goal)
+        return result
+    }
+
+    private var visibleGoals: [Goal] {
+        goalGroups.flatMap { group in
+            (group.parentGoal.map { [$0] } ?? []) + group.goals
         }
-        return groups
     }
 
     private var selectedGoal: Goal? {
         if let selectedGoalID {
             return allGoals.first { $0.id == selectedGoalID }
         }
-        return filteredGoals.first ?? allGoals.first
+        return visibleGoals.first ?? allGoals.first
     }
 
     var body: some View {
@@ -95,14 +111,14 @@ struct GoalsView: View {
             }
             .onAppear {
                 if selectedGoalID == nil {
-                    selectedGoalID = filteredGoals.first?.id ?? allGoals.first?.id
+                    selectedGoalID = visibleGoals.first?.id ?? allGoals.first?.id
                 }
             }
-            .onChange(of: filteredGoals.map(\.id)) {
+            .onChange(of: visibleGoals.map(\.id)) {
                 guard let selectedGoalID,
-                      filteredGoals.contains(where: { $0.id == selectedGoalID }) || searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                      visibleGoals.contains(where: { $0.id == selectedGoalID }) || trimmedQuery.isEmpty
                 else {
-                    self.selectedGoalID = filteredGoals.first?.id ?? allGoals.first?.id
+                    self.selectedGoalID = visibleGoals.first?.id ?? allGoals.first?.id
                     return
                 }
             }
@@ -157,13 +173,13 @@ struct GoalsView: View {
 
     private var header: some View {
         CommitmentPageHeader(
-            title: "Milestones",
-            subtitle: "Finish lines and stages across pursuits."
+            title: "Goals",
+            subtitle: "Directions and the milestones underneath them."
         ) {
             HStack(spacing: 10) {
                 GoalsViewModeToggle(selection: goalsViewModeBinding)
                 CadenceActionButton(
-                    title: "New Milestone",
+                    title: "New Goal",
                     systemImage: "plus",
                     role: .primary,
                     size: .regular
@@ -174,7 +190,7 @@ struct GoalsView: View {
         } controls: {
             HStack(spacing: 12) {
                 CommitmentSearchField(
-                    placeholder: "Search milestones",
+                    placeholder: "Search goals",
                     text: $searchText
                 )
 
@@ -192,8 +208,8 @@ struct GoalsView: View {
         Group {
             if goalGroups.isEmpty {
                 EmptyStateView(
-                    message: searchText.isEmpty ? "No milestones yet" : "No matching milestones",
-                    subtitle: searchText.isEmpty ? "Create a Pursuit first, then add a milestone inside it." : "Try a different search or status.",
+                    message: searchText.isEmpty ? "No goals yet" : "No matching goals",
+                    subtitle: searchText.isEmpty ? "Create a goal for an ongoing direction, then nest milestones inside it." : "Try a different search or status.",
                     icon: "flag.fill"
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -40,11 +40,14 @@ enum GoalStatusFilter: CaseIterable {
     }
 }
 
+/// One top-level goal (a direction) plus the milestones nested under it. `parentGoal` is nil only
+/// for synthetic buckets that aren't backed by a real goal.
 struct GoalMissionGroup: Identifiable {
     let id: String
     let title: String
     let icon: String
     let colorHex: String
+    var parentGoal: Goal? = nil
     let goals: [Goal]
 }
 
@@ -84,23 +87,112 @@ struct GoalMissionGroupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            CommitmentGroupHeader(
-                title: group.title,
-                icon: group.icon,
-                color: Color(hex: group.colorHex),
-                trailingText: "\(group.goals.count)"
-            )
+            if let parentGoal = group.parentGoal {
+                GoalDirectionHeaderCard(
+                    goal: parentGoal,
+                    milestoneCount: group.goals.count,
+                    isSelected: selectedGoalID == parentGoal.id,
+                    onSelect: { onSelect(parentGoal) }
+                )
+            } else {
+                CommitmentGroupHeader(
+                    title: group.title,
+                    icon: group.icon,
+                    color: Color(hex: group.colorHex),
+                    trailingText: "\(group.goals.count)"
+                )
+            }
 
-            VStack(spacing: 10) {
-                ForEach(group.goals) { goal in
-                    GoalMissionCard(
-                        goal: goal,
-                        isSelected: selectedGoalID == goal.id,
-                        onSelect: { onSelect(goal) }
-                    )
+            Group {
+                if group.goals.isEmpty {
+                    GoalInlineEmpty(text: "No milestones under this goal yet.")
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(group.goals) { goal in
+                            GoalMissionCard(
+                                goal: goal,
+                                isSelected: selectedGoalID == goal.id,
+                                onSelect: { onSelect(goal) }
+                            )
+                        }
+                    }
                 }
             }
+            .padding(.leading, group.parentGoal == nil ? 0 : 16)
         }
+    }
+}
+
+/// Header card for a top-level goal. Selectable so the inspector can show the direction itself,
+/// not just its milestones.
+struct GoalDirectionHeaderCard: View {
+    let goal: Goal
+    let milestoneCount: Int
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    private var summary: GoalContributionSummary {
+        GoalContributionResolver.summary(for: goal)
+    }
+
+    private var tint: Color {
+        Color(hex: goal.colorHex)
+    }
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                CommitmentIconTile(
+                    systemImage: goal.icon,
+                    color: tint,
+                    size: 34,
+                    iconSize: 15,
+                    cornerRadius: 9
+                )
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 7) {
+                        Text(goal.title)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(1)
+                        GoalKindBadge(kind: goal.kind)
+                        GoalStatusBadge(status: goal.status)
+                    }
+
+                    HStack(spacing: 10) {
+                        Text(milestoneCount == 1 ? "1 milestone" : "\(milestoneCount) milestones")
+                        Text((goal.habits ?? []).count == 1 ? "1 habit" : "\((goal.habits ?? []).count) habits")
+                        if let context = goal.context {
+                            Text(context.name)
+                        }
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Text(summary.percentLabel)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .monospacedDigit()
+            }
+            .padding(14)
+            .cadenceCard(
+                background: isSelected ? Theme.surfaceElevated : Theme.surface,
+                cornerRadius: Theme.radiusCard,
+                shadowRadius: 12,
+                shadowY: 5
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                    .stroke(tint.opacity(0.65), lineWidth: 1.5)
+                    .opacity(isSelected ? 1 : 0)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -405,7 +497,7 @@ struct GoalsEmptyDetail: View {
     var body: some View {
         CommitmentEmptyDetail(
             icon: "flag.fill",
-            title: "Select a milestone",
+            title: "Select a goal",
             subtitle: "The inspector shows contributors, next actions, and momentum."
         )
     }
@@ -416,7 +508,7 @@ extension Goal {
     var endDateDate: Date? { DateFormatters.ymd.date(from: endDate) }
 
     var rangeLabel: String {
-        guard let s = startDateDate, let e = endDateDate else { return "No milestone range" }
+        guard let s = startDateDate, let e = endDateDate else { return "No date range" }
         return "\(DateFormatters.shortDate.string(from: s)) - \(DateFormatters.shortDate.string(from: e))"
     }
 
@@ -425,7 +517,7 @@ extension Goal {
     }
 
     var daysSummary: String {
-        guard let end = endDateDate else { return "No milestone date" }
+        guard let end = endDateDate else { return "No end date" }
         let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: Date()), to: end).day ?? 0
         if status == .done { return "Completed" }
         if days < 0 { return "\(-days)d late" }

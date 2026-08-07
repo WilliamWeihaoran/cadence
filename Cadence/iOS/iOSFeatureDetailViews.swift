@@ -2,23 +2,42 @@
 import SwiftData
 import SwiftUI
 
-struct iOSPursuitDetail: View {
-    let pursuit: Pursuit
-    let goals: [Goal]
-    let habits: [Habit]
+/// One detail surface for every goal, top-level or nested. A top-level goal reads as a
+/// direction that owns milestones and habits; a nested goal reads as a milestone of its parent.
+struct iOSGoalDetail: View {
+    let goal: Goal
+    var milestones: [Goal] = []
+    var habits: [Habit] = []
     var onEdit: () -> Void = {}
-    var onNewGoal: () -> Void = {}
+    var onNewMilestone: () -> Void = {}
     var onNewHabit: () -> Void = {}
+    var onSelectMilestone: ((Goal) -> Void)? = nil
+
+    private var summary: GoalContributionSummary {
+        GoalContributionResolver.summary(for: goal)
+    }
+
+    private var tint: Color {
+        Color(hex: goal.colorHex)
+    }
+
+    private var heroSubtitle: String {
+        if !goal.desc.isEmpty { return goal.desc }
+        if let parent = goal.parentGoal {
+            return parent.title.isEmpty ? "Untitled Goal" : parent.title
+        }
+        return goal.context?.name ?? goal.kind.detail
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 iOSFeatureHero(
-                    eyebrow: pursuit.kind.label,
-                    title: pursuit.title.isEmpty ? "Untitled Pursuit" : pursuit.title,
-                    subtitle: pursuit.desc.isEmpty ? pursuit.context?.name ?? "Pursuit" : pursuit.desc,
-                    icon: pursuit.icon,
-                    color: Color(hex: pursuit.colorHex)
+                    eyebrow: goal.isTopLevel ? goal.kind.label : "Milestone",
+                    title: goal.title.isEmpty ? "Untitled Goal" : goal.title,
+                    subtitle: heroSubtitle,
+                    icon: goal.icon,
+                    color: tint
                 )
 
                 HStack(spacing: 10) {
@@ -27,9 +46,9 @@ struct iOSPursuitDetail: View {
                             .font(.system(size: 13, weight: .semibold))
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(Color(hex: pursuit.colorHex))
+                    .tint(tint)
 
-                    Button(action: onNewGoal) {
+                    Button(action: onNewMilestone) {
                         Label("Milestone", systemImage: "flag.fill")
                             .font(.system(size: 13, weight: .semibold))
                     }
@@ -44,76 +63,19 @@ struct iOSPursuitDetail: View {
                     .tint(Theme.amber)
                 }
 
-                HStack(spacing: 10) {
-                    iOSMetricTile(title: "Milestones", value: "\(goals.count)", icon: "flag.fill", color: Theme.green)
-                    iOSMetricTile(title: "Habits", value: "\(habits.count)", icon: "flame.fill", color: Theme.amber)
-                    iOSMetricTile(title: "Status", value: pursuit.status.label, icon: "circle.fill", color: Color(hex: pursuit.colorHex))
-                }
-
-                iOSFeatureSection(title: "Milestones") {
-                    ForEach(goals) { goal in
-                        let summary = GoalContributionResolver.summary(for: goal)
-                        iOSFeatureSummaryRow(
-                            title: goal.title.isEmpty ? "Untitled Milestone" : goal.title,
-                            subtitle: summary.nextActionTitle ?? goal.status.rawValue.capitalized,
-                            detail: summary.percentLabel,
-                            icon: "flag.fill",
-                            color: Color(hex: goal.colorHex)
-                        )
-                    }
-                }
-
-                iOSFeatureSection(title: "Habits") {
-                    ForEach(habits) { habit in
-                        iOSFeatureSummaryRow(
-                            title: habit.title.isEmpty ? "Untitled Habit" : habit.title,
-                            subtitle: habit.frequencySummary,
-                            detail: "\(habit.currentStreak)d",
-                            icon: habit.icon,
-                            color: Color(hex: habit.colorHex)
-                        )
-                    }
-                }
-            }
-            .padding(20)
-        }
-        .background(Theme.bg)
-    }
-}
-
-struct iOSMilestoneDetail: View {
-    let goal: Goal
-    var onEdit: () -> Void = {}
-
-    private var summary: GoalContributionSummary {
-        GoalContributionResolver.summary(for: goal)
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                iOSFeatureHero(
-                    eyebrow: goal.status.rawValue.capitalized,
-                    title: goal.title.isEmpty ? "Untitled Milestone" : goal.title,
-                    subtitle: goal.desc.isEmpty ? goal.pursuit?.title ?? goal.context?.name ?? "Milestone" : goal.desc,
-                    icon: "flag.fill",
-                    color: Color(hex: goal.colorHex)
-                )
-
-                Button(action: onEdit) {
-                    Label("Edit Milestone", systemImage: "square.and.pencil")
-                        .font(.system(size: 13, weight: .semibold))
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(hex: goal.colorHex))
-
                 ProgressView(value: summary.progress)
-                    .tint(Color(hex: goal.colorHex))
+                    .tint(tint)
 
                 HStack(spacing: 10) {
-                    iOSMetricTile(title: "Progress", value: summary.percentLabel, icon: "chart.line.uptrend.xyaxis", color: Color(hex: goal.colorHex))
+                    iOSMetricTile(title: "Progress", value: summary.percentLabel, icon: "chart.line.uptrend.xyaxis", color: tint)
                     iOSMetricTile(title: "Tasks", value: summary.taskCountLabel, icon: "checklist", color: Theme.blue)
                     iOSMetricTile(title: "Focus", value: summary.focusLabel, icon: "timer", color: Theme.amber)
+                }
+
+                HStack(spacing: 10) {
+                    iOSMetricTile(title: "Milestones", value: "\(milestones.count)", icon: "flag.fill", color: Theme.green)
+                    iOSMetricTile(title: "Habits", value: "\(habits.count)", icon: "flame.fill", color: Theme.amber)
+                    iOSMetricTile(title: "Status", value: goal.status.label, icon: "circle.fill", color: tint)
                 }
 
                 if let nextActionTitle = summary.nextActionTitle {
@@ -124,6 +86,28 @@ struct iOSMilestoneDetail: View {
                             icon: "arrow.right.circle.fill",
                             color: Theme.blue
                         )
+                    }
+                }
+
+                if !milestones.isEmpty {
+                    iOSFeatureSection(title: "Milestones") {
+                        ForEach(milestones) { milestone in
+                            milestoneRow(milestone)
+                        }
+                    }
+                }
+
+                if !habits.isEmpty {
+                    iOSFeatureSection(title: "Habits") {
+                        ForEach(habits) { habit in
+                            iOSFeatureSummaryRow(
+                                title: habit.title.isEmpty ? "Untitled Habit" : habit.title,
+                                subtitle: habit.frequencySummary,
+                                detail: "\(habit.currentStreak)d",
+                                icon: habit.icon,
+                                color: Color(hex: habit.colorHex)
+                            )
+                        }
                     }
                 }
 
@@ -139,6 +123,29 @@ struct iOSMilestoneDetail: View {
             .padding(20)
         }
         .background(Theme.bg)
+    }
+
+    @ViewBuilder
+    private func milestoneRow(_ milestone: Goal) -> some View {
+        let milestoneSummary = GoalContributionResolver.summary(for: milestone)
+        let row = iOSFeatureSummaryRow(
+            title: milestone.title.isEmpty ? "Untitled Goal" : milestone.title,
+            subtitle: milestoneSummary.nextActionTitle ?? milestone.status.label,
+            detail: milestoneSummary.percentLabel,
+            icon: milestone.icon,
+            color: Color(hex: milestone.colorHex)
+        )
+
+        if let onSelectMilestone {
+            Button {
+                onSelectMilestone(milestone)
+            } label: {
+                row
+            }
+            .buttonStyle(.plain)
+        } else {
+            row
+        }
     }
 }
 
@@ -163,7 +170,7 @@ struct iOSHabitSummaryRow: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
-                Text(habit.pursuit?.title ?? habit.frequencySummary)
+                Text(habit.goal?.title ?? habit.frequencySummary)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.dim)
                     .lineLimit(1)
@@ -195,7 +202,7 @@ struct iOSHabitDetail: View {
                 iOSFeatureHero(
                     eyebrow: habit.frequencyShortLabel,
                     title: habit.title.isEmpty ? "Untitled Habit" : habit.title,
-                    subtitle: habit.pursuit?.title ?? habit.goal?.title ?? habit.context?.name ?? habit.frequencySummary,
+                    subtitle: habit.goal?.title ?? habit.context?.name ?? habit.frequencySummary,
                     icon: habit.icon,
                     color: Color(hex: habit.colorHex)
                 )

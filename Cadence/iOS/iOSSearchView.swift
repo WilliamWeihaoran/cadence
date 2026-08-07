@@ -12,7 +12,6 @@ struct iOSSearchView: View {
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query(sort: \Note.updatedAt, order: .reverse) private var notes: [Note]
-    @Query(sort: \Pursuit.order) private var pursuits: [Pursuit]
     @Query(sort: \Goal.order) private var goals: [Goal]
     @Query(sort: \Habit.order) private var habits: [Habit]
 
@@ -192,39 +191,27 @@ struct iOSSearchView: View {
     }
 
     private var progressResults: [iOSSearchResult] {
-        let candidates = pursuits.filter { $0.status != .done }.map { pursuit in
-            let summary = CadencePursuitSupport.summary(for: pursuit)
-            return iOSSearchResult(
-                kind: .progress,
-                title: pursuit.title.isEmpty ? "Untitled Pursuit" : pursuit.title,
-                subtitle: pursuit.context?.name ?? pursuit.kind.label,
-                detail: "\(summary.activeGoalCount) milestones / \(summary.activeHabitCount) habits",
-                icon: pursuit.icon,
-                color: Color(hex: pursuit.colorHex),
-                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [pursuit.title, pursuit.kind.label, pursuit.context?.name ?? ""]) ?? 0,
-                featureDestination: .pursuits
-            )
-        } + goals.filter { $0.status != .done }.map { goal in
+        let candidates = goals.filter { $0.status != .done }.map { goal in
             let summary = GoalContributionResolver.summary(for: goal)
             return iOSSearchResult(
                 kind: .progress,
-                title: goal.title.isEmpty ? "Untitled Milestone" : goal.title,
-                subtitle: goal.pursuit?.title ?? goal.context?.name ?? goal.status.rawValue.capitalized,
-                detail: "\(Int((summary.progress * 100).rounded()))%",
-                icon: "flag.fill",
+                title: goal.title.isEmpty ? "Untitled Goal" : goal.title,
+                subtitle: goal.parentGoal?.title ?? goal.context?.name ?? goal.kind.label,
+                detail: summary.percentLabel,
+                icon: goal.icon,
                 color: Color(hex: goal.colorHex),
-                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [goal.title, goal.desc, goal.pursuit?.title ?? "", goal.context?.name ?? ""]) ?? 0,
+                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [goal.title, goal.desc, goal.parentGoal?.title ?? "", goal.context?.name ?? ""]) ?? 0,
                 featureDestination: .goals
             )
         } + habits.map { habit in
             iOSSearchResult(
                 kind: .progress,
                 title: habit.title.isEmpty ? "Untitled Habit" : habit.title,
-                subtitle: habit.pursuit?.title ?? habit.context?.name ?? habit.frequencySummary,
+                subtitle: habit.goal?.title ?? habit.context?.name ?? habit.frequencySummary,
                 detail: habit.isDueToday ? "Due today" : habit.frequencySummary,
                 icon: "flame.fill",
                 color: Color(hex: habit.colorHex),
-                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [habit.title, habit.pursuit?.title ?? "", habit.context?.name ?? "", habit.frequencySummary]) ?? 0,
+                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [habit.title, habit.goal?.title ?? "", habit.context?.name ?? "", habit.frequencySummary]) ?? 0,
                 featureDestination: .habits
             )
         }
@@ -332,7 +319,7 @@ struct iOSSearchView: View {
                 resultSection("Calendar Events", results: eventResults)
             }
             if showsProgress {
-                resultSection("Pursuits, Milestones, Habits", results: progressResults)
+                resultSection("Goals and Habits", results: progressResults)
             }
 
             if isSearching && visibleResultsAreEmpty && !(showsEvents && !calendarManager.isAuthorized) {
@@ -388,10 +375,8 @@ struct iOSSearchView: View {
                 iOSCompactNotesView()
             case .lists:
                 iOSListsView()
-            case .pursuits:
-                iOSPursuitsView()
             case .goals:
-                iOSMilestonesView()
+                iOSGoalsView()
             case .habits:
                 iOSHabitsView()
             case .search:

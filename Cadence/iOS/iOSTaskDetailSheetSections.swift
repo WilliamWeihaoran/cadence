@@ -125,25 +125,25 @@ struct iOSTaskOrganizeSection: View {
     }
 }
 
-struct iOSTaskMilestoneSection: View {
+struct iOSTaskGoalSection: View {
     let selectedGoal: Goal?
     let availableGoals: [Goal]
     let goalSelection: Binding<UUID?>
     let onRemoveGoal: () -> Void
 
     var body: some View {
-        iOSTaskEditorSection(title: "Milestone") {
+        iOSTaskEditorSection(title: "Goal") {
             iOSTaskEditorRow(
-                label: "Linked milestone",
+                label: "Linked goal",
                 systemImage: selectedGoal == nil ? "circle.dashed" : "flag.fill",
                 color: selectedGoal.map { Color(hex: $0.colorHex) } ?? Theme.dim
             ) {
-                Picker("Milestone", selection: goalSelection) {
+                Picker("Goal", selection: goalSelection) {
                     Text("None").tag(Optional<UUID>.none)
                     if !availableGoals.isEmpty {
-                        Section("Milestones") {
+                        Section("Goals") {
                             ForEach(availableGoals) { goal in
-                                Text(goal.title.isEmpty ? "Untitled Milestone" : goal.title)
+                                Text(goal.title.isEmpty ? "Untitled Goal" : goal.title)
                                     .tag(Optional(goal.id))
                             }
                         }
@@ -157,7 +157,7 @@ struct iOSTaskMilestoneSection: View {
                 iOSTaskEditorDivider()
 
                 HStack(spacing: 10) {
-                    Image(systemName: "flag.fill")
+                    Image(systemName: selectedGoal.icon)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Color(hex: selectedGoal.colorHex))
                         .frame(width: 28, height: 28)
@@ -165,12 +165,12 @@ struct iOSTaskMilestoneSection: View {
                         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(selectedGoal.title.isEmpty ? "Untitled Milestone" : selectedGoal.title)
+                        Text(selectedGoal.title.isEmpty ? "Untitled Goal" : selectedGoal.title)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Theme.text)
                             .lineLimit(1)
 
-                        Text(selectedGoal.pursuit?.title ?? selectedGoal.context?.name ?? selectedGoal.status.rawValue.capitalized)
+                        Text(selectedGoal.parentGoal?.title ?? selectedGoal.context?.name ?? selectedGoal.status.label)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Theme.dim)
                             .lineLimit(1)
@@ -186,10 +186,10 @@ struct iOSTaskMilestoneSection: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Remove milestone")
+                    .accessibilityLabel("Remove goal")
                 }
             } else if availableGoals.isEmpty {
-                Text("Create a milestone first, then attach tasks here.")
+                Text("Create a goal first, then attach tasks here.")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.dim)
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -12,7 +12,6 @@ struct CadenceContextRef: Codable, Sendable {
     let activeTaskCount: Int
     let goalCount: Int
     let habitCount: Int
-    let pursuitCount: Int
 }
 
 struct CadenceContainerRef: Codable, Sendable {
@@ -244,16 +243,19 @@ struct CadenceGoalSummary: Codable, Sendable {
     let targetHours: Double
     let loggedHours: Double
     let colorHex: String
+    let icon: String
+    /// `ongoing` / `completable` / `maintenance` — top-level ongoing goals are what used to be pursuits.
+    let kind: String
     let status: String
     let progress: Double
     let contextId: String?
     let contextName: String?
     let parentGoalId: String?
     let parentGoalTitle: String?
-    let pursuitId: String?
-    let pursuitTitle: String?
+    let isTopLevel: Bool
     let linkedListCount: Int
     let taskCount: Int
+    let subGoalCount: Int
     let habitCount: Int
     let createdAt: String
 }
@@ -280,27 +282,9 @@ struct CadenceHabitSummary: Codable, Sendable {
     let contextId: String?
     let contextName: String?
     let goal: CadenceGoalRef?
-    let pursuitId: String?
-    let pursuitTitle: String?
     let currentStreak: Int
     let completionCount: Int
     let completedToday: Bool
-    let createdAt: String
-}
-
-struct CadenceMCPPursuitSummary: Codable, Sendable {
-    let id: String
-    let title: String
-    let description: String
-    let icon: String
-    let colorHex: String
-    let kind: String
-    let status: String
-    let order: Int
-    let contextId: String?
-    let contextName: String?
-    let goalCount: Int
-    let habitCount: Int
     let createdAt: String
 }
 

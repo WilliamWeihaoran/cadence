@@ -2,40 +2,8 @@ import Foundation
 import SwiftData
 
 enum CadenceTrackingMutationSupport {
-    @discardableResult
-    static func savePursuit(
-        _ pursuit: Pursuit?,
-        title: String,
-        desc: String,
-        icon: String,
-        colorHex: String,
-        kind: PursuitKind,
-        status: PursuitStatus,
-        context: Context?,
-        allPursuits: [Pursuit],
-        modelContext: ModelContext
-    ) -> Pursuit? {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        let resolved = pursuit ?? Pursuit(title: trimmed)
-        resolved.title = trimmed
-        resolved.desc = desc.trimmingCharacters(in: .whitespacesAndNewlines)
-        resolved.icon = icon
-        resolved.colorHex = colorHex
-        resolved.kind = kind
-        resolved.status = status
-        resolved.context = context
-
-        if pursuit == nil {
-            resolved.order = nextOrder(in: allPursuits)
-            modelContext.insert(resolved)
-        }
-
-        try? modelContext.save()
-        return resolved
-    }
-
+    /// `parentGoal == nil` creates a top-level direction (what used to be a pursuit);
+    /// passing a parent nests this goal as a milestone of it.
     @discardableResult
     static func saveGoal(
         _ goal: Goal?,
@@ -45,10 +13,12 @@ enum CadenceTrackingMutationSupport {
         endDate: String,
         progressType: GoalProgressType,
         targetHours: Double,
+        icon: String,
         colorHex: String,
+        kind: GoalKind,
         status: GoalStatus,
         context: Context?,
-        pursuit: Pursuit,
+        parentGoal: Goal?,
         allGoals: [Goal],
         modelContext: ModelContext
     ) -> Goal? {
@@ -62,10 +32,14 @@ enum CadenceTrackingMutationSupport {
         resolved.endDate = endDate < startDate ? startDate : endDate
         resolved.progressType = progressType
         resolved.targetHours = max(0, targetHours)
+        resolved.icon = icon
         resolved.colorHex = colorHex
+        resolved.kind = kind
         resolved.status = status
-        resolved.context = context ?? pursuit.context
-        resolved.pursuit = pursuit
+        resolved.context = context ?? parentGoal?.context
+        // Guard against a goal becoming its own parent, which would make the subGoals
+        // recursion in GoalContributionResolver walk a cycle.
+        resolved.parentGoal = (parentGoal?.id == resolved.id) ? nil : parentGoal
 
         if goal == nil {
             resolved.order = nextOrder(in: allGoals)
@@ -86,7 +60,6 @@ enum CadenceTrackingMutationSupport {
         frequencyDays: [Int],
         targetCount: Int,
         context: Context?,
-        pursuit: Pursuit,
         goal: Goal?,
         allHabits: [Habit],
         modelContext: ModelContext
@@ -101,8 +74,7 @@ enum CadenceTrackingMutationSupport {
         resolved.frequencyType = frequencyType
         resolved.frequencyDays = frequencyDays
         resolved.targetCount = max(1, targetCount)
-        resolved.context = context ?? pursuit.context
-        resolved.pursuit = pursuit
+        resolved.context = context ?? goal?.context
         resolved.goal = goal
 
         if habit == nil {
@@ -114,11 +86,6 @@ enum CadenceTrackingMutationSupport {
         return resolved
     }
 
-    static func archivePursuit(_ pursuit: Pursuit, modelContext: ModelContext) {
-        pursuit.status = .done
-        try? modelContext.save()
-    }
-
     static func archiveGoal(_ goal: Goal, modelContext: ModelContext) {
         goal.status = .done
         try? modelContext.save()
@@ -126,10 +93,6 @@ enum CadenceTrackingMutationSupport {
 
     private static func nextOrder<T>(in items: [T], order: (T) -> Int) -> Int {
         (items.map(order).max() ?? -1) + 1
-    }
-
-    private static func nextOrder(in pursuits: [Pursuit]) -> Int {
-        nextOrder(in: pursuits, order: \.order)
     }
 
     private static func nextOrder(in goals: [Goal]) -> Int {

@@ -1,11 +1,17 @@
 #if os(macOS)
 import SwiftUI
 
-struct CadenceGoalPickerButton: View {
+/// macOS picker for linking something to a `Goal` — the parent of another goal, or the goal a
+/// habit belongs to. Replaces the old pursuit picker: a goal is now always optional, so this
+/// picker always offers a "none" row instead of gating saves behind a selection.
+struct GoalLinkPickerButton: View {
     let goals: [Goal]
     @Binding var selectedID: UUID?
-    var allowNone = true
-    var style: CadenceGoalPickerStyle = .standard
+    var noneTitle: String = "No parent goal"
+    var noneSubtitle: String = "Keep as a top-level goal"
+    var searchPlaceholder: String = "Search goals"
+    var emptyText: String = "No matching goals"
+    var style: GoalLinkPickerStyle = .standard
 
     @State private var showPicker = false
 
@@ -18,7 +24,7 @@ struct CadenceGoalPickerButton: View {
             HStack(spacing: style.iconLabelSpacing) {
                 selectedIcon
 
-                Text(selectedGoal?.title ?? "No linked milestone")
+                Text(selectedGoal?.title ?? noneTitle)
                     .font(.system(size: style.fontSize, weight: .medium))
                     .foregroundStyle(selectedGoal == nil ? Theme.dim : Theme.text)
                     .lineLimit(1)
@@ -39,10 +45,13 @@ struct CadenceGoalPickerButton: View {
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
-            CadenceGoalPickerList(
+            GoalLinkPickerList(
                 goals: goals,
                 selectedID: $selectedID,
-                allowNone: allowNone,
+                noneTitle: noneTitle,
+                noneSubtitle: noneSubtitle,
+                searchPlaceholder: searchPlaceholder,
+                emptyText: emptyText,
                 onPick: { showPicker = false }
             )
             .frame(width: 280)
@@ -54,7 +63,7 @@ struct CadenceGoalPickerButton: View {
     @ViewBuilder
     private var selectedIcon: some View {
         if let selectedGoal {
-            Image(systemName: "flag.fill")
+            Image(systemName: selectedGoal.icon)
                 .font(.system(size: style.iconSize, weight: .semibold))
                 .foregroundStyle(Color(hex: selectedGoal.colorHex))
                 .frame(width: style.iconBoxSize, height: style.iconBoxSize)
@@ -71,10 +80,13 @@ struct CadenceGoalPickerButton: View {
     }
 }
 
-struct CadenceGoalPickerList: View {
+struct GoalLinkPickerList: View {
     let goals: [Goal]
     @Binding var selectedID: UUID?
-    var allowNone = true
+    var noneTitle: String = "No parent goal"
+    var noneSubtitle: String = "Keep as a top-level goal"
+    var searchPlaceholder: String = "Search goals"
+    var emptyText: String = "No matching goals"
     var onPick: (() -> Void)? = nil
 
     @State private var searchQuery = ""
@@ -102,17 +114,14 @@ struct CadenceGoalPickerList: View {
         return sortedGoals.filter {
             $0.title.localizedLowercase.contains(needle)
                 || $0.desc.localizedLowercase.contains(needle)
+                || $0.kind.label.localizedLowercase.contains(needle)
                 || ($0.context?.name.localizedLowercase.contains(needle) ?? false)
         }
     }
 
     private var flattenedItems: [PickerItem] {
-        var items: [PickerItem] = []
-        if allowNone {
-            items.append(PickerItem(id: nil, label: "No linked milestone"))
-        }
-        items.append(contentsOf: filteredGoals.map { PickerItem(id: $0.id, label: $0.title) })
-        return items
+        [PickerItem(id: nil, label: noneTitle)]
+            + filteredGoals.map { PickerItem(id: $0.id, label: $0.title) }
     }
 
     var body: some View {
@@ -121,30 +130,23 @@ struct CadenceGoalPickerList: View {
 
             Divider().background(Theme.borderSubtle).padding(.top, 6)
 
-            if filteredGoals.isEmpty && !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                if allowNone {
-                    row(id: nil, title: "No linked milestone", subtitle: "Track independently", icon: "circle.dashed", colorHex: nil)
-                    Divider().background(Theme.borderSubtle).padding(.vertical, 2)
-                }
+            row(id: nil, title: noneTitle, subtitle: noneSubtitle, icon: "circle.dashed", colorHex: nil)
+            Divider().background(Theme.borderSubtle).padding(.vertical, 2)
 
-                Text("No matching milestones")
+            if filteredGoals.isEmpty {
+                Text(searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No goals yet" : emptyText)
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.dim)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                if allowNone {
-                    row(id: nil, title: "No linked milestone", subtitle: "Track independently", icon: "circle.dashed", colorHex: nil)
-                    Divider().background(Theme.borderSubtle).padding(.vertical, 2)
-                }
-
                 ForEach(filteredGoals) { goal in
                     row(
                         id: goal.id,
                         title: goal.title,
-                        subtitle: goal.context?.name ?? goal.status.rawValue.capitalized,
-                        icon: "flag.fill",
+                        subtitle: "\(goal.kind.label) • \(goal.context?.name ?? goal.status.label)",
+                        icon: goal.icon,
                         colorHex: goal.colorHex
                     )
                 }
@@ -177,7 +179,7 @@ struct CadenceGoalPickerList: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
 
-            TextField("Search milestones", text: $searchQuery)
+            TextField(searchPlaceholder, text: $searchQuery)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.text)
@@ -251,7 +253,7 @@ struct CadenceGoalPickerList: View {
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.cadencePlain)
-        .modifier(GoalPickerRowHover())
+        .modifier(GoalLinkPickerRowHover())
         .padding(.horizontal, 4)
     }
 
@@ -274,7 +276,7 @@ struct CadenceGoalPickerList: View {
     }
 }
 
-enum CadenceGoalPickerStyle {
+enum GoalLinkPickerStyle {
     case standard
     case compact
 
@@ -290,7 +292,7 @@ enum CadenceGoalPickerStyle {
     var cornerRadius: CGFloat { self == .compact ? 7 : 8 }
 }
 
-private struct GoalPickerRowHover: ViewModifier {
+private struct GoalLinkPickerRowHover: ViewModifier {
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
@@ -300,6 +302,84 @@ private struct GoalPickerRowHover: ViewModifier {
                     .fill(isHovered ? Theme.blue.opacity(0.06) : Color.clear)
             )
             .onHover { isHovered = $0 }
+    }
+}
+
+/// Shared kind selector used by the goal editor. Mirrors the status selector's layout so the
+/// sheet reads as one control stack.
+struct GoalKindSection: View {
+    @Binding var selection: GoalKind
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(GoalKind.allCases, id: \.self) { kind in
+                kindButton(kind)
+            }
+        }
+    }
+
+    private func kindButton(_ kind: GoalKind) -> some View {
+        let isSelected = selection == kind
+        let tint = GoalKindPalette.color(for: kind)
+
+        return Button {
+            selection = kind
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: kind.systemImage)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isSelected ? .white : tint)
+                    .frame(width: 22, height: 22)
+                    .background(isSelected ? tint : tint.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(kind.label)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                        .lineLimit(1)
+                    Text(kind.detail)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(isSelected ? tint.opacity(0.12) : Theme.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(isSelected ? tint.opacity(0.45) : Theme.borderSubtle, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 9))
+        }
+        .buttonStyle(.cadencePlain)
+    }
+}
+
+enum GoalKindPalette {
+    static func color(for kind: GoalKind) -> Color {
+        switch kind {
+        case .ongoing: return Theme.purple
+        case .completable: return Theme.green
+        case .maintenance: return Theme.blue
+        }
+    }
+}
+
+struct GoalKindBadge: View {
+    let kind: GoalKind
+
+    var body: some View {
+        CommitmentMetaChip(
+            label: kind.label,
+            color: GoalKindPalette.color(for: kind),
+            systemImage: kind.systemImage
+        )
     }
 }
 #endif

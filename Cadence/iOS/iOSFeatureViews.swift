@@ -2,23 +2,38 @@
 import SwiftData
 import SwiftUI
 
-struct iOSPursuitsView: View {
+/// Goals screen. Top-level goals are the long-running directions that used to live in their
+/// own model; each is listed with its milestones (`subGoals`) nested directly underneath it.
+struct iOSGoalsView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Query(sort: \Pursuit.order) private var pursuits: [Pursuit]
+    @Query(sort: \Goal.order) private var goals: [Goal]
     @State private var selectedID: UUID?
-    @State private var editorMode: iOSPursuitEditorMode?
-    @State private var goalEditorMode: iOSGoalEditorMode?
+    @State private var editorMode: iOSGoalEditorMode?
     @State private var habitEditorMode: iOSHabitEditorMode?
 
-    private var activePursuits: [Pursuit] {
-        pursuits.filter { $0.status != .done }
+    private var activeGoals: [Goal] {
+        goals.filter { $0.status != .done }
     }
 
-    private var selected: Pursuit? {
-        if let selectedID {
-            return pursuits.first { $0.id == selectedID }
+    /// Genuine directions, plus any nested goal whose parent is completed — without the second
+    /// half those milestones would have no row to appear under and drop off the screen.
+    private var topLevelGoals: [Goal] {
+        let activeIDs = Set(activeGoals.map(\.id))
+        return activeGoals.filter { goal in
+            guard let parent = goal.parentGoal else { return true }
+            return !activeIDs.contains(parent.id)
         }
-        return activePursuits.first ?? pursuits.first
+    }
+
+    private func milestones(of goal: Goal) -> [Goal] {
+        GoalAssignmentRules.milestones(of: goal).filter { $0.status != .done }
+    }
+
+    private var selected: Goal? {
+        if let selectedID {
+            return goals.first { $0.id == selectedID }
+        }
+        return topLevelGoals.first ?? activeGoals.first ?? goals.first
     }
 
     var body: some View {
@@ -34,12 +49,9 @@ struct iOSPursuitsView: View {
             selectedID = selectedID ?? selected?.id
         }
         .sheet(item: $editorMode) { mode in
-            iOSPursuitEditorSheet(mode: mode) { pursuit in
-                selectedID = pursuit.id
+            iOSGoalEditorSheet(mode: mode) { goal in
+                selectedID = goal.id
             }
-        }
-        .sheet(item: $goalEditorMode) { mode in
-            iOSGoalEditorSheet(mode: mode)
         }
         .sheet(item: $habitEditorMode) { mode in
             iOSHabitEditorSheet(mode: mode)
@@ -62,207 +74,112 @@ struct iOSPursuitsView: View {
 
     private var listPane: some View {
         iOSFeatureListPane(
-            eyebrow: "Pursuits",
-            title: "Pursuits",
-            count: activePursuits.count,
-            emptyTitle: "No pursuits yet",
-            emptySubtitle: "Create a direction for related milestones and habits.",
-            emptyIcon: "sparkles",
-            actionTitle: "New Pursuit",
-            actionSystemImage: "plus",
-            action: { editorMode = .new }
-        ) {
-            ForEach(activePursuits) { pursuit in
-                Button {
-                    selectedID = pursuit.id
-                } label: {
-                    pursuitRow(pursuit, isSelected: selected?.id == pursuit.id)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private var compactListPane: some View {
-        iOSFeatureListPane(
-            eyebrow: "Pursuits",
-            title: "Pursuits",
-            count: activePursuits.count,
-            emptyTitle: "No pursuits yet",
-            emptySubtitle: "Create a direction for related milestones and habits.",
-            emptyIcon: "sparkles",
-            actionTitle: "New Pursuit",
-            actionSystemImage: "plus",
-            action: { editorMode = .new }
-        ) {
-            ForEach(activePursuits) { pursuit in
-                NavigationLink {
-                    detailView(for: pursuit)
-                } label: {
-                    pursuitRow(pursuit, isSelected: false)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private func pursuitRow(_ pursuit: Pursuit, isSelected: Bool) -> some View {
-        iOSFeatureSummaryRow(
-            title: pursuit.title.isEmpty ? "Untitled Pursuit" : pursuit.title,
-            subtitle: pursuit.context?.name ?? pursuit.kind.label,
-            detail: pursuitSummaryLabel(for: pursuit),
-            icon: pursuit.icon,
-            color: Color(hex: pursuit.colorHex),
-            isSelected: isSelected
-        )
-    }
-
-    @ViewBuilder
-    private func detailView(for pursuit: Pursuit) -> some View {
-        let summary = CadencePursuitSupport.summary(for: pursuit)
-        iOSPursuitDetail(
-            pursuit: pursuit,
-            goals: summary.goals,
-            habits: summary.habits,
-            onEdit: { editorMode = .edit(pursuit) },
-            onNewGoal: { goalEditorMode = .new(pursuit) },
-            onNewHabit: { habitEditorMode = .new(pursuit) }
-        )
-    }
-
-    @ViewBuilder
-    private var detailPane: some View {
-        if let pursuit = selected {
-            detailView(for: pursuit)
-        } else {
-            iOSFeatureEmptyDetail(systemImage: "sparkles", title: "No pursuit selected")
-        }
-    }
-
-    private func pursuitSummaryLabel(for pursuit: Pursuit) -> String {
-        let summary = CadencePursuitSupport.summary(for: pursuit)
-        return "\(summary.activeGoalCount) milestones / \(summary.activeHabitCount) habits"
-    }
-}
-
-struct iOSMilestonesView: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Query(sort: \Goal.order) private var goals: [Goal]
-    @State private var selectedID: UUID?
-    @State private var editorMode: iOSGoalEditorMode?
-
-    private var activeGoals: [Goal] {
-        goals.filter { $0.status != .done }
-    }
-
-    private var selected: Goal? {
-        if let selectedID {
-            return goals.first { $0.id == selectedID }
-        }
-        return activeGoals.first ?? goals.first
-    }
-
-    var body: some View {
-        Group {
-            if horizontalSizeClass == .compact {
-                compactLayout
-            } else {
-                horizontalLayout
-            }
-        }
-        .background(Theme.bg)
-        .onAppear {
-            selectedID = selectedID ?? selected?.id
-        }
-        .sheet(item: $editorMode) { mode in
-            iOSGoalEditorSheet(mode: mode) { goal in
-                selectedID = goal.id
-            }
-        }
-    }
-
-    private var horizontalLayout: some View {
-        HStack(spacing: 0) {
-            listPane
-
-            Divider().background(Theme.borderSubtle)
-
-            detailPane
-        }
-    }
-
-    private var compactLayout: some View {
-        compactListPane
-    }
-
-    private var listPane: some View {
-        iOSFeatureListPane(
-            eyebrow: "Milestones",
-            title: "Milestones",
+            eyebrow: "Progress",
+            title: "Goals",
             count: activeGoals.count,
-            emptyTitle: "No milestones yet",
-            emptySubtitle: "Create milestones under a pursuit to track outcomes.",
-            emptyIcon: "flag.fill",
-            actionTitle: "New Milestone",
+            emptyTitle: "No goals yet",
+            emptySubtitle: "Create a direction, then nest milestones and habits underneath it.",
+            emptyIcon: "sparkles",
+            actionTitle: "New Goal",
             actionSystemImage: "plus",
             action: { editorMode = .new(nil) }
         ) {
-            ForEach(activeGoals) { goal in
+            ForEach(topLevelGoals) { goal in
                 Button {
                     selectedID = goal.id
                 } label: {
                     goalRow(goal, isSelected: selected?.id == goal.id)
                 }
                 .buttonStyle(.plain)
+
+                ForEach(milestones(of: goal)) { milestone in
+                    Button {
+                        selectedID = milestone.id
+                    } label: {
+                        goalRow(milestone, isSelected: selected?.id == milestone.id)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 16)
+                }
             }
         }
     }
 
     private var compactListPane: some View {
         iOSFeatureListPane(
-            eyebrow: "Milestones",
-            title: "Milestones",
+            eyebrow: "Progress",
+            title: "Goals",
             count: activeGoals.count,
-            emptyTitle: "No milestones yet",
-            emptySubtitle: "Create milestones under a pursuit to track outcomes.",
-            emptyIcon: "flag.fill",
-            actionTitle: "New Milestone",
+            emptyTitle: "No goals yet",
+            emptySubtitle: "Create a direction, then nest milestones and habits underneath it.",
+            emptyIcon: "sparkles",
+            actionTitle: "New Goal",
             actionSystemImage: "plus",
             action: { editorMode = .new(nil) }
         ) {
-            ForEach(activeGoals) { goal in
+            ForEach(topLevelGoals) { goal in
                 NavigationLink {
                     detailView(for: goal)
                 } label: {
                     goalRow(goal, isSelected: false)
                 }
                 .buttonStyle(.plain)
+
+                ForEach(milestones(of: goal)) { milestone in
+                    NavigationLink {
+                        detailView(for: milestone)
+                    } label: {
+                        goalRow(milestone, isSelected: false)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 16)
+                }
             }
         }
     }
 
     private func goalRow(_ goal: Goal, isSelected: Bool) -> some View {
-        let summary = GoalContributionResolver.summary(for: goal)
-        return iOSFeatureSummaryRow(
-            title: goal.title.isEmpty ? "Untitled Milestone" : goal.title,
-            subtitle: goal.pursuit?.title ?? goal.context?.name ?? goal.status.rawValue.capitalized,
-            detail: "\(Int((summary.progress * 100).rounded()))%",
-            icon: "flag.fill",
+        iOSFeatureSummaryRow(
+            title: goal.title.isEmpty ? "Untitled Goal" : goal.title,
+            subtitle: rowSubtitle(for: goal),
+            detail: GoalContributionResolver.summary(for: goal).percentLabel,
+            icon: goal.icon,
             color: Color(hex: goal.colorHex),
             isSelected: isSelected
         )
     }
 
-    private func detailView(for goal: Goal) -> some View {
-        iOSMilestoneDetail(goal: goal, onEdit: { editorMode = .edit(goal) })
+    private func rowSubtitle(for goal: Goal) -> String {
+        if let parent = goal.parentGoal {
+            return parent.title.isEmpty ? "Untitled Goal" : parent.title
+        }
+        let summary = CadenceGoalGroupSupport.summary(for: goal)
+        return "\(summary.activeGoalCount) milestones / \(summary.activeHabitCount) habits"
+    }
+
+    /// `onSelectMilestone` is only wired up in the split layout, where re-pointing `selectedID`
+    /// swaps the detail pane. In the compact push stack the list rows already navigate, so the
+    /// detail's milestone rows stay non-interactive there.
+    private func detailView(for goal: Goal, onSelectMilestone: ((Goal) -> Void)? = nil) -> some View {
+        iOSGoalDetail(
+            goal: goal,
+            milestones: CadenceGoalGroupSupport.milestones(for: goal),
+            habits: CadenceGoalGroupSupport.habits(for: goal),
+            onEdit: { editorMode = .edit(goal) },
+            onNewMilestone: { editorMode = .new(goal) },
+            onNewHabit: { habitEditorMode = .new(goal) },
+            onSelectMilestone: onSelectMilestone
+        )
     }
 
     @ViewBuilder
     private var detailPane: some View {
         if let goal = selected {
-            detailView(for: goal)
+            detailView(for: goal) { milestone in
+                selectedID = milestone.id
+            }
         } else {
-            iOSFeatureEmptyDetail(systemImage: "flag.fill", title: "No milestone selected")
+            iOSFeatureEmptyDetail(systemImage: "sparkles", title: "No goal selected")
         }
     }
 }

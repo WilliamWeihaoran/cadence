@@ -7,7 +7,7 @@ struct CreateHabitSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Habit.order) private var habits: [Habit]
     @Query(sort: \Context.order) private var allContexts: [Context]
-    @Query(sort: \Pursuit.order) private var allPursuits: [Pursuit]
+    @Query(sort: \Goal.order) private var allGoals: [Goal]
 
     @State private var title = ""
     @State private var selectedIcon = "star.fill"
@@ -17,34 +17,34 @@ struct CreateHabitSheet: View {
     @State private var timesPerWeek = 3
     @State private var monthlyDay = 1
     @State private var selectedContextID: UUID? = nil
-    @State private var selectedPursuitID: UUID? = nil
-    @State private var showCreatePursuit = false
+    @State private var selectedGoalID: UUID? = nil
     @State private var hasReminder = false
     @State private var reminderMinuteOfDay = 9 * 60
 
-    private let initialPursuit: Pursuit?
+    private let initialGoal: Goal?
 
-    init(pursuit: Pursuit? = nil) {
-        initialPursuit = pursuit
-        _selectedContextID = State(initialValue: pursuit?.context?.id)
-        _selectedPursuitID = State(initialValue: pursuit?.id)
+    /// A habit no longer needs a parent to be saved — `goal` is only a seed for the picker.
+    init(goal: Goal? = nil) {
+        initialGoal = goal
+        _selectedContextID = State(initialValue: goal?.context?.id)
+        _selectedGoalID = State(initialValue: goal?.id)
     }
 
-    private var pursuitChoices: [Pursuit] {
-        var choices = allPursuits.filter { $0.status == .active }
-        if let initialPursuit,
-           !choices.contains(where: { $0.id == initialPursuit.id }) {
-            choices.insert(initialPursuit, at: 0)
+    private var goalChoices: [Goal] {
+        var choices = allGoals.filter { $0.status != .done }
+        if let initialGoal,
+           !choices.contains(where: { $0.id == initialGoal.id }) {
+            choices.insert(initialGoal, at: 0)
         }
         return choices
     }
 
-    private var selectedContext: Context? {
-        selectedContextID.flatMap { id in allContexts.first { $0.id == id } }
+    private var selectedGoal: Goal? {
+        selectedGoalID.flatMap { id in allGoals.first { $0.id == id } }
     }
 
     private var canSave: Bool {
-        PursuitAssignmentRules.canSaveHabit(title: title, pursuitID: selectedPursuitID)
+        GoalAssignmentRules.canSaveHabit(title: title)
     }
 
     var body: some View {
@@ -53,10 +53,6 @@ struct CreateHabitSheet: View {
             actionTitle: "Create",
             canSave: canSave,
             actionTint: nil,
-            showCreatePursuit: $showCreatePursuit,
-            selectedContextID: $selectedContextID,
-            selectedPursuitID: $selectedPursuitID,
-            selectedContext: selectedContext,
             onCancel: { dismiss() },
             onSave: create
         ) {
@@ -69,12 +65,11 @@ struct CreateHabitSheet: View {
                 timesPerWeek: $timesPerWeek,
                 monthlyDay: $monthlyDay,
                 selectedContextID: $selectedContextID,
-                selectedPursuitID: $selectedPursuitID,
+                selectedGoalID: $selectedGoalID,
                 hasReminder: $hasReminder,
                 reminderMinuteOfDay: $reminderMinuteOfDay,
                 contexts: allContexts,
-                pursuits: pursuitChoices,
-                onCreatePursuit: { showCreatePursuit = true }
+                goals: goalChoices
             )
         }
     }
@@ -82,7 +77,6 @@ struct CreateHabitSheet: View {
     private func create() {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
-        guard let selectedPursuit = selectedPursuitID.flatMap({ id in allPursuits.first { $0.id == id } }) else { return }
 
         let habit = Habit(title: trimmed)
         habit.icon = selectedIcon
@@ -95,8 +89,8 @@ struct CreateHabitSheet: View {
             timesPerWeek: timesPerWeek,
             monthlyDay: monthlyDay
         )
-        habit.assignContext(selectedContextID: selectedContextID, contexts: allContexts, fallbackPursuit: selectedPursuit)
-        habit.pursuit = selectedPursuit
+        habit.assignContext(selectedContextID: selectedContextID, contexts: allContexts, fallbackGoal: selectedGoal)
+        habit.goal = selectedGoal
         habit.reminderMinuteOfDay = hasReminder ? reminderMinuteOfDay : nil
 
         modelContext.insert(habit)
@@ -110,7 +104,7 @@ struct EditHabitSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Context.order) private var allContexts: [Context]
-    @Query(sort: \Pursuit.order) private var allPursuits: [Pursuit]
+    @Query(sort: \Goal.order) private var allGoals: [Goal]
 
     @State private var title: String
     @State private var selectedIcon: String
@@ -120,8 +114,7 @@ struct EditHabitSheet: View {
     @State private var timesPerWeek: Int
     @State private var monthlyDay: Int
     @State private var selectedContextID: UUID?
-    @State private var selectedPursuitID: UUID?
-    @State private var showCreatePursuit = false
+    @State private var selectedGoalID: UUID?
     @State private var hasReminder: Bool
     @State private var reminderMinuteOfDay: Int
 
@@ -138,26 +131,26 @@ struct EditHabitSheet: View {
         _timesPerWeek = State(initialValue: frequency == .timesPerWeek ? max(1, habit.targetCount) : 3)
         _monthlyDay = State(initialValue: frequency == .monthly ? min(max(storedDays.first ?? 1, 1), 31) : 1)
         _selectedContextID = State(initialValue: habit.context?.id)
-        _selectedPursuitID = State(initialValue: habit.pursuit?.id)
+        _selectedGoalID = State(initialValue: habit.goal?.id)
         _hasReminder = State(initialValue: habit.reminderMinuteOfDay != nil)
         _reminderMinuteOfDay = State(initialValue: habit.reminderMinuteOfDay ?? 9 * 60)
     }
 
-    private var pursuitChoices: [Pursuit] {
-        var choices = allPursuits.filter { $0.status == .active }
-        if let current = habit.pursuit,
+    private var goalChoices: [Goal] {
+        var choices = allGoals.filter { $0.status != .done }
+        if let current = habit.goal,
            !choices.contains(where: { $0.id == current.id }) {
             choices.insert(current, at: 0)
         }
         return choices
     }
 
-    private var selectedContext: Context? {
-        selectedContextID.flatMap { id in allContexts.first { $0.id == id } }
+    private var selectedGoal: Goal? {
+        selectedGoalID.flatMap { id in allGoals.first { $0.id == id } }
     }
 
     private var canSave: Bool {
-        PursuitAssignmentRules.canSaveHabit(title: title, pursuitID: selectedPursuitID)
+        GoalAssignmentRules.canSaveHabit(title: title)
     }
 
     var body: some View {
@@ -166,10 +159,6 @@ struct EditHabitSheet: View {
             actionTitle: "Save",
             canSave: canSave,
             actionTint: Color(hex: selectedColor),
-            showCreatePursuit: $showCreatePursuit,
-            selectedContextID: $selectedContextID,
-            selectedPursuitID: $selectedPursuitID,
-            selectedContext: selectedContext,
             onCancel: { dismiss() },
             onSave: save
         ) {
@@ -182,12 +171,11 @@ struct EditHabitSheet: View {
                 timesPerWeek: $timesPerWeek,
                 monthlyDay: $monthlyDay,
                 selectedContextID: $selectedContextID,
-                selectedPursuitID: $selectedPursuitID,
+                selectedGoalID: $selectedGoalID,
                 hasReminder: $hasReminder,
                 reminderMinuteOfDay: $reminderMinuteOfDay,
                 contexts: allContexts,
-                pursuits: pursuitChoices,
-                onCreatePursuit: { showCreatePursuit = true }
+                goals: goalChoices
             )
         }
     }
@@ -195,7 +183,6 @@ struct EditHabitSheet: View {
     private func save() {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        guard let selectedPursuit = selectedPursuitID.flatMap({ id in allPursuits.first { $0.id == id } }) else { return }
 
         habit.title = trimmed
         habit.icon = selectedIcon
@@ -207,8 +194,8 @@ struct EditHabitSheet: View {
             timesPerWeek: timesPerWeek,
             monthlyDay: monthlyDay
         )
-        habit.assignContext(selectedContextID: selectedContextID, contexts: allContexts, fallbackPursuit: selectedPursuit)
-        habit.pursuit = selectedPursuit
+        habit.assignContext(selectedContextID: selectedContextID, contexts: allContexts, fallbackGoal: selectedGoal)
+        habit.goal = selectedGoal
         habit.reminderMinuteOfDay = hasReminder ? reminderMinuteOfDay : nil
         if let context = habit.modelContext {
             HabitNotificationReconcileSupport.scheduleReconcile(in: context)
@@ -222,10 +209,6 @@ private struct HabitFormSheetShell<Content: View>: View {
     let actionTitle: String
     let canSave: Bool
     let actionTint: Color?
-    @Binding var showCreatePursuit: Bool
-    @Binding var selectedContextID: UUID?
-    @Binding var selectedPursuitID: UUID?
-    let selectedContext: Context?
     let onCancel: () -> Void
     let onSave: () -> Void
     @ViewBuilder let content: () -> Content
@@ -269,14 +252,6 @@ private struct HabitFormSheetShell<Content: View>: View {
         }
         .frame(width: 460, height: 640)
         .background(Theme.surface)
-        .sheet(isPresented: $showCreatePursuit) {
-            CreatePursuitSheet(context: selectedContext) { pursuit in
-                selectedPursuitID = pursuit.id
-                if selectedContextID == nil {
-                    selectedContextID = pursuit.context?.id
-                }
-            }
-        }
     }
 }
 
@@ -304,12 +279,14 @@ private extension Habit {
         }
     }
 
-    func assignContext(selectedContextID: UUID?, contexts: [Context], fallbackPursuit: Pursuit) {
+    /// Falls back to the linked goal's context when no context was picked explicitly. The goal is
+    /// optional now, so an unlinked habit simply ends up with no context.
+    func assignContext(selectedContextID: UUID?, contexts: [Context], fallbackGoal: Goal?) {
         if let selectedContextID,
            let context = contexts.first(where: { $0.id == selectedContextID }) {
             self.context = context
         } else {
-            context = fallbackPursuit.context
+            context = fallbackGoal?.context
         }
     }
 }

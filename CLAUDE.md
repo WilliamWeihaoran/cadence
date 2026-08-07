@@ -19,7 +19,7 @@ The user does not write code. Claude handles all implementation. When something 
 
 ## Platform Strategy
 - **macOS**: purpose-built sidebar + multi-column layout (`macOS/`). Fully featured, the primary product surface.
-- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, ~55 files), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a `TabView` shell on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals/Milestones/Pursuits, Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
+- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, ~55 files), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a `TabView` shell on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
 - **watchOS**: not started
 - Use `#if os(macOS)` / `#if os(iOS)` for platform-specific branches
 
@@ -141,15 +141,13 @@ Several large macOS surfaces are now intentionally split into companion support 
 ## Data Models
 All SwiftData `@Model` classes. **Critical CloudKit rule: all to-many relationships must be optional arrays (`[Type]?`).**
 
-> This list is not exhaustive of every model in `Cadence/Models/` — `Pursuit` and `TaskBundle` are included below since they're directly relevant to calendar/scheduling work, but `Note`/`Tag` (which appear to consolidate/supersede `DailyNote`/`WeeklyNote`/`PermNote`/`Document` and add tagging) haven't had a full documentation pass yet. Check `Cadence/Models/` directly rather than assuming this list is complete.
+> This list is not exhaustive of every model in `Cadence/Models/` — `TaskBundle` is included below since it's directly relevant to calendar/scheduling work, but `Note`/`Tag` (which appear to consolidate/supersede `DailyNote`/`WeeklyNote`/`PermNote`/`Document` and add tagging) haven't had a full documentation pass yet. Check `Cadence/Models/` directly rather than assuming this list is complete.
+
+> **`Pursuit` was merged into `Goal`.** A pursuit is now just a top-level goal (`parentGoal == nil`) with `kind == .ongoing`; the goals it owned are its `subGoals` (milestones) and the habits it owned use `habit.goal`. `Cadence/Models/Pursuit.swift`, `Goal.pursuit`, `Habit.pursuit`, `Context.pursuits`, and the `Pursuit.self` schema entry survive **only** so the one-time `PursuitToGoalMigration` can read pre-merge rows — nothing outside that migration may read or write them. See the removal checklist in `Cadence/Services/PursuitToGoalMigration.swift`.
 
 ```
 Context:   id, name, colorHex, icon, order
            → areas:[Area]?, projects:[Project]?, tasks:[AppTask]?, goals:[Goal]?, habits:[Habit]?
-
-Pursuit:   id, title, desc, icon, colorHex, kind("ongoing"|...), status("active"|...), order, createdAt
-           → context:Context?, goals:[Goal]?, habits:[Habit]?
-           (directional effort under a Context; holds milestones/recurring habits)
 
 TaskBundle: id, title, dateKey(yyyy-MM-dd), startMin, durationMinutes, createdAt
            → tasks:[AppTask]? (nullify delete rule)
@@ -168,9 +166,15 @@ Project:   id, name, desc, status("active"|"done"|"archived"|"paused"|"cancelled
 
 Goal:      id, title, desc, startDate(yyyy-MM-dd), endDate(yyyy-MM-dd),
            progressType("subtasks"|"hours"), targetHours, loggedHours,
-           colorHex, status("active"|"done"|"paused"), order, createdAt
-           → context:Context?, tasks:[AppTask]?
-           computed: progress (0.0–1.0)
+           colorHex, icon, kind("ongoing"|"completable"|"maintenance"),
+           status("active"|"done"|"paused"), order, createdAt
+           → context:Context?, parentGoal:Goal?, subGoals:[Goal]?, tasks:[AppTask]?,
+             listLinks:[GoalListLink]?, habits:[Habit]?
+           computed: progress (0.0–1.0), isTopLevel (parentGoal == nil)
+           (goals nest one level deep in practice: a top-level goal is a direction —
+            usually kind .ongoing, what used to be a Pursuit — and its subGoals read
+            as milestones. `kind` defaults to .completable so pre-merge goals keep
+            reading as milestones.)
 
 AppTask:   id, title, notes, priority("none"|"low"|"medium"|"high"),
            status("todo"|"inprogress"|"done"|"cancelled"),
@@ -186,7 +190,7 @@ Subtask:   id, title, isDone, order, createdAt → parentTask:AppTask?
 Habit:     id, title, icon, colorHex, frequencyType("daily"|"daysOfWeek"|"timesPerWeek"|"monthly"),
            frequencyDaysRaw(JSON [Int]), targetCount, order, createdAt,
            reminderMinuteOfDay(Int?, minutes-from-midnight; nil = no daily reminder set)
-           → context:Context?, pursuit:Pursuit?, goal:Goal?, completions:[HabitCompletion]?
+           → context:Context?, goal:Goal?, completions:[HabitCompletion]?
            computed: frequencyDays (JSON get/set), currentStreak
 
 HabitCompletion: id, date(yyyy-MM-dd), count, createdAt → habit:Habit?
@@ -440,7 +444,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Calendar page view: Week / 2-Week / Month modes, infinite scroll
 - [x] Month view: Week / 2-Week / Month modes, infinite scroll; header-sync race conditions and window-boundary clamping fixed (shared `CalendarMonthGridMetrics`, settle-delay-guarded scroll sync in `CalendarMonthGridInteractionSupport`)
 - [x] Remembered scroll position for Today timeline and calendar
-- [x] Goals view: Gantt-style timeline, 2W/Month/Quarter/Year/5Y scales
+- [x] Goals view: Gantt-style timeline, 2W/Month/Quarter/Year/5Y scales; top-level goals (directions) with nested sub-goals as their milestones. The sidebar label for this surface is **Goals** (it was "Milestones" before `Pursuit` was merged into `Goal`).
 - [x] Habits: list, detail, 52-week heatmap, streak tracking, create sheet
 - [x] Daily notes with markdown editor
 - [x] Notes view (formerly Documents in the UI) with Markdown export and rendered PDF export
@@ -476,7 +480,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Tasks (task rows/detail, All Tasks compact view, Inbox)
 - [x] Calendar (EventKit-backed via `iOSCalendarManager`): board view, month/timeline views, event edit/quick-create sheets, inspector
 - [x] Focus timer
-- [x] Goals/Milestones/Pursuits
+- [x] Goals (top-level directions plus their nested milestones)
 - [x] Habits
 - [x] Notes with its own markdown editor stack (styling, preview, slash commands, task/wiki references)
 - [x] Lists (Area/Project detail, editors)

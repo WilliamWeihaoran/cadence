@@ -20,7 +20,7 @@ Feature views in this folder are actively refactored into thin roots plus suppor
 - `QuickCreateChoice*` - drag-to-create task/event/bundle popover and support views.
 - `Settings*` - settings shell and category sections.
 - `GlobalSearch*` - command palette state, indexing, interaction, and shell views.
-- `Habits*`, `Goals*`, `Pursuits*` - long-running progress surfaces.
+- `Habits*`, `Goals*` - long-running progress surfaces. Pursuits were merged into `Goal`; top-level goals are directions and their sub-goals are milestones.
 
 ## View Refactor Rules
 

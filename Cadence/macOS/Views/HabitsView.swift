@@ -4,7 +4,7 @@ import SwiftData
 
 struct HabitsView: View {
     @Query(sort: \Habit.order) private var habits: [Habit]
-    @Query(sort: \Pursuit.order) private var pursuits: [Pursuit]
+    @Query(sort: \Goal.order) private var goals: [Goal]
     @Environment(\.modelContext) private var modelContext
 
     @State private var selectedHabitID: UUID? = nil
@@ -29,16 +29,11 @@ struct HabitsView: View {
                 matchesSearch = habit.title.lowercased().contains(query)
                     || habit.frequencySummary.lowercased().contains(query)
                     || (habit.context?.name.lowercased().contains(query) ?? false)
-                    || (habit.pursuit?.title.lowercased().contains(query) ?? false)
                     || (habit.goal?.title.lowercased().contains(query) ?? false)
             }
 
             return matchesSearch && filter.matches(habit)
         }
-    }
-
-    private var activePursuits: [Pursuit] {
-        pursuits
     }
 
     private var dueHabitsToday: [Habit] {
@@ -49,48 +44,47 @@ struct HabitsView: View {
         dueHabitsToday.filter { !$0.isDone(on: todayKey) }
     }
 
-    private var pursuitLinkedHabitCount: Int {
-        habits.filter { $0.pursuit != nil }.count
+    private var goalLinkedHabitCount: Int {
+        habits.filter { $0.goal != nil }.count
     }
 
-    private var pursuitCoverageLabel: String {
+    private var goalCoverageLabel: String {
         guard !habits.isEmpty else { return "No habits yet" }
-        return "\(pursuitLinkedHabitCount)/\(habits.count) in pursuits"
+        return "\(goalLinkedHabitCount)/\(habits.count) linked to goals"
     }
 
     private var nextOpenHabit: Habit? {
         openHabitsToday.sorted { lhs, rhs in
-            if lhs.pursuit != nil && rhs.pursuit == nil { return true }
-            if lhs.pursuit == nil && rhs.pursuit != nil { return false }
+            if lhs.goal != nil && rhs.goal == nil { return true }
+            if lhs.goal == nil && rhs.goal != nil { return false }
             if lhs.currentStreak != rhs.currentStreak { return lhs.currentStreak > rhs.currentStreak }
             return lhs.order < rhs.order
         }.first
     }
 
+    /// Habits group under the goal they support; anything unlinked falls into a review bucket.
     private var habitGroups: [HabitGoalGroup] {
-        var groups: [HabitGoalGroup] = activePursuits.compactMap { pursuit in
-            let linked = visibleHabits.filter { $0.pursuit?.id == pursuit.id }
+        var groups: [HabitGoalGroup] = goals.compactMap { goal in
+            let linked = visibleHabits.filter { $0.goal?.id == goal.id }
             guard !linked.isEmpty else { return nil }
             return HabitGoalGroup(
-                id: pursuit.id.uuidString,
-                title: pursuit.title,
-                subtitle: pursuit.context?.name ?? "Pursuit",
-                icon: pursuit.icon,
-                colorHex: pursuit.colorHex,
+                id: goal.id.uuidString,
+                title: goal.title,
+                subtitle: goal.context?.name ?? goal.kind.label,
+                icon: goal.icon,
+                colorHex: goal.colorHex,
                 habits: linked
             )
         }
 
-        let unlinked = visibleHabits.filter { habit in
-            habit.pursuit == nil
-        }
+        let unlinked = GoalAssignmentRules.unlinkedHabits(from: visibleHabits)
 
         if !unlinked.isEmpty {
             groups.append(
                 HabitGoalGroup(
                     id: "unlinked",
                     title: "Unassigned",
-                    subtitle: "Assign these habits to a pursuit",
+                    subtitle: "Link these habits to a goal",
                     icon: "circle.dashed",
                     colorHex: "#6b7a99",
                     habits: unlinked
@@ -159,7 +153,7 @@ struct HabitsView: View {
         VStack(spacing: 0) {
             CommitmentPageHeader(
                 title: "Habits",
-                subtitle: "Rhythms across pursuits."
+                subtitle: "Rhythms that feed your goals."
             ) {
                 CadenceActionButton(
                     title: "New Habit",
@@ -172,7 +166,7 @@ struct HabitsView: View {
             } controls: {
                 HStack(spacing: 10) {
                     CommitmentSearchField(
-                        placeholder: "Search habits, pursuits, frequency, context",
+                        placeholder: "Search habits, goals, frequency, context",
                         text: $searchText
                     )
                 }
@@ -191,7 +185,7 @@ struct HabitsView: View {
                 Spacer()
                 EmptyStateView(
                     message: searchText.isEmpty ? "No habits yet" : "No matching habits",
-                    subtitle: searchText.isEmpty ? "Create a Pursuit first, then add a habit inside it." : "Try a different search or filter.",
+                    subtitle: searchText.isEmpty ? "Create a habit, then link it to the goal it supports." : "Try a different search or filter.",
                     icon: "flame.fill"
                 )
                 Spacer()

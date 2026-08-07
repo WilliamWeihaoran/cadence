@@ -13,12 +13,13 @@ struct ListDeleteHelpersTests {
         let context = Context(name: "Work")
         let area = Area(name: "Area", context: context)
         let project = Project(name: "Project", context: context, area: area)
+        // Legacy row: pursuits were merged into Goal, but unmigrated rows must still cascade.
         let pursuit = Pursuit(title: "Pursuit", context: context)
         let goal = Goal(title: "Goal", context: context)
-        goal.pursuit = pursuit
+        let subGoal = Goal(title: "Milestone", context: context)
+        subGoal.parentGoal = goal
         let goalListLink = GoalListLink(goal: goal, area: area)
         let habit = Habit(title: "Habit", context: context, goal: goal)
-        habit.pursuit = pursuit
         let habitCompletion = HabitCompletion(date: "2026-04-29", habit: habit)
 
         let contextTask = AppTask(title: "Context task")
@@ -62,6 +63,7 @@ struct ListDeleteHelpersTests {
         modelContext.insert(project)
         modelContext.insert(pursuit)
         modelContext.insert(goal)
+        modelContext.insert(subGoal)
         modelContext.insert(goalListLink)
         modelContext.insert(habit)
         modelContext.insert(habitCompletion)

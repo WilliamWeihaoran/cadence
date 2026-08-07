@@ -41,7 +41,6 @@ struct iOSSidebar: View {
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query private var habits: [Habit]
-    @Query(filter: #Predicate<Pursuit> { $0.statusRaw == "active" }) private var activePursuits: [Pursuit]
     @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
     @State private var isWorkspaceDrawerPresented = false
 
@@ -52,7 +51,6 @@ struct iOSSidebar: View {
     private var badgeSnapshot: CadenceFeatureBadgeSupport.Snapshot {
         CadenceFeatureBadgeSupport.Snapshot(
             tasks: allTasks,
-            activePursuitCount: activePursuits.count,
             activeGoalCount: activeGoals.count,
             habitCount: habits.count,
             activeListCount: activeListCount
@@ -99,7 +97,7 @@ struct iOSSidebar: View {
                     }
 
                     iOSSidebarSection(title: "Progress") {
-                        ForEach([CadenceFeatureDestination.focus, .pursuits, .goals, .habits]) { destination in
+                        ForEach([CadenceFeatureDestination.focus, .goals, .habits]) { destination in
                             navButton(for: destination)
                         }
                     }
@@ -193,7 +191,6 @@ extension CadenceFeatureDestination {
         case .focus: return .focus
         case .inbox: return .inbox
         case .calendar: return .calendar
-        case .pursuits: return .pursuits
         case .goals: return .goals
         case .habits: return .habits
         case .notes: return .notes

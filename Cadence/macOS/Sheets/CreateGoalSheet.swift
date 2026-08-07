@@ -6,42 +6,48 @@ struct CreateGoalSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Goal.order) private var allGoals: [Goal]
-    @Query(sort: \Pursuit.order) private var allPursuits: [Pursuit]
     @Query(sort: \Context.order) private var allContexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
 
     private let editingGoal: Goal?
-    private let initialPursuit: Pursuit?
+    private let initialParentGoal: Goal?
 
     @State private var title = ""
     @State private var desc = ""
     @State private var selectedContextID: UUID? = nil
-    @State private var selectedPursuitID: UUID? = nil
+    @State private var selectedParentGoalID: UUID? = nil
     @State private var startDate: Date = Date()
     @State private var endDate: Date = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()
     @State private var initialListTag = "none"
+    @State private var selectedIcon = "flag.fill"
     @State private var selectedColor = "#4a9eff"
+    @State private var selectedKind: GoalKind = .completable
     @State private var selectedStatus: GoalStatus = .active
-    @State private var showCreatePursuit = false
 
-    init(goal: Goal? = nil, pursuit: Pursuit? = nil) {
+    /// `parentGoal` is optional — a goal with no parent is a top-level direction (what used to be
+    /// a Pursuit), and a goal with a parent reads as one of that goal's milestones.
+    init(goal: Goal? = nil, parentGoal: Goal? = nil) {
         editingGoal = goal
-        initialPursuit = pursuit
+        initialParentGoal = parentGoal
         let initialStart = goal.flatMap { DateFormatters.ymd.date(from: $0.startDate) } ?? Date()
         let proposedEnd = goal.flatMap { DateFormatters.ymd.date(from: $0.endDate) }
             ?? Calendar.current.date(byAdding: .month, value: 1, to: initialStart)
             ?? initialStart
         let initialEnd = proposedEnd < initialStart ? initialStart : proposedEnd
-        let resolvedPursuit = goal?.pursuit ?? pursuit
+        let resolvedParent = goal?.parentGoal ?? parentGoal
 
         _title = State(initialValue: goal?.title ?? "")
         _desc = State(initialValue: goal?.desc ?? "")
-        _selectedContextID = State(initialValue: goal?.context?.id ?? resolvedPursuit?.context?.id)
-        _selectedPursuitID = State(initialValue: resolvedPursuit?.id)
+        _selectedContextID = State(initialValue: goal?.context?.id ?? resolvedParent?.context?.id)
+        _selectedParentGoalID = State(initialValue: resolvedParent?.id)
         _startDate = State(initialValue: initialStart)
         _endDate = State(initialValue: initialEnd)
+        _selectedIcon = State(initialValue: goal?.icon ?? "flag.fill")
         _selectedColor = State(initialValue: goal?.colorHex ?? "#4a9eff")
+        // A goal nested under another one defaults to a milestone; a fresh top-level goal
+        // defaults to an ongoing direction.
+        _selectedKind = State(initialValue: goal?.kind ?? (resolvedParent == nil ? .ongoing : .completable))
         _selectedStatus = State(initialValue: goal?.status ?? .active)
     }
 
@@ -49,30 +55,36 @@ struct CreateGoalSheet: View {
         editingGoal != nil
     }
 
-    private var pursuitChoices: [Pursuit] {
-        var choices = allPursuits.filter { $0.status == .active }
-        if let current = editingGoal?.pursuit,
+    /// Only top-level goals can be picked as a parent, which keeps the hierarchy two deep
+    /// (direction → milestone) and stops a goal from being nested under its own descendant.
+    private var parentGoalChoices: [Goal] {
+        var choices = GoalAssignmentRules
+            .topLevelGoals(from: allGoals)
+            .filter { $0.id != editingGoal?.id && $0.status != .done }
+        if let current = editingGoal?.parentGoal,
+           current.id != editingGoal?.id,
            !choices.contains(where: { $0.id == current.id }) {
             choices.insert(current, at: 0)
         }
-        if let initialPursuit,
-           !choices.contains(where: { $0.id == initialPursuit.id }) {
-            choices.insert(initialPursuit, at: 0)
+        if let initialParentGoal,
+           initialParentGoal.id != editingGoal?.id,
+           !choices.contains(where: { $0.id == initialParentGoal.id }) {
+            choices.insert(initialParentGoal, at: 0)
         }
         return choices
     }
 
-    private var selectedContext: Context? {
-        selectedContextID.flatMap { id in allContexts.first { $0.id == id } }
+    private var selectedParentGoal: Goal? {
+        selectedParentGoalID.flatMap { id in allGoals.first { $0.id == id } }
     }
 
     private var canSave: Bool {
-        PursuitAssignmentRules.canSaveMilestone(title: title, pursuitID: selectedPursuitID)
+        GoalAssignmentRules.canSaveGoal(title: title)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(isEditing ? "Edit Milestone" : "New Milestone")
+            Text(isEditing ? "Edit Goal" : "New Goal")
                 .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(Theme.text)
                 .padding(.horizontal, 24)
@@ -85,7 +97,7 @@ struct CreateGoalSheet: View {
                 VStack(alignment: .leading, spacing: 20) {
                     // Title
                     fieldLabel("Title")
-                    TextField("e.g. Pass Exam P, Read 12 books", text: $title)
+                    TextField("e.g. Become more knowledgeable, Pass Exam P", text: $title)
                         .textFieldStyle(.plain)
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.text)
@@ -110,14 +122,18 @@ struct CreateGoalSheet: View {
                         selectedID: $selectedContextID
                     )
 
-                    fieldLabel("Pursuit")
-                    CadencePursuitPickerButton(
-                        pursuits: pursuitChoices,
-                        selectedID: $selectedPursuitID,
-                        allowNone: false,
-                        onCreate: { showCreatePursuit = true }
+                    fieldLabel("Parent Goal")
+                    GoalLinkPickerButton(
+                        goals: parentGoalChoices,
+                        selectedID: $selectedParentGoalID,
+                        noneTitle: "No parent goal",
+                        noneSubtitle: "Keep as a top-level goal",
+                        searchPlaceholder: "Search goals",
+                        emptyText: "No matching goals"
                     )
-                    CadencePursuitRequiredHint(hasSelection: selectedPursuitID != nil)
+
+                    fieldLabel("Kind")
+                    GoalKindSection(selection: $selectedKind)
 
                     if isEditing {
                         fieldLabel("Status")
@@ -168,6 +184,9 @@ struct CreateGoalSheet: View {
                         }
                     }
 
+                    fieldLabel("Icon")
+                    IconGrid(selected: $selectedIcon)
+
                     // Color
                     fieldLabel("Color")
                     ColorGrid(selected: $selectedColor)
@@ -198,7 +217,7 @@ struct CreateGoalSheet: View {
             }
             .padding(16)
         }
-        .frame(width: 420, height: 620)
+        .frame(width: 420, height: 660)
         .background(Theme.surface)
         .onChange(of: startDate) {
             if endDate < startDate {
@@ -208,14 +227,6 @@ struct CreateGoalSheet: View {
         .onChange(of: endDate) {
             if endDate < startDate {
                 endDate = startDate
-            }
-        }
-        .sheet(isPresented: $showCreatePursuit) {
-            CreatePursuitSheet(context: selectedContext) { pursuit in
-                selectedPursuitID = pursuit.id
-                if selectedContextID == nil {
-                    selectedContextID = pursuit.context?.id
-                }
             }
         }
     }
@@ -229,38 +240,31 @@ struct CreateGoalSheet: View {
     }
 
     private func save() {
-        let trimmed = title.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, selectedPursuitID != nil else { return }
+        guard GoalAssignmentRules.canSaveGoal(title: title) else { return }
 
-        if let editingGoal {
-            applyFields(to: editingGoal, title: trimmed)
-        } else {
-            let goal = Goal(title: trimmed)
-            goal.progressType = .subtasks
-            goal.targetHours = 0
-            goal.order = allGoals.count
-            applyFields(to: goal, title: trimmed)
-            modelContext.insert(goal)
-            attachInitialList(to: goal)
+        let saved = CadenceTrackingMutationSupport.saveGoal(
+            editingGoal,
+            title: title,
+            desc: desc,
+            startDate: DateFormatters.dateKey(from: startDate),
+            endDate: DateFormatters.dateKey(from: max(endDate, startDate)),
+            progressType: editingGoal?.progressType ?? .subtasks,
+            targetHours: editingGoal?.targetHours ?? 0,
+            icon: selectedIcon,
+            colorHex: selectedColor,
+            kind: selectedKind,
+            status: selectedStatus,
+            context: selectedContextID.flatMap { id in allContexts.first { $0.id == id } },
+            parentGoal: selectedParentGoal,
+            allGoals: allGoals,
+            modelContext: modelContext
+        )
+
+        if editingGoal == nil, let saved {
+            attachInitialList(to: saved)
         }
 
         dismiss()
-    }
-
-    private func applyFields(to goal: Goal, title: String) {
-        goal.title = title
-        goal.desc = desc.trimmingCharacters(in: .whitespaces)
-        goal.startDate = DateFormatters.dateKey(from: startDate)
-        goal.endDate = DateFormatters.dateKey(from: max(endDate, startDate))
-        goal.colorHex = selectedColor
-        goal.status = selectedStatus
-        let selectedPursuit = selectedPursuitID.flatMap { id in allPursuits.first { $0.id == id } }
-        goal.pursuit = selectedPursuit
-        if let selectedContextID {
-            goal.context = allContexts.first { $0.id == selectedContextID }
-        } else {
-            goal.context = selectedPursuit?.context
-        }
     }
 
     private func attachInitialList(to goal: Goal) {
@@ -303,7 +307,7 @@ private struct GoalStatusSection: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6))
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title(for: status))
+                    Text(status.label)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(isSelected ? Theme.text : Theme.muted)
                         .lineLimit(1)
@@ -328,14 +332,6 @@ private struct GoalStatusSection: View {
             .contentShape(RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.cadencePlain)
-    }
-
-    private func title(for status: GoalStatus) -> String {
-        switch status {
-        case .active: return "Active"
-        case .paused: return "Paused"
-        case .done: return "Done"
-        }
     }
 
     private func subtitle(for status: GoalStatus) -> String {

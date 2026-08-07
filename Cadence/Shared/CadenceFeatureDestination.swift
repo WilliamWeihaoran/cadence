@@ -34,7 +34,6 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
     case calendar
     case notes
     case lists
-    case pursuits
     case goals
     case habits
     case search
@@ -48,7 +47,6 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         .focus,
         .inbox,
         .calendar,
-        .pursuits,
         .goals,
         .habits
     ]
@@ -64,7 +62,6 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         .notes,
         .focus,
         .lists,
-        .pursuits,
         .goals,
         .habits
     ]
@@ -76,14 +73,14 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
 
     static let workspaceDrawerSections: [CadenceFeatureSection] = [
         CadenceFeatureSection(kind: .plan, destinations: primaryOrder),
-        CadenceFeatureSection(kind: .progress, destinations: [.focus, .pursuits, .goals, .habits]),
+        CadenceFeatureSection(kind: .progress, destinations: [.focus, .goals, .habits]),
         CadenceFeatureSection(kind: .organize, destinations: [.notes, .lists]),
         CadenceFeatureSection(kind: .workspace, destinations: utilityOrder)
     ]
 
     static let compactMoreSections: [CadenceFeatureSection] = [
         CadenceFeatureSection(kind: .plan, destinations: [.allTasks, .lists, .calendar]),
-        CadenceFeatureSection(kind: .progress, destinations: [.focus, .pursuits, .goals, .habits]),
+        CadenceFeatureSection(kind: .progress, destinations: [.focus, .goals, .habits]),
         CadenceFeatureSection(kind: .workspace, destinations: [.settings])
     ]
 
@@ -91,14 +88,14 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .today, .allTasks, .focus, .inbox, .calendar:
             return true
-        case .notes, .lists, .pursuits, .goals, .habits, .search, .settings:
+        case .notes, .lists, .goals, .habits, .search, .settings:
             return false
         }
     }
 
     var isTrackingNavigation: Bool {
         switch self {
-        case .pursuits, .goals, .habits:
+        case .goals, .habits:
             return true
         case .today, .allTasks, .focus, .inbox, .calendar, .notes, .lists, .search, .settings:
             return false
@@ -109,7 +106,7 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .search, .settings:
             return true
-        case .today, .allTasks, .focus, .inbox, .calendar, .notes, .lists, .pursuits, .goals, .habits:
+        case .today, .allTasks, .focus, .inbox, .calendar, .notes, .lists, .goals, .habits:
             return false
         }
     }
@@ -123,8 +120,7 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         case .calendar: return "Calendar"
         case .notes: return "Notes"
         case .lists: return "Lists"
-        case .pursuits: return "Pursuits"
-        case .goals: return "Milestones"
+        case .goals: return "Goals"
         case .habits: return "Habits"
         case .search: return "Search"
         case .settings: return "Settings"
@@ -134,7 +130,6 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
     var compactTitle: String {
         switch self {
         case .allTasks: return "Tasks"
-        case .goals: return "Goals"
         default: return title
         }
     }
@@ -148,8 +143,7 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         case .calendar: return "Schedule tasks and events"
         case .notes: return "Daily and permanent notes"
         case .lists: return "Areas, projects, and lists"
-        case .pursuits: return "Long-running directions"
-        case .goals: return "Milestones and outcomes"
+        case .goals: return "Directions and milestones"
         case .habits: return "Recurring progress"
         case .search: return "Find tasks and notes"
         case .settings: return "Workspace preferences"
@@ -165,8 +159,7 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         case .calendar: return "Timeline, month, and board"
         case .notes: return "Daily, weekly, and permanent notes"
         case .lists: return "Areas, projects, and lists"
-        case .pursuits: return "Long-running directions"
-        case .goals: return "Milestones and outcomes"
+        case .goals: return "Directions and milestones"
         case .habits: return "Repeating commitments"
         case .search: return "Find anything in Cadence"
         case .settings: return "Preferences and diagnostics"
@@ -189,10 +182,8 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
             return "notes daily weekly notepad markdown permanent meeting"
         case .lists:
             return "lists areas projects contexts organize kanban planning links"
-        case .pursuits:
-            return "pursuits aspirations directions progress"
         case .goals:
-            return "goals milestones outcomes progress timeline"
+            return "goals milestones outcomes progress timeline pursuits aspirations directions"
         case .habits:
             return "habits routines streaks recurring commitments"
         case .search:
@@ -215,7 +206,6 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         case .calendar: return "calendar"
         case .notes: return "note.text"
         case .lists: return "folder.fill"
-        case .pursuits: return "sparkles"
         case .goals: return "flag.fill"
         case .habits: return "flame.fill"
         case .search: return "magnifyingglass"
@@ -236,7 +226,6 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         case .calendar: return "#9E8CFF"
         case .notes: return "#9E8CFF"
         case .lists: return "#4ECB71"
-        case .pursuits: return "#A78BFA"
         case .goals: return "#4ECB71"
         case .habits: return "#FFB84D"
         case .search: return "#9E8CFF"
@@ -250,7 +239,6 @@ enum CadenceFeatureBadgeSupport {
         let todayCount: Int
         let allTaskCount: Int
         let inboxCount: Int
-        let activePursuitCount: Int
         let activeGoalCount: Int
         let habitCount: Int
         let activeListCount: Int
@@ -258,7 +246,6 @@ enum CadenceFeatureBadgeSupport {
         init(
             tasks: [AppTask],
             todayKey: String = DateFormatters.todayKey(),
-            activePursuitCount: Int = 0,
             activeGoalCount: Int = 0,
             habitCount: Int = 0,
             activeListCount: Int = 0
@@ -266,7 +253,6 @@ enum CadenceFeatureBadgeSupport {
             self.todayCount = CadenceTaskQuerySupport.scheduledOrDueTodayCount(from: tasks, todayKey: todayKey)
             self.allTaskCount = CadenceTaskQuerySupport.openTaskCount(from: tasks)
             self.inboxCount = CadenceTaskQuerySupport.openInboxTaskCount(from: tasks)
-            self.activePursuitCount = activePursuitCount
             self.activeGoalCount = activeGoalCount
             self.habitCount = habitCount
             self.activeListCount = activeListCount
@@ -280,8 +266,6 @@ enum CadenceFeatureBadgeSupport {
                 return CadenceTaskQuerySupport.badgeCount(allTaskCount)
             case .inbox:
                 return CadenceTaskQuerySupport.badgeCount(inboxCount)
-            case .pursuits:
-                return activePursuitCount > 0 ? activePursuitCount : nil
             case .goals:
                 return activeGoalCount > 0 ? activeGoalCount : nil
             case .habits:
@@ -298,7 +282,6 @@ enum CadenceFeatureBadgeSupport {
         for destination: CadenceFeatureDestination,
         tasks: [AppTask],
         todayKey: String = DateFormatters.todayKey(),
-        activePursuitCount: Int = 0,
         activeGoalCount: Int = 0,
         habitCount: Int = 0,
         activeListCount: Int = 0
@@ -306,7 +289,6 @@ enum CadenceFeatureBadgeSupport {
         Snapshot(
             tasks: tasks,
             todayKey: todayKey,
-            activePursuitCount: activePursuitCount,
             activeGoalCount: activeGoalCount,
             habitCount: habitCount,
             activeListCount: activeListCount
