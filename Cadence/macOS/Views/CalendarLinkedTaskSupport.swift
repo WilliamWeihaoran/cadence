@@ -1,11 +1,22 @@
 #if os(macOS)
+import EventKit
 import SwiftData
+
+/// Minimal seam over `CalendarManager` so calendar-link reconciliation (deciding whether a task's
+/// stale `calendarEventID` should be cleared) can be regression-tested with a fake implementation
+/// instead of requiring live EventKit authorization/data.
+protocol CalendarEventLookup {
+    var isAuthorized: Bool { get }
+    func event(withIdentifier identifier: String) -> EKEvent?
+}
+
+extension CalendarManager: CalendarEventLookup {}
 
 enum CalendarLinkedTaskSupport {
     static func clearMissingEventLinks(
         in tasks: [AppTask],
         modelContext: ModelContext,
-        calendarManager: CalendarManager
+        calendarManager: CalendarEventLookup
     ) {
         guard calendarManager.isAuthorized else { return }
 
@@ -22,16 +33,16 @@ enum CalendarLinkedTaskSupport {
 
     static func clearMissingEventLinks(
         modelContext: ModelContext,
-        calendarManager: CalendarManager
+        calendarManager: CalendarEventLookup
     ) {
         let descriptor = FetchDescriptor<AppTask>()
         let tasks = (try? modelContext.fetch(descriptor)) ?? []
         clearMissingEventLinks(in: tasks, modelContext: modelContext, calendarManager: calendarManager)
     }
 
-    private static func shouldClearCalendarLink(
+    static func shouldClearCalendarLink(
         for task: AppTask,
-        calendarManager: CalendarManager
+        calendarManager: CalendarEventLookup
     ) -> Bool {
         guard !task.calendarEventID.isEmpty else { return false }
 

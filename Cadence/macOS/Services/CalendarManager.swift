@@ -114,8 +114,19 @@ final class CalendarManager {
             object: store,
             queue: .main
         ) { [weak self] _ in
-            self?.storeVersion += 1
+            self?.handleStoreChangeNotification()
         }
+    }
+
+    /// Handles an `EKEventStoreChanged` notification. EventKit posts this notification both for
+    /// ordinary data changes (create/update/delete elsewhere) and when the user grants or revokes
+    /// Calendar access from System Settings while Cadence keeps running. Re-deriving authorization
+    /// here — not just bumping `storeVersion` — prevents `isAuthorized` from staying stale-true
+    /// indefinitely after a mid-session revocation (previously only `refreshAuthorizationState()`
+    /// at app-foreground caught that, so a revocation could go undetected until relaunch).
+    func handleStoreChangeNotification() {
+        storeVersion += 1
+        refreshAuthorizationState()
     }
 
     func stopObserving() {
@@ -338,10 +349,14 @@ final class CalendarManager {
         }
     }
 
-    private func dayBounds(for date: Date) -> (start: Date, end: Date) {
-        let cal = Calendar.current
-        let start = cal.startOfDay(for: date)
-        let end = cal.date(byAdding: .day, value: 1, to: start) ?? start
+    /// Internal (not private) and calendar-injectable so day-boundary correctness — including
+    /// across DST transitions — is directly testable without touching live EventKit. Uses
+    /// `Calendar`'s wall-clock-aware day arithmetic (not a fixed 24-hour offset), so a day that is
+    /// actually 23 or 25 hours long around a DST transition still resolves to exactly one calendar
+    /// day rather than drifting into the wrong day.
+    func dayBounds(for date: Date, calendar: Calendar = .current) -> (start: Date, end: Date) {
+        let start = calendar.startOfDay(for: date)
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
         return (start, end)
     }
 
