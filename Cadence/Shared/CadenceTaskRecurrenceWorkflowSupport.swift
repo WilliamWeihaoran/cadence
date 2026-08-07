@@ -38,6 +38,37 @@ enum CadenceTaskRecurrenceWorkflowSupport {
         task.status = .todo
     }
 
+    /// If a predecessor's recorded `recurrenceSpawnedTaskID` points at a task being deleted, that
+    /// predecessor would otherwise believe the series already has a live next occurrence forever —
+    /// even though that occurrence no longer exists. That silently kills the series: the predecessor
+    /// can never spawn a replacement, including if it's later reopened and completed again.
+    ///
+    /// Walk forward through the chain of *also-deleted* successors (covers deleting several
+    /// consecutive occurrences in one batch, e.g. a multi-select delete) to find the first surviving
+    /// occurrence and re-point the predecessor directly at it, or clear the pointer to nil if nothing
+    /// in the chain survives. Callers on every platform must run this before actually deleting the
+    /// tasks — sharing one implementation here (rather than each delete path reimplementing it) is
+    /// what keeps that guarantee true everywhere.
+    static func repairDanglingRecurrenceLinks(forDeleted deletedTasks: [AppTask], allTasks: [AppTask]) {
+        let deletedByID = Dictionary(uniqueKeysWithValues: deletedTasks.map { ($0.id, $0) })
+        guard !deletedByID.isEmpty else { return }
+
+        func survivingSuccessor(startingFrom taskID: UUID) -> UUID? {
+            var seen = Set<UUID>()
+            var currentID: UUID? = taskID
+            while let id = currentID, seen.insert(id).inserted {
+                guard let deletedTask = deletedByID[id] else { return id }
+                currentID = deletedTask.recurrenceSpawnedTaskID
+            }
+            return nil
+        }
+
+        for task in allTasks where deletedByID[task.id] == nil {
+            guard let spawnedID = task.recurrenceSpawnedTaskID, deletedByID[spawnedID] != nil else { continue }
+            task.recurrenceSpawnedTaskID = survivingSuccessor(startingFrom: spawnedID)
+        }
+    }
+
     private static func spawnNextOccurrenceIfNeeded(from task: AppTask, in context: ModelContext, now: Date) {
         guard task.isRecurring, task.recurrenceSpawnedTaskID == nil else { return }
         ensureRecurrenceSeriesMetadata(for: task)

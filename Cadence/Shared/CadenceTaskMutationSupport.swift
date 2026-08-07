@@ -254,6 +254,12 @@ enum CadenceTaskMutationSupport {
         task.subtasks = []
         task.bundle?.tasks = (task.bundle?.tasks ?? []).filter { $0.id != task.id }
 
+        // Otherwise, if `task` is a mid-series recurring occurrence, whichever task recorded it as
+        // its `recurrenceSpawnedTaskID` would keep believing the series has a live next occurrence
+        // forever, silently stalling it — see CadenceTaskRecurrenceWorkflowSupport for the full story.
+        let allTasks = (try? modelContext.fetch(FetchDescriptor<AppTask>())) ?? []
+        CadenceTaskRecurrenceWorkflowSupport.repairDanglingRecurrenceLinks(forDeleted: [task], allTasks: allTasks)
+
         for subtask in subtasks {
             modelContext.delete(subtask)
         }

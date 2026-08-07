@@ -466,9 +466,9 @@ struct TaskDeleteHelpersScenarioTests {
         #expect(remaining.count == 2)
         #expect(remaining.contains { $0.id == taskA.id })
         #expect(remaining.contains { $0.id == taskCID })
-        // A still (correctly) believes it spawned B — B's replacement (C) already exists and
-        // continues the chain, so no repair is needed or attempted here.
-        #expect(taskA.recurrenceSpawnedTaskID == taskBID)
+        // B is gone, but its replacement (C) already exists — A is re-pointed directly at the
+        // surviving successor rather than left dangling on a deleted id.
+        #expect(taskA.recurrenceSpawnedTaskID == taskCID)
 
         let targets = CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets(
             from: taskA,
@@ -476,8 +476,110 @@ struct TaskDeleteHelpersScenarioTests {
             scope: .thisAndFuture
         )
         // Walking "this and future" from A must not crash even though B (the recorded link) is
-        // gone, and must still land on the remaining series member (C) via the seriesID fallback.
+        // gone, and must still land on the remaining series member (C).
         #expect(Set(targets.map(\.id)) == Set([taskA.id, taskCID]))
+    }
+
+    @Test func deletingConsecutiveMiddleOccurrencesTogetherRepointsPredecessorToSurvivor() throws {
+        resetSharedManagers()
+        defer { resetSharedManagers() }
+
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let taskA = AppTask(title: "Weekly review")
+        taskA.recurrenceRule = .weekly
+        taskA.scheduledDate = "2026-08-04"
+        modelContext.insert(taskA)
+        try modelContext.save()
+
+        TaskWorkflowService.markDone(taskA, in: modelContext)
+        try modelContext.save()
+        let taskBID = try #require(taskA.recurrenceSpawnedTaskID)
+        let taskB = try #require(try modelContext.fetch(FetchDescriptor<AppTask>()).first { $0.id == taskBID })
+
+        TaskWorkflowService.markDone(taskB, in: modelContext)
+        try modelContext.save()
+        let taskCID = try #require(taskB.recurrenceSpawnedTaskID)
+        let taskC = try #require(try modelContext.fetch(FetchDescriptor<AppTask>()).first { $0.id == taskCID })
+
+        TaskWorkflowService.markDone(taskC, in: modelContext)
+        try modelContext.save()
+        let taskDID = try #require(taskC.recurrenceSpawnedTaskID)
+
+        // Delete B and C together in one batch (e.g. a multi-select delete). Neither is individually
+        // a "tip" (each recorded a live successor at delete time), so a naive check that only clears a
+        // predecessor's pointer when the deleted task itself has no successor would miss this entirely
+        // and leave A pointing at deleted B forever.
+        modelContext.deleteTasks(withIDs: [taskBID, taskCID])
+        try modelContext.save()
+
+        let remaining = try modelContext.fetch(FetchDescriptor<AppTask>())
+        #expect(remaining.count == 2)
+        #expect(remaining.contains { $0.id == taskA.id })
+        #expect(remaining.contains { $0.id == taskDID })
+        #expect(taskA.recurrenceSpawnedTaskID == taskDID)
+    }
+
+    @Test func deletingEntireRemainderOfSeriesClearsPredecessorPointerToNil() throws {
+        resetSharedManagers()
+        defer { resetSharedManagers() }
+
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let taskA = AppTask(title: "Weekly review")
+        taskA.recurrenceRule = .weekly
+        taskA.scheduledDate = "2026-08-04"
+        modelContext.insert(taskA)
+        try modelContext.save()
+
+        TaskWorkflowService.markDone(taskA, in: modelContext)
+        try modelContext.save()
+        let taskBID = try #require(taskA.recurrenceSpawnedTaskID)
+        let taskB = try #require(try modelContext.fetch(FetchDescriptor<AppTask>()).first { $0.id == taskBID })
+
+        // Delete the only remaining occurrence (B), leaving nothing alive downstream of A.
+        modelContext.deleteTask(taskB)
+        try modelContext.save()
+
+        #expect(taskA.recurrenceSpawnedTaskID == nil)
+    }
+
+    // MARK: - iOS delete path (CadenceTaskMutationSupport.delete)
+
+    @Test func iosDeletePathAlsoRepairsDanglingRecurrenceLinks() throws {
+        resetSharedManagers()
+        defer { resetSharedManagers() }
+
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        // Deliberately uses the shared symbols iOS calls directly (not the macOS-only
+        // TaskWorkflowService wrapper or ModelContext.deleteTask) to prove the iOS delete path —
+        // CadenceTaskMutationSupport.delete — got the same fix as macOS's TaskDeleteHelpers, rather
+        // than silently lacking it.
+        let taskA = AppTask(title: "Weekly review")
+        taskA.recurrenceRule = .weekly
+        taskA.scheduledDate = "2026-08-04"
+        modelContext.insert(taskA)
+        try modelContext.save()
+
+        CadenceTaskRecurrenceWorkflowSupport.markDone(taskA, in: modelContext)
+        try modelContext.save()
+        let taskBID = try #require(taskA.recurrenceSpawnedTaskID)
+        let taskB = try #require(try modelContext.fetch(FetchDescriptor<AppTask>()).first { $0.id == taskBID })
+
+        CadenceTaskMutationSupport.delete(taskB, modelContext: modelContext)
+
+        #expect(taskA.recurrenceSpawnedTaskID == nil)
+
+        // The series can recover: completing A again spawns a fresh occurrence instead of the
+        // recurrenceSpawnedTaskID == nil guard staying blocked on a stale pointer forever.
+        CadenceTaskRecurrenceWorkflowSupport.markTodo(taskA)
+        CadenceTaskRecurrenceWorkflowSupport.markDone(taskA, in: modelContext)
+        try modelContext.save()
+        #expect(taskA.recurrenceSpawnedTaskID != nil)
     }
 }
 #endif

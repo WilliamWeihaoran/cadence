@@ -30,7 +30,7 @@ extension ModelContext {
         }
 
         let touchedBundles = uniqueBundles(from: tasks.compactMap(\.bundle))
-        breakDanglingRecurrenceLinks(forDeleted: tasks, allTasks: allTasks)
+        CadenceTaskRecurrenceWorkflowSupport.repairDanglingRecurrenceLinks(forDeleted: tasks, allTasks: allTasks)
 
         for task in tasks {
             detachRelationships(for: task)
@@ -48,24 +48,6 @@ extension ModelContext {
 
         // Cheaper than a full reconcile since we already know exactly which tasks were removed.
         Task { await NotificationManager.shared.cancel(taskIDs: Array(taskIDs)) }
-    }
-
-    /// If a deleted task was the "tip" of a recurring series (i.e. it hadn't itself spawned a
-    /// successor yet), any predecessor that recorded this task as its spawned occurrence would
-    /// otherwise believe the series already has a live next occurrence forever — even though that
-    /// occurrence no longer exists. That silently kills the series: the predecessor can never spawn
-    /// a replacement, including if it's later reopened and completed again. Clear the stale pointer
-    /// so the series can recover.
-    private func breakDanglingRecurrenceLinks(forDeleted deletedTasks: [AppTask], allTasks: [AppTask]) {
-        let deletedIDs = Set(deletedTasks.map(\.id))
-        let deletedTipIDs = Set(deletedTasks.filter { $0.recurrenceSpawnedTaskID == nil }.map(\.id))
-        guard !deletedTipIDs.isEmpty else { return }
-
-        for task in allTasks where !deletedIDs.contains(task.id) {
-            if let spawnedID = task.recurrenceSpawnedTaskID, deletedTipIDs.contains(spawnedID) {
-                task.recurrenceSpawnedTaskID = nil
-            }
-        }
     }
 
     private func cancelTaskState(for taskIDs: Set<UUID>) {
