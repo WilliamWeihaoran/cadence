@@ -118,15 +118,21 @@ enum CadenceMCPToolDefinitions {
                 "query": stringProperty("Optional habit search."),
                 "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
             ])),
+            Tool(name: "list_pursuits", description: "List Cadence pursuits with goal and habit counts.", inputSchema: schema([
+                "contextId": uuidProperty("Optional context UUID."),
+                "status": stringProperty("Optional pursuit status.", enumValues: PursuitStatus.allCases.map(\.rawValue)),
+                "query": stringProperty("Optional pursuit search."),
+                "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
+            ])),
             Tool(name: "list_links", description: "List saved links attached to Cadence areas or projects.", inputSchema: schema([
                 "containerKind": stringProperty("Optional area or project.", enumValues: ["area", "project"]),
                 "containerId": uuidProperty("Optional area/project UUID."),
                 "query": stringProperty("Optional link search."),
                 "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
             ])),
-            Tool(name: "search_cadence", description: "Search Cadence tasks, containers, contexts, documents, notes, goals, habits, links, and tags.", inputSchema: schema([
+            Tool(name: "search_cadence", description: "Search Cadence tasks, containers, contexts, documents, notes, goals, habits, pursuits, links, and tags.", inputSchema: schema([
                 "query": stringProperty("Search query.", minLength: 1),
-                "scopes": flexibleStringArrayProperty("Optional scopes: tasks, containers, contexts, documents, notes, core_notes, event_notes, goals, habits, links, tags.", enumValues: ["tasks", "containers", "contexts", "documents", "notes", "core_notes", "event_notes", "goals", "habits", "links", "tags"]),
+                "scopes": flexibleStringArrayProperty("Optional scopes: tasks, containers, contexts, documents, notes, core_notes, event_notes, goals, habits, pursuits, links, tags.", enumValues: ["tasks", "containers", "contexts", "documents", "notes", "core_notes", "event_notes", "goals", "habits", "pursuits", "links", "tags"]),
                 "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
             ], required: ["query"])),
             Tool(name: "get_recent_mcp_writes", description: "Read recent Cadence MCP write audit log entries.", inputSchema: schema([

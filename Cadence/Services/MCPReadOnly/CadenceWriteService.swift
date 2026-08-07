@@ -302,8 +302,16 @@ final class CadenceWriteService {
         if task.completedAt != nil || task.status != .cancelled {
             // Cancelling a single occurrence still advances a recurring series (mirrors completeTask),
             // otherwise cancelling instead of completing one occurrence would silently kill all future ones.
+            let previouslySpawnedTaskID = task.recurrenceSpawnedTaskID
             CadenceTaskRecurrenceWorkflowSupport.markCancelled(task, in: context)
-            try saveNotifyAndAudit(.task(tool: "cancel_task", id: task.id, summary: "Cancelled task: \(task.title)"))
+
+            var auditEntries: [PendingAuditEntry] = [
+                .task(tool: "cancel_task", id: task.id, summary: "Cancelled task: \(task.title)")
+            ]
+            if let spawnedTaskID = task.recurrenceSpawnedTaskID, spawnedTaskID != previouslySpawnedTaskID {
+                auditEntries.append(.task(tool: "cancel_task", id: spawnedTaskID, summary: "Spawned recurring task from: \(task.title)"))
+            }
+            try saveNotifyAndAudit(auditEntries)
         }
         return try readService.getTask(taskID: task.id.uuidString)
     }
@@ -346,16 +354,23 @@ final class CadenceWriteService {
         }
 
         var changed: [AppTask] = []
+        var auditEntries: [PendingAuditEntry] = []
         for task in selectedTasks where task.status != .cancelled || task.completedAt != nil {
-            task.completedAt = nil
-            task.status = .cancelled
+            // Mirror cancelTask's single-task behavior: route through the shared recurrence
+            // workflow instead of setting status/completedAt directly, otherwise bulk-cancelling
+            // a recurring task silently kills the rest of its series (it never spawns the next
+            // occurrence the way completeTask/cancelTask do).
+            let previouslySpawnedTaskID = task.recurrenceSpawnedTaskID
+            CadenceTaskRecurrenceWorkflowSupport.markCancelled(task, in: context)
             changed.append(task)
+            auditEntries.append(.task(tool: "bulk_cancel_tasks", id: task.id, summary: "Bulk cancelled task: \(task.title)"))
+            if let spawnedTaskID = task.recurrenceSpawnedTaskID, spawnedTaskID != previouslySpawnedTaskID {
+                auditEntries.append(.task(tool: "bulk_cancel_tasks", id: spawnedTaskID, summary: "Spawned recurring task from: \(task.title)"))
+            }
         }
 
         if !changed.isEmpty {
-            try saveNotifyAndAudit(changed.map {
-                .task(tool: "bulk_cancel_tasks", id: $0.id, summary: "Bulk cancelled task: \($0.title)")
-            })
+            try saveNotifyAndAudit(auditEntries)
         }
 
         return CadenceBulkCancelResult(

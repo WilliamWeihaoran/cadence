@@ -31,7 +31,7 @@ enum CadenceReadError: Error, LocalizedError, Sendable {
         case .invalidStatus(let value):
             return "Invalid status value: \(value)."
         case .invalidScope(let value):
-            return "Invalid search scope: \(value). Expected tasks, containers, contexts, documents, notes, core_notes, event_notes, goals, habits, links, or tags."
+            return "Invalid search scope: \(value). Expected tasks, containers, contexts, documents, notes, core_notes, event_notes, goals, habits, pursuits, links, or tags."
         case .invalidNoteKind(let value):
             return "Invalid note kind: \(value). Expected daily, weekly, permanent, list, or meeting."
         case .incompleteContainerFilter:
@@ -86,6 +86,13 @@ struct CadenceGoalListOptions: Sendable {
 struct CadenceHabitListOptions: Sendable {
     var contextId: String? = nil
     var goalId: String? = nil
+    var query: String? = nil
+    var limit: Int = 50
+}
+
+struct CadencePursuitListOptions: Sendable {
+    var contextId: String? = nil
+    var status: String? = nil
     var query: String? = nil
     var limit: Int = 50
 }
@@ -612,6 +619,32 @@ final class CadenceReadService {
             .map(habitSummary))
     }
 
+    func listPursuits(options: CadencePursuitListOptions) throws -> [CadenceMCPPursuitSummary] {
+        let contextUUID = try options.contextId.map(uuid)
+        let normalizedStatus = try options.status.map(validatePursuitStatus)
+        var pursuits = try fetchPursuits()
+
+        if let contextUUID {
+            pursuits = pursuits.filter { $0.context?.id == contextUUID }
+        }
+        if let normalizedStatus {
+            pursuits = pursuits.filter { $0.statusRaw == normalizedStatus }
+        }
+        if let query = options.query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
+            pursuits = pursuits.filter { pursuit in
+                CadenceSearchMatcher.matchScore(query: query, fields: [pursuit.title, pursuit.desc, pursuit.context?.name ?? "", pursuit.statusRaw, pursuit.kindRaw]) != nil
+            }
+        }
+
+        return Array(pursuits
+            .sorted {
+                if $0.order != $1.order { return $0.order < $1.order }
+                return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
+            .prefix(cappedLimit(options.limit))
+            .map(pursuitSummary))
+    }
+
     func listLinks(options: CadenceSavedLinkListOptions) throws -> [CadenceSavedLinkSummary] {
         var links = try fetchLinks()
 
@@ -638,7 +671,7 @@ final class CadenceReadService {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 
-        let selectedScopes = try validateScopes(scopes ?? ["tasks", "containers", "contexts", "documents", "core_notes", "event_notes", "goals", "habits", "links", "tags"])
+        let selectedScopes = try validateScopes(scopes ?? ["tasks", "containers", "contexts", "documents", "core_notes", "event_notes", "goals", "habits", "pursuits", "links", "tags"])
         let noteScopes = Set(["documents", "notes", "core_notes", "event_notes"])
         let notes = selectedScopes.isDisjoint(with: noteScopes) ? [] : try fetchNotes()
         var hits: [CadenceSearchHit] = []
@@ -761,6 +794,20 @@ final class CadenceReadService {
             }
         }
 
+        if selectedScopes.contains("pursuits") {
+            hits += try fetchPursuits().compactMap { pursuit in
+                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [pursuit.title, pursuit.desc, pursuit.context?.name ?? "", pursuit.statusRaw, pursuit.kindRaw]) else { return nil }
+                return CadenceSearchHit(
+                    entityType: "pursuit",
+                    entityId: pursuit.id.uuidString,
+                    title: resolvedTitle(pursuit.title, fallback: "Untitled Pursuit"),
+                    subtitle: [pursuit.context?.name ?? "No context", pursuit.statusRaw].joined(separator: " - "),
+                    excerpt: excerpt(pursuit.desc),
+                    score: score
+                )
+            }
+        }
+
         if selectedScopes.contains("links") {
             hits += try fetchLinks().compactMap { link in
                 guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [link.title, link.url, link.area?.name ?? "", link.project?.name ?? ""]) else { return nil }
@@ -838,6 +885,10 @@ final class CadenceReadService {
 
     private func fetchLinks() throws -> [SavedLink] {
         try context.fetch(FetchDescriptor<SavedLink>())
+    }
+
+    private func fetchPursuits() throws -> [Pursuit] {
+        try context.fetch(FetchDescriptor<Pursuit>())
     }
 
     private func fetchTaskBundles() throws -> [TaskBundle] {
@@ -918,6 +969,8 @@ final class CadenceReadService {
             contextName: goal.context?.name,
             parentGoalId: goal.parentGoal?.id.uuidString,
             parentGoalTitle: goal.parentGoal?.title,
+            pursuitId: goal.pursuit?.id.uuidString,
+            pursuitTitle: goal.pursuit?.title,
             linkedListCount: (goal.listLinks ?? []).filter { $0.area != nil || $0.project != nil }.count,
             taskCount: (goal.tasks ?? []).filter { !$0.isCancelled }.count,
             habitCount: (goal.habits ?? []).count,
@@ -939,10 +992,30 @@ final class CadenceReadService {
             contextId: habit.context?.id.uuidString,
             contextName: habit.context?.name,
             goal: habit.goal.map(goalRef),
+            pursuitId: habit.pursuit?.id.uuidString,
+            pursuitTitle: habit.pursuit?.title,
             currentStreak: habit.currentStreak,
             completionCount: (habit.completions ?? []).count,
             completedToday: (habit.completions ?? []).contains { $0.date == today },
             createdAt: format(habit.createdAt)
+        )
+    }
+
+    private func pursuitSummary(_ pursuit: Pursuit) -> CadenceMCPPursuitSummary {
+        CadenceMCPPursuitSummary(
+            id: pursuit.id.uuidString,
+            title: resolvedTitle(pursuit.title, fallback: "Untitled Pursuit"),
+            description: pursuit.desc,
+            icon: pursuit.icon,
+            colorHex: pursuit.colorHex,
+            kind: pursuit.kindRaw,
+            status: pursuit.statusRaw,
+            order: pursuit.order,
+            contextId: pursuit.context?.id.uuidString,
+            contextName: pursuit.context?.name,
+            goalCount: (pursuit.goals ?? []).count,
+            habitCount: (pursuit.habits ?? []).count,
+            createdAt: format(pursuit.createdAt)
         )
     }
 
@@ -1042,7 +1115,8 @@ final class CadenceReadService {
             projectCount: (context.projects ?? []).count,
             activeTaskCount: (context.tasks ?? []).filter { !$0.isDone && !$0.isCancelled }.count,
             goalCount: (context.goals ?? []).count,
-            habitCount: (context.habits ?? []).count
+            habitCount: (context.habits ?? []).count,
+            pursuitCount: (context.pursuits ?? []).count
         )
     }
 
@@ -1281,6 +1355,15 @@ final class CadenceReadService {
         return normalized
     }
 
+    private func validatePursuitStatus(_ status: String) throws -> String {
+        let normalized = status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let valid = Set(PursuitStatus.allCases.map(\.rawValue))
+        guard valid.contains(normalized) else {
+            throw CadenceReadError.invalidStatus(status)
+        }
+        return normalized
+    }
+
     private func validateNoteKind(_ kind: String) throws -> String {
         let normalized = kind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard NoteKind(rawValue: normalized) != nil else {
@@ -1290,7 +1373,7 @@ final class CadenceReadService {
     }
 
     private func validateScopes(_ scopes: [String]) throws -> Set<String> {
-        let valid = Set(["tasks", "containers", "contexts", "documents", "notes", "core_notes", "event_notes", "goals", "habits", "links", "tags"])
+        let valid = Set(["tasks", "containers", "contexts", "documents", "notes", "core_notes", "event_notes", "goals", "habits", "pursuits", "links", "tags"])
         return try Set(scopes.map { scope in
             let normalized = scope.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard valid.contains(normalized) else {

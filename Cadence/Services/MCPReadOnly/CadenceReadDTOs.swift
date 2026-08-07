@@ -12,6 +12,7 @@ struct CadenceContextRef: Codable, Sendable {
     let activeTaskCount: Int
     let goalCount: Int
     let habitCount: Int
+    let pursuitCount: Int
 }
 
 struct CadenceContainerRef: Codable, Sendable {
@@ -249,6 +250,8 @@ struct CadenceGoalSummary: Codable, Sendable {
     let contextName: String?
     let parentGoalId: String?
     let parentGoalTitle: String?
+    let pursuitId: String?
+    let pursuitTitle: String?
     let linkedListCount: Int
     let taskCount: Int
     let habitCount: Int
@@ -277,9 +280,27 @@ struct CadenceHabitSummary: Codable, Sendable {
     let contextId: String?
     let contextName: String?
     let goal: CadenceGoalRef?
+    let pursuitId: String?
+    let pursuitTitle: String?
     let currentStreak: Int
     let completionCount: Int
     let completedToday: Bool
+    let createdAt: String
+}
+
+struct CadenceMCPPursuitSummary: Codable, Sendable {
+    let id: String
+    let title: String
+    let description: String
+    let icon: String
+    let colorHex: String
+    let kind: String
+    let status: String
+    let order: Int
+    let contextId: String?
+    let contextName: String?
+    let goalCount: Int
+    let habitCount: Int
     let createdAt: String
 }
 
