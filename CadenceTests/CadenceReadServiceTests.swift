@@ -102,13 +102,17 @@ struct CadenceReadServiceTests {
             title: "Knowledge Hub",
             content: "[[note:\(note.id.uuidString)|Design Note]]"
         )
+        let pursuit = Pursuit(title: "Ship Cadence MCP", context: fixture.context)
+        goal.pursuit = pursuit
         let habit = Habit(title: "Write daily", context: fixture.context, goal: goal)
+        habit.pursuit = pursuit
         let completion = HabitCompletion(date: DateFormatters.todayKey(), habit: habit)
         let savedLink = SavedLink(title: "Goal Spec", url: "https://example.com/spec")
         savedLink.project = fixture.project
         let goalLink = GoalListLink(goal: goal, project: fixture.project)
 
         fixture.modelContext.insert(goal)
+        fixture.modelContext.insert(pursuit)
         fixture.modelContext.insert(task)
         fixture.modelContext.insert(bundle)
         fixture.modelContext.insert(note)
@@ -132,7 +136,10 @@ struct CadenceReadServiceTests {
         #expect(try fixture.service.listGoals(options: .init(query: "Ship")).map(\.id) == [goal.id.uuidString])
         #expect(goalDetail.linkedContainers.map(\.id) == [fixture.project.id.uuidString])
         #expect(goalDetail.directTasks.map(\.id) == [task.id.uuidString])
+        #expect(goalDetail.summary.pursuitId == pursuit.id.uuidString)
+        #expect(goalDetail.summary.pursuitTitle == pursuit.title)
         #expect(try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString)).first?.completedToday == true)
+        #expect(try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString)).first?.pursuitId == pursuit.id.uuidString)
         #expect(try fixture.service.listLinks(options: .init(containerKind: "project", containerId: fixture.project.id.uuidString)).map(\.id) == [savedLink.id.uuidString])
         #expect(try fixture.service.listTaskBundles(options: .init(dateKey: "2026-05-01")).map(\.id) == [bundle.id.uuidString])
         #expect(bundleDetail.tasks.map(\.id) == [task.id.uuidString])
@@ -140,6 +147,16 @@ struct CadenceReadServiceTests {
         #expect(try fixture.service.search(query: "Write daily", scopes: ["habits"]).first?.entityType == "habit")
         #expect(try fixture.service.search(query: "Ship Goals", scopes: ["goals"]).first?.entityType == "goal")
         #expect(try fixture.service.search(query: "feature", scopes: ["tags"]).first?.entityType == "tag")
+
+        let pursuitList = try fixture.service.listPursuits(options: .init(contextId: fixture.context.id.uuidString))
+        #expect(pursuitList.map(\.id) == [pursuit.id.uuidString])
+        #expect(pursuitList.first?.goalCount == 1)
+        #expect(pursuitList.first?.habitCount == 1)
+
+        let contexts = try fixture.service.listContexts()
+        #expect(contexts.first { $0.id == fixture.context.id.uuidString }?.pursuitCount == 1)
+
+        #expect(try fixture.service.search(query: "Ship Cadence MCP", scopes: ["pursuits"]).first?.entityType == "pursuit")
     }
 
     @Test func readServiceMigratesLegacyListDocumentsOnInit() throws {

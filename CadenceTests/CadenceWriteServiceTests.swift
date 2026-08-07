@@ -144,6 +144,68 @@ struct CadenceWriteServiceTests {
         #expect(next.summary.title == "Daily standup")
     }
 
+    @Test func bulkCancellingRecurringTasksSpawnsNextOccurrenceWithSeriesMetadata() throws {
+        // Regression test: bulkCancelTasks used to set status/completedAt directly instead of
+        // routing through CadenceTaskRecurrenceWorkflowSupport.markCancelled, which meant a
+        // bulk-cancelled recurring task never spawned its next occurrence and the whole future
+        // series silently died -- unlike the single-task cancelTask path, which already handled
+        // this correctly. bulk_cancel_tasks must behave the same way per task.
+        let auditURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cadence-mcp-bulk-recurring-audit-\(UUID().uuidString)")
+            .appendingPathExtension("log")
+        defer { try? FileManager.default.removeItem(at: auditURL) }
+
+        let fixture = try Fixture(auditLogger: CadenceMCPAuditLogger(logURL: auditURL))
+        let recurring = AppTask(title: "MCP TEST daily standup")
+        recurring.recurrenceRule = .daily
+        recurring.scheduledDate = DateFormatters.todayKey()
+        let nonRecurring = AppTask(title: "MCP TEST one-off cleanup")
+        fixture.modelContext.insert(recurring)
+        fixture.modelContext.insert(nonRecurring)
+        try fixture.modelContext.save()
+
+        let result = try fixture.writeService.bulkCancelTasks(options: .init(titlePrefix: "MCP TEST"))
+        #expect(result.cancelledTasks.allSatisfy { $0.isCancelled })
+
+        let spawnedID = try #require(recurring.recurrenceSpawnedTaskID)
+        let spawned = try fixture.readService.getTask(taskID: spawnedID.uuidString)
+        #expect(spawned.summary.status == "todo")
+        #expect(spawned.summary.title == "MCP TEST daily standup")
+        #expect(nonRecurring.recurrenceSpawnedTaskID == nil)
+
+        let auditEntries = try readAuditEntries(from: auditURL)
+        #expect(auditEntries.map(\.tool) == ["bulk_cancel_tasks", "bulk_cancel_tasks", "bulk_cancel_tasks"])
+        #expect(auditEntries.contains { $0.summary == "Spawned recurring task from: MCP TEST daily standup" })
+        #expect(auditEntries.contains { $0.entityId == spawnedID.uuidString })
+    }
+
+    @Test func cancelTaskAuditsSpawnedRecurringTask() throws {
+        // Companion regression test for the single-task cancelTask path: it always spawned the
+        // next occurrence via CadenceTaskRecurrenceWorkflowSupport.markCancelled, but the audit
+        // log only recorded the "Cancelled task" entry, silently omitting that a new task row was
+        // also created. completeTask already logs its spawn; cancelTask should match.
+        let auditURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cadence-mcp-cancel-spawn-audit-\(UUID().uuidString)")
+            .appendingPathExtension("log")
+        defer { try? FileManager.default.removeItem(at: auditURL) }
+
+        let fixture = try Fixture(auditLogger: CadenceMCPAuditLogger(logURL: auditURL))
+        let task = AppTask(title: "Daily standup")
+        task.recurrenceRule = .daily
+        task.scheduledDate = DateFormatters.todayKey()
+        fixture.modelContext.insert(task)
+        try fixture.modelContext.save()
+
+        _ = try fixture.writeService.cancelTask(taskID: task.id.uuidString)
+        let spawnedID = try #require(task.recurrenceSpawnedTaskID)
+
+        let auditEntries = try readAuditEntries(from: auditURL)
+        #expect(auditEntries.map(\.tool) == ["cancel_task", "cancel_task"])
+        #expect(auditEntries.first?.summary == "Cancelled task: Daily standup")
+        #expect(auditEntries.last?.summary == "Spawned recurring task from: Daily standup")
+        #expect(auditEntries.last?.entityId == spawnedID.uuidString)
+    }
+
     @Test func scheduleTaskClearAndInvalidTime() throws {
         let fixture = try Fixture()
         let task = AppTask(title: "Clear schedule")
