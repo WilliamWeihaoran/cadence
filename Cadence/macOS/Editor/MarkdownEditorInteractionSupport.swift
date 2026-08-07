@@ -994,7 +994,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         var result: NSRange?
         textStorage.enumerateAttribute(.cadenceMarkdownImage, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, stop in
             guard let info = value as? MarkdownImageLayoutInfo, info.id == id else { return }
-            result = expandedMarkdownImageDeletionRange(from: range)
+            result = expandedBlockDeletionRange(from: range)
             stop.pointee = true
         }
         return result
@@ -1006,7 +1006,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         textStorage.enumerateAttribute(.cadenceMarkdownImage, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, stop in
             guard value is MarkdownImageLayoutInfo,
                   NSIntersectionRange(range, selection).length > 0 else { return }
-            result = expandedMarkdownImageDeletionRange(from: range)
+            result = expandedBlockDeletionRange(from: range)
             stop.pointee = true
         }
         return result
@@ -1018,7 +1018,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         var effectiveRange = NSRange(location: NSNotFound, length: 0)
         if textStorage.attribute(.cadenceMarkdownImage, at: clamped, effectiveRange: &effectiveRange) is MarkdownImageLayoutInfo,
            effectiveRange.location != NSNotFound {
-            return expandedMarkdownImageDeletionRange(from: effectiveRange)
+            return expandedBlockDeletionRange(from: effectiveRange)
         }
         return nil
     }
@@ -1029,7 +1029,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         textStorage.enumerateAttribute(.cadenceMarkdownTaskEmbed, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, stop in
             guard value is MarkdownTaskEmbedLayoutInfo,
                   NSIntersectionRange(range, selection).length > 0 else { return }
-            result = expandedMarkdownTaskEmbedDeletionRange(from: range)
+            result = expandedBlockDeletionRange(from: range)
             stop.pointee = true
         }
         return result
@@ -1043,7 +1043,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
             var effectiveRange = NSRange(location: NSNotFound, length: 0)
             if textStorage.attribute(.cadenceMarkdownTaskEmbed, at: candidate, effectiveRange: &effectiveRange) is MarkdownTaskEmbedLayoutInfo,
                effectiveRange.location != NSNotFound {
-                return expandedMarkdownTaskEmbedDeletionRange(from: effectiveRange)
+                return expandedBlockDeletionRange(from: effectiveRange)
             }
         }
         return nil
@@ -1052,8 +1052,8 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     private func markdownReferenceHit(at point: NSPoint) -> MarkdownReferenceTarget? {
         guard let layoutManager, let textContainer, let textStorage else { return nil }
         let containerPoint = NSPoint(
-            x: point.x - textContainerInset.width,
-            y: point.y - textContainerInset.height
+            x: point.x - textContainerOrigin.x,
+            y: point.y - textContainerOrigin.y
         )
         let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer, fractionOfDistanceThroughGlyph: nil)
         guard glyphIndex < layoutManager.numberOfGlyphs else { return nil }
@@ -1062,24 +1062,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         return textStorage.attribute(.cadenceMarkdownReference, at: characterIndex, effectiveRange: nil) as? MarkdownReferenceTarget
     }
 
-    private func expandedMarkdownImageDeletionRange(from range: NSRange) -> NSRange {
-        let nsText = string as NSString
-        var deletionRange = NSIntersectionRange(range, NSRange(location: 0, length: nsText.length))
-        guard deletionRange.length > 0 else { return deletionRange }
-
-        let after = NSMaxRange(deletionRange)
-        if after < nsText.length, nsText.substring(with: NSRange(location: after, length: 1)) == "\n" {
-            deletionRange.length += 1
-        } else if deletionRange.location > 0,
-                  nsText.substring(with: NSRange(location: deletionRange.location - 1, length: 1)) == "\n" {
-            deletionRange.location -= 1
-            deletionRange.length += 1
-        }
-
-        return deletionRange
-    }
-
-    private func expandedMarkdownTaskEmbedDeletionRange(from range: NSRange) -> NSRange {
+    private func expandedBlockDeletionRange(from range: NSRange) -> NSRange {
         let nsText = string as NSString
         var deletionRange = NSIntersectionRange(range, NSRange(location: 0, length: nsText.length))
         guard deletionRange.length > 0 else { return deletionRange }
@@ -1254,7 +1237,11 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         if let handled = handleDeletionCommand(commandSelector, in: textView) { return handled }
         return handleNewlineCommand(commandSelector, in: textView)
     }
+}
 
+// MARK: - Command Routing
+
+extension MarkdownEditorCoordinator {
     private func handleTagPickerCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool? {
         guard tagPicker.isShown else { return nil }
         if tagPicker.isShown {
@@ -1411,6 +1398,30 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         textView.didChangeText()
         return true
     }
+}
+
+// MARK: - Caret & Indentation
+
+extension MarkdownEditorCoordinator {
+    private func moveCaret(in textView: NSTextView, forward: Bool, extendSelection: Bool) -> Bool {
+        let selection = textView.selectedRange()
+        let storage = textView.textStorage
+
+        if extendSelection {
+            let anchor = forward ? selection.location : selection.location + selection.length
+            let movingEdge = forward ? selection.location + selection.length : selection.location
+            let next = MarkdownHiddenRangeSupport.nextVisibleCaretLocation(from: movingEdge, movingForward: forward, in: storage)
+            let newLocation = min(anchor, next)
+            let newLength = abs(next - anchor)
+            textView.setSelectedRange(NSRange(location: newLocation, length: newLength))
+            return true
+        }
+
+        let baseLocation = selection.length > 0 ? (forward ? selection.location + selection.length : selection.location) : selection.location
+        let next = MarkdownHiddenRangeSupport.nextVisibleCaretLocation(from: baseLocation, movingForward: forward, in: storage)
+        textView.setSelectedRange(NSRange(location: next, length: 0))
+        return true
+    }
 
     private func adjustIndentation(in textView: NSTextView, increase: Bool) -> Bool {
         guard let result = MarkdownListSupport.adjustedListIndentation(
@@ -1427,6 +1438,24 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         return true
     }
 
+    private func deleteBackwardFromListPrefix(in textView: NSTextView) -> Bool {
+        let selection = textView.selectedRange()
+        guard let mutation = MarkdownBackspaceSupport.listPrefixMutation(in: textView.string, selection: selection) else {
+            return false
+        }
+
+        guard textView.shouldChangeText(in: mutation.replacementRange, replacementString: mutation.replacement) else { return true }
+        textView.textStorage?.replaceCharacters(in: mutation.replacementRange, with: mutation.replacement)
+        textView.setSelectedRange(mutation.selection)
+        textView.typingAttributes = MarkdownStylist.baseAttributes
+        textView.didChangeText()
+        return true
+    }
+}
+
+// MARK: - Input Transforms & Embedded Tasks
+
+extension MarkdownEditorCoordinator {
     private func applyInputTransforms(to textView: NSTextView) {
         let nsText = textView.string as NSString
         let cursor = textView.selectedRange().location
@@ -1508,7 +1537,11 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         guard textView.shouldChangeText(in: range, replacementString: replacement) else { return }
         textView.textStorage?.replaceCharacters(in: range, with: replacement)
     }
+}
 
+// MARK: - Styling
+
+extension MarkdownEditorCoordinator {
     private func applyStyling(to textView: NSTextView, in scrollView: NSScrollView?) {
         pendingStylingWorkItem?.cancel()
         pendingStylingWorkItem = nil
@@ -1550,7 +1583,11 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         pendingStylingWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.stylingDebounceDelay, execute: workItem)
     }
+}
 
+// MARK: - List Normalization
+
+extension MarkdownEditorCoordinator {
     private func normalizeMarkdownListPrefixes(in textView: NSTextView) {
         let originalText = textView.string
         let selection = textView.selectedRange()
@@ -1561,6 +1598,88 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         textView.setSelectedRange(result.selection)
     }
 
+    private func normalizeOrderedListMarkers(in textView: NSTextView) {
+        let originalText = textView.string
+        let nsText = originalText as NSString
+        let lines = originalText.components(separatedBy: "\n")
+        guard !lines.isEmpty else { return }
+
+        var rebuiltLines: [String] = []
+        var counters: [Int: Int] = [:]
+        var previousOrderedLevel: Int? = nil
+
+        for line in lines {
+            guard let match = MarkdownListSupport.listPrefixMatch(in: line),
+                  match.kind == .ordered else {
+                rebuiltLines.append(line)
+                counters.removeAll()
+                previousOrderedLevel = nil
+                continue
+            }
+
+            let level = MarkdownListSupport.orderedLevel(forIndentation: match.indentation)
+            let nextIndex: Int
+            if let previousOrderedLevel {
+                if level > previousOrderedLevel {
+                    nextIndex = 1
+                } else {
+                    nextIndex = (counters[level] ?? 0) + 1
+                }
+            } else {
+                nextIndex = 1
+            }
+
+            counters = counters.filter { $0.key <= level }
+            counters[level] = nextIndex
+            previousOrderedLevel = level
+
+            let expectedMarker = MarkdownListSupport.orderedMarker(for: level, index: nextIndex)
+            if match.marker == expectedMarker {
+                rebuiltLines.append(line)
+                continue
+            }
+
+            let indentationCount = match.indentation.count
+            let markerStart = line.index(line.startIndex, offsetBy: indentationCount)
+            let markerEnd = line.index(markerStart, offsetBy: match.marker.count)
+            let updated = String(line[..<markerStart]) + expectedMarker + String(line[markerEnd...])
+            rebuiltLines.append(updated)
+        }
+
+        let rebuiltText = rebuiltLines.joined(separator: "\n")
+        guard rebuiltText != originalText else { return }
+
+        let selection = textView.selectedRange()
+        let adjustedLocation = adjustedSelectionOffset(in: nsText, original: originalText, updated: rebuiltText, cursorLocation: selection.location)
+        textView.string = rebuiltText
+        textView.setSelectedRange(NSRange(location: adjustedLocation, length: selection.length))
+    }
+
+    private func adjustedSelectionOffset(in originalText: NSString, original: String, updated: String, cursorLocation: Int) -> Int {
+        var runningOriginal = 0
+        var runningUpdated = 0
+        let originalLines = original.components(separatedBy: "\n")
+        let updatedLines = updated.components(separatedBy: "\n")
+
+        for (originalLine, updatedLine) in zip(originalLines, updatedLines) {
+            let originalLength = (originalLine as NSString).length
+            let updatedLength = (updatedLine as NSString).length
+            if cursorLocation <= runningOriginal + originalLength {
+                let offsetWithinLine = cursorLocation - runningOriginal
+                let delta = updatedLength - originalLength
+                return max(0, runningUpdated + min(updatedLength, max(0, offsetWithinLine + delta)))
+            }
+            runningOriginal += originalLength + 1
+            runningUpdated += updatedLength + 1
+        }
+
+        return min((updated as NSString).length, cursorLocation)
+    }
+}
+
+// MARK: - Pickers
+
+extension MarkdownEditorCoordinator {
     private func updateSlashCommandPicker(for textView: NSTextView) {
         slashCommandPicker.update(for: textView, context: currentSlashCommandContext(in: textView)) { [weak self] command, context in
             self?.applySlashCommand(command, context: context, in: textView)
@@ -1735,142 +1854,6 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         textView.typingAttributes = MarkdownStylist.baseAttributes
         textView.didChangeText()
         tagPicker.close()
-    }
-
-    private func moveCaret(in textView: NSTextView, forward: Bool, extendSelection: Bool) -> Bool {
-        let selection = textView.selectedRange()
-        let storage = textView.textStorage
-
-        if extendSelection {
-            let anchor = forward ? selection.location : selection.location + selection.length
-            let movingEdge = forward ? selection.location + selection.length : selection.location
-            let next = MarkdownHiddenRangeSupport.nextVisibleCaretLocation(from: movingEdge, movingForward: forward, in: storage)
-            let newLocation = min(anchor, next)
-            let newLength = abs(next - anchor)
-            textView.setSelectedRange(NSRange(location: newLocation, length: newLength))
-            return true
-        }
-
-        let baseLocation = selection.length > 0 ? (forward ? selection.location + selection.length : selection.location) : selection.location
-        let next = MarkdownHiddenRangeSupport.nextVisibleCaretLocation(from: baseLocation, movingForward: forward, in: storage)
-        textView.setSelectedRange(NSRange(location: next, length: 0))
-        return true
-    }
-
-    private func effectiveLineRange(for selection: NSRange, in text: NSString) -> NSRange {
-        guard text.length > 0 else { return NSRange(location: 0, length: 0) }
-
-        let startLocation = min(max(selection.location, 0), text.length - 1)
-        let startLine = text.lineRange(for: NSRange(location: startLocation, length: 0))
-
-        if selection.length == 0 {
-            return startLine
-        }
-
-        let rawEnd = NSMaxRange(selection)
-        let endLocation: Int
-        if rawEnd > selection.location,
-           rawEnd <= text.length,
-           text.character(at: rawEnd - 1) == 10 {
-            endLocation = max(selection.location, rawEnd - 1)
-        } else {
-            endLocation = min(max(selection.location, rawEnd), text.length - 1)
-        }
-
-        let endLine = text.lineRange(for: NSRange(location: endLocation, length: 0))
-        return NSUnionRange(startLine, endLine)
-    }
-
-    private func deleteBackwardFromListPrefix(in textView: NSTextView) -> Bool {
-        let selection = textView.selectedRange()
-        guard let mutation = MarkdownBackspaceSupport.listPrefixMutation(in: textView.string, selection: selection) else {
-            return false
-        }
-
-        guard textView.shouldChangeText(in: mutation.replacementRange, replacementString: mutation.replacement) else { return true }
-        textView.textStorage?.replaceCharacters(in: mutation.replacementRange, with: mutation.replacement)
-        textView.setSelectedRange(mutation.selection)
-        textView.typingAttributes = MarkdownStylist.baseAttributes
-        textView.didChangeText()
-        return true
-    }
-
-    private func normalizeOrderedListMarkers(in textView: NSTextView) {
-        let originalText = textView.string
-        let nsText = originalText as NSString
-        let lines = originalText.components(separatedBy: "\n")
-        guard !lines.isEmpty else { return }
-
-        var rebuiltLines: [String] = []
-        var counters: [Int: Int] = [:]
-        var previousOrderedLevel: Int? = nil
-
-        for line in lines {
-            guard let match = MarkdownListSupport.listPrefixMatch(in: line),
-                  match.kind == .ordered else {
-                rebuiltLines.append(line)
-                counters.removeAll()
-                previousOrderedLevel = nil
-                continue
-            }
-
-            let level = MarkdownListSupport.orderedLevel(forIndentation: match.indentation)
-            let nextIndex: Int
-            if let previousOrderedLevel {
-                if level > previousOrderedLevel {
-                    nextIndex = 1
-                } else {
-                    nextIndex = (counters[level] ?? 0) + 1
-                }
-            } else {
-                nextIndex = 1
-            }
-
-            counters = counters.filter { $0.key <= level }
-            counters[level] = nextIndex
-            previousOrderedLevel = level
-
-            let expectedMarker = MarkdownListSupport.orderedMarker(for: level, index: nextIndex)
-            if match.marker == expectedMarker {
-                rebuiltLines.append(line)
-                continue
-            }
-
-            let indentationCount = match.indentation.count
-            let markerStart = line.index(line.startIndex, offsetBy: indentationCount)
-            let markerEnd = line.index(markerStart, offsetBy: match.marker.count)
-            let updated = String(line[..<markerStart]) + expectedMarker + String(line[markerEnd...])
-            rebuiltLines.append(updated)
-        }
-
-        let rebuiltText = rebuiltLines.joined(separator: "\n")
-        guard rebuiltText != originalText else { return }
-
-        let selection = textView.selectedRange()
-        let adjustedLocation = adjustedSelectionOffset(in: nsText, original: originalText, updated: rebuiltText, cursorLocation: selection.location)
-        textView.string = rebuiltText
-        textView.setSelectedRange(NSRange(location: adjustedLocation, length: selection.length))
-    }
-
-    private func adjustedSelectionOffset(in originalText: NSString, original: String, updated: String, cursorLocation: Int) -> Int {
-        var runningOriginal = 0
-        var runningUpdated = 0
-        let originalLines = original.components(separatedBy: "\n")
-        let updatedLines = updated.components(separatedBy: "\n")
-
-        for (originalLine, updatedLine) in zip(originalLines, updatedLines) {
-            let originalLength = (originalLine as NSString).length
-            let updatedLength = (updatedLine as NSString).length
-            if cursorLocation <= runningOriginal + originalLength {
-                let offsetWithinLine = cursorLocation - runningOriginal
-                let delta = updatedLength - originalLength
-                return max(0, runningUpdated + min(updatedLength, max(0, offsetWithinLine + delta)))
-            }
-            runningOriginal += originalLength + 1
-            runningUpdated += updatedLength + 1
-        }
-
-        return min((updated as NSString).length, cursorLocation)
     }
 }
 #endif

@@ -30,6 +30,8 @@ struct MarkdownImageRenderAsset {
 #endif
 
 enum MarkdownImageAssetService {
+    private static let imageReferenceRegex = try! NSRegularExpression(pattern: #"(?m)^!\[([^\]\n]*)\]\(cadence-image://([0-9A-Fa-f-]{36})\)\s*$"#)
+
     static let urlScheme = "cadence-image"
     static let maxLongEdge: CGFloat = 2400
     static let defaultDisplayWidth: CGFloat = 520
@@ -42,11 +44,9 @@ enum MarkdownImageAssetService {
 
     static func references(in text: String) -> [MarkdownImageReference] {
         let nsText = text as NSString
-        guard nsText.length > 0,
-              let regex = try? NSRegularExpression(pattern: #"(?m)^!\[([^\]\n]*)\]\(cadence-image://([0-9A-Fa-f-]{36})\)\s*$"#)
-        else { return [] }
+        guard nsText.length > 0 else { return [] }
 
-        return regex.matches(in: text, range: NSRange(location: 0, length: nsText.length)).compactMap { match in
+        return imageReferenceRegex.matches(in: text, range: NSRange(location: 0, length: nsText.length)).compactMap { match in
             guard match.numberOfRanges >= 3,
                   let id = UUID(uuidString: nsText.substring(with: match.range(at: 2)))
             else { return nil }

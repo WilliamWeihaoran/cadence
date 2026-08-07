@@ -9,6 +9,9 @@ struct MarkdownChecklistLine: Equatable {
 }
 
 enum MarkdownChecklistSupport {
+    private static let githubChecklistRegex = try! NSRegularExpression(pattern: #"^([ \t]*[-*+]\s+\[)([ xX])(\]\s+)"#)
+    private static let legacyChecklistRegex = try! NSRegularExpression(pattern: #"^([ \t]*)([○●✓])\s+"#)
+
     static func lineInfo(in line: String) -> MarkdownChecklistLine? {
         githubLineInfo(in: line) ?? legacyLineInfo(in: line)
     }
@@ -30,9 +33,7 @@ enum MarkdownChecklistSupport {
     }
 
     private static func githubLineInfo(in line: String) -> MarkdownChecklistLine? {
-        guard let regex = try? NSRegularExpression(pattern: #"^([ \t]*[-*+]\s+\[)([ xX])(\]\s+)"#) else {
-            return nil
-        }
+        let regex = githubChecklistRegex
         let nsLine = line as NSString
         let fullRange = NSRange(location: 0, length: nsLine.length)
         guard let match = regex.firstMatch(in: line, range: fullRange),
@@ -54,9 +55,7 @@ enum MarkdownChecklistSupport {
     }
 
     private static func legacyLineInfo(in line: String) -> MarkdownChecklistLine? {
-        guard let regex = try? NSRegularExpression(pattern: #"^([ \t]*)([○●✓])\s+"#) else {
-            return nil
-        }
+        let regex = legacyChecklistRegex
         let nsLine = line as NSString
         let fullRange = NSRange(location: 0, length: nsLine.length)
         guard let match = regex.firstMatch(in: line, range: fullRange),

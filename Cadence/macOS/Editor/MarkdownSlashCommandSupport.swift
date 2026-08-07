@@ -2,6 +2,43 @@
 import SwiftUI
 import AppKit
 
+private func markdownPickerCaretAnchorRect(for textView: NSTextView, at characterIndex: Int) -> NSRect {
+    guard let layoutManager = textView.layoutManager,
+          let textContainer = textView.textContainer else {
+        return NSRect(x: textView.textContainerInset.width, y: textView.textContainerInset.height, width: 1, height: 18)
+    }
+
+    let length = (textView.string as NSString).length
+    let safeIndex = min(max(characterIndex, 0), length)
+    layoutManager.ensureLayout(for: textContainer)
+    let origin = textView.textContainerOrigin
+
+    if safeIndex < length, layoutManager.numberOfGlyphs > 0 {
+        let glyphIndex = layoutManager.glyphIndexForCharacter(at: safeIndex)
+        let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+        let glyphLocation = layoutManager.location(forGlyphAt: glyphIndex)
+        return NSRect(
+            x: origin.x + lineRect.minX + glyphLocation.x,
+            y: origin.y + lineRect.minY,
+            width: 1,
+            height: max(lineRect.height, 18)
+        )
+    }
+
+    guard layoutManager.numberOfGlyphs > 0 else {
+        return NSRect(x: origin.x, y: origin.y, width: 1, height: 18)
+    }
+
+    let fallbackGlyphIndex = max(layoutManager.numberOfGlyphs - 1, 0)
+    let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: fallbackGlyphIndex, effectiveRange: nil)
+    return NSRect(
+        x: origin.x + lineRect.maxX,
+        y: origin.y + lineRect.minY,
+        width: 1,
+        height: max(lineRect.height, 18)
+    )
+}
+
 private struct MarkdownSlashCommandPickerView: View {
     let commands: [MarkdownSlashCommand]
     let highlightedIndex: Int
@@ -93,7 +130,7 @@ final class MarkdownSlashCommandPickerController {
         }
 
         popover.contentViewController = NSHostingController(rootView: rootView)
-        let anchorRect = caretAnchorRect(for: textView, at: context.cursorLocation)
+        let anchorRect = markdownPickerCaretAnchorRect(for: textView, at: context.cursorLocation)
 
         if popover.isShown {
             popover.positioningRect = anchorRect
@@ -136,43 +173,6 @@ final class MarkdownSlashCommandPickerController {
             onSelect: { command in
                 onSelect(command, context)
             }
-        )
-    }
-
-    private func caretAnchorRect(for textView: NSTextView, at characterIndex: Int) -> NSRect {
-        guard let layoutManager = textView.layoutManager,
-              let textContainer = textView.textContainer else {
-            return NSRect(x: textView.textContainerInset.width, y: textView.textContainerInset.height, width: 1, height: 18)
-        }
-
-        let length = (textView.string as NSString).length
-        let safeIndex = min(max(characterIndex, 0), length)
-        layoutManager.ensureLayout(for: textContainer)
-        let origin = textView.textContainerOrigin
-
-        if safeIndex < length, layoutManager.numberOfGlyphs > 0 {
-            let glyphIndex = layoutManager.glyphIndexForCharacter(at: safeIndex)
-            let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
-            let glyphLocation = layoutManager.location(forGlyphAt: glyphIndex)
-            return NSRect(
-                x: origin.x + lineRect.minX + glyphLocation.x,
-                y: origin.y + lineRect.minY,
-                width: 1,
-                height: max(lineRect.height, 18)
-            )
-        }
-
-        guard layoutManager.numberOfGlyphs > 0 else {
-            return NSRect(x: origin.x, y: origin.y, width: 1, height: 18)
-        }
-
-        let fallbackGlyphIndex = max(layoutManager.numberOfGlyphs - 1, 0)
-        let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: fallbackGlyphIndex, effectiveRange: nil)
-        return NSRect(
-            x: origin.x + lineRect.maxX,
-            y: origin.y + lineRect.minY,
-            width: 1,
-            height: max(lineRect.height, 18)
         )
     }
 }
@@ -280,7 +280,7 @@ final class MarkdownReferencePickerController {
         }
 
         popover.contentViewController = NSHostingController(rootView: rootView)
-        let anchorRect = caretAnchorRect(for: textView, at: context.cursorLocation)
+        let anchorRect = markdownPickerCaretAnchorRect(for: textView, at: context.cursorLocation)
 
         if popover.isShown {
             popover.positioningRect = anchorRect
@@ -323,43 +323,6 @@ final class MarkdownReferencePickerController {
             onSelect: { suggestion in
                 onSelect(suggestion, context)
             }
-        )
-    }
-
-    private func caretAnchorRect(for textView: NSTextView, at characterIndex: Int) -> NSRect {
-        guard let layoutManager = textView.layoutManager,
-              let textContainer = textView.textContainer else {
-            return NSRect(x: textView.textContainerInset.width, y: textView.textContainerInset.height, width: 1, height: 18)
-        }
-
-        let length = (textView.string as NSString).length
-        let safeIndex = min(max(characterIndex, 0), length)
-        layoutManager.ensureLayout(for: textContainer)
-        let origin = textView.textContainerOrigin
-
-        if safeIndex < length, layoutManager.numberOfGlyphs > 0 {
-            let glyphIndex = layoutManager.glyphIndexForCharacter(at: safeIndex)
-            let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
-            let glyphLocation = layoutManager.location(forGlyphAt: glyphIndex)
-            return NSRect(
-                x: origin.x + lineRect.minX + glyphLocation.x,
-                y: origin.y + lineRect.minY,
-                width: 1,
-                height: max(lineRect.height, 18)
-            )
-        }
-
-        guard layoutManager.numberOfGlyphs > 0 else {
-            return NSRect(x: origin.x, y: origin.y, width: 1, height: 18)
-        }
-
-        let fallbackGlyphIndex = max(layoutManager.numberOfGlyphs - 1, 0)
-        let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: fallbackGlyphIndex, effectiveRange: nil)
-        return NSRect(
-            x: origin.x + lineRect.maxX,
-            y: origin.y + lineRect.minY,
-            width: 1,
-            height: max(lineRect.height, 18)
         )
     }
 }
@@ -583,7 +546,7 @@ final class MarkdownTagPickerController {
         }
 
         popover.contentViewController = NSHostingController(rootView: rootView)
-        let anchorRect = caretAnchorRect(for: textView, at: context.cursorLocation)
+        let anchorRect = markdownPickerCaretAnchorRect(for: textView, at: context.cursorLocation)
 
         if popover.isShown {
             popover.positioningRect = anchorRect
@@ -627,43 +590,6 @@ final class MarkdownTagPickerController {
             onSelect: { choice in
                 onSelect(choice, context)
             }
-        )
-    }
-
-    private func caretAnchorRect(for textView: NSTextView, at characterIndex: Int) -> NSRect {
-        guard let layoutManager = textView.layoutManager,
-              let textContainer = textView.textContainer else {
-            return NSRect(x: textView.textContainerInset.width, y: textView.textContainerInset.height, width: 1, height: 18)
-        }
-
-        let length = (textView.string as NSString).length
-        let safeIndex = min(max(characterIndex, 0), length)
-        layoutManager.ensureLayout(for: textContainer)
-        let origin = textView.textContainerOrigin
-
-        if safeIndex < length, layoutManager.numberOfGlyphs > 0 {
-            let glyphIndex = layoutManager.glyphIndexForCharacter(at: safeIndex)
-            let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
-            let glyphLocation = layoutManager.location(forGlyphAt: glyphIndex)
-            return NSRect(
-                x: origin.x + lineRect.minX + glyphLocation.x,
-                y: origin.y + lineRect.minY,
-                width: 1,
-                height: max(lineRect.height, 18)
-            )
-        }
-
-        guard layoutManager.numberOfGlyphs > 0 else {
-            return NSRect(x: origin.x, y: origin.y, width: 1, height: 18)
-        }
-
-        let fallbackGlyphIndex = max(layoutManager.numberOfGlyphs - 1, 0)
-        let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: fallbackGlyphIndex, effectiveRange: nil)
-        return NSRect(
-            x: origin.x + lineRect.maxX,
-            y: origin.y + lineRect.minY,
-            width: 1,
-            height: max(lineRect.height, 18)
         )
     }
 }

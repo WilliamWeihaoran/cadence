@@ -33,7 +33,7 @@ enum MarkdownTaskEmbedDrawing {
     }
 
     static func fieldHit(at point: NSPoint, task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect) -> MarkdownTaskEmbedField? {
-        let layout = fieldRects(task: task, cardRect: cardRect)
+        let layout = fieldRects(task: task, cardRect: cardRect, chips: displayChips(for: task))
         if layout.title.insetBy(dx: -3, dy: -3).contains(point) {
             return .title
         }
@@ -41,7 +41,7 @@ enum MarkdownTaskEmbedDrawing {
     }
 
     static func titleRect(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect) -> NSRect {
-        fieldRects(task: task, cardRect: cardRect).title
+        fieldRects(task: task, cardRect: cardRect, chips: displayChips(for: task)).title
     }
 
     static func subtaskHit(
@@ -73,9 +73,9 @@ enum MarkdownTaskEmbedDrawing {
 
         drawCheckbox(task: task, rect: checkboxRect)
 
-        let layout = fieldRects(task: task, cardRect: cardRect)
-        drawTitle(task: task, in: layout.title)
         let chips = displayChips(for: task)
+        let layout = fieldRects(task: task, cardRect: cardRect, chips: chips)
+        drawTitle(task: task, in: layout.title)
         for chipRect in layout.chips {
             guard let chip = chips.first(where: { $0.field == chipRect.field }) else { continue }
             drawChip(label: chip.label, color: chip.color, rect: chipRect.rect)
@@ -131,7 +131,8 @@ enum MarkdownTaskEmbedDrawing {
 
     private static func fieldRects(
         task: MarkdownTaskEmbedRenderInfo,
-        cardRect: NSRect
+        cardRect: NSRect,
+        chips: [Chip]
     ) -> (title: NSRect, chips: [ChipRect]) {
         let contentMinX = checkboxRect(in: cardRect).maxX + 12
         let contentMaxX = cardRect.maxX - 12
@@ -145,7 +146,7 @@ enum MarkdownTaskEmbedDrawing {
         var chipRects: [ChipRect] = []
         var x = contentMinX
         let y = cardRect.minY + 38
-        for chip in displayChips(for: task) {
+        for chip in chips {
             let width = min(max(42, chip.label.size(withAttributes: chipAttributes).width + 18), 128)
             guard x + width <= contentMaxX else { break }
             let rect = NSRect(x: x, y: y, width: width, height: 20)
@@ -212,11 +213,12 @@ enum MarkdownTaskEmbedDrawing {
             max(140, task.title.size(withAttributes: titleMeasureAttributes).width + 8),
             240
         )
-        let chipWidths = displayChips(for: task)
+        let chips = displayChips(for: task)
+        let chipWidths = chips
             .prefix(task.hasSubtasks ? 4 : 5)
             .map { min(max(42, $0.label.size(withAttributes: chipAttributes).width + 18), 128) }
             .reduce(CGFloat(0), +)
-        let chipGaps = CGFloat(max(0, min(displayChips(for: task).count, task.hasSubtasks ? 4 : 5) - 1)) * 6
+        let chipGaps = CGFloat(max(0, min(chips.count, task.hasSubtasks ? 4 : 5) - 1)) * 6
         let subtaskAllowance: CGFloat = task.hasSubtasks ? 90 : 0
         let preferred = checkboxAndPadding + max(titleWidth, chipWidths + chipGaps) + subtaskAllowance + 24
         return min(max(320, preferred), min(maxWidth, MarkdownTaskEmbedRenderInfo.maxCardWidth))

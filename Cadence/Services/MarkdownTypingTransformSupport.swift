@@ -1,6 +1,8 @@
 import Foundation
 
 enum MarkdownTypingTransformSupport {
+    private static let typedOrderedPrefixRegex = try! NSRegularExpression(pattern: #"^([ \t]*)((?:\d+|[A-Za-z]+|[ivxlcdmIVXLCDM]+)[.)]) $"#)
+
     static func mutation(in text: String, cursor: Int) -> MarkdownFormatMutation? {
         let nsText = text as NSString
         let safeCursor = min(max(cursor, 0), nsText.length)
@@ -82,8 +84,7 @@ enum MarkdownTypingTransformSupport {
         let lineRange = text.lineRange(for: NSRange(location: max(0, safeCursor - 1), length: 0))
         let prefixRange = NSRange(location: lineRange.location, length: safeCursor - lineRange.location)
         let prefix = text.substring(with: prefixRange)
-        guard let regex = try? NSRegularExpression(pattern: #"^([ \t]*)((?:\d+|[A-Za-z]+|[ivxlcdmIVXLCDM]+)[.)]) $"#),
-              let match = regex.firstMatch(in: prefix, range: NSRange(location: 0, length: (prefix as NSString).length)) else {
+        guard let match = typedOrderedPrefixRegex.firstMatch(in: prefix, range: NSRange(location: 0, length: (prefix as NSString).length)) else {
             return nil
         }
 

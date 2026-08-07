@@ -1,6 +1,8 @@
 #if os(macOS)
 import AppKit
 
+// MARK: - Suggestion & Hit-Rect Types
+
 struct MarkdownReferenceTarget: Hashable {
     let kind: MarkdownReferenceKind
     let id: UUID?
@@ -120,6 +122,8 @@ enum MarkdownTaskEmbedSubtaskHitTesting {
     }
 }
 
+// MARK: - MarkdownStylist
+
 enum MarkdownStylist {
     static let bgColor        = NSColor(hex: "#0f1117")
     static let textColor      = NSColor(hex: "#e2e8f0")
@@ -137,6 +141,19 @@ enum MarkdownStylist {
         .font: baseFont,
         .foregroundColor: textColor
     ]
+
+    // MARK: - Cached Regexes
+
+    private static let boldItalicRegex = try! NSRegularExpression(pattern: "\\*\\*\\*(.+?)\\*\\*\\*")
+    private static let boldRegex = try! NSRegularExpression(pattern: "\\*\\*(.+?)\\*\\*")
+    private static let italicRegex = try! NSRegularExpression(pattern: "(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)")
+    private static let strikethroughRegex = try! NSRegularExpression(pattern: "~~(.+?)~~")
+    private static let highlightRegex = try! NSRegularExpression(pattern: "==(.+?)==")
+    private static let inlineCodeRegex = try! NSRegularExpression(pattern: "`([^`\n]+)`")
+    private static let wikiLinkRegex = try! NSRegularExpression(pattern: #"\[\[([^\[\]]+?)\]\]"#)
+    private static let wikiLinkDisplayPrefixRegex = try! NSRegularExpression(pattern: #"^\s*(?:task|note):(?:[^\|\]]*\|)?"#, options: [.caseInsensitive])
+    private static let codeFenceRegex = try! NSRegularExpression(pattern: #"(?s)```([^\n`]*)\n(.*?)\n?```"#)
+    private static let tablePipeRegex = try! NSRegularExpression(pattern: #"\|"#)
 
     static func apply(to textView: NSTextView) {
         let cadenceTextView = textView as? CadenceTextView
@@ -182,20 +199,20 @@ enum MarkdownStylist {
         }
 
         applyInline(storage: storage, text: nsText,
-                    pattern: "\\*\\*\\*(.+?)\\*\\*\\*", markerLen: 3,
+                    regex: boldItalicRegex, markerLen: 3,
                     contentStyle: { range, s in
                         let existing = s.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? baseFont
                         let italic = NSFontManager.shared.convert(existing, toHaveTrait: .italicFontMask)
                         s.addAttribute(.font, value: NSFontManager.shared.convert(italic, toHaveTrait: .boldFontMask), range: range)
                     })
         applyInline(storage: storage, text: nsText,
-                    pattern: "\\*\\*(.+?)\\*\\*", markerLen: 2,
+                    regex: boldRegex, markerLen: 2,
                     contentStyle: { range, s in
                         let existing = s.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? baseFont
                         s.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: existing.pointSize), range: range)
                     })
         applyInline(storage: storage, text: nsText,
-                    pattern: "(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)", markerLen: 1,
+                    regex: italicRegex, markerLen: 1,
                     contentStyle: { range, s in
                         let existing = s.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? baseFont
                         let italic = NSFontManager.shared.convert(existing, toHaveTrait: .italicFontMask)
@@ -203,13 +220,13 @@ enum MarkdownStylist {
                     })
         applyCode(storage, text: nsText)
         applyInline(storage: storage, text: nsText,
-                    pattern: "~~(.+?)~~", markerLen: 2,
+                    regex: strikethroughRegex, markerLen: 2,
                     contentStyle: { range, s in
                         s.addAttribute(.foregroundColor, value: dimColor, range: range)
                         s.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
                     })
         applyInline(storage: storage, text: nsText,
-                    pattern: "==(.+?)==", markerLen: 2,
+                    regex: highlightRegex, markerLen: 2,
                     contentStyle: { range, s in
                         s.addAttributes([
                             .cadenceMarkdownHighlight: true,
@@ -222,6 +239,8 @@ enum MarkdownStylist {
 
         storage.endEditing()
     }
+
+    // MARK: - Line Dispatch
 
     private static func applyLine(
         storage: NSTextStorage,
@@ -279,42 +298,9 @@ enum MarkdownStylist {
                 storage.addAttribute(.font, value: italic, range: rest)
             }
         } else if let ordered = orderedListMatch(in: line) {
-            let level = MarkdownListSupport.visualLevel(forIndentation: ordered.indentation)
-            let ps = listStyle(for: level, markerWidth: ordered.marker.count + 1)
-            storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
-            let markerRange = NSRange(location: lineStart + ordered.indentation.count, length: min(ordered.marker.count, lineRange.length))
-            storage.addAttribute(.foregroundColor, value: textColor, range: markerRange)
-            storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .semibold), range: markerRange)
-            addListMarkerSpacing(storage, markerRange: markerRange)
+            applyOrderedListLine(storage: storage, lineRange: lineRange, lineStart: lineStart, ordered: ordered)
         } else if let bullet = unorderedListMatch(in: line) {
-            let level = MarkdownListSupport.visualLevel(forIndentation: bullet.indentation)
-            let ps = listStyle(for: level, markerWidth: 2)
-            storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
-            let markerLocation = lineStart + bullet.indentation.count
-            switch bullet.marker {
-            case "•", "*":
-                let bulletRange = NSRange(location: markerLocation, length: min(1, lineRange.length))
-                storage.addAttribute(.foregroundColor, value: textColor, range: bulletRange)
-                storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 20), range: bulletRange)
-                addListMarkerSpacing(storage, markerRange: bulletRange)
-            case "–", "-", "+":
-                let markerRange = NSRange(location: markerLocation, length: min(1, max(0, lineRange.length - bullet.indentation.count)))
-                storage.addAttribute(.foregroundColor, value: textColor, range: markerRange)
-                addListMarkerSpacing(storage, markerRange: markerRange)
-            case "○", "●", "✓":
-                let checked = bullet.marker == "●" || bullet.marker == "✓"
-                let markerRange = NSRange(location: markerLocation, length: min(1, lineRange.length))
-                storage.addAttribute(.foregroundColor, value: checked ? greenColor : dimColor, range: markerRange)
-                storage.addAttribute(.font, value: NSFont.systemFont(ofSize: checked ? 16 : 18, weight: checked ? .bold : .regular), range: markerRange)
-                addListMarkerSpacing(storage, markerRange: markerRange)
-                if checked && lineRange.length > bullet.indentation.count + 2 {
-                    let textRange = NSRange(location: markerLocation + 2, length: lineRange.length - bullet.indentation.count - 2)
-                    storage.addAttribute(.foregroundColor, value: dimColor, range: textRange)
-                    storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: textRange)
-                }
-            default:
-                break
-            }
+            applyUnorderedListLine(storage: storage, lineRange: lineRange, lineStart: lineStart, bullet: bullet)
         } else if isDividerLine(line) {
             let ps = NSMutableParagraphStyle()
             ps.alignment = .center
@@ -323,6 +309,57 @@ enum MarkdownStylist {
             storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
             storage.addAttribute(.cadenceMarkdownDivider, value: true, range: lineRange)
             storage.addAttribute(.foregroundColor, value: NSColor.clear, range: lineRange)
+        }
+    }
+
+    private static func applyOrderedListLine(
+        storage: NSTextStorage,
+        lineRange: NSRange,
+        lineStart: Int,
+        ordered: (indentation: String, marker: String)
+    ) {
+        let level = MarkdownListSupport.visualLevel(forIndentation: ordered.indentation)
+        let ps = listStyle(for: level, markerWidth: ordered.marker.count + 1)
+        storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
+        let markerRange = NSRange(location: lineStart + ordered.indentation.count, length: min(ordered.marker.count, lineRange.length))
+        storage.addAttribute(.foregroundColor, value: textColor, range: markerRange)
+        storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .semibold), range: markerRange)
+        addListMarkerSpacing(storage, markerRange: markerRange)
+    }
+
+    private static func applyUnorderedListLine(
+        storage: NSTextStorage,
+        lineRange: NSRange,
+        lineStart: Int,
+        bullet: (indentation: String, marker: String)
+    ) {
+        let level = MarkdownListSupport.visualLevel(forIndentation: bullet.indentation)
+        let ps = listStyle(for: level, markerWidth: 2)
+        storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
+        let markerLocation = lineStart + bullet.indentation.count
+        switch bullet.marker {
+        case "•", "*":
+            let bulletRange = NSRange(location: markerLocation, length: min(1, lineRange.length))
+            storage.addAttribute(.foregroundColor, value: textColor, range: bulletRange)
+            storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 20), range: bulletRange)
+            addListMarkerSpacing(storage, markerRange: bulletRange)
+        case "–", "-", "+":
+            let markerRange = NSRange(location: markerLocation, length: min(1, max(0, lineRange.length - bullet.indentation.count)))
+            storage.addAttribute(.foregroundColor, value: textColor, range: markerRange)
+            addListMarkerSpacing(storage, markerRange: markerRange)
+        case "○", "●", "✓":
+            let checked = bullet.marker == "●" || bullet.marker == "✓"
+            let markerRange = NSRange(location: markerLocation, length: min(1, lineRange.length))
+            storage.addAttribute(.foregroundColor, value: checked ? greenColor : dimColor, range: markerRange)
+            storage.addAttribute(.font, value: NSFont.systemFont(ofSize: checked ? 16 : 18, weight: checked ? .bold : .regular), range: markerRange)
+            addListMarkerSpacing(storage, markerRange: markerRange)
+            if checked && lineRange.length > bullet.indentation.count + 2 {
+                let textRange = NSRange(location: markerLocation + 2, length: lineRange.length - bullet.indentation.count - 2)
+                storage.addAttribute(.foregroundColor, value: dimColor, range: textRange)
+                storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: textRange)
+            }
+        default:
+            break
         }
     }
 
@@ -350,8 +387,7 @@ enum MarkdownStylist {
 
         let nsLine = line as NSString
         let fullRange = NSRange(location: 0, length: nsLine.length)
-        guard let regex = try? NSRegularExpression(pattern: #"\|"#) else { return }
-        regex.enumerateMatches(in: line, range: fullRange) { match, _, _ in
+        tablePipeRegex.enumerateMatches(in: line, range: fullRange) { match, _, _ in
             guard let match else { return }
             storage.addAttribute(.foregroundColor, value: blueColor.withAlphaComponent(0.72), range: NSRange(location: lineStart + match.range.location, length: match.range.length))
         }
@@ -480,11 +516,10 @@ enum MarkdownStylist {
     private static func applyInline(
         storage: NSTextStorage,
         text: NSString,
-        pattern: String,
+        regex: NSRegularExpression,
         markerLen: Int,
         contentStyle: (NSRange, NSTextStorage) -> Void
     ) {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
         regex.enumerateMatches(in: text as String, range: NSRange(location: 0, length: text.length)) { match, _, _ in
             guard let m = match, m.range.length > markerLen * 2 else { return }
             let full = m.range
@@ -498,8 +533,7 @@ enum MarkdownStylist {
     }
 
     private static func applyCode(_ storage: NSTextStorage, text: NSString) {
-        guard let regex = try? NSRegularExpression(pattern: "`([^`\n]+)`") else { return }
-        regex.enumerateMatches(in: text as String, range: NSRange(location: 0, length: text.length)) { match, _, _ in
+        inlineCodeRegex.enumerateMatches(in: text as String, range: NSRange(location: 0, length: text.length)) { match, _, _ in
             guard let m = match, m.range.length >= 3 else { return }
             let full = m.range
             let open = NSRange(location: full.location, length: 1)
@@ -533,8 +567,7 @@ enum MarkdownStylist {
     }
 
     private static func applyWikiLinks(_ storage: NSTextStorage, text: NSString) {
-        guard let regex = try? NSRegularExpression(pattern: #"\[\[([^\[\]]+?)\]\]"#) else { return }
-        regex.enumerateMatches(in: text as String, range: NSRange(location: 0, length: text.length)) { match, _, _ in
+        wikiLinkRegex.enumerateMatches(in: text as String, range: NSRange(location: 0, length: text.length)) { match, _, _ in
             guard let match, match.numberOfRanges >= 2 else { return }
             let fullRange = match.range(at: 0)
             let labelRange = match.range(at: 1)
@@ -574,8 +607,7 @@ enum MarkdownStylist {
     private static func wikiLinkDisplayRange(label: String, labelRange: NSRange) -> NSRange {
         let nsLabel = label as NSString
         let fullRange = NSRange(location: 0, length: nsLabel.length)
-        guard let regex = try? NSRegularExpression(pattern: #"^\s*(?:task|note):(?:[^\|\]]*\|)?"#, options: [.caseInsensitive]),
-              let match = regex.firstMatch(in: label, range: fullRange) else {
+        guard let match = wikiLinkDisplayPrefixRegex.firstMatch(in: label, range: fullRange) else {
             return labelRange
         }
 
@@ -614,8 +646,7 @@ enum MarkdownStylist {
     }
 
     private static func applyCodeFences(_ storage: NSTextStorage, text: NSString) {
-        guard let regex = try? NSRegularExpression(pattern: #"(?s)```([^\n`]*)\n(.*?)\n?```"#) else { return }
-        regex.enumerateMatches(in: text as String, range: NSRange(location: 0, length: text.length)) { match, _, _ in
+        codeFenceRegex.enumerateMatches(in: text as String, range: NSRange(location: 0, length: text.length)) { match, _, _ in
             guard let match, match.numberOfRanges >= 3 else { return }
 
             let fullRange = match.range(at: 0)
@@ -683,6 +714,8 @@ enum MarkdownStylist {
         storage.addAttribute(.kern, value: 4.0, range: markerRange)
     }
 }
+
+// MARK: - Color Utilities
 
 extension NSColor {
     convenience init(hex: String) {

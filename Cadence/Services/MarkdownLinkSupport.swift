@@ -13,11 +13,10 @@ struct MarkdownLinkRange: Equatable {
 }
 
 enum MarkdownLinkSupport {
-    nonisolated static func linkRanges(in markdown: String) -> [MarkdownLinkRange] {
-        guard let regex = try? NSRegularExpression(pattern: #"(?<!\!)\[([^\]]+)\]\(([^)]+)\)"#) else {
-            return []
-        }
+    private static let linkRegex = try! NSRegularExpression(pattern: #"(?<!\!)\[([^\]]+)\]\(([^)]+)\)"#)
 
+    nonisolated static func linkRanges(in markdown: String) -> [MarkdownLinkRange] {
+        let regex = linkRegex
         let nsMarkdown = markdown as NSString
         return regex.matches(in: markdown, range: NSRange(location: 0, length: nsMarkdown.length)).compactMap { match in
             guard match.numberOfRanges >= 3 else { return nil }

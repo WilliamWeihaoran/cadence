@@ -44,6 +44,9 @@ struct MarkdownListIndentationResult: Equatable {
 }
 
 enum MarkdownListSupport {
+    private static let orderedMarkerRegex = try! NSRegularExpression(pattern: #"^((?:\d+|[A-Za-z]+|[ivxlcdmIVXLCDM]+)[.)])\s"#)
+    private static let bulletCheckboxRegex = try! NSRegularExpression(pattern: #"^([*+-])\s+(?:\[([ xX])\]\s+)?"#)
+
     static func normalizedMarkdownListPrefixes(in text: String) -> String {
         normalizedMarkdownListPrefixes(in: text, selection: NSRange(location: 0, length: 0)).text
     }
@@ -272,8 +275,7 @@ enum MarkdownListSupport {
             return MarkdownListPrefixMatch(kind: kind, indentation: indentation, marker: marker, prefix: indentation + prefix)
         }
 
-        guard let regex = try? NSRegularExpression(pattern: #"^((?:\d+|[A-Za-z]+|[ivxlcdmIVXLCDM]+)[.)])\s"#),
-              let match = regex.firstMatch(in: trimmed, range: NSRange(location: 0, length: (trimmed as NSString).length)) else {
+        guard let match = orderedMarkerRegex.firstMatch(in: trimmed, range: NSRange(location: 0, length: (trimmed as NSString).length)) else {
             return nil
         }
 
@@ -333,8 +335,7 @@ enum MarkdownListSupport {
             )
         }
 
-        guard let regex = try? NSRegularExpression(pattern: #"^((?:\d+|[A-Za-z]+|[ivxlcdmIVXLCDM]+)[.)])\s"#),
-              let match = regex.firstMatch(in: trimmed, range: NSRange(location: 0, length: nsTrimmed.length)) else {
+        guard let match = orderedMarkerRegex.firstMatch(in: trimmed, range: NSRange(location: 0, length: nsTrimmed.length)) else {
             return nil
         }
 
@@ -495,8 +496,7 @@ enum MarkdownListSupport {
             return indentation + "✓ " + String(trimmed.dropFirst(2))
         }
 
-        guard let regex = try? NSRegularExpression(pattern: #"^([*+-])\s+(?:\[([ xX])\]\s+)?"#),
-              let match = regex.firstMatch(in: trimmed, range: NSRange(location: 0, length: (trimmed as NSString).length)) else {
+        guard let match = bulletCheckboxRegex.firstMatch(in: trimmed, range: NSRange(location: 0, length: (trimmed as NSString).length)) else {
             return nil
         }
 

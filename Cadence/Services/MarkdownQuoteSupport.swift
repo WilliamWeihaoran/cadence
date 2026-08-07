@@ -8,11 +8,10 @@ struct MarkdownQuoteLine: Equatable {
 }
 
 enum MarkdownQuoteSupport {
-    static func lineInfo(in line: String) -> MarkdownQuoteLine? {
-        guard let regex = try? NSRegularExpression(pattern: #"^([ \t]*)(>\s*)+"#) else {
-            return nil
-        }
+    private static let quoteRegex = try! NSRegularExpression(pattern: #"^([ \t]*)(>\s*)+"#)
 
+    static func lineInfo(in line: String) -> MarkdownQuoteLine? {
+        let regex = quoteRegex
         let nsLine = line as NSString
         let fullRange = NSRange(location: 0, length: nsLine.length)
         guard let match = regex.firstMatch(in: line, range: fullRange) else {
