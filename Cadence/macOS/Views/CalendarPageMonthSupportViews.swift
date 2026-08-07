@@ -272,7 +272,6 @@ struct AllDayTaskChip: View {
         .popover(isPresented: $showInspector, arrowEdge: .bottom) {
             TaskDetailPopover(task: task)
         }
-        .suppressWindowBackgroundDrag()
         .draggable(task.id.uuidString)
     }
 }

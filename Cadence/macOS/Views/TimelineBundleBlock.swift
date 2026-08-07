@@ -83,7 +83,6 @@ struct TimelineBundleBlock: View {
                 activeDragBundleID = nil
                 selectedBundleID = bundle.id
             }
-            .suppressWindowBackgroundDrag()
             .onDrag {
                 selectedBundleID = nil
                 activeDragBundleID = bundle.id

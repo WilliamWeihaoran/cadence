@@ -105,7 +105,6 @@ struct TimelineTaskBlock: View {
                 onSelect()
             }
         }
-        .suppressWindowBackgroundDrag()
         .onDrag {
             guard activeResizeEdge == nil else {
                 return NSItemProvider()

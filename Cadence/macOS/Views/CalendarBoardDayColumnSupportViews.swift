@@ -213,7 +213,6 @@ struct CalendarBoardDayColumn: View {
                             CalendarBoardPlannerSupport.boardTaskSort(lhs, rhs)
                         }) { task in
                             KanbanCard(task: task, presentation: .calendarBoard(dateKey: dateKey))
-                                .suppressWindowBackgroundDrag()
                                 .draggable(TaskDragPayload.string(for: task.id))
                         }
                     }
@@ -244,7 +243,6 @@ struct CalendarBoardDayColumn: View {
             )
         case .task(let task):
             KanbanCard(task: task, presentation: .calendarBoard(dateKey: dateKey))
-                .suppressWindowBackgroundDrag()
                 .draggable(TaskDragPayload.string(for: task.id))
         }
     }
