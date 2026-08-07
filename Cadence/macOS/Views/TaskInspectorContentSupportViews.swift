@@ -176,7 +176,6 @@ final class TaskNotesPanelController: NSObject, NSWindowDelegate {
             onClose: { [weak self] in self?.close() }
         )
         .modelContainer(PersistenceController.shared.container)
-        .environment(ThemeManager.shared)
         .environment(CadenceDeepLinkManager.shared)
         .environment(CalendarManager.shared)
         .environment(AISettingsManager.shared)

@@ -3,7 +3,6 @@ import SwiftUI
 import SwiftData
 
 struct SettingsView: View {
-    @Environment(ThemeManager.self) private var themeManager
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(AISettingsManager.self) private var aiSettingsManager
     @Environment(AppleAccountManager.self) private var appleAccountManager
@@ -19,7 +18,7 @@ struct SettingsView: View {
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query(sort: \Tag.order) private var tags: [Tag]
-    @State private var selectedCategory: SettingsCategory = .appearance
+    @State private var selectedCategory: SettingsCategory = .navigation
     @State private var pendingDeleteArea: Area?
     @State private var pendingDeleteProject: Project?
     @State private var pendingDeleteContext: Context?
@@ -152,11 +151,6 @@ struct SettingsView: View {
     @ViewBuilder
     private var selectedSectionContent: some View {
         switch selectedCategory {
-        case .appearance:
-            SettingsAppearanceSection(
-                selectedTheme: themeManager.selectedTheme,
-                onSelectTheme: { themeManager.selectedTheme = $0 }
-            )
         case .account:
             SettingsAccountSection(
                 appleAccountManager: appleAccountManager,

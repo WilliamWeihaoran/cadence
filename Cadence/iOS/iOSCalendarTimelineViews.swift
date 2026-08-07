@@ -321,41 +321,34 @@ private struct iOSCalendarEventBlock: View {
     let startMin: Int
     let endMin: Int
 
-    private var color: Color {
-        iOSCalendarEventSupport.color(for: event.calendar)
+    private var fill: Color {
+        iOSCalendarEventSupport.fillColor(for: event.calendar)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(iOSCalendarEventSupport.title(for: event))
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(2)
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "calendar")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.text.opacity(0.82))
+                .padding(.top, 2)
 
-            Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(Theme.dim)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(iOSCalendarEventSupport.title(for: event))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(2)
+
+                Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Theme.text.opacity(0.7))
+                    .lineLimit(1)
+            }
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                    .fill(Theme.surfaceElevated)
-                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                    .fill(color.opacity(0.14))
-            }
-        )
+        .background(fill)
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(color)
-                .frame(width: 3)
-                .padding(.vertical, 5)
-        }
-        .shadow(color: Theme.chipShadow, radius: 3, x: 0, y: 1)
     }
 }
 
@@ -365,43 +358,52 @@ private struct iOSCalendarTaskBlock: View {
     let endMin: Int
     @State private var showDetail = false
 
-    private var color: Color {
+    private var listColor: Color {
         Color(hex: task.containerColor)
+    }
+
+    private var priorityColor: Color {
+        Theme.priorityColor(task.priority)
     }
 
     var body: some View {
         Button {
             showDetail = true
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(task.title.isEmpty ? "Untitled" : task.title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(2)
-                Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
+            HStack(alignment: .top, spacing: 6) {
+                iOSTaskCompletionCircle(isDone: task.isDone, tint: priorityColor)
+                    .frame(width: 11, height: 11)
+                    .padding(.top, 2)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(task.title.isEmpty ? "Untitled" : task.title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                        .strikethrough(task.isDone, color: Theme.dim)
+                        .lineLimit(2)
+                    Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
             }
             .padding(.horizontal, 7)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                        .fill(Theme.surfaceElevated)
-                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                        .fill(color.opacity(task.isDone ? 0.07 : 0.18))
-                }
+            .background(listColor.opacity(task.isDone ? 0.05 : 0.10))
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 0,
+                    bottomLeadingRadius: 0,
+                    bottomTrailingRadius: Theme.radiusControl,
+                    topTrailingRadius: Theme.radiusControl
+                )
             )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             .overlay(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(color)
-                    .frame(width: 3)
-                    .padding(.vertical, 5)
+                Rectangle()
+                    .fill(listColor)
+                    .frame(width: 2)
             }
-            .shadow(color: Theme.chipShadow, radius: 3, x: 0, y: 1)
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $showDetail) {
@@ -414,19 +416,49 @@ private struct iOSCalendarBundleBlock: View {
     let bundle: TaskBundle
     @State private var showDetail = false
 
+    private var tasks: [AppTask] {
+        bundle.sortedTasks
+    }
+
+    private var allDone: Bool {
+        !tasks.isEmpty && tasks.allSatisfy(\.isDone)
+    }
+
     var body: some View {
         Button {
             showDetail = true
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
                     Image(systemName: "tray.full.fill")
                         .font(.system(size: 9, weight: .semibold))
                     Text(bundle.displayTitle)
                         .font(.system(size: 11, weight: .semibold))
-                        .lineLimit(2)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text("×\(tasks.count)")
+                        .font(.system(size: 10, weight: .bold))
                 }
-                .foregroundStyle(Theme.text)
+                .foregroundStyle(allDone ? Theme.dim : Theme.text)
+                .strikethrough(allDone, color: Theme.dim)
+
+                ForEach(tasks.prefix(2)) { task in
+                    HStack(spacing: 4) {
+                        iOSTaskCompletionCircle(isDone: task.isDone, tint: Theme.priorityColor(task.priority))
+                            .frame(width: 9, height: 9)
+                        Text(task.title.isEmpty ? "Untitled" : task.title)
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundStyle(task.isDone ? Theme.dim : Theme.text.opacity(0.85))
+                            .strikethrough(task.isDone, color: Theme.dim)
+                            .lineLimit(1)
+                    }
+                }
+
+                if tasks.count > 2 {
+                    Text("+\(tasks.count - 2) more")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                }
 
                 Text(CadenceScheduleSupport.timeRangeLabel(startMinute: bundle.startMin, endMinute: bundle.endMin))
                     .font(.system(size: 9, weight: .medium))
@@ -436,16 +468,12 @@ private struct iOSCalendarBundleBlock: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                        .fill(Theme.surfaceElevated)
-                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                        .fill(Theme.amber.opacity(0.16))
-                }
-            )
+            .background(allDone ? Theme.doneFill.opacity(0.12) : Theme.amber.opacity(0.10))
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-            .shadow(color: Theme.chipShadow, radius: 3, x: 0, y: 1)
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                    .stroke(allDone ? Theme.doneFill.opacity(0.4) : Theme.amber.opacity(0.2), lineWidth: 1)
+            }
         }
         .buttonStyle(.plain)
         .contextMenu {

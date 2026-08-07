@@ -20,7 +20,6 @@ enum iOSSidebarItem: Hashable {
 }
 
 struct iOSRootView: View {
-    @Environment(ThemeManager.self) private var themeManager
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -33,8 +32,6 @@ struct iOSRootView: View {
     @State private var compactMorePath: [CadenceFeatureDestination] = []
 
     var body: some View {
-        let _ = themeManager.selectedTheme
-
         Group {
             if horizontalSizeClass == .regular {
                 iPadMacStyleRootShell(selection: $selection) {

@@ -56,7 +56,7 @@ struct GlobalSearchOverlayShell<Content: View>: View {
 
             content()
                 .frame(width: 760, height: 620)
-                .background(.ultraThinMaterial)
+                .background(Theme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous)

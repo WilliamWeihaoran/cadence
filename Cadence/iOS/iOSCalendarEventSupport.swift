@@ -1,6 +1,7 @@
 #if os(iOS)
 import EventKit
 import SwiftUI
+import UIKit
 
 enum iOSCalendarEventSupport {
     static func title(for event: EKEvent) -> String {
@@ -15,6 +16,27 @@ enum iOSCalendarEventSupport {
             return Theme.blue
         }
         return Color(cgColor: cgColor)
+    }
+
+    /// Desaturated, darkened variant of the calendar's own bright color, used as a solid
+    /// event-block fill so vivid EventKit calendar colors stay legible against the dark theme.
+    static func fillColor(for calendar: EKCalendar?) -> Color {
+        fillColor(from: color(for: calendar))
+    }
+
+    static func fillColor(from base: Color) -> Color {
+        let uiColor = UIColor(base)
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
+        uiColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        return Color(UIColor(
+            hue: hue,
+            saturation: min(saturation * 0.55, 1),
+            brightness: max(brightness * 0.6, 0.22),
+            alpha: alpha
+        ))
     }
 
     static func timeRangeLabel(for event: EKEvent) -> String {

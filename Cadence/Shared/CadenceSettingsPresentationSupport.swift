@@ -1,7 +1,6 @@
 import SwiftUI
 
 enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
-    case appearance
     case navigation
     case sidebar
     case sync
@@ -21,7 +20,6 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .appearance: return "Appearance"
         case .navigation: return "Navigation"
         case .sidebar: return "Sidebar"
         case .sync: return "Account & Sync"
@@ -41,8 +39,6 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .appearance:
-            return "Theme and visual tone."
         case .navigation:
             return "Layouts and defaults."
         case .sidebar:
@@ -76,8 +72,6 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
 
     var detailDescription: String {
         switch self {
-        case .appearance:
-            return "Choose the palette Cadence uses across the app."
         case .navigation:
             return "Choose default layouts and opening behavior for task, calendar, list, and note workflows."
         case .sidebar:
@@ -111,7 +105,6 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .appearance: return "paintpalette.fill"
         case .navigation: return "rectangle.stack.fill"
         case .sidebar: return "sidebar.left"
         case .sync: return "icloud.fill"
@@ -131,8 +124,6 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
 
     var tint: Color {
         switch self {
-        case .appearance:
-            return Theme.blue
         case .navigation:
             return Theme.green
         case .sidebar:

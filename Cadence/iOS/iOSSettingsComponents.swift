@@ -2,7 +2,6 @@
 import SwiftUI
 
 enum iOSSettingsCategory: String, CaseIterable, Identifiable {
-    case appearance
     case navigation
     case sync
     case data
@@ -20,7 +19,6 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
 
     var sharedKind: CadenceSettingsCategoryKind {
         switch self {
-        case .appearance: return .appearance
         case .navigation: return .navigation
         case .sync: return .sync
         case .data: return .dataSafety
@@ -66,7 +64,7 @@ private struct iOSSettingsCategoryGroup: Identifiable {
     static let all: [iOSSettingsCategoryGroup] = [
         iOSSettingsCategoryGroup(
             title: "Interface",
-            categories: [.appearance, .navigation]
+            categories: [.navigation]
         ),
         iOSSettingsCategoryGroup(
             title: "Organization",
@@ -294,79 +292,6 @@ struct iOSSettingsCompactCategoryPicker: View {
             .padding(.horizontal, 1)
         }
         .scrollIndicators(.hidden)
-    }
-}
-
-struct iOSAppearanceSettingsSection: View {
-    let selectedTheme: ThemeOption
-    let onSelectTheme: (ThemeOption) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            CadenceSettingsSectionLabel(text: "Theme")
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 10)], spacing: 10) {
-                ForEach(ThemeOption.allCases) { option in
-                    iOSThemeOptionCard(
-                        option: option,
-                        isSelected: selectedTheme == option,
-                        action: { onSelectTheme(option) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-private struct iOSThemeOptionCard: View {
-    let option: ThemeOption
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
-                    ForEach(Array(option.previewColors.enumerated()), id: \.offset) { _, color in
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(color)
-                            .frame(height: 28)
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                    .strokeBorder(Theme.borderSubtle.opacity(0.7), lineWidth: 1)
-                            }
-                    }
-                }
-
-                HStack(spacing: 7) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(option.title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                        Text(option.subtitle)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.dim)
-                            .lineLimit(2)
-                    }
-
-                    Spacer(minLength: 0)
-
-                    if isSelected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(Theme.blue)
-                    }
-                }
-            }
-            .padding(13)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .strokeBorder(isSelected ? Theme.blue.opacity(0.68) : Theme.borderSubtle.opacity(0.6), lineWidth: isSelected ? 1.4 : 1)
-            }
-        }
-        .buttonStyle(.plain)
     }
 }
 

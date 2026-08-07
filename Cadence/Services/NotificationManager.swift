@@ -19,8 +19,13 @@ final class NotificationManager: NSObject {
 
     var isAuthorized: Bool = false
 
+    // `lazy` is deliberate: a plain stored-property initializer runs before `super.init()`,
+    // which would touch `UNUserNotificationCenter.current()` unconditionally on every
+    // construction — bypassing the `isTestEnvironment`/Preview guard below entirely, since
+    // that guard only runs once the `init()` body executes. `lazy` defers the actual touch
+    // until `center` is first read, which only happens after the guard has already returned.
     @ObservationIgnored
-    private let center = UNUserNotificationCenter.current()
+    private lazy var center: UNUserNotificationCenter = .current()
 
     private override init() {
         super.init()
@@ -139,10 +144,13 @@ final class NotificationManager: NSObject {
 
     /// Reuses the same test-mode detection as `CadenceUITestSupport`/`CadenceAppDelegate` so unit
     /// and UI tests never trigger a real OS permission prompt or schedule real notifications.
+    /// Also skips Xcode's SwiftUI Preview host process — `UNUserNotificationCenter.current()` is a
+    /// well-known source of crashes there since preview hosts lack a normal app bundle identity.
     static var isTestEnvironment: Bool {
         let environment = ProcessInfo.processInfo.environment
         if environment["XCTestConfigurationFilePath"] != nil { return true }
         if environment["XCTestSessionIdentifier"] != nil { return true }
+        if environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return true }
         if CadenceUITestSupport.isEnabled { return true }
         return false
     }

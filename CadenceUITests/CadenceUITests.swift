@@ -25,22 +25,6 @@ final class CadenceUITests: XCTestCase {
         XCTAssertTrue(app.buttons["sidebar.list.area.gamma-area"].exists)
     }
 
-    func testThemeSelectionPersistsAcrossRelaunch() throws {
-        try requireInteractiveUITestsEnabled()
-        launchApp(resetStore: true, resetDefaults: true)
-
-        openSettings()
-        let daylightTheme = app.buttons["settings.theme.daylight"]
-        daylightTheme.click()
-        XCTAssertTrue(waitUntil("Daylight theme becomes active") {
-            daylightTheme.value as? String == "Active"
-        })
-
-        relaunchApp(resetStore: false, resetDefaults: false)
-        openSettings()
-        XCTAssertEqual(app.buttons["settings.theme.daylight"].value as? String, "Active")
-    }
-
     func testRightClickingSidebarListOpensEditPanel() throws {
         try requireInteractiveUITestsEnabled()
         launchApp(resetStore: true, resetDefaults: true)
@@ -94,20 +78,6 @@ final class CadenceUITests: XCTestCase {
         app.terminate()
         XCTAssertTrue(app.wait(for: .notRunning, timeout: 5))
         launchApp(resetStore: resetStore, resetDefaults: resetDefaults)
-    }
-
-    private func openSettings() {
-        let settings = app.buttons["sidebar.settings"]
-        XCTAssertTrue(settings.waitForExistence(timeout: 5))
-        XCTAssertTrue(waitUntil("Settings sidebar button is hittable") {
-            settings.isHittable
-        })
-        settings.click()
-        let daylightTheme = app.buttons["settings.theme.daylight"]
-        XCTAssertTrue(daylightTheme.waitForExistence(timeout: 5))
-        XCTAssertTrue(waitUntil("Daylight theme button is hittable") {
-            daylightTheme.isHittable
-        })
     }
 
     private func drag(_ source: XCUIElement, to target: XCUIElement) {

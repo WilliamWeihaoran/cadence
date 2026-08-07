@@ -1,282 +1,35 @@
 import SwiftUI
-import Observation
 
-struct ThemeColors {
-    let bg: Color
-    let surface: Color
-    let surfaceElevated: Color
-    let borderSubtle: Color
-
-    let text: Color
-    let muted: Color
-    let dim: Color
-
-    let blue: Color
-    let blueLight: Color
-    let blueDark: Color
-
-    let red: Color
-    let redLight: Color
-
-    let green: Color
-    let greenLight: Color
-
-    let amber: Color
-    let amberLight: Color
-
-    let purple: Color
-}
-
-enum ThemeOption: String, CaseIterable, Identifiable {
-    case midnight
-    case graphite
-    case ember
-    case ocean
-    case daylight
-    case sage
-    case aurora
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .midnight: return "Midnight"
-        case .graphite: return "Graphite"
-        case .ember: return "Ember"
-        case .ocean: return "Ocean"
-        case .daylight: return "Daylight"
-        case .sage: return "Sage"
-        case .aurora: return "Aurora"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .midnight: return "Ink surfaces with cyan and violet accents"
-        case .graphite: return "Soft charcoal with cobalt and moss accents"
-        case .ember: return "Warm graphite with copper and rose accents"
-        case .ocean: return "Deep teal with aqua and sea-glass accents"
-        case .daylight: return "Clean light surfaces with crisp blue actions"
-        case .sage: return "Calm light greens with teal and clay accents"
-        case .aurora: return "Night violet with mint and electric blue accents"
-        }
-    }
-
-    var previewColors: [Color] {
-        let palette = colors
-        return [palette.bg, palette.surface, palette.blue, palette.amber]
-    }
-
-    var preferredColorScheme: ColorScheme {
-        switch self {
-        case .daylight, .sage:
-            return .light
-        case .midnight, .graphite, .ember, .ocean, .aurora:
-            return .dark
-        }
-    }
-
-    var colors: ThemeColors {
-        switch self {
-        case .midnight:
-            return ThemeColors(
-                bg: Color(hex: "#0b1020"),
-                surface: Color(hex: "#141a2c"),
-                surfaceElevated: Color(hex: "#1b2440"),
-                borderSubtle: Color(hex: "#2b3656"),
-                text: Color(hex: "#edf4ff"),
-                muted: Color(hex: "#b8c8df"),
-                dim: Color(hex: "#7384a3"),
-                blue: Color(hex: "#55b7ff"),
-                blueLight: Color(hex: "#84ceff"),
-                blueDark: Color(hex: "#247fd0"),
-                red: Color(hex: "#ff6f8f"),
-                redLight: Color(hex: "#ff9ab2"),
-                green: Color(hex: "#67d8a2"),
-                greenLight: Color(hex: "#91e8bd"),
-                amber: Color(hex: "#f8b85e"),
-                amberLight: Color(hex: "#ffd17f"),
-                purple: Color(hex: "#b59cff")
-            )
-        case .graphite:
-            return ThemeColors(
-                bg: Color(hex: "#111315"),
-                surface: Color(hex: "#1b1f22"),
-                surfaceElevated: Color(hex: "#242a2f"),
-                borderSubtle: Color(hex: "#333b42"),
-                text: Color(hex: "#eef2f4"),
-                muted: Color(hex: "#c3cbd2"),
-                dim: Color(hex: "#818b94"),
-                blue: Color(hex: "#6aa7ff"),
-                blueLight: Color(hex: "#94c2ff"),
-                blueDark: Color(hex: "#3d75c5"),
-                red: Color(hex: "#ff7d86"),
-                redLight: Color(hex: "#ffa0a7"),
-                green: Color(hex: "#8ac36f"),
-                greenLight: Color(hex: "#abd98f"),
-                amber: Color(hex: "#e9b15f"),
-                amberLight: Color(hex: "#f4c985"),
-                purple: Color(hex: "#b49bff")
-            )
-        case .ember:
-            return ThemeColors(
-                bg: Color(hex: "#17110f"),
-                surface: Color(hex: "#241a17"),
-                surfaceElevated: Color(hex: "#30221d"),
-                borderSubtle: Color(hex: "#473129"),
-                text: Color(hex: "#f6ebe5"),
-                muted: Color(hex: "#dfc8bb"),
-                dim: Color(hex: "#aa8877"),
-                blue: Color(hex: "#ff9a62"),
-                blueLight: Color(hex: "#ffbd8b"),
-                blueDark: Color(hex: "#c76231"),
-                red: Color(hex: "#ff6f7d"),
-                redLight: Color(hex: "#ff9aa3"),
-                green: Color(hex: "#74c69d"),
-                greenLight: Color(hex: "#9addba"),
-                amber: Color(hex: "#f4c45f"),
-                amberLight: Color(hex: "#ffdc87"),
-                purple: Color(hex: "#d498ff")
-            )
-        case .ocean:
-            return ThemeColors(
-                bg: Color(hex: "#071417"),
-                surface: Color(hex: "#102428"),
-                surfaceElevated: Color(hex: "#17333a"),
-                borderSubtle: Color(hex: "#28535d"),
-                text: Color(hex: "#e3fbf8"),
-                muted: Color(hex: "#b9dad7"),
-                dim: Color(hex: "#719794"),
-                blue: Color(hex: "#36c7df"),
-                blueLight: Color(hex: "#72deec"),
-                blueDark: Color(hex: "#168396"),
-                red: Color(hex: "#ff8276"),
-                redLight: Color(hex: "#ffa69d"),
-                green: Color(hex: "#62d8a7"),
-                greenLight: Color(hex: "#8ae8c0"),
-                amber: Color(hex: "#ffc25c"),
-                amberLight: Color(hex: "#ffd98b"),
-                purple: Color(hex: "#8fb5ff")
-            )
-        case .daylight:
-            return ThemeColors(
-                bg: Color(hex: "#f6f8fb"),
-                surface: Color(hex: "#ffffff"),
-                surfaceElevated: Color(hex: "#eef3f8"),
-                borderSubtle: Color(hex: "#d9e2ec"),
-                text: Color(hex: "#16202a"),
-                muted: Color(hex: "#4d5d6f"),
-                dim: Color(hex: "#7c8a99"),
-                blue: Color(hex: "#256fdb"),
-                blueLight: Color(hex: "#5b9df0"),
-                blueDark: Color(hex: "#174f9f"),
-                red: Color(hex: "#d64545"),
-                redLight: Color(hex: "#f17777"),
-                green: Color(hex: "#238b63"),
-                greenLight: Color(hex: "#5fbf95"),
-                amber: Color(hex: "#c77918"),
-                amberLight: Color(hex: "#eba64a"),
-                purple: Color(hex: "#7655d9")
-            )
-        case .sage:
-            return ThemeColors(
-                bg: Color(hex: "#f3f6ef"),
-                surface: Color(hex: "#fbfcf8"),
-                surfaceElevated: Color(hex: "#e8efe3"),
-                borderSubtle: Color(hex: "#d1dcc9"),
-                text: Color(hex: "#1b261f"),
-                muted: Color(hex: "#50614f"),
-                dim: Color(hex: "#7a8a77"),
-                blue: Color(hex: "#2c8c83"),
-                blueLight: Color(hex: "#62b9ad"),
-                blueDark: Color(hex: "#17665f"),
-                red: Color(hex: "#c65252"),
-                redLight: Color(hex: "#e78383"),
-                green: Color(hex: "#4f9a57"),
-                greenLight: Color(hex: "#7fbd85"),
-                amber: Color(hex: "#bd7f3a"),
-                amberLight: Color(hex: "#d9a76d"),
-                purple: Color(hex: "#8269c9")
-            )
-        case .aurora:
-            return ThemeColors(
-                bg: Color(hex: "#100d1c"),
-                surface: Color(hex: "#1b162b"),
-                surfaceElevated: Color(hex: "#26203d"),
-                borderSubtle: Color(hex: "#3b315c"),
-                text: Color(hex: "#f0ecff"),
-                muted: Color(hex: "#cec5ed"),
-                dim: Color(hex: "#8c80ae"),
-                blue: Color(hex: "#7c9cff"),
-                blueLight: Color(hex: "#a7bcff"),
-                blueDark: Color(hex: "#4f67c7"),
-                red: Color(hex: "#ff6fa0"),
-                redLight: Color(hex: "#ff9cc0"),
-                green: Color(hex: "#76e0bd"),
-                greenLight: Color(hex: "#9bf0d3"),
-                amber: Color(hex: "#f4c86a"),
-                amberLight: Color(hex: "#ffdc91"),
-                purple: Color(hex: "#c08cff")
-            )
-        }
-    }
-}
-
-@Observable
-final class ThemeManager {
-    static let shared = ThemeManager()
-
-    private let storageKey = "selectedTheme"
-    var selectedTheme: ThemeOption {
-        didSet {
-            UserDefaults.standard.set(selectedTheme.rawValue, forKey: storageKey)
-        }
-    }
-
-    var palette: ThemeColors { selectedTheme.colors }
-
-    private init() {
-        if
-            let rawValue = UserDefaults.standard.string(forKey: storageKey),
-            let restored = ThemeOption(rawValue: rawValue)
-        {
-            selectedTheme = restored
-        } else {
-            selectedTheme = .midnight
-        }
-    }
-}
-
+/// Cadence's single fixed dark palette. Previously the app supported 7 selectable themes
+/// (light and dark) via `ThemeManager`; that system has been removed in favor of one fixed,
+/// non-adaptive palette shared by macOS and iOS/iPadOS.
 struct Theme {
-    private static var palette: ThemeColors { ThemeManager.shared.palette }
+    static let bg = Color(hex: "#0f1117")
+    static let surface = Color(hex: "#1a1d27")
+    static let surfaceElevated = Color(hex: "#1f2235")
+    static let borderSubtle = Color(hex: "#252a3d")
 
-    static var bg: Color { palette.bg }
-    static var surface: Color { palette.surface }
-    static var surfaceElevated: Color { palette.surfaceElevated }
-    static var borderSubtle: Color { palette.borderSubtle }
+    static let text = Color(hex: "#e2e8f0")
+    static let muted = Color(hex: "#c4d4e8")
+    static let dim = Color(hex: "#6b7a99")
 
-    static var text: Color { palette.text }
-    static var muted: Color { palette.muted }
-    static var dim: Color { palette.dim }
+    static let blue = Color(hex: "#4a9eff")
+    static let blueLight = lightened("#4a9eff")
+    static let blueDark = darkened("#4a9eff")
 
-    static var blue: Color { palette.blue }
-    static var blueLight: Color { palette.blueLight }
-    static var blueDark: Color { palette.blueDark }
+    static let red = Color(hex: "#ff6b6b")
+    static let redLight = lightened("#ff6b6b")
 
-    static var red: Color { palette.red }
-    static var redLight: Color { palette.redLight }
+    static let green = Color(hex: "#4ecb71")
+    static let greenLight = lightened("#4ecb71")
 
-    static var green: Color { palette.green }
-    static var greenLight: Color { palette.greenLight }
+    static let amber = Color(hex: "#ffa94d")
+    static let amberLight = lightened("#ffa94d")
 
-    static var amber: Color { palette.amber }
-    static var amberLight: Color { palette.amberLight }
+    static let purple = Color(hex: "#a78bfa")
 
-    static var purple: Color { palette.purple }
-
-    static var preferredColorScheme: ColorScheme {
-        ThemeManager.shared.selectedTheme.preferredColorScheme
-    }
+    /// The palette is fixed dark; there is no light variant or user selection anymore.
+    static let preferredColorScheme: ColorScheme = .dark
 
     static func priorityColor(_ priority: TaskPriority) -> Color {
         switch priority {
@@ -296,6 +49,11 @@ struct Theme {
         }
     }
 
+    /// Fill for a completed completion-circle (task rows, kanban cards, timeline blocks, task
+    /// inspector). When checked, every priority converges to this same green + a white
+    /// checkmark — priority stops being shown once a task is done.
+    static let doneFill = green
+
     // MARK: - Shadow presets
     // Named to replace one-off `Color.black.opacity(...)` shadow values scattered across
     // surfaces. Radius/offset stay call-site-specific since elevation depth genuinely varies;
@@ -309,8 +67,10 @@ struct Theme {
     /// Shadow for centered modal cards, popovers, toasts, and overlay shells presented
     /// above a dimming scrim.
     static let overlayCardShadow = Color.black.opacity(0.3)
-    /// Soft lift for in-flow content cards (task rows, stat cards, list rows) that
-    /// replaces a hard border with gentle elevation. Paired with `radiusCard`.
+    /// Soft lift for in-flow content cards that replaces a hard border with gentle elevation.
+    /// Paired with `radiusCard`. NOTE: task rows/kanban cards moved back to a flat,
+    /// divider-separated style per the current design spec — this token is now only for
+    /// surfaces that are still deliberately card-shaped (e.g. stat tiles, popovers).
     static let cardElevationShadow = Color.black.opacity(0.22)
 
     // MARK: - Corner radius scale
@@ -319,10 +79,46 @@ struct Theme {
 
     /// Small in-card controls: icon badges, compact buttons, inline pickers.
     static let radiusControl: CGFloat = 10
-    /// Standard content cards: task rows, stat tiles, list rows, kanban cards.
+    /// Standard content cards: stat tiles, list rows that are still card-shaped, kanban cards.
     static let radiusCard: CGFloat = 18
     /// Large surfaces: page headers, sheets, popovers, modal shells.
     static let radiusPanel: CGFloat = 22
+
+    // MARK: - Derived variants
+    // The design spec defines only the base hues above; light/dark accent variants (still
+    // referenced by existing call sites for hover/pressed/emphasis states) are derived here by
+    // blending a fixed fraction toward white/black, rather than hand-picking arbitrary hex
+    // values with no spec to match against.
+
+    private static func lightened(_ hex: String, by amount: Double = 0.3) -> Color {
+        blended(hex, toward: (1, 1, 1), amount: amount)
+    }
+
+    private static func darkened(_ hex: String, by amount: Double = 0.35) -> Color {
+        blended(hex, toward: (0, 0, 0), amount: amount)
+    }
+
+    private static func blended(_ hex: String, toward target: (r: Double, g: Double, b: Double), amount: Double) -> Color {
+        let c = hexComponents(hex)
+        return Color(
+            .sRGB,
+            red: c.r + (target.r - c.r) * amount,
+            green: c.g + (target.g - c.g) * amount,
+            blue: c.b + (target.b - c.b) * amount,
+            opacity: 1
+        )
+    }
+
+    private static func hexComponents(_ hex: String) -> (r: Double, g: Double, b: Double) {
+        let cleaned = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: cleaned).scanHexInt64(&int)
+        return (
+            Double((int >> 16) & 0xFF) / 255,
+            Double((int >> 8) & 0xFF) / 255,
+            Double(int & 0xFF) / 255
+        )
+    }
 }
 
 extension Color {

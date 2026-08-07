@@ -45,7 +45,6 @@ enum CadenceUITestSupport {
 
     private static func resetUserDefaults() {
         let keys = [
-            "selectedTheme",
             "listDetailDefaultPage",
             "sidebarHiddenTabs",
             "sidebarTabOrder",

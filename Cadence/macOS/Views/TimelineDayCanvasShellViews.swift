@@ -60,12 +60,13 @@ struct TimelineDraftGhostLayer: View {
             .foregroundStyle(Theme.text)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
-            .background(.ultraThinMaterial)
+            .background(Theme.surfaceElevated)
             .clipShape(Capsule())
             .overlay(
                 Capsule()
                     .stroke(Theme.blue.opacity(0.28), lineWidth: 1)
             )
+            .shadow(color: Theme.chipShadow, radius: 4, x: 0, y: 2)
             .padding(.top, 6)
             .padding(.leading, 6)
         }

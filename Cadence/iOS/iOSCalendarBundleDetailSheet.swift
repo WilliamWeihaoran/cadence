@@ -251,16 +251,14 @@ private struct iOSCalendarBundleTaskRow: View {
             Button {
                 CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
             } label: {
-                Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(task.isDone ? Theme.green : Theme.dim)
+                iOSTaskCompletionCircle(isDone: task.isDone, tint: Theme.priorityColor(task.priority))
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(task.title.isEmpty ? "Untitled Task" : task.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                     .strikethrough(task.isDone, color: Theme.dim)
                     .lineLimit(2)
@@ -297,12 +295,14 @@ private struct iOSCalendarBundleTaskRow: View {
                     .frame(width: 30, height: 30)
             }
         }
-        .padding(.horizontal, 11)
+        .padding(.horizontal, 2)
         .padding(.vertical, 11)
-        .background(Theme.surfaceElevated.opacity(0.58))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
-        .shadow(color: Theme.cardElevationShadow, radius: 8, x: 0, y: 3)
-        .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(0.35))
+                .frame(height: 1)
+        }
+        .contentShape(Rectangle())
         .onTapGesture(perform: open)
     }
 }

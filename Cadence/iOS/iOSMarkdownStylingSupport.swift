@@ -1078,7 +1078,7 @@ struct iOSMarkdownStyleSignature: Equatable {
         contentWidth: CGFloat = 0
     ) -> iOSMarkdownStyleSignature {
         iOSMarkdownStyleSignature(
-            theme: ThemeManager.shared.selectedTheme.rawValue,
+            theme: "fixed",
             hidesMarkdownMarkers: hidesMarkdownMarkers,
             contentWidthBucket: Int(max(0, contentWidth).rounded()),
             imageAssetRevision: imageAssets

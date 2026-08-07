@@ -182,6 +182,11 @@ struct iOSTaskDetailSheet: View {
     private var editorScrollView: some View {
         ScrollView {
             taskForm
+                .padding(14)
+                .background(Color(hex: "#151824"))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
                 .padding(isRegularWidth ? 20 : 18)
         }
         .background(Theme.bg)
@@ -191,16 +196,7 @@ struct iOSTaskDetailSheet: View {
         .tint(Theme.blue)
     }
 
-    @ViewBuilder
     private var taskForm: some View {
-        if isRegularWidth {
-            regularTaskForm
-        } else {
-            compactTaskForm
-        }
-    }
-
-    private var compactTaskForm: some View {
         VStack(alignment: .leading, spacing: 14) {
             iOSTaskEditorTitleCard(task: task)
             iOSTaskEditorOverviewCard(
@@ -217,34 +213,6 @@ struct iOSTaskDetailSheet: View {
             subtasksSection
             actionsSection
         }
-    }
-
-    private var regularTaskForm: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 14) {
-                iOSTaskEditorTitleCard(task: task)
-                iOSTaskEditorOverviewCard(
-                    task: task,
-                    containerTitle: currentContainerTitle,
-                    goalTitle: currentGoalTitle
-                )
-                taskPropertiesSection
-                organizeSection
-                milestoneSection
-                datesSection
-            }
-            .frame(minWidth: 340, maxWidth: 440, alignment: .topLeading)
-
-            VStack(alignment: .leading, spacing: 14) {
-                notesSection
-                tagsSection
-                subtasksSection
-                actionsSection
-            }
-            .frame(minWidth: 360, maxWidth: 520, alignment: .topLeading)
-        }
-        .frame(maxWidth: 980, alignment: .top)
-        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     @ToolbarContentBuilder

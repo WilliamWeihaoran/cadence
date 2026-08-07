@@ -2,6 +2,32 @@
 import SwiftData
 import SwiftUI
 
+/// Shared 13pt outline completion circle used by task rows across iOS: transparent center
+/// with a 1.6pt border in the row's tint color while pending, solid green fill + white
+/// checkmark when done (priority/tint color drops once a task is complete).
+struct iOSTaskCompletionCircle: View {
+    let isDone: Bool
+    let tint: Color
+    var diameter: CGFloat = 13
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(isDone ? Theme.doneFill : Color.clear)
+            if !isDone {
+                Circle()
+                    .stroke(tint, lineWidth: 1.6)
+            }
+            if isDone {
+                Image(systemName: "checkmark")
+                    .font(.system(size: diameter * 0.6, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .frame(width: diameter, height: diameter)
+    }
+}
+
 struct iOSFeatureListPane<Content: View>: View {
     let eyebrow: String
     let title: String

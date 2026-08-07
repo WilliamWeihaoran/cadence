@@ -99,11 +99,15 @@ struct iOSCalendarBoardEventCard: View {
         return TimeFormatters.timeRange(startMin: item.startMin, endMin: item.endMin)
     }
 
+    private var fill: Color {
+        iOSCalendarEventSupport.fillColor(from: item.color)
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: item.isAllDay ? "calendar" : "clock")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(item.color)
+                .foregroundStyle(Theme.text.opacity(0.85))
                 .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -131,23 +135,15 @@ struct iOSCalendarBoardEventCard: View {
                 if !item.calendarTitle.isEmpty {
                     Text(item.calendarTitle)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(Theme.text.opacity(0.68))
                         .lineLimit(1)
                 }
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                    .fill(Theme.surfaceElevated.opacity(0.85))
-                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                    .fill(item.color.opacity(0.10))
-            }
-        )
+        .background(fill)
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
-        .shadow(color: Theme.cardElevationShadow, radius: 10, x: 0, y: 4)
     }
 }
 
@@ -163,47 +159,53 @@ struct iOSCalendarBoardTaskCard: View {
         horizontalSizeClass == .regular
     }
 
+    private var listColor: Color {
+        Color(hex: task.containerColor)
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(Theme.priorityColor(task.priority))
-                .frame(width: 3.5)
-                .padding(.leading, 10)
-                .padding(.vertical, 12)
-
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 10) {
-                    Button(action: toggleCompletion) {
-                        Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: isRegularWidth ? 17 : 15, weight: .semibold))
-                            .foregroundStyle(task.isDone ? Theme.green : Theme.dim.opacity(0.72))
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-
-                    Text(task.title.isEmpty ? "Untitled" : task.title)
-                        .font(.system(size: isRegularWidth ? 14 : 13, weight: .semibold))
-                        .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
-                        .strikethrough(task.isDone, color: Theme.dim)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Button(action: toggleCompletion) {
+                    iOSTaskCompletionCircle(isDone: task.isDone, tint: Theme.priorityColor(task.priority))
+                        .frame(width: 15, height: 15)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
-                    ForEach(metadataChips, id: \.id) { chip in
-                        iOSCalendarBoardMetadataChip(item: chip)
-                    }
+                Text(task.title.isEmpty ? "Untitled" : task.title)
+                    .font(.system(size: isRegularWidth ? 14 : 13, weight: .medium))
+                    .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                    .strikethrough(task.isDone, color: Theme.dim)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                ForEach(metadataChips, id: \.id) { chip in
+                    iOSCalendarBoardMetadataChip(item: chip)
                 }
             }
-            .padding(.leading, 10)
-            .padding(.trailing, 12)
-            .padding(.vertical, 12)
         }
-        .background(Theme.surfaceElevated.opacity(0.78))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
-        .shadow(color: Theme.cardElevationShadow, radius: 10, x: 0, y: 4)
-        .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .padding(.leading, 12)
+        .padding(.trailing, 12)
+        .padding(.vertical, 12)
+        .background(listColor.opacity(task.isDone ? 0.05 : 0.10))
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: Theme.radiusCard,
+                topTrailingRadius: Theme.radiusCard
+            )
+        )
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(listColor)
+                .frame(width: 2)
+        }
+        .contentShape(Rectangle())
         .onTapGesture {
             showDetail = true
         }
@@ -263,60 +265,74 @@ struct iOSCalendarBoardBundleCard: View {
     @State private var isTargeted = false
     @State private var showDetail = false
 
+    private var tasks: [AppTask] {
+        bundle.sortedTasks
+    }
+
+    private var allDone: Bool {
+        !tasks.isEmpty && tasks.allSatisfy(\.isDone)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "tray.full.fill")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.amber)
+                    .foregroundStyle(allDone ? Theme.dim : Theme.amber)
                     .padding(.top, 1)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(bundle.displayTitle)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(2)
-
                     HStack(spacing: 6) {
-                        iOSCalendarBoardMetadataChip(
-                            item: .init(
-                                id: "time",
-                                icon: "clock",
-                                title: TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin),
-                                color: Theme.amber
-                            )
+                        Text(bundle.displayTitle)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(allDone ? Theme.dim : Theme.text)
+                            .strikethrough(allDone, color: Theme.dim)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text("×\(tasks.count)")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Theme.dim)
+                    }
+
+                    iOSCalendarBoardMetadataChip(
+                        item: .init(
+                            id: "time",
+                            icon: "clock",
+                            title: TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin),
+                            color: allDone ? Theme.dim : Theme.amber
                         )
-                        iOSCalendarBoardMetadataChip(
-                            item: .init(
-                                id: "tasks",
-                                icon: "checklist",
-                                title: "\(bundle.sortedTasks.count) task\(bundle.sortedTasks.count == 1 ? "" : "s")",
-                                color: Theme.dim
-                            )
-                        )
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(tasks.prefix(2)) { task in
+                            HStack(spacing: 5) {
+                                iOSTaskCompletionCircle(isDone: task.isDone, tint: Theme.priorityColor(task.priority))
+                                    .frame(width: 10, height: 10)
+                                Text(task.title.isEmpty ? "Untitled" : task.title)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(task.isDone ? Theme.dim : Theme.text.opacity(0.85))
+                                    .strikethrough(task.isDone, color: Theme.dim)
+                                    .lineLimit(1)
+                            }
+                        }
+                        if tasks.count > 2 {
+                            Text("+\(tasks.count - 2) more")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Theme.dim)
+                        }
                     }
                 }
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                    .fill(Theme.surfaceElevated.opacity(0.82))
-                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                    .fill(Theme.amber.opacity(isTargeted ? 0.20 : 0.09))
-            }
-        )
+        .contentShape(Rectangle())
+        .background(allDone ? Theme.doneFill.opacity(0.10) : Theme.amber.opacity(isTargeted ? 0.20 : 0.09))
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
         .overlay {
-            if isTargeted {
-                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                    .strokeBorder(Theme.amber.opacity(0.74), lineWidth: 1.5)
-            }
+            RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                .stroke(isTargeted ? Theme.amber.opacity(0.74) : (allDone ? Theme.doneFill.opacity(0.35) : Theme.amber.opacity(0.2)), lineWidth: isTargeted ? 1.5 : 1)
         }
-        .shadow(color: Theme.cardElevationShadow, radius: 10, x: 0, y: 4)
         .onTapGesture {
             showDetail = true
         }

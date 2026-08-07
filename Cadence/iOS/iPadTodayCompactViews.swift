@@ -490,7 +490,7 @@ private struct iOSCompactScheduleTaskRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.title.isEmpty ? "Untitled Task" : task.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.text)
                     .lineLimit(2)
                 Text(task.containerName.isEmpty ? "Inbox" : task.containerName)
@@ -501,14 +501,13 @@ private struct iOSCompactScheduleTaskRow: View {
 
             Spacer(minLength: 8)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 2)
         .padding(.vertical, 9)
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 999, style: .continuous)
-                .fill(Theme.purple)
-                .frame(width: 3)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(0.35))
+                .frame(height: 1)
         }
-        .cadenceCard(background: Theme.surfaceElevated.opacity(0.42), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
     }
 
     private var startLabel: String {

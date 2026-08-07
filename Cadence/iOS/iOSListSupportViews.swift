@@ -402,30 +402,74 @@ private struct iOSListKanbanColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
+            Text("\(title.uppercased()) · \(tasks.count)")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(accent.opacity(0.8))
+                .kerning(0.6)
+                .lineLimit(1)
 
-                Spacer(minLength: 8)
-
-                Text("\(tasks.count)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(accent)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(accent.opacity(0.13))
-                    .clipShape(Capsule())
-            }
-
-            ForEach(tasks) { task in
-                iOSTaskRow(task: task)
+            VStack(spacing: 6) {
+                ForEach(tasks) { task in
+                    iOSListKanbanCard(task: task)
+                }
             }
         }
-        .padding(14)
-        .frame(width: 300, alignment: .topLeading)
-        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
+        .padding(8)
+        .frame(width: 260, alignment: .topLeading)
+        .background(accent.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(accent.opacity(0.18), lineWidth: 1)
+        }
+    }
+}
+
+private struct iOSListKanbanCard: View {
+    @Bindable var task: AppTask
+    @Environment(\.modelContext) private var modelContext
+    @State private var showDetail = false
+
+    private var rowTint: Color {
+        switch task.priority {
+        case .high: return Theme.red
+        case .medium: return Theme.amber
+        case .low: return Theme.blue
+        case .none: return Theme.dim
+        }
+    }
+
+    var body: some View {
+        Button {
+            showDetail = true
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                iOSTaskCompletionCircle(isDone: task.isDone, tint: rowTint)
+                    .frame(width: 13, height: 13)
+                    .padding(.top, 2)
+                    .onTapGesture {
+                        CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
+                    }
+
+                Text(task.title.isEmpty ? "Untitled" : task.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                    .strikethrough(task.isDone, color: Theme.dim)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(9)
+            .background(Color(hex: "#151824"))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Theme.borderSubtle, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showDetail) {
+            iOSTaskDetailSheet(task: task)
+        }
     }
 }
 

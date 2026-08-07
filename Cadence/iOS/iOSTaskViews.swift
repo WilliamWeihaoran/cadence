@@ -40,18 +40,12 @@ struct iOSTaskRow: View {
         rowContent
             .padding(.horizontal, rowHorizontalPadding)
             .padding(.vertical, rowVerticalPadding)
-            .cadenceCard(
-                background: Theme.surfaceElevated.opacity(task.isDone ? 0.20 : 0.46),
-                cornerRadius: Theme.radiusCard,
-                shadowRadius: 10,
-                shadowY: 4
-            )
-            .overlay(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 999, style: .continuous)
-                    .fill(rowTint.opacity(task.isDone ? 0.34 : 0.86))
-                    .frame(width: 3)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Theme.borderSubtle.opacity(0.35))
+                    .frame(height: 1)
             }
-            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+            .contentShape(Rectangle())
             .onTapGesture {
                 showDetail = true
             }
@@ -123,9 +117,7 @@ struct iOSTaskRow: View {
         Button {
             toggleCompletion()
         } label: {
-            Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: isCompact ? 16 : (isRegularWidth ? 19 : 16), weight: .semibold))
-                .foregroundStyle(task.isDone ? Theme.green : Theme.dim.opacity(0.68))
+            iOSTaskCompletionCircle(isDone: task.isDone, tint: rowTint)
                 .frame(width: isCompact ? 20 : (isRegularWidth ? 24 : 20), height: isCompact ? 20 : (isRegularWidth ? 24 : 20))
                 .contentShape(Rectangle())
         }
@@ -136,7 +128,7 @@ struct iOSTaskRow: View {
     private var taskSummary: some View {
         VStack(alignment: .leading, spacing: isCompact ? 5 : (isRegularWidth ? 8 : 6)) {
             Text(task.title.isEmpty ? "Untitled" : task.title)
-                .font(.system(size: titleFontSize, weight: .semibold))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                 .strikethrough(task.isDone, color: Theme.dim)
                 .lineLimit(isCompact ? 1 : 2)
@@ -156,11 +148,6 @@ struct iOSTaskRow: View {
                 tagScroller
             }
         }
-    }
-
-    private var titleFontSize: CGFloat {
-        if isCompact { return 13 }
-        return isRegularWidth ? 15 : 13
     }
 
     private var secondaryFontSize: CGFloat {

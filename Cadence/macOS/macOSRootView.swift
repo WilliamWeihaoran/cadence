@@ -22,7 +22,6 @@ struct macOSRootView: View {
     @State private var selection: SidebarItem? = .today
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(ThemeManager.self) private var themeManager
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
     @Environment(FocusManager.self) private var focusManager
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
@@ -52,7 +51,6 @@ struct macOSRootView: View {
     private let taskCompletionAnimationManager = TaskCompletionAnimationManager.shared
 
     var body: some View {
-        let _ = themeManager.selectedTheme
         let currentModelContext = activeModelContext ?? modelContext
 
         ZStack {
@@ -300,7 +298,7 @@ private struct RootStartupIssueBanner: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .frame(maxWidth: 620)
-        .background(.ultraThinMaterial)
+        .background(Theme.surfaceElevated)
         .overlay {
             RoundedRectangle(cornerRadius: Theme.radiusPanel)
                 .stroke(Theme.amber.opacity(0.22), lineWidth: 1)

@@ -23,7 +23,6 @@ struct CadenceApp: App {
         WindowGroup {
 #if os(macOS)
             macOSRootView()
-                .environment(ThemeManager.shared)
                 .environment(CadenceDeepLinkManager.shared)
                 .environment(CalendarManager.shared)
                 .environment(RemindersManager.shared)
@@ -48,7 +47,6 @@ struct CadenceApp: App {
                 .environment(TaskSubtaskEntryManager.shared)
 #else
             iOSRootView()
-                .environment(ThemeManager.shared)
                 .environment(CadenceDeepLinkManager.shared)
                 .environment(AISettingsManager.shared)
                 .environment(iOSCalendarManager.shared)

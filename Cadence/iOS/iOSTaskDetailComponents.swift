@@ -76,8 +76,6 @@ struct iOSTaskEditorTitleCard: View {
                 .padding(.vertical, 1)
             }
         }
-        .padding(isRegularWidth ? 18 : 16)
-        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusPanel)
     }
 
     private var estimateLabel: String {
@@ -150,8 +148,6 @@ struct iOSTaskEditorOverviewCard: View {
                 color: tagCount == 0 ? Theme.dim : Theme.amber
             )
         }
-        .padding(isRegularWidth ? 12 : 10)
-        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusPanel)
     }
 
     private var columns: [GridItem] {
@@ -198,33 +194,37 @@ private struct iOSTaskOverviewMetric: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 8)
-        .cadenceCard(background: Theme.surfaceElevated.opacity(0.34), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
+        .background(Theme.surface.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(Theme.borderSubtle.opacity(0.5), lineWidth: 1)
+        }
     }
 }
 
 struct iOSTaskEditorSection<Content: View>: View {
     let title: String
     @ViewBuilder let content: () -> Content
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: isRegularWidth ? 11 : 10) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Theme.dim)
                 .textCase(.uppercase)
                 .kerning(0.8)
 
-            VStack(alignment: .leading, spacing: isRegularWidth ? 12 : 10) {
+            VStack(alignment: .leading, spacing: 10) {
                 content()
             }
-            .padding(isRegularWidth ? 14 : 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusPanel)
+        }
+        .padding(.top, 12)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(0.35))
+                .frame(height: 1)
         }
     }
 }
@@ -234,30 +234,25 @@ struct iOSTaskEditorRow<Content: View>: View {
     let systemImage: String
     let color: Color
     @ViewBuilder let content: () -> Content
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
-    }
 
     var body: some View {
-        HStack(spacing: isRegularWidth ? 12 : 10) {
+        HStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(.system(size: isRegularWidth ? 13 : 12, weight: .semibold))
+                .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(color)
-                .frame(width: isRegularWidth ? 30 : 26, height: isRegularWidth ? 30 : 26)
-                .background(color.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 8 : 7, style: .continuous))
+                .frame(width: 14, alignment: .center)
 
             Text(label)
-                .font(.system(size: isRegularWidth ? 14 : 13, weight: .semibold))
-                .foregroundStyle(Theme.text)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .textCase(.uppercase)
+                .kerning(0.4)
 
             Spacer(minLength: 12)
 
             content()
         }
-        .frame(minHeight: isRegularWidth ? 44 : 38)
+        .frame(minHeight: 34)
     }
 }
 
@@ -313,10 +308,8 @@ struct iOSSubtaskRow: View {
                 subtask.isDone.toggle()
                 save()
             } label: {
-                Image(systemName: subtask.isDone ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(subtask.isDone ? Theme.green : Theme.dim)
-                    .frame(width: 28, height: 28)
+                iOSTaskCompletionCircle(isDone: subtask.isDone, tint: Theme.dim)
+                    .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -341,16 +334,18 @@ struct iOSSubtaskRow: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .frame(width: 28, height: 28)
-                    .background(Theme.surfaceElevated.opacity(0.45))
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Delete subtask")
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .cadenceCard(background: Theme.surfaceElevated.opacity(0.34), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
+        .padding(.horizontal, 2)
+        .padding(.vertical, 6)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(0.35))
+                .frame(height: 1)
+        }
     }
 
     private func save() {

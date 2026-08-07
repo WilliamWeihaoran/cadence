@@ -454,17 +454,16 @@ private struct iOSScheduleReadyTaskRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .top, spacing: 8) {
-                Circle()
-                    .fill(rowTint)
-                    .frame(width: 8, height: 8)
-                    .padding(.top, 5)
+                iOSTaskCompletionCircle(isDone: false, tint: rowTint)
+                    .frame(width: 13, height: 13)
+                    .padding(.top, 3)
 
                 Button {
                     showDetail = true
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(task.title.isEmpty ? "Untitled Task" : task.title)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Theme.text)
                             .lineLimit(1)
 
@@ -509,10 +508,14 @@ private struct iOSScheduleReadyTaskRow: View {
                 }
             }
         }
-        .padding(.horizontal, 11)
+        .padding(.horizontal, 2)
         .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cadenceCard(background: Theme.surface.opacity(0.82), cornerRadius: Theme.radiusCard)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(0.35))
+                .frame(height: 1)
+        }
         .sheet(isPresented: $showDetail) {
             iOSTaskDetailSheet(task: task)
         }

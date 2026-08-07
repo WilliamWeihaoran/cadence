@@ -264,15 +264,7 @@ struct iOSCompactNotesView: View {
     var body: some View {
         VStack(spacing: 0) {
             compactHeader
-
-            Picker("Note", selection: $activePage) {
-                ForEach(iOSCompactNotesPage.allCases) { page in
-                    Text(page.compactTitle).tag(page)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
+            pageTabRow
 
             if let coreTab = activePage.coreTab {
                 HStack {
@@ -388,6 +380,39 @@ struct iOSCompactNotesView: View {
         .padding(.horizontal, 16)
         .padding(.top, 18)
         .padding(.bottom, 14)
+    }
+
+    // Matches macOS NotesView's tab treatment: left-aligned text tabs with a blue underline on
+    // the selected tab, instead of a native `.pickerStyle(.segmented)` control stretched into
+    // four equal-width boxes (which looked like generic system chrome, not part of the app).
+    private var pageTabRow: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 4) {
+                ForEach(iOSCompactNotesPage.allCases) { page in
+                    Button {
+                        activePage = page
+                    } label: {
+                        Text(page.compactTitle)
+                            .font(.system(size: 15, weight: activePage == page ? .semibold : .medium))
+                            .foregroundStyle(activePage == page ? Theme.text : Theme.dim)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .overlay(alignment: .bottom) {
+                                if activePage == page {
+                                    RoundedRectangle(cornerRadius: 1)
+                                        .fill(Theme.blue)
+                                        .frame(height: 2)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+
+            Divider().background(Theme.borderSubtle)
+        }
     }
 
     private var selectedCoreNote: Note? {

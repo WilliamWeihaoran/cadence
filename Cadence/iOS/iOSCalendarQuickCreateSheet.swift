@@ -101,20 +101,13 @@ struct iOSCalendarQuickCreateSheet: View {
         NavigationStack {
             ScrollView {
                 formLayout
+                    .padding(16)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .padding(isRegularWidth ? 20 : 18)
             }
             .background(Theme.bg)
-            .navigationTitle("Add to Calendar")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add", action: create)
-                        .disabled(!canCreate)
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .onChange(of: containerSelection) { _, _ in normalizeSection() }
             .onChange(of: kind) { _, _ in normalizeCalendarSelection() }
             .onAppear {
@@ -205,10 +198,67 @@ struct iOSCalendarQuickCreateSheet: View {
                     .foregroundStyle(Theme.dim)
             }
 
-            Spacer()
+            Spacer(minLength: 8)
+
+            if kind == .task {
+                priorityFlagButton
+            }
+
+            cancelButton
+            createButton
         }
-        .padding(16)
-        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
+    }
+
+    private var priorityFlagButton: some View {
+        Button(action: cyclePriority) {
+            Image(systemName: "flag.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.priorityColor(priority))
+                .frame(width: 34, height: 34)
+                .background(Theme.priorityColor(priority).opacity(0.13))
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Priority: \(priority.label)")
+        .accessibilityHint("Tap to cycle priority")
+    }
+
+    private var cancelButton: some View {
+        Button {
+            dismiss()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.dim)
+                .frame(width: 34, height: 34)
+                .background(Theme.surface)
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Cancel")
+    }
+
+    private var createButton: some View {
+        Button(action: create) {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(canCreate ? Theme.blue : Theme.blue.opacity(0.4))
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canCreate)
+        .accessibilityLabel("Create")
+    }
+
+    private func cyclePriority() {
+        switch priority {
+        case .none: priority = .low
+        case .low: priority = .medium
+        case .medium: priority = .high
+        case .high: priority = .none
+        }
     }
 
     private var kindPicker: some View {
@@ -272,17 +322,6 @@ struct iOSCalendarQuickCreateSheet: View {
 
     private var taskOptions: some View {
         iOSCalendarQuickCreateSection(title: "Details") {
-            iOSCalendarQuickCreateRow(label: "Priority", systemImage: "flag.fill", color: Theme.priorityColor(priority)) {
-                Picker("Priority", selection: $priority) {
-                    ForEach(TaskPriority.allCases, id: \.self) { priority in
-                        Text(priority.label).tag(priority)
-                    }
-                }
-                .labelsHidden()
-            }
-
-            iOSCalendarQuickCreateDivider()
-
             iOSCalendarQuickCreateRow(label: "Estimate", systemImage: "clock.fill", color: Theme.blue) {
                 Stepper(value: $estimatedMinutes, in: 5...480, step: 5) {
                     Text(durationLabel(estimatedMinutes))
@@ -592,9 +631,13 @@ private struct iOSCalendarQuickCreateSection<Content: View>: View {
             VStack(alignment: .leading, spacing: 10) {
                 content()
             }
-            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
+        }
+        .padding(.top, 12)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(0.35))
+                .frame(height: 1)
         }
     }
 }

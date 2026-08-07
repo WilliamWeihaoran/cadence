@@ -334,14 +334,12 @@ struct iOSSidebarButton: View {
         HStack(spacing: 9) {
             Image(systemName: systemImage)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isSelected ? tint : tint.opacity(0.84))
-                .frame(width: 26, height: 26)
-                .background(tint.opacity(isSelected ? 0.18 : 0.10))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                .foregroundStyle(tint)
+                .frame(width: 20)
 
             Text(title)
-                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                .foregroundStyle(isSelected ? Theme.text : Theme.text.opacity(0.78))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(isSelected ? Theme.text : Theme.muted)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
 
@@ -358,32 +356,23 @@ struct iOSSidebarButton: View {
                     .clipShape(Capsule())
             }
         }
+        .padding(.vertical, 6)
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 38)
-        .padding(.horizontal, 8)
-        .background(isSelected ? tint.opacity(0.11) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .overlay(alignment: .leading) {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(tint)
-                    .frame(width: 3, height: 20)
-                    .offset(x: -2)
-            }
+            Rectangle()
+                .fill(isSelected ? tint : Color.clear)
+                .frame(width: 2)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .contentShape(Rectangle())
     }
 
     private var railLabel: some View {
         ZStack(alignment: .topTrailing) {
             Image(systemName: systemImage)
                 .font(.system(size: iOSSidebarMetrics.iconSize, weight: .semibold))
-                .foregroundStyle(isSelected ? Theme.text : tint.opacity(0.86))
-                .frame(width: iOSSidebarMetrics.iconBoxSize, height: iOSSidebarMetrics.iconBoxSize)
-                .background(
-                    RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous)
-                        .fill(iconFill)
-                )
+                .foregroundStyle(tint)
                 .frame(maxWidth: .infinity)
                 .frame(height: iOSSidebarMetrics.buttonHeight)
 
@@ -402,24 +391,12 @@ struct iOSSidebarButton: View {
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .frame(height: iOSSidebarMetrics.buttonHeight)
-        .background(isSelected ? tint.opacity(0.10) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous))
         .overlay(alignment: .leading) {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(tint)
-                    .frame(width: 3, height: 22)
-                    .offset(x: -4)
-            }
+            Rectangle()
+                .fill(isSelected ? tint : Color.clear)
+                .frame(width: 2)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-    }
-
-    private var iconFill: Color {
-        if isSelected {
-            return tint.opacity(0.24)
-        }
-        return Color.clear
+        .contentShape(Rectangle())
     }
 }
 

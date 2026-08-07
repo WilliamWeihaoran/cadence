@@ -4,7 +4,6 @@ import SwiftData
 import SwiftUI
 
 struct iOSSettingsView: View {
-    @Environment(ThemeManager.self) private var themeManager
     @Environment(AISettingsManager.self) private var aiSettingsManager
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Environment(NotificationManager.self) private var notificationManager
@@ -28,7 +27,7 @@ struct iOSSettingsView: View {
     @State private var isCheckingAccount = false
     @State private var lastChecked: Date?
     @State private var contextEditorMode: iOSContextEditorMode?
-    @State private var selectedCategory: iOSSettingsCategory = .appearance
+    @State private var selectedCategory: iOSSettingsCategory = .navigation
     @State private var aiAPIKeyDraft = ""
     #if DEBUG
     @State private var sampleDataStatus: String?
@@ -127,8 +126,6 @@ struct iOSSettingsView: View {
             tint: selectedCategory.tint
         ) {
             switch selectedCategory {
-            case .appearance:
-                CadenceSettingsStatusBadge(title: themeManager.selectedTheme.title, isActive: true)
             case .navigation:
                 CadenceSettingsStatusBadge(title: todayLayoutMode.title, isActive: true)
             case .sync:
@@ -166,11 +163,6 @@ struct iOSSettingsView: View {
     @ViewBuilder
     private var selectedSectionContent: some View {
         switch selectedCategory {
-        case .appearance:
-            iOSAppearanceSettingsSection(
-                selectedTheme: themeManager.selectedTheme,
-                onSelectTheme: { themeManager.selectedTheme = $0 }
-            )
         case .navigation:
             iOSNavigationSettingsSection(
                 todayLayoutMode: Binding(

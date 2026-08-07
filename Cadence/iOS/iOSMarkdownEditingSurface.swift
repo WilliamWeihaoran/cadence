@@ -46,21 +46,10 @@ struct iOSMarkdownModePicker: View {
     }
 
     var body: some View {
-        if showsLabels {
-            Picker("Markdown Mode", selection: $mode) {
-                ForEach(iOSMarkdownEditorMode.allCases) { candidate in
-                    Text(candidate.rawValue).tag(candidate)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 224)
-            .accessibilityLabel("Markdown Mode")
-        } else {
-            compactPicker
-        }
-    }
-
-    private var compactPicker: some View {
+        // Same grouped-capsule control at every width — showsLabels only adds text next to the
+        // icon when there's room. Previously the regular-width case used a native
+        // `.pickerStyle(.segmented)`, which looked like a different, disconnected control (a
+        // plain system tab bar) from the custom capsule used everywhere else in the app.
         HStack(spacing: 2) {
             ForEach(iOSMarkdownEditorMode.allCases) { candidate in
                 Button {
@@ -83,14 +72,22 @@ struct iOSMarkdownModePicker: View {
 
     @ViewBuilder
     private func modeLabel(for candidate: iOSMarkdownEditorMode) -> some View {
-        Image(systemName: candidate.systemImage)
-            .font(.system(size: compact ? 11 : 12, weight: .semibold))
-            .foregroundStyle(mode == candidate ? Theme.text : Theme.dim)
-            .frame(width: compact ? 32 : 34, height: compact ? 30 : 32)
-            .background(
-                RoundedRectangle(cornerRadius: compact ? 6 : 7, style: .continuous)
-                    .fill(mode == candidate ? Theme.blue.opacity(0.18) : Color.clear)
-            )
+        HStack(spacing: 5) {
+            Image(systemName: candidate.systemImage)
+                .font(.system(size: compact ? 11 : 12, weight: .semibold))
+            if showsLabels {
+                Text(candidate.rawValue)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+        }
+        .foregroundStyle(mode == candidate ? Theme.text : Theme.dim)
+        .frame(height: compact ? 30 : 32)
+        .frame(minWidth: showsLabels ? nil : (compact ? 32 : 34))
+        .padding(.horizontal, showsLabels ? 12 : 0)
+        .background(
+            RoundedRectangle(cornerRadius: compact ? 6 : 7, style: .continuous)
+                .fill(mode == candidate ? Theme.blue.opacity(0.18) : Color.clear)
+        )
     }
 }
 
