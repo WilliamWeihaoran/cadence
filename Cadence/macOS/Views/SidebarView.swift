@@ -12,6 +12,8 @@ struct SidebarView: View {
     @AppStorage("sidebarTabOrder") private var sidebarTabOrderRaw = ""
     @AppStorage("sidebarTabColors") private var sidebarTabColorsRaw = ""
 
+    @Environment(GlobalSearchManager.self) private var globalSearchManager
+
     @State private var contextForNewList: Context? = nil
 
     private var tasksInActiveContainers: [AppTask] {
@@ -75,6 +77,19 @@ struct SidebarView: View {
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(Theme.dim)
                         }
+
+                        Spacer(minLength: 0)
+
+                        Button { globalSearchManager.present() } label: {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Theme.dim)
+                                .frame(width: 26, height: 26)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.cadencePlain)
+                        .help("Search (⌘K)")
+                        .accessibilityLabel("Search")
                     }
                     .padding(.bottom, 2)
 
@@ -83,22 +98,6 @@ struct SidebarView: View {
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
                             ForEach(primaryDestinations) { destination in
                                 SidebarCardButton(
-                                    destination: destination,
-                                    tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
-                                    count: count(for: destination),
-                                    isSelected: selection == destination.item
-                                ) {
-                                    selection = destination.item
-                                }
-                            }
-                        }
-                    }
-
-                    let trackingDestinations = visibleTrackingDestinations
-                    if !trackingDestinations.isEmpty {
-                        SidebarSection(title: "TRACK") {
-                            ForEach(trackingDestinations) { destination in
-                                SidebarTrackingButton(
                                     destination: destination,
                                     tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
                                     count: count(for: destination),
@@ -121,9 +120,12 @@ struct SidebarView: View {
                         }
                     }
 
-                    SidebarSection(title: "NOTES") {
-                        SidebarRow(item: .notes, icon: "doc.text", label: "Notes", color: Theme.purple, selection: $selection)
-                    }
+                    // Long-term tracking sits in its own shelf at the bottom, deliberately
+                    // separated from the task destinations above so "what am I doing today"
+                    // and "what am I working toward" don't read as the same kind of thing.
+                    trackShelf
+
+                    SidebarRow(item: .notes, icon: "doc.text", label: "Notes", color: Theme.purple, selection: $selection)
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 12)
@@ -150,6 +152,41 @@ struct SidebarView: View {
         .background(Theme.surface)
         .sheet(item: $contextForNewList) { ctx in
             CreateListSheet(context: ctx)
+        }
+    }
+
+    /// Goals + Habits, grouped onto a quietly tinted shelf. The tint is what does the
+    /// separating — a divider alone would read as just another section break.
+    @ViewBuilder
+    private var trackShelf: some View {
+        let trackingDestinations = visibleTrackingDestinations
+        if !trackingDestinations.isEmpty {
+            VStack(alignment: .leading, spacing: 7) {
+                Text("TRACK")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .kerning(0.8)
+                    .padding(.horizontal, 2)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(trackingDestinations) { destination in
+                        SidebarTrackingButton(
+                            destination: destination,
+                            tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
+                            count: count(for: destination),
+                            isSelected: selection == destination.item
+                        ) {
+                            selection = destination.item
+                        }
+                    }
+                }
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Theme.dim.opacity(0.045))
+            )
+            .padding(.top, 2)
         }
     }
 
