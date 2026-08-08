@@ -6,13 +6,9 @@ struct ListSectionsKanbanView: View {
     var universeTasks: [AppTask]? = nil
     var area: Area? = nil
     var project: Project? = nil
-    var explicitSectionConfigs: [TaskSectionConfig]? = nil
     var showArchived: Binding<Bool>? = nil
-    var onTaskDroppedIntoColumn: ((AppTask, String) -> Void)? = nil
-    var assignSectionOnDrop: Bool = true
     var sortField: TaskSortField = .date
     var sortDirection: TaskSortDirection = .ascending
-    var sectionTaskProvider: ((TaskSectionConfig) -> [AppTask])? = nil
     var highlightedSectionName: String? = nil
 
     @State private var localShowArchived = false
@@ -20,7 +16,7 @@ struct ListSectionsKanbanView: View {
     @State private var activeHighlightSectionName: String?
 
     private var baseSectionConfigs: [TaskSectionConfig] {
-        explicitSectionConfigs ?? area?.sectionConfigs ?? project?.sectionConfigs ?? [TaskSectionConfig(name: TaskSectionDefaults.defaultName)]
+        area?.sectionConfigs ?? project?.sectionConfigs ?? [TaskSectionConfig(name: TaskSectionDefaults.defaultName)]
     }
 
     private var sectionConfigs: [TaskSectionConfig] {
@@ -51,8 +47,6 @@ struct ListSectionsKanbanView: View {
                                 universeTasks: universeTasks ?? tasks,
                                 area: area,
                                 project: project,
-                                onTaskDroppedIntoColumn: onTaskDroppedIntoColumn,
-                                assignSectionOnDrop: assignSectionOnDrop,
                                 isBeingDragged: draggingSectionName?.caseInsensitiveCompare(section.name) == .orderedSame,
                                 isAnotherSectionBeingDragged: draggingSectionName != nil && draggingSectionName?.caseInsensitiveCompare(section.name) != .orderedSame,
                                 isHighlighted: activeHighlightSectionName?.caseInsensitiveCompare(section.name) == .orderedSame,
@@ -117,7 +111,7 @@ struct ListSectionsKanbanView: View {
     }
 
     private func sortedTasksForSection(_ section: TaskSectionConfig) -> [AppTask] {
-        let source = sectionTaskProvider?(section) ?? tasks.filter {
+        let source = tasks.filter {
             !$0.isCancelled && $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame
         }
         return source.taskSorted(by: sortField, direction: sortDirection)
@@ -221,25 +215,4 @@ struct ListSectionsKanbanView: View {
     }
 }
 
-struct KanbanFreezeObserver: View {
-    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
-    @Binding var frozenTasks: [AppTask]?
-    let columnTaskIDs: Set<UUID>
-    let capturedTasks: [AppTask]
-    private let releaseAnimation = Animation.spring(response: 0.34, dampingFraction: 0.86, blendDuration: 0.08)
-
-    var body: some View {
-        Color.clear
-            .allowsHitTesting(false)
-            .onChange(of: hoveredTaskManager.hoveredTask?.id) { _, newID in
-                if let newID, columnTaskIDs.contains(newID) {
-                    if frozenTasks == nil { frozenTasks = capturedTasks }
-                } else if frozenTasks != nil {
-                    withAnimation(releaseAnimation) {
-                        frozenTasks = nil
-                    }
-                }
-            }
-    }
-}
 #endif

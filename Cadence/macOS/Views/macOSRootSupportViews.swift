@@ -554,8 +554,7 @@ struct AllTasksPageView: View {
                 case .kanban:
                     TaskListsKanbanView(
                         sortField: sortField,
-                        sortDirection: sortDirection,
-                        groupingMode: .byList
+                        sortDirection: sortDirection
                     )
                 }
             }

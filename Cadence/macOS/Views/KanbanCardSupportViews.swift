@@ -3,7 +3,6 @@ import SwiftUI
 
 enum KanbanMetaAction: Hashable {
     case none
-    case priority
     case doDate
     case dueDate
 }
@@ -19,7 +18,7 @@ struct KanbanMetaItem: Identifiable {
 
 enum KanbanCardPresentation {
     case listBoard
-    case calendarBoard(dateKey: String)
+    case calendarBoard
 }
 
 struct KanbanMetaChip: View {

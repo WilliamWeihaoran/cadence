@@ -14,19 +14,27 @@ let kanbanColumnCornerRadius: CGFloat = 10
 /// Cards keep a container so they read as objects sitting directly on the canvas.
 let kanbanCardCornerRadius: CGFloat = 7
 
-struct KanbanDateBucket: Identifiable {
-    let title: String
-    let icon: String
-    let color: Color
-    let tasks: [AppTask]
+// MARK: - Shared column chrome constants
+//
+// Both kanban column implementations (`ListSectionKanbanColumn` and `TaskListKanbanColumn`)
+// render through the shared components in `KanbanColumnSupportViews.swift`, which read these
+// values. Nothing should re-spell these literals inline — that is exactly how the two columns
+// drifted apart before.
 
-    var id: String { title }
-}
+/// The single dot of color that survives in an otherwise containerless column header.
+let kanbanColumnDotSize: CGFloat = 7
+/// Transient drag-over wash behind a targeted column.
+let kanbanColumnDropFillOpacity: Double = 0.07
+/// Transient drag-over dashed outline around a targeted column.
+let kanbanColumnDropStrokeOpacity: Double = 0.55
+let kanbanColumnDropDash: [CGFloat] = [5, 4]
+let kanbanColumnDropAnimation = Animation.easeInOut(duration: 0.14)
+/// Applied when card `order` values are reassigned after a drop.
+let kanbanCardReorderAnimation = Animation.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)
 
 struct KanbanListColumnModel: Identifiable {
     let id: String
     let title: String
-    let icon: String
     let color: Color
     let tasks: [AppTask]
     let container: TaskContainerSelection
@@ -96,7 +104,6 @@ enum KanbanBoardSupport {
             KanbanListColumnModel(
                 id: "inbox",
                 title: "Inbox",
-                icon: "tray.fill",
                 color: Theme.dim,
                 tasks: inboxTasks(from: activeTasks, sortField: sortField, sortDirection: sortDirection),
                 container: .inbox,
@@ -112,7 +119,6 @@ enum KanbanBoardSupport {
             KanbanListColumnModel(
                 id: "area-\(area.id.uuidString)",
                 title: area.name,
-                icon: area.icon,
                 color: Color(hex: area.colorHex),
                 tasks: groupedAreas[area.id] ?? [],
                 container: .area(area.id),
@@ -128,7 +134,6 @@ enum KanbanBoardSupport {
             KanbanListColumnModel(
                 id: "project-\(project.id.uuidString)",
                 title: project.name,
-                icon: project.icon,
                 color: Color(hex: project.colorHex),
                 tasks: groupedProjects[project.id] ?? [],
                 container: .project(project.id),
@@ -143,43 +148,24 @@ enum KanbanBoardSupport {
         return columns
     }
 
-    static func dateBuckets(
-        activeTasks: [AppTask],
-        todayKey: String,
-        sortField: TaskSortField,
-        sortDirection: TaskSortDirection
-    ) -> [KanbanDateBucket] {
-        let overdue = activeTasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey }.taskSorted(by: sortField, direction: sortDirection)
-        let doToday = activeTasks.filter { $0.scheduledDate == todayKey }.taskSorted(by: sortField, direction: sortDirection)
-        let scheduled = activeTasks.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate != todayKey }.taskSorted(by: sortField, direction: sortDirection)
-        let unscheduled = activeTasks.filter { $0.scheduledDate.isEmpty || $0.scheduledStartMin < 0 }.taskSorted(by: sortField, direction: sortDirection)
-        return [
-            KanbanDateBucket(title: "Overdue", icon: "exclamationmark.triangle.fill", color: Theme.red, tasks: overdue),
-            KanbanDateBucket(title: "Do Today", icon: "sun.max.fill", color: Theme.blue, tasks: doToday),
-            KanbanDateBucket(title: "Scheduled", icon: "calendar", color: Theme.dim, tasks: scheduled),
-            KanbanDateBucket(title: "Unscheduled", icon: "questionmark.circle", color: Theme.amber, tasks: unscheduled)
-        ]
-    }
-
-    static func applyDateBucketDrop(task: AppTask, bucketTitle: String, todayKey: String, now: Date = Date()) {
-        switch bucketTitle {
-        case "Do Today":
-            task.scheduledDate = todayKey
-        case "Scheduled":
-            if task.scheduledDate.isEmpty || task.scheduledDate == todayKey {
-                let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now
-                task.scheduledDate = DateFormatters.dateKey(from: tomorrow)
+    /// Reassigns `order` across a column after a card was dropped into it.
+    ///
+    /// `columnTasks` is the column's current ordering *as the caller presents it* (section
+    /// columns sort by `order`, list columns by the board's active sort), `task` is the card
+    /// that was dropped, and `target` is the card it was dropped in front of — `nil` means
+    /// "append to the end", which is what a drop on empty column space produces.
+    static func reorder(_ columnTasks: [AppTask], moving task: AppTask, before target: AppTask?) {
+        var ordered = columnTasks
+        ordered.removeAll { $0.id == task.id }
+        if let target, let targetIndex = ordered.firstIndex(where: { $0.id == target.id }) {
+            ordered.insert(task, at: targetIndex)
+        } else {
+            ordered.append(task)
+        }
+        withAnimation(kanbanCardReorderAnimation) {
+            for (index, item) in ordered.enumerated() {
+                item.order = index
             }
-        case "Unscheduled":
-            task.scheduledDate = ""
-            task.scheduledStartMin = -1
-        case "Overdue":
-            if task.dueDate.isEmpty || task.dueDate >= todayKey {
-                let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now) ?? now
-                task.dueDate = DateFormatters.dateKey(from: yesterday)
-            }
-        default:
-            break
         }
     }
 

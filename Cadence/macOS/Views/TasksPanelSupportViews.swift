@@ -272,10 +272,13 @@ struct ContainerPickerBadge: View {
     @ViewBuilder
     private var trigger: some View {
         if let inspectorRowLabel {
+            // Always the real container name ("Inbox" when unset) so the row and its picker
+            // agree; the dim `isSet: false` treatment is what conveys "no list chosen".
             TaskInspectorFieldRow(label: inspectorRowLabel) {
-                TaskInspectorFieldValueText(text: hasContainer ? label : "None", isSet: hasContainer)
+                TaskInspectorFieldValueText(text: label, isSet: hasContainer)
             }
             .contentShape(Rectangle())
+            .modifier(InspectorPickerHover(cornerRadius: 0))
         } else {
             HStack(spacing: 4) {
                 Image(systemName: labelIcon).font(.system(size: compact ? 9 : 10)).foregroundStyle(labelColor)
@@ -351,7 +354,6 @@ struct ContainerPickerBadge: View {
                                 name: "Inbox",
                                 color: Theme.dim,
                                 isHighlighted: highlightedTag == .inbox,
-                                isSelected: selection == .inbox,
                                 action: {
                                     selection = .inbox
                                     showPicker = false
@@ -377,7 +379,6 @@ struct ContainerPickerBadge: View {
                                         name: area.name,
                                         color: Color(hex: area.colorHex),
                                         isHighlighted: highlightedTag == .area(area.id),
-                                        isSelected: selection == .area(area.id),
                                         action: {
                                             selection = .area(area.id)
                                             showPicker = false
@@ -391,7 +392,6 @@ struct ContainerPickerBadge: View {
                                         name: project.name,
                                         color: Color(hex: project.colorHex),
                                         isHighlighted: highlightedTag == .project(project.id),
-                                        isSelected: selection == .project(project.id),
                                         action: {
                                             selection = .project(project.id)
                                             showPicker = false
@@ -467,10 +467,13 @@ struct TaskSectionPickerBadge: View {
     @ViewBuilder
     private var trigger: some View {
         if let inspectorRowLabel {
+            // Always the real section name ("Default" when the task isn't in a named section)
+            // so the row and its picker agree; dim styling conveys the unset state.
             TaskInspectorFieldRow(label: inspectorRowLabel) {
-                TaskInspectorFieldValueText(text: matchedSection ?? "None", isSet: matchedSection != nil)
+                TaskInspectorFieldValueText(text: label, isSet: matchedSection != nil)
             }
             .contentShape(Rectangle())
+            .modifier(InspectorPickerHover(cornerRadius: 0))
         } else {
             HStack(spacing: 4) {
                 Image(systemName: "square.split.2x1")
@@ -549,7 +552,6 @@ struct TaskSectionPickerBadge: View {
                         SectionPickerRow(
                             section: section,
                             isHighlighted: section == highlightedSection,
-                            isSelected: section.caseInsensitiveCompare(selection) == .orderedSame,
                             action: {
                                 selection = section
                                 showPicker = false
@@ -583,7 +585,6 @@ private struct ContainerPickerRow: View {
     let name: String
     let color: Color
     let isHighlighted: Bool
-    let isSelected: Bool
     let action: () -> Void
     @State private var isHovered = false
 
@@ -618,7 +619,6 @@ private struct ContainerPickerRow: View {
 private struct SectionPickerRow: View {
     let section: String
     let isHighlighted: Bool
-    let isSelected: Bool
     let action: () -> Void
     @State private var isHovered = false
 

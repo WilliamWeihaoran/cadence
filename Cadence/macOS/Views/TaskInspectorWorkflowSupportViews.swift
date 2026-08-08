@@ -22,6 +22,7 @@ struct TaskInspectorRecurrenceControl: View {
                 TaskInspectorFieldValueText(text: recurrenceLabel, isSet: task.isRecurring)
             }
             .contentShape(Rectangle())
+            .modifier(InspectorPickerHover(cornerRadius: 0))
         }
         .menuIndicator(.hidden)
         // On macOS `buttonStyle` does not style a `Menu` — `menuStyle` does. Without this the

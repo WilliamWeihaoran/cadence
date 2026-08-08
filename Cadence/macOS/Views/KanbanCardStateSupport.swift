@@ -3,13 +3,6 @@ import SwiftUI
 import SwiftData
 
 enum KanbanCardStateSupport {
-    static func metadataRows(for task: AppTask, doDateMetaItem: KanbanMetaItem, dueDateMetaItem: KanbanMetaItem?) -> [[KanbanMetaItem]] {
-        if let dueDateMetaItem {
-            return [[doDateMetaItem, dueDateMetaItem]]
-        }
-        return [[doDateMetaItem]]
-    }
-
     static func compactDurationLabel(_ minutes: Int) -> String {
         let clamped = max(minutes, 0)
         return "\(clamped / 60):\(String(format: "%02d", clamped % 60))"

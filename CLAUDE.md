@@ -68,9 +68,12 @@ Cadence/
     │   ├── NotePanel.swift        # Today's daily note editor (inline in TodayView)
     │   ├── SchedulePanel.swift    # Today timeline shell/state; delegates viewport + popover support to companion files
     │   ├── SchedulePanelComponents.swift # TaskDetailPopover stateful logic
-    │   ├── SchedulePanelSupportViews.swift # Quick-create popovers and timeline support views
+    │   ├── SchedulePanelSupportViews.swift # Timeline hour-rail row only (`ScheduleTimeRailRow`)
     │   ├── SchedulePanelShellViews.swift # Shell composition shared by Today timeline surfaces
-    │   ├── SchedulePanelPopoverSupportViews.swift # Task inspector header/metadata/subtask/action views
+    │   ├── SchedulePanelPopoverSupportViews.swift # Task inspector header, priority picker, compact overview section
+    │   ├── TaskInspectorFieldSupportViews.swift # Task inspector field-row primitives: metrics, field/button/divider rows, date control, estimate + minutes rows, info card, section group, priority pill, InspectorPickerHover
+    │   ├── TaskInspectorContentSupportViews.swift # Task inspector notes/subtasks/actions sections
+    │   ├── TaskInspectorWorkflowSupportViews.swift # Task inspector recurrence control
     │   ├── InboxView.swift        # Inbox: tasks with no area/project, capture bar, drag-to-reorder
     │   ├── CalendarPageView.swift # Calendar page shell/state: Week/2W/Month, infinite scroll, restore/jump logic
     │   ├── CalendarPageComponents.swift # Month/grid rendering layer
@@ -133,7 +136,8 @@ Cadence/
 
 Several large macOS surfaces are now intentionally split into companion support files rather than one oversized view file. Important examples:
 - `TasksPanel*` — orchestration vs sections vs row/support views
-- `SchedulePanel*` — shell/state vs quick-create/task inspector support
+- `SchedulePanel*` — timeline shell/state, canvas data/interaction helpers, and the inspector's stateful popover wrapper. Generic task-inspector chrome lives in `TaskInspector*SupportViews.swift`, **not** here — `SchedulePanel*` is a risk hotspot (timeline coordinate math, drag/drop, EventKit), so don't park shared UI primitives in it.
+- `TaskInspector*SupportViews.swift` — field-row primitives vs content sections vs recurrence workflow
 - `TimelineDayCanvas*` — canvas state vs overlays/shell/state helpers
 - `MarkdownEditor*` — wrapper vs styling/parser support vs interaction/coordinator logic
 - `TaskSurfaceFreeze*` — shared hover-freeze models/coordinator/helpers used by Today, Inbox, and list-detail task surfaces
@@ -279,11 +283,15 @@ TimeFormatters.durationLabel(actual: Int, estimated: Int)  // "45/60m"
 
 **Drag across groups:** Dropping a task into another group/section can update the relevant attribute (e.g. do date, list, priority, kanban section) and `order`.
 
-**`MacTaskRow` (TasksPanelComponents.swift):** Container (area/project/inbox) uses pill styling; do/due dates are smaller, lower-contrast metadata (icons + text) with hover affordances, not pills. Due date badge only renders when `!task.dueDate.isEmpty` — no empty clickable badge. Overdue tasks can show red emphasis; “over-do” (past do date) is not amber-tinted on the row. Estimate and list pickers use `EstimatePickerControl(compact: true)` / compact container control. Priority strip height is slightly less than the row; estimate/focus controls sit beside the title when hovered.
+**`MacTaskRow` (TasksPanelComponents.swift):** Container (area/project/inbox) uses pill styling; do/due dates are smaller, lower-contrast metadata (icons + text) with hover affordances, not pills. Due date badge only renders when `!task.dueDate.isEmpty` — no empty clickable badge. Overdue tasks can show red emphasis; “over-do” (past do date) is not amber-tinted on the row. The row has **no** estimate control — trailing metadata is the focus button, due-date badge, optional bundle badge, and a `ContainerPickerBadge(compact: true, flat: true)` list chip. Priority strip height is slightly less than the row; the focus control sits beside the title when hovered.
+
+`EstimatePickerControl` (Shared/Components) is **iOS-only in practice** — every caller is under `Cadence/iOS/` and passes `value:` only. macOS surfaces present `EstimatePickerPopoverContent` directly (e.g. `TaskInspectorEstimateFieldRow`).
 
 **Performance:** `MacTaskRow` does NOT read `TaskCompletionAnimationManager` directly. The completion button and animated background are extracted into `TaskCompletionButton` and `TaskRowBackground` sub-view structs, each with their own `@Environment(TaskCompletionAnimationManager.self)`. This scopes SwiftUI observation so only those small sub-views re-render on animation ticks — not every visible row.
 
-**`ContainerPickerBadge` / `TaskSectionPickerBadge` (TasksPanelComponents.swift):** Both popovers open with a search bar auto-focused. Search filters by `hasPrefix` (case-insensitive). Navigation: ↑↓ arrows or `Enter` to select the highlighted item. The highlighted item is tracked by `highlightIdx` (index into `flatFiltered` / `filteredSections`), resets to 0 on query change or close. List name capped at 80pt (60 compact), section name at 70pt — both truncate with `…`. Rows use dedicated `ContainerPickerRow` / `SectionPickerRow` View structs (not `@ViewBuilder` functions) with `let isHighlighted: Bool` for reliable in-place updates. Checkmark follows `isHighlighted`. Hover + highlight share a single `rowBackground` computed property.
+**`ContainerPickerBadge` / `TaskSectionPickerBadge` (TasksPanelSupportViews.swift):** Both popovers open with a search bar auto-focused. Search filters by `hasPrefix` (case-insensitive). Navigation: ↑↓ arrows or `Enter` to select the highlighted item. The highlighted item is tracked by `highlightIdx` (index into `flatFiltered` / `filteredSections`), resets to 0 on query change or close. List name capped at 80pt (60 compact), section name at 70pt — both truncate with `…`. Rows use dedicated `ContainerPickerRow` / `SectionPickerRow` View structs (not `@ViewBuilder` functions) with `let isHighlighted: Bool` for reliable in-place updates. Checkmark follows `isHighlighted`, so the rows deliberately carry **no** `isSelected` property. Hover + highlight share a single `rowBackground` computed property.
+
+Both badges also take an optional `inspectorRowLabel:`. When set, the trigger renders as a full-bleed `TaskInspectorFieldRow` (label left, plain value right) instead of a chip, so the task inspector's List/Section rows match the date/estimate/repeat rows around them; the popover is identical either way. The inspector-row value always shows the **real** name (`Inbox` / `Default`) — the dim `isSet: false` styling is what conveys "unset", so the row and its picker never disagree.
 
 ## Today view task scope
 The Today **tasks** column only includes tasks that are **do today**, **due today**, **past do** (over-do), or **past due**, plus work tied to **sections due today**. A one-time **rollover** banner can appear when there are over-do tasks from the previous day; dismissing it merges those tasks into normal grouping.

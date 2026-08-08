@@ -1,6 +1,208 @@
 #if os(macOS)
 import SwiftUI
 
+// MARK: - Shared column chrome
+//
+// Everything in this MARK section is used by BOTH kanban column implementations —
+// `ListSectionKanbanColumn` (KanbanSectionColumnView.swift) and `TaskListKanbanColumn`
+// (KanbanListColumnView.swift). The two boards must look identical; keeping the styling here
+// rather than copy-pasted in each column is what makes that structural instead of accidental.
+// If you need to change column appearance, change it here — never in one column only.
+
+/// The 7pt dot + uppercased title + task count that opens every kanban column, on both boards.
+/// `trailing` is where a board adds its own controls (the section board puts the completion and
+/// ellipsis buttons there; the list board passes `EmptyView()`).
+struct KanbanColumnTitleRow<Trailing: View>: View {
+    let dotColor: Color
+    let title: String
+    let count: Int
+    @ViewBuilder let trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(dotColor)
+                .frame(width: kanbanColumnDotSize, height: kanbanColumnDotSize)
+
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .kerning(0.4)
+                .foregroundStyle(Theme.muted)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 6)
+
+            Text("\(count)")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Theme.dim)
+                .monospacedDigit()
+
+            trailing()
+        }
+    }
+}
+
+extension KanbanColumnTitleRow where Trailing == EmptyView {
+    init(dotColor: Color, title: String, count: Int) {
+        self.init(dotColor: dotColor, title: title, count: count) { EmptyView() }
+    }
+}
+
+/// The column is containerless at rest: no fill, no stroke. This layer only supplies a
+/// transparent-but-hit-testable region plus the *transient* drag-over wash, so a wall of
+/// columns never reads as a wall of color. Without it the drop destination, the section-reorder
+/// `.onDrag`, and the column hover state would only register on top of actual glyphs.
+///
+/// `overlay` is for board-specific transient state on top of the wash (the section board layers
+/// its pending-completion sweep there).
+struct KanbanColumnDropSurface<Overlay: View>: View {
+    let tint: Color
+    let isTargeted: Bool
+    @ViewBuilder let overlay: () -> Overlay
+
+    var body: some View {
+        ZStack {
+            Color.clear
+
+            if isTargeted {
+                RoundedRectangle(cornerRadius: kanbanColumnCornerRadius)
+                    .fill(tint.opacity(kanbanColumnDropFillOpacity))
+                RoundedRectangle(cornerRadius: kanbanColumnCornerRadius)
+                    .strokeBorder(
+                        tint.opacity(kanbanColumnDropStrokeOpacity),
+                        style: StrokeStyle(lineWidth: 1, dash: kanbanColumnDropDash)
+                    )
+            }
+
+            overlay()
+        }
+        .contentShape(Rectangle())
+        .animation(kanbanColumnDropAnimation, value: isTargeted)
+    }
+}
+
+/// Fixed width + transparent drop surface + full-column hit shape. The outer `contentShape`
+/// is what guarantees the whole 236pt column — not just its glyphs — is a drop target.
+struct KanbanColumnChrome<SurfaceOverlay: View>: ViewModifier {
+    let tint: Color
+    let isTargeted: Bool
+    @ViewBuilder let surfaceOverlay: () -> SurfaceOverlay
+
+    func body(content: Content) -> some View {
+        content
+            .frame(width: kanbanColumnWidth)
+            .background(
+                KanbanColumnDropSurface(tint: tint, isTargeted: isTargeted, overlay: surfaceOverlay)
+            )
+            .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    func kanbanColumnChrome<SurfaceOverlay: View>(
+        tint: Color,
+        isTargeted: Bool,
+        @ViewBuilder surfaceOverlay: @escaping () -> SurfaceOverlay
+    ) -> some View {
+        modifier(KanbanColumnChrome(tint: tint, isTargeted: isTargeted, surfaceOverlay: surfaceOverlay))
+    }
+
+    func kanbanColumnChrome(tint: Color, isTargeted: Bool) -> some View {
+        modifier(KanbanColumnChrome(tint: tint, isTargeted: isTargeted) { EmptyView() })
+    }
+
+    /// Padding shared by both boards' column header blocks.
+    func kanbanColumnHeaderPadding() -> some View {
+        padding(.horizontal, 4)
+            .padding(.top, 2)
+            .padding(.bottom, 8)
+    }
+}
+
+/// The scrolling card stack for a column. The `minHeight` and the inner/outer `contentShape`s
+/// are what keep the empty space under the last card — and an entirely empty column — a live
+/// drop target now that the column paints nothing. Bundling the add-task row in here makes that
+/// structural instead of something each board has to remember.
+struct KanbanColumnScroll<Content: View>: View {
+    let isColumnHovered: Bool
+    let onAddTask: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                content()
+                // Replaces the old header "+" chip; always genuinely last in the column.
+                KanbanColumnAddTaskRow(isColumnHovered: isColumnHovered, action: onAddTask)
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .frame(minHeight: 200)
+        .background(
+            Color.clear.contentShape(Rectangle())
+        )
+    }
+}
+
+/// A card that can be picked up and that accepts a drop *in front of itself*. Used for every
+/// card on both boards.
+struct KanbanDraggableCard: View {
+    let task: AppTask
+    var showsDropIndicator: Bool = false
+    var onDropTargetedChanged: (Bool) -> Void = { _ in }
+    let onDropBefore: ([String]) -> Bool
+
+    var body: some View {
+        KanbanCard(task: task)
+            .overlay(alignment: .top) {
+                if showsDropIndicator {
+                    Rectangle()
+                        .fill(Theme.blue)
+                        .frame(height: 2)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: showsDropIndicator)
+            .draggable(task.id.uuidString)
+            .dropDestination(for: String.self) { items, _ in
+                onDropBefore(items)
+            } isTargeted: { isOver in
+                onDropTargetedChanged(isOver)
+            }
+    }
+}
+
+/// Holds a column's card ordering still while the pointer is over one of its cards, so hover
+/// never makes rows resort under the cursor. Both boards install this.
+struct KanbanFreezeObserver: View {
+    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
+    @Binding var frozenTasks: [AppTask]?
+    let columnTaskIDs: Set<UUID>
+    let capturedTasks: [AppTask]
+    private let releaseAnimation = Animation.spring(response: 0.34, dampingFraction: 0.86, blendDuration: 0.08)
+
+    var body: some View {
+        Color.clear
+            .allowsHitTesting(false)
+            .onChange(of: hoveredTaskManager.hoveredTask?.id) { _, newID in
+                if let newID, columnTaskIDs.contains(newID) {
+                    if frozenTasks == nil { frozenTasks = capturedTasks }
+                } else if frozenTasks != nil {
+                    withAnimation(releaseAnimation) {
+                        frozenTasks = nil
+                    }
+                }
+            }
+    }
+}
+
+// MARK: - Section-board column header
+
 struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
     let section: TaskSectionConfig
     let activeTaskCount: Int
@@ -40,32 +242,12 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
                     .padding(.leading, 14)
             }
         }
-        .padding(.horizontal, 4)
-        .padding(.top, 2)
-        .padding(.bottom, 8)
+        .kanbanColumnHeaderPadding()
         .onHover(perform: onHoverChanged)
     }
 
     private var titleRow: some View {
-        HStack(spacing: 7) {
-            Circle()
-                .fill(dotColor)
-                .frame(width: 7, height: 7)
-
-            Text(section.name.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .kerning(0.4)
-                .foregroundStyle(Theme.muted)
-                .lineLimit(1)
-                .truncationMode(.tail)
-
-            Spacer(minLength: 6)
-
-            Text("\(activeTaskCount)")
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(Theme.dim)
-                .monospacedDigit()
-
+        KanbanColumnTitleRow(dotColor: dotColor, title: section.name, count: activeTaskCount) {
             Button(action: onToggleCompletion) {
                 TaskCompletionProgressGlyph(
                     icon: section.isCompleted ? "checkmark.circle.fill" : "circle",

@@ -5,15 +5,12 @@ import SwiftData
 struct KanbanCard: View {
     @Bindable var task: AppTask
     var presentation: KanbanCardPresentation = .listBoard
-    var showsEmptyDoDate = false
-    var showsContainerMetadata = false
 
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @Environment(TaskCompletionAnimationManager.self) private var taskCompletionAnimationManager
-    @State private var showPriorityPicker = false
     @State private var showDueDatePicker = false
     @State private var dueDatePickerDate: Date = Date()
     @State private var dueDateViewMonth: Date = Date()
@@ -130,7 +127,7 @@ struct KanbanCard: View {
     }
 
     private var doDateMetaItem: KanbanMetaItem? {
-        guard showsEmptyDoDate || !task.scheduledDate.isEmpty else { return nil }
+        guard !task.scheduledDate.isEmpty else { return nil }
         return KanbanMetaItem(
             id: "do-date",
             icon: "sun.max.fill",
@@ -160,9 +157,6 @@ struct KanbanCard: View {
         }
         if let dueDateMetaItem {
             row.append(dueDateMetaItem)
-        }
-        if showsContainerMetadata {
-            row.append(contextMetaItem)
         }
         return row.isEmpty ? [] : [row]
     }
@@ -227,17 +221,6 @@ struct KanbanCard: View {
         switch item.action {
         case .none:
             KanbanMetaChip(item: item, onHoverChanged: setAttributeFocused)
-        case .priority:
-            KanbanPriorityMetaButton(
-                item: item,
-                priority: $task.priority,
-                isPresented: $showPriorityPicker,
-                onOpen: {
-                    showPriorityPicker = true
-                    syncInteractiveHoverState()
-                },
-                onHoverChanged: setAttributeFocused
-            )
         case .doDate:
             KanbanDateMetaButton(
                 item: item,
@@ -416,7 +399,7 @@ struct KanbanCard: View {
     }
 
     private var isPresentingInlinePopover: Bool {
-        showPriorityPicker || showDueDatePicker || showDoDatePicker || showDurationPicker
+        showDueDatePicker || showDoDatePicker || showDurationPicker
     }
 
     private var isCardVisuallyFocused: Bool {

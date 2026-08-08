@@ -80,7 +80,7 @@ struct QuickCreateTaskDetailsView: View {
             QuickCreateSlotSummary(dateKey: dateKey, startMin: startMin, endMin: endMin)
 
             QuickCreateCompactSection {
-                TaskInspectorDetailRow(title: "List", icon: "tray") {
+                QuickCreateDetailRow(title: "List", icon: "tray") {
                     HStack(alignment: .center, spacing: 6) {
                         ContainerPickerBadge(
                             selection: $selectedContainer,
@@ -102,7 +102,7 @@ struct QuickCreateTaskDetailsView: View {
             }
 
             QuickCreateCompactSection {
-                TaskInspectorDetailRow(title: "Notes", icon: "note.text") {
+                QuickCreateDetailRow(title: "Notes", icon: "note.text") {
                     QuickCreateNotesEditor(text: $notes, minHeight: 64)
                 }
             }
@@ -193,7 +193,7 @@ struct QuickCreateEventDetailsView: View {
             QuickCreateSlotSummary(dateKey: dateKey, startMin: startMin, endMin: endMin)
 
             QuickCreateCompactSection {
-                TaskInspectorDetailRow(title: "Calendar", icon: "calendar") {
+                QuickCreateDetailRow(title: "Calendar", icon: "calendar") {
                     if calendars.isEmpty {
                         Text("No writable calendars")
                             .font(.system(size: 12, weight: .medium))
@@ -211,7 +211,7 @@ struct QuickCreateEventDetailsView: View {
             }
 
             QuickCreateCompactSection {
-                TaskInspectorDetailRow(title: "Notes", icon: "note.text") {
+                QuickCreateDetailRow(title: "Notes", icon: "note.text") {
                     QuickCreateNotesEditor(text: $notes, minHeight: 84)
                 }
             }
@@ -235,7 +235,7 @@ struct QuickCreateBundleDetailsView: View {
             QuickCreateSlotSummary(dateKey: dateKey, startMin: startMin, endMin: endMin)
 
             QuickCreateCompactSection {
-                TaskInspectorDetailRow(title: "Tasks", icon: "checklist") {
+                QuickCreateDetailRow(title: "Tasks", icon: "checklist") {
                     QuickCreateBundleTaskSelectionView(
                         bundleDateKey: bundleDateKey,
                         allTasks: allTasks,
@@ -247,6 +247,34 @@ struct QuickCreateBundleDetailsView: View {
                 }
             }
         }
+    }
+}
+
+/// Label-left / content-right metadata row used by the quick-create sheets.
+struct QuickCreateDetailRow<Content: View>: View {
+    let title: String
+    let icon: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 11)
+                Text(title)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+            }
+            .frame(width: 76, alignment: .leading)
+            .padding(.top, 7)
+
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(minHeight: 28, alignment: .top)
     }
 }
 
@@ -288,7 +316,7 @@ struct QuickCreateSlotMetadataRows: View {
     let endMin: Int
 
     var body: some View {
-        TaskInspectorDetailRow(title: "When", icon: "clock") {
+        QuickCreateDetailRow(title: "When", icon: "clock") {
             HStack(spacing: 8) {
                 QuickCreateInspectorValue(text: DateFormatters.relativeDate(from: dateKey), icon: "calendar")
                 QuickCreateInspectorValue(text: TimeFormatters.timeRange(startMin: startMin, endMin: endMin), icon: "clock")

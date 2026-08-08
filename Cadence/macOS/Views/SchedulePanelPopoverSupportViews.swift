@@ -125,7 +125,13 @@ struct TaskDetailCompactOverviewSection: View {
                     isOn: Binding(
                         get: { !task.scheduledDate.isEmpty },
                         set: { isOn in
-                            if !isOn { task.scheduledDate = "" }
+                            // Clearing the do date has to unschedule too, or the task keeps a
+                            // timeline slot (and a linked calendar event) it no longer has a day
+                            // for. Same order as the inspector's Unschedule action.
+                            guard !isOn else { return }
+                            SchedulingActions.removeFromCalendar(task)
+                            task.scheduledStartMin = -1
+                            task.scheduledDate = ""
                         }
                     ),
                     date: Binding(

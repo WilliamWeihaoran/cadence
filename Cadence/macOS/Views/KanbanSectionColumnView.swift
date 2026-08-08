@@ -4,14 +4,17 @@ import SwiftData
 
 // MARK: - Column
 
+/// One of Cadence's **two** kanban column implementations: this one renders the *section*
+/// columns of a list/project board. The other is `TaskListKanbanColumn` in
+/// `KanbanListColumnView.swift`, which renders the *list* columns of the All Tasks board.
+/// The two must stay visually identical — all shared chrome lives in
+/// `KanbanColumnSupportViews.swift` / `KanbanBoardSupport.swift`, so change it there, not here.
 struct ListSectionKanbanColumn: View {
     let section: TaskSectionConfig
     let tasks: [AppTask]
     let universeTasks: [AppTask]
     var area: Area?
     var project: Project?
-    var onTaskDroppedIntoColumn: ((AppTask, String) -> Void)? = nil
-    var assignSectionOnDrop: Bool = true
     let isBeingDragged: Bool
     let isAnotherSectionBeingDragged: Bool
     let isHighlighted: Bool
@@ -80,37 +83,7 @@ struct ListSectionKanbanColumn: View {
 
     private var columnBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            TimelineView(.animation) { context in
-                KanbanColumnHeader(
-                    section: section,
-                    activeTaskCount: activeTasks.count,
-                    columnColor: columnColor,
-                    hideColumnDueDateIfEmpty: hideColumnDueDateIfEmpty,
-                    sectionDueDateIsOverdue: sectionDueDateIsOverdue,
-                    isPendingCompletion: isPendingCompletion,
-                    completionProgress: sectionCompletionAnimationManager.progress(for: section, now: context.date),
-                    showHeaderDueDatePicker: $showHeaderDueDatePicker,
-                    showEditor: $showEditor,
-                    onToggleCompletion: toggleSectionCompletion,
-                    onOpenDueDatePicker: openHeaderDueDatePicker,
-                    onOpenEditor: openSectionEditor,
-                    onHoverChanged: { hovering in
-                        if hovering {
-                            hoveredEditableManager.beginHovering(id: sectionEditHoverID) {
-                                openSectionEditor()
-                            }
-                        } else {
-                            hoveredEditableManager.endHovering(id: sectionEditHoverID)
-                        }
-                    },
-                    dueDatePopover: {
-                        sectionDueDatePickerPopover
-                    },
-                    editorPopover: {
-                        columnEditor
-                    }
-                )
-            }
+            columnHeader
 
             Rectangle()
                 .fill(Theme.borderSubtle)
@@ -118,14 +91,19 @@ struct ListSectionKanbanColumn: View {
 
             columnTaskScroll
         }
-        .frame(width: kanbanColumnWidth)
-        // The column has no fill or border any more, so it needs an explicit
-        // transparent-but-hit-testable region: without this the drop destination, the
-        // section-reorder `.onDrag`, and the column hover state would only register on top
-        // of actual glyphs. `columnDropSurface` supplies `Color.clear` + `contentShape`,
-        // and the outer `contentShape` guarantees the whole 236pt column is a drop target.
-        .background(columnDropSurface)
-        .contentShape(Rectangle())
+        .kanbanColumnChrome(tint: columnColor, isTargeted: isTargeted) {
+            // Section columns can be "completing…" — that sweep layers on top of the shared
+            // drag-over wash.
+            if isPendingCompletion {
+                TimelineView(.animation) { context in
+                    TaskCompletionPendingOverlay(
+                        progress: sectionCompletionAnimationManager.progress(for: section, now: context.date),
+                        tint: Theme.green,
+                        cornerRadius: kanbanColumnCornerRadius
+                    )
+                }
+            }
+        }
         .overlay {
             if isHighlighted {
                 RoundedRectangle(cornerRadius: kanbanColumnCornerRadius)
@@ -157,7 +135,9 @@ struct ListSectionKanbanColumn: View {
                 onReorderBefore(movingName)
                 return true
             }
-            guard let uuid = UUID(uuidString: payload),
+            // Same payload parsing as the card-level drop and as the list board's column, so a
+            // drop on empty column space accepts exactly what a drop on a card accepts.
+            guard let uuid = KanbanBoardSupport.taskID(from: payload),
                   let task = universeTasks.first(where: { $0.id == uuid }) else { return false }
             moveTask(task, before: nil)
             return true
@@ -178,38 +158,72 @@ struct ListSectionKanbanColumn: View {
         }
     }
 
-    private var columnTaskScroll: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                activeTaskCards
-                completedTaskSection
-                // Always genuinely last in the column — below the "Completed (n)" disclosure.
-                KanbanColumnAddTaskRow(isColumnHovered: isHovered, action: presentNewTaskPanel)
+    /// The `TimelineView` must stay *conditional*: an unconditional one re-renders every
+    /// visible column on every display frame, forever.
+    @ViewBuilder
+    private var columnHeader: some View {
+        if isPendingCompletion {
+            TimelineView(.animation) { context in
+                header(completionProgress: sectionCompletionAnimationManager.progress(for: section, now: context.date))
             }
-            .padding(.horizontal, 4)
-            .padding(.top, 8)
-            .padding(.bottom, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // Keeps the empty area under the last card a live drop target now that the
-            // column itself paints nothing.
-            .contentShape(Rectangle())
+        } else {
+            header(completionProgress: 0)
         }
-        .frame(minHeight: 200)
-        .background(
-            Color.clear.contentShape(Rectangle())
+    }
+
+    private func header(completionProgress: Double) -> some View {
+        KanbanColumnHeader(
+            section: section,
+            activeTaskCount: activeTasks.count,
+            columnColor: columnColor,
+            hideColumnDueDateIfEmpty: hideColumnDueDateIfEmpty,
+            sectionDueDateIsOverdue: sectionDueDateIsOverdue,
+            isPendingCompletion: isPendingCompletion,
+            completionProgress: completionProgress,
+            showHeaderDueDatePicker: $showHeaderDueDatePicker,
+            showEditor: $showEditor,
+            onToggleCompletion: toggleSectionCompletion,
+            onOpenDueDatePicker: openHeaderDueDatePicker,
+            onOpenEditor: openSectionEditor,
+            onHoverChanged: { hovering in
+                if hovering {
+                    hoveredEditableManager.beginHovering(id: sectionEditHoverID) {
+                        openSectionEditor()
+                    }
+                } else {
+                    hoveredEditableManager.endHovering(id: sectionEditHoverID)
+                }
+            },
+            dueDatePopover: {
+                sectionDueDatePickerPopover
+            },
+            editorPopover: {
+                columnEditor
+            }
         )
+    }
+
+    private var columnTaskScroll: some View {
+        KanbanColumnScroll(isColumnHovered: isHovered, onAddTask: presentNewTaskPanel) {
+            activeTaskCards
+            completedTaskSection
+        }
     }
 
     @ViewBuilder
     private var activeTaskCards: some View {
         ForEach(activeTasks) { task in
-            kanbanCard(task, showsDropIndicator: dragOverTaskID == task.id)
-                .dropDestination(for: String.self) { items, _ in
-                    handleTaskDrop(items: items, before: task)
-                } isTargeted: { isOver in
+            KanbanDraggableCard(
+                task: task,
+                showsDropIndicator: dragOverTaskID == task.id,
+                onDropTargetedChanged: { isOver in
                     if isOver { dragOverTaskID = task.id }
                     else if dragOverTaskID == task.id { dragOverTaskID = nil }
+                },
+                onDropBefore: { items in
+                    handleTaskDrop(items: items, before: task)
                 }
+            )
         }
     }
 
@@ -269,10 +283,9 @@ struct ListSectionKanbanColumn: View {
     private var completedTaskCards: some View {
         VStack(spacing: 6) {
             ForEach(completedTasks) { task in
-                kanbanCard(task)
-                    .dropDestination(for: String.self) { items, _ in
-                        return handleTaskDrop(items: items, before: task)
-                    }
+                KanbanDraggableCard(task: task) { items in
+                    handleTaskDrop(items: items, before: task)
+                }
             }
         }
         .transition(
@@ -283,20 +296,9 @@ struct ListSectionKanbanColumn: View {
         )
     }
 
-    private func kanbanCard(_ task: AppTask, showsDropIndicator: Bool = false) -> some View {
-        KanbanCard(task: task)
-            .overlay(alignment: .top) {
-                if showsDropIndicator {
-                    Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
-                }
-            }
-            .animation(.easeInOut(duration: 0.15), value: dragOverTaskID)
-            .draggable(task.id.uuidString)
-    }
-
     private func handleTaskDrop(items: [String], before target: AppTask) -> Bool {
         guard let payload = items.first,
-              let droppedID = taskID(from: payload),
+              let droppedID = KanbanBoardSupport.taskID(from: payload),
               droppedID != target.id,
               let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
         moveTask(droppedTask, before: target)
@@ -319,13 +321,6 @@ struct ListSectionKanbanColumn: View {
         )
     }
 
-    private func taskID(from payload: String) -> UUID? {
-        if payload.hasPrefix("listTask:") {
-            return UUID(uuidString: String(payload.dropFirst(9)))
-        }
-        return UUID(uuidString: payload)
-    }
-
     private func moveTask(_ task: AppTask, before target: AppTask?) {
         if let area {
             task.area = area
@@ -339,23 +334,13 @@ struct ListSectionKanbanColumn: View {
             task.area = nil
             task.project = nil
         }
-        onTaskDroppedIntoColumn?(task, section.name)
-        if assignSectionOnDrop {
-            task.sectionName = section.name
-        }
+        task.sectionName = section.name
 
-        var columnTasks = tasks.sorted { $0.order < $1.order }
-        columnTasks.removeAll { $0.id == task.id }
-        if let target, let targetIndex = columnTasks.firstIndex(where: { $0.id == target.id }) {
-            columnTasks.insert(task, at: targetIndex)
-        } else {
-            columnTasks.append(task)
-        }
-        withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
-            for (index, item) in columnTasks.enumerated() {
-                item.order = index
-            }
-        }
+        KanbanBoardSupport.reorder(
+            tasks.sorted { $0.order < $1.order },
+            moving: task,
+            before: target
+        )
     }
 
     private func openSectionEditor() {
@@ -535,38 +520,6 @@ struct ListSectionKanbanColumn: View {
 
     private var sectionDueDateIsOverdue: Bool {
         !section.dueDate.isEmpty && !section.isCompleted && section.dueDate < DateFormatters.todayKey()
-    }
-
-    /// The column is containerless at rest: no fill, no stroke. This layer only supplies a
-    /// transparent hit-test region plus *transient* state washes (drag-over, pending
-    /// completion), so a wall of columns never reads as a wall of color.
-    @ViewBuilder
-    private var columnDropSurface: some View {
-        ZStack {
-            Color.clear
-
-            if isTargeted {
-                RoundedRectangle(cornerRadius: kanbanColumnCornerRadius)
-                    .fill(columnColor.opacity(0.07))
-                RoundedRectangle(cornerRadius: kanbanColumnCornerRadius)
-                    .strokeBorder(
-                        columnColor.opacity(0.55),
-                        style: StrokeStyle(lineWidth: 1, dash: [5, 4])
-                    )
-            }
-
-            if isPendingCompletion {
-                TimelineView(.animation) { context in
-                    TaskCompletionPendingOverlay(
-                        progress: sectionCompletionAnimationManager.progress(for: section, now: context.date),
-                        tint: Theme.green,
-                        cornerRadius: kanbanColumnCornerRadius
-                    )
-                }
-            }
-        }
-        .contentShape(Rectangle())
-        .animation(.easeInOut(duration: 0.14), value: isTargeted)
     }
 }
 #endif
