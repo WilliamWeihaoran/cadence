@@ -30,7 +30,11 @@ enum MarkdownHiddenRangeSupport {
         let length = storage.length
         guard length > 0 else { return 0 }
 
-        if location < length, let hidden = hiddenRange(containing: location, in: storage) {
+        // A caret sitting exactly at the start of a hidden range (e.g. right before a
+        // closing "`"/"**" marker) is a normal, valid resting place — not "stuck inside"
+        // the hidden run — so it must not be snapped. Only snap when the caret is
+        // strictly past the start, i.e. genuinely inside the hidden span.
+        if location < length, let hidden = hiddenRange(containing: location, in: storage), location > hidden.location {
             return preferringForward ? NSMaxRange(hidden) : hidden.location
         }
         if location > 0, let hidden = hiddenRange(containing: location - 1, in: storage), location < NSMaxRange(hidden) {

@@ -310,7 +310,15 @@ enum MarkdownStylist {
             paragraph.paragraphSpacing = 4
 
             storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
-            storage.addAttribute(.cadenceMarkdownQuoteDepth, value: quote.depth, range: lineRange)
+            // Extend by one character (the trailing newline, when present) so consecutive
+            // same-depth quote lines form one contiguous attribute run — enumerateAttribute
+            // otherwise sees the un-tagged newline as a gap and draws each line as its own
+            // separate rounded block instead of one continuous quote.
+            let depthRange = NSRange(
+                location: lineRange.location,
+                length: min(lineRange.length + 1, storage.length - lineRange.location)
+            )
+            storage.addAttribute(.cadenceMarkdownQuoteDepth, value: quote.depth, range: depthRange)
             hide(storage, NSRange(location: lineStart + quote.indentation.count, length: quote.prefix.count - quote.indentation.count))
 
             let restStart = lineStart + quote.prefix.count
