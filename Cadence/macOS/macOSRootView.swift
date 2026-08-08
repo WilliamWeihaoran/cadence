@@ -5,6 +5,7 @@ import AppKit
 
 enum SidebarItem: Hashable {
     case today
+    case planning
     case allTasks
     case inbox
     case area(UUID)

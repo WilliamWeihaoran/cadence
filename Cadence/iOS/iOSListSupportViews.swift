@@ -459,7 +459,7 @@ private struct iOSListKanbanCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(9)
-            .background(Color(hex: "#151824"))
+            .background(Theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)

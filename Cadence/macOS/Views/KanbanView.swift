@@ -94,7 +94,6 @@ struct ListSectionKanbanColumn: View {
                     onToggleCompletion: toggleSectionCompletion,
                     onOpenDueDatePicker: openHeaderDueDatePicker,
                     onOpenEditor: openSectionEditor,
-                    onCreateTask: presentNewTaskPanel,
                     onHoverChanged: { hovering in
                         if hovering {
                             hoveredEditableManager.beginHovering(id: sectionEditHoverID) {
@@ -113,30 +112,30 @@ struct ListSectionKanbanColumn: View {
                 )
             }
 
-            Divider().background(Theme.borderSubtle)
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(height: 1)
 
             columnTaskScroll
         }
         .frame(width: kanbanColumnWidth)
-        .background(columnBackground)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(
-                    isTargeted
-                        ? columnColor.opacity(0.6)
-                        : (isHovered ? columnColor.opacity(section.isDefault ? 0.3 : 0.4) : columnColor.opacity(section.isDefault ? 0.14 : 0.2))
-                )
-        )
+        // The column has no fill or border any more, so it needs an explicit
+        // transparent-but-hit-testable region: without this the drop destination, the
+        // section-reorder `.onDrag`, and the column hover state would only register on top
+        // of actual glyphs. `columnDropSurface` supplies `Color.clear` + `contentShape`,
+        // and the outer `contentShape` guarantees the whole 236pt column is a drop target.
+        .background(columnDropSurface)
+        .contentShape(Rectangle())
         .overlay {
             if isHighlighted {
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(columnColor.opacity(0.9), lineWidth: 2.5)
-                    .padding(-2)
-                    .shadow(color: columnColor.opacity(0.32), radius: 14)
+                RoundedRectangle(cornerRadius: kanbanColumnCornerRadius)
+                    .strokeBorder(columnColor.opacity(0.9), lineWidth: 2)
+                    .padding(-4)
+                    .shadow(color: columnColor.opacity(0.28), radius: 14)
+                    .allowsHitTesting(false)
             }
         }
-        .scaleEffect(isBeingDragged ? 0.972 : (isTargeted ? 1.018 : 1))
-        .offset(y: isTargeted ? -6 : 0)
+        .scaleEffect(isBeingDragged ? 0.972 : 1)
         .opacity(isBeingDragged ? 0.42 : 1)
         .zIndex(isBeingDragged ? 3 : (isTargeted ? 2 : 0))
         .animation(kanbanColumnStateAnimation, value: isBeingDragged)
@@ -145,9 +144,9 @@ struct ListSectionKanbanColumn: View {
             if isTargeted && isAnotherSectionBeingDragged {
                 RoundedRectangle(cornerRadius: 3)
                     .fill(columnColor.opacity(0.9))
-                    .frame(height: 4)
-                    .padding(.horizontal, 26)
-                    .offset(y: -7)
+                    .frame(height: 3)
+                    .padding(.horizontal, 4)
+                    .offset(y: -8)
                     .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
         }
@@ -184,13 +183,20 @@ struct ListSectionKanbanColumn: View {
             VStack(alignment: .leading, spacing: 8) {
                 activeTaskCards
                 completedTaskSection
+                // Always genuinely last in the column — below the "Completed (n)" disclosure.
+                KanbanColumnAddTaskRow(isColumnHovered: isHovered, action: presentNewTaskPanel)
             }
-            .padding(8)
+            .padding(.horizontal, 4)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // Keeps the empty area under the last card a live drop target now that the
+            // column itself paints nothing.
+            .contentShape(Rectangle())
         }
         .frame(minHeight: 200)
         .background(
-            RoundedRectangle(cornerRadius: 0)
-                .fill(.clear)
+            Color.clear.contentShape(Rectangle())
         )
     }
 
@@ -243,10 +249,17 @@ struct ListSectionKanbanColumn: View {
             }
             .foregroundStyle(Theme.dim)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .cadenceCard(background: Theme.surface.opacity(0.5), cornerRadius: Theme.radiusControl, shadowRadius: 8, shadowY: 3)
-            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background {
+                RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
+                    .fill(Theme.surface)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
+                    .strokeBorder(Theme.borderSubtle, lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
         }
         .buttonStyle(.cadencePlain)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -524,29 +537,36 @@ struct ListSectionKanbanColumn: View {
         !section.dueDate.isEmpty && !section.isCompleted && section.dueDate < DateFormatters.todayKey()
     }
 
+    /// The column is containerless at rest: no fill, no stroke. This layer only supplies a
+    /// transparent hit-test region plus *transient* state washes (drag-over, pending
+    /// completion), so a wall of columns never reads as a wall of color.
     @ViewBuilder
-    private var columnBackground: some View {
-        RoundedRectangle(cornerRadius: 10)
-            .fill(Theme.surface.opacity(section.isDefault ? 0.6 : 0.55))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(columnColor.opacity(isHovered ? (section.isDefault ? 0.05 : 0.09) : (section.isDefault ? 0.03 : 0.06)))
+    private var columnDropSurface: some View {
+        ZStack {
+            Color.clear
+
+            if isTargeted {
+                RoundedRectangle(cornerRadius: kanbanColumnCornerRadius)
+                    .fill(columnColor.opacity(0.07))
+                RoundedRectangle(cornerRadius: kanbanColumnCornerRadius)
+                    .strokeBorder(
+                        columnColor.opacity(0.55),
+                        style: StrokeStyle(lineWidth: 1, dash: [5, 4])
+                    )
             }
-            .overlay {
-                if isPendingCompletion {
-                    TimelineView(.animation) { context in
-                        TaskCompletionPendingOverlay(
-                            progress: sectionCompletionAnimationManager.progress(for: section, now: context.date),
-                            tint: Theme.green,
-                            cornerRadius: 10
-                        )
-                    }
+
+            if isPendingCompletion {
+                TimelineView(.animation) { context in
+                    TaskCompletionPendingOverlay(
+                        progress: sectionCompletionAnimationManager.progress(for: section, now: context.date),
+                        tint: Theme.green,
+                        cornerRadius: kanbanColumnCornerRadius
+                    )
                 }
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(.white.opacity(isHovered || isTargeted ? 0.024 : 0.01))
-            }
+        }
+        .contentShape(Rectangle())
+        .animation(.easeInOut(duration: 0.14), value: isTargeted)
     }
 }
 #endif

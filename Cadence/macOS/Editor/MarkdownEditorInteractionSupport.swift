@@ -74,17 +74,17 @@ final class CadenceLayoutManager: NSLayoutManager {
 
             let fillColor: NSColor
             if style.isHeader {
-                fillColor = NSColor(hex: "#24304a").withAlphaComponent(0.78)
+                fillColor = MarkdownStylist.borderColor.withAlphaComponent(0.78)
             } else if style.isDelimiter {
-                fillColor = NSColor(hex: "#38405c").withAlphaComponent(0.58)
+                fillColor = MarkdownStylist.codeBorder.withAlphaComponent(0.58)
             } else {
-                fillColor = (style.lineIndex % 2 == 0 ? NSColor(hex: "#171d2a") : NSColor(hex: "#141923")).withAlphaComponent(0.72)
+                fillColor = (style.lineIndex % 2 == 0 ? MarkdownStylist.codeBackground : Theme.nsSurface).withAlphaComponent(0.72)
             }
 
             fillColor.setFill()
             NSBezierPath(roundedRect: rowRect, xRadius: style.isHeader ? 9 : 6, yRadius: style.isHeader ? 9 : 6).fill()
 
-            NSColor(hex: "#3b4668").withAlphaComponent(style.isHeader ? 0.75 : 0.45).setStroke()
+            MarkdownStylist.codeBorder.withAlphaComponent(style.isHeader ? 0.75 : 0.45).setStroke()
             let border = NSBezierPath()
             border.lineWidth = 0.7
             border.move(to: NSPoint(x: rowRect.minX + 8, y: rowRect.maxY))
@@ -209,10 +209,10 @@ final class CadenceLayoutManager: NSLayoutManager {
                 height: max(0, backgroundRect.height - 4)
             )
 
-            NSColor(hex: "#13243d").withAlphaComponent(0.68).setFill()
+            MarkdownStylist.codeBackground.withAlphaComponent(0.68).setFill()
             NSBezierPath(roundedRect: backgroundRect, xRadius: 7, yRadius: 7).fill()
 
-            NSColor(hex: "#4a9eff").withAlphaComponent(0.85).setFill()
+            MarkdownStylist.blueColor.withAlphaComponent(0.85).setFill()
             NSBezierPath(roundedRect: barRect, xRadius: 2, yRadius: 2).fill()
         }
     }
@@ -235,7 +235,7 @@ final class CadenceLayoutManager: NSLayoutManager {
                 width: ruleWidth,
                 height: 2
             )
-            NSColor(hex: "#50597a").setFill()
+            MarkdownStylist.ruleColor.setFill()
             ruleRect.fill()
         }
     }
@@ -268,13 +268,13 @@ final class CadenceLayoutManager: NSLayoutManager {
 
             textView.markdownImageRects[info.id] = imageRect
 
-            NSColor(hex: "#151a24").setFill()
+            Theme.nsSurface.setFill()
             NSBezierPath(roundedRect: imageRect.insetBy(dx: -1, dy: -1), xRadius: 9, yRadius: 9).fill()
 
             if let image = info.image {
                 image.draw(in: imageRect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
             } else {
-                NSColor(hex: "#1d2534").setFill()
+                MarkdownStylist.highlightSurface.setFill()
                 NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8).fill()
                 let label = "Missing image"
                 let attrs: [NSAttributedString.Key: Any] = [
@@ -285,16 +285,16 @@ final class CadenceLayoutManager: NSLayoutManager {
             }
 
             if textView.selectedMarkdownImageID == info.id {
-                NSColor(hex: "#4a9eff").setStroke()
+                MarkdownStylist.blueColor.setStroke()
                 let selectionPath = NSBezierPath(roundedRect: imageRect.insetBy(dx: -2, dy: -2), xRadius: 10, yRadius: 10)
                 selectionPath.lineWidth = 2
                 selectionPath.stroke()
             }
 
             let handleRect = textView.resizeHandleRect(for: imageRect)
-            NSColor(hex: "#0f1117").withAlphaComponent(0.86).setFill()
+            Theme.nsBg.withAlphaComponent(0.86).setFill()
             NSBezierPath(roundedRect: handleRect, xRadius: 5, yRadius: 5).fill()
-            NSColor(hex: "#4a9eff").setStroke()
+            MarkdownStylist.blueColor.setStroke()
             let handle = NSBezierPath()
             handle.lineWidth = 1.4
             handle.move(to: NSPoint(x: handleRect.minX + 4, y: handleRect.maxY - 5))
@@ -768,7 +768,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         editor.placeholderString = MarkdownTaskEmbedRenderInfo.untitledTaskTitle
         editor.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         editor.textColor = MarkdownStylist.textColor
-        editor.backgroundColor = NSColor(hex: "#182236")
+        editor.backgroundColor = MarkdownStylist.codeBackground
         editor.isBordered = false
         editor.focusRingType = .none
         editor.delegate = self
@@ -882,7 +882,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     private func taskEmbedDragPreview(for id: UUID, rect: NSRect) -> NSImage {
         let image = NSImage(size: rect.size)
         image.lockFocus()
-        NSColor(hex: "#182236").withAlphaComponent(0.96).setFill()
+        MarkdownStylist.codeBackground.withAlphaComponent(0.96).setFill()
         NSBezierPath(roundedRect: NSRect(origin: .zero, size: rect.size), xRadius: 11, yRadius: 11).fill()
         MarkdownStylist.blueColor.withAlphaComponent(0.48).setStroke()
         let border = NSBezierPath(roundedRect: NSRect(origin: .zero, size: rect.size).insetBy(dx: 0.5, dy: 0.5), xRadius: 11, yRadius: 11)

@@ -18,18 +18,16 @@ struct TaskInspectorRecurrenceControl: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: task.recurrenceRule.systemImage)
-                    .font(.system(size: 11))
-                    .foregroundStyle(task.isRecurring ? Theme.blue : Theme.dim)
-                Text(recurrenceLabel)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(task.isRecurring ? Theme.text : Theme.dim)
+            TaskInspectorFieldRow(label: "Repeat") {
+                TaskInspectorFieldValueText(text: recurrenceLabel, isSet: task.isRecurring)
             }
-            .padding(.vertical, 2)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.cadencePlain)
+        .menuIndicator(.hidden)
+        // On macOS `buttonStyle` does not style a `Menu` — `menuStyle` does. Without this the
+        // system draws its own pull-down chrome around the full-bleed row and breaks the
+        // flush hairline field list.
+        .menuStyle(.borderlessButton)
         .confirmationDialog(
             "Change repeating task?",
             isPresented: Binding(
@@ -53,7 +51,7 @@ struct TaskInspectorRecurrenceControl: View {
     }
 
     private var recurrenceLabel: String {
-        task.recurrenceRule == .none ? "No repeat" : task.recurrenceRule.shortLabel
+        task.recurrenceRule == .none ? "Never" : task.recurrenceRule.shortLabel
     }
 
     private func selectRule(_ rule: TaskRecurrenceRule) {

@@ -70,7 +70,7 @@ struct TimelineDraggedTaskPreview: View {
                                     .stroke(Theme.blue.opacity(0.45), lineWidth: 1)
                             )
                     )
-                    .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+                    .shadow(color: Theme.chipShadow, radius: 8, y: 3)
                     .offset(x: -8, y: -10)
             }
         }
@@ -142,7 +142,7 @@ private struct DiagonalStripeOverlay: View {
                 var path = Path()
                 path.move(to: CGPoint(x: offset - size.height, y: 0))
                 path.addLine(to: CGPoint(x: offset, y: size.height))
-                context.stroke(path, with: .color(.white.opacity(0.10)), lineWidth: lineWidth)
+                context.stroke(path, with: .color(Theme.onColorBorder), lineWidth: lineWidth)
             }
         }
         .allowsHitTesting(false)

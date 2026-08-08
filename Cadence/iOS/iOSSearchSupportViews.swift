@@ -136,7 +136,7 @@ private struct iOSSearchScopeChip: View {
     let action: () -> Void
 
     private var foreground: Color {
-        isSelected ? .white : Theme.text
+        isSelected ? Theme.onColor : Theme.text
     }
 
     private var background: Color {

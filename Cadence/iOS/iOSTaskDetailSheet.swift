@@ -158,7 +158,7 @@ struct iOSTaskDetailSheet: View {
         ScrollView {
             taskForm
                 .padding(14)
-                .background(Color(hex: "#151824"))
+                .background(Theme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .frame(maxWidth: 640)
                 .frame(maxWidth: .infinity)

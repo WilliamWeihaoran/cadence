@@ -188,7 +188,7 @@ struct iOSFocusView: View {
             } label: {
                 Label(timerState.isRunning ? "Pause" : "Start", systemImage: timerState.isRunning ? "pause.fill" : "play.fill")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onColor)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)
                     .background(timerState.isRunning ? Theme.amber : Theme.blue)

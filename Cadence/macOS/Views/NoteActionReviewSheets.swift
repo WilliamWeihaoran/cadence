@@ -40,7 +40,7 @@ struct AISummaryReviewSheet: View {
                 }
                 .buttonStyle(.cadencePlain)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.onColor)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(Theme.blue)
@@ -140,7 +140,7 @@ struct AITaskDraftReviewSheet: View {
                 }
                 .buttonStyle(.cadencePlain)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.onColor)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(selectedIDs.isEmpty ? Theme.dim : Theme.blue)

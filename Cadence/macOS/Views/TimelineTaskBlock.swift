@@ -173,7 +173,7 @@ struct TimelineTaskBlock: View {
             .overlay {
                 let isEmphasized = activeResizeEdge == edge || isHovered || selectedTaskID == task.id
                 Capsule()
-                    .fill(.white.opacity(isEmphasized ? 0.4 : 0.16))
+                    .fill(isEmphasized ? Theme.onColorHandleActive : Theme.onColorHandle)
                     .frame(width: min(18, max(10, frame.width - 18)), height: 2)
             }
             .highPriorityGesture(

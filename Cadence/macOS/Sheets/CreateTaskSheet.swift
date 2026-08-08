@@ -244,7 +244,7 @@ struct CreateTaskSheet: View {
             Button(action: createTask) {
                 Image(systemName: "arrow.right")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onColor)
                     .frame(width: 26, height: 26)
                     .background(Theme.blue)
                     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))

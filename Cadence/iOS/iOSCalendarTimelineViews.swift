@@ -126,7 +126,7 @@ private struct iOSCalendarTimelineDayHeader: View {
                         .foregroundStyle(isToday ? Theme.blue : Theme.dim)
                     Text(DateFormatters.dayNumber.string(from: date))
                         .font(.system(size: horizontalSizeClass == .regular ? 20 : 18, weight: isToday || isSelected ? .bold : .regular))
-                        .foregroundStyle(isToday ? .white : Theme.text)
+                        .foregroundStyle(isToday ? Theme.onColor : Theme.text)
                         .frame(width: horizontalSizeClass == .regular ? 36 : 32, height: horizontalSizeClass == .regular ? 36 : 32)
                         .background(isToday ? Theme.blue : isSelected ? Theme.blue.opacity(0.16) : Color.clear)
                         .clipShape(Circle())

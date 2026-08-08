@@ -301,7 +301,7 @@ private struct GoalStatusSection: View {
             HStack(spacing: 8) {
                 Image(systemName: icon(for: status))
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isSelected ? .white : tint)
+                    .foregroundStyle(isSelected ? Theme.onColor : tint)
                     .frame(width: 22, height: 22)
                     .background(isSelected ? tint : tint.opacity(0.14))
                     .clipShape(RoundedRectangle(cornerRadius: 6))

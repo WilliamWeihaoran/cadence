@@ -28,7 +28,7 @@ struct CreateTaskPanelSurface: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(Theme.borderSubtle.opacity(0.95), lineWidth: 1)
             }
-            .shadow(color: .black.opacity(0.42), radius: 34, x: 0, y: 18)
+            .shadow(color: Theme.overlayCardShadow, radius: 34, x: 0, y: 18)
             .shadow(color: Theme.blue.opacity(0.08), radius: 18, x: 0, y: 0)
     }
 }
@@ -197,7 +197,7 @@ struct TaskDateChip: View {
 
     private var effectiveIconColor: Color {
         guard isOn else { return Theme.dim }
-        if isDoDate && cal.isDateInToday(date) { return .yellow }
+        if isDoDate && cal.isDateInToday(date) { return Theme.amber }
         return activeColor
     }
 
@@ -216,7 +216,7 @@ struct TaskDateChip: View {
                     if isOn {
                         Text(displayLabel)
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(isDoDate && cal.isDateInToday(date) ? .yellow : activeColor)
+                            .foregroundStyle(isDoDate && cal.isDateInToday(date) ? Theme.amber : activeColor)
                             .fixedSize()
                     }
                 }
@@ -296,7 +296,7 @@ struct TaskDateChip: View {
         } label: {
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isSelected ? .white : Theme.muted)
+                .foregroundStyle(isSelected ? Theme.onColor : Theme.muted)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(isSelected ? Theme.blue : Theme.surface)

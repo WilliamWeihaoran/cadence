@@ -111,7 +111,7 @@ struct iOSSegmentedChoice<T: Hashable>: View {
                 } label: {
                     Text(option.label)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(selection == option.value ? Color.white : Theme.dim)
+                        .foregroundStyle(selection == option.value ? Theme.onColor : Theme.dim)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)

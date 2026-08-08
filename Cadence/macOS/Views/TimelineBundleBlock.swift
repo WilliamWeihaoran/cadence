@@ -272,7 +272,7 @@ struct TimelineBundleBlock: View {
             .overlay {
                 let emphasized = activeResizeEdge == edge || isHovered || selectedBundleID == bundle.id
                 Capsule()
-                    .fill(.white.opacity(emphasized ? 0.38 : 0.14))
+                    .fill(emphasized ? Theme.onColorHandleActive : Theme.onColorHandle)
                     .frame(width: min(18, max(10, frame.width - 18)), height: 2)
             }
             .highPriorityGesture(

@@ -120,7 +120,7 @@ struct MonthCalendarPanel: View {
 
                                                     Text("\(cal.component(.day, from: d))")
                                                         .font(.system(size: 12, weight: isSelected || isToday ? .semibold : .regular))
-                                                        .foregroundStyle(isSelected ? .white : (isToday ? Theme.blue : Theme.text))
+                                                        .foregroundStyle(isSelected ? Theme.onColor : (isToday ? Theme.blue : Theme.text))
                                                 }
                                                 .frame(width: 34, height: 34)
                                                 .contentShape(Circle())
@@ -261,7 +261,7 @@ struct CadenceQuickDatePopover: View {
         } label: {
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isSelected ? .white : Theme.muted)
+                .foregroundStyle(isSelected ? Theme.onColor : Theme.muted)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(isSelected ? Theme.blue : Theme.surface)

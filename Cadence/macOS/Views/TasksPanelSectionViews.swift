@@ -364,7 +364,7 @@ struct TasksPanelRolloverNoticeSectionView: View {
                 Button("Roll Over", action: onRollOver)
                     .buttonStyle(.cadencePlain)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onColor)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(Theme.blue)

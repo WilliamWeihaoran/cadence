@@ -2,67 +2,127 @@
 import AppKit
 import SwiftUI
 
-struct SidebarRow: View {
-    let item: SidebarItem
+/// Icon-first tile used for the four highest-traffic destinations at the top of the
+/// sidebar. Deliberately tiny (icon + micro label) so all four fit on one row and read
+/// as a toolbar rather than as four competing cards.
+struct SidebarDestinationTile: View {
     let icon: String
     let label: String
-    let color: Color
-    @Binding var selection: SidebarItem?
+    let tint: Color
+    let count: Int?
+    let isSelected: Bool
+    let accessibilityID: String
+    let action: () -> Void
+
     @State private var isHovered = false
 
     var body: some View {
-        Button {
-            selection = item
-        } label: {
-            HStack(spacing: 9) {
+        Button(action: action) {
+            VStack(spacing: 3) {
                 Image(systemName: icon)
-                    .foregroundStyle(color)
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 15)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(tint)
 
                 Text(label)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(selection == item ? Theme.text : Theme.muted)
-
-                Spacer(minLength: 0)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 8)
-            .background(backgroundFillShape)
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(borderColor, lineWidth: 0.8)
-            }
-            .overlay(alignment: .leading) {
-                Rectangle()
-                    .fill(selection == item ? color : Color.clear)
-                    .frame(width: 2)
+            .frame(maxWidth: .infinity)
+            .frame(height: 38)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(backgroundFill)
+            )
+            .overlay(alignment: .topTrailing) {
+                if let count {
+                    Text("\(count)")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .padding(.top, 3)
+                        .padding(.trailing, 4)
+                }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityID)
+        .accessibilityLabel(label)
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
-        .animation(.easeOut(duration: 0.12), value: selection == item)
-    }
-
-    private var borderColor: Color {
-        Theme.borderSubtle.opacity(isHovered ? 0.72 : 0.28)
+        .animation(.easeOut(duration: 0.12), value: isSelected)
     }
 
     private var backgroundFill: Color {
-        if isHovered {
-            return Theme.surfaceElevated.opacity(0.9)
+        if isSelected {
+            return Theme.surfaceElevated
         }
-        return Theme.surfaceElevated.opacity(0.34)
+        if isHovered {
+            return Theme.surfaceElevated.opacity(0.6)
+        }
+        return Theme.surface
     }
 }
 
-private extension SidebarRow {
-    @ViewBuilder
-    var backgroundFillShape: some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(backgroundFill)
+/// Low-profile single-line row for secondary destinations (All Tasks, Focus, Goals,
+/// Habits…). No card, no border — selection is carried by a filled background alone.
+struct SidebarCompactRow: View {
+    let icon: String
+    let label: String
+    let tint: Color
+    let count: Int?
+    let isSelected: Bool
+    let accessibilityID: String
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 14)
+
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                    .lineLimit(1)
+
+                Spacer(minLength: 6)
+
+                if let count {
+                    Text("\(count)")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                }
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(backgroundFill)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityID)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(.easeOut(duration: 0.12), value: isSelected)
+    }
+
+    private var backgroundFill: Color {
+        if isSelected {
+            return Theme.surfaceElevated
+        }
+        if isHovered {
+            return Theme.surfaceElevated.opacity(0.55)
+        }
+        return Color.clear
     }
 }
 

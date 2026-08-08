@@ -72,7 +72,7 @@ struct SettingsAccountSection: View {
                                 }
                                 .buttonStyle(.cadencePlain)
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Theme.onColor)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
                                 .background(Theme.red)
@@ -88,10 +88,10 @@ struct SettingsAccountSection: View {
                                     Text(appleAccountManager.isAuthorizing ? "Signing In..." : "Sign in with Apple")
                                         .font(.system(size: 12, weight: .semibold))
                                 }
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Theme.onColor)
                                 .padding(.horizontal, 13)
                                 .padding(.vertical, 8)
-                                .background(appleAccountManager.isAuthorizing ? Theme.dim : Color.black)
+                                .background(appleAccountManager.isAuthorizing ? Theme.dim : Theme.appleSignInFill)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
                             .buttonStyle(.cadencePlain)
@@ -228,7 +228,7 @@ struct SettingsAISection: View {
                         }
                         .buttonStyle(.cadencePlain)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onColor)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(Theme.blue)
@@ -312,6 +312,12 @@ struct SettingsAISection: View {
 struct SettingsNavigationSection: View {
     @Binding var listDetailDefaultPage: String
 
+    /// Never trust the raw persisted string: it can still hold a page this build removed
+    /// (e.g. "Planning"), which would leave every pill unhighlighted.
+    private var selectedPage: ListDetailPage {
+        ListDetailPage.resolved(listDetailDefaultPage)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SettingsSectionLabel(text: "List Opening")
@@ -335,18 +341,25 @@ struct SettingsNavigationSection: View {
                                     Text(page.rawValue)
                                         .font(.system(size: 12, weight: .semibold))
                                 }
-                                .foregroundStyle(listDetailDefaultPage == page.rawValue ? .white : Theme.dim)
+                                .foregroundStyle(selectedPage == page ? Theme.onColor : Theme.dim)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .frame(minHeight: 34)
                                 .contentShape(Rectangle())
-                                .background(listDetailDefaultPage == page.rawValue ? Theme.blue : Theme.surfaceElevated)
+                                .background(selectedPage == page ? Theme.blue : Theme.surfaceElevated)
                                 .clipShape(RoundedRectangle(cornerRadius: 9))
                             }
                             .buttonStyle(.cadencePlain)
                         }
                     }
                 }
+            }
+        }
+        .onAppear {
+            // One-time normalization: rewrite a stale/unrecognized persisted value so the
+            // rest of the app reads a page that actually exists.
+            if listDetailDefaultPage != selectedPage.rawValue {
+                listDetailDefaultPage = selectedPage.rawValue
             }
         }
     }

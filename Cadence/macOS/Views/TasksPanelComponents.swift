@@ -145,7 +145,7 @@ struct MacTaskRow: View {
                 Button { focusManager.startFocus(task: task) } label: {
                     Image(systemName: "play.fill")
                         .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onColor)
                         .frame(width: 20, height: 20)
                         .background(Theme.blue)
                         .clipShape(Circle())
@@ -215,7 +215,7 @@ struct MacTaskRow: View {
             HStack(spacing: 4) {
                 Image(systemName: "sun.max.fill")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(task.scheduledDate.isEmpty ? Theme.dim : .yellow)
+                    .foregroundStyle(task.scheduledDate.isEmpty ? Theme.dim : Theme.amber)
                     .frame(width: 12, alignment: .leading)
 
                 ZStack {
@@ -228,7 +228,7 @@ struct MacTaskRow: View {
                         .foregroundStyle(
                             isOverdo
                                 ? Theme.red
-                                : (isDoToday ? .yellow : (task.scheduledDate.isEmpty ? Theme.dim : Theme.muted))
+                                : (isDoToday ? Theme.amber : (task.scheduledDate.isEmpty ? Theme.dim : Theme.muted))
                         )
                         .frame(maxWidth: .infinity, alignment: .center)
                 }

@@ -291,7 +291,7 @@ private struct TagEditSheet: View {
             if hasDuplicateSlug {
                 Text("A tag with this name already exists.")
                     .font(.system(size: 11))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.red)
             }
 
             HStack {

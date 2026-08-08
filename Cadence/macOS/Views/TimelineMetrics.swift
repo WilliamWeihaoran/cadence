@@ -77,8 +77,8 @@ enum CalendarVisualStyle {
     static let timelineDaySeparatorOpacity: Double = 0.16
     static let timelineDaySeparatorLineWidth: CGFloat = 0.95
     static let chipRadius: CGFloat = 6
-    static let cardShadow = Color.black.opacity(0.16)
-    static let selectedCardShadow = Color.black.opacity(0.24)
+    static let cardShadow = Theme.cardElevationShadow
+    static let selectedCardShadow = Theme.overlayCardShadow
 }
 
 enum TimelineDropBehavior {

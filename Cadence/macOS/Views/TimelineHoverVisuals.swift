@@ -16,7 +16,7 @@ enum TimelineHoverVisuals {
     ) -> Color {
         if isSelected { return tint.opacity(selectedOpacity) }
         if isHovered { return tint.opacity(hoverOpacity) }
-        return .white.opacity(idleOpacity)
+        return Theme.onColor.opacity(idleOpacity)
     }
 
     static func shadowColor(isActive: Bool) -> Color {

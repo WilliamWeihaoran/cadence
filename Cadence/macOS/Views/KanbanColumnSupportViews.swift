@@ -14,97 +14,139 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
     let onToggleCompletion: () -> Void
     let onOpenDueDatePicker: () -> Void
     let onOpenEditor: () -> Void
-    let onCreateTask: () -> Void
     let onHoverChanged: (Bool) -> Void
     @ViewBuilder let dueDatePopover: () -> DueDatePopover
     @ViewBuilder let editorPopover: () -> EditorPopover
 
+    /// Column containers are gone, so the header is the only place the section's color
+    /// survives — a single 7pt dot. Everything else is neutral, quiet type.
+    private var dotColor: Color {
+        section.isCompleted || isPendingCompletion ? Theme.green : columnColor
+    }
+
     var body: some View {
-        HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 5) {
+            titleRow
+
+            if !section.dueDate.isEmpty || !hideColumnDueDateIfEmpty {
+                dueDateRow
+                    .padding(.leading, 14)
+            }
+
+            if section.isCompleted || isPendingCompletion {
+                Text(section.isCompleted ? "Completed" : "Completing…")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.green)
+                    .padding(.leading, 14)
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 2)
+        .padding(.bottom, 8)
+        .onHover(perform: onHoverChanged)
+    }
+
+    private var titleRow: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(dotColor)
+                .frame(width: 7, height: 7)
+
+            Text(section.name.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .kerning(0.4)
+                .foregroundStyle(Theme.muted)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 6)
+
+            Text("\(activeTaskCount)")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Theme.dim)
+                .monospacedDigit()
+
             Button(action: onToggleCompletion) {
                 TaskCompletionProgressGlyph(
                     icon: section.isCompleted ? "checkmark.circle.fill" : "circle",
-                    color: section.isCompleted || isPendingCompletion ? Theme.green : columnColor.opacity(section.isDefault ? 0.75 : 0.9),
+                    color: section.isCompleted || isPendingCompletion ? Theme.green : Theme.dim,
                     progress: isPendingCompletion ? completionProgress : nil,
-                    size: 15,
-                    lineWidth: 1.8
+                    size: 12,
+                    lineWidth: 1.5
                 )
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
-            .padding(.trailing, 2)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(section.name)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(section.isDefault ? Theme.muted : columnColor.opacity(0.85))
-
-                if !section.dueDate.isEmpty || !hideColumnDueDateIfEmpty {
-                    Button(action: onOpenDueDatePicker) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "flag.fill")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(Theme.red)
-                            Text(section.dueDate.isEmpty ? "No due date" : DateFormatters.relativeDate(from: section.dueDate))
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(
-                                    section.dueDate.isEmpty
-                                        ? Theme.dim
-                                        : (sectionDueDateIsOverdue ? Theme.red : Theme.dim)
-                                )
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.cadencePlain)
-                    .popover(isPresented: $showHeaderDueDatePicker, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
-                        dueDatePopover()
-                    }
-                }
-
-                if section.isCompleted {
-                    Text("Completed")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.green)
-                } else if isPendingCompletion {
-                    Text("Completing…")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.green)
-                }
-            }
-
-            Spacer()
-
-            Text("\(activeTaskCount)")
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.dim)
+            .help(section.isCompleted ? "Mark column active" : "Mark column completed")
 
             Button(action: onOpenEditor) {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.dim)
-                    .frame(width: 22, height: 22)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
             .popover(isPresented: $showEditor, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
                 editorPopover()
             }
-
-            Button(action: onCreateTask) {
-                Image(systemName: "plus")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 22, height: 22)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
-            .buttonStyle(.cadencePlain)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .onHover(perform: onHoverChanged)
+    }
+
+    private var dueDateRow: some View {
+        Button(action: onOpenDueDatePicker) {
+            HStack(spacing: 5) {
+                Image(systemName: "flag.fill")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(section.dueDate.isEmpty ? Theme.dim : Theme.red)
+                Text(section.dueDate.isEmpty ? "No due date" : DateFormatters.relativeDate(from: section.dueDate))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(sectionDueDateIsOverdue ? Theme.red : Theme.dim)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.cadencePlain)
+        .popover(isPresented: $showHeaderDueDatePicker, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+            dueDatePopover()
+        }
+    }
+}
+
+/// Bottom-of-column affordance that replaces the old header "+" button. It is always
+/// present — including for empty columns, which otherwise render as nothing now that the
+/// column has no container — and routes to the exact same task-creation call.
+struct KanbanColumnAddTaskRow: View {
+    let isColumnHovered: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "plus")
+                    .font(.system(size: 9, weight: .semibold))
+                Text("Add task")
+                    .font(.system(size: 11, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Theme.dim)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
+                    .fill(Theme.surface.opacity(isHovered ? 1 : 0))
+            }
+            .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
+        }
+        .buttonStyle(.cadencePlain)
+        .opacity(isColumnHovered || isHovered ? 1 : 0.45)
+        .animation(.easeInOut(duration: 0.14), value: isColumnHovered)
+        .animation(.easeInOut(duration: 0.14), value: isHovered)
+        .onHover { isHovered = $0 }
     }
 }
 

@@ -454,7 +454,7 @@ struct iOSTaskCaptureBar: View {
             Button(action: action) {
                 Image(systemName: "plus")
                     .font(.system(size: isRegularWidth ? 16 : 15, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onColor)
                     .frame(width: isRegularWidth ? 44 : 42, height: isRegularWidth ? 44 : 42)
                     .background(Theme.blue)
                     .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 11, style: .continuous))

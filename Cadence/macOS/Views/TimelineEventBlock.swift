@@ -195,7 +195,7 @@ struct TimelineEventBlock: View {
             .overlay {
                 let isEmphasized = activeResizeEdge == edge || isHovered || isSelected
                 Capsule()
-                    .fill(.white.opacity(isEmphasized ? 0.5 : 0.18))
+                    .fill(isEmphasized ? Theme.onColorHandleActive : Theme.onColorHandle)
                     .frame(width: min(18, max(10, frame.width - 18)), height: 2)
             }
             .highPriorityGesture(
@@ -316,27 +316,27 @@ struct TimelineEventBlock: View {
             if frame.height >= 36 {
                 Text(timeRangeLabel)
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.78))
+                    .foregroundStyle(Theme.onColorSecondary)
                     .lineLimit(1)
             }
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Image(systemName: "calendar")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.75))
+                    .foregroundStyle(Theme.onColorSecondary)
                 Text(item.title)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onColor)
                     .lineLimit(2)
                 if item.isRecurringSeriesMember {
                     Image(systemName: "repeat")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.72))
+                        .foregroundStyle(Theme.onColorTertiary)
                 }
             }
             if frame.height >= 54 && !item.calendarTitle.isEmpty {
                 Text(item.calendarTitle)
                     .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.75))
+                    .foregroundStyle(Theme.onColorSecondary)
                     .lineLimit(1)
             }
         }
@@ -349,9 +349,9 @@ struct TimelineEventBlock: View {
                 RoundedRectangle(cornerRadius: style.cornerRadius)
                     .fill(item.calendarColor.mutedEventFill())
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(TimelineHoverVisuals.hoverFill(tint: .white, isHovered: isHovered && !isSelected, opacity: 0.04))
+                    .fill(TimelineHoverVisuals.hoverFill(tint: Theme.onColor, isHovered: isHovered && !isSelected, opacity: 0.04))
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(.white.opacity(CalendarEventVisualStyle.blockHighlightOpacity(isSelected: isSelected, isHovered: isHovered)))
+                    .fill(Theme.onColor.opacity(CalendarEventVisualStyle.blockHighlightOpacity(isSelected: isSelected, isHovered: isHovered)))
             }
         )
         .overlay(
@@ -370,7 +370,7 @@ struct TimelineEventBlock: View {
         )
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(.white.opacity(CalendarEventVisualStyle.blockAccentOpacity(isSelected: isSelected, isHovered: isHovered)))
+                .fill(Theme.onColor.opacity(CalendarEventVisualStyle.blockAccentOpacity(isSelected: isSelected, isHovered: isHovered)))
                 .frame(height: isSelected ? 2 : 1)
                 .padding(.horizontal, 8)
         }

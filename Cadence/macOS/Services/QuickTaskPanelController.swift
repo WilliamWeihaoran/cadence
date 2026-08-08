@@ -253,7 +253,7 @@ private struct QuickTaskCaptureSuccessView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Theme.borderSubtle.opacity(0.95), lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.42), radius: 34, x: 0, y: 18)
+        .shadow(color: Theme.overlayCardShadow, radius: 34, x: 0, y: 18)
         .shadow(color: Theme.green.opacity(0.12), radius: 18, x: 0, y: 0)
         .scaleEffect(isVisible ? 1 : 0.98)
         .opacity(isVisible ? 1 : 0)

@@ -4,21 +4,56 @@ import SwiftUI
 /// (light and dark) via `ThemeManager`; that system has been removed in favor of one fixed,
 /// non-adaptive palette shared by macOS and iOS/iPadOS.
 struct Theme {
-    static let bg = Color(hex: "#0f1117")
-    static let surface = Color(hex: "#1a1d27")
-    static let surfaceElevated = Color(hex: "#1f2235")
-    static let borderSubtle = Color(hex: "#252a3d")
+    // Near-black neutral. The previous stops sat around hue 225 at ~19% saturation, so the
+    // blue cast compounded on every elevated surface and the chrome ended up carrying more
+    // color than the content. These sit at ~4% saturation so the accents do that job instead.
+    static let bg = Color(hex: "#09090b")
+    static let surface = Color(hex: "#131316")
+    static let surfaceElevated = Color(hex: "#1a1a1e")
+    static let borderSubtle = Color(hex: "#26262b")
 
-    static let text = Color(hex: "#e2e8f0")
-    static let muted = Color(hex: "#c4d4e8")
-    static let dim = Color(hex: "#6b7a99")
+    static let text = Color(hex: "#ededef")
+    static let muted = Color(hex: "#a1a1aa")
+    static let dim = Color(hex: "#71717a")
 
-    static let blue = Color(hex: "#4a9eff")
-    static let blueLight = lightened("#4a9eff")
-    static let blueDark = darkened("#4a9eff")
+    // MARK: - Extended neutral ramp
+    // Stops that sit *between* (or just below) the four surface values above. They exist for
+    // jobs the four-stop ramp cannot express — a recessed well below `bg`, a hover lift between
+    // `surface` and `surfaceElevated`, and borders that must stay visible when drawn at partial
+    // alpha. Introduced so the AppKit markdown editor could stop carrying its own private hex
+    // literals; they follow the same ~4% saturation near-black ramp as the stops above.
+
+    /// Recessed well one step *below* `bg` (unchecked checkbox interiors, inset wells).
+    static let surfaceRecessed = Color(hex: "#0d0d0f")
+    /// Hover lift for a surface whose resting fill is `surface`.
+    static let surfaceHover = Color(hex: "#17171a")
+    /// Hover/selection highlight behind content nested inside an already-elevated surface.
+    static let surfaceHighlight = Color(hex: "#1f1f23")
+    /// One step above `borderSubtle`, for hairlines that are drawn at partial alpha and would
+    /// otherwise disappear.
+    static let border = Color(hex: "#2e2e34")
+    /// Emphasized border: hovered cards, table delimiters, code fences.
+    static let borderStrong = Color(hex: "#3f3f46")
+    /// Standalone horizontal rules, which carry no other affordance to lean on.
+    static let rule = Color(hex: "#52525b")
+
+    // MARK: - Marker highlight
+    // The `==highlight==` marker pen in the markdown editors. Semantic, not palette — it has to
+    // read as a physical highlighter, so it deliberately keeps its warm hue through the neutral
+    // repaint rather than resolving to `amber`.
+
+    static let markerHighlightFill = Color(hex: "#f6c343")
+    static let markerHighlightBorder = Color(hex: "#ffd66b")
+    static let markerHighlightText = Color(hex: "#fff4c2")
+
+    /// Single source of truth for the accent hex — also used where a *string* color is
+    /// required (model `colorHex` fallbacks) so the literal is not duplicated.
+    static let blueHex = "#4a9eff"
+
+    static let blue = Color(hex: blueHex)
+    static let blueLight = lightened(blueHex)
 
     static let red = Color(hex: "#ff6b6b")
-    static let redLight = lightened("#ff6b6b")
 
     static let green = Color(hex: "#4ecb71")
     static let greenLight = lightened("#4ecb71")
@@ -54,6 +89,49 @@ struct Theme {
     /// checkmark — priority stops being shown once a task is done.
     static let doneFill = green
 
+    // MARK: - Foreground on colored fills
+    // For content drawn ON TOP of a saturated fill (calendar event blocks, a selected day
+    // cell, an accent-filled button) the foreground is deliberately near-white rather than
+    // `text` — it has to hold up against an arbitrary user-chosen hue, not against `bg`.
+    // These replace scattered `.white` / `.white.opacity(...)` literals so the tiers are
+    // named and consistent instead of each call site inventing its own alpha.
+
+    /// Primary content on a colored fill: titles, button labels.
+    static let onColor = Color.white
+    /// Secondary content on a colored fill: time ranges, subtitles, calendar names.
+    static let onColorSecondary = Color.white.opacity(0.75)
+    /// Tertiary content on a colored fill: incidental glyphs.
+    static let onColorTertiary = Color.white.opacity(0.6)
+
+    /// Hairline outline drawn ON a colored fill, where `borderSubtle` would read as a dark
+    /// gap instead of an edge (task-count bubbles on a selected day cell, hatching over a
+    /// completed timeline block).
+    static let onColorBorder = Color.white.opacity(0.14)
+    /// Emphasized variant of `onColorBorder` for selected/active colored fills.
+    static let onColorBorderStrong = Color.white.opacity(0.32)
+
+    /// Resting grab handle drawn on a colored timeline block (resize affordances on task,
+    /// event, and bundle blocks). Deliberately faint until the block is hovered/selected.
+    static let onColorHandle = Color.white.opacity(0.16)
+    /// `onColorHandle` while the block is hovered, selected, or actively being resized.
+    static let onColorHandleActive = Color.white.opacity(0.42)
+
+    /// Brand-mandated fill for the "Sign in with Apple" button. Not a palette color — Apple's
+    /// Sign in with Apple guidelines only permit black / white / outline treatments, so this
+    /// deliberately sits outside the neutral ramp and must not be re-tinted with the palette.
+    static let appleSignInFill = Color.black
+
+    // MARK: - Overlays
+    // Washes and scrims expressed as white/black alpha. Previously hand-tuned per call site
+    // against the old blue-tinted background; centralized so a palette change moves them all.
+
+    /// Full-screen dimming behind a modal, sheet, or command palette.
+    static let scrim = Color.black.opacity(0.34)
+    /// Selected-state wash on top of a colored surface (e.g. today's cell in the month grid).
+    static let selectionWash = Color.white.opacity(0.18)
+    /// Barely-there lift used to separate a nested region from the surface beneath it.
+    static let subtleWash = Color.white.opacity(0.035)
+
     // MARK: - Shadow presets
     // Named to replace one-off `Color.black.opacity(...)` shadow values scattered across
     // surfaces. Radius/offset stay call-site-specific since elevation depth genuinely varies;
@@ -85,17 +163,13 @@ struct Theme {
     static let radiusPanel: CGFloat = 22
 
     // MARK: - Derived variants
-    // The design spec defines only the base hues above; light/dark accent variants (still
+    // The design spec defines only the base hues above; the lightened accent variants (still
     // referenced by existing call sites for hover/pressed/emphasis states) are derived here by
-    // blending a fixed fraction toward white/black, rather than hand-picking arbitrary hex
+    // blending a fixed fraction toward white, rather than hand-picking arbitrary hex
     // values with no spec to match against.
 
     private static func lightened(_ hex: String, by amount: Double = 0.3) -> Color {
         blended(hex, toward: (1, 1, 1), amount: amount)
-    }
-
-    private static func darkened(_ hex: String, by amount: Double = 0.35) -> Color {
-        blended(hex, toward: (0, 0, 0), amount: amount)
     }
 
     private static func blended(_ hex: String, toward target: (r: Double, g: Double, b: Double), amount: Double) -> Color {
@@ -120,6 +194,50 @@ struct Theme {
         )
     }
 }
+
+#if canImport(AppKit)
+import AppKit
+
+// MARK: - AppKit bridges
+//
+// The markdown editor is AppKit (NSTextView + a custom NSLayoutManager doing its own drawing),
+// so it cannot read SwiftUI `Color`. It used to carry its own hand-tuned `NSColor(hex:)` literals,
+// which silently drifted from the palette above whenever the palette changed. These bridges
+// resolve the *same* `Color` constants declared in this file into concrete sRGB `NSColor`s, so a
+// palette value is still defined in exactly one place and the two can never diverge.
+extension Theme {
+    /// Resolves a palette `Color` into a concrete sRGB `NSColor` suitable for AppKit drawing
+    /// (`setFill()`, `setStroke()`, `backgroundColor`, `withAlphaComponent(_:)`, PDF rendering).
+    private static func nsColor(_ color: Color) -> NSColor {
+        let resolved = NSColor(color)
+        return resolved.usingColorSpace(.sRGB) ?? resolved
+    }
+
+    static let nsBg = nsColor(bg)
+    static let nsSurface = nsColor(surface)
+    static let nsSurfaceElevated = nsColor(surfaceElevated)
+    static let nsBorderSubtle = nsColor(borderSubtle)
+
+    static let nsSurfaceRecessed = nsColor(surfaceRecessed)
+    static let nsSurfaceHover = nsColor(surfaceHover)
+    static let nsSurfaceHighlight = nsColor(surfaceHighlight)
+    static let nsBorder = nsColor(border)
+    static let nsBorderStrong = nsColor(borderStrong)
+    static let nsRule = nsColor(rule)
+
+    static let nsMarkerHighlightFill = nsColor(markerHighlightFill)
+    static let nsMarkerHighlightBorder = nsColor(markerHighlightBorder)
+    static let nsMarkerHighlightText = nsColor(markerHighlightText)
+
+    static let nsText = nsColor(text)
+    static let nsMuted = nsColor(muted)
+    static let nsDim = nsColor(dim)
+
+    static let nsBlue = nsColor(blue)
+    static let nsRed = nsColor(red)
+    static let nsGreen = nsColor(green)
+}
+#endif
 
 extension Color {
     init(hex: String) {

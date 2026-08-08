@@ -192,7 +192,7 @@ private struct iOSCalendarInspectorHeader: View {
             Button(action: addItem) {
                 Image(systemName: "plus")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onColor)
                     .frame(width: 36, height: 36)
                     .background(Theme.blue)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -200,7 +200,7 @@ private struct iOSCalendarInspectorHeader: View {
                         if count > 0 {
                             Text("\(count)")
                                 .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Theme.onColor)
                                 .monospacedDigit()
                                 .padding(.horizontal, 5)
                                 .frame(minWidth: 18)
@@ -320,7 +320,7 @@ private struct iOSCalendarInspectorEmptyState: View {
             Button(action: addItem) {
                 Image(systemName: "plus")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onColor)
                     .frame(width: 32, height: 32)
                     .background(Theme.blue)
                     .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))

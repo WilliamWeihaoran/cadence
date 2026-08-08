@@ -132,13 +132,13 @@ struct TaskDetailPopover: View {
             }
             .padding(14)
         }
-        .frame(width: presentationMode == .subtasksOnly ? 332 : 300)
+        .frame(width: presentationMode == .subtasksOnly ? 332 : 320)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Theme.surface)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(.white.opacity(0.08), lineWidth: 1)
+                        .stroke(Theme.borderSubtle, lineWidth: 1)
                 )
         )
         .onAppear {

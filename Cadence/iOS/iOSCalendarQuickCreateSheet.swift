@@ -265,7 +265,7 @@ struct iOSCalendarQuickCreateSheet: View {
         Button(action: create) {
             Image(systemName: "arrow.up")
                 .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.onColor)
                 .frame(width: 34, height: 34)
                 .background(canCreate ? Theme.blue : Theme.blue.opacity(0.4))
                 .clipShape(Circle())

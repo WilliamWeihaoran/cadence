@@ -181,7 +181,7 @@ struct TaskCreationLayerView: View {
     var body: some View {
         if taskCreationManager.isPresented {
             ZStack {
-                Color.black.opacity(0.28)
+                Theme.scrim
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -310,7 +310,7 @@ struct HoveredTaskDatePickerOverlay: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.34)
+            Theme.scrim
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onCancel)
@@ -422,7 +422,7 @@ struct DeleteConfirmationOverlay: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.34)
+            Theme.scrim
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onCancel)
@@ -486,7 +486,7 @@ struct DeleteConfirmationOverlay: View {
                     .fill(Theme.surface)
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.radiusPanel)
-                            .stroke(.white.opacity(0.08), lineWidth: 1)
+                            .stroke(Theme.borderSubtle, lineWidth: 1)
                     )
             )
             .shadow(color: Theme.overlayCardShadow, radius: 28, x: 0, y: 16)

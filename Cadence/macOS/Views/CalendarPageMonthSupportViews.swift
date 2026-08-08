@@ -24,7 +24,7 @@ struct MonthDayCell: View {
     }
 
     private var dateLabelColor: Color {
-        if isToday { return .white }
+        if isToday { return Theme.onColor }
         return isCurrentMonth ? Theme.text : Theme.dim.opacity(0.58)
     }
 
@@ -95,7 +95,7 @@ struct MonthDayCell: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                            .stroke(.white.opacity(0.045), lineWidth: 1)
+                            .stroke(Theme.borderSubtle, lineWidth: 1)
                     )
                     .shadow(color: Theme.chipShadow, radius: 3, y: 1)
                 }
@@ -122,14 +122,14 @@ struct MonthDayCell: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                            .stroke(.white.opacity(0.045), lineWidth: 1)
+                            .stroke(Theme.borderSubtle, lineWidth: 1)
                     )
                     .shadow(color: Theme.chipShadow, radius: 3, y: 1)
                 }
                 ForEach(eventChips) { event in
                     Text(event.title)
                         .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.92))
+                        .foregroundStyle(Theme.onColor)
                         .lineLimit(1)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
@@ -139,7 +139,7 @@ struct MonthDayCell: View {
                                 RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
                                     .fill(event.calendarColor.opacity(CalendarEventVisualStyle.chipFillOpacity()))
                                 RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                    .fill(.white.opacity(0.035))
+                                    .fill(Theme.subtleWash)
                             }
                         )
                         .overlay(
@@ -194,7 +194,7 @@ struct CalDayHeaderView: View {
                     .kerning(0.5)
                 Text(DateFormatters.dayNumber.string(from: date))
                     .font(.system(size: 18, weight: isToday ? .bold : .regular))
-                    .foregroundStyle(isToday ? .white : Theme.text)
+                    .foregroundStyle(isToday ? Theme.onColor : Theme.text)
                     .frame(width: 32, height: 32)
                     .background(isToday ? Theme.blue : Color.clear)
                     .clipShape(Circle())
@@ -259,7 +259,7 @@ struct AllDayTaskChip: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                .stroke(.white.opacity(0.05), lineWidth: 1)
+                .stroke(Theme.borderSubtle, lineWidth: 1)
         )
         .shadow(color: Theme.chipShadow, radius: 4, y: 1)
         .contentShape(Rectangle())
@@ -280,13 +280,13 @@ struct AllDayEventChip: View {
     let event: EKEvent
 
     private var eventColor: Color {
-        Color(cgColor: event.calendar?.cgColor ?? CGColor(gray: 0.5, alpha: 1))
+        Color(cgColor: event.calendar?.cgColor ?? Theme.nsDim.cgColor)
     }
 
     var body: some View {
         Text(event.title ?? "Untitled")
             .font(.system(size: 10))
-            .foregroundStyle(.white.opacity(0.92))
+            .foregroundStyle(Theme.onColor)
             .lineLimit(1)
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
@@ -296,7 +296,7 @@ struct AllDayEventChip: View {
                 RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
                     .fill(eventColor.opacity(CalendarEventVisualStyle.chipFillOpacity()))
                 RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                    .fill(.white.opacity(0.035))
+                    .fill(Theme.subtleWash)
             }
         )
         .overlay(

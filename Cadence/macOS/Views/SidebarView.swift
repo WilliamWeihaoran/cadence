@@ -44,14 +44,16 @@ struct SidebarView: View {
         )
     }
 
+    // All Tasks counts only work inside still-active areas/projects; everything else
+    // counts against the full task set. `fullBadgeSnapshot` already returns nil for the
+    // badge-less destinations (focus, calendar, notes…), so a default branch here stays
+    // correct even if new destinations are added to the enum.
     private func count(for destination: SidebarStaticDestination) -> Int? {
         switch destination {
         case .allTasks:
             return activeContainerBadgeSnapshot.count(for: destination.feature)
-        case .today, .inbox, .goals, .habits:
+        default:
             return fullBadgeSnapshot.count(for: destination.feature)
-        case .focus, .calendar:
-            return nil
         }
     }
 
@@ -93,20 +95,9 @@ struct SidebarView: View {
                     }
                     .padding(.bottom, 2)
 
-                    let primaryDestinations = visiblePrimaryDestinations
-                    if !primaryDestinations.isEmpty {
-                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-                            ForEach(primaryDestinations) { destination in
-                                SidebarCardButton(
-                                    destination: destination,
-                                    tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
-                                    count: count(for: destination),
-                                    isSelected: selection == destination.item
-                                ) {
-                                    selection = destination.item
-                                }
-                            }
-                        }
+                    VStack(alignment: .leading, spacing: 7) {
+                        tileRow
+                        secondaryRows
                     }
 
                     SidebarSection(title: "ORGANIZE") {
@@ -120,12 +111,10 @@ struct SidebarView: View {
                         }
                     }
 
-                    // Long-term tracking sits in its own shelf at the bottom, deliberately
+                    // Long-term tracking sits below a hairline at the bottom, deliberately
                     // separated from the task destinations above so "what am I doing today"
                     // and "what am I working toward" don't read as the same kind of thing.
-                    trackShelf
-
-                    SidebarRow(item: .notes, icon: "doc.text", label: "Notes", color: Theme.purple, selection: $selection)
+                    trackSection
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 12)
@@ -155,38 +144,77 @@ struct SidebarView: View {
         }
     }
 
-    /// Goals + Habits, grouped onto a quietly tinted shelf. The tint is what does the
-    /// separating — a divider alone would read as just another section break.
+    /// The four highest-traffic destinations, as one row of icon-only tiles.
     @ViewBuilder
-    private var trackShelf: some View {
+    private var tileRow: some View {
+        let tiles = tileDestinations
+        if !tiles.isEmpty {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
+                ForEach(tiles) { tile in
+                    SidebarDestinationTile(
+                        icon: tile.icon,
+                        label: tile.label,
+                        tint: tile.tint,
+                        count: tile.count,
+                        isSelected: selection == tile.item,
+                        accessibilityID: tile.accessibilityID
+                    ) {
+                        selection = tile.item
+                    }
+                }
+            }
+        }
+    }
+
+    /// Primary destinations that didn't earn a tile (All Tasks, Planning, Focus…).
+    @ViewBuilder
+    private var secondaryRows: some View {
+        let destinations = secondaryRowDestinations
+        if !destinations.isEmpty {
+            VStack(alignment: .leading, spacing: 1) {
+                ForEach(destinations) { destination in
+                    compactRow(for: destination)
+                }
+            }
+        }
+    }
+
+    /// Goals + Habits. A hairline plus the TRACK label carries the separation now — the
+    /// old tinted shelf competed with the ORGANIZE section for weight.
+    @ViewBuilder
+    private var trackSection: some View {
         let trackingDestinations = visibleTrackingDestinations
         if !trackingDestinations.isEmpty {
             VStack(alignment: .leading, spacing: 7) {
+                Rectangle()
+                    .fill(Theme.borderSubtle)
+                    .frame(height: 1)
+
                 Text("TRACK")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .kerning(0.8)
                     .padding(.horizontal, 2)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 1) {
                     ForEach(trackingDestinations) { destination in
-                        SidebarTrackingButton(
-                            destination: destination,
-                            tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
-                            count: count(for: destination),
-                            isSelected: selection == destination.item
-                        ) {
-                            selection = destination.item
-                        }
+                        compactRow(for: destination)
                     }
                 }
             }
-            .padding(10)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Theme.dim.opacity(0.045))
-            )
-            .padding(.top, 2)
+        }
+    }
+
+    private func compactRow(for destination: SidebarStaticDestination) -> some View {
+        SidebarCompactRow(
+            icon: destination.icon,
+            label: destination.label,
+            tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
+            count: count(for: destination),
+            isSelected: selection == destination.item,
+            accessibilityID: "sidebar.destination.\(destination.rawValue)"
+        ) {
+            selection = destination.item
         }
     }
 
@@ -212,6 +240,73 @@ struct SidebarView: View {
 
     private var visibleTrackingDestinations: [SidebarStaticDestination] {
         allVisibleDestinations.filter(\.isTrackingNavigation)
+    }
+
+    // MARK: - Tile / row split
+
+    /// The four destinations promoted to the icon tile row, in fixed visual order.
+    /// Matched by `CadenceFeatureDestination` rather than by `SidebarStaticDestination`
+    /// case so this keeps compiling (and keeps behaving) if new sidebar cases appear.
+    private static let tileFeatures: [CadenceFeatureDestination] = [.today, .inbox, .calendar, .notes]
+
+    private static let staticDestinationFeatures: Set<CadenceFeatureDestination> =
+        Set(SidebarStaticDestination.allCases.map(\.feature))
+
+    private struct SidebarTile: Identifiable {
+        let id: String
+        let item: SidebarItem
+        let icon: String
+        let label: String
+        let tint: Color
+        let count: Int?
+        let accessibilityID: String
+    }
+
+    private var tileDestinations: [SidebarTile] {
+        let visible = allVisibleDestinations
+        return Self.tileFeatures.compactMap { feature -> SidebarTile? in
+            if let destination = visible.first(where: { $0.feature == feature }) {
+                return SidebarTile(
+                    id: destination.rawValue,
+                    item: destination.item,
+                    icon: destination.icon,
+                    label: tileLabel(for: feature, fallback: destination.label),
+                    tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
+                    count: count(for: destination),
+                    accessibilityID: "sidebar.destination.\(destination.rawValue)"
+                )
+            }
+
+            // Notes has no `SidebarStaticDestination` case (and therefore no hide toggle
+            // in Settings), so it is rendered straight from the shared feature metadata.
+            // If a case is ever added, the branch above takes over and hiding starts
+            // working for it automatically.
+            if feature == .notes, !Self.staticDestinationFeatures.contains(.notes) {
+                return SidebarTile(
+                    id: feature.rawValue,
+                    item: .notes,
+                    icon: feature.systemImage,
+                    label: tileLabel(for: feature, fallback: feature.title),
+                    tint: Theme.purple,
+                    count: nil,
+                    accessibilityID: "sidebar.destination.notes"
+                )
+            }
+
+            return nil
+        }
+    }
+
+    /// Everything primary that isn't in the tile row falls through to a compact row.
+    /// Hidden destinations are filtered out upstream, so a destination the user hid in
+    /// Settings stays hidden in both groups.
+    private var secondaryRowDestinations: [SidebarStaticDestination] {
+        visiblePrimaryDestinations.filter { !Self.tileFeatures.contains($0.feature) }
+    }
+
+    /// "Calendar" doesn't fit a quarter-width tile.
+    private func tileLabel(for feature: CadenceFeatureDestination, fallback: String) -> String {
+        feature == .calendar ? "Cal" : fallback
     }
 }
 

@@ -363,7 +363,8 @@ struct iOSSearchView: View {
             switch destination {
             case .today:
                 iPadTodayView()
-            case .allTasks:
+            // Planning is a macOS-only page for now; iOS falls back to All Tasks.
+            case .planning, .allTasks:
                 iOSAllTasksView()
             case .focus:
                 iOSFocusView()
@@ -456,7 +457,8 @@ struct iOSSearchView: View {
     }
 
     private var searchableFeatureDestinations: [CadenceFeatureDestination] {
-        CadenceFeatureDestination.allCases.filter { $0 != .search }
+        // `.planning` has no iOS surface yet, so it stays out of iOS search results.
+        CadenceFeatureDestination.allCases.filter { $0 != .search && $0 != .planning }
     }
 
     @ViewBuilder

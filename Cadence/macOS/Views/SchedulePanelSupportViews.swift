@@ -20,77 +20,112 @@ struct ScheduleTimeRailRow: View {
     private var hourLabel: String { "\(hour)" }
 }
 
-struct TaskInspectorDateControl: View {
+/// Shared metrics for the inspector's "label left / value right" field list.
+enum TaskInspectorFieldRowMetrics {
+    static let horizontalPadding: CGFloat = 10
+    static let verticalPadding: CGFloat = 6
+    static let minHeight: CGFloat = 34
+    static let labelFont = Font.system(size: 11)
+    static let valueFont = Font.system(size: 11, weight: .medium)
+}
+
+/// One line of the inspector overview list: field name on the left, value flush right.
+struct TaskInspectorFieldRow<Value: View>: View {
     let label: String
-    let icon: String
+    var verticalPadding: CGFloat = TaskInspectorFieldRowMetrics.verticalPadding
+    @ViewBuilder let value: Value
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(TaskInspectorFieldRowMetrics.labelFont)
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+
+            Spacer(minLength: 8)
+
+            value
+        }
+        .padding(.horizontal, TaskInspectorFieldRowMetrics.horizontalPadding)
+        .padding(.vertical, verticalPadding)
+        .frame(maxWidth: .infinity, minHeight: TaskInspectorFieldRowMetrics.minHeight, alignment: .leading)
+    }
+}
+
+/// Value text for a field row — bright when the field has a value, dim when it is empty.
+struct TaskInspectorFieldValueText: View {
+    let text: String
+    let isSet: Bool
+
+    var body: some View {
+        Text(text)
+            .font(TaskInspectorFieldRowMetrics.valueFont)
+            .foregroundStyle(isSet ? Theme.text : Theme.dim)
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+}
+
+/// Hairline between field rows. `strong` marks the break between field groups.
+struct TaskInspectorFieldDivider: View {
+    var strong: Bool = false
+
+    var body: some View {
+        Rectangle()
+            .fill(Theme.borderSubtle.opacity(strong ? 1 : 0.6))
+            .frame(height: 1)
+    }
+}
+
+/// A field row whose entire surface is a button (opens a picker/menu for that field).
+struct TaskInspectorFieldButtonRow: View {
+    let label: String
+    let valueText: String
+    let isSet: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            TaskInspectorFieldRow(label: label) {
+                TaskInspectorFieldValueText(text: valueText, isSet: isSet)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.cadencePlain)
+    }
+}
+
+struct TaskInspectorDateControl: View {
+    /// Field name shown on the left (e.g. "Do date").
+    let label: String
+    /// Short word shown as the value when no date is set.
+    var placeholder: String = "Set"
+    /// Tint used by the picker's quick pills.
     var activeColor: Color = Theme.blue
     @Binding var isOn: Bool
     @Binding var date: Date
 
     @State private var showPicker = false
     @State private var viewMonth: Date = Calendar.current.startOfDay(for: Date())
-    @State private var isHovered = false
 
     private let cal = Calendar.current
 
-    private var isDoDate: Bool { icon == "calendar" }
-
-    private var effectiveIcon: String {
-        guard isOn, isDoDate else { return icon }
-        return cal.isDateInToday(date) ? "star.fill" : icon
-    }
-
-    private var effectiveIconColor: Color {
-        guard isOn else { return Theme.dim }
-        if isDoDate && cal.isDateInToday(date) { return .yellow }
-        return activeColor
-    }
-
-    private var displayLabel: String {
-        guard isOn else { return label }
+    private var displayValue: String {
+        guard isOn else { return placeholder }
         return DateFormatters.relativeDate(from: DateFormatters.dateKey(from: date))
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Button { showPicker.toggle() } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: effectiveIcon)
-                        .font(.system(size: 11))
-                        .foregroundStyle(isOn ? effectiveIconColor : Theme.dim)
-
-                    Text(displayLabel)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(
-                            isOn
-                                ? (isDoDate && cal.isDateInToday(date) ? .yellow : activeColor)
-                                : Theme.dim
-                        )
-                        .lineLimit(1)
-                }
-                .padding(.vertical, 2)
-                .contentShape(Rectangle())
-                .background(isHovered ? activeColor.opacity(0.08) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
-            }
-            .buttonStyle(.cadencePlain)
-            .onHover { isHovered = $0 }
-            .popover(isPresented: $showPicker, arrowEdge: .bottom) {
-                pickerPopover
-            }
-
-            if isOn {
-                Button {
-                    isOn = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.dim.opacity(0.6))
-                }
-                .buttonStyle(.cadencePlain)
-            }
-
-            Spacer(minLength: 0)
+        TaskInspectorFieldButtonRow(
+            label: label,
+            valueText: displayValue,
+            isSet: isOn
+        ) {
+            showPicker.toggle()
+        }
+        .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+            pickerPopover
         }
         .onAppear {
             var comps = cal.dateComponents([.year, .month], from: isOn ? date : Date())
@@ -127,14 +162,26 @@ struct TaskInspectorDateControl: View {
             )
 
             if isOn {
-                Button("Clear date") {
+                Divider().background(Theme.borderSubtle)
+
+                Button {
                     isOn = false
                     showPicker = false
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark.circle")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Clear date")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundStyle(Theme.red)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.red)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
             }
         }
         .background(Theme.surfaceElevated)
@@ -161,7 +208,7 @@ struct TaskInspectorDateControl: View {
         } label: {
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isSelected ? .white : Theme.muted)
+                .foregroundStyle(isSelected ? Theme.onColor : Theme.muted)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(isSelected ? activeColor : Theme.surface)
@@ -173,13 +220,17 @@ struct TaskInspectorDateControl: View {
 }
 
 struct TaskInspectorInfoCard<Content: View>: View {
+    /// Inset applied around the card content. Pass `0` when the content supplies its own
+    /// row padding (e.g. the overview field list, whose hairlines run edge to edge).
+    var contentPadding: CGFloat = 10
+    var contentSpacing: CGFloat = 12
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: contentSpacing) {
             content
         }
-        .padding(10)
+        .padding(contentPadding)
         .background(Theme.surfaceElevated.opacity(0.38))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
@@ -282,26 +333,72 @@ struct InspectorPickerHover: ViewModifier {
     }
 }
 
+/// Estimate field row: whole row opens the shared estimate picker.
+struct TaskInspectorEstimateFieldRow: View {
+    @Binding var value: Int
+    @State private var showPicker = false
+
+    var body: some View {
+        TaskInspectorFieldButtonRow(
+            label: "Estimate",
+            valueText: TaskInspectorEstimateLabel.short(for: value),
+            isSet: value > 0
+        ) {
+            showPicker.toggle()
+        }
+        .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+            EstimatePickerPopoverContent(value: $value) {
+                showPicker = false
+            }
+        }
+    }
+}
+
+enum TaskInspectorEstimateLabel {
+    static func short(for minutes: Int) -> String {
+        switch minutes {
+        case ..<1:  return "None"
+        case 60:    return "1h"
+        case 90:    return "1.5h"
+        case 120:   return "2h"
+        case 150:   return "2.5h"
+        case 180:   return "3h"
+        default:    return "\(minutes)m"
+        }
+    }
+}
+
+/// Logged-minutes field row — the value stays inline-editable, right aligned.
+struct TaskInspectorMinutesFieldRow: View {
+    let label: String
+    @Binding var value: Int
+
+    var body: some View {
+        TaskInspectorFieldRow(label: label) {
+            MinutesField(value: $value)
+        }
+    }
+}
+
 struct MinutesField: View {
     @Binding var value: Int
     @State private var text: String = ""
     @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             TextField("—", text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12, weight: .medium))
+                .font(TaskInspectorFieldRowMetrics.valueFont)
                 .foregroundStyle(value > 0 ? Theme.text : Theme.dim)
-                .frame(width: 52)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 46)
                 .focused($focused)
                 .onSubmit { commit() }
                 .onChange(of: focused) { if !focused { commit() } }
-            if value > 0 {
-                Text("min")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-            }
+            Text("min")
+                .font(.system(size: 11))
+                .foregroundStyle(value > 0 ? Theme.muted : Theme.dim)
         }
         .onAppear { text = value > 0 ? "\(value)" : "" }
         .onChange(of: value) { text = value > 0 ? "\(value)" : "" }

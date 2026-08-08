@@ -47,7 +47,7 @@ struct KanbanMetaChip: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Theme.surface.opacity(focused ? 0.86 : 0.66))
+                .fill(Theme.surfaceElevated.opacity(focused ? 1 : 0.75))
                 .overlay {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(item.tint.opacity(focused ? 0.10 : 0))
@@ -195,7 +195,7 @@ struct KanbanDurationBadge: View {
             .padding(.vertical, 1.5)
             .background {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Theme.surface.opacity(focused ? 0.92 : 0.72))
+                    .fill(Theme.surfaceElevated.opacity(focused ? 1 : 0.75))
                     .overlay {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .fill(Theme.blue.opacity(focused ? 0.12 : 0))
@@ -280,11 +280,14 @@ struct KanbanCardBackground: View {
     let cancelProgress: CGFloat
 
     var body: some View {
-        RoundedRectangle(cornerRadius: Theme.radiusCard)
-            .fill(isHovered ? Theme.surfaceElevated.opacity(1.0) : Theme.surfaceElevated)
+        // Columns are containerless now, so the card's own container is what makes it read
+        // as an object sitting on the canvas: flat Theme.surface, hairline border (applied
+        // by the caller), tight radius, no elevation shadow.
+        RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
+            .fill(isHovered ? Theme.surfaceElevated : Theme.surface)
             .overlay {
                 if urgencyBackgroundTint != .clear {
-                    RoundedRectangle(cornerRadius: Theme.radiusCard)
+                    RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
                         .fill(urgencyBackgroundTint)
                 }
             }
@@ -293,23 +296,22 @@ struct KanbanCardBackground: View {
                     TaskCompletionPendingOverlay(
                         progress: Double(completionProgress),
                         tint: Theme.green,
-                        cornerRadius: Theme.radiusCard
+                        cornerRadius: kanbanCardCornerRadius
                     )
                 } else if isPendingCancel {
                     TaskCompletionPendingOverlay(
                         progress: Double(cancelProgress),
                         tint: Theme.dim,
-                        cornerRadius: Theme.radiusCard
+                        cornerRadius: kanbanCardCornerRadius
                     )
                 }
             }
             .overlay {
                 if isDone {
-                    RoundedRectangle(cornerRadius: Theme.radiusCard)
-                        .fill(Theme.surface.opacity(0.18))
+                    RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
+                        .fill(Theme.bg.opacity(0.28))
                 }
             }
-            .shadow(color: Theme.cardElevationShadow, radius: 10, x: 0, y: 4)
     }
 }
 #endif

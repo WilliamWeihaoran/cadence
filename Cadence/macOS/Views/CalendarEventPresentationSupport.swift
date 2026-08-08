@@ -68,7 +68,7 @@ struct CalendarEventItem: Identifiable {
         self.isMultiDayTimedEvent = !calendar.isDate(eventStart, inSameDayAs: eventEnd)
         self.isFirstSegment = abs(segmentStart.timeIntervalSince(eventStart)) < 1
         self.isLastSegment = abs(segmentEnd.timeIntervalSince(eventEnd)) < 1
-        self.calendarColor = Color(cgColor: event.calendar?.cgColor ?? CGColor(gray: 0.5, alpha: 1))
+        self.calendarColor = Color(cgColor: event.calendar?.cgColor ?? Theme.nsDim.cgColor)
         self.calendarTitle = event.calendar?.title ?? ""
         self.seriesIdentifier = CalendarEventIdentity.lookupIdentifier(from: self.id)
         self.occurrenceDateKey = DateFormatters.dateKey(from: event.startDate ?? event.occurrenceDate ?? dayStart)
@@ -156,7 +156,7 @@ struct CalendarBoardEventDisplayItem: Identifiable {
         startMin = CalendarBoardPlannerSupport.allDaySortMinute
         durationMinutes = 24 * 60
         isAllDay = true
-        calendarColor = Color(cgColor: event.calendar?.cgColor ?? CGColor(gray: 0.5, alpha: 1))
+        calendarColor = Color(cgColor: event.calendar?.cgColor ?? Theme.nsDim.cgColor)
         calendarTitle = event.calendar?.title ?? ""
         seriesIdentifier = CalendarEventIdentity.lookupIdentifier(from: id)
         let sourceDate = event.startDate ?? event.occurrenceDate ?? date

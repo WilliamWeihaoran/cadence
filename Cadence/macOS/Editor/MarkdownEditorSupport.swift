@@ -125,15 +125,39 @@ enum MarkdownTaskEmbedSubtaskHitTesting {
 // MARK: - MarkdownStylist
 
 enum MarkdownStylist {
-    static let bgColor        = NSColor(hex: "#0f1117")
-    static let textColor      = NSColor(hex: "#e2e8f0")
-    static let dimColor       = NSColor(hex: "#6b7a99")
-    static let codeBackground = NSColor(hex: "#1f2235")
-    static let codeBorder     = NSColor(hex: "#39405f")
-    static let blueColor      = NSColor(hex: "#4a9eff")
-    static let greenColor     = NSColor(hex: "#4ecb71")
-    static let highlightFillColor = NSColor(hex: "#f6c343")
-    static let highlightBorderColor = NSColor(hex: "#ffd66b")
+    // Palette values come from `Theme` so the AppKit editor cannot drift from the rest of the app.
+    static let bgColor        = Theme.nsBg
+    static let textColor      = Theme.nsText
+    static let mutedColor     = Theme.nsMuted
+    static let dimColor       = Theme.nsDim
+    static let codeBackground = Theme.nsSurfaceElevated
+    static let blueColor      = Theme.nsBlue
+    static let greenColor     = Theme.nsGreen
+    static let redColor       = Theme.nsRed
+
+    // Extended neutral ramp — see `Theme`'s "Extended neutral ramp" section. These stops sit
+    // *between* the four core Theme surfaces (or below `bg`) for jobs the four-stop ramp cannot
+    // express: inline strokes that must stay visible at low alpha, recessed wells, and
+    // hover/selection lifts inside drawn cards. They used to be private hex literals declared
+    // here, which let the editor silently drift from the palette; they now resolve from `Theme`
+    // like every other color in the app.
+    /// Recessed well, one step *below* the page background (unchecked checkbox interiors).
+    static let recessColor    = Theme.nsSurfaceRecessed
+    /// Hover lift for a drawn card whose resting fill is `Theme.surface`.
+    static let surfaceHover   = Theme.nsSurfaceHover
+    /// Hover/selection highlight behind drawn text inside a card.
+    static let highlightSurface = Theme.nsSurfaceHighlight
+    /// Border one step above `Theme.borderSubtle`, for hairlines drawn at partial alpha.
+    static let borderColor    = Theme.nsBorder
+    /// Emphasized border: hovered cards, table delimiters, code fences.
+    static let codeBorder     = Theme.nsBorderStrong
+    /// Standalone horizontal rules (`---`), which carry no other affordance.
+    static let ruleColor      = Theme.nsRule
+
+    // Semantic (non-palette) highlight colors — deliberately unchanged by the neutral repaint.
+    static let highlightFillColor = Theme.nsMarkerHighlightFill
+    static let highlightBorderColor = Theme.nsMarkerHighlightBorder
+    static let highlightTextColor = Theme.nsMarkerHighlightText
 
     static let baseFont   = NSFont.systemFont(ofSize: 14)
     static let monoFont   = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -230,7 +254,7 @@ enum MarkdownStylist {
                     contentStyle: { range, s in
                         s.addAttributes([
                             .cadenceMarkdownHighlight: true,
-                            .foregroundColor: NSColor(hex: "#fff4c2")
+                            .foregroundColor: highlightTextColor
                         ], range: range)
                     })
         applyLinks(storage, text: nsText)
@@ -292,7 +316,7 @@ enum MarkdownStylist {
             let restStart = lineStart + quote.prefix.count
             let rest = NSRange(location: restStart, length: max(0, lineRange.length - quote.prefix.count))
             if rest.length > 0 {
-                storage.addAttribute(.foregroundColor, value: NSColor(hex: "#c4d4e8"), range: rest)
+                storage.addAttribute(.foregroundColor, value: mutedColor, range: rest)
                 let existing = storage.attribute(.font, at: rest.location, effectiveRange: nil) as? NSFont ?? baseFont
                 let italic = NSFontManager.shared.convert(existing, toHaveTrait: .italicFontMask)
                 storage.addAttribute(.font, value: italic, range: rest)

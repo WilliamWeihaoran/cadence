@@ -121,7 +121,7 @@ struct CalendarBoardDayColumn: View {
             Capsule()
                 .fill(
                     LinearGradient(
-                        colors: [Theme.amber.opacity(0.82), Color.orange.opacity(0.44), Theme.amber.opacity(0.16)],
+                        colors: [Theme.amber.opacity(0.82), Theme.amber.opacity(0.44), Theme.amber.opacity(0.16)],
                         startPoint: .leading,
                         endPoint: .trailing
                     )

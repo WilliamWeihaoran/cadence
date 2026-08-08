@@ -217,7 +217,7 @@ struct ListSectionsKanbanView: View {
             RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(tint.opacity(0.25))
         }
-        .shadow(color: .black.opacity(0.24), radius: 18, y: 10)
+        .shadow(color: Theme.overlayCardShadow, radius: 18, y: 10)
     }
 }
 

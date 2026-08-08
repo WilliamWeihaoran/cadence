@@ -328,7 +328,7 @@ private struct iOSCompactSampleDataCard: View {
             Button(action: action) {
                 Image(systemName: "plus")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onColor)
                     .frame(width: 34, height: 34)
                     .background(Theme.blue)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))

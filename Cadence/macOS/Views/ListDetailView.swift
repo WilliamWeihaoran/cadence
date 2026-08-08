@@ -28,21 +28,30 @@ struct ProjectDetailLoader: View {
 
 // MARK: - Detail View
 
+/// Per-list pages. Planning used to live here; it is now a first-level `Planning`
+/// destination that spans every list, so there is no per-list planning tab.
 enum ListDetailPage: String, CaseIterable, Identifiable {
     case tasks     = "Tasks"
     case kanban    = "Kanban"
-    case planning  = "Planning"
     case documents = "Notes"
     case links     = "Links"
     case completed = "Completed"
 
     var id: String { rawValue }
 
+    /// A persisted raw value can name a page that no longer exists — the "Planning" tab was
+    /// removed from this enum, and any user who had it saved as their default would otherwise
+    /// leave the Settings picker with nothing selected. Resolve stale values to `.tasks`.
+    static func resolved(_ rawValue: String) -> ListDetailPage {
+        ListDetailPage(rawValue: rawValue) ?? .tasks
+    }
+
+    /// The tab bar itself is text-only; this is still used by the Settings
+    /// "default list page" picker.
     var icon: String {
         switch self {
         case .tasks:     return "checkmark.square"
         case .kanban:    return "square.grid.3x2"
-        case .planning:  return "calendar"
         case .documents: return "doc.text"
         case .links:     return "link"
         case .completed: return "list.bullet.clipboard"
@@ -134,9 +143,7 @@ private struct ListDetailView: View {
     private func restoreRememberedTab() {
         guard let rawValue = UserDefaults.standard.string(forKey: tabDefaultsKey),
               let rememberedTab = ListDetailPage(rawValue: rawValue) else {
-            if let defaultPage = ListDetailPage(rawValue: defaultPageRawValue) {
-                tab = defaultPage
-            }
+            tab = ListDetailPage.resolved(defaultPageRawValue)
             return
         }
         tab = rememberedTab
@@ -220,7 +227,7 @@ private struct ListDetailChromeView: View {
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
 
     private var name: String { area?.name ?? project?.name ?? "" }
-    private var colorHex: String { area?.colorHex ?? project?.colorHex ?? "#4a9eff" }
+    private var colorHex: String { area?.colorHex ?? project?.colorHex ?? Theme.blueHex }
     private var icon: String { area?.icon ?? project?.icon ?? "folder.fill" }
     private var tasks: [AppTask] { area?.tasks ?? project?.tasks ?? [] }
     private var allowsSectionEditing: Bool { area != nil || project != nil }
@@ -332,8 +339,6 @@ private struct ListDetailChromeView: View {
                 sortDirection: kanbanSortDirection,
                 highlightedSectionName: highlightedKanbanSectionName
             ))
-        case .planning:
-            return AnyView(ListPlanningView(tasks: tasks, area: area, project: project))
         case .documents:
             return AnyView(ListNotesView(area: area, project: project, requestedEventNoteID: $requestedEventNoteID))
         case .links:
@@ -421,22 +426,16 @@ private struct ListDetailTabBarView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .cadenceCard(background: Theme.surface.opacity(0.82), cornerRadius: Theme.radiusControl, shadowRadius: 10, shadowY: 4)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 2)
     }
 
     private var tabCluster: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 20) {
             ForEach(ListDetailPage.allCases, id: \.self) { page in
                 TabButton(tab: page, isSelected: tab == page) {
                     tab = page
                 }
             }
         }
-        .padding(4)
-        .background(Theme.surfaceElevated.opacity(0.38))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     @ViewBuilder

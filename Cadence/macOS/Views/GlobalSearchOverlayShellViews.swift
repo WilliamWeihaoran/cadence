@@ -49,7 +49,7 @@ struct GlobalSearchOverlayShell<Content: View>: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.34)
+            Theme.scrim
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onDismiss)

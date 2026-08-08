@@ -209,7 +209,7 @@ private struct HabitWeekdayPicker: View {
                 } label: {
                     Text(dayNames[index])
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(isSelected ? .white : Theme.dim)
+                        .foregroundStyle(isSelected ? Theme.onColor : Theme.dim)
                         .frame(maxWidth: .infinity, minHeight: 32)
                         .background(isSelected ? Color(hex: tintHex) : Theme.surfaceElevated)
                         .clipShape(RoundedRectangle(cornerRadius: 8))

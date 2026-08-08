@@ -30,7 +30,7 @@ struct TasksPanelHeader: View {
                         Image(systemName: "plus").font(.system(size: 11, weight: .semibold))
                         Text("New Task").font(.system(size: 13, weight: .semibold))
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onColor)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(Theme.blue)
@@ -182,6 +182,11 @@ struct ContainerPickerBadge: View {
     /// Renders as a bordered, unfilled chip with no chevron — used in toolbar rows
     /// (e.g. CreateTaskSheet) alongside other outlined chips.
     var outlined: Bool = false
+    /// Renders the trigger as a full-bleed task-inspector field row (this label on the left,
+    /// plain right-aligned value) instead of a chip, so the inspector's List row matches the
+    /// date/estimate/repeat rows around it. The popover — search, arrow-key highlight,
+    /// selection — is the same one the chip presents.
+    var inspectorRowLabel: String? = nil
 
     @State private var showPicker = false
     @State private var searchQuery = ""
@@ -259,8 +264,19 @@ struct ContainerPickerBadge: View {
         showPicker = false
     }
 
-    var body: some View {
-        Button { showPicker.toggle() } label: {
+    /// Inbox is the *absence* of a list, so the inspector row reads it as an unset field.
+    private var hasContainer: Bool {
+        selection != .inbox
+    }
+
+    @ViewBuilder
+    private var trigger: some View {
+        if let inspectorRowLabel {
+            TaskInspectorFieldRow(label: inspectorRowLabel) {
+                TaskInspectorFieldValueText(text: hasContainer ? label : "None", isSet: hasContainer)
+            }
+            .contentShape(Rectangle())
+        } else {
             HStack(spacing: 4) {
                 Image(systemName: labelIcon).font(.system(size: compact ? 9 : 10)).foregroundStyle(labelColor)
                 Text(label)
@@ -285,6 +301,12 @@ struct ContainerPickerBadge: View {
                         .stroke(Theme.borderSubtle, lineWidth: 1)
                 }
             }
+        }
+    }
+
+    var body: some View {
+        Button { showPicker.toggle() } label: {
+            trigger
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker) {
@@ -406,6 +428,9 @@ struct TaskSectionPickerBadge: View {
     @Binding var selection: String
     let sections: [String]
     var compact: Bool = false
+    /// Renders the trigger as a full-bleed task-inspector field row (this label on the left,
+    /// plain right-aligned value) instead of a chip. Presents the same picker popover.
+    var inspectorRowLabel: String? = nil
 
     @State private var showPicker = false
     @State private var searchQuery = ""
@@ -429,12 +454,24 @@ struct TaskSectionPickerBadge: View {
         return filteredSections[min(highlightIdx, filteredSections.count - 1)]
     }
 
-    private var label: String {
-        resolvedSections.first(where: { $0.caseInsensitiveCompare(selection) == .orderedSame }) ?? TaskSectionDefaults.defaultName
+    /// The section the current selection actually resolves to, or `nil` when it names a
+    /// section this list no longer has.
+    private var matchedSection: String? {
+        resolvedSections.first(where: { $0.caseInsensitiveCompare(selection) == .orderedSame })
     }
 
-    var body: some View {
-        Button { showPicker.toggle() } label: {
+    private var label: String {
+        matchedSection ?? TaskSectionDefaults.defaultName
+    }
+
+    @ViewBuilder
+    private var trigger: some View {
+        if let inspectorRowLabel {
+            TaskInspectorFieldRow(label: inspectorRowLabel) {
+                TaskInspectorFieldValueText(text: matchedSection ?? "None", isSet: matchedSection != nil)
+            }
+            .contentShape(Rectangle())
+        } else {
             HStack(spacing: 4) {
                 Image(systemName: "square.split.2x1")
                     .font(.system(size: compact ? 9 : 10, weight: .semibold))
@@ -460,6 +497,12 @@ struct TaskSectionPickerBadge: View {
                     RoundedRectangle(cornerRadius: 7).stroke(Theme.borderSubtle, lineWidth: 1)
                 }
             }
+        }
+    }
+
+    var body: some View {
+        Button { showPicker.toggle() } label: {
+            trigger
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker) {

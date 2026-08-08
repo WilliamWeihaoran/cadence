@@ -93,7 +93,7 @@ private struct CalendarBoardDayCell: View {
     private let calendar = Calendar.current
     private var isToday: Bool { calendar.isDateInToday(date) }
     private var foreground: Color {
-        if isSelected { return .white }
+        if isSelected { return Theme.onColor }
         return isCurrentMonth ? Theme.text : Theme.dim.opacity(0.42)
     }
 
@@ -113,12 +113,12 @@ private struct CalendarBoardDayCell: View {
                     if summary.overflowCount > 0 {
                         Text("+\(summary.overflowCount)")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(isSelected ? .white.opacity(0.92) : Theme.dim)
+                            .foregroundStyle(isSelected ? Theme.onColor : Theme.dim)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 3)
                             .background(
                                 Capsule()
-                                    .fill(isSelected ? .white.opacity(0.18) : Theme.surfaceElevated.opacity(0.8))
+                                    .fill(isSelected ? Theme.selectionWash : Theme.surfaceElevated.opacity(0.8))
                             )
                     }
                 }
@@ -157,7 +157,7 @@ private struct CalendarBoardDayCell: View {
     }
 
     private var dayNumberFill: Color {
-        if isSelected { return .white.opacity(0.18) }
+        if isSelected { return Theme.selectionWash }
         if isToday { return selectedFill.opacity(0.18) }
         return .clear
     }
@@ -203,7 +203,7 @@ private struct CalendarBoardTaskCountBubbles: View {
             ForEach(markers) { marker in
                 Text(countLabel(for: marker.count))
                     .font(.system(size: marker.count > 9 ? 7 : 8, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .frame(minWidth: 18, minHeight: 18)
@@ -214,7 +214,7 @@ private struct CalendarBoardTaskCountBubbles: View {
                     )
                     .overlay(
                         Capsule(style: .continuous)
-                            .stroke(.white.opacity(isSelected ? 0.34 : 0.16), lineWidth: 0.75)
+                            .stroke(isSelected ? Theme.onColorBorderStrong : Theme.onColorBorder, lineWidth: 0.75)
                     )
             }
             Spacer(minLength: 0)
@@ -245,7 +245,7 @@ private struct CalendarBoardBundleMarker: View {
             if count > 1 {
                 Text("\(count)")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(isSelected ? .white.opacity(0.86) : Theme.amber)
+                    .foregroundStyle(isSelected ? Theme.onColor : Theme.amber)
             }
         }
         .frame(height: 10)

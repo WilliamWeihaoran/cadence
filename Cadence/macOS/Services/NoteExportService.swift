@@ -133,7 +133,11 @@ enum NoteExportService {
         textView.isEditable = false
         textView.isSelectable = false
         textView.drawsBackground = true
-        textView.backgroundColor = NSColor(hex: "#0f1117")
+        // Deliberately dark: the PDF is rendered by running the *live* editor styling
+        // (`MarkdownStylist.apply`) over an offscreen text view, so the glyphs come out in the
+        // app's light-on-dark palette. A light page here would render near-white text on white.
+        // Keep it matched to the app background rather than paper-white.
+        textView.backgroundColor = Theme.nsBg
         textView.textContainerInset = NSSize(width: options.horizontalInset, height: options.verticalInset)
         textView.textContainer?.widthTracksTextView = false
         textView.textContainer?.containerSize = NSSize(width: contentWidth, height: CGFloat.greatestFiniteMagnitude)

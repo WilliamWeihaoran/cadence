@@ -418,7 +418,7 @@ private struct iPadTodaySidePanelPicker: View {
                         .minimumScaleFactor(0.82)
                         .frame(maxWidth: .infinity)
                         .frame(height: 30)
-                        .background(selection == panel ? Color.white.opacity(0.16) : Color.clear)
+                        .background(selection == panel ? Theme.selectionWash : Color.clear)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)

@@ -8,6 +8,11 @@ let kanbanSectionColorOptions: [String] = [
 let kanbanColumnReorderAnimation = Animation.spring(response: 0.34, dampingFraction: 0.82, blendDuration: 0.12)
 let kanbanColumnStateAnimation = Animation.spring(response: 0.26, dampingFraction: 0.88, blendDuration: 0.08)
 let kanbanColumnWidth: CGFloat = 236
+/// Kanban columns are containerless (no fill, no border). This radius is only used for the
+/// transient drop-target wash / dashed outline and the search-navigation highlight ring.
+let kanbanColumnCornerRadius: CGFloat = 10
+/// Cards keep a container so they read as objects sitting directly on the canvas.
+let kanbanCardCornerRadius: CGFloat = 7
 
 struct KanbanDateBucket: Identifiable {
     let title: String

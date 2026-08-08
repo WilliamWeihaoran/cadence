@@ -21,7 +21,7 @@ struct iOSTaskCompletionCircle: View {
             if isDone {
                 Image(systemName: "checkmark")
                     .font(.system(size: diameter * 0.6, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onColor)
             }
         }
         .frame(width: diameter, height: diameter)
@@ -258,7 +258,7 @@ struct iOSCalendarDayCell: View {
                 HStack(spacing: 3) {
                     ForEach(0..<min(taskCount, 3), id: \.self) { _ in
                         Circle()
-                            .fill(isSelected ? .white : Theme.blue)
+                            .fill(isSelected ? Theme.onColor : Theme.blue)
                             .frame(width: 4, height: 4)
                     }
                 }

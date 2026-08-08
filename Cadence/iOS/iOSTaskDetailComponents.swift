@@ -17,7 +17,7 @@ struct iOSTaskEditorTitleCard: View {
                 Button(action: onToggleCompletion) {
                     Image(systemName: task.isDone ? "checkmark" : task.status.systemImage)
                         .font(.system(size: isRegularWidth ? 17 : 15, weight: .semibold))
-                        .foregroundStyle(task.isDone ? Color.white : CadenceTaskPresentationSupport.statusColor(task.status))
+                        .foregroundStyle(task.isDone ? Theme.onColor : CadenceTaskPresentationSupport.statusColor(task.status))
                         .frame(width: isRegularWidth ? 38 : 34, height: isRegularWidth ? 38 : 34)
                         .background(task.isDone ? Theme.doneFill : CadenceTaskPresentationSupport.statusColor(task.status).opacity(0.13))
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -322,7 +322,7 @@ struct iOSTaskTagEditorSection: View {
                 Button(action: addTag) {
                     Image(systemName: "plus")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onColor)
                         .frame(width: 36, height: 36)
                         .background(trimmedNewTagName.isEmpty ? Theme.surfaceElevated : Theme.blue)
                         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))

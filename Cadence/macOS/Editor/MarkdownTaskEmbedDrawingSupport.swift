@@ -69,12 +69,12 @@ enum MarkdownTaskEmbedDrawing {
         let isHovered = hoveredTarget != nil
         let radius: CGFloat = 11
         let cardPath = NSBezierPath(roundedRect: cardRect, xRadius: radius, yRadius: radius)
-        (isHovered ? NSColor(hex: "#161f2d") : NSColor(hex: "#141b26"))
+        (isHovered ? MarkdownStylist.surfaceHover : Theme.nsSurface)
             .withAlphaComponent(0.98)
             .setFill()
         cardPath.fill()
 
-        (isHovered ? NSColor(hex: "#465875") : NSColor(hex: "#33435f"))
+        (isHovered ? MarkdownStylist.codeBorder : MarkdownStylist.borderColor)
             .withAlphaComponent(isHovered ? 0.62 : 0.82)
             .setStroke()
         cardPath.lineWidth = isHovered ? 1.0 : 0.9
@@ -101,7 +101,7 @@ enum MarkdownTaskEmbedDrawing {
         let path = NSBezierPath(ovalIn: rect)
         let done = task.isDone
         if task.isMissing {
-            NSColor(hex: "#101620").withAlphaComponent(0.76).setFill()
+            MarkdownStylist.recessColor.withAlphaComponent(0.76).setFill()
             path.fill()
             MarkdownStylist.dimColor.withAlphaComponent(0.38).setStroke()
         } else if done {
@@ -109,7 +109,7 @@ enum MarkdownTaskEmbedDrawing {
             path.fill()
             MarkdownStylist.greenColor.setStroke()
         } else {
-            NSColor(hex: "#101620").withAlphaComponent(0.94).setFill()
+            MarkdownStylist.recessColor.withAlphaComponent(0.94).setFill()
             path.fill()
             MarkdownStylist.dimColor.withAlphaComponent(0.75).setStroke()
         }
@@ -124,7 +124,7 @@ enum MarkdownTaskEmbedDrawing {
         }
 
         guard done else { return }
-        NSColor(hex: "#0f1117").setStroke()
+        Theme.nsBg.setStroke()
         let check = NSBezierPath()
         check.lineWidth = 2
         check.lineCapStyle = .round
@@ -137,7 +137,7 @@ enum MarkdownTaskEmbedDrawing {
 
     private static func drawTitle(task: MarkdownTaskEmbedRenderInfo, in rect: NSRect, isHovered: Bool) {
         if isHovered {
-            NSColor(hex: "#1c2740").withAlphaComponent(0.7).setFill()
+            MarkdownStylist.highlightSurface.withAlphaComponent(0.7).setFill()
             NSBezierPath(roundedRect: rect.insetBy(dx: -4, dy: -2), xRadius: 4, yRadius: 4).fill()
         }
         let paragraph = NSMutableParagraphStyle()
@@ -201,7 +201,7 @@ enum MarkdownTaskEmbedDrawing {
 
     private static func displayChips(for task: MarkdownTaskEmbedRenderInfo) -> [Chip] {
         if task.isMissing {
-            return [Chip(label: "Missing", color: NSColor(hex: "#ff6b6b"), field: .status)]
+            return [Chip(label: "Missing", color: MarkdownStylist.redColor, field: .status)]
         }
 
         var chips: [Chip] = []
@@ -241,10 +241,10 @@ enum MarkdownTaskEmbedDrawing {
         }
 
         let scheduledColor: NSColor = isOverdo(task)
-            ? NSColor(hex: "#ff6b6b")
+            ? MarkdownStylist.redColor
             : (isDoToday(task) ? MarkdownStylist.highlightFillColor : MarkdownStylist.dimColor)
         chips.append(Chip(label: scheduledLabel(for: task), color: scheduledColor, field: .scheduledDate))
-        let dueColor: NSColor = isOverdue(task) ? NSColor(hex: "#ff6b6b") : MarkdownStylist.dimColor
+        let dueColor: NSColor = isOverdue(task) ? MarkdownStylist.redColor : MarkdownStylist.dimColor
         chips.append(Chip(label: dueLabel(for: task), color: dueColor, field: .dueDate))
         chips.append(Chip(label: estimateLabel(for: task), color: MarkdownStylist.blueColor, field: .estimate))
 
@@ -293,7 +293,7 @@ enum MarkdownTaskEmbedDrawing {
         guard !rects.isEmpty else { return }
 
         let separatorY = cardRect.minY + 64
-        NSColor(hex: "#33435f").withAlphaComponent(0.42).setStroke()
+        MarkdownStylist.borderColor.withAlphaComponent(0.42).setStroke()
         let separator = NSBezierPath()
         separator.lineWidth = 0.6
         separator.move(to: NSPoint(x: cardRect.minX + 15, y: separatorY))
@@ -363,9 +363,9 @@ enum MarkdownTaskEmbedDrawing {
 
     private static func drawOverflowChip(count: Int, rect: NSRect) {
         let path = NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5)
-        NSColor(hex: "#263248").withAlphaComponent(0.72).setFill()
+        Theme.nsBorderSubtle.withAlphaComponent(0.72).setFill()
         path.fill()
-        NSColor(hex: "#4f607e").withAlphaComponent(0.52).setStroke()
+        MarkdownStylist.codeBorder.withAlphaComponent(0.52).setStroke()
         path.lineWidth = 0.7
         path.stroke()
         ("+\(count) more" as NSString).draw(in: rect.insetBy(dx: 6, dy: 3), withAttributes: subtaskMetaAttributes)
@@ -383,7 +383,7 @@ enum MarkdownTaskEmbedDrawing {
             checkboxPath.fill()
             MarkdownStylist.greenColor.withAlphaComponent(0.9).setStroke()
         } else {
-            NSColor(hex: "#101620").withAlphaComponent(0.84).setFill()
+            MarkdownStylist.recessColor.withAlphaComponent(0.84).setFill()
             checkboxPath.fill()
             MarkdownStylist.dimColor.withAlphaComponent(0.62).setStroke()
         }
@@ -398,7 +398,7 @@ enum MarkdownTaskEmbedDrawing {
         }
 
         if subtask.isDone {
-            NSColor(hex: "#0f1117").setStroke()
+            Theme.nsBg.setStroke()
             let check = NSBezierPath()
             check.lineWidth = 1.35
             check.lineCapStyle = .round
@@ -444,7 +444,7 @@ enum MarkdownTaskEmbedDrawing {
     private static func priorityColor(_ raw: String, fallback: String) -> NSColor {
         switch TaskPriority(rawValue: raw) ?? .none {
         case .high:
-            return NSColor(hex: "#ff6b6b")
+            return MarkdownStylist.redColor
         case .medium:
             return MarkdownStylist.highlightFillColor
         case .low:

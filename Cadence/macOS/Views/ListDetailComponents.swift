@@ -99,7 +99,7 @@ struct ListTasksView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 21, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onColor)
                     .frame(width: 54, height: 54)
                     .background(Theme.blue)
                     .clipShape(Circle())

@@ -15,6 +15,7 @@ struct TaskListKanbanColumn: View {
     @Environment(TaskCreationManager.self) private var taskCreationManager
     @State private var isTargeted = false
     @State private var dragOverTaskID: UUID?
+    @State private var isHovered = false
 
     private var sortedTasks: [AppTask] {
         tasks.taskSorted(by: sortField, direction: sortDirection)
@@ -24,54 +25,21 @@ struct TaskListKanbanColumn: View {
         VStack(alignment: .leading, spacing: 0) {
             header
 
-            Divider().background(Theme.borderSubtle.opacity(0.82))
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(height: 1)
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    if sortedTasks.isEmpty {
-                        emptyColumn
-                    } else {
-                        ForEach(sortedTasks) { task in
-                            KanbanCard(task: task)
-                                .overlay(alignment: .top) {
-                                    if dragOverTaskID == task.id {
-                                        Rectangle()
-                                            .fill(Theme.blue)
-                                            .frame(height: 2)
-                                            .transition(.opacity)
-                                    }
-                                }
-                                .animation(.easeInOut(duration: 0.15), value: dragOverTaskID)
-                                .draggable(task.id.uuidString)
-                                .dropDestination(for: String.self) { items, _ in
-                                    guard let payload = items.first,
-                                          let droppedID = taskID(from: payload),
-                                          droppedID != task.id,
-                                          let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
-                                    moveTask(droppedTask, before: task)
-                                    return true
-                                } isTargeted: { isOver in
-                                    if isOver {
-                                        dragOverTaskID = task.id
-                                    } else if dragOverTaskID == task.id {
-                                        dragOverTaskID = nil
-                                    }
-                                }
-                        }
-                    }
-                }
-                .padding(8)
-            }
-            .frame(minHeight: 360)
+            columnTaskScroll
         }
         .frame(width: kanbanColumnWidth)
-        .background(columnBackground)
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(isTargeted ? color.opacity(0.66) : color.opacity(0.22), lineWidth: isTargeted ? 1.4 : 1)
-        }
-        .scaleEffect(isTargeted ? 1.012 : 1)
-        .offset(y: isTargeted ? -4 : 0)
+        // The column has no fill or border any more, so it needs an explicit
+        // transparent-but-hit-testable region: without this the drop destination and the
+        // column hover state would only register on top of actual glyphs.
+        // `columnDropSurface` supplies `Color.clear` + `contentShape`, and the outer
+        // `contentShape` guarantees the whole 236pt column is a drop target.
+        .background(columnDropSurface)
+        .contentShape(Rectangle())
+        .zIndex(isTargeted ? 2 : 0)
         .animation(kanbanColumnStateAnimation, value: isTargeted)
         .dropDestination(for: String.self) { items, _ in
             guard let payload = items.first,
@@ -80,78 +48,112 @@ struct TaskListKanbanColumn: View {
             moveTask(droppedTask, before: nil)
             return true
         } isTargeted: { isTargeted = $0 }
+        .onHover { isHovered = $0 }
     }
 
+    /// Column containers are gone, so the header is the only place the list's color
+    /// survives — a single 7pt dot. Everything else is neutral, quiet type.
     private var header: some View {
-        HStack(spacing: 9) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(color)
-                .frame(width: 24, height: 24)
-                .background(color.opacity(0.16))
-                .clipShape(RoundedRectangle(cornerRadius: 7))
+        HStack(spacing: 7) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
 
-            Text(title)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(Theme.text)
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .kerning(0.4)
+                .foregroundStyle(Theme.muted)
                 .lineLimit(1)
+                .truncationMode(.tail)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 6)
 
             Text("\(sortedTasks.count)")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Theme.muted)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Theme.surfaceElevated.opacity(0.95))
-                .clipShape(Capsule())
-
-            Button {
-                taskCreationManager.present(container: container)
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 24, height: 24)
-                    .background(Theme.surfaceElevated.opacity(0.8))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
-            }
-            .buttonStyle(.cadencePlain)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
-    }
-
-    private var emptyColumn: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "tray")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(color.opacity(0.68))
-            Text("No active tasks")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(Theme.dim)
+                .monospacedDigit()
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 34)
-        .background(Theme.surface.opacity(0.42))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(Theme.borderSubtle.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
+        .padding(.horizontal, 4)
+        .padding(.top, 2)
+        .padding(.bottom, 8)
+    }
+
+    private var columnTaskScroll: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                taskCards
+                // Replaces the old header "+" chip; always last in the column.
+                KanbanColumnAddTaskRow(isColumnHovered: isHovered, action: presentNewTaskPanel)
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // Keeps the empty area under the last card a live drop target now that the
+            // column itself paints nothing.
+            .contentShape(Rectangle())
+        }
+        .frame(minHeight: 200)
+        .background(
+            Color.clear.contentShape(Rectangle())
+        )
+    }
+
+    @ViewBuilder
+    private var taskCards: some View {
+        ForEach(sortedTasks) { task in
+            KanbanCard(task: task)
+                .overlay(alignment: .top) {
+                    if dragOverTaskID == task.id {
+                        Rectangle()
+                            .fill(Theme.blue)
+                            .frame(height: 2)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.15), value: dragOverTaskID)
+                .draggable(task.id.uuidString)
+                .dropDestination(for: String.self) { items, _ in
+                    guard let payload = items.first,
+                          let droppedID = taskID(from: payload),
+                          droppedID != task.id,
+                          let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
+                    moveTask(droppedTask, before: task)
+                    return true
+                } isTargeted: { isOver in
+                    if isOver {
+                        dragOverTaskID = task.id
+                    } else if dragOverTaskID == task.id {
+                        dragOverTaskID = nil
+                    }
+                }
         }
     }
 
-    private var columnBackground: some View {
-        RoundedRectangle(cornerRadius: 10)
-            .fill(color.opacity(0.12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Theme.surface.opacity(0.84))
+    /// The column is containerless at rest: no fill, no stroke. This layer only supplies a
+    /// transparent hit-test region plus the *transient* drag-over wash, so a wall of
+    /// columns never reads as a wall of color.
+    @ViewBuilder
+    private var columnDropSurface: some View {
+        ZStack {
+            Color.clear
+
+            if isTargeted {
+                RoundedRectangle(cornerRadius: kanbanColumnCornerRadius)
+                    .fill(color.opacity(0.07))
+                RoundedRectangle(cornerRadius: kanbanColumnCornerRadius)
+                    .strokeBorder(
+                        color.opacity(0.55),
+                        style: StrokeStyle(lineWidth: 1, dash: [5, 4])
+                    )
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(.white.opacity(isTargeted ? 0.028 : 0.012))
-            }
+        }
+        .contentShape(Rectangle())
+        .animation(.easeInOut(duration: 0.14), value: isTargeted)
+    }
+
+    private func presentNewTaskPanel() {
+        taskCreationManager.present(container: container)
     }
 
     private func moveTask(_ task: AppTask, before target: AppTask?) {

@@ -140,7 +140,8 @@ private struct iOSCompactRootShell: View {
         switch destination {
         case .today:
             iPadTodayView()
-        case .allTasks:
+        // Planning is a macOS-only page for now; iOS falls back to All Tasks.
+        case .planning, .allTasks:
             iOSAllTasksView()
         case .focus:
             iOSFocusView()
@@ -179,7 +180,7 @@ private struct iOSQuickAddButton: View {
         Button(action: action) {
             Image(systemName: "plus")
                 .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.onColor)
                 .frame(width: 56, height: 56)
                 .background(Theme.blue)
                 .clipShape(Circle())

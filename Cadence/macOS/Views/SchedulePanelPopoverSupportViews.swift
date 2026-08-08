@@ -115,13 +115,12 @@ struct TaskDetailCompactOverviewSection: View {
     let availableSections: [String]
 
     var body: some View {
-        TaskInspectorInfoCard {
-            // Single narrow column — reads top to bottom like the inspector metaphor
-            // rather than a 2-up form grid.
-            VStack(alignment: .leading, spacing: 8) {
+        // Label-left / value-right field list. Rows are full-bleed so the hairlines
+        // span the card, so the card itself carries no inner padding.
+        TaskInspectorInfoCard(contentPadding: 0, contentSpacing: 0) {
+            VStack(spacing: 0) {
                 TaskInspectorDateControl(
-                    label: "Set do",
-                    icon: "calendar",
+                    label: "Do date",
                     activeColor: Theme.blue,
                     isOn: Binding(
                         get: { !task.scheduledDate.isEmpty },
@@ -135,9 +134,10 @@ struct TaskDetailCompactOverviewSection: View {
                     )
                 )
 
+                TaskInspectorFieldDivider()
+
                 TaskInspectorDateControl(
-                    label: "Set due",
-                    icon: "calendar.badge.exclamationmark",
+                    label: "Due date",
                     activeColor: Theme.red,
                     isOn: Binding(
                         get: { !task.dueDate.isEmpty },
@@ -151,19 +151,40 @@ struct TaskDetailCompactOverviewSection: View {
                     )
                 )
 
-                EstimatePickerControl(value: $task.estimatedMinutes, compact: true)
+                TaskInspectorFieldDivider()
+
+                TaskInspectorEstimateFieldRow(value: $task.estimatedMinutes)
+
+                if task.actualMinutes > 0 {
+                    TaskInspectorFieldDivider()
+                    TaskInspectorMinutesFieldRow(label: "Actual", value: $task.actualMinutes)
+                }
+
+                TaskInspectorFieldDivider()
 
                 TaskInspectorRecurrenceControl(task: task)
 
-                if task.actualMinutes > 0 {
-                    MinutesField(value: $task.actualMinutes)
-                }
+                TaskInspectorFieldDivider(strong: true)
 
-                Divider().background(Theme.borderSubtle.opacity(0.75))
+                // These two render the *same* pickers as everywhere else — search, arrow-key
+                // highlight and all — but as label-left / plain-value-right rows, so they match
+                // the date/estimate/repeat rows above instead of sitting in the value slot as
+                // bordered chips.
+                ContainerPickerBadge(
+                    selection: taskContainerBinding,
+                    contexts: contexts,
+                    areas: areas,
+                    projects: projects,
+                    inspectorRowLabel: "List"
+                )
 
-                ContainerPickerBadge(selection: taskContainerBinding, contexts: contexts, areas: areas, projects: projects, compact: true, outlined: true)
+                TaskInspectorFieldDivider()
 
-                TaskSectionPickerBadge(selection: $task.sectionName, sections: availableSections, compact: true)
+                TaskSectionPickerBadge(
+                    selection: $task.sectionName,
+                    sections: availableSections,
+                    inspectorRowLabel: "Section"
+                )
             }
         }
     }

@@ -321,7 +321,7 @@ struct iOSTaskSubtasksSection: View {
             Button(action: onAdd) {
                 Image(systemName: "plus")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onColor)
                     .frame(width: 36, height: 36)
                     .background(canAddSubtask ? Theme.blue : Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))

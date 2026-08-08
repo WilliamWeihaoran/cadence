@@ -75,7 +75,7 @@ private struct iOSCalendarMonthDayCell: View {
     private var overflow: Int { max(0, tasks.count + bundles.count + events.count - visibleTasks.count - visibleBundles.count - visibleEvents.count) }
 
     private var dateLabelColor: Color {
-        if isToday { return .white }
+        if isToday { return Theme.onColor }
         if isSelected { return Theme.blue }
         return isCurrentMonth ? Theme.text : Theme.dim.opacity(0.58)
     }

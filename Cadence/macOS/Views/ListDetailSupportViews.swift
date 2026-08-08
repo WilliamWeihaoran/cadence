@@ -400,6 +400,9 @@ struct ListLogView: View {
     }
 }
 
+/// List-detail tab bar item. Text only — no icon, no pill, no container. The active
+/// tab is marked by a small accent dot ahead of the label; inactive tabs simply have
+/// no dot and reserve no space for one.
 struct TabButton: View {
     let tab: ListDetailPage
     let isSelected: Bool
@@ -408,24 +411,17 @@ struct TabButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: tab.icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 14)
+                if isSelected {
+                    Circle()
+                        .fill(Theme.blue)
+                        .frame(width: 4, height: 4)
+                }
+
                 Text(tab.rawValue)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(isSelected ? Theme.text : Theme.dim)
             }
-            .foregroundStyle(isSelected ? Theme.blue : Theme.dim)
-            .padding(.horizontal, 11)
-            .frame(height: 32)
             .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Theme.blue.opacity(0.16) : Color.clear)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
-            }
         }
         .buttonStyle(.cadencePlain)
     }

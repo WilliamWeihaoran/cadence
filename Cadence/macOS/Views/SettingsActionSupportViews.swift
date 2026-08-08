@@ -27,7 +27,7 @@ struct SettingsActionButton<Label: View>: View {
     private var foregroundColor: Color {
         switch tone {
         case .filled:
-            return .white
+            return Theme.onColor
         case .tinted(let color):
             return color
         }

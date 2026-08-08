@@ -374,7 +374,7 @@ struct MarkdownEditorView: NSViewRepresentable {
     func makeNSView(context: NSViewRepresentableContext<MarkdownEditorView>) -> NSScrollView {
         let scrollView = MarkdownEditorScrollView()
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = NSColor(hex: "#0f1117")
+        scrollView.backgroundColor = Theme.nsBg
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
@@ -407,8 +407,8 @@ struct MarkdownEditorView: NSViewRepresentable {
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
-        textView.backgroundColor = NSColor(hex: "#0f1117")
-        textView.insertionPointColor = NSColor(hex: "#4a9eff")
+        textView.backgroundColor = Theme.nsBg
+        textView.insertionPointColor = Theme.nsBlue
         textView.textContainerInset = NSSize(
             width: MarkdownEditorMetrics.textInset,
             height: MarkdownEditorMetrics.textInset
