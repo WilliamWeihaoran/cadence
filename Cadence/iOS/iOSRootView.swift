@@ -27,8 +27,7 @@ struct iOSRootView: View {
     @Query private var allTasksForNotifications: [AppTask]
     @Query private var allHabitsForNotifications: [Habit]
     @State private var selection: iOSSidebarItem? = .today
-    @State private var compactTabSelection: iOSRootTab = .today
-    @State private var compactMorePath: [CadenceFeatureDestination] = []
+    @State private var compactPath: [CadenceFeatureDestination] = []
 
     var body: some View {
         Group {
@@ -37,10 +36,7 @@ struct iOSRootView: View {
                     detailView(for: selection ?? .today)
                 }
             } else {
-                iOSCompactRootShell(
-                    selection: $compactTabSelection,
-                    morePath: $compactMorePath
-                )
+                iOSCompactRootShell(path: $compactPath)
             }
         }
         .background(Theme.bg)
@@ -110,74 +106,127 @@ struct iOSRootView: View {
     }
 }
 
-private enum iOSRootTab: Hashable {
-    case today
-    case inbox
-    case notes
-    case search
-    case more
+/// iPhone navigation, modeled directly on Things 3: no persistent tab bar at all — a single
+/// NavigationStack rooted at a home list of every destination, with an always-available
+/// floating quick-add button for capture. iPad keeps its own sidebar shell untouched.
+private struct iOSCompactRootShell: View {
+    @Binding var path: [CadenceFeatureDestination]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Environment(\.modelContext) private var modelContext
+    @State private var showQuickCapture = false
+    @State private var quickCaptureTitle = ""
 
-    var title: String {
-        switch self {
-        case .today: return CadenceFeatureDestination.today.compactTitle
-        case .inbox: return CadenceFeatureDestination.inbox.compactTitle
-        case .notes: return CadenceFeatureDestination.notes.compactTitle
-        case .search: return "Search"
-        case .more: return "More"
+    var body: some View {
+        NavigationStack(path: $path) {
+            iOSCompactHomeView()
+                .navigationDestination(for: CadenceFeatureDestination.self, destination: destinationView)
+        }
+        .tint(Theme.blue)
+        .overlay(alignment: .bottomTrailing) {
+            iOSQuickAddButton {
+                quickCaptureTitle = ""
+                showQuickCapture = true
+            }
+            .padding(.trailing, 20)
+            .padding(.bottom, 24)
+        }
+        .sheet(isPresented: $showQuickCapture) {
+            iOSQuickCaptureSheet(title: $quickCaptureTitle, onAdd: captureQuickTask)
         }
     }
 
-    var systemImage: String {
-        switch self {
-        case .today: return CadenceFeatureDestination.today.systemImage
-        case .inbox: return CadenceFeatureDestination.inbox.systemImage
-        case .notes: return CadenceFeatureDestination.notes.systemImage
-        case .search: return CadenceFeatureDestination.search.systemImage
-        case .more: return "ellipsis"
+    @ViewBuilder
+    private func destinationView(for destination: CadenceFeatureDestination) -> some View {
+        switch destination {
+        case .today:
+            iPadTodayView()
+        case .allTasks:
+            iOSAllTasksView()
+        case .focus:
+            iOSFocusView()
+        case .inbox:
+            iPadInboxView()
+        case .calendar:
+            iOSCalendarView()
+        case .notes:
+            iOSCompactNotesView()
+        case .lists:
+            iOSListsView()
+        case .goals:
+            iOSGoalsView()
+        case .habits:
+            iOSHabitsView()
+        case .search:
+            iOSSearchView()
+        case .settings:
+            iOSSettingsView()
         }
+    }
+
+    private func captureQuickTask() {
+        let trimmed = quickCaptureTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        _ = try? CadenceTaskMutationSupport.insertTask(title: trimmed, allTasks: allTasks, modelContext: modelContext)
+        quickCaptureTitle = ""
+        showQuickCapture = false
     }
 }
 
-private struct iOSCompactRootShell: View {
-    @Binding var selection: iOSRootTab
-    @Binding var morePath: [CadenceFeatureDestination]
+private struct iOSQuickAddButton: View {
+    let action: () -> Void
 
     var body: some View {
-        TabView(selection: $selection) {
-            iPadTodayView()
-                .tag(iOSRootTab.today)
-                .tabItem { Label(iOSRootTab.today.title, systemImage: iOSRootTab.today.systemImage) }
-
-            iPadInboxView()
-                .tag(iOSRootTab.inbox)
-                .tabItem { Label(iOSRootTab.inbox.title, systemImage: iOSRootTab.inbox.systemImage) }
-
-            NavigationStack {
-                iOSCompactNotesView()
-                    .toolbar(.hidden, for: .navigationBar)
-            }
-            .tag(iOSRootTab.notes)
-            .tabItem { Label(iOSRootTab.notes.title, systemImage: iOSRootTab.notes.systemImage) }
-
-            NavigationStack {
-                iOSSearchView()
-                    .navigationBarTitleDisplayMode(.inline)
-            }
-            .tag(iOSRootTab.search)
-            .tabItem { Label(iOSRootTab.search.title, systemImage: iOSRootTab.search.systemImage) }
-
-            NavigationStack(path: $morePath) {
-                iOSMoreView()
-                    .toolbar(.hidden, for: .navigationBar)
-            }
-            .tag(iOSRootTab.more)
-            .tabItem { Label(iOSRootTab.more.title, systemImage: iOSRootTab.more.systemImage) }
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 56, height: 56)
+                .background(Theme.blue)
+                .clipShape(Circle())
+                .shadow(color: Theme.overlayCardShadow, radius: 12, x: 0, y: 6)
         }
-            .background(Theme.bg.ignoresSafeArea())
-            .tint(Theme.blue)
-            .toolbarBackground(Theme.surface, for: .tabBar)
-            .toolbarBackground(.visible, for: .tabBar)
-            .toolbarColorScheme(.dark, for: .tabBar)
+        .accessibilityLabel("New Task")
+    }
+}
+
+private struct iOSQuickCaptureSheet: View {
+    @Binding var title: String
+    let onAdd: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("New Task")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.text)
+
+            TextField("What do you need to do?", text: $title)
+                .textFieldStyle(.plain)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Theme.text)
+                .focused($isFocused)
+                .submitLabel(.done)
+                .onSubmit(onAdd)
+                .padding(.horizontal, 13)
+                .frame(height: 44)
+                .background(Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            HStack(spacing: 16) {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .foregroundStyle(Theme.dim)
+                Button("Add", action: onAdd)
+                    .foregroundStyle(Theme.blue)
+                    .fontWeight(.semibold)
+                    .disabled(TaskTitleSupport.isEmpty(title))
+            }
+        }
+        .padding(18)
+        .presentationDetents([.height(150)])
+        .presentationBackground(Theme.surface)
+        .onAppear { isFocused = true }
     }
 }
 
@@ -187,20 +236,16 @@ private extension iOSRootView {
         switch route {
         case .today, .task:
             selection = .today
-            compactTabSelection = .today
-            compactMorePath = []
+            compactPath = [.today]
         case .habits:
             selection = .habits
-            compactTabSelection = .more
-            compactMorePath = [.habits]
+            compactPath = [.habits]
         case .goals:
             selection = .goals
-            compactTabSelection = .more
-            compactMorePath = [.goals]
+            compactPath = [.goals]
         case .calendar:
             selection = .calendar
-            compactTabSelection = .more
-            compactMorePath = [.calendar]
+            compactPath = [.calendar]
         }
     }
 }

@@ -4,6 +4,7 @@ import SwiftUI
 
 struct iOSTaskEditorTitleCard: View {
     @Bindable var task: AppTask
+    let onToggleCompletion: () -> Void
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var isRegularWidth: Bool {
@@ -13,12 +14,16 @@ struct iOSTaskEditorTitleCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: isRegularWidth ? 14 : 12) {
             HStack(alignment: .center, spacing: 11) {
-                Image(systemName: task.status.systemImage)
-                    .font(.system(size: isRegularWidth ? 17 : 15, weight: .semibold))
-                    .foregroundStyle(CadenceTaskPresentationSupport.statusColor(task.status))
-                    .frame(width: isRegularWidth ? 38 : 34, height: isRegularWidth ? 38 : 34)
-                    .background(CadenceTaskPresentationSupport.statusColor(task.status).opacity(0.13))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Button(action: onToggleCompletion) {
+                    Image(systemName: task.isDone ? "checkmark" : task.status.systemImage)
+                        .font(.system(size: isRegularWidth ? 17 : 15, weight: .semibold))
+                        .foregroundStyle(task.isDone ? Color.white : CadenceTaskPresentationSupport.statusColor(task.status))
+                        .frame(width: isRegularWidth ? 38 : 34, height: isRegularWidth ? 38 : 34)
+                        .background(task.isDone ? Theme.doneFill : CadenceTaskPresentationSupport.statusColor(task.status).opacity(0.13))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(task.isDone ? "Mark task todo" : "Complete task")
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(task.status.label)
@@ -80,126 +85,6 @@ struct iOSTaskEditorTitleCard: View {
 
     private var estimateLabel: String {
         CadenceTaskPresentationSupport.estimateLabel(for: task)
-    }
-}
-
-struct iOSTaskEditorOverviewCard: View {
-    @Bindable var task: AppTask
-    let containerTitle: String
-    let goalTitle: String?
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
-    }
-
-    private var completedSubtasks: Int {
-        CadenceTaskPresentationSupport.subtaskProgress(for: task)?.completed ?? 0
-    }
-
-    private var totalSubtasks: Int {
-        CadenceTaskPresentationSupport.subtaskProgress(for: task)?.total ?? 0
-    }
-
-    private var hasNotes: Bool {
-        CadenceTaskPresentationSupport.hasNotes(task)
-    }
-
-    private var tagCount: Int {
-        (task.tags ?? []).filter { !$0.isArchived }.count
-    }
-
-    var body: some View {
-        LazyVGrid(columns: columns, spacing: 8) {
-            iOSTaskOverviewMetric(
-                title: "List",
-                value: containerTitle,
-                systemImage: "tray.full.fill",
-                color: Theme.blue
-            )
-            iOSTaskOverviewMetric(
-                title: "Subtasks",
-                value: totalSubtasks == 0 ? "None" : "\(completedSubtasks)/\(totalSubtasks)",
-                systemImage: "checklist",
-                color: totalSubtasks == 0 ? Theme.dim : Theme.green
-            )
-            iOSTaskOverviewMetric(
-                title: "Logged",
-                value: loggedLabel,
-                systemImage: "timer",
-                color: task.actualMinutes == 0 ? Theme.dim : Theme.green
-            )
-            iOSTaskOverviewMetric(
-                title: "Goal",
-                value: goalTitle ?? "None",
-                systemImage: goalTitle == nil ? "circle.dashed" : "flag.fill",
-                color: goalTitle == nil ? Theme.dim : Theme.amber
-            )
-            iOSTaskOverviewMetric(
-                title: "Notes",
-                value: hasNotes ? "Ready" : "Empty",
-                systemImage: hasNotes ? "doc.text.fill" : "doc.text",
-                color: hasNotes ? Theme.purple : Theme.dim
-            )
-            iOSTaskOverviewMetric(
-                title: "Tags",
-                value: tagCount == 0 ? "None" : "\(tagCount)",
-                systemImage: "tag.fill",
-                color: tagCount == 0 ? Theme.dim : Theme.amber
-            )
-        }
-    }
-
-    private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: isRegularWidth ? 122 : 108), spacing: 8)]
-    }
-
-    private var loggedLabel: String {
-        if task.actualMinutes == 0 { return "None" }
-        return CadenceTaskPresentationSupport.estimateLabel(minutes: task.actualMinutes)
-    }
-}
-
-private struct iOSTaskOverviewMetric: View {
-    let title: String
-    let value: String
-    let systemImage: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(color)
-                .frame(width: 24, height: 24)
-                .background(color.opacity(0.11))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .textCase(.uppercase)
-                    .kerning(0.5)
-                    .lineLimit(1)
-
-                Text(value)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 8)
-        .background(Theme.surface.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(Theme.borderSubtle.opacity(0.5), lineWidth: 1)
-        }
     }
 }
 

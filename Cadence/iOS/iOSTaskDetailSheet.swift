@@ -71,31 +71,6 @@ struct iOSTaskDetailSheet: View {
         return projects.first { $0.id == selectedProjectID }
     }
 
-    private var selectedGoal: Goal? {
-        task.goal
-    }
-
-    private var currentContainerTitle: String {
-        if let selectedArea {
-            return selectedArea.name.isEmpty ? "Untitled Area" : selectedArea.name
-        }
-        if let selectedProject {
-            return selectedProject.name.isEmpty ? "Untitled Project" : selectedProject.name
-        }
-        if let area = task.area {
-            return area.name.isEmpty ? "Untitled Area" : area.name
-        }
-        if let project = task.project {
-            return project.name.isEmpty ? "Untitled Project" : project.name
-        }
-        return "Inbox"
-    }
-
-    private var currentGoalTitle: String? {
-        guard let selectedGoal else { return nil }
-        return selectedGoal.title.isEmpty ? "Untitled Goal" : selectedGoal.title
-    }
-
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
     }
@@ -198,20 +173,10 @@ struct iOSTaskDetailSheet: View {
 
     private var taskForm: some View {
         VStack(alignment: .leading, spacing: 14) {
-            iOSTaskEditorTitleCard(task: task)
-            iOSTaskEditorOverviewCard(
-                task: task,
-                containerTitle: currentContainerTitle,
-                goalTitle: currentGoalTitle
-            )
-            taskPropertiesSection
-            organizeSection
-            goalSection
-            datesSection
+            iOSTaskEditorTitleCard(task: task, onToggleCompletion: toggleCompletion)
+            overviewSection
             notesSection
-            tagsSection
             subtasksSection
-            actionsSection
         }
     }
 
@@ -222,6 +187,13 @@ struct iOSTaskDetailSheet: View {
                 finishEditingAndDismiss()
             }
         }
+        ToolbarItem(placement: .destructiveAction) {
+            Button(role: .destructive) {
+                showDeleteConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+            }
+        }
         ToolbarItemGroup(placement: .keyboard) {
             Spacer()
             Button("Done") {
@@ -230,38 +202,15 @@ struct iOSTaskDetailSheet: View {
         }
     }
 
-    private var taskPropertiesSection: some View {
-        iOSTaskPropertiesSection(
-            task: task,
-            recurrenceSelection: recurrenceSelection,
-            estimateLabel: estimateLabel,
-            actualTimeLabel: actualTimeLabel
-        )
-    }
-
-    private var organizeSection: some View {
-        iOSTaskOrganizeSection(
+    private var overviewSection: some View {
+        iOSTaskOverviewSection(
             task: task,
             containerSelection: $containerSelection,
             activeAreas: activeAreas,
             activeProjects: activeProjects,
-            availableSectionNames: availableSectionNames
-        )
-    }
-
-    private var goalSection: some View {
-        iOSTaskGoalSection(
-            selectedGoal: selectedGoal,
+            availableSectionNames: availableSectionNames,
             availableGoals: availableGoals,
-            goalSelection: goalSelection,
-            onRemoveGoal: {
-                CadenceTaskMutationSupport.setGoal(nil, for: task, modelContext: modelContext)
-            }
-        )
-    }
-
-    private var datesSection: some View {
-        iOSTaskDatesSection(
+            recurrenceSelection: recurrenceSelection,
             hasScheduledDate: $hasScheduledDate,
             scheduledDate: $scheduledDate,
             hasDueDate: $hasDueDate,
@@ -287,18 +236,11 @@ struct iOSTaskDetailSheet: View {
             minHeight: notesEditorMinHeight,
             referenceNotes: allNotes,
             referenceTasks: allTasks,
-            onOpenReference: openMarkdownReference
+            onOpenReference: openMarkdownReference,
+            task: task,
+            allTags: tags,
+            newTagName: $newTagName
         )
-    }
-
-    private var tagsSection: some View {
-        iOSTaskEditorSection(title: "Tags") {
-            iOSTaskTagEditorSection(
-                task: task,
-                allTags: tags,
-                newTagName: $newTagName
-            )
-        }
     }
 
     private var subtasksSection: some View {
@@ -308,14 +250,6 @@ struct iOSTaskDetailSheet: View {
             canAddSubtask: canAddSubtask,
             onAdd: addSubtask,
             onDelete: deleteSubtask
-        )
-    }
-
-    private var actionsSection: some View {
-        iOSTaskActionsSection(
-            isDone: task.isDone,
-            onToggleCompletion: toggleCompletion,
-            onDeleteRequested: { showDeleteConfirmation = true }
         )
     }
 
@@ -368,32 +302,11 @@ struct iOSTaskDetailSheet: View {
         )
     }
 
-    private var goalSelection: Binding<UUID?> {
-        Binding(
-            get: { task.goal?.id },
-            set: { goalID in
-                let goal = goalID.flatMap { id in goals.first { $0.id == id } }
-                CadenceTaskMutationSupport.setGoal(goal, for: task, modelContext: modelContext)
-            }
-        )
-    }
-
     private func finishEditingAndDismiss() {
         isNotesFocused = false
         applyDates()
         try? modelContext.save()
         dismiss()
-    }
-
-    private var estimateLabel: String {
-        CadenceTaskPresentationSupport.estimateLabel(for: task)
-    }
-
-    private var actualTimeLabel: String {
-        if task.actualMinutes == 0 { return "None" }
-        if task.actualMinutes < 60 { return "\(task.actualMinutes)m" }
-        if task.actualMinutes % 60 == 0 { return "\(task.actualMinutes / 60)h" }
-        return String(format: "%.1fh", Double(task.actualMinutes) / 60.0)
     }
 
     private var scheduledTimeLabel: String {

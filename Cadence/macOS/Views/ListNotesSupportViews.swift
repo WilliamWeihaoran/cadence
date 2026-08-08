@@ -139,6 +139,22 @@ struct TaskNoteEditorPane: View {
                     onTextViewChanged: { editorTextView = $0 }
                 )
                 .frame(minWidth: 360)
+                .popover(item: $linkedTaskForPopover) { linkedTask in
+                    TaskDetailPopover(task: linkedTask)
+                        .frame(width: 380)
+                }
+                .popover(item: $embeddedTaskEditRequest) { request in
+                    if let embeddedTask = embeddedTask(id: request.taskID) {
+                        TaskEmbedFieldEditorPopover(task: embeddedTask, initialField: request.field) {
+                            refreshEmbeddedTask(embeddedTask)
+                        }
+                    } else {
+                        Text("Task no longer exists")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .padding()
+                    }
+                }
 
                 if !isInspectorCollapsed {
                     NoteMarkdownSidePanel(
@@ -156,22 +172,6 @@ struct TaskNoteEditorPane: View {
             }
         }
         .background(Theme.surface)
-        .popover(item: $linkedTaskForPopover) { linkedTask in
-            TaskDetailPopover(task: linkedTask)
-                .frame(width: 380)
-        }
-        .popover(item: $embeddedTaskEditRequest) { request in
-            if let embeddedTask = embeddedTask(id: request.taskID) {
-                TaskEmbedFieldEditorPopover(task: embeddedTask, initialField: request.field) {
-                    refreshEmbeddedTask(embeddedTask)
-                }
-            } else {
-                Text("Task no longer exists")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
-                    .padding()
-            }
-        }
         .onAppear {
             loadEditorStateIfNeeded(force: true)
         }

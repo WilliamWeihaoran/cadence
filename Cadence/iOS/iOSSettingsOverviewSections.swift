@@ -224,12 +224,10 @@ struct iOSNavigationSettingsSection: View {
                         icon: todayLayoutMode.systemImage,
                         color: Theme.green
                     ) {
-                        Picker("iPad Today", selection: $todayLayoutMode) {
-                            ForEach(iPadTodayLayoutMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+                        iOSSegmentedChoice(
+                            options: iPadTodayLayoutMode.allCases.map { ($0, $0.title) },
+                            selection: $todayLayoutMode
+                        )
                     }
 
                     Divider().background(Theme.borderSubtle)
@@ -240,12 +238,10 @@ struct iOSNavigationSettingsSection: View {
                         icon: "calendar",
                         color: Theme.purple
                     ) {
-                        Picker("Calendar View", selection: $calendarViewMode) {
-                            ForEach(CadenceCalendarViewMode.pickerCases, id: \.self) { mode in
-                                Text(mode.rawValue).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+                        iOSSegmentedChoice(
+                            options: CadenceCalendarViewMode.pickerCases.map { ($0, $0.rawValue) },
+                            selection: $calendarViewMode
+                        )
                     }
 
                     Divider().background(Theme.borderSubtle)
@@ -256,12 +252,10 @@ struct iOSNavigationSettingsSection: View {
                         icon: calendarPresentation == .timeline ? "timeline.selection" : "square.grid.2x2",
                         color: Theme.blue
                     ) {
-                        Picker("Calendar Style", selection: $calendarPresentation) {
-                            ForEach(CadenceCalendarPresentation.allCases, id: \.self) { presentation in
-                                Text(presentation.rawValue).tag(presentation)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+                        iOSSegmentedChoice(
+                            options: CadenceCalendarPresentation.allCases.map { ($0, $0.rawValue) },
+                            selection: $calendarPresentation
+                        )
                     }
 
                     Divider().background(Theme.borderSubtle)
@@ -272,12 +266,10 @@ struct iOSNavigationSettingsSection: View {
                         icon: "arrow.up.and.down",
                         color: Theme.amber
                     ) {
-                        Stepper(value: $calendarZoomLevel, in: 1...3) {
-                            Text(zoomLabel)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Theme.text)
-                                .monospacedDigit()
-                        }
+                        iOSSegmentedChoice(
+                            options: [(1, "Compact"), (2, "Comfort"), (3, "Spacious")],
+                            selection: $calendarZoomLevel
+                        )
                     }
 
                     Divider().background(Theme.borderSubtle)
@@ -288,25 +280,16 @@ struct iOSNavigationSettingsSection: View {
                         icon: notesEditorMode.systemImage,
                         color: Theme.purple
                     ) {
-                        Picker("Notes Editor", selection: $notesEditorMode) {
-                            ForEach(iOSMarkdownEditorMode.allCases) { mode in
-                                Text(mode.rawValue).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+                        iOSSegmentedChoice(
+                            options: iOSMarkdownEditorMode.allCases.map { ($0, $0.rawValue) },
+                            selection: $notesEditorMode
+                        )
                     }
                 }
             }
         }
     }
 
-    private var zoomLabel: String {
-        switch calendarZoomLevel {
-        case 1: return "Compact"
-        case 2: return "Comfort"
-        default: return "Spacious"
-        }
-    }
 }
 
 private struct iOSSettingsControlRow<Control: View>: View {

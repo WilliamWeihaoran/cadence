@@ -1,6 +1,19 @@
 #if os(macOS)
 import AppKit
 
+enum MarkdownTaskEmbedHitTarget: Equatable {
+    case checkbox
+    case subtaskCheckbox(UUID)
+    case subtaskText
+    case field(MarkdownTaskEmbedField)
+    case card
+}
+
+struct MarkdownTaskEmbedHover: Equatable {
+    let id: UUID
+    let target: MarkdownTaskEmbedHitTarget
+}
+
 enum MarkdownTaskEmbedDrawing {
     private struct Chip {
         let label: String
@@ -52,7 +65,8 @@ enum MarkdownTaskEmbedDrawing {
         MarkdownTaskEmbedSubtaskHitTesting.hit(at: point, in: subtaskRects(task: task, cardRect: cardRect))
     }
 
-    static func drawCard(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect, checkboxRect: NSRect, isHovered: Bool) {
+    static func drawCard(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect, checkboxRect: NSRect, hoveredTarget: MarkdownTaskEmbedHitTarget?) {
+        let isHovered = hoveredTarget != nil
         let radius: CGFloat = 11
         let cardPath = NSBezierPath(roundedRect: cardRect, xRadius: radius, yRadius: radius)
         (isHovered ? NSColor(hex: "#161f2d") : NSColor(hex: "#141b26"))
@@ -71,19 +85,19 @@ enum MarkdownTaskEmbedDrawing {
         stripColor.withAlphaComponent(task.isMissing ? 0.48 : 0.9).setFill()
         NSBezierPath(roundedRect: stripRect, xRadius: 2, yRadius: 2).fill()
 
-        drawCheckbox(task: task, rect: checkboxRect)
+        drawCheckbox(task: task, rect: checkboxRect, isHovered: hoveredTarget == .checkbox)
 
         let chips = displayChips(for: task)
         let layout = fieldRects(task: task, cardRect: cardRect, chips: chips)
-        drawTitle(task: task, in: layout.title)
+        drawTitle(task: task, in: layout.title, isHovered: hoveredTarget == .field(.title))
         for chipRect in layout.chips {
             guard let chip = chips.first(where: { $0.field == chipRect.field }) else { continue }
-            drawChip(label: chip.label, color: chip.color, rect: chipRect.rect)
+            drawChip(label: chip.label, color: chip.color, rect: chipRect.rect, isHovered: hoveredTarget == .field(chipRect.field))
         }
-        drawSubtasks(task: task, cardRect: cardRect)
+        drawSubtasks(task: task, cardRect: cardRect, hoveredTarget: hoveredTarget)
     }
 
-    private static func drawCheckbox(task: MarkdownTaskEmbedRenderInfo, rect: NSRect) {
+    private static func drawCheckbox(task: MarkdownTaskEmbedRenderInfo, rect: NSRect, isHovered: Bool) {
         let path = NSBezierPath(ovalIn: rect)
         let done = task.isDone
         if task.isMissing {
@@ -102,6 +116,13 @@ enum MarkdownTaskEmbedDrawing {
         path.lineWidth = 1.4
         path.stroke()
 
+        if isHovered {
+            let ring = NSBezierPath(ovalIn: rect.insetBy(dx: -3, dy: -3))
+            ring.lineWidth = 1.4
+            MarkdownStylist.blueColor.withAlphaComponent(0.65).setStroke()
+            ring.stroke()
+        }
+
         guard done else { return }
         NSColor(hex: "#0f1117").setStroke()
         let check = NSBezierPath()
@@ -114,7 +135,11 @@ enum MarkdownTaskEmbedDrawing {
         check.stroke()
     }
 
-    private static func drawTitle(task: MarkdownTaskEmbedRenderInfo, in rect: NSRect) {
+    private static func drawTitle(task: MarkdownTaskEmbedRenderInfo, in rect: NSRect, isHovered: Bool) {
+        if isHovered {
+            NSColor(hex: "#1c2740").withAlphaComponent(0.7).setFill()
+            NSBezierPath(roundedRect: rect.insetBy(dx: -4, dy: -2), xRadius: 4, yRadius: 4).fill()
+        }
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         let titleColor: NSColor = task.isDone || task.isCancelled || task.isMissing ? MarkdownStylist.dimColor : MarkdownStylist.textColor
@@ -123,6 +148,9 @@ enum MarkdownTaskEmbedDrawing {
             .foregroundColor: titleColor,
             .paragraphStyle: paragraph
         ]
+        if isHovered {
+            attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        }
         if task.isDone || task.isCancelled {
             attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
         }
@@ -154,6 +182,21 @@ enum MarkdownTaskEmbedDrawing {
             x = rect.maxX + 6
         }
         return (titleRect, chipRects)
+    }
+
+    private static func isOverdue(_ task: MarkdownTaskEmbedRenderInfo) -> Bool {
+        guard !task.dueDate.isEmpty, !task.isDone else { return false }
+        return task.dueDate < DateFormatters.todayKey()
+    }
+
+    private static func isOverdo(_ task: MarkdownTaskEmbedRenderInfo) -> Bool {
+        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
+        return (DateFormatters.dayOffset(from: task.scheduledDate) ?? 0) < 0
+    }
+
+    private static func isDoToday(_ task: MarkdownTaskEmbedRenderInfo) -> Bool {
+        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
+        return task.scheduledDate == DateFormatters.todayKey()
     }
 
     private static func displayChips(for task: MarkdownTaskEmbedRenderInfo) -> [Chip] {
@@ -197,8 +240,12 @@ enum MarkdownTaskEmbedDrawing {
             chips.append(Chip(label: section, color: MarkdownStylist.dimColor, field: .section))
         }
 
-        chips.append(Chip(label: scheduledLabel(for: task), color: MarkdownStylist.highlightFillColor, field: .scheduledDate))
-        chips.append(Chip(label: dueLabel(for: task), color: NSColor(hex: "#ff6b6b"), field: .dueDate))
+        let scheduledColor: NSColor = isOverdo(task)
+            ? NSColor(hex: "#ff6b6b")
+            : (isDoToday(task) ? MarkdownStylist.highlightFillColor : MarkdownStylist.dimColor)
+        chips.append(Chip(label: scheduledLabel(for: task), color: scheduledColor, field: .scheduledDate))
+        let dueColor: NSColor = isOverdue(task) ? NSColor(hex: "#ff6b6b") : MarkdownStylist.dimColor
+        chips.append(Chip(label: dueLabel(for: task), color: dueColor, field: .dueDate))
         chips.append(Chip(label: estimateLabel(for: task), color: MarkdownStylist.blueColor, field: .estimate))
 
         if let recurrence = TaskRecurrenceRule(rawValue: task.recurrenceRaw), recurrence != .none {
@@ -224,12 +271,12 @@ enum MarkdownTaskEmbedDrawing {
         return min(max(320, preferred), min(maxWidth, MarkdownTaskEmbedRenderInfo.maxCardWidth))
     }
 
-    private static func drawChip(label: String, color: NSColor, rect: NSRect) {
+    private static func drawChip(label: String, color: NSColor, rect: NSRect, isHovered: Bool) {
         let path = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
-        color.withAlphaComponent(0.13).setFill()
+        color.withAlphaComponent(isHovered ? 0.22 : 0.13).setFill()
         path.fill()
-        color.withAlphaComponent(0.38).setStroke()
-        path.lineWidth = 0.7
+        color.withAlphaComponent(isHovered ? 0.6 : 0.38).setStroke()
+        path.lineWidth = isHovered ? 1.0 : 0.7
         path.stroke()
 
         let paragraph = NSMutableParagraphStyle()
@@ -240,7 +287,7 @@ enum MarkdownTaskEmbedDrawing {
         (label as NSString).draw(in: rect.insetBy(dx: 6, dy: 3), withAttributes: attrs)
     }
 
-    private static func drawSubtasks(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect) {
+    private static func drawSubtasks(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect, hoveredTarget: MarkdownTaskEmbedHitTarget?) {
         guard task.hasSubtasks else { return }
         let rects = subtaskRects(task: task, cardRect: cardRect)
         guard !rects.isEmpty else { return }
@@ -258,7 +305,8 @@ enum MarkdownTaskEmbedDrawing {
 
         for subtask in task.visibleSubtasks {
             guard let rect = rects.first(where: { $0.subtaskID == subtask.id }) else { continue }
-            drawSubtask(subtask, checkboxRect: rect.checkbox ?? .zero, textRect: rect.text)
+            let isHovered = hoveredTarget == .subtaskCheckbox(subtask.id)
+            drawSubtask(subtask, checkboxRect: rect.checkbox ?? .zero, textRect: rect.text, isHovered: isHovered)
         }
 
         if task.hiddenSubtaskCount > 0, let overflowRect = rects.first(where: { $0.subtaskID == nil }) {
@@ -326,7 +374,8 @@ enum MarkdownTaskEmbedDrawing {
     private static func drawSubtask(
         _ subtask: MarkdownTaskEmbedSubtaskRenderInfo,
         checkboxRect: NSRect,
-        textRect: NSRect
+        textRect: NSRect,
+        isHovered: Bool
     ) {
         let checkboxPath = NSBezierPath(ovalIn: checkboxRect)
         if subtask.isDone {
@@ -340,6 +389,13 @@ enum MarkdownTaskEmbedDrawing {
         }
         checkboxPath.lineWidth = 1
         checkboxPath.stroke()
+
+        if isHovered {
+            let ring = NSBezierPath(ovalIn: checkboxRect.insetBy(dx: -2.5, dy: -2.5))
+            ring.lineWidth = 1.2
+            MarkdownStylist.blueColor.withAlphaComponent(0.65).setStroke()
+            ring.stroke()
+        }
 
         if subtask.isDone {
             NSColor(hex: "#0f1117").setStroke()

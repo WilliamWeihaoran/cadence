@@ -334,7 +334,7 @@ struct iOSSearchView: View {
         }
         .navigationTitle("Search")
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Tasks, lists, notes, events")
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Theme.bg)
         .safeAreaInset(edge: .bottom) {

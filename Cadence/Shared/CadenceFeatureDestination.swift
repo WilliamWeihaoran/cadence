@@ -78,10 +78,10 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         CadenceFeatureSection(kind: .workspace, destinations: utilityOrder)
     ]
 
-    static let compactMoreSections: [CadenceFeatureSection] = [
-        CadenceFeatureSection(kind: .plan, destinations: [.allTasks, .lists, .calendar]),
+    static let compactHomeSections: [CadenceFeatureSection] = [
+        CadenceFeatureSection(kind: .plan, destinations: primaryOrder),
         CadenceFeatureSection(kind: .progress, destinations: [.focus, .goals, .habits]),
-        CadenceFeatureSection(kind: .workspace, destinations: [.settings])
+        CadenceFeatureSection(kind: .organize, destinations: [.notes, .lists])
     ]
 
     var isPrimaryNavigation: Bool {

@@ -55,6 +55,40 @@ struct iOSCalendarEventEditSheet: View {
     @State private var selectedReferenceTask: AppTask?
     @State private var confirmDelete = false
     @State private var pendingAction: PendingAction?
+    @State private var showCalendarPicker = false
+    @State private var showStartTimePicker = false
+    @State private var showDaysPicker = false
+
+    /// `CadenceDatePicker` returns midnight-anchored day dates — merge just the Y/M/D into the
+    /// existing `startDate` so picking a new day doesn't silently zero out the time-of-day.
+    private var startDateOnlyBinding: Binding<Date> {
+        Binding(
+            get: { startDate },
+            set: { newDay in
+                let dayComps = Calendar.current.dateComponents([.year, .month, .day], from: newDay)
+                var comps = Calendar.current.dateComponents([.hour, .minute], from: startDate)
+                comps.year = dayComps.year
+                comps.month = dayComps.month
+                comps.day = dayComps.day
+                startDate = Calendar.current.date(from: comps) ?? startDate
+            }
+        )
+    }
+
+    private var startTimeMinutesBinding: Binding<Int> {
+        Binding(
+            get: {
+                let comps = Calendar.current.dateComponents([.hour, .minute], from: startDate)
+                return (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+            },
+            set: { minutes in
+                var comps = Calendar.current.dateComponents([.year, .month, .day], from: startDate)
+                comps.hour = minutes / 60
+                comps.minute = minutes % 60
+                startDate = Calendar.current.date(from: comps) ?? startDate
+            }
+        )
+    }
 
     private enum PendingAction {
         case save
@@ -246,27 +280,48 @@ struct iOSCalendarEventEditSheet: View {
 
             iOSCalendarEventEditorDivider()
 
-            DatePicker("Starts", selection: $startDate, displayedComponents: isAllDay ? .date : [.date, .hourAndMinute])
-                .datePickerStyle(.compact)
-                .tint(Theme.blue)
+            iOSCalendarEventEditorRow(label: "Date", systemImage: "calendar", color: Theme.blue) {
+                CadenceDatePicker(selection: startDateOnlyBinding)
+            }
+
+            if !isAllDay {
+                iOSCalendarEventEditorDivider()
+                iOSCalendarEventEditorRow(label: "Time", systemImage: "clock.fill", color: Theme.blue) {
+                    iOSChoiceValueButton(title: TimeFormatters.timeString(from: startTimeMinutesBinding.wrappedValue), color: Theme.text) {
+                        showStartTimePicker = true
+                    }
+                    .popover(isPresented: $showStartTimePicker) {
+                        iOSChoicePopoverList(
+                            rows: stride(from: 0, to: 1440, by: 15).map { minute in
+                                iOSChoiceRow(value: minute, title: TimeFormatters.timeString(from: minute), color: Theme.blue)
+                            },
+                            selection: startTimeMinutesBinding,
+                            isPresented: $showStartTimePicker
+                        )
+                    }
+                }
+            }
 
             iOSCalendarEventEditorDivider()
 
             if isAllDay {
                 iOSCalendarEventEditorRow(label: "Days", systemImage: "calendar", color: Theme.green) {
-                    Stepper(value: $allDayDurationDays, in: 1...365, step: 1) {
-                        Text(allDayDurationDays == 1 ? "1 day" : "\(allDayDurationDays) days")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Theme.text)
+                    iOSChoiceValueButton(title: allDayDurationDays == 1 ? "1 day" : "\(allDayDurationDays) days", color: Theme.text) {
+                        showDaysPicker = true
+                    }
+                    .popover(isPresented: $showDaysPicker) {
+                        iOSChoicePopoverList(
+                            rows: [1, 2, 3, 4, 5, 6, 7, 10, 14, 21, 30].map { days in
+                                iOSChoiceRow(value: days, title: days == 1 ? "1 day" : "\(days) days", color: Theme.green)
+                            },
+                            selection: $allDayDurationDays,
+                            isPresented: $showDaysPicker
+                        )
                     }
                 }
             } else {
                 iOSCalendarEventEditorRow(label: "Duration", systemImage: "timer", color: Theme.green) {
-                    Stepper(value: $durationMinutes, in: 5...480, step: 5) {
-                        Text(durationLabel(durationMinutes))
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                    }
+                    EstimatePickerControl(value: $durationMinutes)
                 }
             }
         }
@@ -280,12 +335,21 @@ struct iOSCalendarEventEditSheet: View {
                     .foregroundStyle(Theme.dim)
             } else {
                 iOSCalendarEventEditorRow(label: "Calendar", systemImage: "calendar", color: Theme.blue) {
-                    Picker("Calendar", selection: $selectedCalendarID) {
-                        ForEach(calendarManager.writableCalendars, id: \.calendarIdentifier) { calendar in
-                            Text(calendar.title).tag(calendar.calendarIdentifier)
-                        }
+                    iOSChoiceValueButton(
+                        title: calendarManager.writableCalendars.first { $0.calendarIdentifier == selectedCalendarID }?.title ?? "Choose Calendar",
+                        color: Theme.text
+                    ) {
+                        showCalendarPicker = true
                     }
-                    .labelsHidden()
+                    .popover(isPresented: $showCalendarPicker) {
+                        iOSChoicePopoverList(
+                            rows: calendarManager.writableCalendars.map { calendar in
+                                iOSChoiceRow(value: calendar.calendarIdentifier, title: calendar.title, systemImage: "calendar", color: Theme.blue)
+                            },
+                            selection: $selectedCalendarID,
+                            isPresented: $showCalendarPicker
+                        )
+                    }
                 }
             }
         }
@@ -449,11 +513,6 @@ struct iOSCalendarEventEditSheet: View {
         }
     }
 
-    private func durationLabel(_ minutes: Int) -> String {
-        if minutes < 60 { return "\(minutes)m" }
-        if minutes % 60 == 0 { return "\(minutes / 60)h" }
-        return "\(minutes / 60)h \(minutes % 60)m"
-    }
 }
 
 private struct iOSCalendarEventEditorSection<Content: View>: View {

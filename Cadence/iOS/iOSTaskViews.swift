@@ -373,6 +373,7 @@ struct iOSTaskViewOptionsBar: View {
     @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
     var completedCount: Int
+    @State private var showSortPicker = false
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
@@ -380,12 +381,8 @@ struct iOSTaskViewOptionsBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Menu {
-                Picker("Sort", selection: $sortMode) {
-                    ForEach(CadenceTaskSortMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
+            Button {
+                showSortPicker = true
             } label: {
                 Label(sortMode.title, systemImage: "arrow.up.arrow.down")
                     .font(.system(size: isRegularWidth ? 13 : 12, weight: .semibold))
@@ -396,6 +393,15 @@ struct iOSTaskViewOptionsBar: View {
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
+            .popover(isPresented: $showSortPicker) {
+                iOSChoicePopoverList(
+                    rows: CadenceTaskSortMode.allCases.map { mode in
+                        iOSChoiceRow(value: mode, title: mode.title, color: Theme.blue)
+                    },
+                    selection: $sortMode,
+                    isPresented: $showSortPicker
+                )
+            }
 
             Spacer()
 

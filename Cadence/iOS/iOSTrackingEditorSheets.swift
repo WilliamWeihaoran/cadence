@@ -50,6 +50,8 @@ struct iOSGoalEditorSheet: View {
     @State private var status: GoalStatus
     @State private var contextID: UUID?
     @State private var parentGoalID: UUID?
+    @State private var showParentGoalPicker = false
+    @State private var showContextPicker = false
 
     init(mode: iOSGoalEditorMode, onSave: @escaping (Goal) -> Void = { _ in }) {
         self.mode = mode
@@ -143,25 +145,39 @@ struct iOSGoalEditorSheet: View {
                         .foregroundStyle(Theme.dim)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    Picker("Parent Goal", selection: $parentGoalID) {
-                        Text("None — top-level goal").tag(Optional<UUID>.none)
-                        ForEach(parentChoices) { goal in
-                            Label(goal.title.isEmpty ? "Untitled Goal" : goal.title, systemImage: goal.icon)
-                                .tag(Optional(goal.id))
-                        }
+                    iOSChoiceValueButton(
+                        title: selectedParentGoal.map { $0.title.isEmpty ? "Untitled Goal" : $0.title } ?? "None \u{2014} top-level goal",
+                        color: Theme.text
+                    ) {
+                        showParentGoalPicker = true
                     }
-                    .pickerStyle(.menu)
+                    .popover(isPresented: $showParentGoalPicker) {
+                        iOSChoicePopoverList(
+                            rows: [iOSChoiceRow<UUID?>(value: nil, title: "None \u{2014} top-level goal", color: Theme.dim)]
+                                + parentChoices.map { goal in
+                                    iOSChoiceRow(value: Optional(goal.id), title: goal.title.isEmpty ? "Untitled Goal" : goal.title, systemImage: goal.icon, color: Color(hex: goal.colorHex))
+                                },
+                            selection: $parentGoalID,
+                            isPresented: $showParentGoalPicker
+                        )
+                    }
                 }
             }
 
             iOSTrackingPickerSection(title: "Context") {
-                Picker("Context", selection: $contextID) {
-                    Text("Use Parent Context").tag(Optional<UUID>.none)
-                    ForEach(contexts) { context in
-                        Label(context.name, systemImage: context.icon).tag(Optional(context.id))
-                    }
+                iOSChoiceValueButton(title: selectedContext?.name.isEmpty == false ? selectedContext!.name : "Use Parent Context", color: Theme.text) {
+                    showContextPicker = true
                 }
-                .pickerStyle(.menu)
+                .popover(isPresented: $showContextPicker) {
+                    iOSChoicePopoverList(
+                        rows: [iOSChoiceRow<UUID?>(value: nil, title: "Use Parent Context", color: Theme.dim)]
+                            + contexts.map { context in
+                                iOSChoiceRow(value: Optional(context.id), title: context.name, systemImage: context.icon, color: Color(hex: context.colorHex))
+                            },
+                        selection: $contextID,
+                        isPresented: $showContextPicker
+                    )
+                }
             }
 
             iOSTrackingPickerSection(title: "Kind") {
@@ -181,33 +197,35 @@ struct iOSGoalEditorSheet: View {
             iOSTrackingDateRangeSection(startDate: $startDate, endDate: $endDate)
 
             iOSTrackingPickerSection(title: "Progress") {
-                Picker("Progress", selection: $progressType) {
-                    ForEach(GoalProgressType.allCases, id: \.self) { type in
-                        Text(type.label).tag(type)
-                    }
-                }
-                .pickerStyle(.segmented)
+                iOSSegmentedChoice(
+                    options: GoalProgressType.allCases.map { ($0, $0.label) },
+                    selection: $progressType
+                )
 
                 if progressType == .hours {
-                    Stepper(value: $targetHours, in: 0...10_000, step: 1) {
-                        HStack {
-                            Text("Target Hours")
-                            Spacer()
-                            Text("\(Int(targetHours))h")
-                                .foregroundStyle(Theme.dim)
-                        }
+                    HStack {
+                        Text("Target Hours")
+                        Spacer()
+                        TextField("Hours", value: $targetHours, format: .number)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .frame(width: 80)
+                            .background(Theme.surface.opacity(0.55))
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
                     .padding(.top, 8)
                 }
             }
 
             iOSTrackingPickerSection(title: "Status") {
-                Picker("Status", selection: $status) {
-                    ForEach(GoalStatus.allCases, id: \.self) { status in
-                        Text(status.label).tag(status)
-                    }
-                }
-                .pickerStyle(.segmented)
+                iOSSegmentedChoice(
+                    options: GoalStatus.allCases.map { ($0, $0.label) },
+                    selection: $status
+                )
             }
 
             iOSTrackingPickerSection(title: "Icon") {
@@ -264,6 +282,9 @@ struct iOSHabitEditorSheet: View {
     @State private var goalID: UUID?
     @State private var hasReminder: Bool
     @State private var reminderMinuteOfDay: Int
+    @State private var showGoalPicker = false
+    @State private var showContextPicker = false
+    @State private var showReminderTimePicker = false
 
     init(mode: iOSHabitEditorMode, onSave: @escaping (Habit) -> Void = { _ in }) {
         self.mode = mode
@@ -330,23 +351,6 @@ struct iOSHabitEditorSheet: View {
         GoalAssignmentRules.canSaveHabit(title: title)
     }
 
-    private var reminderTimeBinding: Binding<Date> {
-        Binding(
-            get: {
-                Calendar.current.date(
-                    bySettingHour: reminderMinuteOfDay / 60,
-                    minute: reminderMinuteOfDay % 60,
-                    second: 0,
-                    of: Date()
-                ) ?? Date()
-            },
-            set: { newDate in
-                let comps = Calendar.current.dateComponents([.hour, .minute], from: newDate)
-                reminderMinuteOfDay = ((comps.hour ?? 9) * 60) + (comps.minute ?? 0)
-            }
-        )
-    }
-
     var body: some View {
         iOSTrackingEditorShell(
             title: editingHabit == nil ? "New Habit" : "Edit Habit",
@@ -357,33 +361,45 @@ struct iOSHabitEditorSheet: View {
             iOSTrackingTextField(title: "Title", placeholder: "e.g. Read for 20 minutes", text: $title)
 
             iOSTrackingPickerSection(title: "Goal") {
-                Picker("Goal", selection: $goalID) {
-                    Text("None").tag(Optional<UUID>.none)
-                    ForEach(goalChoices) { goal in
-                        Label(goalMenuTitle(for: goal), systemImage: goal.icon)
-                            .tag(Optional(goal.id))
-                    }
+                iOSChoiceValueButton(
+                    title: selectedGoal.map { goalMenuTitle(for: $0) } ?? "None",
+                    color: Theme.text
+                ) {
+                    showGoalPicker = true
                 }
-                .pickerStyle(.menu)
+                .popover(isPresented: $showGoalPicker) {
+                    iOSChoicePopoverList(
+                        rows: [iOSChoiceRow<UUID?>(value: nil, title: "None", color: Theme.dim)]
+                            + goalChoices.map { goal in
+                                iOSChoiceRow(value: Optional(goal.id), title: goalMenuTitle(for: goal), systemImage: goal.icon, color: Color(hex: goal.colorHex))
+                            },
+                        selection: $goalID,
+                        isPresented: $showGoalPicker
+                    )
+                }
             }
 
             iOSTrackingPickerSection(title: "Context") {
-                Picker("Context", selection: $contextID) {
-                    Text("Use Goal Context").tag(Optional<UUID>.none)
-                    ForEach(contexts) { context in
-                        Label(context.name, systemImage: context.icon).tag(Optional(context.id))
-                    }
+                iOSChoiceValueButton(title: selectedContext?.name.isEmpty == false ? selectedContext!.name : "Use Goal Context", color: Theme.text) {
+                    showContextPicker = true
                 }
-                .pickerStyle(.menu)
+                .popover(isPresented: $showContextPicker) {
+                    iOSChoicePopoverList(
+                        rows: [iOSChoiceRow<UUID?>(value: nil, title: "Use Goal Context", color: Theme.dim)]
+                            + contexts.map { context in
+                                iOSChoiceRow(value: Optional(context.id), title: context.name, systemImage: context.icon, color: Color(hex: context.colorHex))
+                            },
+                        selection: $contextID,
+                        isPresented: $showContextPicker
+                    )
+                }
             }
 
             iOSTrackingPickerSection(title: "Frequency") {
-                Picker("Frequency", selection: $frequencyType) {
-                    ForEach(HabitFrequency.allCases, id: \.self) { frequency in
-                        Text(frequency.label).tag(frequency)
-                    }
-                }
-                .pickerStyle(.segmented)
+                iOSSegmentedChoice(
+                    options: HabitFrequency.allCases.map { ($0, $0.label) },
+                    selection: $frequencyType
+                )
 
                 iOSHabitFrequencyEditor(
                     frequencyType: frequencyType,
@@ -397,13 +413,22 @@ struct iOSHabitEditorSheet: View {
             iOSTrackingPickerSection(title: "Reminder") {
                 Toggle("Remind me daily", isOn: $hasReminder)
                 if hasReminder {
-                    DatePicker(
-                        "Reminder time",
-                        selection: reminderTimeBinding,
-                        displayedComponents: .hourAndMinute
-                    )
-                    .labelsHidden()
-                    .datePickerStyle(.compact)
+                    HStack {
+                        Text("Reminder time")
+                        Spacer()
+                        iOSChoiceValueButton(title: TimeFormatters.timeString(from: reminderMinuteOfDay), color: Theme.text) {
+                            showReminderTimePicker = true
+                        }
+                        .popover(isPresented: $showReminderTimePicker) {
+                            iOSChoicePopoverList(
+                                rows: stride(from: 0, to: 1440, by: 15).map { minute in
+                                    iOSChoiceRow(value: minute, title: TimeFormatters.timeString(from: minute), color: Theme.blue)
+                                },
+                                selection: $reminderMinuteOfDay,
+                                isPresented: $showReminderTimePicker
+                            )
+                        }
+                    }
                     .padding(.top, 8)
                 }
             }
