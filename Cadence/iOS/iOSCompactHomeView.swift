@@ -2,7 +2,7 @@
 import SwiftData
 import SwiftUI
 
-struct iOSMoreView: View {
+struct iOSCompactHomeView: View {
     @Query private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -25,56 +25,42 @@ struct iOSMoreView: View {
             VStack(alignment: .leading, spacing: 18) {
                 iOSCompactPageHeader(
                     eyebrow: "Cadence",
-                    title: "More",
-                    subtitle: "Planning, progress, and workspace tools.",
-                    systemImage: "ellipsis",
+                    title: "Home",
+                    subtitle: "Today's plan, notes, and everything else.",
+                    systemImage: "sun.max.fill",
                     color: Theme.blue
                 )
 
                 VStack(alignment: .leading, spacing: 14) {
-                    ForEach(CadenceFeatureDestination.compactMoreSections) { section in
-                        iOSMoreFeatureSectionView(section: section, badgeSnapshot: badgeSnapshot)
+                    ForEach(CadenceFeatureDestination.compactHomeSections) { section in
+                        iOSHomeFeatureSectionView(section: section, badgeSnapshot: badgeSnapshot)
                     }
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 18)
-            .padding(.bottom, 18)
+            .padding(.bottom, 100)
         }
         .scrollIndicators(.hidden)
-        .navigationDestination(for: CadenceFeatureDestination.self) { destination in
-            switch destination {
-            case .today:
-                iPadTodayView()
-            case .allTasks:
-                iOSAllTasksView()
-            case .focus:
-                iOSFocusView()
-            case .inbox:
-                iPadInboxView()
-            case .calendar:
-                iOSCalendarView()
-            case .notes:
-                iOSCompactNotesView()
-            case .lists:
-                iOSListsView()
-            case .pursuits:
-                iOSPursuitsView()
-            case .goals:
-                iOSMilestonesView()
-            case .habits:
-                iOSHabitsView()
-            case .search:
-                iOSSearchView()
-            case .settings:
-                iOSSettingsView()
+        .background(Theme.bg.ignoresSafeArea())
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                NavigationLink(value: CadenceFeatureDestination.settings) {
+                    Image(systemName: "gearshape.fill")
+                        .foregroundStyle(Theme.dim)
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink(value: CadenceFeatureDestination.search) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(Theme.dim)
+                }
             }
         }
-        .background(Theme.bg.ignoresSafeArea())
     }
 }
 
-private struct iOSMoreFeatureRow: Identifiable {
+private struct iOSHomeFeatureRow: Identifiable {
     let destination: CadenceFeatureDestination
     let count: Int?
 
@@ -85,7 +71,7 @@ private struct iOSMoreFeatureRow: Identifiable {
     var color: Color { destination.tint }
 }
 
-private struct iOSMoreFeatureSectionView: View {
+private struct iOSHomeFeatureSectionView: View {
     let section: CadenceFeatureSection
     let badgeSnapshot: CadenceFeatureBadgeSupport.Snapshot
 
@@ -100,7 +86,7 @@ private struct iOSMoreFeatureSectionView: View {
             VStack(spacing: 0) {
                 ForEach(rows) { row in
                     NavigationLink(value: row.destination) {
-                        iOSMoreFeatureNavigationRow(row: row)
+                        iOSHomeFeatureNavigationRow(row: row)
                     }
                     .buttonStyle(.plain)
 
@@ -115,9 +101,9 @@ private struct iOSMoreFeatureSectionView: View {
         }
     }
 
-    private var rows: [iOSMoreFeatureRow] {
+    private var rows: [iOSHomeFeatureRow] {
         section.destinations.map { destination in
-            iOSMoreFeatureRow(
+            iOSHomeFeatureRow(
                 destination: destination,
                 count: badgeSnapshot.count(for: destination)
             )
@@ -125,8 +111,8 @@ private struct iOSMoreFeatureSectionView: View {
     }
 }
 
-private struct iOSMoreFeatureNavigationRow: View {
-    let row: iOSMoreFeatureRow
+private struct iOSHomeFeatureNavigationRow: View {
+    let row: iOSHomeFeatureRow
 
     var body: some View {
         HStack(spacing: 11) {

@@ -29,6 +29,10 @@ struct iOSCalendarQuickCreateSheet: View {
     @State private var containerSelection = "inbox"
     @State private var sectionName = TaskSectionDefaults.defaultName
     @State private var selectedCalendarID = ""
+    @State private var showCalendarPicker = false
+    @State private var showContainerPicker = false
+    @State private var showSectionPicker = false
+    @State private var showStartTimePicker = false
 
     init(dateKey: String, initialStartMinute: Int? = nil) {
         self.dateKey = dateKey
@@ -76,6 +80,25 @@ struct iOSCalendarQuickCreateSheet: View {
 
     private var selectedWritableCalendar: EKCalendar? {
         calendarManager.writableCalendars.first { $0.calendarIdentifier == selectedCalendarID }
+    }
+
+    private var selectedCalendarTitle: String {
+        selectedWritableCalendar?.title ?? "Choose Calendar"
+    }
+
+    private var startTimeMinutesBinding: Binding<Int> {
+        Binding(
+            get: {
+                let comps = Calendar.current.dateComponents([.hour, .minute], from: startTime)
+                return (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+            },
+            set: { minutes in
+                var comps = Calendar.current.dateComponents([.year, .month, .day], from: startTime)
+                comps.hour = minutes / 60
+                comps.minute = minutes % 60
+                startTime = Calendar.current.date(from: comps) ?? startTime
+            }
+        )
     }
 
     private var showsTimedControls: Bool {
@@ -262,13 +285,10 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private var kindPicker: some View {
-        Picker("Kind", selection: $kind) {
-            ForEach(iOSCalendarQuickCreateKind.allCases) { item in
-                Label(item.title, systemImage: item.systemImage).tag(item)
-            }
-        }
-        .pickerStyle(.segmented)
-        .tint(Theme.blue)
+        iOSSegmentedChoice(
+            options: iOSCalendarQuickCreateKind.allCases.map { ($0, $0.title) },
+            selection: $kind
+        )
     }
 
     private var titleSection: some View {
@@ -309,12 +329,18 @@ struct iOSCalendarQuickCreateSheet: View {
                     .foregroundStyle(Theme.dim)
             } else {
                 iOSCalendarQuickCreateRow(label: "Calendar", systemImage: "calendar", color: Theme.green) {
-                    Picker("Calendar", selection: $selectedCalendarID) {
-                        ForEach(calendarManager.writableCalendars, id: \.calendarIdentifier) { calendar in
-                            Text(calendar.title).tag(calendar.calendarIdentifier)
-                        }
+                    iOSChoiceValueButton(title: selectedCalendarTitle, color: Theme.text) {
+                        showCalendarPicker = true
                     }
-                    .labelsHidden()
+                    .popover(isPresented: $showCalendarPicker) {
+                        iOSChoicePopoverList(
+                            rows: calendarManager.writableCalendars.map { calendar in
+                                iOSChoiceRow(value: calendar.calendarIdentifier, title: calendar.title, systemImage: "calendar", color: Theme.green)
+                            },
+                            selection: $selectedCalendarID,
+                            isPresented: $showCalendarPicker
+                        )
+                    }
                 }
             }
         }
@@ -323,51 +349,51 @@ struct iOSCalendarQuickCreateSheet: View {
     private var taskOptions: some View {
         iOSCalendarQuickCreateSection(title: "Details") {
             iOSCalendarQuickCreateRow(label: "Estimate", systemImage: "clock.fill", color: Theme.blue) {
-                Stepper(value: $estimatedMinutes, in: 5...480, step: 5) {
-                    Text(durationLabel(estimatedMinutes))
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                }
+                EstimatePickerControl(value: $estimatedMinutes)
             }
 
             iOSCalendarQuickCreateDivider()
 
             iOSCalendarQuickCreateRow(label: "List", systemImage: "tray.full.fill", color: Theme.blue) {
-                Picker("List", selection: $containerSelection) {
-                    Text("Inbox").tag("inbox")
-                    if !activeAreas.isEmpty {
-                        Section("Areas") {
-                            ForEach(activeAreas) { area in
-                                Text(area.name.isEmpty ? "Untitled Area" : area.name)
-                                    .tag("area:\(area.id.uuidString)")
-                            }
-                        }
-                    }
-                    if !activeProjects.isEmpty {
-                        Section("Projects") {
-                            ForEach(activeProjects) { project in
-                                Text(project.name.isEmpty ? "Untitled Project" : project.name)
-                                    .tag("project:\(project.id.uuidString)")
-                            }
-                        }
-                    }
+                iOSChoiceValueButton(title: containerTitle, color: Theme.text) {
+                    showContainerPicker = true
                 }
-                .labelsHidden()
+                .popover(isPresented: $showContainerPicker) {
+                    iOSContainerChoicePopover(
+                        activeAreas: activeAreas,
+                        activeProjects: activeProjects,
+                        selection: $containerSelection,
+                        isPresented: $showContainerPicker
+                    )
+                }
             }
 
             iOSCalendarQuickCreateDivider()
 
             iOSCalendarQuickCreateRow(label: "Section", systemImage: "rectangle.split.3x1.fill", color: Theme.purple) {
-                Picker("Section", selection: $sectionName) {
-                    ForEach(availableSectionNames, id: \.self) { section in
-                        Text(section).tag(section)
-                    }
+                iOSChoiceValueButton(title: sectionName, color: Theme.text) {
+                    showSectionPicker = true
                 }
-                .labelsHidden()
+                .popover(isPresented: $showSectionPicker) {
+                    iOSChoicePopoverList(
+                        rows: availableSectionNames.map { name in
+                            iOSChoiceRow(value: name, title: name, color: Theme.purple)
+                        },
+                        selection: $sectionName,
+                        isPresented: $showSectionPicker
+                    )
+                }
                 .disabled(containerSelection == "inbox")
                 .opacity(containerSelection == "inbox" ? 0.45 : 1)
             }
         }
+    }
+
+    private var containerTitle: String {
+        if containerSelection == "inbox" { return "Inbox" }
+        if let selectedArea { return selectedArea.name.isEmpty ? "Untitled Area" : selectedArea.name }
+        if let selectedProject { return selectedProject.name.isEmpty ? "Untitled Project" : selectedProject.name }
+        return "Inbox"
     }
 
     private var timeSection: some View {
@@ -401,18 +427,25 @@ struct iOSCalendarQuickCreateSheet: View {
                     iOSCalendarQuickCreateDivider()
                 }
 
-                DatePicker("Starts", selection: $startTime, displayedComponents: .hourAndMinute)
-                    .datePickerStyle(.compact)
-                    .tint(Theme.blue)
+                iOSCalendarQuickCreateRow(label: "Starts", systemImage: "clock.fill", color: Theme.blue) {
+                    iOSChoiceValueButton(title: TimeFormatters.timeString(from: startTimeMinutesBinding.wrappedValue), color: Theme.text) {
+                        showStartTimePicker = true
+                    }
+                    .popover(isPresented: $showStartTimePicker) {
+                        iOSChoicePopoverList(
+                            rows: stride(from: 0, to: 1440, by: 15).map { minute in
+                                iOSChoiceRow(value: minute, title: TimeFormatters.timeString(from: minute), color: Theme.blue)
+                            },
+                            selection: startTimeMinutesBinding,
+                            isPresented: $showStartTimePicker
+                        )
+                    }
+                }
 
                 iOSCalendarQuickCreateDivider()
 
                 iOSCalendarQuickCreateRow(label: "Duration", systemImage: "timer", color: Theme.green) {
-                    Stepper(value: $estimatedMinutes, in: 5...480, step: 5) {
-                        Text(durationLabel(estimatedMinutes))
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                    }
+                    EstimatePickerControl(value: $estimatedMinutes)
                 }
             }
         }
@@ -554,12 +587,6 @@ struct iOSCalendarQuickCreateSheet: View {
     private func minuteOfDay(from date: Date) -> Int {
         let components = Calendar.current.dateComponents([.hour, .minute], from: date)
         return max(0, min(23 * 60 + 59, (components.hour ?? 9) * 60 + (components.minute ?? 0)))
-    }
-
-    private func durationLabel(_ minutes: Int) -> String {
-        if minutes < 60 { return "\(minutes)m" }
-        if minutes % 60 == 0 { return "\(minutes / 60)h" }
-        return String(format: "%.1fh", Double(minutes) / 60.0)
     }
 
     private var headerSubtitle: String {

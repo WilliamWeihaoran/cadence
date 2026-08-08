@@ -36,6 +36,8 @@ struct iOSListEditorSheet: View {
     @State private var hasProjectDueDate = false
     @State private var projectDueDate = Date()
     @State private var hasLoaded = false
+    @State private var showContextPicker = false
+    @State private var showAreaPicker = false
 
     private var isProjectMode: Bool {
         switch mode {
@@ -61,6 +63,22 @@ struct iOSListEditorSheet: View {
 
     private var activeAreas: [Area] {
         areas.filter(\.isActive)
+    }
+
+    private var contextTitle: String {
+        guard selectedContextID != "none",
+              let context = activeContexts.first(where: { $0.id.uuidString == selectedContextID }),
+              !context.name.isEmpty
+        else { return "None" }
+        return context.name
+    }
+
+    private var areaTitle: String {
+        guard selectedAreaID != "none",
+              let area = activeAreas.first(where: { $0.id.uuidString == selectedAreaID }),
+              !area.name.isEmpty
+        else { return "None" }
+        return area.name
     }
 
     private var trimmedName: String {
@@ -92,20 +110,40 @@ struct iOSListEditorSheet: View {
                 }
 
                 Section("Organize") {
-                    Picker("Context", selection: $selectedContextID) {
-                        Text("None").tag("none")
-                        ForEach(activeContexts) { context in
-                            Text(context.name.isEmpty ? "Untitled Context" : context.name)
-                                .tag(context.id.uuidString)
+                    HStack {
+                        Text("Context")
+                        Spacer()
+                        iOSChoiceValueButton(title: contextTitle, color: Theme.text) {
+                            showContextPicker = true
+                        }
+                        .popover(isPresented: $showContextPicker) {
+                            iOSChoicePopoverList(
+                                rows: [iOSChoiceRow(value: "none", title: "None", color: Theme.dim)]
+                                    + activeContexts.map { context in
+                                        iOSChoiceRow(value: context.id.uuidString, title: context.name.isEmpty ? "Untitled Context" : context.name, color: Color(hex: context.colorHex))
+                                    },
+                                selection: $selectedContextID,
+                                isPresented: $showContextPicker
+                            )
                         }
                     }
 
                     if isProjectMode {
-                        Picker("Area", selection: $selectedAreaID) {
-                            Text("None").tag("none")
-                            ForEach(activeAreas) { area in
-                                Text(area.name.isEmpty ? "Untitled Area" : area.name)
-                                    .tag(area.id.uuidString)
+                        HStack {
+                            Text("Area")
+                            Spacer()
+                            iOSChoiceValueButton(title: areaTitle, color: Theme.text) {
+                                showAreaPicker = true
+                            }
+                            .popover(isPresented: $showAreaPicker) {
+                                iOSChoicePopoverList(
+                                    rows: [iOSChoiceRow(value: "none", title: "None", color: Theme.dim)]
+                                        + activeAreas.map { area in
+                                            iOSChoiceRow(value: area.id.uuidString, title: area.name.isEmpty ? "Untitled Area" : area.name, color: Color(hex: area.colorHex))
+                                        },
+                                    selection: $selectedAreaID,
+                                    isPresented: $showAreaPicker
+                                )
                             }
                         }
                     }
@@ -113,7 +151,11 @@ struct iOSListEditorSheet: View {
                     if isProjectMode {
                         Toggle("Due date", isOn: $hasProjectDueDate)
                         if hasProjectDueDate {
-                            DatePicker("Due", selection: $projectDueDate, displayedComponents: .date)
+                            HStack {
+                                Text("Due")
+                                Spacer()
+                                CadenceDatePicker(selection: $projectDueDate)
+                            }
                         }
                     }
                 }

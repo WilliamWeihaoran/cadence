@@ -123,16 +123,22 @@ struct iOSTrackingDateRangeSection: View {
 
     var body: some View {
         iOSTrackingPickerSection(title: "Dates") {
-            DatePicker("Start", selection: $startDate, displayedComponents: .date)
-                .tint(Theme.blue)
+            HStack {
+                Text("Start")
+                Spacer()
+                CadenceDatePicker(selection: $startDate)
+            }
             Divider().background(Theme.borderSubtle.opacity(0.55)).padding(.vertical, 8)
-            DatePicker("End", selection: $endDate, displayedComponents: .date)
-                .tint(Theme.blue)
-                .onChange(of: endDate) { _, newValue in
-                    if newValue < startDate {
-                        endDate = startDate
-                    }
+            HStack {
+                Text("End")
+                Spacer()
+                CadenceDatePicker(selection: $endDate)
+            }
+            .onChange(of: endDate) { _, newValue in
+                if newValue < startDate {
+                    endDate = startDate
                 }
+            }
         }
         .onChange(of: startDate) { _, newValue in
             if endDate < newValue {
@@ -147,6 +153,8 @@ struct iOSHabitFrequencyEditor: View {
     @Binding var selectedDays: Set<Int>
     @Binding var timesPerWeek: Int
     @Binding var monthlyDay: Int
+    @State private var showTimesPerWeekPicker = false
+    @State private var showMonthlyDayPicker = false
 
     private let weekdays = [
         (1, "M"), (2, "T"), (3, "W"), (4, "T"), (5, "F"), (6, "S"), (7, "S")
@@ -179,21 +187,37 @@ struct iOSHabitFrequencyEditor: View {
                 }
             }
         case .timesPerWeek:
-            Stepper(value: $timesPerWeek, in: 1...14) {
-                HStack {
-                    Text("Times per week")
-                    Spacer()
-                    Text("\(timesPerWeek)")
-                        .foregroundStyle(Theme.dim)
+            HStack {
+                Text("Times per week")
+                Spacer()
+                iOSChoiceValueButton(title: "\(timesPerWeek)", color: Theme.text) {
+                    showTimesPerWeekPicker = true
+                }
+                .popover(isPresented: $showTimesPerWeekPicker) {
+                    iOSChoicePopoverList(
+                        rows: (1...14).map { count in
+                            iOSChoiceRow(value: count, title: "\(count)", color: Theme.blue)
+                        },
+                        selection: $timesPerWeek,
+                        isPresented: $showTimesPerWeekPicker
+                    )
                 }
             }
         case .monthly:
-            Stepper(value: $monthlyDay, in: 1...31) {
-                HStack {
-                    Text("Day of month")
-                    Spacer()
-                    Text("\(monthlyDay)")
-                        .foregroundStyle(Theme.dim)
+            HStack {
+                Text("Day of month")
+                Spacer()
+                iOSChoiceValueButton(title: "\(monthlyDay)", color: Theme.text) {
+                    showMonthlyDayPicker = true
+                }
+                .popover(isPresented: $showMonthlyDayPicker) {
+                    iOSChoicePopoverList(
+                        rows: (1...31).map { day in
+                            iOSChoiceRow(value: day, title: "\(day)", color: Theme.blue)
+                        },
+                        selection: $monthlyDay,
+                        isPresented: $showMonthlyDayPicker
+                    )
                 }
             }
         }

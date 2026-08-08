@@ -13,6 +13,7 @@ struct iOSCalendarBundleDetailSheet: View {
     @State private var durationMinutes: Int
     @State private var selectedTask: AppTask?
     @State private var showDeleteConfirmation = false
+    @State private var showStartTimePicker = false
 
     private let calendar = Calendar.current
 
@@ -117,28 +118,56 @@ struct iOSCalendarBundleDetailSheet: View {
 
     private var scheduleSection: some View {
         iOSCalendarBundleEditorSection(title: "Schedule") {
-            DatePicker("Date", selection: $date, displayedComponents: .date)
-                .tint(Theme.blue)
-                .onChange(of: date) { _, newDate in
-                    startTime = Self.timeDate(on: newDate, minute: startMinute)
+            HStack {
+                Text("Date")
+                Spacer()
+                CadenceDatePicker(selection: dateBinding)
+            }
+
+            iOSCalendarBundleDivider()
+
+            HStack {
+                Text("Start")
+                Spacer()
+                iOSChoiceValueButton(title: TimeFormatters.timeString(from: startMinuteBinding.wrappedValue), color: Theme.text) {
+                    showStartTimePicker = true
                 }
-
-            iOSCalendarBundleDivider()
-
-            DatePicker("Start", selection: $startTime, displayedComponents: .hourAndMinute)
-                .tint(Theme.blue)
-
-            iOSCalendarBundleDivider()
-
-            Stepper(value: $durationMinutes, in: 5...720, step: 5) {
-                HStack {
-                    Text("Duration")
-                    Spacer()
-                    Text(durationLabel(durationMinutes))
-                        .foregroundStyle(Theme.dim)
+                .popover(isPresented: $showStartTimePicker) {
+                    iOSChoicePopoverList(
+                        rows: stride(from: 0, to: 1440, by: 15).map { minute in
+                            iOSChoiceRow(value: minute, title: TimeFormatters.timeString(from: minute), color: Theme.blue)
+                        },
+                        selection: startMinuteBinding,
+                        isPresented: $showStartTimePicker
+                    )
                 }
             }
+
+            iOSCalendarBundleDivider()
+
+            HStack {
+                Text("Duration")
+                Spacer()
+                EstimatePickerControl(value: $durationMinutes)
+            }
         }
+    }
+
+    private var dateBinding: Binding<Date> {
+        Binding(
+            get: { date },
+            set: { newDate in
+                date = newDate
+                startTime = Self.timeDate(on: newDate, minute: startMinute)
+            }
+        )
+    }
+
+    private var startMinuteBinding: Binding<Int> {
+        Binding(
+            get: { startMinute },
+            set: { minute in startTime = Self.timeDate(on: date, minute: minute) }
+        )
     }
 
     private var taskSection: some View {
@@ -194,13 +223,6 @@ struct iOSCalendarBundleDetailSheet: View {
             durationMinutes: durationMinutes,
             modelContext: modelContext
         )
-    }
-
-    private func durationLabel(_ minutes: Int) -> String {
-        if minutes < 60 { return "\(minutes)m" }
-        let hours = minutes / 60
-        let remainder = minutes % 60
-        return remainder == 0 ? "\(hours)h" : "\(hours)h \(remainder)m"
     }
 
     private static func timeDate(on date: Date, minute: Int, calendar: Calendar = .current) -> Date {
