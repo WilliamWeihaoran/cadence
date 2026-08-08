@@ -29,9 +29,7 @@ struct TimelineDraggedTaskPreview: View {
 
     private var dragDurationLabel: String {
         guard durationMinutes > 0 else { return "" }
-        if durationMinutes < 60 { return "\(durationMinutes)m" }
-        if durationMinutes % 60 == 0 { return "\(durationMinutes / 60)h" }
-        return String(format: "%.1fh", Double(durationMinutes) / 60.0)
+        return CadenceTaskPresentationSupport.estimateLabel(minutes: durationMinutes)
     }
 
     var body: some View {
@@ -204,9 +202,12 @@ func timelineBlockBody(
                         .lineLimit(2)
                     let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes)
                     if label != "-/-" {
+                        // The block is hard-clipped to a fixed frame, so a wrapped label would
+                        // lose its second line and silently report a shorter duration.
                         Text(label)
                             .font(.system(size: 10))
                             .foregroundStyle(Theme.dim)
+                            .lineLimit(1)
                     }
                 } else {
                     let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes)
@@ -220,6 +221,7 @@ func timelineBlockBody(
                             Text(label)
                                 .font(.system(size: 9))
                                 .foregroundStyle(Theme.dim)
+                                .lineLimit(1)
                         }
                     }
                 }

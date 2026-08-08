@@ -106,6 +106,7 @@ struct FocusSessionHeader: View {
 
                 if let estimateLabel {
                     Text(estimateLabel)
+                        .lineLimit(1)
                 }
             }
         }

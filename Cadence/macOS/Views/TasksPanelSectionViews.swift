@@ -1,10 +1,13 @@
 #if os(macOS)
 import SwiftUI
 
+/// A single list-level task group (one area / project / Inbox).
+///
+/// `contextIcon` / `contextColor` are **not** used by Today, which groups by list
+/// only. They exist for `AllTasksListView` (and `TasksPanel`'s `.byDoDate` list
+/// grouping), which still shows a small context glyph beside the list icon.
 struct TodayTaskGroup: Identifiable {
     let id: String
-    let contextID: String?
-    let contextName: String?
     let contextIcon: String?
     let contextColor: Color?
     let listIcon: String
@@ -15,22 +18,12 @@ struct TodayTaskGroup: Identifiable {
 
 struct FrozenTodayTaskGroup {
     let id: String
-    let contextID: String?
-    let contextName: String?
     let contextIcon: String?
     let contextColor: Color?
     let listIcon: String
     let listName: String
     let listColor: Color
     let taskIDs: [UUID]
-}
-
-struct TodayTaskContextSection: Identifiable {
-    let id: String
-    let contextName: String?
-    let contextIcon: String?
-    let contextColor: Color?
-    let groups: [TodayTaskGroup]
 }
 
 struct FrozenFlatTaskSection {
@@ -135,96 +128,6 @@ struct TasksPanelGroupSectionView: View {
                         insertion: .opacity,
                         removal: .opacity.combined(with: .move(edge: .top))
                     ))
-            }
-        }
-    }
-}
-
-struct TodayTaskContextSectionView: View {
-    let section: TodayTaskContextSection
-    @Binding var dragOverTaskID: UUID?
-    let contexts: [Context]
-    let areas: [Area]
-    let projects: [Project]
-    let allTasks: [AppTask]
-    let collapsedGroupIDs: Set<String>
-    let overdueCount: ([AppTask]) -> Int?
-    let regularCount: ([AppTask]) -> Int
-    let onToggleGroup: (String) -> Void
-    let taskDragPayload: (AppTask) -> String
-    let onDropOnGroupPayload: (TodayTaskGroup, String) -> Bool
-    let onDropOnTaskPayload: (TodayTaskGroup, String, AppTask) -> Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let contextName = section.contextName {
-                HStack(spacing: 12) {
-                    if let contextIcon = section.contextIcon, let contextColor = section.contextColor {
-                        HStack(spacing: 8) {
-                            Image(systemName: contextIcon)
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(contextColor)
-
-                            Text(contextName)
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(contextColor)
-                                .kerning(0.9)
-                                .textCase(.uppercase)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(contextColor.opacity(0.13))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(contextColor.opacity(0.28), lineWidth: 1)
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                    } else {
-                        Text(contextName)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(section.contextColor ?? Theme.text)
-                            .kerning(0.9)
-                            .textCase(.uppercase)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background((section.contextColor ?? Theme.surfaceElevated).opacity(0.12))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke((section.contextColor ?? Theme.borderSubtle).opacity(0.28), lineWidth: 1)
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-
-                    Rectangle()
-                        .fill((section.contextColor ?? Theme.borderSubtle).opacity(0.24))
-                        .frame(height: 1.5)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 22)
-                .padding(.bottom, 4)
-            }
-
-            ForEach(section.groups) { group in
-                TasksPanelGroupSectionView(
-                    group: group,
-                    dragOverTaskID: $dragOverTaskID,
-                    contexts: contexts,
-                    areas: areas,
-                    projects: projects,
-                    allTasks: allTasks,
-                    showsContextIcon: false,
-                    isCollapsed: collapsedGroupIDs.contains(group.id),
-                    overdueCount: overdueCount(group.tasks),
-                    regularCount: regularCount(group.tasks),
-                    onToggle: { onToggleGroup(group.id) },
-                    taskDragPayload: taskDragPayload,
-                    onDropOnGroupPayload: { payload in
-                        onDropOnGroupPayload(group, payload)
-                    },
-                    onDropOnTaskPayload: { payload, targetTask in
-                        onDropOnTaskPayload(group, payload, targetTask)
-                    }
-                )
             }
         }
     }

@@ -490,11 +490,12 @@ enum MarkdownTaskEmbedDrawing {
         return task.estimatedMinutes > 0 ? durationLabel(task.estimatedMinutes) : "No estimate"
     }
 
+    /// Same chip can show either this or `TimeFormatters.durationLabel` depending on whether
+    /// actual minutes are logged, so both have to come from the shared formatter — otherwise
+    /// one control flips between "1h 30m/2h" and "1.5h".
     private static func durationLabel(_ minutes: Int) -> String {
         guard minutes > 0 else { return "-" }
-        if minutes < 60 { return "\(minutes)m" }
-        if minutes % 60 == 0 { return "\(minutes / 60)h" }
-        return String(format: "%.1fh", Double(minutes) / 60.0)
+        return CadenceTaskPresentationSupport.estimateLabel(minutes: minutes)
     }
 }
 #endif

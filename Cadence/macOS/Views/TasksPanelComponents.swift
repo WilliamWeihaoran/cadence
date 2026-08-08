@@ -91,11 +91,11 @@ struct MacTaskRow: View {
                 showTaskInspector = true
             }
         }
-        .background(TaskRowBackground(task: task, isHovered: isHovered, urgencyTint: urgencyBackgroundTint))
+        .background(TaskRowBackground(task: task, isHovered: isHovered, hoverFill: hoverBackgroundFill))
         .overlay {
             RoundedRectangle(cornerRadius: Theme.radiusCard)
                 .stroke(
-                    TaskHoverVisuals.borderColor(for: task, isHovered: isHovered, opacity: 0.34),
+                    TaskHoverVisuals.borderColor(isHovered: isHovered),
                     lineWidth: 1
                 )
         }
@@ -109,25 +109,24 @@ struct MacTaskRow: View {
             guard isHovered != hovering else { return }
             isHovered = hovering
             if hovering {
-                hoveredTaskManager.beginHovering(task, source: .list)
-                hoveredEditableManager.beginHovering(id: "task-row-\(task.id.uuidString)") {
-                    showTaskInspector = true
-                } onDelete: {
-                    deleteConfirmationManager.present(
-                        title: "Delete Task?",
-                        message: "This will permanently delete \"\(task.title.isEmpty ? "Untitled" : task.title)\"."
-                    ) {
-                        if hoveredTaskManager.hoveredTask?.id == task.id {
-                            hoveredTaskManager.hoveredTask = nil
-                        }
-                        hoveredEditableManager.endHovering(id: "task-row-\(task.id.uuidString)")
-                        modelContext.deleteTask(task)
-                    }
-                }
+                beginHoverRegistration()
             } else {
-                hoveredTaskManager.endHovering(task)
-                hoveredEditableManager.endHovering(id: "task-row-\(task.id.uuidString)")
+                endHoverRegistration()
             }
+        }
+        .onDisappear {
+            // A row can vanish out from under a still-parked pointer — completed with
+            // Cmd+Return and filtered out of the section, deleted, or regrouped by a date/list
+            // change — in which case `.onHover(false)` never fires. Without this teardown the
+            // managers keep pointing at the gone row and hold its `onDelete` closure, so the
+            // next Cmd+Delete / Cmd+Return acts on the wrong task.
+            //
+            // Safe against a fast pointer move from this row to the next: the replacement
+            // registers first, and both managers' `endHovering` are identity-guarded, so this
+            // call no-ops once the hover has moved on.
+            guard isHovered else { return }
+            isHovered = false
+            endHoverRegistration()
         }
         .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             TaskDetailPopover(task: task)
@@ -137,6 +136,37 @@ struct MacTaskRow: View {
         .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
             handlePendingDeepLink()
         }
+    }
+
+    // MARK: - Hover registration
+
+    /// Namespaced per surface so a task visible on two surfaces at once can't unregister
+    /// the other's entry.
+    private var editableID: String { "task-row-\(task.id.uuidString)" }
+
+    /// The hovered-task shortcuts (Cmd+Delete / Cmd+Return / Cmd+E / Cmd+T / Cmd+D / Cmd+P /
+    /// Cmd+S / Cmd+/) are all driven off these two managers.
+    private func beginHoverRegistration() {
+        hoveredTaskManager.beginHovering(task, source: .list)
+        hoveredEditableManager.beginHovering(id: editableID) {
+            showTaskInspector = true
+        } onDelete: {
+            deleteConfirmationManager.present(
+                title: "Delete Task?",
+                message: "This will permanently delete \"\(task.title.isEmpty ? "Untitled" : task.title)\"."
+            ) {
+                if hoveredTaskManager.hoveredTask?.id == task.id {
+                    hoveredTaskManager.hoveredTask = nil
+                }
+                hoveredEditableManager.endHovering(id: editableID)
+                modelContext.deleteTask(task)
+            }
+        }
+    }
+
+    private func endHoverRegistration() {
+        hoveredTaskManager.endHovering(task)
+        hoveredEditableManager.endHovering(id: editableID)
     }
 
     private var focusButtonSlot: some View {
@@ -388,14 +418,11 @@ struct MacTaskRow: View {
         style == .standard && !task.containerName.isEmpty
     }
 
-    private var urgencyBackgroundTint: Color {
-        TaskHoverVisuals.hoverFill(
-            for: task,
-            isHovered: isHovered,
-            isOverdue: isOverdue,
-            isOverdo: isOverdo,
-            normalOpacity: 0.07
-        )
+    /// Uniform neutral hover wash. Overdue / over-do state is carried by the red date text on the
+    /// row (see `doDatePill` / `dueDateBadgeList`), which is persistent — it is intentionally not
+    /// re-encoded as a hover-only background hue.
+    private var hoverBackgroundFill: Color {
+        TaskHoverVisuals.hoverFill(isHovered: isHovered)
     }
 
     private func handlePendingDeepLink() {
@@ -467,15 +494,15 @@ private struct TaskCompletionButton: View {
 private struct TaskRowBackground: View {
     let task: AppTask
     let isHovered: Bool
-    let urgencyTint: Color
+    let hoverFill: Color
     @Environment(TaskCompletionAnimationManager.self) private var manager
 
     var body: some View {
         RoundedRectangle(cornerRadius: Theme.radiusCard)
             .fill(Color.clear)
             .overlay {
-                if urgencyTint != .clear {
-                    RoundedRectangle(cornerRadius: Theme.radiusCard).fill(urgencyTint)
+                if hoverFill != .clear {
+                    RoundedRectangle(cornerRadius: Theme.radiusCard).fill(hoverFill)
                 }
             }
             .overlay {

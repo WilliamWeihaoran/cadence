@@ -2,6 +2,10 @@
 import SwiftUI
 import SwiftData
 
+/// The sidebar is two fixed columns: a permanent, non-scrolling icon rail carrying every
+/// app destination, and a scrolling panel dedicated entirely to lists (contexts →
+/// areas/projects). Destinations no longer compete with lists for vertical space, so the
+/// panel can grow without pushing navigation off-screen.
 struct SidebarView: View {
     @Binding var selection: SidebarItem?
     @Query(sort: \Context.order) private var contexts: [Context]
@@ -58,85 +62,14 @@ struct SidebarView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 13) {
-                    HStack(spacing: 9) {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(Theme.surfaceElevated)
-                            .frame(width: 30, height: 30)
-                            .overlay {
-                                Image(systemName: "checklist.checked")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(Theme.blue)
-                            }
+        HStack(spacing: 0) {
+            rail
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Cadence")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(Theme.text)
-                            Text("Workspace")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(Theme.dim)
-                        }
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(width: 1)
 
-                        Spacer(minLength: 0)
-
-                        Button { globalSearchManager.present() } label: {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Theme.dim)
-                                .frame(width: 26, height: 26)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.cadencePlain)
-                        .help("Search (⌘K)")
-                        .accessibilityLabel("Search")
-                    }
-                    .padding(.bottom, 2)
-
-                    VStack(alignment: .leading, spacing: 7) {
-                        tileRow
-                        secondaryRows
-                    }
-
-                    SidebarSection(title: "ORGANIZE") {
-                        ForEach(contexts.filter { !$0.isArchived }) { context in
-                            ContextSection(
-                                context: context,
-                                selection: $selection,
-                                onAddList: { contextForNewList = context }
-                            )
-                            .padding(.vertical, 2)
-                        }
-                    }
-
-                    // Long-term tracking sits below a hairline at the bottom, deliberately
-                    // separated from the task destinations above so "what am I doing today"
-                    // and "what am I working toward" don't read as the same kind of thing.
-                    trackSection
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
-                .padding(.bottom, 12)
-            }
-            .scrollIndicators(.hidden)
-
-            HStack {
-                CompactSidebarIconButton(
-                    item: .settings,
-                    icon: "gearshape.fill",
-                    color: Theme.dim,
-                    isSelected: selection == .settings
-                ) {
-                    selection = .settings
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 4)
-            .padding(.bottom, 12)
+            panel
         }
         .background(Theme.surface)
         .sheet(item: $contextForNewList) { ctx in
@@ -144,88 +77,116 @@ struct SidebarView: View {
         }
     }
 
-    /// The four highest-traffic destinations, as one row of icon-only tiles.
-    @ViewBuilder
-    private var tileRow: some View {
-        let tiles = tileDestinations
-        if !tiles.isEmpty {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-                ForEach(tiles) { tile in
-                    SidebarDestinationTile(
-                        icon: tile.icon,
-                        label: tile.label,
-                        tint: tile.tint,
-                        count: tile.count,
-                        isSelected: selection == tile.item,
-                        accessibilityID: tile.accessibilityID
+    // MARK: - Rail
+
+    /// Permanent icon-only navigation column. Never scrolls: the destination set is
+    /// bounded and small enough to always fit, which is the whole point of moving it out
+    /// of the scrolling panel.
+    private var rail: some View {
+        VStack(spacing: SidebarRailMetrics.spacing) {
+            appIconTile
+                .padding(.bottom, 6)
+
+            ForEach(Array(railGroups.enumerated()), id: \.offset) { index, group in
+                if index > 0 {
+                    SidebarRailSeparator()
+                }
+
+                ForEach(group) { entry in
+                    SidebarRailButton(
+                        icon: entry.icon,
+                        label: entry.label,
+                        tint: entry.tint,
+                        count: entry.count,
+                        isSelected: selection == entry.item,
+                        accessibilityID: entry.accessibilityID
                     ) {
-                        selection = tile.item
+                        selection = entry.item
                     }
                 }
             }
-        }
-    }
 
-    /// Primary destinations that didn't earn a tile (All Tasks, Planning, Focus…).
-    @ViewBuilder
-    private var secondaryRows: some View {
-        let destinations = secondaryRowDestinations
-        if !destinations.isEmpty {
-            VStack(alignment: .leading, spacing: 1) {
-                ForEach(destinations) { destination in
-                    compactRow(for: destination)
-                }
+            Spacer(minLength: 0)
+
+            SidebarRailButton(
+                icon: CadenceFeatureDestination.settings.systemImage,
+                label: CadenceFeatureDestination.settings.title,
+                tint: Theme.blue,
+                count: nil,
+                isSelected: selection == .settings,
+                accessibilityID: "sidebar.settings"
+            ) {
+                selection = .settings
             }
         }
+        .frame(width: SidebarRailMetrics.width)
+        .padding(.top, SidebarRailMetrics.topInset)
+        .padding(.bottom, 12)
     }
 
-    /// Goals + Habits. A hairline plus the TRACK label carries the separation now — the
-    /// old tinted shelf competed with the ORGANIZE section for weight.
-    @ViewBuilder
-    private var trackSection: some View {
-        let trackingDestinations = visibleTrackingDestinations
-        if !trackingDestinations.isEmpty {
-            VStack(alignment: .leading, spacing: 7) {
-                Rectangle()
-                    .fill(Theme.borderSubtle)
-                    .frame(height: 1)
+    private var appIconTile: some View {
+        RoundedRectangle(cornerRadius: SidebarRailMetrics.cornerRadius, style: .continuous)
+            .fill(Theme.surfaceElevated)
+            .frame(width: SidebarRailMetrics.buttonSize, height: SidebarRailMetrics.buttonSize)
+            .overlay {
+                Image(systemName: "checklist.checked")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+            }
+            .accessibilityHidden(true)
+    }
 
-                Text("TRACK")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .kerning(0.8)
-                    .padding(.horizontal, 2)
+    // MARK: - Panel
 
-                VStack(alignment: .leading, spacing: 1) {
-                    ForEach(trackingDestinations) { destination in
-                        compactRow(for: destination)
+    /// Lists only. The header stays pinned so the search affordance is always reachable
+    /// no matter how far the context list is scrolled.
+    private var panel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Text("Lists")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+
+                Spacer(minLength: 0)
+
+                Button { globalSearchManager.present() } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.cadencePlain)
+                .help("Search (⌘K)")
+                .accessibilityLabel("Search")
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, SidebarRailMetrics.topInset)
+            .padding(.bottom, 8)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(contexts.filter { !$0.isArchived }) { context in
+                        ContextSection(
+                            context: context,
+                            selection: $selection,
+                            onAddList: { contextForNewList = context }
+                        )
+                        .padding(.vertical, 2)
                     }
                 }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
             }
+            .scrollIndicators(.hidden)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func compactRow(for destination: SidebarStaticDestination) -> some View {
-        SidebarCompactRow(
-            icon: destination.icon,
-            label: destination.label,
-            tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
-            count: count(for: destination),
-            isSelected: selection == destination.item,
-            accessibilityID: "sidebar.destination.\(destination.rawValue)"
-        ) {
-            selection = destination.item
-        }
-    }
+    // MARK: - Tab visibility / order
 
     var hiddenTabs: Set<SidebarStaticDestination> {
         Set(sidebarHiddenTabsRaw.split(separator: ",").compactMap { SidebarStaticDestination(rawValue: String($0)) })
-    }
-
-    func setTabHidden(_ destination: SidebarStaticDestination, hidden: Bool) {
-        var set = hiddenTabs
-        if hidden { set.insert(destination) } else { set.remove(destination) }
-        sidebarHiddenTabsRaw = set.map(\.rawValue).joined(separator: ",")
     }
 
     private var allVisibleDestinations: [SidebarStaticDestination] {
@@ -234,79 +195,68 @@ struct SidebarView: View {
             .filter { !hiddenTabs.contains($0) }
     }
 
-    private var visiblePrimaryDestinations: [SidebarStaticDestination] {
-        allVisibleDestinations.filter(\.isPrimaryNavigation)
-    }
+    // MARK: - Rail grouping
 
-    private var visibleTrackingDestinations: [SidebarStaticDestination] {
-        allVisibleDestinations.filter(\.isTrackingNavigation)
-    }
-
-    // MARK: - Tile / row split
-
-    /// The four destinations promoted to the icon tile row, in fixed visual order.
-    /// Matched by `CadenceFeatureDestination` rather than by `SidebarStaticDestination`
-    /// case so this keeps compiling (and keeps behaving) if new sidebar cases appear.
-    private static let tileFeatures: [CadenceFeatureDestination] = [.today, .inbox, .calendar, .notes]
+    // The three rail groups are fixed structure, not user data: "what am I doing today",
+    // "where do I go to look at things", and "what am I working toward" are different
+    // kinds of destination and the hairlines are what make the icon-only rail readable.
+    // The stored `sidebarTabOrder` therefore sorts *within* a group rather than across
+    // groups — reordering in Settings still moves an icon, it just can't move it into a
+    // different section of the rail.
+    private static let dailyFeatures: [CadenceFeatureDestination] = [.today, .inbox]
+    private static let viewFeatures: [CadenceFeatureDestination] = [.planning, .calendar, .allTasks, .notes]
+    private static let trackingFeatures: [CadenceFeatureDestination] = [.focus, .goals, .habits]
 
     private static let staticDestinationFeatures: Set<CadenceFeatureDestination> =
         Set(SidebarStaticDestination.allCases.map(\.feature))
 
-    private struct SidebarTile: Identifiable {
-        let id: String
-        let item: SidebarItem
-        let icon: String
-        let label: String
-        let tint: Color
-        let count: Int?
-        let accessibilityID: String
+    /// Non-empty groups only, so hiding every destination in a group also removes its
+    /// hairline instead of leaving a stray divider behind.
+    private var railGroups: [[SidebarRailItem]] {
+        [Self.dailyFeatures, Self.viewFeatures, Self.trackingFeatures]
+            .map(railItems(for:))
+            .filter { !$0.isEmpty }
     }
 
-    private var tileDestinations: [SidebarTile] {
-        let visible = allVisibleDestinations
-        return Self.tileFeatures.compactMap { feature -> SidebarTile? in
-            if let destination = visible.first(where: { $0.feature == feature }) {
-                return SidebarTile(
+    private func railItems(for features: [CadenceFeatureDestination]) -> [SidebarRailItem] {
+        let featureSet = Set(features)
+
+        // `allVisibleDestinations` is already in the user's stored order with hidden
+        // tabs stripped, so filtering it preserves both settings at once.
+        var items = allVisibleDestinations
+            .filter { featureSet.contains($0.feature) }
+            .map { destination in
+                SidebarRailItem(
                     id: destination.rawValue,
                     item: destination.item,
                     icon: destination.icon,
-                    label: tileLabel(for: feature, fallback: destination.label),
+                    label: destination.label,
                     tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
                     count: count(for: destination),
                     accessibilityID: "sidebar.destination.\(destination.rawValue)"
                 )
             }
 
-            // Notes has no `SidebarStaticDestination` case (and therefore no hide toggle
-            // in Settings), so it is rendered straight from the shared feature metadata.
-            // If a case is ever added, the branch above takes over and hiding starts
-            // working for it automatically.
-            if feature == .notes, !Self.staticDestinationFeatures.contains(.notes) {
-                return SidebarTile(
-                    id: feature.rawValue,
+        // Notes has no `SidebarStaticDestination` case (and therefore no hide toggle, no
+        // color override, and no entry in the stored order), so it is rendered straight
+        // from the shared feature metadata and pinned to the end of its group. If a case
+        // is ever added, the branch above takes over and both settings start working for
+        // it automatically.
+        if featureSet.contains(.notes), !Self.staticDestinationFeatures.contains(.notes) {
+            items.append(
+                SidebarRailItem(
+                    id: CadenceFeatureDestination.notes.rawValue,
                     item: .notes,
-                    icon: feature.systemImage,
-                    label: tileLabel(for: feature, fallback: feature.title),
-                    tint: Theme.purple,
+                    icon: CadenceFeatureDestination.notes.systemImage,
+                    label: CadenceFeatureDestination.notes.title,
+                    tint: CadenceFeatureDestination.notes.tint,
                     count: nil,
                     accessibilityID: "sidebar.destination.notes"
                 )
-            }
-
-            return nil
+            )
         }
-    }
 
-    /// Everything primary that isn't in the tile row falls through to a compact row.
-    /// Hidden destinations are filtered out upstream, so a destination the user hid in
-    /// Settings stays hidden in both groups.
-    private var secondaryRowDestinations: [SidebarStaticDestination] {
-        visiblePrimaryDestinations.filter { !Self.tileFeatures.contains($0.feature) }
-    }
-
-    /// "Calendar" doesn't fit a quarter-width tile.
-    private func tileLabel(for feature: CadenceFeatureDestination, fallback: String) -> String {
-        feature == .calendar ? "Cal" : fallback
+        return items
     }
 }
 

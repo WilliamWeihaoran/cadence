@@ -3,8 +3,8 @@ import SwiftData
 import SwiftUI
 
 /// Consolidated "everything editable about this task" section — status, priority, repeat,
-/// schedule, and placement in one flat card, mirroring macOS's TaskDetailCompactOverviewSection
-/// (one narrow column read top to bottom, rather than a form-per-field spread of cards).
+/// schedule, and placement in one flat card: one narrow column read top to bottom, rather than
+/// a form-per-field spread of cards.
 struct iOSTaskOverviewSection: View {
     @Bindable var task: AppTask
     let containerSelection: Binding<String>
@@ -70,7 +70,7 @@ struct iOSTaskOverviewSection: View {
             }
             iOSTaskEditorDivider()
             iOSTaskEditorRow(label: "Logged", systemImage: "timer", color: Theme.green) {
-                EstimatePickerControl(value: $task.actualMinutes)
+                EstimatePickerControl(value: $task.actualMinutes, pickerTitle: "LOGGED")
             }
             iOSTaskEditorDivider()
 

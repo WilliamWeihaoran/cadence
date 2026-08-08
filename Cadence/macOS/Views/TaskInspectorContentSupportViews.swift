@@ -18,17 +18,15 @@ struct TaskDetailNotesSection: View {
                 referenceTasks: referenceTasks,
                 onEditingChanged: handleEditorFocusChange
             )
+                // MarkdownEditor has no intrinsic content size — it fills exactly what it is
+                // given — so this height IS the notes box, not a floor it grows from.
                 .frame(minHeight: 120)
-                .background(Theme.surface.opacity(0.45))
+                .background(Theme.surfaceRecessed)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
-                )
 
             if displayedNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("Add notes...")
-                    .font(.system(size: 14))
+                Text("Add notes…")
+                    .font(.system(size: 12))
                     .foregroundStyle(Theme.dim.opacity(0.6))
                     .padding(.leading, MarkdownEditorMetrics.firstTextColumnInset)
                     .padding(.top, MarkdownEditorMetrics.textInset)
@@ -48,7 +46,7 @@ struct TaskDetailNotesSection: View {
             }
             .buttonStyle(.cadencePlain)
             .help("Open task notes")
-            .padding(8)
+            .padding(6)
             .frame(maxWidth: .infinity, alignment: .topTrailing)
         }
         .onAppear {
@@ -264,8 +262,8 @@ struct TaskDetailSubtasksSection: View {
     let onDeleteSubtask: (Subtask) -> Void
 
     var body: some View {
-        TaskInspectorInfoCard {
-            VStack(alignment: .leading, spacing: 4) {
+        TaskInspectorRecessedGroup(verticalPadding: 6) {
+            VStack(alignment: .leading, spacing: 2) {
                 let sortedSubtasks = (task.subtasks ?? []).sorted { $0.order < $1.order }
                 ForEach(sortedSubtasks) { subtask in
                     SubtaskRow(subtask: subtask, showDelete: true) {
@@ -277,15 +275,14 @@ struct TaskDetailSubtasksSection: View {
                     Image(systemName: "plus.circle")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim.opacity(0.6))
-                    TextField("Add subtask...", text: $newSubtaskTitle)
+                    TextField("Add subtask…", text: $newSubtaskTitle)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.text)
                         .focused($subtaskFieldFocused)
                         .onSubmit { onAddSubtask() }
                 }
-                .padding(.horizontal, 2)
-                .padding(.vertical, 2)
+                .padding(.vertical, 3)
             }
         }
     }
@@ -296,8 +293,13 @@ struct TaskDetailActionsSection: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
 
+    private static let controlHeight: CGFloat = 32
+    private static let cornerRadius: CGFloat = 7
+
     var body: some View {
-        HStack(spacing: 10) {
+        // One row: a flexible primary action plus two square icon buttons. The old layout used
+        // three equal-width text buttons, which forced "Unschedule" to wrap mid-word.
+        HStack(spacing: 8) {
             Button {
                 if task.isDone {
                     TaskWorkflowService.markTodo(task)
@@ -305,52 +307,65 @@ struct TaskDetailActionsSection: View {
                     TaskWorkflowService.markDone(task, in: modelContext)
                 }
             } label: {
-                Label(task.isDone ? "Unmark Done" : "Mark Done",
-                      systemImage: task.isDone ? "circle" : "checkmark.circle.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(task.isDone ? Theme.dim : Theme.green)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                HStack(spacing: 6) {
+                    Image(systemName: task.isDone ? "circle" : "checkmark.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(task.isDone ? "Mark not done" : "Mark done")
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(task.isDone ? Theme.dim : Theme.green)
+                .frame(maxWidth: .infinity)
+                .frame(height: Self.controlHeight)
+                .background(task.isDone ? Theme.surfaceElevated : Theme.green.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+                .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
 
             if task.scheduledStartMin >= 0 {
-                Button {
+                iconButton(
+                    systemImage: "calendar.badge.minus",
+                    tint: Theme.dim,
+                    help: "Unschedule"
+                ) {
                     SchedulingActions.removeFromCalendar(task)
                     task.scheduledStartMin = -1
                     task.scheduledDate = ""
-                } label: {
-                    Label("Unschedule", systemImage: "calendar.badge.minus")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                .buttonStyle(.cadencePlain)
             }
 
-            Button {
+            iconButton(systemImage: "trash", tint: Theme.red, help: "Delete task") {
                 deleteConfirmationManager.present(
                     title: "Delete Task?",
                     message: "This will permanently delete \"\(TaskTitleSupport.displayTitle(task.title, fallback: "Untitled"))\"."
                 ) {
                     modelContext.deleteTask(task)
                 }
-            } label: {
-                Label("Delete", systemImage: "trash")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.red)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
             }
-            .buttonStyle(.cadencePlain)
         }
+    }
+
+    @ViewBuilder
+    private func iconButton(
+        systemImage: String,
+        tint: Color,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: Self.controlHeight, height: Self.controlHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: Self.cornerRadius)
+                        .stroke(Theme.borderSubtle, lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.cadencePlain)
+        .help(help)
     }
 }
 #endif

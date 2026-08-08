@@ -356,9 +356,7 @@ struct TaskEmbedFieldEditorPopover: View {
 
     private func durationLabel(_ minutes: Int) -> String {
         guard minutes > 0 else { return "-" }
-        if minutes < 60 { return "\(minutes)m" }
-        if minutes % 60 == 0 { return "\(minutes / 60)h" }
-        return String(format: "%.1fh", Double(minutes) / 60.0)
+        return CadenceTaskPresentationSupport.estimateLabel(minutes: minutes)
     }
 
     private func fieldLabel(_ label: String) -> some View {

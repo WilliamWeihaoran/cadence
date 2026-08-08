@@ -37,7 +37,7 @@ enum KanbanCardStateSupport {
         setHovered(isActive)
         if isActive {
             hoveredTaskManager.beginHovering(task, source: .kanban)
-            hoveredEditableManager.beginHovering(id: "kanban-task-\(task.id.uuidString)") {
+            hoveredEditableManager.beginHovering(id: editableID(for: task)) {
                 showTaskInspector.wrappedValue = true
             } onDelete: {
                 deleteConfirmationManager.present(
@@ -47,14 +47,35 @@ enum KanbanCardStateSupport {
                     if hoveredTaskManager.hoveredTask?.id == task.id {
                         hoveredTaskManager.hoveredTask = nil
                     }
-                    hoveredEditableManager.endHovering(id: "kanban-task-\(task.id.uuidString)")
+                    hoveredEditableManager.endHovering(id: editableID(for: task))
                     modelContext.deleteTask(task)
                 }
             }
         } else {
-            hoveredTaskManager.endHovering(task)
-            hoveredEditableManager.endHovering(id: "kanban-task-\(task.id.uuidString)")
+            endHoverRegistration(
+                task: task,
+                hoveredTaskManager: hoveredTaskManager,
+                hoveredEditableManager: hoveredEditableManager
+            )
         }
+    }
+
+    /// Namespaced per surface so a task visible on two surfaces at once can't unregister
+    /// the other's entry.
+    static func editableID(for task: AppTask) -> String {
+        "kanban-task-\(task.id.uuidString)"
+    }
+
+    /// Drops the card's hovered-task/hovered-editable entries. Both managers' `endHovering`
+    /// are identity-guarded, so calling this after the hover has already moved to another
+    /// card is a no-op rather than a stomp.
+    static func endHoverRegistration(
+        task: AppTask,
+        hoveredTaskManager: HoveredTaskManager,
+        hoveredEditableManager: HoveredEditableManager
+    ) {
+        hoveredTaskManager.endHovering(task)
+        hoveredEditableManager.endHovering(id: editableID(for: task))
     }
 }
 #endif

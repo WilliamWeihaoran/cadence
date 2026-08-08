@@ -53,6 +53,11 @@ struct TaskDetailPopover: View {
         )
     }
 
+    /// "1/3" beside the SUBTASKS heading; nil (and so omitted) when there are no subtasks.
+    private var subtaskProgressLabel: String? {
+        CadenceTaskPresentationSupport.subtaskProgress(for: task)?.compactLabel
+    }
+
     private var taskTagsBinding: Binding<[Tag]> {
         Binding(
             get: { task.tags ?? [] },
@@ -76,25 +81,16 @@ struct TaskDetailPopover: View {
                         onCreateTag: createTag
                     )
 
-                    TaskInspectorSectionGroup(title: "Overview") {
-                        TaskDetailCompactOverviewSection(
-                            task: task,
-                            contexts: contexts,
-                            areas: areas,
-                            projects: projects,
-                            taskContainerBinding: taskContainerBinding,
-                            availableSections: availableSections
-                        )
-                    }
+                    TaskDetailScheduleGroupSection(task: task)
 
-                    TaskInspectorSectionGroup(title: "Notes") {
-                        TagPickerControl(
-                            selectedTags: taskTagsBinding,
-                            allTags: tags,
-                            onCreateTag: createTag
-                        )
-                        TaskDetailNotesSection(task: task)
-                    }
+                    TaskDetailPlacementGroupSection(
+                        task: task,
+                        contexts: contexts,
+                        areas: areas,
+                        projects: projects,
+                        taskContainerBinding: taskContainerBinding,
+                        availableSections: availableSections
+                    )
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(task.title.isEmpty ? "Untitled task" : task.title)
@@ -107,7 +103,7 @@ struct TaskDetailPopover: View {
                     }
                 }
 
-                TaskInspectorSectionGroup(title: "Subtasks") {
+                TaskInspectorSectionGroup(title: "Subtasks", trailing: subtaskProgressLabel) {
                     TaskDetailSubtasksSection(
                         task: task,
                         newSubtaskTitle: $newSubtaskTitle,
@@ -125,6 +121,15 @@ struct TaskDetailPopover: View {
                 }
 
                 if presentationMode == .full {
+                    TaskInspectorSectionGroup(title: "Notes") {
+                        TagPickerControl(
+                            selectedTags: taskTagsBinding,
+                            allTags: tags,
+                            onCreateTag: createTag
+                        )
+                        TaskDetailNotesSection(task: task)
+                    }
+
                     TaskInspectorSectionGroup(title: "Actions") {
                         TaskDetailActionsSection(task: task)
                     }
@@ -132,7 +137,8 @@ struct TaskDetailPopover: View {
             }
             .padding(14)
         }
-        .frame(width: presentationMode == .subtasksOnly ? 332 : 320)
+        // Both presentation modes share one width now that the field rows drive the layout.
+        .frame(width: 336)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Theme.surface)

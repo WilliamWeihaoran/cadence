@@ -169,8 +169,6 @@ enum TasksPanelSupport {
         if let area = task.area {
             return TodayTaskGroup(
                 id: key,
-                contextID: area.context?.id.uuidString,
-                contextName: area.context?.name,
                 contextIcon: area.context?.icon,
                 contextColor: area.context.map { Color(hex: $0.colorHex) },
                 listIcon: area.icon,
@@ -182,8 +180,6 @@ enum TasksPanelSupport {
         if let project = task.project {
             return TodayTaskGroup(
                 id: key,
-                contextID: project.context?.id.uuidString,
-                contextName: project.context?.name,
                 contextIcon: project.context?.icon,
                 contextColor: project.context.map { Color(hex: $0.colorHex) },
                 listIcon: project.icon,
@@ -194,8 +190,6 @@ enum TasksPanelSupport {
         }
         return TodayTaskGroup(
             id: "inbox",
-            contextID: nil,
-            contextName: nil,
             contextIcon: nil,
             contextColor: nil,
             listIcon: "tray.fill",

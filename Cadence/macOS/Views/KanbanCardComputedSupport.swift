@@ -55,14 +55,5 @@ enum KanbanCardComputedSupport {
         }
     }
 
-    static func urgencyBackgroundTint(task: AppTask, isHovered: Bool) -> Color {
-        TaskHoverVisuals.hoverFill(
-            for: task,
-            isHovered: isHovered,
-            isOverdue: isOverdue(task: task),
-            isOverdo: isOverdo(task: task),
-            normalOpacity: 0.08
-        )
-    }
 }
 #endif

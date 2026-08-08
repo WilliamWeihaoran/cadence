@@ -33,9 +33,7 @@ struct TimelineDraftGhostLayer: View {
     }
 
     private var durationLabel: String {
-        if durationMinutes < 60 { return "\(durationMinutes)m" }
-        if durationMinutes % 60 == 0 { return "\(durationMinutes / 60)h" }
-        return String(format: "%.1fh", Double(durationMinutes) / 60.0)
+        CadenceTaskPresentationSupport.estimateLabel(minutes: durationMinutes)
     }
 
     var body: some View {

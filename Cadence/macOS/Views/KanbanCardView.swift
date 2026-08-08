@@ -66,9 +66,7 @@ struct KanbanCard: View {
         .overlay {
             RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
                 .strokeBorder(
-                    isCardVisuallyFocused
-                        ? TaskHoverVisuals.borderColor(for: task, isHovered: isCardVisuallyFocused, opacity: 0.56)
-                        : Theme.borderSubtle,
+                    Theme.borderSubtle,
                     lineWidth: 1
                 )
         }
@@ -86,6 +84,25 @@ struct KanbanCard: View {
         .onHover { hovering in
             isPointerOverCard = hovering
             syncInteractiveHoverState()
+        }
+        .onDisappear {
+            // A card can vanish out from under a still-parked pointer — dragged to another
+            // column, completed with Cmd+Return and filtered out, or deleted — in which case
+            // `.onHover(false)` never fires. Without this teardown the managers keep pointing
+            // at the gone card and hold its `onDelete` closure, so the next Cmd+Delete /
+            // Cmd+Return acts on the wrong task.
+            //
+            // Safe against a fast pointer move to the next card: the replacement registers
+            // first, and both managers' `endHovering` are identity-guarded, so this call
+            // no-ops once the hover has moved on.
+            guard isHovered else { return }
+            isPointerOverCard = false
+            isHovered = false
+            KanbanCardStateSupport.endHoverRegistration(
+                task: task,
+                hoveredTaskManager: hoveredTaskManager,
+                hoveredEditableManager: hoveredEditableManager
+            )
         }
         .onChange(of: isPresentingInlinePopover) { _, isPresented in
             if !isPresented {
@@ -128,24 +145,30 @@ struct KanbanCard: View {
 
     private var doDateMetaItem: KanbanMetaItem? {
         guard !task.scheduledDate.isEmpty else { return nil }
+        // Amber is semantic here — it means "do date", not "this task's list".
+        let tint = task.scheduledDate.isEmpty ? Theme.dim : Theme.amber
         return KanbanMetaItem(
             id: "do-date",
             icon: "sun.max.fill",
             text: task.scheduledDate.isEmpty ? "Do" : DateFormatters.relativeDate(from: task.scheduledDate),
-            tint: task.scheduledDate.isEmpty ? Theme.dim : Theme.amber,
+            tint: tint,
             textColor: task.scheduledDate.isEmpty ? Theme.dim : (isOverdo ? Theme.red : (isDoToday ? Theme.amber : Theme.dim)),
+            hoverStyle: .semantic(tint),
             action: .doDate
         )
     }
 
     private var dueDateMetaItem: KanbanMetaItem? {
         guard task.shouldShowDueDateField else { return nil }
+        // Red is semantic here — it means "due date".
+        let tint = task.dueDate.isEmpty ? Theme.dim : Theme.red
         return KanbanMetaItem(
             id: "due-date",
             icon: "flag.fill",
             text: task.dueDate.isEmpty ? "Due" : DateFormatters.relativeDate(from: task.dueDate),
-            tint: task.dueDate.isEmpty ? Theme.dim : Theme.red,
+            tint: tint,
             textColor: task.dueDate.isEmpty ? Theme.dim : (isOverdue ? Theme.red : Theme.dim),
+            hoverStyle: .semantic(tint),
             action: .dueDate
         )
     }
@@ -180,8 +203,12 @@ struct KanbanCard: View {
             id: "list",
             icon: task.project?.icon ?? task.area?.icon ?? "tray.fill",
             text: task.containerName.isEmpty ? "Inbox" : task.containerName,
+            // The container color stays on the icon — that is the list's identity. It must not
+            // become the hover color, or the chip hovers in whatever hue this list happens to be,
+            // which is the container-color bleed already removed from the row hover.
             tint: Color(hex: task.containerColor),
             textColor: Theme.dim,
+            hoverStyle: .neutral,
             action: .none
         )
     }
@@ -194,6 +221,7 @@ struct KanbanCard: View {
             text: DateFormatters.relativeDate(from: task.dueDate),
             tint: Theme.red,
             textColor: isOverdue ? Theme.red : Theme.dim,
+            hoverStyle: .semantic(Theme.red),
             action: .dueDate
         )
     }
@@ -402,12 +430,15 @@ struct KanbanCard: View {
         showDueDatePicker || showDoDatePicker || showDurationPicker
     }
 
+    /// Merely hovering a chip no longer cancels the card's own hover — the two coexist, so the
+    /// card keeps its neutral gray raise while the chip adds its own. (Chips cover most of the
+    /// card, so gating on `isAttributeFocused` here meant the common case was "card hover off,
+    /// colored chip hover on", which is why hover still read as colored.)
+    ///
+    /// An *open* inline popover still suppresses the card hover: that is deliberate, since the
+    /// pointer has left the card for the picker.
     private var isCardVisuallyFocused: Bool {
-        isHovered && !isAttributeFocused && !isPresentingInlinePopover
-    }
-
-    private var urgencyBackgroundTint: Color {
-        KanbanCardComputedSupport.urgencyBackgroundTint(task: task, isHovered: isCardVisuallyFocused)
+        isHovered && !isPresentingInlinePopover
     }
 
     @ViewBuilder
@@ -454,7 +485,6 @@ struct KanbanCard: View {
                     isDone: task.isDone,
                     isPendingCompletion: isPendingCompletion,
                     isPendingCancel: isPendingCancel,
-                    urgencyBackgroundTint: urgencyBackgroundTint,
                     completionProgress: taskCompletionAnimationManager.progress(for: task, now: context.date),
                     cancelProgress: taskCompletionAnimationManager.cancelProgress(for: task, now: context.date)
                 )
@@ -465,7 +495,6 @@ struct KanbanCard: View {
                 isDone: task.isDone,
                 isPendingCompletion: false,
                 isPendingCancel: false,
-                urgencyBackgroundTint: urgencyBackgroundTint,
                 completionProgress: 0,
                 cancelProgress: 0
             )

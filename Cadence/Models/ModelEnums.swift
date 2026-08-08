@@ -90,6 +90,39 @@ enum TaskRecurrenceRule: String, Codable, CaseIterable, Hashable {
     }
 }
 
+/// How a recurring series stops. `.never` is the default and preserves the historical
+/// behavior (a series that repeats forever). The other two cases are paired with
+/// `AppTask.recurrenceEndDate` ("yyyy-MM-dd") and `AppTask.recurrenceEndCount` respectively.
+enum TaskRecurrenceEndMode: String, Codable, CaseIterable, Hashable {
+    case never      = "never"
+    case onDate     = "onDate"
+    case afterCount = "afterCount"
+
+    var label: String {
+        switch self {
+        case .never: return "Never"
+        case .onDate: return "On Date"
+        case .afterCount: return "After"
+        }
+    }
+
+    var shortLabel: String {
+        switch self {
+        case .never: return "Never"
+        case .onDate: return "Date"
+        case .afterCount: return "Count"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .never: return "infinity"
+        case .onDate: return "calendar.badge.checkmark"
+        case .afterCount: return "number"
+        }
+    }
+}
+
 // MARK: - Project enums
 
 enum ProjectStatus: String, Codable, CaseIterable, Hashable {

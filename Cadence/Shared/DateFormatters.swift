@@ -168,14 +168,23 @@ enum TimeFormatters {
     }
 
     /// Compact actual/estimated label: "3m/15m", "1h/2h", "-/30m", "45m/-", etc.
-    /// Shows minutes for <60 min, hours (with one decimal if fractional) for ≥60 min.
+    /// Uses the same hours-and-minutes shape as `CadenceTaskPresentationSupport.estimateLabel`
+    /// ("1h 30m", never "1.5h"); the logic is duplicated rather than called so this file stays
+    /// dependency-free for the widget target.
+    ///
+    /// The hour/minute gap is a NON-BREAKING SPACE (U+00A0), matching `estimateLabel` — these
+    /// labels are drawn inside hard-clipped fixed-size chrome, where a wrap would hide the
+    /// minute component and make the badge report a shorter duration than the real one.
+    ///
     /// Returns "-" for any zero/negative value.
     static func durationLabel(actual: Int, estimated: Int) -> String {
         func fmt(_ m: Int) -> String {
             guard m > 0 else { return "-" }
-            if m < 60 { return "\(m)m" }
-            if m % 60 == 0 { return "\(m / 60)h" }
-            return String(format: "%.1fh", Double(m) / 60.0)
+            let hours = m / 60
+            let remainder = m % 60
+            if hours == 0 { return "\(remainder)m" }
+            if remainder == 0 { return "\(hours)h" }
+            return "\(hours)h\u{00A0}\(remainder)m"
         }
         return "\(fmt(actual))/\(fmt(estimated))"
     }

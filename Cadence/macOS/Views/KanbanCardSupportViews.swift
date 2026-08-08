@@ -7,12 +7,30 @@ enum KanbanMetaAction: Hashable {
     case dueDate
 }
 
+/// How a meta chip washes on hover. Deliberately separate from `KanbanMetaItem.tint`: the tint
+/// colors the chip's **icon** (identity — which list this is, what kind of date this is), while
+/// this decides the hover **state** color. Conflating the two is what made the list chip hover in
+/// whatever color its container happened to be.
+enum KanbanMetaHoverStyle {
+    /// Hover wash in the chip's own semantic color — the do chip is amber, the due chip is red,
+    /// because those hues *mean* something about the field.
+    case semantic(Color)
+    /// Neutral raise only: the base fill goes to full `Theme.surfaceElevated` and picks up a
+    /// `Theme.borderSubtle` hairline, matching the neutral hover used everywhere else in the app.
+    /// Used by the list chip, whose tint is the container color.
+    case neutral
+}
+
 struct KanbanMetaItem: Identifiable {
     let id: String
     let icon: String
     let text: String
+    /// Icon color. Identity, not hover state — see `KanbanMetaHoverStyle`.
     let tint: Color
     let textColor: Color
+    /// Hover fill/border treatment. Defaults to neutral so a new chip cannot accidentally leak a
+    /// container color into its hover.
+    var hoverStyle: KanbanMetaHoverStyle = .neutral
     let action: KanbanMetaAction
 }
 
@@ -26,6 +44,21 @@ struct KanbanMetaChip: View {
     var isFocused: Bool = false
     var onHoverChanged: (Bool) -> Void = { _ in }
     @State private var isHovered = false
+
+    /// Hue washed over the resting fill on hover. Neutral chips add nothing here — their raise
+    /// comes from the base fill going to full `Theme.surfaceElevated` below.
+    private func hoverFill(focused: Bool) -> Color {
+        guard focused, case .semantic(let color) = item.hoverStyle else { return .clear }
+        return color.opacity(0.10)
+    }
+
+    private func hoverBorder(focused: Bool) -> Color {
+        guard focused else { return .clear }
+        switch item.hoverStyle {
+        case .semantic(let color): return color.opacity(0.28)
+        case .neutral: return Theme.borderSubtle
+        }
+    }
 
     var body: some View {
         let focused = isFocused || isHovered
@@ -49,12 +82,12 @@ struct KanbanMetaChip: View {
                 .fill(Theme.surfaceElevated.opacity(focused ? 1 : 0.75))
                 .overlay {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(item.tint.opacity(focused ? 0.10 : 0))
+                        .fill(hoverFill(focused: focused))
                 }
         }
         .overlay {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(item.tint.opacity(focused ? 0.28 : 0), lineWidth: 1)
+                .strokeBorder(hoverBorder(focused: focused), lineWidth: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -274,7 +307,6 @@ struct KanbanCardBackground: View {
     let isDone: Bool
     let isPendingCompletion: Bool
     let isPendingCancel: Bool
-    let urgencyBackgroundTint: Color
     let completionProgress: CGFloat
     let cancelProgress: CGFloat
 
@@ -282,14 +314,11 @@ struct KanbanCardBackground: View {
         // Columns are containerless now, so the card's own container is what makes it read
         // as an object sitting on the canvas: flat Theme.surface, hairline border (applied
         // by the caller), tight radius, no elevation shadow.
+        //
+        // Hover is the neutral `Theme.surfaceElevated` raise and nothing else — no list/priority
+        // tint, no overdue wash. Urgency stays readable through the persistent red do/due text.
         RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
-            .fill(isHovered ? Theme.surfaceElevated : Theme.surface)
-            .overlay {
-                if urgencyBackgroundTint != .clear {
-                    RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
-                        .fill(urgencyBackgroundTint)
-                }
-            }
+            .fill(TaskHoverVisuals.cardFill(isHovered: isHovered))
             .overlay {
                 if isPendingCompletion {
                     TaskCompletionPendingOverlay(

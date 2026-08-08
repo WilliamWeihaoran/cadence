@@ -32,10 +32,22 @@ enum CadenceTaskPresentationSupport {
         )
     }
 
+    /// Canonical minutes → duration label for the whole app: "45m", "2h", "1h 24m".
+    /// Never renders a decimal hour — the hour and minute components are shown separately,
+    /// and a zero component is omitted.
+    ///
+    /// The gap between the hour and minute components is a NON-BREAKING SPACE (U+00A0) on
+    /// purpose. These labels are drawn inside hard-clipped fixed-size chrome (timeline blocks
+    /// can be ~50pt wide when three tasks overlap); an ordinary space is a line-break
+    /// opportunity, so "1h 30m" would wrap and the clipped second line would leave the badge
+    /// reading "1h" for a 90-minute task — wrong information, not just truncation.
     static func estimateLabel(minutes: Int) -> String {
-        if minutes < 60 { return "\(minutes)m" }
-        if minutes % 60 == 0 { return "\(minutes / 60)h" }
-        return String(format: "%.1fh", Double(minutes) / 60.0)
+        guard minutes > 0 else { return "0m" }
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if hours == 0 { return "\(remainder)m" }
+        if remainder == 0 { return "\(hours)h" }
+        return "\(hours)h\u{00A0}\(remainder)m"
     }
 
     static func estimateLabel(for task: AppTask) -> String {

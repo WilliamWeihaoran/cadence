@@ -61,14 +61,6 @@ extension SidebarStaticDestination {
         CadenceFeatureDestination.desktopSidebarOrder.compactMap { SidebarStaticDestination(rawValue: $0.rawValue) }
     }
 
-    var isPrimaryNavigation: Bool {
-        feature.isPrimaryNavigation
-    }
-
-    var isTrackingNavigation: Bool {
-        feature.isTrackingNavigation
-    }
-
     static func orderedDestinations(from raw: String) -> [SidebarStaticDestination] {
         let stored = raw
             .split(separator: ",")
@@ -107,64 +99,33 @@ extension SidebarStaticDestination {
     }
 }
 
-struct CompactSidebarIconButton: View {
-    let item: SidebarItem
-    let icon: String
-    let color: Color
-    let isSelected: Bool
-    let action: () -> Void
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isSelected ? Theme.text : color)
-                .frame(width: 32, height: 32)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(backgroundFill)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(borderColor, lineWidth: isSelected ? 1 : 0.8)
-                }
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("sidebar.\(identifierFragment(for: item))")
-        .onHover { isHovered = $0 }
-    }
-
-    private var backgroundFill: Color {
-        if isSelected {
-            return Theme.blue.opacity(0.22)
-        }
-        if isHovered {
-            return Theme.surfaceElevated.opacity(0.9)
-        }
-        return Theme.surfaceElevated.opacity(0.45)
-    }
-
-    private var borderColor: Color {
-        isSelected ? Theme.blue.opacity(0.34) : Theme.borderSubtle.opacity(isHovered ? 0.75 : 0.4)
-    }
+/// Fixed geometry for the permanent icon rail on the left edge of the sidebar.
+/// The rail never scrolls, so every value here is a hard layout constant rather
+/// than something derived from available space.
+enum SidebarRailMetrics {
+    static let width: CGFloat = 42
+    static let buttonSize: CGFloat = 30
+    static let cornerRadius: CGFloat = 8
+    static let spacing: CGFloat = 4
+    static let separatorWidth: CGFloat = 22
+    static let badgeSize: CGFloat = 12
+    /// Both rail and panel start below this inset so their first row clears the
+    /// window's traffic lights and the floating Cmd+O sidebar toggle, which are
+    /// drawn over the top-left corner of the content view (`.fullSizeContentView`).
+    static let topInset: CGFloat = 46
 }
 
-private func identifierFragment(for item: SidebarItem) -> String {
-    switch item {
-    case .today: return "today"
-    case .planning: return "planning"
-    case .allTasks: return "allTasks"
-    case .inbox: return "inbox"
-    case .area(let id): return "area.\(id.uuidString)"
-    case .project(let id): return "project.\(id.uuidString)"
-    case .goals: return "goals"
-    case .habits: return "habits"
-    case .notes: return "notes"
-    case .calendar: return "calendar"
-    case .focus: return "focus"
-    case .settings: return "settings"
-    }
+/// One icon-only rail entry. Modelled as a value type rather than a
+/// `SidebarStaticDestination` so Notes — which has no static-destination case, and
+/// therefore no hide toggle or color override in Settings — can sit in the rail
+/// alongside the destinations that do.
+struct SidebarRailItem: Identifiable {
+    let id: String
+    let item: SidebarItem
+    let icon: String
+    let label: String
+    let tint: Color
+    let count: Int?
+    let accessibilityID: String
 }
 #endif

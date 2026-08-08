@@ -58,6 +58,7 @@ struct TaskCompletionPendingOverlay: View {
     var body: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
+            let height = proxy.size.height
             let progressWidth = max(12, width * CGFloat(clampedProgress))
             let glowWidth = min(86, max(34, width * 0.18))
             ZStack(alignment: .leading) {
@@ -66,7 +67,7 @@ struct TaskCompletionPendingOverlay: View {
 
                 Capsule()
                     .fill(tint.opacity(0.18))
-                    .frame(width: glowWidth, height: proxy.size.height * 1.35)
+                    .frame(width: glowWidth, height: height * 1.35)
                     .blur(radius: 16)
                     .offset(x: (width + glowWidth) * CGFloat(clampedProgress) - glowWidth)
 
@@ -82,8 +83,18 @@ struct TaskCompletionPendingOverlay: View {
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .strokeBorder(tint.opacity(0.12), lineWidth: 1)
             }
+            // The sweeping glow capsule is deliberately TALLER than the host view
+            // (height * 1.35) and blurred, so the ZStack's own layout size grows past
+            // the geometry proposal. `.clipShape` clips to the view's own bounds, so
+            // clipping the raw ZStack clips to that oversized box — and since
+            // GeometryReader never clips its content, the green sweep painted outside
+            // the host block. Pin back to the proposed size FIRST, then clip, so the
+            // fill/border sit exactly on the block's rounded rect and nothing can
+            // escape it in any direction.
+            .frame(width: width, height: height)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         .allowsHitTesting(false)
     }
 }

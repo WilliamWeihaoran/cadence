@@ -1,22 +1,45 @@
 #if os(macOS)
 import SwiftUI
 
-/// Shared metrics for the inspector's "label left / value right" field list.
+/// Shared metrics for the inspector's "icon / label left / value right" field list.
 enum TaskInspectorFieldRowMetrics {
-    static let horizontalPadding: CGFloat = 10
+    /// Rows sit inside the recessed group, which supplies the horizontal inset — so the row
+    /// itself only pads vertically and the hairlines line up with the icon column.
     static let verticalPadding: CGFloat = 6
-    static let minHeight: CGFloat = 34
+    static let minHeight: CGFloat = 32
+    /// Fixed leading slot so every label in a group starts on the same x.
+    static let iconSlot: CGFloat = 19
+    static let iconSize: CGFloat = 12
+    static let hoverCornerRadius: CGFloat = 6
     static let labelFont = Font.system(size: 11)
-    static let valueFont = Font.system(size: 11, weight: .medium)
+    static let valueFont = Font.system(size: 11)
+    static let groupHorizontalPadding: CGFloat = 10
+    static let groupCornerRadius: CGFloat = 8
+    static let groupLabelFont = Font.system(size: 9, weight: .semibold)
+    /// ~0.06em at 9pt.
+    static let groupLabelKerning: CGFloat = 0.54
 }
 
-/// One line of the inspector overview list: field name on the left, value flush right.
+/// One line of the inspector overview list: leading glyph, field name, value flush right.
 struct TaskInspectorFieldRow<Value: View>: View {
     let label: String
+    /// SF Symbol drawn in the fixed leading slot. `nil` leaves the slot empty so rows without
+    /// an icon still align with their neighbours.
+    var icon: String? = nil
+    var iconColor: Color = Theme.dim
     @ViewBuilder let value: Value
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 0) {
+            Group {
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: TaskInspectorFieldRowMetrics.iconSize))
+                        .foregroundStyle(iconColor)
+                }
+            }
+            .frame(width: TaskInspectorFieldRowMetrics.iconSlot, alignment: .leading)
+
             Text(label)
                 .font(TaskInspectorFieldRowMetrics.labelFont)
                 .foregroundStyle(Theme.dim)
@@ -27,9 +50,65 @@ struct TaskInspectorFieldRow<Value: View>: View {
 
             value
         }
-        .padding(.horizontal, TaskInspectorFieldRowMetrics.horizontalPadding)
         .padding(.vertical, TaskInspectorFieldRowMetrics.verticalPadding)
         .frame(maxWidth: .infinity, minHeight: TaskInspectorFieldRowMetrics.minHeight, alignment: .leading)
+    }
+}
+
+/// Uppercase group heading, optionally with a right-aligned counter ("1/3").
+struct TaskInspectorGroupLabel: View {
+    let title: String
+    var trailing: String? = nil
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title.uppercased())
+                .font(TaskInspectorFieldRowMetrics.groupLabelFont)
+                .foregroundStyle(Theme.dim)
+                .kerning(TaskInspectorFieldRowMetrics.groupLabelKerning)
+
+            Spacer(minLength: 0)
+
+            if let trailing {
+                Text(trailing)
+                    .font(TaskInspectorFieldRowMetrics.groupLabelFont)
+                    .foregroundStyle(Theme.dim)
+                    .monospacedDigit()
+            }
+        }
+    }
+}
+
+/// Recessed well that holds a run of field rows (or any inspector content).
+struct TaskInspectorRecessedGroup<Content: View>: View {
+    var verticalPadding: CGFloat = 0
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content
+        }
+        .padding(.horizontal, TaskInspectorFieldRowMetrics.groupHorizontalPadding)
+        .padding(.vertical, verticalPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surfaceRecessed)
+        .clipShape(RoundedRectangle(cornerRadius: TaskInspectorFieldRowMetrics.groupCornerRadius))
+    }
+}
+
+/// Group heading + recessed well, the standard inspector section shape.
+struct TaskInspectorRecessedSection<Content: View>: View {
+    let title: String
+    var trailing: String? = nil
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            TaskInspectorGroupLabel(title: title, trailing: trailing)
+            TaskInspectorRecessedGroup {
+                content
+            }
+        }
     }
 }
 
@@ -47,42 +126,45 @@ struct TaskInspectorFieldValueText: View {
     }
 }
 
-/// Hairline between field rows. `strong` marks the break between field groups.
+/// Hairline between field rows. Never drawn after the last row of a group.
 struct TaskInspectorFieldDivider: View {
-    var strong: Bool = false
-
     var body: some View {
         Rectangle()
-            .fill(Theme.borderSubtle.opacity(strong ? 1 : 0.6))
+            .fill(Theme.borderSubtle)
             .frame(height: 1)
     }
 }
 
 /// A field row whose entire surface is a button (opens a picker/menu for that field).
+///
+/// Uses `.plain`, **not** `.cadencePlain`, so every row in the well hovers identically:
+/// `InspectorPickerHover` is the one hover layer. Stacking cadencePlain's radius-10 blue fill +
+/// stroke on top of that made the button rows hover heavier than their neighbour and nested a
+/// radius-6 wash inside a radius-10 border. One layer, one radius, every row in the well.
 struct TaskInspectorFieldButtonRow: View {
     let label: String
+    var icon: String? = nil
     let valueText: String
     let isSet: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            TaskInspectorFieldRow(label: label) {
+            TaskInspectorFieldRow(label: label, icon: icon) {
                 TaskInspectorFieldValueText(text: valueText, isSet: isSet)
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.cadencePlain)
-        // Rows are full-bleed between hairlines, so the hover fill runs edge to edge.
-        .modifier(InspectorPickerHover(cornerRadius: 0))
+        .buttonStyle(.plain)
+        .modifier(InspectorPickerHover(cornerRadius: TaskInspectorFieldRowMetrics.hoverCornerRadius))
     }
 }
 
 struct TaskInspectorDateControl: View {
-    /// Field name shown on the left (e.g. "Do date").
+    /// Field name shown on the left (e.g. "Do").
     let label: String
-    /// Short word shown as the value when no date is set.
-    var placeholder: String = "Set"
+    /// SF Symbol for the row's leading slot.
+    var icon: String? = nil
     /// Tint used by the picker's quick pills.
     var activeColor: Color = Theme.blue
     @Binding var isOn: Bool
@@ -94,13 +176,14 @@ struct TaskInspectorDateControl: View {
     private let cal = Calendar.current
 
     private var displayValue: String {
-        guard isOn else { return placeholder }
+        guard isOn else { return "Set" }
         return DateFormatters.relativeDate(from: DateFormatters.dateKey(from: date))
     }
 
     var body: some View {
         TaskInspectorFieldButtonRow(
             label: label,
+            icon: icon,
             valueText: displayValue,
             isSet: isOn
         ) {
@@ -201,67 +284,41 @@ struct TaskInspectorDateControl: View {
     }
 }
 
-struct TaskInspectorInfoCard<Content: View>: View {
-    /// Inset applied around the card content. Pass `0` when the content supplies its own
-    /// row padding (e.g. the overview field list, whose hairlines run edge to edge).
-    var contentPadding: CGFloat = 10
-    var contentSpacing: CGFloat = 12
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: contentSpacing) {
-            content
-        }
-        .padding(contentPadding)
-        .background(Theme.surfaceElevated.opacity(0.38))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.borderSubtle.opacity(0.82), lineWidth: 1)
-        )
-    }
-}
-
+/// Group heading + free-form (non-recessed) content, e.g. the Actions row.
 struct TaskInspectorSectionGroup<Content: View>: View {
     let title: String
+    var trailing: String? = nil
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .kerning(0.8)
-
+        VStack(alignment: .leading, spacing: 6) {
+            TaskInspectorGroupLabel(title: title, trailing: trailing)
             content
         }
     }
 }
 
-struct TaskPriorityPill: View {
+/// Header priority affordance: the shared "!" mark convention on a tinted, clickable surface.
+/// Deliberately not a flag glyph — the marks are the app-wide priority language.
+struct TaskPriorityMarkControl: View {
     let priority: TaskPriority
-    let selected: Bool
+
+    private var isSet: Bool { priority != .none }
+    private var tint: Color { isSet ? Theme.priorityColor(priority) : Theme.dim }
 
     var body: some View {
-        HStack(spacing: 5) {
-            Text(TaskTitleSupport.priorityMark(for: priority))
-                .font(.system(size: 12, weight: .bold))
-                .frame(minWidth: 18)
-            Image(systemName: "chevron.down")
-                .font(.system(size: 7, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-        }
-        .foregroundStyle(selected ? Theme.priorityColor(priority) : Theme.dim)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .frame(minHeight: 30)
-        .contentShape(Rectangle())
-        .background(selected ? Theme.priorityColor(priority).opacity(0.12) : Theme.surface.opacity(0.6))
-        .overlay(
-            Capsule()
-                .stroke(selected ? Theme.priorityColor(priority).opacity(0.35) : Theme.borderSubtle, lineWidth: 1)
-        )
-        .clipShape(Capsule())
+        Text(TaskTitleSupport.priorityMark(for: priority))
+            .font(.system(size: 14, weight: .bold))
+            .foregroundStyle(tint)
+            .lineLimit(1)
+            .frame(minWidth: 28, minHeight: 28)
+            .background(isSet ? tint.opacity(0.10) : Theme.surfaceElevated)
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(isSet ? tint.opacity(0.30) : Theme.borderSubtle, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .contentShape(Rectangle())
     }
 }
 
@@ -280,72 +337,30 @@ struct InspectorPickerHover: ViewModifier {
     }
 }
 
-/// Estimate field row: whole row opens the shared estimate picker.
+/// Estimate field row: whole row opens the shared estimate picker (presets + hours/minutes).
 struct TaskInspectorEstimateFieldRow: View {
     @Binding var value: Int
+    var label: String = "Estimate"
+    var icon: String = "timer"
     @State private var showPicker = false
 
     var body: some View {
         TaskInspectorFieldButtonRow(
-            label: "Estimate",
+            label: label,
+            icon: icon,
             valueText: value > 0 ? CadenceTaskPresentationSupport.estimateLabel(minutes: value) : "None",
             isSet: value > 0
         ) {
             showPicker.toggle()
         }
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
-            EstimatePickerPopoverContent(value: $value) {
+            // The popover heading follows the row, so the "Actual" row cannot present a panel
+            // titled ESTIMATE.
+            EstimatePickerPopoverContent(value: $value, title: label.uppercased()) {
                 showPicker = false
             }
         }
     }
 }
 
-/// Logged-minutes field row — the value stays inline-editable, right aligned.
-/// Deliberately *not* a button row: the row itself isn't clickable, only the field inside it,
-/// so it gets no row-level hover affordance.
-struct TaskInspectorMinutesFieldRow: View {
-    let label: String
-    @Binding var value: Int
-
-    var body: some View {
-        TaskInspectorFieldRow(label: label) {
-            MinutesField(value: $value)
-        }
-    }
-}
-
-struct MinutesField: View {
-    @Binding var value: Int
-    @State private var text: String = ""
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        HStack(spacing: 3) {
-            TextField("—", text: $text)
-                .textFieldStyle(.plain)
-                .font(TaskInspectorFieldRowMetrics.valueFont)
-                .foregroundStyle(value > 0 ? Theme.text : Theme.dim)
-                .multilineTextAlignment(.trailing)
-                .frame(width: 46)
-                .focused($focused)
-                .onSubmit { commit() }
-                .onChange(of: focused) { if !focused { commit() } }
-            Text("min")
-                .font(.system(size: 11))
-                .foregroundStyle(value > 0 ? Theme.muted : Theme.dim)
-        }
-        .onAppear { text = value > 0 ? "\(value)" : "" }
-        .onChange(of: value) { text = value > 0 ? "\(value)" : "" }
-    }
-
-    private func commit() {
-        if let parsed = Int(text.trimmingCharacters(in: .whitespaces)), parsed >= 0 {
-            value = parsed
-        } else if text.trimmingCharacters(in: .whitespaces).isEmpty {
-            value = 0
-        }
-        text = value > 0 ? "\(value)" : ""
-    }
-}
 #endif

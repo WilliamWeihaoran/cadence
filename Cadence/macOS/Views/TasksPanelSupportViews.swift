@@ -274,11 +274,12 @@ struct ContainerPickerBadge: View {
         if let inspectorRowLabel {
             // Always the real container name ("Inbox" when unset) so the row and its picker
             // agree; the dim `isSet: false` treatment is what conveys "no list chosen".
-            TaskInspectorFieldRow(label: inspectorRowLabel) {
+            // The leading glyph is the container's own icon in its own colour.
+            TaskInspectorFieldRow(label: inspectorRowLabel, icon: labelIcon, iconColor: labelColor) {
                 TaskInspectorFieldValueText(text: label, isSet: hasContainer)
             }
             .contentShape(Rectangle())
-            .modifier(InspectorPickerHover(cornerRadius: 0))
+            .modifier(InspectorPickerHover(cornerRadius: TaskInspectorFieldRowMetrics.hoverCornerRadius))
         } else {
             HStack(spacing: 4) {
                 Image(systemName: labelIcon).font(.system(size: compact ? 9 : 10)).foregroundStyle(labelColor)
@@ -469,11 +470,12 @@ struct TaskSectionPickerBadge: View {
         if let inspectorRowLabel {
             // Always the real section name ("Default" when the task isn't in a named section)
             // so the row and its picker agree; dim styling conveys the unset state.
-            TaskInspectorFieldRow(label: inspectorRowLabel) {
+            // Sections have no colour of their own, so the glyph stays neutral.
+            TaskInspectorFieldRow(label: inspectorRowLabel, icon: "square.split.2x1", iconColor: Theme.dim) {
                 TaskInspectorFieldValueText(text: label, isSet: matchedSection != nil)
             }
             .contentShape(Rectangle())
-            .modifier(InspectorPickerHover(cornerRadius: 0))
+            .modifier(InspectorPickerHover(cornerRadius: TaskInspectorFieldRowMetrics.hoverCornerRadius))
         } else {
             HStack(spacing: 4) {
                 Image(systemName: "square.split.2x1")

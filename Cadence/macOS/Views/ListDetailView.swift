@@ -418,6 +418,16 @@ private struct ListDetailTabBarView: View {
     @Binding var taskGroupingMode: TaskGroupingMode
     let allowsSectionEditing: Bool
 
+    /// The bar's height is pinned rather than derived from its children. `trailingControls`
+    /// only exists on Tasks and Kanban, so an unconstrained HStack sized itself to whichever
+    /// controls happened to be present and the bar visibly grew/shrank on every tab switch.
+    private static let barHeight = CadenceDesktopMetrics.compactControlHeight + 20
+
+    /// The gap a reader *sees* between two tab labels is the cluster spacing plus the two
+    /// hover-pill paddings that sit between them. Solved for a ~20pt visual gap:
+    /// `2 * TabButton.horizontalPadding + spacing == 20`.
+    private static let tabClusterSpacing = 20 - 2 * TabButton.horizontalPadding
+
     var body: some View {
         HStack(spacing: 12) {
             tabCluster
@@ -425,11 +435,11 @@ private struct ListDetailTabBarView: View {
             trailingControls
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .frame(height: Self.barHeight)
     }
 
     private var tabCluster: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: Self.tabClusterSpacing) {
             ForEach(ListDetailPage.allCases, id: \.self) { page in
                 TabButton(tab: page, isSelected: tab == page) {
                     tab = page
@@ -470,7 +480,7 @@ private struct ListDetailTabBarView: View {
             }
             .foregroundStyle(showArchivedKanbanColumns ? Theme.blue : Theme.dim)
             .padding(.horizontal, 12)
-            .frame(height: 32)
+            .frame(height: CadenceDesktopMetrics.compactControlHeight)
             .contentShape(Rectangle())
             .background(showArchivedKanbanColumns ? Theme.blue.opacity(0.16) : Theme.surfaceElevated.opacity(0.92))
             .clipShape(RoundedRectangle(cornerRadius: 8))

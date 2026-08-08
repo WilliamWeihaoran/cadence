@@ -130,8 +130,6 @@ struct TasksPanel: View {
             guard !resolvedTasks.isEmpty else { return nil }
             return TodayTaskGroup(
                 id: group.id,
-                contextID: group.contextID,
-                contextName: group.contextName,
                 contextIcon: group.contextIcon,
                 contextColor: group.contextColor,
                 listIcon: group.listIcon,
@@ -544,75 +542,46 @@ struct TasksPanel: View {
 
     // MARK: - Grouping
 
-    private func todayContextSections(from groups: [TodayTaskGroup]) -> [TodayTaskContextSection] {
-        var orderedSections: [TodayTaskContextSection] = []
-        var groupedContextMap: [String: Int] = [:]
-
-        for group in groups {
-            if let contextID = group.contextID {
-                if let index = groupedContextMap[contextID] {
-                    orderedSections[index] = TodayTaskContextSection(
-                        id: orderedSections[index].id,
-                        contextName: orderedSections[index].contextName,
-                        contextIcon: orderedSections[index].contextIcon,
-                        contextColor: orderedSections[index].contextColor,
-                        groups: orderedSections[index].groups + [group]
-                    )
-                } else {
-                    groupedContextMap[contextID] = orderedSections.count
-                    orderedSections.append(
-                        TodayTaskContextSection(
-                            id: "context-\(contextID)",
-                            contextName: group.contextName,
-                            contextIcon: group.contextIcon,
-                            contextColor: group.contextColor,
-                            groups: [group]
-                        )
-                    )
-                }
-            } else {
-                orderedSections.append(
-                    TodayTaskContextSection(
-                        id: "group-\(group.id)",
-                        contextName: nil,
-                        contextIcon: nil,
-                        contextColor: nil,
-                        groups: [group]
-                    )
-                )
-            }
-        }
-
-        return orderedSections
-    }
-
+    /// Today's "by list" organization is a **single, flat tier of list groups** — no
+    /// context headers. Group order comes straight out of
+    /// `TasksPanelSupport.listGroups`, which orders by `sidebarListOrder`
+    /// (Inbox pinned first, then contexts in their sidebar order, and within each
+    /// context its areas then its projects in their own order). That keeps the
+    /// sequence stable as counts and dates change.
+    ///
+    /// Scoped to Today only: All Tasks (`.byDoDate`) still renders its own
+    /// `byDoDateListSections`, and `AllTasksListView` keeps its context-icon
+    /// affordance — neither goes through this path.
     @ViewBuilder
     private func todayListSections(groups: [TodayTaskGroup]) -> some View {
-        ForEach(todayContextSections(from: groups)) { section in
-            TodayTaskContextSectionView(
-                section: section,
-                dragOverTaskID: $dragOverTaskID,
-                contexts: contexts,
-                areas: areas,
-                projects: projects,
-                allTasks: allTasks,
-                collapsedGroupIDs: collapsedGroupIDs,
-                overdueCount: { overdueCount(in: $0) },
-                regularCount: { regularCount(in: $0) },
-                onToggleGroup: toggleGroup,
-                taskDragPayload: taskDragPayload,
-                onDropOnGroupPayload: { group, payload in
-                    dropCoordinator.handleSectionDrop(payload: payload, dropKey: "list:\(group.id)")
-                },
-                onDropOnTaskPayload: { group, payload, targetTask in
-                    dropCoordinator.handleTaskDrop(
-                        payload: payload,
-                        targetTask: targetTask,
-                        scopeTasks: group.tasks,
-                        dropKey: "list:\(group.id)"
-                    )
-                }
-            )
+        ForEach(groups) { group in
+            VStack(alignment: .leading, spacing: 0) {
+                TasksPanelGroupSectionView(
+                    group: group,
+                    dragOverTaskID: $dragOverTaskID,
+                    contexts: contexts,
+                    areas: areas,
+                    projects: projects,
+                    allTasks: allTasks,
+                    showsContextIcon: false,
+                    isCollapsed: collapsedGroupIDs.contains(group.id),
+                    overdueCount: overdueCount(in: group.tasks),
+                    regularCount: regularCount(in: group.tasks),
+                    onToggle: { toggleGroup(group.id) },
+                    taskDragPayload: taskDragPayload,
+                    onDropOnGroupPayload: { payload in
+                        dropCoordinator.handleSectionDrop(payload: payload, dropKey: "list:\(group.id)")
+                    },
+                    onDropOnTaskPayload: { payload, targetTask in
+                        dropCoordinator.handleTaskDrop(
+                            payload: payload,
+                            targetTask: targetTask,
+                            scopeTasks: group.tasks,
+                            dropKey: "list:\(group.id)"
+                        )
+                    }
+                )
+            }
         }
     }
 
@@ -647,8 +616,6 @@ struct TasksPanel: View {
         groupedTasks(tasks).map { group in
             FrozenTodayTaskGroup(
                 id: group.id,
-                contextID: group.contextID,
-                contextName: group.contextName,
                 contextIcon: group.contextIcon,
                 contextColor: group.contextColor,
                 listIcon: group.listIcon,

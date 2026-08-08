@@ -1,37 +1,29 @@
 #if os(macOS)
 import SwiftUI
 
+/// Hover visuals shared by every task-row-like surface (task lists, kanban cards, planning cards).
+///
+/// Hover is deliberately **neutral**: it never derives a hue from the task's list/container color,
+/// its priority, or its urgency. Hovering any task on any surface produces the same gray wash.
+/// State meaning (priority on the completion circle, the container icon color, red/amber overdue
+/// and over-do date text) is expressed by persistent elements, not by the hover wash.
 enum TaskHoverVisuals {
-    static func accentColor(for task: AppTask) -> Color {
-        if task.isCancelled { return Theme.dim }
-        if task.isDone { return Theme.green }
-        if task.priority != .none { return Theme.priorityColor(task.priority) }
-
-        let containerHex = task.containerColor.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !containerHex.isEmpty,
-           containerHex.caseInsensitiveCompare(TaskSectionDefaults.defaultColorHex) != .orderedSame {
-            return Color(hex: containerHex)
-        }
-
-        return Theme.blue
+    /// Neutral raised-surface fill for surfaces that are **transparent** at rest — task rows,
+    /// which sit directly on the page background.
+    static func hoverFill(isHovered: Bool) -> Color {
+        isHovered ? Theme.surfaceElevated : .clear
     }
 
-    static func hoverFill(
-        for task: AppTask,
-        isHovered: Bool,
-        isOverdue: Bool,
-        isOverdo: Bool,
-        normalOpacity: Double = 0.08
-    ) -> Color {
-        guard isHovered else { return .clear }
-        if task.isDone { return Theme.green.opacity(0.07) }
-        if isOverdue { return Theme.red.opacity(0.2) }
-        if isOverdo { return Theme.amber.opacity(0.22) }
-        return accentColor(for: task).opacity(normalOpacity)
+    /// Neutral raised-surface fill for surfaces that draw their **own** resting fill — kanban
+    /// and planning cards, which are `Theme.surface` objects on a canvas. Same raise as
+    /// `hoverFill`, so all three surfaces stay single-sourced.
+    static func cardFill(isHovered: Bool) -> Color {
+        isHovered ? Theme.surfaceElevated : Theme.surface
     }
 
-    static func borderColor(for task: AppTask, isHovered: Bool, opacity: Double) -> Color {
-        isHovered ? accentColor(for: task).opacity(opacity) : .clear
+    /// Neutral hairline used while a task row/card is hovered.
+    static func borderColor(isHovered: Bool) -> Color {
+        isHovered ? Theme.borderSubtle : .clear
     }
 }
 #endif

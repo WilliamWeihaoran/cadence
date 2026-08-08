@@ -2,10 +2,13 @@
 import AppKit
 import SwiftUI
 
-/// Icon-first tile used for the four highest-traffic destinations at the top of the
-/// sidebar. Deliberately tiny (icon + micro label) so all four fit on one row and read
-/// as a toolbar rather than as four competing cards.
-struct SidebarDestinationTile: View {
+/// A single icon-only button in the permanent left rail.
+///
+/// The rail carries no labels, so every button needs a `.help(...)` tooltip to stay
+/// learnable. Selection is expressed by a filled `Theme.surfaceElevated` pill plus the
+/// destination's own tint on the glyph; inactive buttons drop to `Theme.dim` so the
+/// rail reads as one calm column with a single obvious active item.
+struct SidebarRailButton: View {
     let icon: String
     let label: String
     let tint: Color
@@ -18,40 +21,42 @@ struct SidebarDestinationTile: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(tint)
-
-                Text(label)
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 38)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(backgroundFill)
-            )
-            .overlay(alignment: .topTrailing) {
-                if let count {
-                    Text("\(count)")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .padding(.top, 3)
-                        .padding(.trailing, 4)
+            RoundedRectangle(cornerRadius: SidebarRailMetrics.cornerRadius, style: .continuous)
+                .fill(backgroundFill)
+                .frame(width: SidebarRailMetrics.buttonSize, height: SidebarRailMetrics.buttonSize)
+                .overlay {
+                    Image(systemName: icon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isSelected ? tint : Theme.dim)
                 }
-            }
-            .contentShape(Rectangle())
+                .overlay(alignment: .topTrailing) {
+                    if let count, count > 0 {
+                        badge(count)
+                    }
+                }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help(label)
         .accessibilityIdentifier(accessibilityID)
         .accessibilityLabel(label)
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
         .animation(.easeOut(duration: 0.12), value: isSelected)
+    }
+
+    @ViewBuilder
+    private func badge(_ count: Int) -> some View {
+        Text(count > 99 ? "99+" : "\(count)")
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundStyle(isSelected ? Theme.bg : Theme.muted)
+            .padding(.horizontal, 3)
+            .frame(minWidth: SidebarRailMetrics.badgeSize, minHeight: SidebarRailMetrics.badgeSize)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(isSelected ? tint : Theme.borderSubtle)
+            )
+            .offset(x: 3, y: -3)
     }
 
     private var backgroundFill: Color {
@@ -61,68 +66,16 @@ struct SidebarDestinationTile: View {
         if isHovered {
             return Theme.surfaceElevated.opacity(0.6)
         }
-        return Theme.surface
+        return Color.clear
     }
 }
 
-/// Low-profile single-line row for secondary destinations (All Tasks, Focus, Goals,
-/// Habits…). No card, no border — selection is carried by a filled background alone.
-struct SidebarCompactRow: View {
-    let icon: String
-    let label: String
-    let tint: Color
-    let count: Int?
-    let isSelected: Bool
-    let accessibilityID: String
-    let action: () -> Void
-
-    @State private var isHovered = false
-
+/// Hairline that splits the rail into its daily / views / tracking groups.
+struct SidebarRailSeparator: View {
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 14)
-
-                Text(label)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
-                    .lineLimit(1)
-
-                Spacer(minLength: 6)
-
-                if let count {
-                    Text("\(count)")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                }
-            }
-            .padding(.vertical, 5)
-            .padding(.horizontal, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(backgroundFill)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(accessibilityID)
-        .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: 0.12), value: isHovered)
-        .animation(.easeOut(duration: 0.12), value: isSelected)
-    }
-
-    private var backgroundFill: Color {
-        if isSelected {
-            return Theme.surfaceElevated
-        }
-        if isHovered {
-            return Theme.surfaceElevated.opacity(0.55)
-        }
-        return Color.clear
+        Rectangle()
+            .fill(Theme.borderSubtle)
+            .frame(width: SidebarRailMetrics.separatorWidth, height: 1)
     }
 }
 
@@ -318,27 +271,4 @@ private struct SidebarRightClickEditTrigger: NSViewRepresentable {
     }
 }
 
-struct SidebarSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .kerning(0.8)
-                Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.65))
-                    .frame(height: 1)
-            }
-            .padding(.horizontal, 2)
-
-            VStack(alignment: .leading, spacing: 4) {
-                content
-            }
-        }
-    }
-}
 #endif

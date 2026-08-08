@@ -69,10 +69,24 @@ enum CadenceTaskRecurrenceWorkflowSupport {
         }
     }
 
+    /// Spawns the successor unless the series' end condition (see `TaskRecurrenceEndMode`) says the
+    /// series stops here. The end check has to happen *before* the successor is built: assigning
+    /// relationships (area/project/goal/context/tags) onto a freshly-made `AppTask` can pull it into
+    /// the context through the inverse side, so a "build it then throw it away" shape would risk
+    /// leaking a phantom occurrence. We therefore compute the successor's dates first, ask the end
+    /// condition about them, and only then materialize the task.
+    ///
+    /// When the series does end, the current task still completes/cancels normally (its status was
+    /// already set by the caller) and its `recurrenceSpawnedTaskID` stays nil — no dangling pointer.
     private static func spawnNextOccurrenceIfNeeded(from task: AppTask, in context: ModelContext, now: Date) {
         guard task.isRecurring, task.recurrenceSpawnedTaskID == nil else { return }
         ensureRecurrenceSeriesMetadata(for: task)
-        let nextTask = makeNextRecurringTask(from: task, now: now)
+
+        guard !task.recurrenceHasEnded else { return }
+        let plannedDates = plannedNextDates(for: task, now: now)
+        guard task.shouldSpawnNextOccurrence(nextDateKey: plannedDates.anchorKey(now: now)) else { return }
+
+        let nextTask = makeNextRecurringTask(from: task, dates: plannedDates)
         context.insert(nextTask)
         task.recurrenceSpawnedTaskID = nextTask.id
     }
@@ -97,6 +111,29 @@ enum CadenceTaskRecurrenceWorkflowSupport {
             if rule == .none {
                 target.recurrenceSpawnedTaskID = nil
             }
+        }
+    }
+
+    /// Sets the series end condition. Values that don't belong to the chosen mode are normalized
+    /// away so a stale end date can't resurface if the user flips back to `.onDate` later with a
+    /// half-configured value, and so `.never` never leaves a stray limit behind.
+    static func applyRecurrenceEnd(
+        mode: TaskRecurrenceEndMode,
+        endDateKey: String = "",
+        endCount: Int = 0,
+        to task: AppTask,
+        allTasks: [AppTask],
+        scope: CadenceTaskRecurrenceEditScope
+    ) {
+        ensureRecurrenceSeriesMetadata(for: task)
+        let normalizedDate = mode == .onDate ? endDateKey : ""
+        let normalizedCount = mode == .afterCount ? max(1, endCount) : 0
+
+        for target in recurrenceTargets(from: task, allTasks: allTasks, scope: scope) {
+            ensureRecurrenceSeriesMetadata(for: target)
+            target.recurrenceEndMode = mode
+            target.recurrenceEndDate = normalizedDate
+            target.recurrenceEndCount = normalizedCount
         }
     }
 
@@ -136,11 +173,45 @@ enum CadenceTaskRecurrenceWorkflowSupport {
         }
     }
 
-    private static func makeNextRecurringTask(from task: AppTask, now: Date) -> AppTask {
+    /// The dates the next occurrence would carry. Each date only advances if the predecessor
+    /// actually had one, matching the historical behavior.
+    struct PlannedRecurrenceDates {
+        var dueDate: String = ""
+        var scheduledDate: String = ""
+
+        /// The single date key that represents this occurrence for end-date purposes. Do date
+        /// (`scheduledDate`) wins over due date because that's the same precedence
+        /// `recurrenceSortDateKey` already uses to decide "when is this occurrence". A dateless
+        /// occurrence is anchored to `now` — that's the day it would actually appear.
+        func anchorKey(now: Date) -> String {
+            if !scheduledDate.isEmpty { return scheduledDate }
+            if !dueDate.isEmpty { return dueDate }
+            return DateFormatters.dateKey(from: now)
+        }
+    }
+
+    private static func plannedNextDates(for task: AppTask, now: Date) -> PlannedRecurrenceDates {
+        var planned = PlannedRecurrenceDates()
+        let todayKey = DateFormatters.dateKey(from: now)
+        if !task.dueDate.isEmpty {
+            planned.dueDate = nextRecurrenceDateKey(from: task.dueDate, todayKey: todayKey, recurrence: task.recurrenceRule) ?? task.dueDate
+        }
+        if !task.scheduledDate.isEmpty {
+            planned.scheduledDate = nextRecurrenceDateKey(from: task.scheduledDate, todayKey: todayKey, recurrence: task.recurrenceRule) ?? task.scheduledDate
+        }
+        return planned
+    }
+
+    private static func makeNextRecurringTask(from task: AppTask, dates: PlannedRecurrenceDates) -> AppTask {
         let nextTask = AppTask(title: task.title)
         nextTask.notes = task.notes
         nextTask.priority = task.priority
         nextTask.recurrenceRule = task.recurrenceRule
+        // The successor must inherit the end condition, or the series forgets its own limit after
+        // one hop and starts repeating forever again.
+        nextTask.recurrenceEndModeRaw = task.recurrenceEndModeRaw
+        nextTask.recurrenceEndDate = task.recurrenceEndDate
+        nextTask.recurrenceEndCount = task.recurrenceEndCount
         nextTask.estimatedMinutes = max(task.estimatedMinutes, 30)
         nextTask.sectionName = task.sectionName
         nextTask.area = task.area
@@ -152,12 +223,9 @@ enum CadenceTaskRecurrenceWorkflowSupport {
         nextTask.recurrenceSourceTaskID = task.id
         nextTask.recurrenceOccurrenceIndex = task.recurrenceOccurrenceIndex + 1
 
-        let todayKey = DateFormatters.dateKey(from: now)
-        if !task.dueDate.isEmpty {
-            nextTask.dueDate = nextRecurrenceDateKey(from: task.dueDate, todayKey: todayKey, recurrence: task.recurrenceRule) ?? task.dueDate
-        }
-        if !task.scheduledDate.isEmpty {
-            nextTask.scheduledDate = nextRecurrenceDateKey(from: task.scheduledDate, todayKey: todayKey, recurrence: task.recurrenceRule) ?? task.scheduledDate
+        nextTask.dueDate = dates.dueDate
+        if !dates.scheduledDate.isEmpty {
+            nextTask.scheduledDate = dates.scheduledDate
             nextTask.scheduledStartMin = task.scheduledStartMin
         }
 

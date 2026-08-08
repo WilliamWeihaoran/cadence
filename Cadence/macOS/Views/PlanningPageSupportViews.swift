@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import SwiftData
 import SwiftUI
 
 // MARK: - Buckets
@@ -147,11 +148,12 @@ struct PlanningBucketColumn: View {
                 PlanningCardView(task: task, todayKey: todayKey)
             }
 
-            Spacer(minLength: 0)
-
-            // Sits at the true bottom of the column so it never floats mid-column in a
-            // short/empty bucket. Still quiet at rest, full strength on hover.
+            // Must follow the last card directly. The column's `minHeight` means a short
+            // bucket has slack below it — putting the spacer *after* the button pushes that
+            // slack to the bottom of the column instead of pinning the button to the page floor.
             PlanningAddTaskButton(action: onAddTask)
+
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
         .contentShape(Rectangle())
@@ -195,8 +197,17 @@ struct PlanningCardView: View {
     @Bindable var task: AppTask
     let todayKey: String
 
+    @Environment(\.modelContext) private var modelContext
+    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
+    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
+    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
+
     @State private var isHovered = false
     @State private var showTaskInspector = false
+
+    /// Namespaced the same way `MacTaskRow` / `KanbanCardView` namespace theirs, so a card
+    /// visible on two surfaces at once can't unregister the other's hover entry.
+    private var editableID: String { "planning-task-\(task.id.uuidString)" }
 
     var body: some View {
         Button {
@@ -220,15 +231,34 @@ struct PlanningCardView: View {
             }
             .padding(7)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface)
+            // Same neutral hover as `MacTaskRow` / `KanbanCardView`: a plain raise to
+            // `Theme.surfaceElevated` with a `Theme.borderSubtle` hairline — no list, priority,
+            // or urgency hue in the wash.
+            .background(TaskHoverVisuals.cardFill(isHovered: isHovered))
             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(isHovered ? Theme.dim.opacity(0.45) : Theme.borderSubtle, lineWidth: 1)
+                    .strokeBorder(Theme.borderSubtle, lineWidth: 1)
             }
         }
         .buttonStyle(.cadencePlain)
-        .onHover { isHovered = $0 }
+        .onHover { hovering in
+            guard isHovered != hovering else { return }
+            isHovered = hovering
+            if hovering {
+                beginHoverRegistration()
+            } else {
+                endHoverRegistration()
+            }
+        }
+        .onDisappear {
+            // A card can be dragged into another bucket (or completed away) while the pointer
+            // is still over it, so `.onHover(false)` never fires. Without this the managers keep
+            // pointing at a row that no longer exists and the shortcuts act on a stale task.
+            guard isHovered else { return }
+            isHovered = false
+            endHoverRegistration()
+        }
         .overlay {
             RightClickActionTrigger {
                 showTaskInspector = true
@@ -238,6 +268,34 @@ struct PlanningCardView: View {
         .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             TaskDetailPopover(task: task)
         }
+    }
+
+    // MARK: - Hover registration
+
+    /// The hovered-task shortcuts (Cmd+Delete / Cmd+Return / Cmd+E / Cmd+T / Cmd+D / Cmd+P /
+    /// Cmd+S / Cmd+/) are all driven off these two managers — a surface that never registers
+    /// is a surface where every one of them silently no-ops.
+    private func beginHoverRegistration() {
+        hoveredTaskManager.beginHovering(task, source: .list)
+        hoveredEditableManager.beginHovering(id: editableID) {
+            showTaskInspector = true
+        } onDelete: {
+            deleteConfirmationManager.present(
+                title: "Delete Task?",
+                message: "This will permanently delete \"\(task.title.isEmpty ? "Untitled" : task.title)\"."
+            ) {
+                if hoveredTaskManager.hoveredTask?.id == task.id {
+                    hoveredTaskManager.hoveredTask = nil
+                }
+                hoveredEditableManager.endHovering(id: editableID)
+                modelContext.deleteTask(task)
+            }
+        }
+    }
+
+    private func endHoverRegistration() {
+        hoveredTaskManager.endHovering(task)
+        hoveredEditableManager.endHovering(id: editableID)
     }
 
     @ViewBuilder
@@ -258,13 +316,38 @@ struct PlanningCardView: View {
                     .lineLimit(1)
             }
 
+            // App-wide rule: a task that *has* a due date always shows it, on every surface.
+            // The "Nd late" badge is not a substitute — it says the task is late, not when it
+            // was due, and it never appears at all for a task due today or in the future.
+            if !task.dueDate.isEmpty {
+                HStack(spacing: 3) {
+                    Image(systemName: "flag.fill")
+                        .font(.system(size: 8, weight: .semibold))
+                    Text(DateFormatters.relativeDate(from: task.dueDate))
+                        .font(.system(size: 9, weight: .medium))
+                }
+                .foregroundStyle(dueDateTint)
+                .lineLimit(1)
+                .fixedSize()
+            }
+
             if let daysLate {
                 Text("\(daysLate)d late")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Theme.red)
                     .lineLimit(1)
+                    .fixedSize()
             }
         }
+    }
+
+    /// Same urgency convention as `MacTaskRow` and the kanban card: overdue reads red,
+    /// due today reads amber, everything else stays quiet.
+    private var dueDateTint: Color {
+        guard !task.isDone, !task.isCancelled else { return Theme.dim }
+        if task.dueDate < todayKey { return Theme.red }
+        if task.dueDate == todayKey { return Theme.amber }
+        return Theme.dim
     }
 
     private var containerIcon: String {

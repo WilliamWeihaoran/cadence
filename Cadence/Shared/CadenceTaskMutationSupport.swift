@@ -226,6 +226,11 @@ enum CadenceTaskMutationSupport {
         duplicate.priority = task.priority
         duplicate.status = .todo
         duplicate.recurrenceRule = task.recurrenceRule
+        // A duplicate starts its own series at occurrence 1, but it should carry the same end
+        // condition the user configured rather than silently becoming an endless series.
+        duplicate.recurrenceEndModeRaw = task.recurrenceEndModeRaw
+        duplicate.recurrenceEndDate = task.recurrenceEndDate
+        duplicate.recurrenceEndCount = task.recurrenceEndCount
         duplicate.dueDate = task.dueDate
         duplicate.scheduledDate = task.scheduledDate
         duplicate.scheduledStartMin = task.scheduledStartMin
