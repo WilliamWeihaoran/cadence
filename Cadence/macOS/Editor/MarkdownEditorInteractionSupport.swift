@@ -332,11 +332,14 @@ final class CadenceLayoutManager: NSLayoutManager {
                 card: cardRect,
                 checkbox: checkboxRect.insetBy(dx: -6, dy: -6)
             )
+            let hoveredTarget = textView.hoveredMarkdownTaskEmbed?.id == embed.task.id
+                ? textView.hoveredMarkdownTaskEmbed?.target
+                : nil
             MarkdownTaskEmbedDrawing.drawCard(
                 task: embed.task,
                 cardRect: cardRect,
                 checkboxRect: checkboxRect,
-                isHovered: textView.hoveredMarkdownTaskEmbedID == embed.task.id
+                hoveredTarget: hoveredTarget
             )
         }
     }
@@ -389,7 +392,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     var markdownImageRects: [UUID: NSRect] = [:]
     var markdownTaskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:]
     var markdownTaskEmbedRects: [UUID: MarkdownTaskEmbedHitRects] = [:]
-    var hoveredMarkdownTaskEmbedID: UUID?
+    var hoveredMarkdownTaskEmbed: MarkdownTaskEmbedHover?
     var selectedMarkdownImageID: UUID?
     var referenceSuggestions: [MarkdownReferenceSuggestion] = []
     var tagSuggestions: [MarkdownTagSuggestion] = []
@@ -409,7 +412,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     private var resizeStartX: CGFloat = 0
     private var resizeStartWidth: CGFloat = 0
     private var trackingAreaForHover: NSTrackingArea?
-    private var pendingTaskEmbedMouseDown: (id: UUID, target: TaskEmbedHitTarget, point: NSPoint, event: NSEvent)?
+    private var pendingTaskEmbedMouseDown: (id: UUID, target: MarkdownTaskEmbedHitTarget, point: NSPoint, event: NSEvent)?
     private var draggingTaskEmbedID: UUID?
     private var inlineTaskTitleEditor: NSTextField?
     private var inlineTaskTitleTaskID: UUID?
@@ -729,7 +732,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         return nil
     }
 
-    private func performTaskEmbedClick(_ pending: (id: UUID, target: TaskEmbedHitTarget, point: NSPoint, event: NSEvent)) {
+    private func performTaskEmbedClick(_ pending: (id: UUID, target: MarkdownTaskEmbedHitTarget, point: NSPoint, event: NSEvent)) {
         switch pending.target {
         case .checkbox:
             onToggleEmbeddedMarkdownTask?(pending.id)
@@ -836,14 +839,18 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     }
 
     private func updateHoveredTaskEmbed(at point: NSPoint) {
-        let nextID = taskEmbedHit(at: point)?.id
-        guard nextID != hoveredMarkdownTaskEmbedID else { return }
-        if let hoveredMarkdownTaskEmbedID {
-            onHoverEmbeddedMarkdownTask?(hoveredMarkdownTaskEmbedID, false)
+        let hit = taskEmbedHit(at: point)
+        let next = hit.map { MarkdownTaskEmbedHover(id: $0.id, target: $0.target) }
+        guard next != hoveredMarkdownTaskEmbed else { return }
+        let didChangeID = next?.id != hoveredMarkdownTaskEmbed?.id
+        if didChangeID, let hoveredMarkdownTaskEmbed {
+            onHoverEmbeddedMarkdownTask?(hoveredMarkdownTaskEmbed.id, false)
         }
-        hoveredMarkdownTaskEmbedID = nextID
-        if let nextID {
-            onHoverEmbeddedMarkdownTask?(nextID, true)
+        hoveredMarkdownTaskEmbed = next
+        if let next {
+            if didChangeID {
+                onHoverEmbeddedMarkdownTask?(next.id, true)
+            }
             NSCursor.pointingHand.set()
         } else {
             NSCursor.iBeam.set()
@@ -852,9 +859,9 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     }
 
     private func clearHoveredTaskEmbed() {
-        guard let hoveredMarkdownTaskEmbedID else { return }
-        onHoverEmbeddedMarkdownTask?(hoveredMarkdownTaskEmbedID, false)
-        self.hoveredMarkdownTaskEmbedID = nil
+        guard let hoveredMarkdownTaskEmbed else { return }
+        onHoverEmbeddedMarkdownTask?(hoveredMarkdownTaskEmbed.id, false)
+        self.hoveredMarkdownTaskEmbed = nil
         pendingTaskEmbedMouseDown = nil
         NSCursor.iBeam.set()
         needsDisplay = true
@@ -892,17 +899,9 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         return image
     }
 
-    private enum TaskEmbedHitTarget {
-        case checkbox
-        case subtaskCheckbox(UUID)
-        case subtaskText
-        case field(MarkdownTaskEmbedField)
-        case card
-    }
-
-    private func taskEmbedHit(at point: NSPoint) -> (id: UUID, target: TaskEmbedHitTarget)? {
+    private func taskEmbedHit(at point: NSPoint) -> (id: UUID, target: MarkdownTaskEmbedHitTarget)? {
         guard let layoutManager, let textContainer, let textStorage else { return nil }
-        var result: (id: UUID, target: TaskEmbedHitTarget)?
+        var result: (id: UUID, target: MarkdownTaskEmbedHitTarget)?
         textStorage.enumerateAttribute(.cadenceMarkdownTaskEmbed, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, stop in
             guard let embed = value as? MarkdownTaskEmbedLayoutInfo,
                   range.location < textStorage.length else { return }
@@ -1163,19 +1162,14 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
 }
 
 final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
-    private static let stylingDebounceDelay: TimeInterval = 0.18
-
     private var parent: MarkdownEditorView
     private let slashCommandPicker = MarkdownSlashCommandPickerController()
     private let referencePicker = MarkdownReferencePickerController()
     private let tagPicker = MarkdownTagPickerController()
     private weak var reportedTextView: CadenceTextView?
-    private weak var pendingStylingTextView: NSTextView?
-    private weak var pendingStylingScrollView: NSScrollView?
     private weak var pendingSlashCommandTextView: NSTextView?
     private weak var pendingReferenceTextView: NSTextView?
     private weak var pendingTagTextView: NSTextView?
-    private var pendingStylingWorkItem: DispatchWorkItem?
     private var slashCommandUpdateIsScheduled = false
     private var referenceUpdateIsScheduled = false
     private var tagUpdateIsScheduled = false
@@ -1203,12 +1197,7 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         normalizeMarkdownListPrefixes(in: textView)
         normalizeOrderedListMarkers(in: textView)
         parent.text = textView.string
-        if let cadenceTextView = textView as? CadenceTextView,
-           cadenceTextView.hasPendingInlineTaskTitleEdit {
-            applyStyling(to: textView, in: textView.enclosingScrollView)
-        } else {
-            scheduleStylingUpdate(for: textView)
-        }
+        applyStyling(to: textView, in: textView.enclosingScrollView)
         textView.typingAttributes = MarkdownStylist.baseAttributes
         scheduleSlashCommandPickerUpdate(for: textView)
         scheduleReferencePickerUpdate(for: textView)
@@ -1543,11 +1532,6 @@ extension MarkdownEditorCoordinator {
 
 extension MarkdownEditorCoordinator {
     private func applyStyling(to textView: NSTextView, in scrollView: NSScrollView?) {
-        pendingStylingWorkItem?.cancel()
-        pendingStylingWorkItem = nil
-        pendingStylingTextView = nil
-        pendingStylingScrollView = nil
-
         if let scrollView {
             MarkdownEditorScrollSupport.preservingScrollPosition(in: scrollView) {
                 MarkdownStylist.apply(to: textView)
@@ -1565,23 +1549,6 @@ extension MarkdownEditorCoordinator {
         if let cadenceTextView = textView as? CadenceTextView {
             cadenceTextView.performPendingInlineTaskTitleEditIfNeeded()
         }
-    }
-
-    private func scheduleStylingUpdate(for textView: NSTextView) {
-        pendingStylingTextView = textView
-        pendingStylingScrollView = textView.enclosingScrollView
-        pendingStylingWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            guard let textView = pendingStylingTextView else {
-                pendingStylingWorkItem = nil
-                pendingStylingScrollView = nil
-                return
-            }
-            applyStyling(to: textView, in: pendingStylingScrollView)
-        }
-        pendingStylingWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.stylingDebounceDelay, execute: workItem)
     }
 }
 

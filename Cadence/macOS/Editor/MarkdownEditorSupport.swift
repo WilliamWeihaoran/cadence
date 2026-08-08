@@ -309,6 +309,7 @@ enum MarkdownStylist {
             storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
             storage.addAttribute(.cadenceMarkdownDivider, value: true, range: lineRange)
             storage.addAttribute(.foregroundColor, value: NSColor.clear, range: lineRange)
+            storage.addAttribute(.cadenceMarkdownHidden, value: true, range: lineRange)
         }
     }
 

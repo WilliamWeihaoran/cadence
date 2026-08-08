@@ -217,6 +217,22 @@ struct NoteEditorPane: View {
                     onTextViewChanged: { editorTextView = $0 }
                 )
                 .frame(minWidth: 360)
+                .popover(item: $linkedTaskForPopover) { task in
+                    TaskDetailPopover(task: task)
+                        .frame(width: 380)
+                }
+                .popover(item: $embeddedTaskEditRequest) { request in
+                    if let task = embeddedTask(id: request.taskID) {
+                        TaskEmbedFieldEditorPopover(task: task, initialField: request.field) {
+                            refreshEmbeddedTask(task)
+                        }
+                    } else {
+                        Text("Task no longer exists")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .padding()
+                    }
+                }
 
                 if !isInspectorCollapsed {
                     NoteMarkdownSidePanel(
@@ -235,22 +251,6 @@ struct NoteEditorPane: View {
             .zIndex(0)
         }
         .background(Theme.surface)
-        .popover(item: $linkedTaskForPopover) { task in
-            TaskDetailPopover(task: task)
-                .frame(width: 380)
-        }
-        .popover(item: $embeddedTaskEditRequest) { request in
-            if let task = embeddedTask(id: request.taskID) {
-                TaskEmbedFieldEditorPopover(task: task, initialField: request.field) {
-                    refreshEmbeddedTask(task)
-                }
-            } else {
-                Text("Task no longer exists")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
-                    .padding()
-            }
-        }
         .onAppear {
             loadEditorStateIfNeeded(force: true)
             TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)

@@ -477,9 +477,9 @@ struct MarkdownEditorView: NSViewRepresentable {
         if textView.markdownTaskEmbeds != taskEmbedInfos {
             textView.markdownTaskEmbedRects.removeAll()
             textView.markdownTaskEmbeds = taskEmbedInfos
-            if let hoveredMarkdownTaskEmbedID = textView.hoveredMarkdownTaskEmbedID,
-               taskEmbedInfos[hoveredMarkdownTaskEmbedID] == nil {
-                textView.hoveredMarkdownTaskEmbedID = nil
+            if let hoveredMarkdownTaskEmbed = textView.hoveredMarkdownTaskEmbed,
+               taskEmbedInfos[hoveredMarkdownTaskEmbed.id] == nil {
+                textView.hoveredMarkdownTaskEmbed = nil
             }
             didUpdateRenderedContent = true
         }
