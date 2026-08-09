@@ -3,6 +3,60 @@ import SwiftUI
 import SwiftData
 import EventKit
 
+/// Compact deadline marker for calendar chips.
+///
+/// A chip is bucketed onto its scheduled day first (`CadenceScheduleSupport.monthTasksByDate`),
+/// so a chip's position asserts a date that is frequently NOT the deadline. The marker therefore
+/// carries the real due day: a bare "this has a deadline somewhere" dot would repeat the omission
+/// it exists to fix. Nothing is drawn when the chip already sits on its due date — the grid
+/// position states that itself.
+struct CalendarChipDueMarker: View {
+    let dueDateKey: String
+    /// `yyyy-MM-dd` of the day cell / column this chip is drawn in.
+    let dayKey: String
+    var isDone: Bool = false
+
+    private var urgency: CadenceDueUrgency? {
+        guard !dueDateKey.isEmpty, dueDateKey != dayKey else { return nil }
+        return CadenceDueUrgency.evaluate(dueDateKey: dueDateKey, isDone: isDone)
+    }
+
+    /// Day number alone while the deadline stays inside the chip's own month, where the
+    /// surrounding grid supplies the month; "MMM d" once it crosses into another month, where a
+    /// bare number would be ambiguous.
+    private var label: String {
+        guard let due = DateFormatters.date(from: dueDateKey) else { return dueDateKey }
+        if let day = DateFormatters.date(from: dayKey),
+           Calendar.current.isDate(due, equalTo: day, toGranularity: .month) {
+            return DateFormatters.dayNumber.string(from: due)
+        }
+        return DateFormatters.shortDate.string(from: due)
+    }
+
+    var body: some View {
+        if let urgency {
+            let isOverdue = urgency == .overdue
+            Text(label)
+                .font(.system(size: 9, weight: .semibold))
+                // Overdue gets a solid fill rather than another tinted wash, so it outranks a
+                // merely-later deadline at a glance instead of only differing in hue.
+                .foregroundStyle(isOverdue ? Theme.onColor : urgency.tint)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 4)
+                .background(
+                    Capsule().fill(isOverdue ? Theme.red : urgency.tint.opacity(0.18))
+                )
+                .overlay(
+                    Capsule().stroke(isOverdue ? Color.clear : urgency.tint.opacity(0.45), lineWidth: 0.5)
+                )
+                // The chip is single-line and non-wrapping, so in a narrow month column the title
+                // must be what truncates — never the date this marker exists to show.
+                .layoutPriority(1)
+        }
+    }
+}
+
 struct MonthDayCell: View {
     let date: Date
     let tasks: [AppTask]
@@ -14,6 +68,7 @@ struct MonthDayCell: View {
 
     private let cal = Calendar.current
 
+    private var dateKey: String { DateFormatters.dateKey(from: date) }
     private var isToday: Bool { cal.isDateInToday(date) }
     private var isCurrentMonth: Bool {
         cal.component(.month, from: date) == cal.component(.month, from: displayMonth) &&
@@ -108,6 +163,8 @@ struct MonthDayCell: View {
                             .font(.system(size: 10))
                             .foregroundStyle(Theme.text)
                             .lineLimit(1)
+                        Spacer(minLength: 2)
+                        CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dateKey, isDone: task.isDone)
                     }
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
@@ -220,7 +277,7 @@ struct CalDayHeaderView: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(unscheduledTasks) { task in
-                    AllDayTaskChip(task: task)
+                    AllDayTaskChip(task: task, dayKey: DateFormatters.dateKey(from: date))
                 }
                 ForEach(allDayEventItems) { item in
                     AllDayEventChip(event: item.event)
@@ -234,6 +291,9 @@ struct CalDayHeaderView: View {
 
 struct AllDayTaskChip: View {
     let task: AppTask
+    /// Day column this chip is parked in. A task reaches the all-day lane by either its
+    /// scheduled date or its due date, so the chip cannot let its column stand in for a deadline.
+    let dayKey: String
     @State private var showInspector = false
 
     var body: some View {
@@ -245,6 +305,8 @@ struct AllDayTaskChip: View {
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
+            Spacer(minLength: 2)
+            CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dayKey, isDone: task.isDone)
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 3)

@@ -1,6 +1,41 @@
 #if os(macOS)
 import SwiftUI
 
+/// Trailing-edge deadline marker for timeline blocks, sized to cost zero vertical space so it
+/// survives the 22pt minimum block height where no text fits.
+///
+/// It deliberately does NOT live on the leading edge: that edge already carries a flush 3pt strip
+/// in the task's container color, so a due accent there would read as "this task changed lists".
+/// The shape differs from that strip too — an inset floating capsule rather than a full-bleed
+/// band — because a container's own color can itself be red or amber, and position alone would
+/// then be the only thing telling the two apart.
+struct TimelineDueEdgeAccent: View {
+    let urgency: CadenceDueUrgency
+    let blockHeight: CGFloat
+
+    private var verticalInset: CGFloat { blockHeight >= 34 ? 4 : 2 }
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            // A 3.5pt capsule alone is easy to miss on a short block; the fade gives the marker
+            // presence at any height without claiming a line of its own.
+            LinearGradient(
+                colors: [urgency.tint.opacity(0), urgency.tint.opacity(0.24)],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: 16)
+
+            Capsule()
+                .fill(urgency.tint)
+                .frame(width: 3.5)
+                .padding(.vertical, verticalInset)
+                .padding(.trailing, 2)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 struct TimelineDraggedTaskPreview: View {
     let task: AppTask
     let startMinute: Int
@@ -161,6 +196,9 @@ func timelineBlockBody(
     onToggleDone: (() -> Void)? = nil
 ) -> some View {
     let taskColor = Color(hex: task.containerColor)
+    let todayKey = DateFormatters.todayKey()
+    let dueUrgency = CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey)
+    let dueLabel = CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)
     let clampedProgress = min(max(completionProgress, 0), 1)
     let completedTransitionOpacity = max(0, (clampedProgress - 0.58) / 0.42)
     let pendingOverlayOpacity = 1 - max(0, (clampedProgress - 0.86) / 0.14)
@@ -201,13 +239,23 @@ func timelineBlockBody(
                         .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                         .lineLimit(2)
                     let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes)
-                    if label != "-/-" {
-                        // The block is hard-clipped to a fixed frame, so a wrapped label would
-                        // lose its second line and silently report a shorter duration.
-                        Text(label)
-                            .font(.system(size: 10))
-                            .foregroundStyle(Theme.dim)
-                            .lineLimit(1)
+                    if label != "-/-" || dueLabel != nil {
+                        HStack(spacing: 5) {
+                            if label != "-/-" {
+                                // The block is hard-clipped to a fixed frame, so a wrapped label would
+                                // lose its second line and silently report a shorter duration.
+                                Text(label)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Theme.dim)
+                                    .lineLimit(1)
+                            }
+                            if let dueLabel {
+                                Text(dueLabel)
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(dueUrgency?.tint ?? Theme.dim)
+                                    .lineLimit(1)
+                            }
+                        }
                     }
                 } else {
                     let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes)
@@ -229,6 +277,8 @@ func timelineBlockBody(
         }
         .padding(.horizontal, style.horizontalPadding)
         .padding(.vertical, style.verticalPadding)
+        // Keep text clear of the trailing due accent instead of letting it run underneath.
+        .padding(.trailing, dueUrgency == nil ? 0 : 8)
 
         Spacer(minLength: 0)
     }
@@ -260,6 +310,13 @@ func timelineBlockBody(
     .overlay {
         if task.isDone {
             DiagonalStripeOverlay()
+                .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius))
+        }
+    }
+    .overlay {
+        if let dueUrgency {
+            TimelineDueEdgeAccent(urgency: dueUrgency, blockHeight: frame.height)
+                .frame(maxWidth: .infinity, alignment: .trailing)
                 .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius))
         }
     }

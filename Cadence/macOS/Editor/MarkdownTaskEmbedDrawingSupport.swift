@@ -19,6 +19,24 @@ enum MarkdownTaskEmbedDrawing {
         let label: String
         let color: NSColor
         let field: MarkdownTaskEmbedField
+        /// Chips render left to right but are budgeted by importance, so a card that cannot fit
+        /// every chip drops the least useful one instead of whatever happens to sit last in the
+        /// row. Lower wins. A due date always outranks the rest — it must never be the chip that
+        /// disappears, because a hidden chip is also an unhittable one.
+        let importance: Int
+    }
+
+    private enum ChipImportance {
+        static let dueDate = 1
+        static let container = 2
+        static let scheduledDate = 3
+        static let priority = 4
+        static let status = 5
+        static let recurrence = 6
+        static let section = 7
+        static let emptyDueDate = 8
+        static let emptyScheduledDate = 9
+        static let estimate = 10
     }
 
     private struct ChipRect {
@@ -55,6 +73,14 @@ enum MarkdownTaskEmbedDrawing {
 
     static func titleRect(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect) -> NSRect {
         fieldRects(task: task, cardRect: cardRect, chips: displayChips(for: task)).title
+    }
+
+    /// Chip layout drops metadata that does not fit, so callers need a way to ask which fields
+    /// actually made it onto the card instead of assuming every chip is there.
+    static func chipRects(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect) -> [(field: MarkdownTaskEmbedField, rect: NSRect)] {
+        fieldRects(task: task, cardRect: cardRect, chips: displayChips(for: task))
+            .chips
+            .map { (field: $0.field, rect: $0.rect) }
     }
 
     static func subtaskHit(
@@ -171,17 +197,55 @@ enum MarkdownTaskEmbedDrawing {
             height: 19
         )
 
+        let widths = chips.map { chipWidth($0) }
+        let kept = keptChipIndices(chips: chips, widths: widths, available: max(0, contentMaxX - contentMinX))
+
         var chipRects: [ChipRect] = []
         var x = contentMinX
         let y = cardRect.minY + 38
-        for chip in chips {
-            let width = min(max(42, chip.label.size(withAttributes: chipAttributes).width + 18), 128)
-            guard x + width <= contentMaxX else { break }
+        for index in kept {
+            let width = min(widths[index], contentMaxX - x)
+            guard width > 0 else { break }
             let rect = NSRect(x: x, y: y, width: width, height: 20)
-            chipRects.append(ChipRect(field: chip.field, rect: rect))
+            chipRects.append(ChipRect(field: chips[index].field, rect: rect))
             x = rect.maxX + 6
         }
         return (titleRect, chipRects)
+    }
+
+    /// Picks which chips survive a narrow card by importance, then hands the survivors back in
+    /// display order. Both drawing and hit testing go through here, so a chip is never visible
+    /// without being clickable or clickable without being visible.
+    private static func keptChipIndices(chips: [Chip], widths: [CGFloat], available: CGFloat) -> [Int] {
+        var kept: [Int] = []
+        var used: CGFloat = 0
+        for index in rankedChipIndices(chips) {
+            guard !kept.isEmpty else {
+                // The most important chip always lays out; an extremely narrow card truncates
+                // its label rather than dropping the chip entirely.
+                kept.append(index)
+                used = min(widths[index], available)
+                continue
+            }
+            let next = used + 6 + widths[index]
+            guard next <= available else { continue }
+            kept.append(index)
+            used = next
+        }
+        return kept.sorted()
+    }
+
+    /// Stable importance ranking; equal importance keeps display order.
+    private static func rankedChipIndices(_ chips: [Chip]) -> [Int] {
+        chips.indices.sorted {
+            chips[$0].importance == chips[$1].importance
+                ? $0 < $1
+                : chips[$0].importance < chips[$1].importance
+        }
+    }
+
+    private static func chipWidth(_ chip: Chip) -> CGFloat {
+        min(max(42, chip.label.size(withAttributes: chipAttributes).width + 18), 128)
     }
 
     private static func isOverdue(_ task: MarkdownTaskEmbedRenderInfo) -> Bool {
@@ -201,7 +265,7 @@ enum MarkdownTaskEmbedDrawing {
 
     private static func displayChips(for task: MarkdownTaskEmbedRenderInfo) -> [Chip] {
         if task.isMissing {
-            return [Chip(label: "Missing", color: MarkdownStylist.redColor, field: .status)]
+            return [Chip(label: "Missing", color: MarkdownStylist.redColor, field: .status, importance: ChipImportance.status)]
         }
 
         var chips: [Chip] = []
@@ -218,13 +282,19 @@ enum MarkdownTaskEmbedDrawing {
         }
 
         if (TaskStatus(rawValue: task.statusRaw) ?? .todo) != .todo {
-            chips.append(Chip(label: statusLabel(task.statusRaw), color: statusColor, field: .status))
+            chips.append(Chip(
+                label: statusLabel(task.statusRaw),
+                color: statusColor,
+                field: .status,
+                importance: ChipImportance.status
+            ))
         }
         if (TaskPriority(rawValue: task.priorityRaw) ?? .none) != .none {
             chips.append(Chip(
                 label: priorityLabel(task.priorityRaw),
                 color: priorityColor(task.priorityRaw, fallback: task.containerColorHex),
-                field: .priority
+                field: .priority,
+                importance: ChipImportance.priority
             ))
         }
 
@@ -232,24 +302,50 @@ enum MarkdownTaskEmbedDrawing {
         chips.append(Chip(
             label: container.isEmpty ? "Inbox" : container,
             color: container.isEmpty ? MarkdownStylist.dimColor : NSColor(hex: task.containerColorHex),
-            field: .container
+            field: .container,
+            importance: ChipImportance.container
         ))
 
         let section = task.sectionName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !section.isEmpty, section.caseInsensitiveCompare(TaskSectionDefaults.defaultName) != .orderedSame {
-            chips.append(Chip(label: section, color: MarkdownStylist.dimColor, field: .section))
+            chips.append(Chip(
+                label: section,
+                color: MarkdownStylist.dimColor,
+                field: .section,
+                importance: ChipImportance.section
+            ))
         }
 
         let scheduledColor: NSColor = isOverdo(task)
             ? MarkdownStylist.redColor
             : (isDoToday(task) ? MarkdownStylist.highlightFillColor : MarkdownStylist.dimColor)
-        chips.append(Chip(label: scheduledLabel(for: task), color: scheduledColor, field: .scheduledDate))
+        chips.append(Chip(
+            label: scheduledLabel(for: task),
+            color: scheduledColor,
+            field: .scheduledDate,
+            importance: task.scheduledDate.isEmpty ? ChipImportance.emptyScheduledDate : ChipImportance.scheduledDate
+        ))
         let dueColor: NSColor = isOverdue(task) ? MarkdownStylist.redColor : MarkdownStylist.dimColor
-        chips.append(Chip(label: dueLabel(for: task), color: dueColor, field: .dueDate))
-        chips.append(Chip(label: estimateLabel(for: task), color: MarkdownStylist.blueColor, field: .estimate))
+        chips.append(Chip(
+            label: dueLabel(for: task),
+            color: dueColor,
+            field: .dueDate,
+            importance: task.dueDate.isEmpty ? ChipImportance.emptyDueDate : ChipImportance.dueDate
+        ))
+        chips.append(Chip(
+            label: estimateLabel(for: task),
+            color: MarkdownStylist.blueColor,
+            field: .estimate,
+            importance: ChipImportance.estimate
+        ))
 
         if let recurrence = TaskRecurrenceRule(rawValue: task.recurrenceRaw), recurrence != .none {
-            chips.append(Chip(label: recurrence.shortLabel, color: MarkdownStylist.greenColor, field: .recurrence))
+            chips.append(Chip(
+                label: recurrence.shortLabel,
+                color: MarkdownStylist.greenColor,
+                field: .recurrence,
+                importance: ChipImportance.recurrence
+            ))
         }
         return chips
     }
@@ -261,11 +357,14 @@ enum MarkdownTaskEmbedDrawing {
             240
         )
         let chips = displayChips(for: task)
-        let chipWidths = chips
-            .prefix(task.hasSubtasks ? 4 : 5)
-            .map { min(max(42, $0.label.size(withAttributes: chipAttributes).width + 18), 128) }
+        // Budget the most important chips, not the first few in display order — otherwise the
+        // card is sized for metadata the layout is willing to drop and starves the due chip.
+        let budget = task.hasSubtasks ? 4 : 5
+        let budgeted = rankedChipIndices(chips).prefix(budget)
+        let chipWidths = budgeted
+            .map { chipWidth(chips[$0]) }
             .reduce(CGFloat(0), +)
-        let chipGaps = CGFloat(max(0, min(chips.count, task.hasSubtasks ? 4 : 5) - 1)) * 6
+        let chipGaps = CGFloat(max(0, budgeted.count - 1)) * 6
         let subtaskAllowance: CGFloat = task.hasSubtasks ? 90 : 0
         let preferred = checkboxAndPadding + max(titleWidth, chipWidths + chipGaps) + subtaskAllowance + 24
         return min(max(320, preferred), min(maxWidth, MarkdownTaskEmbedRenderInfo.maxCardWidth))

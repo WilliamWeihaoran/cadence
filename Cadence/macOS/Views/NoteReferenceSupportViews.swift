@@ -7,6 +7,8 @@ struct NoteReferenceStrip: View {
     let backlinks: [Note]
     let onOpenNote: (Note) -> Void
 
+    private var todayKey: String { DateFormatters.todayKey() }
+
     var body: some View {
         if linkedNotes.isEmpty && linkedTasks.isEmpty && backlinks.isEmpty {
             EmptyView()
@@ -28,7 +30,13 @@ struct NoteReferenceStrip: View {
                 if !linkedTasks.isEmpty {
                     ReferenceSection(label: "Task References") {
                         ForEach(linkedTasks, id: \.id) { task in
-                            ReferenceChip(icon: "checkmark.circle", title: task.title.isEmpty ? "Untitled Task" : task.title, tint: Theme.green)
+                            ReferenceChip(
+                                icon: "checkmark.circle",
+                                title: task.title.isEmpty ? "Untitled Task" : task.title,
+                                tint: Theme.green,
+                                dueLabel: CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey),
+                                isOverdue: !task.isDone && CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: todayKey)
+                            )
                         }
                     }
                 }
@@ -78,6 +86,8 @@ private struct ReferenceChip: View {
     let icon: String
     let title: String
     let tint: Color
+    var dueLabel: String? = nil
+    var isOverdue: Bool = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -86,6 +96,18 @@ private struct ReferenceChip: View {
             Text(title)
                 .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
+                .truncationMode(.tail)
+
+            // The chip is tight, so the deadline gets the fixed width and the title truncates
+            // around it — a task with a due date never shows up here as a bare title.
+            if let dueLabel {
+                Text(dueLabel)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(isOverdue ? Theme.red : Theme.muted)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .layoutPriority(1)
+            }
         }
         .foregroundStyle(tint)
         .padding(.horizontal, 10)

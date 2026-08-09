@@ -107,6 +107,14 @@ struct TaskNoteListRow: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var dueLabel: String? {
+        CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: DateFormatters.todayKey())
+    }
+
+    private var isOverdue: Bool {
+        !task.isDone && CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: DateFormatters.todayKey())
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
@@ -117,11 +125,26 @@ struct TaskNoteListRow: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(isSelected ? Theme.text : Theme.muted)
                     .lineLimit(1)
-                if !excerpt.isEmpty {
-                    Text(excerpt)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
+                // A due date always claims the second line first; the excerpt is what gives way
+                // when the row runs out of width.
+                if dueLabel != nil || !excerpt.isEmpty {
+                    HStack(spacing: 6) {
+                        if let dueLabel {
+                            Text(dueLabel)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(isOverdue ? Theme.red : Theme.muted)
+                                .lineLimit(1)
+                                .fixedSize()
+                                .layoutPriority(1)
+                        }
+                        if !excerpt.isEmpty {
+                            Text(excerpt)
+                                .font(.system(size: 10))
+                                .foregroundStyle(Theme.dim)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                    }
                 }
             }
             Spacer()

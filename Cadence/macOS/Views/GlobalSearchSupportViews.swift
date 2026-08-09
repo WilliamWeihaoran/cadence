@@ -65,6 +65,35 @@ struct GlobalSearchResult: Identifiable, Hashable {
     var tint: Color { Color(hex: tintHex) }
 }
 
+/// Task subtitles are a bullet-joined metadata string where the due date lands near the end,
+/// so a long list name plus tags used to truncate it away entirely. Splitting the due segment
+/// out lets the row lay it out with priority instead of letting it fall off the tail.
+struct GlobalSearchSubtitleParts {
+    let leading: String
+    let due: String?
+
+    init(subtitle: String, category: GlobalSearchCategory) {
+        let segments = subtitle.components(separatedBy: " • ")
+        // Only tasks carry a due segment, and the container name always leads — so a list
+        // literally named "Due Diligence" is never mistaken for one. Scanning from the back
+        // also prefers the real due segment over an earlier tag that happens to start with it.
+        let dueIndex: Int? = category == .tasks
+            ? segments.indices.dropFirst().last(where: { segments[$0].hasPrefix("Due ") })
+            : nil
+
+        guard let dueIndex else {
+            self.leading = subtitle
+            self.due = nil
+            return
+        }
+        self.leading = segments.enumerated()
+            .filter { $0.offset != dueIndex }
+            .map(\.element)
+            .joined(separator: " • ")
+        self.due = segments[dueIndex]
+    }
+}
+
 struct GlobalSearchSection: Identifiable {
     let category: GlobalSearchCategory
     let results: [GlobalSearchResult]
@@ -237,6 +266,10 @@ struct GlobalSearchResultRow: View {
     let onSelect: () -> Void
     let onHover: () -> Void
 
+    private var subtitleParts: GlobalSearchSubtitleParts {
+        GlobalSearchSubtitleParts(subtitle: result.subtitle, category: result.category)
+    }
+
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 12) {
@@ -255,10 +288,30 @@ struct GlobalSearchResultRow: View {
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
 
-                    Text(result.subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        if !subtitleParts.leading.isEmpty {
+                            Text(subtitleParts.leading)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+
+                        if let due = subtitleParts.due {
+                            // Laid out ahead of the rest of the metadata so the due date is never
+                            // the part that gets truncated away.
+                            Text(due)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Theme.amber)
+                                .lineLimit(1)
+                                .fixedSize()
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(Theme.amber.opacity(0.14))
+                                .clipShape(Capsule())
+                                .layoutPriority(1)
+                        }
+                    }
                 }
 
                 Spacer()
