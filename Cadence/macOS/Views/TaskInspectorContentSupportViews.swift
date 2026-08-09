@@ -284,6 +284,9 @@ struct TaskDetailSubtasksSection: View {
                 }
                 .padding(.vertical, 3)
             }
+            // The recessed group stopped padding its contents so field rows could hover full
+            // bleed; content that isn't a field row supplies the inset itself.
+            .padding(.horizontal, TaskInspectorFieldRowMetrics.groupHorizontalPadding)
         }
     }
 }

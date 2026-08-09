@@ -14,24 +14,24 @@ private extension CadenceTodayWidgetTask {
         guard let dueLabel = CadenceWidgetDateSupport.dueLabel(for: dueDate, todayKey: todayKey) else {
             return CadenceTodayTaskStatusPresentation(
                 label: "Scheduled",
-                tint: Color(red: 0.39, green: 0.71, blue: 1.0)
+                tint: Theme.blueLight
             )
         }
         if dueDate < todayKey {
             return CadenceTodayTaskStatusPresentation(
                 label: dueLabel,
-                tint: Color(red: 1.0, green: 0.45, blue: 0.41)
+                tint: Theme.red
             )
         }
         if dueDate == todayKey {
             return CadenceTodayTaskStatusPresentation(
                 label: dueLabel,
-                tint: Color(red: 1.0, green: 0.72, blue: 0.28)
+                tint: Theme.amber
             )
         }
         return CadenceTodayTaskStatusPresentation(
             label: dueLabel,
-            tint: Color(red: 0.39, green: 0.71, blue: 1.0)
+            tint: Theme.blueLight
         )
     }
 }
@@ -57,10 +57,7 @@ struct TodayTasksWidgetView: View {
                 mediumLayout
             }
         }
-        .cadenceWidgetBackground([
-            Color(red: 0.08, green: 0.10, blue: 0.15),
-            Color(red: 0.12, green: 0.14, blue: 0.21),
-        ])
+        .cadenceWidgetBackground([Theme.bg, Theme.surface])
     }
 
     private var smallLayout: some View {
@@ -172,17 +169,17 @@ struct TodayTasksWidgetView: View {
                 metricTile(
                     title: "Overdue",
                     value: entry.snapshot.overdueCount,
-                    tint: Color(red: 1.0, green: 0.45, blue: 0.41)
+                    tint: Theme.red
                 )
                 metricTile(
                     title: "Due today",
                     value: entry.snapshot.dueTodayCount,
-                    tint: Color(red: 1.0, green: 0.72, blue: 0.28)
+                    tint: Theme.amber
                 )
                 metricTile(
                     title: "Scheduled",
                     value: entry.snapshot.scheduledTodayCount,
-                    tint: Color(red: 0.39, green: 0.71, blue: 1.0)
+                    tint: Theme.blueLight
                 )
             }
         }
@@ -198,12 +195,12 @@ struct TodayTasksWidgetView: View {
             focusTile(
                 title: "Visible",
                 value: "\(entry.snapshot.tasks.count)",
-                tint: .white
+                tint: Theme.text
             )
             focusTile(
                 title: "Total",
                 value: "\(entry.snapshot.totalCount)",
-                tint: Color(red: 0.72, green: 0.86, blue: 1.0)
+                tint: Theme.blueLight
             )
         }
     }
@@ -213,11 +210,11 @@ struct TodayTasksWidgetView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Today")
                     .font(.system(size: scale.titleSize, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.text)
                 Spacer(minLength: 10)
                 Text("\(entry.snapshot.totalCount)")
                     .font(.system(size: scale.countSize, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.text)
                     .minimumScaleFactor(0.8)
             }
 
@@ -237,12 +234,12 @@ struct TodayTasksWidgetView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(compact ? "Top task" : "Priority now")
                         .font(.system(size: scale.captionFontSize, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(Theme.muted)
 
                     Link(destination: task.deepLinkURL) {
                         Text(task.title)
                             .font(.system(size: compact ? scale.bodyFontSize + 2 : scale.titleSize, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Theme.text)
                             .lineLimit(compact ? 3 : 3)
                             .minimumScaleFactor(0.9)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -270,8 +267,10 @@ struct TodayTasksWidgetView: View {
         .background(
             LinearGradient(
                 colors: [
-                    Color.white.opacity(0.12),
-                    Color(red: 0.21, green: 0.31, blue: 0.42).opacity(0.30),
+                    Theme.surfaceHighlight,
+                    // Was a one-off slate blue; the same accent every other tint in this widget
+                    // now uses, at the badge-fill alpha, lands in the same place.
+                    Theme.blue.opacity(0.20),
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -291,10 +290,10 @@ struct TodayTasksWidgetView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.system(size: scale.bodyFontSize + 1, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.text)
                     Text(subtitle)
                         .font(.system(size: scale.bodyFontSize, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.58))
+                        .foregroundStyle(Theme.muted)
                 }
 
                 VStack(spacing: scale.compactSectionSpacing) {
@@ -314,12 +313,12 @@ struct TodayTasksWidgetView: View {
             VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
                 Text(title)
                     .font(.system(size: scale.bodyFontSize + 1, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.text)
 
                 if tasks.isEmpty {
                     Text("No more tasks in this lane.")
                         .font(.system(size: scale.bodyFontSize, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(Theme.muted)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
                     VStack(spacing: scale.compactSectionSpacing) {
@@ -341,7 +340,7 @@ struct TodayTasksWidgetView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(task.title)
                         .font(.system(size: dense ? scale.bodyFontSize + 0.5 : scale.bodyFontSize + 1, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.text)
                         .lineLimit(dense ? 2 : 2)
                         .minimumScaleFactor(0.9)
 
@@ -350,7 +349,7 @@ struct TodayTasksWidgetView: View {
                         if !task.containerName.isEmpty {
                             Text(task.containerName)
                                 .font(.system(size: scale.captionFontSize, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.55))
+                                .foregroundStyle(Theme.muted)
                                 .lineLimit(1)
                         }
                     }
@@ -362,7 +361,7 @@ struct TodayTasksWidgetView: View {
         }
         .padding(.horizontal, scale.panelPadding)
         .padding(.vertical, dense ? max(scale.panelPadding - 2, 6) : max(scale.panelPadding - 1, 7))
-        .background(Color.white.opacity(dense ? 0.07 : 0.09))
+        .background(Theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous))
         .cadenceWidgetElevation(scale)
     }
@@ -371,7 +370,7 @@ struct TodayTasksWidgetView: View {
         HStack(spacing: scale.compactSectionSpacing) {
             Text("\(entry.snapshot.totalCount) tasks in view")
                 .font(.system(size: scale.bodyFontSize, weight: .medium))
-                .foregroundStyle(.white.opacity(0.64))
+                .foregroundStyle(Theme.muted)
             Spacer(minLength: 8)
             CadenceWidgetFooterLink(label: label, url: entry.snapshot.todayURL)
         }
@@ -381,7 +380,7 @@ struct TodayTasksWidgetView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: scale.captionFontSize, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.58))
+                .foregroundStyle(Theme.muted)
             Text("\(value)")
                 .font(.system(size: scale.metricValueSize + 1, weight: .black, design: .rounded))
                 .foregroundStyle(tint)
@@ -394,7 +393,7 @@ struct TodayTasksWidgetView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: scale.captionFontSize, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(Theme.muted)
             Text(value)
                 .font(.system(size: scale.bodyFontSize + 2, weight: .bold))
                 .foregroundStyle(tint)
@@ -403,7 +402,7 @@ struct TodayTasksWidgetView: View {
         }
         .padding(scale.panelPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.07))
+        .background(Theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
     }
 
@@ -433,7 +432,7 @@ struct TodayTasksWidgetView: View {
         Button(intent: CompleteTaskIntent(taskID: taskID)) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: size, weight: .semibold))
-                .foregroundStyle(Color(red: 0.35, green: 0.89, blue: 0.56))
+                .foregroundStyle(Theme.green)
                 .padding(3)
                 .contentShape(Rectangle())
         }
@@ -450,12 +449,12 @@ struct TodayTasksWidgetView: View {
     private func containerPill(_ name: String) -> some View {
         Text(name)
             .font(.system(size: scale.captionFontSize, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.76))
+            .foregroundStyle(Theme.muted)
             .lineLimit(1)
             .minimumScaleFactor(0.85)
             .padding(.horizontal, scale.badgeHorizontalPadding)
             .padding(.vertical, scale.badgeVerticalPadding)
-            .background(Color.white.opacity(0.10))
+            .background(Theme.surfaceHighlight)
             .clipShape(Capsule())
     }
 
@@ -473,7 +472,7 @@ struct TodayTasksWidgetView: View {
         guard let task = entry.snapshot.tasks.first else {
             return CadenceTodayTaskStatusPresentation(
                 label: "Scheduled",
-                tint: Color(red: 0.39, green: 0.71, blue: 1.0)
+                tint: Theme.blueLight
             )
         }
         return task.widgetStatus(for: entry.snapshot.dateKey)
@@ -484,14 +483,14 @@ struct TodayTasksWidgetView: View {
             return [
                 WidgetHeaderBadge(
                     text: "unavailable",
-                    tint: Color(red: 1.0, green: 0.72, blue: 0.28)
+                    tint: Theme.amber
                 )
             ]
         }
 
-        let overdueTint = Color(red: 1.0, green: 0.45, blue: 0.41)
-        let dueTint = Color(red: 1.0, green: 0.72, blue: 0.28)
-        let scheduledTint = Color(red: 0.39, green: 0.71, blue: 1.0)
+        let overdueTint = Theme.red
+        let dueTint = Theme.amber
+        let scheduledTint = Theme.blueLight
 
         switch widgetFamily {
         case .systemSmall:

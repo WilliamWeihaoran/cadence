@@ -3,25 +3,25 @@ import SwiftUI
 import SwiftData
 
 /// The inspector's Repeat field: a row that states the rule *and* how the series ends, plus a
-/// two-section popover (REPEATS / ENDS) for editing both.
+/// popover (APPLY TO / REPEATS / ENDS) for editing all three.
 ///
-/// Every write — rule or end condition — funnels through `pendingChange`, so a task that belongs
-/// to a series always gets the "this task vs this and future" confirmation before anything is
-/// persisted. `applyRecurrenceEnd` takes the same `scope:` as `applyRecurrenceRule` precisely so
-/// the end condition can honor that choice too; writing the end fields directly here would both
-/// bypass the scope and skip the off-mode normalization the model layer does.
+/// The scope used to be a `confirmationDialog` raised after each edit — a system alert that looked
+/// nothing like the app and asked the question *after* the choice was made. It is now an "Apply
+/// to" row at the top of the popover, so the scope is picked before the edit and travels with it.
+/// Every write — rule or end condition — still funnels through `apply`, and both
+/// `applyRecurrenceRule` and `applyRecurrenceEnd` take the same `scope:`; writing the recurrence
+/// fields directly here would bypass both the series propagation and the off-mode normalization
+/// the workflow helpers do.
 struct TaskInspectorRecurrenceControl: View {
     @Bindable var task: AppTask
     @Query private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
 
     @State private var showPicker = false
-    @State private var pendingChange: PendingRecurrenceChange?
 
-    /// One pending edit awaiting the scope confirmation. Rule and end changes share a single case
-    /// list so they cannot drift into two dialogs with different wording — or worse, one of them
-    /// silently skipping the dialog.
-    private enum PendingRecurrenceChange {
+    /// One recurrence edit. Rule and end changes share a single case list so they cannot drift
+    /// into two paths where one of them forgets the scope.
+    private enum RecurrenceChange {
         case rule(TaskRecurrenceRule)
         case end(mode: TaskRecurrenceEndMode, dateKey: String, count: Int)
     }
@@ -44,29 +44,12 @@ struct TaskInspectorRecurrenceControl: View {
                 endMode: task.effectiveRecurrenceEndMode,
                 endDateKey: task.recurrenceEndDate,
                 endCount: task.recurrenceEndCount,
+                // A task that isn't in a series has no siblings to spill onto, so there is no
+                // scope question to ask and the row stays hidden.
+                showsScope: task.isRecurrenceSeriesMember,
                 onSelectRule: selectRule,
                 onSelectEnd: selectEnd
             )
-        }
-        .confirmationDialog(
-            "Change repeating task?",
-            isPresented: Binding(
-                get: { pendingChange != nil },
-                set: { if !$0 { pendingChange = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button(TaskRecurrenceEditScope.thisTask.label) {
-                applyPendingChange(scope: .thisTask)
-            }
-            Button(TaskRecurrenceEditScope.thisAndFuture.label) {
-                applyPendingChange(scope: .thisAndFuture)
-            }
-            Button("Cancel", role: .cancel) {
-                pendingChange = nil
-            }
-        } message: {
-            Text("Choose whether this repeat change applies only here or to this task and future instances.")
         }
     }
 
@@ -78,7 +61,10 @@ struct TaskInspectorRecurrenceControl: View {
             TaskInspectorFieldRow(
                 label: "Repeat",
                 icon: "repeat",
-                iconColor: task.isRecurring ? Theme.blue : Theme.dim
+                // Amber: the app's "recurring / in cycle" colour. Fixed rather than gated on
+                // `isRecurring` so the glyph names the field, not its current value — the value
+                // text beside it already says "Never".
+                iconColor: Theme.amber
             ) {
                 TaskInspectorFieldValueText(text: recurrenceLabel, isSet: task.isRecurring)
             }
@@ -88,8 +74,10 @@ struct TaskInspectorRecurrenceControl: View {
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.dim)
                     .lineLimit(1)
-                    // Aligns under the label, not the glyph — the icon column is a fixed slot.
-                    .padding(.leading, TaskInspectorFieldRowMetrics.iconSlot)
+                    // Aligns under the label, not the glyph — the icon column is a fixed slot
+                    // sitting inside the row's own horizontal inset.
+                    .padding(.leading, TaskInspectorFieldRowMetrics.groupHorizontalPadding
+                             + TaskInspectorFieldRowMetrics.iconSlot)
                     .padding(.bottom, TaskInspectorFieldRowMetrics.verticalPadding)
             }
         }
@@ -123,37 +111,27 @@ struct TaskInspectorRecurrenceControl: View {
 
     // MARK: - Edits
 
-    private func selectRule(_ rule: TaskRecurrenceRule) {
+    private func selectRule(_ rule: TaskRecurrenceRule, scope: TaskRecurrenceEditScope) {
         guard task.recurrenceRule != rule else { return }
-        stage(.rule(rule))
+        apply(.rule(rule), scope: resolvedScope(scope))
     }
 
-    private func selectEnd(mode: TaskRecurrenceEndMode, dateKey: String, count: Int) {
+    private func selectEnd(mode: TaskRecurrenceEndMode, dateKey: String, count: Int, scope: TaskRecurrenceEditScope) {
         let normalizedDate = mode == .onDate ? dateKey : ""
         let normalizedCount = mode == .afterCount ? max(1, count) : 0
         guard mode != task.recurrenceEndMode
                 || normalizedDate != task.recurrenceEndDate
                 || normalizedCount != task.recurrenceEndCount else { return }
-        stage(.end(mode: mode, dateKey: normalizedDate, count: normalizedCount))
+        apply(.end(mode: mode, dateKey: normalizedDate, count: normalizedCount), scope: resolvedScope(scope))
     }
 
-    /// A task already in a series has to ask before it rewrites its siblings; a standalone task
-    /// applies straight away.
-    private func stage(_ change: PendingRecurrenceChange) {
-        if task.isRecurrenceSeriesMember {
-            pendingChange = change
-        } else {
-            apply(change, scope: .thisTask)
-        }
+    /// A standalone task has no siblings to propagate to, and the panel hides the scope row for
+    /// it — so whatever the panel reports is pinned back to `.thisTask` rather than trusted.
+    private func resolvedScope(_ scope: TaskRecurrenceEditScope) -> TaskRecurrenceEditScope {
+        task.isRecurrenceSeriesMember ? scope : .thisTask
     }
 
-    private func applyPendingChange(scope: TaskRecurrenceEditScope) {
-        guard let pendingChange else { return }
-        apply(pendingChange, scope: scope)
-        self.pendingChange = nil
-    }
-
-    private func apply(_ change: PendingRecurrenceChange, scope: TaskRecurrenceEditScope) {
+    private func apply(_ change: RecurrenceChange, scope: TaskRecurrenceEditScope) {
         switch change {
         case .rule(let rule):
             TaskWorkflowService.applyRecurrenceRule(rule, to: task, allTasks: allTasks, scope: scope)
@@ -215,7 +193,12 @@ enum TaskRecurrencePresentation {
 
 // MARK: - Picker panel
 
-/// REPEATS (frequency) stacked over ENDS (stop condition).
+/// APPLY TO (scope, series members only) stacked over REPEATS (frequency) and ENDS (stop
+/// condition).
+///
+/// The scope sits **first** because it qualifies everything below it: the panel applies each edit
+/// the moment it is made, so asking afterwards — which is what the old confirmation dialog did —
+/// put the question on the wrong side of the answer.
 ///
 /// **"Never" is a clear action, not a fifth segment.** The segmented control is a single axis —
 /// how often — and "never" isn't a frequency; as a segment it would also be the one segment whose
@@ -228,9 +211,13 @@ private struct TaskRecurrencePickerPanel: View {
     let endMode: TaskRecurrenceEndMode
     let endDateKey: String
     let endCount: Int
-    let onSelectRule: (TaskRecurrenceRule) -> Void
-    let onSelectEnd: (TaskRecurrenceEndMode, String, Int) -> Void
+    let showsScope: Bool
+    let onSelectRule: (TaskRecurrenceRule, TaskRecurrenceEditScope) -> Void
+    let onSelectEnd: (TaskRecurrenceEndMode, String, Int, TaskRecurrenceEditScope) -> Void
 
+    /// Resets to "this task only" every time the popover opens — the safe default, and the one
+    /// the old dialog listed first.
+    @State private var scope: TaskRecurrenceEditScope = .thisTask
     @State private var showEndDatePicker = false
     @State private var viewMonth: Date = Calendar.current.startOfDay(for: Date())
     @State private var countText: String = ""
@@ -246,6 +233,19 @@ private struct TaskRecurrencePickerPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if showsScope {
+                sectionLabel("Apply to")
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 2)
+
+                scopeOptions
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+
+                Divider().background(Theme.borderSubtle)
+            }
+
             sectionLabel("Repeats")
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
@@ -289,6 +289,46 @@ private struct TaskRecurrencePickerPanel: View {
         .onDisappear { commitCount(force: false) }
     }
 
+    // MARK: APPLY TO
+
+    @ViewBuilder
+    private var scopeOptions: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Wording is deliberately the short inline form, not `TaskRecurrenceEditScope.label`
+            // ("Only This Task" / "This And Future Tasks") — those are title-cased for the alert
+            // buttons this row replaced.
+            scopeRow("This task only", value: .thisTask)
+            scopeRow("This and future", value: .thisAndFuture)
+        }
+    }
+
+    @ViewBuilder
+    private func scopeRow(_ title: String, value: TaskRecurrenceEditScope) -> some View {
+        let isSelected = scope == value
+        Button {
+            scope = value
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+                    .opacity(isSelected ? 1 : 0)
+                    .frame(width: 11)
+
+                Text(title)
+                    .font(.system(size: 11))
+                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .modifier(InspectorPickerHover(cornerRadius: 6))
+    }
+
     // MARK: REPEATS
 
     @ViewBuilder
@@ -297,7 +337,7 @@ private struct TaskRecurrencePickerPanel: View {
             ForEach(TaskRecurrencePresentation.repeatSegments, id: \.rule) { segment in
                 let isSelected = rule == segment.rule
                 Button {
-                    onSelectRule(segment.rule)
+                    onSelectRule(segment.rule, scope)
                 } label: {
                     Text(segment.title)
                         .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
@@ -335,7 +375,7 @@ private struct TaskRecurrencePickerPanel: View {
                 isSelected: endMode == .never
             ) {
                 showEndDatePicker = false
-                onSelectEnd(.never, "", 0)
+                onSelectEnd(.never, "", 0, scope)
             } trailing: {
                 EmptyView()
             }
@@ -372,7 +412,7 @@ private struct TaskRecurrencePickerPanel: View {
                         get: { resolvedEndDate },
                         set: { newDate in
                             showEndDatePicker = false
-                            onSelectEnd(.onDate, DateFormatters.dateKey(from: newDate), endCount)
+                            onSelectEnd(.onDate, DateFormatters.dateKey(from: newDate), endCount, scope)
                         }
                     ),
                     viewMonth: $viewMonth,
@@ -387,7 +427,7 @@ private struct TaskRecurrencePickerPanel: View {
                 isSelected: endMode == .afterCount
             ) {
                 showEndDatePicker = false
-                onSelectEnd(.afterCount, "", resolvedCount)
+                onSelectEnd(.afterCount, "", resolvedCount, scope)
             } trailing: {
                 HStack(spacing: 5) {
                     TextField("", text: $countText)
@@ -427,7 +467,7 @@ private struct TaskRecurrencePickerPanel: View {
     private var clearRepeatButton: some View {
         Button {
             showEndDatePicker = false
-            onSelectRule(.none)
+            onSelectRule(.none, scope)
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "xmark.circle")
@@ -468,7 +508,7 @@ private struct TaskRecurrencePickerPanel: View {
             showEndDatePicker = togglingPicker ? !showEndDatePicker : true
         } else {
             showEndDatePicker = true
-            onSelectEnd(.onDate, key, endCount)
+            onSelectEnd(.onDate, key, endCount, scope)
         }
     }
 
@@ -498,7 +538,7 @@ private struct TaskRecurrencePickerPanel: View {
         countTextAtFocus = normalized
         guard force || textChanged else { return }
         guard endMode != .afterCount || parsed != endCount else { return }
-        onSelectEnd(.afterCount, "", parsed)
+        onSelectEnd(.afterCount, "", parsed, scope)
     }
 
     private func monthStart(for date: Date) -> Date {

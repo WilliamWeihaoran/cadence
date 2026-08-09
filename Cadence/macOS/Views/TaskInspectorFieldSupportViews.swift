@@ -3,8 +3,9 @@ import SwiftUI
 
 /// Shared metrics for the inspector's "icon / label left / value right" field list.
 enum TaskInspectorFieldRowMetrics {
-    /// Rows sit inside the recessed group, which supplies the horizontal inset — so the row
-    /// itself only pads vertically and the hairlines line up with the icon column.
+    /// Each row carries its own horizontal inset rather than inheriting one from the recessed
+    /// group. That is what lets a hovered row wash the full width of the well: if the group
+    /// padded its contents, every hover would be a narrower box drawn inside the well's box.
     static let verticalPadding: CGFloat = 6
     static let minHeight: CGFloat = 32
     /// Fixed leading slot so every label in a group starts on the same x.
@@ -51,6 +52,7 @@ struct TaskInspectorFieldRow<Value: View>: View {
             value
         }
         .padding(.vertical, TaskInspectorFieldRowMetrics.verticalPadding)
+        .padding(.horizontal, TaskInspectorFieldRowMetrics.groupHorizontalPadding)
         .frame(maxWidth: .infinity, minHeight: TaskInspectorFieldRowMetrics.minHeight, alignment: .leading)
     }
 }
@@ -88,7 +90,6 @@ struct TaskInspectorRecessedGroup<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             content
         }
-        .padding(.horizontal, TaskInspectorFieldRowMetrics.groupHorizontalPadding)
         .padding(.vertical, verticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surfaceRecessed)
@@ -132,6 +133,9 @@ struct TaskInspectorFieldDivider: View {
         Rectangle()
             .fill(Theme.borderSubtle)
             .frame(height: 1)
+            // Matches the rows' own inset so the hairlines still start at the icon column now
+            // that the group no longer pads its contents.
+            .padding(.horizontal, TaskInspectorFieldRowMetrics.groupHorizontalPadding)
     }
 }
 
@@ -144,13 +148,16 @@ struct TaskInspectorFieldDivider: View {
 struct TaskInspectorFieldButtonRow: View {
     let label: String
     var icon: String? = nil
+    /// Semantic tint for the glyph — the colour the field's concept already carries elsewhere in
+    /// the app (do = blue, due = red, estimate = purple, actual = green, repeat = amber).
+    var iconColor: Color = Theme.dim
     let valueText: String
     let isSet: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            TaskInspectorFieldRow(label: label, icon: icon) {
+            TaskInspectorFieldRow(label: label, icon: icon, iconColor: iconColor) {
                 TaskInspectorFieldValueText(text: valueText, isSet: isSet)
             }
             .contentShape(Rectangle())
@@ -184,6 +191,9 @@ struct TaskInspectorDateControl: View {
         TaskInspectorFieldButtonRow(
             label: label,
             icon: icon,
+            // The glyph reuses the field's own accent rather than taking a second parameter —
+            // "Do is blue, Due is red" is one fact, and two knobs could disagree.
+            iconColor: activeColor,
             valueText: displayValue,
             isSet: isOn
         ) {
@@ -322,6 +332,12 @@ struct TaskPriorityMarkControl: View {
     }
 }
 
+/// The inspector's single hover layer: one neutral wash, one radius, no border.
+///
+/// It fills with the same `TaskHoverVisuals` raise the task rows elsewhere in the app use, so a
+/// hovered inspector row reads as "this row" rather than as an accent-tinted box drawn inside the
+/// well's box. Anything that needs a hover here goes through this modifier — never a second
+/// `.background()` at a call site.
 struct InspectorPickerHover: ViewModifier {
     var cornerRadius: CGFloat = 6
     @State private var isHovered = false
@@ -330,24 +346,26 @@ struct InspectorPickerHover: ViewModifier {
         content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(isHovered ? Theme.blue.opacity(0.06) : Color.clear)
+                    .fill(TaskHoverVisuals.hoverFill(isHovered: isHovered))
             )
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
             .onHover { isHovered = $0 }
     }
 }
 
-/// Estimate field row: whole row opens the shared estimate picker (presets + hours/minutes).
+/// Estimate field row: whole row opens the roller picker.
 struct TaskInspectorEstimateFieldRow: View {
     @Binding var value: Int
     var label: String = "Estimate"
     var icon: String = "timer"
+    var iconColor: Color = Theme.purple
     @State private var showPicker = false
 
     var body: some View {
         TaskInspectorFieldButtonRow(
             label: label,
             icon: icon,
+            iconColor: iconColor,
             valueText: value > 0 ? CadenceTaskPresentationSupport.estimateLabel(minutes: value) : "None",
             isSet: value > 0
         ) {
@@ -356,9 +374,288 @@ struct TaskInspectorEstimateFieldRow: View {
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
             // The popover heading follows the row, so the "Actual" row cannot present a panel
             // titled ESTIMATE.
-            EstimatePickerPopoverContent(value: $value, title: label.uppercased()) {
+            TaskInspectorEstimateRollerPopover(value: $value, title: label.uppercased()) {
                 showPicker = false
             }
+        }
+    }
+}
+
+// MARK: - Estimate roller
+
+/// Duration editor as a roller: the live total on top, an hours column stepping by 1 beside a
+/// minutes column stepping by 5, then the presets.
+///
+/// SwiftUI has no wheel picker on macOS, so each column is a `ScrollView` whose *centred* row is
+/// read back through `scrollPosition(id:anchor:)`. That keeps real trackpad/scroll-wheel input
+/// working — a custom drag-driven offset would only answer to click-drags, since SwiftUI exposes
+/// no scroll-wheel event — while `.onKeyPress` on the focused column handles ↑/↓ to step it and
+/// ←/→ to move between the two.
+struct TaskInspectorEstimateRollerPopover: View {
+    @Binding var value: Int
+    /// Uppercase heading. Callers editing a duration that is not a planning estimate (logged
+    /// "Actual" minutes) pass their own so the panel is not mislabelled.
+    var title: String = "ESTIMATE"
+    var onClose: () -> Void = {}
+
+    private enum RollerColumn: Hashable { case hours, minutes }
+
+    @State private var hours = 0
+    @State private var minutes = 0
+    /// The scroll positions report their centred row a beat *after* layout. Until that has
+    /// settled, a reported change is the picker seeding itself rather than an edit — committing
+    /// it would silently round an off-step value (focus-logged "Actual" minutes are rarely
+    /// multiples of 5) merely because the popover was opened.
+    @State private var isSeeding = true
+    @FocusState private var focusedColumn: RollerColumn?
+
+    private static let hourValues = Array(0...24)
+    private static let minuteValues = Array(stride(from: 0, through: 55, by: 5))
+    private static let presets: [Int] = [15, 30, 45, 60, 90]
+    /// Matches every other estimate entry point in the app: a duration field tops out at 24h.
+    private static let maxMinutes = 1440
+
+    private var total: Int { min(hours * 60 + minutes, Self.maxMinutes) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            rollers
+            presetRow
+
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(height: 1)
+
+            footer
+        }
+        .padding(10)
+        .frame(width: 260)
+        .background(Theme.surfaceElevated)
+        .onAppear {
+            seed(from: value)
+            DispatchQueue.main.async { focusedColumn = .hours }
+        }
+        .task {
+            try? await Task.sleep(for: .milliseconds(300))
+            isSeeding = false
+        }
+        .onChange(of: hours) { _, _ in commit() }
+        .onChange(of: minutes) { _, _ in commit() }
+    }
+
+    @ViewBuilder
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .kerning(0.54)
+
+            Spacer(minLength: 0)
+
+            Text(total > 0 ? CadenceTaskPresentationSupport.estimateLabel(minutes: total) : "None")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(total > 0 ? Theme.text : Theme.dim)
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+    }
+
+    @ViewBuilder
+    private var rollers: some View {
+        HStack(spacing: 8) {
+            column(.hours, values: Self.hourValues, unit: "h", selection: $hours)
+            column(.minutes, values: Self.minuteValues, unit: "m", selection: $minutes)
+        }
+    }
+
+    @ViewBuilder
+    private func column(
+        _ id: RollerColumn,
+        values: [Int],
+        unit: String,
+        selection: Binding<Int>
+    ) -> some View {
+        EstimateRollerColumn(
+            values: values,
+            unit: unit,
+            selection: selection,
+            isFocused: focusedColumn == id
+        )
+        .focusable()
+        .focused($focusedColumn, equals: id)
+        .onKeyPress(.upArrow) { step(-1, in: values, selection: selection); return .handled }
+        .onKeyPress(.downArrow) { step(1, in: values, selection: selection); return .handled }
+        .onKeyPress(.leftArrow) { focusedColumn = .hours; return .handled }
+        .onKeyPress(.rightArrow) { focusedColumn = .minutes; return .handled }
+        .onKeyPress(.return) { onClose(); return .handled }
+    }
+
+    @ViewBuilder
+    private var presetRow: some View {
+        HStack(spacing: 5) {
+            ForEach(Self.presets, id: \.self) { preset in
+                let isSelected = total == preset
+                Button {
+                    apply(preset)
+                    onClose()
+                } label: {
+                    Text(CadenceTaskPresentationSupport.estimateLabel(minutes: preset))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(isSelected ? Theme.blue : Theme.muted)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 24)
+                        .background(isSelected ? Theme.blue.opacity(0.14) : Theme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .modifier(InspectorPickerHover(cornerRadius: 6))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var footer: some View {
+        HStack(spacing: 8) {
+            Button {
+                apply(0)
+                onClose()
+            } label: {
+                Text("Clear")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.red)
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .modifier(InspectorPickerHover(cornerRadius: 6))
+
+            Spacer(minLength: 0)
+
+            Button {
+                commit(force: true)
+                onClose()
+            } label: {
+                Text("Done")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+                    .padding(.horizontal, 12)
+                    .frame(height: 26)
+                    .background(Theme.blue.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: Edits
+
+    private func seed(from minutesValue: Int) {
+        let clamped = min(max(0, minutesValue), Self.maxMinutes)
+        hours = clamped / 60
+        // Floored, not rounded, to a step the minutes column actually carries.
+        minutes = (clamped % 60) / 5 * 5
+    }
+
+    private func step(_ delta: Int, in values: [Int], selection: Binding<Int>) {
+        isSeeding = false
+        guard let index = values.firstIndex(of: selection.wrappedValue) else {
+            selection.wrappedValue = values.first ?? 0
+            return
+        }
+        withAnimation(.easeOut(duration: 0.12)) {
+            selection.wrappedValue = values[min(max(0, index + delta), values.count - 1)]
+        }
+    }
+
+    /// Sets both columns from a total. Commits directly rather than relying on the column
+    /// `onChange`, so "Clear" still writes 0 when the columns already read 0h 0m.
+    private func apply(_ totalMinutes: Int) {
+        isSeeding = false
+        seed(from: totalMinutes)
+        commit(force: true)
+    }
+
+    private func commit(force: Bool = false) {
+        guard force || !isSeeding else { return }
+        if value != total { value = total }
+    }
+}
+
+/// One roller column. The centre band is drawn *behind* the scrolling rows so it tints the well
+/// rather than the glyphs sitting in it.
+private struct EstimateRollerColumn: View {
+    let values: [Int]
+    let unit: String
+    @Binding var selection: Int
+    let isFocused: Bool
+
+    private static let rowHeight: CGFloat = 26
+    private static let visibleRows: CGFloat = 5
+    private static let cornerRadius: CGFloat = 8
+
+    private var viewportHeight: CGFloat { Self.rowHeight * Self.visibleRows }
+
+    /// `scrollPosition` wants an optional; a nil centre (mid-fling, empty content) must not wipe
+    /// the selection.
+    private var centeredValue: Binding<Int?> {
+        Binding(
+            get: { selection },
+            set: { if let newValue = $0 { selection = newValue } }
+        )
+    }
+
+    var body: some View {
+        ScrollView(.vertical) {
+            LazyVStack(spacing: 0) {
+                ForEach(values, id: \.self) { item in
+                    Text("\(item)\(unit)")
+                        .font(.system(size: 13, weight: item == selection ? .semibold : .regular))
+                        .foregroundStyle(item == selection ? Theme.text : Theme.muted)
+                        .monospacedDigit()
+                        .opacity(opacity(for: item))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: Self.rowHeight)
+                        .id(item)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollIndicators(.hidden)
+        .scrollTargetBehavior(.viewAligned)
+        // Lets the first and last rows reach the centre band instead of stopping at the edges.
+        .contentMargins(.vertical, (viewportHeight - Self.rowHeight) / 2, for: .scrollContent)
+        .scrollPosition(id: centeredValue, anchor: .center)
+        .frame(height: viewportHeight)
+        .background(alignment: .center) {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Theme.blue.opacity(0.12))
+                .frame(height: Self.rowHeight)
+                .padding(.horizontal, 4)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: Self.cornerRadius)
+                .fill(Theme.surfaceRecessed)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Self.cornerRadius)
+                .stroke(isFocused ? Theme.blue.opacity(0.5) : Theme.borderSubtle, lineWidth: 1)
+        )
+    }
+
+    private func opacity(for item: Int) -> Double {
+        guard let itemIndex = values.firstIndex(of: item),
+              let selectedIndex = values.firstIndex(of: selection) else { return 0.35 }
+        switch abs(itemIndex - selectedIndex) {
+        case 0:  return 1
+        case 1:  return 0.55
+        default: return 0.3
         }
     }
 }

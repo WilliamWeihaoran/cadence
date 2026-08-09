@@ -85,6 +85,7 @@
 		B10000002FCE000000000221 /* Cadence/Services/CadenceHabitWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000115 /* Cadence/Services/CadenceHabitWidgetSupport.swift */; };
 		B10000002FCE000000000222 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000116 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift */; };
 		B10000002FCE000000000223 /* Cadence/Services/CadenceCalendarWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000117 /* Cadence/Services/CadenceCalendarWidgetSupport.swift */; };
+		B10000002FCE000000000299 /* Cadence/Shared/Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000199 /* Cadence/Shared/Theme.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -169,6 +170,7 @@
 		A10000002FCE000000000126 /* Cadence/Services/NoteReferenceSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/NoteReferenceSupport.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000127 /* Cadence/Services/DataIntegrityRepairService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/DataIntegrityRepairService.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000128 /* Cadence/Models/Pursuit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Pursuit.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000199 /* Cadence/Shared/Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/Theme.swift; sourceTree = "<group>"; };
 		A10000002FCE00000000022B /* Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift; sourceTree = "<group>"; };
 		B10000002FCE000000000101 /* CadenceWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CadenceWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000002FCE000000000102 /* Cadence/Services/CadenceStoreSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceStoreSupport.swift; sourceTree = "<group>"; };
@@ -304,6 +306,7 @@
 				A10000002FCE000000000111 /* Cadence/Models/EventNote.swift */,
 				A10000002FCE00000000011D /* Cadence/Models/MarkdownImageAsset.swift */,
 				A10000002FCE000000000112 /* Cadence/Shared/DateFormatters.swift */,
+				A10000002FCE000000000199 /* Cadence/Shared/Theme.swift */,
 				A10000002FCE000000000113 /* Cadence/Services/CadenceSchema.swift */,
 				A10000002FCE00000000011F /* Cadence/Services/NoteMigrationService.swift */,
 				A10000002FCE000000000124 /* Cadence/Services/TagSupport.swift */,
@@ -665,6 +668,7 @@
 				B10000002FCE00000000021A /* Cadence/Models/EventNote.swift in Sources */,
 				B10000002FCE00000000021B /* Cadence/Models/MarkdownImageAsset.swift in Sources */,
 				B10000002FCE00000000021C /* Cadence/Shared/DateFormatters.swift in Sources */,
+				B10000002FCE000000000299 /* Cadence/Shared/Theme.swift in Sources */,
 				B10000002FCE00000000021D /* Cadence/Services/CadenceSchema.swift in Sources */,
 				B10000002FCE00000000021E /* Cadence/Services/TagSupport.swift in Sources */,
 				B10000002FCE00000000021F /* Cadence/Services/MarkdownMetadataSupport.swift in Sources */,

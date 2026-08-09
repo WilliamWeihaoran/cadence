@@ -119,10 +119,7 @@ struct CalendarSnapshotWidgetView: View {
                 extraLargeLayout
             }
         }
-        .cadenceWidgetBackground([
-            Color(red: 0.07, green: 0.11, blue: 0.17),
-            Color(red: 0.10, green: 0.15, blue: 0.23),
-        ])
+        .cadenceWidgetBackground([Theme.bg, Theme.surface])
     }
 
     private var smallLayout: some View {
@@ -206,11 +203,11 @@ struct CalendarSnapshotWidgetView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Calendar")
                     .font(.system(size: scale.titleSize, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.text)
                 Spacer(minLength: 8)
                 Text("\(scheduledCount + dueCount)")
                     .font(.system(size: scale.countSize, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.text)
                     .minimumScaleFactor(0.8)
             }
 
@@ -243,13 +240,13 @@ struct CalendarSnapshotWidgetView: View {
         VStack(alignment: .leading, spacing: compact ? 4 : 5) {
             Text(day.weekdayLabel)
                 .font(.system(size: scale.captionFontSize, weight: .semibold))
-                .foregroundStyle(day.isToday ? Color(red: 0.48, green: 0.77, blue: 1.0) : .white.opacity(0.58))
+                .foregroundStyle(day.isToday ? Theme.blueLight : Theme.muted)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
             Text(day.dayNumberLabel)
                 .font(.system(size: compact ? scale.metricValueSize : scale.metricValueSize + 1, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .monospacedDigit()
@@ -257,7 +254,7 @@ struct CalendarSnapshotWidgetView: View {
             if day.totalCount == 0 {
                 Text("clear")
                     .font(.system(size: scale.captionFontSize, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(Theme.muted)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             } else {
@@ -266,14 +263,14 @@ struct CalendarSnapshotWidgetView: View {
                         countChip(
                             value: "\(day.dueCount)",
                             label: usesShortCountLabels ? "d" : "due",
-                            tint: Color(red: 1.0, green: 0.72, blue: 0.28)
+                            tint: Theme.amber
                         )
                     }
                     if day.scheduledCount > 0 {
                         countChip(
                             value: "\(day.scheduledCount)",
                             label: usesShortCountLabels ? "p" : "planned",
-                            tint: Color(red: 0.48, green: 0.77, blue: 1.0)
+                            tint: Theme.blueLight
                         )
                     }
                 }
@@ -297,7 +294,7 @@ struct CalendarSnapshotWidgetView: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Next up")
                     .font(.system(size: scale.captionFontSize, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.58))
+                    .foregroundStyle(Theme.muted)
                 Spacer(minLength: 4)
                 if let dueLabel = upcomingDueLabel {
                     Text(dueLabel)
@@ -309,7 +306,7 @@ struct CalendarSnapshotWidgetView: View {
             }
             Text(entry.snapshot.upcomingTitle ?? "Nothing urgent right now")
                 .font(.system(size: scale.bodyFontSize + 1, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.text)
                 .lineLimit(titleLineLimit)
                 .minimumScaleFactor(0.85)
         }
@@ -325,9 +322,9 @@ struct CalendarSnapshotWidgetView: View {
 
     private var upcomingDueTint: Color {
         let dueDate = entry.snapshot.upcomingDueDate
-        if dueDate < todayKey { return Color(red: 1.0, green: 0.52, blue: 0.44) }
-        if dueDate == todayKey { return Color(red: 1.0, green: 0.72, blue: 0.28) }
-        return Color(red: 0.48, green: 0.77, blue: 1.0)
+        if dueDate < todayKey { return Theme.red }
+        if dueDate == todayKey { return Theme.amber }
+        return Theme.blueLight
     }
 
     private var todayKey: String {
@@ -343,7 +340,7 @@ struct CalendarSnapshotWidgetView: View {
             nextUpSection(titleLineLimit: 3)
                 .padding(scale.panelPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white.opacity(0.07))
+                .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
         }
     }
@@ -374,16 +371,19 @@ struct CalendarSnapshotWidgetView: View {
         if day.isToday {
             return AnyShapeStyle(
                 LinearGradient(
+                    // Today's cell keeps a blue wash rather than resolving to a neutral surface:
+                    // the weekday label above it is already `blueLight`, and a neutral cell would
+                    // leave that lone blue word doing all the work of marking today.
                     colors: [
-                        Color(red: 0.21, green: 0.34, blue: 0.52).opacity(0.65),
-                        Color(red: 0.12, green: 0.18, blue: 0.28).opacity(0.95),
+                        Theme.blue.opacity(0.32),
+                        Theme.blue.opacity(0.12),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
         }
-        return AnyShapeStyle(Color.white.opacity(0.08))
+        return AnyShapeStyle(Theme.surfaceElevated)
     }
 
     private var scheduledCount: Int {
@@ -399,8 +399,8 @@ struct CalendarSnapshotWidgetView: View {
     }
 
     private var headerBadges: [WidgetHeaderBadge] {
-        let overdueTint = Color(red: 1.0, green: 0.52, blue: 0.44)
-        let upcomingTint = Color(red: 0.48, green: 0.77, blue: 1.0)
+        let overdueTint = Theme.red
+        let upcomingTint = Theme.blueLight
         let leadingDayCount = widgetFamily == .systemSmall ? 5 : 7
         let upcomingCount = Array(entry.snapshot.days.prefix(leadingDayCount)).reduce(0) { $0 + $1.totalCount }
 

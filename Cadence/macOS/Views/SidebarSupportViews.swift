@@ -2,18 +2,105 @@
 import AppKit
 import SwiftUI
 
-/// A single icon-only button in the permanent left rail.
+/// Branding block at the top of the sidebar: the real app mark, the product name, and
+/// the search affordance.
 ///
-/// The rail carries no labels, so every button needs a `.help(...)` tooltip to stay
-/// learnable. Selection is expressed by a filled `Theme.surfaceElevated` pill plus the
-/// destination's own tint on the glyph; inactive buttons drop to `Theme.dim` so the
-/// rail reads as one calm column with a single obvious active item.
-struct SidebarRailButton: View {
+/// The mark and the wordmark are deliberately **not** a button. This slot used to be the
+/// first item of the icon rail, where it read as a navigable destination that went
+/// nowhere; here it is branding only, and the sole control in the row is search.
+struct SidebarAppHeader: View {
+    let onSearch: () -> Void
+
+    var body: some View {
+        HStack(spacing: SidebarMetrics.headerSpacing) {
+            appMark
+
+            Text("Cadence")
+                .font(.system(size: SidebarMetrics.appTitleFontSize, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+
+            Spacer(minLength: 6)
+
+            Button(action: onSearch) {
+                Image(systemName: CadenceFeatureDestination.search.systemImage)
+                    .font(.system(size: SidebarMetrics.searchIconSize, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: SidebarMetrics.searchButtonSize, height: SidebarMetrics.searchButtonSize)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.cadencePlain)
+            .help("Search (⌘K)")
+            .accessibilityLabel("Search")
+            .accessibilityIdentifier("sidebar.search")
+        }
+        .padding(.horizontal, SidebarMetrics.rowHorizontalPadding)
+    }
+
+    /// Prefers the shipped app icon so the header carries the product's actual mark.
+    /// Falls back to a tinted tile when the icon can't be resolved (previews, or a build
+    /// whose asset catalog hasn't produced an icon yet) rather than rendering nothing.
+    @ViewBuilder
+    private var appMark: some View {
+        if let image = SidebarAppMark.image {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fill)
+                .frame(width: SidebarMetrics.appMarkSize, height: SidebarMetrics.appMarkSize)
+                .clipShape(
+                    RoundedRectangle(cornerRadius: SidebarMetrics.appMarkCornerRadius, style: .continuous)
+                )
+                .accessibilityHidden(true)
+        } else {
+            RoundedRectangle(cornerRadius: SidebarMetrics.appMarkCornerRadius, style: .continuous)
+                .fill(Theme.blue)
+                .frame(width: SidebarMetrics.appMarkSize, height: SidebarMetrics.appMarkSize)
+                .overlay {
+                    Image(systemName: CadenceFeatureDestination.allTasks.systemImage)
+                        .font(.system(size: SidebarMetrics.appMarkFallbackIconSize, weight: .bold))
+                        .foregroundStyle(Theme.onColor)
+                }
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// Resolved once: `NSImage` lookups hit disk, and the header re-renders on every
+/// selection change.
+enum SidebarAppMark {
+    static let image: NSImage? = {
+        if let named = NSImage(named: "AppIcon") { return named }
+        let applicationIcon: NSImage? = NSApplication.shared.applicationIconImage
+        return applicationIcon
+    }()
+}
+
+/// A single navigation row: colored glyph, label, optional trailing count.
+///
+/// The glyph keeps its destination tint whether or not the row is selected — the colors
+/// are what make nine destinations scannable in one column, so dropping them on
+/// deselection would cost more than it saves. Selection reads from the filled row
+/// background plus the heavier label.
+///
+/// Hover and selection share **one** background layer at **one** radius, the same rule
+/// `TaskInspectorFieldButtonRow` follows: `.plain` rather than `.cadencePlain`, because
+/// cadencePlain would stack its own fill and radius on top of this one.
+struct SidebarNavRow: View {
+    /// Bottom-group rows are quieter than the top group, but they are real destinations
+    /// — the difference is a slightly softened glyph, never a disabled-looking label.
+    enum Emphasis {
+        case primary
+        case secondary
+    }
+
     let icon: String
     let label: String
     let tint: Color
     let count: Int?
     let isSelected: Bool
+    var emphasis: Emphasis = .primary
     let accessibilityID: String
     let action: () -> Void
 
@@ -21,20 +108,36 @@ struct SidebarRailButton: View {
 
     var body: some View {
         Button(action: action) {
-            RoundedRectangle(cornerRadius: SidebarRailMetrics.cornerRadius, style: .continuous)
-                .fill(backgroundFill)
-                .frame(width: SidebarRailMetrics.buttonSize, height: SidebarRailMetrics.buttonSize)
-                .overlay {
-                    Image(systemName: icon)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(isSelected ? tint : Theme.dim)
+            HStack(spacing: SidebarMetrics.iconLabelSpacing) {
+                Image(systemName: icon)
+                    .font(.system(size: SidebarMetrics.iconSize, weight: .semibold))
+                    .foregroundStyle(tint.opacity(iconOpacity))
+                    .frame(width: SidebarMetrics.iconSlotWidth)
+
+                Text(label)
+                    .font(.system(size: SidebarMetrics.labelFontSize, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: SidebarMetrics.badgeLeadingGap)
+
+                if let count, count > 0 {
+                    SidebarNavCountBadge(count: count, tint: tint, isSelected: isSelected)
+                        // The badge is the row's fixed element; the label is what gives.
+                        .layoutPriority(1)
                 }
-                .overlay(alignment: .topTrailing) {
-                    if let count, count > 0 {
-                        badge(count)
-                    }
-                }
-                .contentShape(Rectangle())
+            }
+            .padding(.horizontal, SidebarMetrics.rowHorizontalPadding)
+            .frame(height: SidebarMetrics.rowHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: SidebarMetrics.rowCornerRadius, style: .continuous)
+                    .fill(backgroundFill)
+            )
+            .contentShape(
+                RoundedRectangle(cornerRadius: SidebarMetrics.rowCornerRadius, style: .continuous)
+            )
         }
         .buttonStyle(.plain)
         .help(label)
@@ -45,18 +148,11 @@ struct SidebarRailButton: View {
         .animation(.easeOut(duration: 0.12), value: isSelected)
     }
 
-    @ViewBuilder
-    private func badge(_ count: Int) -> some View {
-        Text(count > 99 ? "99+" : "\(count)")
-            .font(.system(size: 8, weight: .semibold))
-            .foregroundStyle(isSelected ? Theme.bg : Theme.muted)
-            .padding(.horizontal, 3)
-            .frame(minWidth: SidebarRailMetrics.badgeSize, minHeight: SidebarRailMetrics.badgeSize)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(isSelected ? tint : Theme.borderSubtle)
-            )
-            .offset(x: 3, y: -3)
+    private var iconOpacity: Double {
+        switch emphasis {
+        case .primary: return 1
+        case .secondary: return SidebarMetrics.secondaryIconOpacity
+        }
     }
 
     private var backgroundFill: Color {
@@ -70,12 +166,41 @@ struct SidebarRailButton: View {
     }
 }
 
-/// Hairline that splits the rail into its daily / views / tracking groups.
-struct SidebarRailSeparator: View {
+/// Trailing count for a nav row. Fixed-size on purpose: three digits must never be
+/// squeezed or clipped by a long destination label.
+struct SidebarNavCountBadge: View {
+    let count: Int
+    let tint: Color
+    let isSelected: Bool
+
+    private var text: String {
+        count > 999 ? "999+" : "\(count)"
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: SidebarMetrics.badgeFontSize, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(isSelected ? Theme.bg : Theme.muted)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, SidebarMetrics.badgeHorizontalPadding)
+            .frame(minWidth: SidebarMetrics.badgeMinWidth, minHeight: SidebarMetrics.badgeHeight)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(isSelected ? tint : Theme.borderSubtle)
+            )
+            .accessibilityHidden(true)
+    }
+}
+
+/// Hairline splitting the column into nav / lists / nav.
+struct SidebarSectionDivider: View {
     var body: some View {
         Rectangle()
             .fill(Theme.borderSubtle)
-            .frame(width: SidebarRailMetrics.separatorWidth, height: 1)
+            .frame(height: 1)
+            .padding(.horizontal, SidebarMetrics.dividerInset)
     }
 }
 

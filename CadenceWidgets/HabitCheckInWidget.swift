@@ -129,10 +129,7 @@ struct HabitCheckInWidgetView: View {
                 largeLayout
             }
         }
-        .cadenceWidgetBackground([
-            Color(red: 0.09, green: 0.12, blue: 0.09),
-            Color(red: 0.13, green: 0.19, blue: 0.13),
-        ])
+        .cadenceWidgetBackground([Theme.bg, Theme.surface])
     }
 
     private var smallLayout: some View {
@@ -199,11 +196,11 @@ struct HabitCheckInWidgetView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(headerTitle)
                     .font(.system(size: scale.titleSize, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.text)
                 Spacer(minLength: 8)
                 Text("\(entry.snapshot.doneCount)")
                     .font(.system(size: scale.countSize, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.text)
                     .minimumScaleFactor(0.8)
             }
 
@@ -255,7 +252,7 @@ struct HabitCheckInWidgetView: View {
 
                     Text(habit.title)
                         .font(.system(size: compact ? scale.bodyFontSize + 0.5 : scale.bodyFontSize + 1, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.text)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -263,12 +260,12 @@ struct HabitCheckInWidgetView: View {
                     if !compact {
                         Text(habit.currentStreak > 0 ? "\(habit.currentStreak)d streak" : habit.frequencyLabel)
                             .font(.system(size: scale.captionFontSize, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.60))
+                            .foregroundStyle(Theme.muted)
                             .lineLimit(1)
                     } else if habit.currentStreak > 0 {
                         Text("\(habit.currentStreak)d")
                             .font(.system(size: scale.captionFontSize, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.64))
+                            .foregroundStyle(Theme.muted)
                             .lineLimit(1)
                     }
                 }
@@ -283,12 +280,12 @@ struct HabitCheckInWidgetView: View {
             .buttonStyle(.plain)
         } else {
             RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous)
-                .fill(Color.white.opacity(0.05))
+                .fill(Theme.surface)
                 .frame(minHeight: compact ? 66 : 74)
                 .overlay {
                     Image(systemName: "plus")
                         .font(.system(size: scale.bodyFontSize + 1, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.32))
+                        .foregroundStyle(Theme.dim)
                 }
         }
     }
@@ -321,14 +318,17 @@ struct HabitCheckInWidgetView: View {
             )
         }
         return LinearGradient(
-            colors: [Color.white.opacity(0.08), tint.opacity(0.14)],
+            colors: [Theme.surfaceElevated, tint.opacity(0.14)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
     }
 
     private func habitTint(for habit: CadenceHabitWidgetHabit) -> Color {
-        habit.isDoneToday ? .white : Color(hex: habit.colorHex)
+        // A checked-in cell is filled with the habit's own color, so its glyphs are the one place
+        // in the widget set that is genuinely drawn on a saturated fill — hence `onColor` rather
+        // than the neutral `text` used everywhere else here.
+        habit.isDoneToday ? Theme.onColor : Color(hex: habit.colorHex)
     }
 
     private func paddedHabits(count: Int) -> [CadenceHabitWidgetHabit?] {
@@ -342,8 +342,8 @@ struct HabitCheckInWidgetView: View {
     }
 
     private var headerBadges: [WidgetHeaderBadge] {
-        let doneTint = Color(red: 0.38, green: 0.90, blue: 0.55)
-        let openTint = Color(red: 1.0, green: 0.74, blue: 0.30)
+        let doneTint = Theme.green
+        let openTint = Theme.amber
 
         if widgetFamily == .systemSmall {
             if entry.snapshot.openCount == 0 {

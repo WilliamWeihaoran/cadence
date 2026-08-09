@@ -2,10 +2,13 @@
 import SwiftUI
 import SwiftData
 
-/// The sidebar is two fixed columns: a permanent, non-scrolling icon rail carrying every
-/// app destination, and a scrolling panel dedicated entirely to lists (contexts →
-/// areas/projects). Destinations no longer compete with lists for vertical space, so the
-/// panel can grow without pushing navigation off-screen.
+/// The sidebar is one column, top to bottom: app header, primary nav, lists, secondary
+/// nav, settings.
+///
+/// **Only the lists region scrolls.** Everything else is pinned. Navigation and lists
+/// share a column now, and if the whole column scrolled, a long list collection would
+/// push the secondary nav and Settings below the fold — so the two nav groups and the
+/// header are fixed and the lists region absorbs all remaining height.
 struct SidebarView: View {
     @Binding var selection: SidebarItem?
     @Query(sort: \Context.order) private var contexts: [Context]
@@ -62,125 +65,95 @@ struct SidebarView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            rail
+        VStack(alignment: .leading, spacing: 0) {
+            SidebarAppHeader { globalSearchManager.present() }
+                .padding(.top, SidebarMetrics.topInset)
+                .padding(.bottom, SidebarMetrics.headerBottomSpacing)
 
-            Rectangle()
-                .fill(Theme.borderSubtle)
-                .frame(width: 1)
+            if !primaryNavItems.isEmpty {
+                navGroup(primaryNavItems, emphasis: .primary)
+                    .padding(.bottom, SidebarMetrics.groupSpacing)
 
-            panel
+                SidebarSectionDivider()
+            }
+
+            listsSection
+
+            SidebarSectionDivider()
+
+            bottomGroup
         }
+        .padding(.horizontal, SidebarMetrics.horizontalInset)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surface)
         .sheet(item: $contextForNewList) { ctx in
             CreateListSheet(context: ctx)
         }
     }
 
-    // MARK: - Rail
+    // MARK: - Nav groups
 
-    /// Permanent icon-only navigation column. Never scrolls: the destination set is
-    /// bounded and small enough to always fit, which is the whole point of moving it out
-    /// of the scrolling panel.
-    private var rail: some View {
-        VStack(spacing: SidebarRailMetrics.spacing) {
-            appIconTile
-                .padding(.bottom, 6)
-
-            ForEach(Array(railGroups.enumerated()), id: \.offset) { index, group in
-                if index > 0 {
-                    SidebarRailSeparator()
-                }
-
-                ForEach(group) { entry in
-                    SidebarRailButton(
-                        icon: entry.icon,
-                        label: entry.label,
-                        tint: entry.tint,
-                        count: entry.count,
-                        isSelected: selection == entry.item,
-                        accessibilityID: entry.accessibilityID
-                    ) {
-                        selection = entry.item
-                    }
+    private func navGroup(_ items: [SidebarNavItem], emphasis: SidebarNavRow.Emphasis) -> some View {
+        VStack(spacing: SidebarMetrics.rowSpacing) {
+            ForEach(items) { entry in
+                SidebarNavRow(
+                    icon: entry.icon,
+                    label: entry.label,
+                    tint: entry.tint,
+                    count: entry.count,
+                    isSelected: selection == entry.item,
+                    emphasis: emphasis,
+                    accessibilityID: entry.accessibilityID
+                ) {
+                    selection = entry.item
                 }
             }
+        }
+    }
 
-            Spacer(minLength: 0)
+    /// Secondary nav plus Settings. Pinned to the bottom of the column by the lists
+    /// region above it, which is the only part that flexes.
+    private var bottomGroup: some View {
+        VStack(spacing: SidebarMetrics.rowSpacing) {
+            navGroup(secondaryNavItems, emphasis: .secondary)
 
-            SidebarRailButton(
+            SidebarNavRow(
                 icon: CadenceFeatureDestination.settings.systemImage,
                 label: CadenceFeatureDestination.settings.title,
-                tint: Theme.blue,
+                tint: CadenceFeatureDestination.settings.tint,
                 count: nil,
                 isSelected: selection == .settings,
+                emphasis: .secondary,
                 accessibilityID: "sidebar.settings"
             ) {
                 selection = .settings
             }
         }
-        .frame(width: SidebarRailMetrics.width)
-        .padding(.top, SidebarRailMetrics.topInset)
-        .padding(.bottom, 12)
+        .padding(.top, SidebarMetrics.groupSpacing)
+        .padding(.bottom, SidebarMetrics.bottomInset)
     }
 
-    private var appIconTile: some View {
-        RoundedRectangle(cornerRadius: SidebarRailMetrics.cornerRadius, style: .continuous)
-            .fill(Theme.surfaceElevated)
-            .frame(width: SidebarRailMetrics.buttonSize, height: SidebarRailMetrics.buttonSize)
-            .overlay {
-                Image(systemName: "checklist.checked")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-            }
-            .accessibilityHidden(true)
-    }
+    // MARK: - Lists
 
-    // MARK: - Panel
-
-    /// Lists only. The header stays pinned so the search affordance is always reachable
-    /// no matter how far the context list is scrolled.
-    private var panel: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Text("Lists")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-
-                Spacer(minLength: 0)
-
-                Button { globalSearchManager.present() } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
+    /// The single scrolling region. Takes every point the pinned groups don't, so
+    /// Settings stays on the bottom edge whether the user has two lists or forty.
+    private var listsSection: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(contexts.filter { !$0.isArchived }) { context in
+                    ContextSection(
+                        context: context,
+                        selection: $selection,
+                        onAddList: { contextForNewList = context }
+                    )
+                    .padding(.vertical, 2)
                 }
-                .buttonStyle(.cadencePlain)
-                .help("Search (⌘K)")
-                .accessibilityLabel("Search")
             }
-            .padding(.horizontal, 12)
-            .padding(.top, SidebarRailMetrics.topInset)
-            .padding(.bottom, 8)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(contexts.filter { !$0.isArchived }) { context in
-                        ContextSection(
-                            context: context,
-                            selection: $selection,
-                            onAddList: { contextForNewList = context }
-                        )
-                        .padding(.vertical, 2)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
-            }
-            .scrollIndicators(.hidden)
+            .padding(.vertical, SidebarMetrics.groupSpacing)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .scrollIndicators(.hidden)
+        .frame(maxHeight: .infinity)
     }
 
     // MARK: - Tab visibility / order
@@ -195,56 +168,44 @@ struct SidebarView: View {
             .filter { !hiddenTabs.contains($0) }
     }
 
-    // MARK: - Rail grouping
+    // MARK: - Nav grouping
 
-    // The three rail groups are fixed structure, not user data: "what am I doing today",
-    // "where do I go to look at things", and "what am I working toward" are different
-    // kinds of destination and the hairlines are what make the icon-only rail readable.
+    // The two nav groups are fixed structure, not user data: "where the day's work
+    // happens" sits above the lists, "everything else I navigate to" sits below them.
     // The stored `sidebarTabOrder` therefore sorts *within* a group rather than across
-    // groups — reordering in Settings still moves an icon, it just can't move it into a
-    // different section of the rail.
-    private static let dailyFeatures: [CadenceFeatureDestination] = [.today, .inbox]
-    private static let viewFeatures: [CadenceFeatureDestination] = [.planning, .calendar, .allTasks, .notes]
-    private static let trackingFeatures: [CadenceFeatureDestination] = [.focus, .goals, .habits]
+    // groups — reordering in Settings still moves a row, it just can't move it past the
+    // lists into the other group.
+    private static let primaryFeatures: [CadenceFeatureDestination] = [
+        .today, .inbox, .planning, .calendar, .allTasks
+    ]
+    private static let secondaryFeatures: [CadenceFeatureDestination] = [
+        .notes, .focus, .goals, .habits
+    ]
 
     private static let staticDestinationFeatures: Set<CadenceFeatureDestination> =
         Set(SidebarStaticDestination.allCases.map(\.feature))
 
-    /// Non-empty groups only, so hiding every destination in a group also removes its
-    /// hairline instead of leaving a stray divider behind.
-    private var railGroups: [[SidebarRailItem]] {
-        [Self.dailyFeatures, Self.viewFeatures, Self.trackingFeatures]
-            .map(railItems(for:))
-            .filter { !$0.isEmpty }
+    private var primaryNavItems: [SidebarNavItem] {
+        navItems(for: Self.primaryFeatures)
     }
 
-    private func railItems(for features: [CadenceFeatureDestination]) -> [SidebarRailItem] {
-        let featureSet = Set(features)
+    private var secondaryNavItems: [SidebarNavItem] {
+        navItems(for: Self.secondaryFeatures)
+    }
 
-        // `allVisibleDestinations` is already in the user's stored order with hidden
-        // tabs stripped, so filtering it preserves both settings at once.
-        var items = allVisibleDestinations
-            .filter { featureSet.contains($0.feature) }
-            .map { destination in
-                SidebarRailItem(
-                    id: destination.rawValue,
-                    item: destination.item,
-                    icon: destination.icon,
-                    label: destination.label,
-                    tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
-                    count: count(for: destination),
-                    accessibilityID: "sidebar.destination.\(destination.rawValue)"
-                )
-            }
+    private func navItems(for features: [CadenceFeatureDestination]) -> [SidebarNavItem] {
+        let featureSet = Set(features)
+        var items: [SidebarNavItem] = []
 
         // Notes has no `SidebarStaticDestination` case (and therefore no hide toggle, no
         // color override, and no entry in the stored order), so it is rendered straight
-        // from the shared feature metadata and pinned to the end of its group. If a case
-        // is ever added, the branch above takes over and both settings start working for
-        // it automatically.
+        // from the shared feature metadata and pinned to its declared position at the
+        // head of its group — it can't take part in the sort the other rows use. If a
+        // case is ever added, the branch below takes over and both settings start
+        // working for it automatically.
         if featureSet.contains(.notes), !Self.staticDestinationFeatures.contains(.notes) {
             items.append(
-                SidebarRailItem(
+                SidebarNavItem(
                     id: CadenceFeatureDestination.notes.rawValue,
                     item: .notes,
                     icon: CadenceFeatureDestination.notes.systemImage,
@@ -255,6 +216,22 @@ struct SidebarView: View {
                 )
             )
         }
+
+        // `allVisibleDestinations` is already in the user's stored order with hidden
+        // tabs stripped, so filtering it preserves both settings at once.
+        items += allVisibleDestinations
+            .filter { featureSet.contains($0.feature) }
+            .map { destination in
+                SidebarNavItem(
+                    id: destination.rawValue,
+                    item: destination.item,
+                    icon: destination.icon,
+                    label: destination.label,
+                    tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
+                    count: count(for: destination),
+                    accessibilityID: "sidebar.destination.\(destination.rawValue)"
+                )
+            }
 
         return items
     }

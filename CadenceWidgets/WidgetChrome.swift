@@ -132,10 +132,18 @@ struct CadenceWidgetScale {
 /// which matters inside WidgetKit's fixed, non-scrolling family sizes.
 extension View {
     func cadenceWidgetElevation(_ scale: CadenceWidgetScale) -> some View {
-        shadow(color: .black.opacity(0.25), radius: scale.elevationRadius, x: 0, y: scale.elevationY)
+        shadow(color: Theme.cardElevationShadow, radius: scale.elevationRadius, x: 0, y: scale.elevationY)
     }
 }
 
+/// Widget surfaces resolve their colors from `Theme` like every in-app surface does. They used to
+/// carry their own hand-tuned `Color(red:...)` literals, which drifted into near-duplicate reds,
+/// blues, greens, and ambers that no longer matched anything in the app; the widget target now
+/// compiles `Theme.swift` directly so there is one palette instead of two.
+///
+/// The container background is deliberately the neutral page ramp (`bg` → `surface`) for every
+/// widget: the per-widget hue tints that used to distinguish them lived only in these literals and
+/// had no token behind them. Identity is carried by the accent tints inside the widget instead.
 extension View {
     func cadenceWidgetBackground(_ colors: [Color]) -> some View {
         containerBackground(for: .widget) {
@@ -170,7 +178,7 @@ struct CadenceWidgetBadge: View {
 struct CadenceWidgetMetricCard: View {
     let title: String
     let value: String
-    var valueTint: Color = .white
+    var valueTint: Color = Theme.text
     @Environment(\.widgetFamily) private var widgetFamily
 
     var body: some View {
@@ -178,7 +186,7 @@ struct CadenceWidgetMetricCard: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: scale.metricTitleSize, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.58))
+                .foregroundStyle(Theme.muted)
             Text(value)
                 .font(.system(size: scale.metricValueSize, weight: .black, design: .rounded))
                 .foregroundStyle(valueTint)
@@ -187,7 +195,7 @@ struct CadenceWidgetMetricCard: View {
         }
         .padding(scale.panelPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.08))
+        .background(Theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
         .cadenceWidgetElevation(scale)
     }
@@ -203,12 +211,12 @@ struct CadenceWidgetFooterLink: View {
         Link(destination: url) {
             Text(label)
                 .font(.system(size: scale.controlFontSize, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
                 .padding(.horizontal, scale.panelPadding)
                 .padding(.vertical, max(scale.panelPadding - 4, 5))
-                .background(Color.white.opacity(0.13))
+                .background(Theme.surfaceHighlight)
                 .clipShape(Capsule())
                 .cadenceWidgetElevation(scale)
         }
@@ -228,12 +236,12 @@ struct CadenceWidgetStateCard: View {
         VStack(alignment: alignment, spacing: scale.compactSectionSpacing) {
             Text(title)
                 .font(.system(size: scale.stateTitleSize, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.text)
 
             if let message, !message.isEmpty {
                 Text(message)
                     .font(.system(size: scale.bodyFontSize, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.68))
+                    .foregroundStyle(Theme.muted)
                     .multilineTextAlignment(alignment == .leading ? .leading : .center)
                     .lineLimit(4)
                     .minimumScaleFactor(0.9)
@@ -242,7 +250,7 @@ struct CadenceWidgetStateCard: View {
             Link(destination: actionURL) {
                 Text(actionLabel)
                     .font(.system(size: scale.controlFontSize, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.text)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
             }
@@ -263,7 +271,7 @@ struct CadenceWidgetPanel<Content: View>: View {
         let scale = CadenceWidgetScale.forFamily(widgetFamily)
         content
             .padding(scale.panelPadding)
-            .background(Color.white.opacity(0.08))
+            .background(Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
             .cadenceWidgetElevation(scale)
     }

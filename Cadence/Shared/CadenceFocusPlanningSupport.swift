@@ -62,20 +62,14 @@ enum CadenceFocusSupport {
     /// Compact due-date label for focus and bundle rows. `nil` only when there is no due date at
     /// all, so an absent label reliably means "no deadline". Overdue is spelled out rather than
     /// left for the reader to infer from a bare past date, and the real day is always kept.
+    ///
+    /// Forwards to `CadenceWidgetDateSupport.dueLabel(for:todayKey:)`, which owns the single
+    /// implementation of this vocabulary. It lives there, not here, because it has to be
+    /// `nonisolated` for widget timeline providers while this file's `DateFormatters` statics are
+    /// main-actor isolated. Keeping a second copy here is what let the widget drift to a bare
+    /// "Overdue" with no date on it.
     static func dueLabel(forDueDateKey key: String, todayKey: String) -> String? {
-        guard !key.isEmpty else { return nil }
-        if key == todayKey { return "Due today" }
-
-        let day = DateFormatters.shortDateString(from: key)
-        if key < todayKey { return "Overdue \(day)" }
-
-        // `DateFormatters.relativeDate` is anchored on the wall clock, which would disagree with a
-        // caller that passed a different `todayKey`; anchor the one relative word we use here instead.
-        if let today = DateFormatters.date(from: todayKey),
-           DateFormatters.dayOffset(from: key, relativeTo: today) == 1 {
-            return "Due tomorrow"
-        }
-        return "Due \(day)"
+        CadenceWidgetDateSupport.dueLabel(for: key, todayKey: todayKey)
     }
 
     /// Detail line for focus rows, split into segments so surfaces can tint the due segment red

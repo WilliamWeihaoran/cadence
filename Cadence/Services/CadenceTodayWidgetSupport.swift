@@ -232,26 +232,44 @@ enum CadenceWidgetDateSupport {
         date.formatted(.dateTime.day())
     }
 
-    /// Compact due-date label for widget chrome: "Overdue", "Due today", "Due Fri" inside the
-    /// coming week, then "Due Aug 14".
+    /// Cadence's single due-date vocabulary: `nil` (no due date at all), "Due today",
+    /// "Due tomorrow", "Overdue Aug 2", "Due Aug 14".
     ///
-    /// Returns `nil` — never a generic stand-in string — when the task has no due date, so a
-    /// task due later can never render identically to one with no deadline at all.
+    /// This is the one implementation — `CadenceFocusSupport.dueLabel(forDueDateKey:todayKey:)`
+    /// forwards here. It lives in this enum rather than beside the focus helper because it has to
+    /// stay `nonisolated`: widget timeline providers run off the main actor, and every date helper
+    /// the focus copy reached for (`DateFormatters.shortDateString`, `.dayOffset`) is main-actor
+    /// isolated. Parsing goes through `parsedDate(fromKey:)` for the same reason.
+    ///
+    /// Returns `nil` — never a generic stand-in string — when the task has no due date, so a task
+    /// due later can never render identically to one with no deadline at all. An overdue task
+    /// names its date instead of saying a bare "Overdue"; the date is the part the reader needs.
+    ///
+    /// The widget copy used to name near dates by weekday ("Due Fri") and guard that with a
+    /// six-day cutoff, because weekday names repeat at seven days. Both are gone with the weekday
+    /// names: the only relative word left is "tomorrow", which is an exact one-day offset and so
+    /// needs no window.
     nonisolated static func dueLabel(for dueDate: String, todayKey: String) -> String? {
         let key = dueDate.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return nil }
-        if key < todayKey { return "Overdue" }
         if key == todayKey { return "Due today" }
-        guard let date = parsedDate(fromKey: key) else { return "Due \(key)" }
 
-        // Weekday names are only unambiguous inside the next six days; past that the name would
-        // repeat and read as a nearer date than it is.
+        let day = dayLabel(fromKey: key)
+        if key < todayKey { return "Overdue \(day)" }
+
         if let today = parsedDate(fromKey: todayKey),
-           let days = Calendar.current.dateComponents([.day], from: today, to: date).day,
-           days < 7 {
-            return "Due \(date.formatted(.dateTime.weekday(.abbreviated)))"
+           let date = parsedDate(fromKey: key),
+           Calendar.current.dateComponents([.day], from: today, to: date).day == 1 {
+            return "Due tomorrow"
         }
-        return "Due \(date.formatted(.dateTime.month(.abbreviated).day()))"
+        return "Due \(day)"
+    }
+
+    /// "Aug 14" for a `yyyy-MM-dd` key, falling back to the raw key when it cannot be parsed —
+    /// the same contract as `DateFormatters.shortDateString(from:)`, minus the main-actor formatter.
+    nonisolated static func dayLabel(fromKey key: String) -> String {
+        guard let date = parsedDate(fromKey: key) else { return key }
+        return date.formatted(.dateTime.month(.abbreviated).day())
     }
 
     /// Parses a `yyyy-MM-dd` key without touching `DateFormatters`, whose statics are main-actor

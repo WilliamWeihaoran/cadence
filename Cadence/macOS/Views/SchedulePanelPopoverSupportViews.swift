@@ -21,14 +21,18 @@ struct TaskDetailHeaderSection: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: 7)
-                .fill(Color(hex: task.containerColor).opacity(0.16))
-                .frame(width: 28, height: 28)
-                .overlay {
-                    Image(systemName: task.scheduledStartMin >= 0 ? "calendar.badge.clock" : "checklist")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color(hex: task.containerColor))
-                }
+            // The header tile *is* the priority control. It used to be a decorative container
+            // glyph, with the real priority control duplicated on the right — two affordances
+            // for one field.
+            Button { showPriorityPicker.toggle() } label: {
+                TaskPriorityMarkControl(priority: task.priority)
+            }
+            .buttonStyle(.cadencePlain)
+            .fixedSize()
+            .help("Priority")
+            .popover(isPresented: $showPriorityPicker, arrowEdge: .bottom) {
+                TaskPriorityPickerPopover(priority: $task.priority, isPresented: $showPriorityPicker)
+            }
 
             TaskTitleEntryField(
                 title: $task.title,
@@ -51,16 +55,6 @@ struct TaskDetailHeaderSection: View {
             // minHeight + .leading centres the single-line title against the 28pt badge while
             // still letting a wrapped title grow downward.
             .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-
-            Button { showPriorityPicker.toggle() } label: {
-                TaskPriorityMarkControl(priority: task.priority)
-            }
-            .buttonStyle(.cadencePlain)
-            .fixedSize()
-            .help("Priority")
-            .popover(isPresented: $showPriorityPicker, arrowEdge: .bottom) {
-                TaskPriorityPickerPopover(priority: $task.priority, isPresented: $showPriorityPicker)
-            }
         }
     }
 
@@ -159,7 +153,9 @@ struct TaskDetailScheduleGroupSection: View {
 
             TaskInspectorFieldDivider()
 
-            TaskInspectorEstimateFieldRow(value: $task.estimatedMinutes)
+            // Glyph tints are the colours these concepts already carry elsewhere in the app:
+            // planned time is purple (goal/effort planning), logged time is green (done work).
+            TaskInspectorEstimateFieldRow(value: $task.estimatedMinutes, iconColor: Theme.purple)
 
             TaskInspectorFieldDivider()
 
@@ -169,7 +165,8 @@ struct TaskDetailScheduleGroupSection: View {
             TaskInspectorEstimateFieldRow(
                 value: $task.actualMinutes,
                 label: "Actual",
-                icon: "stopwatch"
+                icon: "stopwatch",
+                iconColor: Theme.green
             )
 
             TaskInspectorFieldDivider()

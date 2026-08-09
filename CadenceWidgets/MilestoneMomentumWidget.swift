@@ -132,10 +132,7 @@ struct MilestoneMomentumWidgetView: View {
                 extraLargeLayout
             }
         }
-        .cadenceWidgetBackground([
-            Color(red: 0.11, green: 0.08, blue: 0.14),
-            Color(red: 0.16, green: 0.10, blue: 0.20),
-        ])
+        .cadenceWidgetBackground([Theme.bg, Theme.surface])
     }
 
     private var smallLayout: some View {
@@ -227,11 +224,11 @@ struct MilestoneMomentumWidgetView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(headerTitle)
                     .font(.system(size: scale.titleSize, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.text)
                 Spacer(minLength: 8)
                 Text("\(entry.snapshot.totalGoalCount)")
                     .font(.system(size: scale.countSize, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.text)
                     .minimumScaleFactor(0.8)
             }
 
@@ -250,10 +247,10 @@ struct MilestoneMomentumWidgetView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(compact ? "Priority" : "Priority milestone")
                             .font(.system(size: scale.captionFontSize, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.58))
+                            .foregroundStyle(Theme.muted)
                         Text(goal.title)
                             .font(.system(size: compact ? scale.bodyFontSize + 2 : scale.titleSize, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Theme.text)
                             .lineLimit(compact ? 3 : 2)
                             .minimumScaleFactor(0.85)
                     }
@@ -270,7 +267,7 @@ struct MilestoneMomentumWidgetView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(nextActionTitle)
                             .font(.system(size: scale.bodyFontSize, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.70))
+                            .foregroundStyle(Theme.muted)
                             .lineLimit(compact ? 2 : 3)
                         Spacer(minLength: 4)
                         // `fixedSize` so a long next-action title wraps instead of squeezing the
@@ -288,12 +285,12 @@ struct MilestoneMomentumWidgetView: View {
                 HStack(spacing: 6) {
                     CadenceWidgetBadge(
                         text: "\(goal.linkedHabitCount) habits",
-                        tint: Color(red: 0.55, green: 0.89, blue: 0.78)
+                        tint: Theme.greenLight
                     )
                     if goal.overdueTaskCount > 0 {
                         CadenceWidgetBadge(
                             text: "\(goal.overdueTaskCount) overdue",
-                            tint: Color(red: 1.0, green: 0.52, blue: 0.44)
+                            tint: Theme.red
                         )
                     }
                 }
@@ -304,7 +301,7 @@ struct MilestoneMomentumWidgetView: View {
                 LinearGradient(
                     colors: [
                         Color(hex: goal.colorHex).opacity(0.32),
-                        Color.white.opacity(0.07),
+                        Theme.surfaceElevated,
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -321,8 +318,8 @@ struct MilestoneMomentumWidgetView: View {
 
     private func nextActionDueTint(for goal: CadenceMilestoneWidgetGoal) -> Color {
         goal.nextActionDueDate < todayKey
-            ? Color(red: 1.0, green: 0.52, blue: 0.44)
-            : Color(red: 0.48, green: 0.77, blue: 1.0)
+            ? Theme.red
+            : Theme.blueLight
     }
 
     private var todayKey: String {
@@ -344,7 +341,7 @@ struct MilestoneMomentumWidgetView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(goal.title)
                         .font(.system(size: compact ? scale.bodyFontSize + 0.5 : scale.bodyFontSize + 1, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.text)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                     Spacer(minLength: 8)
@@ -358,19 +355,19 @@ struct MilestoneMomentumWidgetView: View {
                 HStack(spacing: 6) {
                     Text(goal.dueTodayLabel)
                         .font(.system(size: scale.captionFontSize, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.62))
+                        .foregroundStyle(Theme.muted)
                         .lineLimit(1)
                     if goal.overdueTaskCount > 0 {
                         Text("\(goal.overdueTaskCount) overdue")
                             .font(.system(size: scale.captionFontSize, weight: .semibold))
-                            .foregroundStyle(Color(red: 1.0, green: 0.52, blue: 0.44))
+                            .foregroundStyle(Theme.red)
                     }
                 }
             }
             .padding(.horizontal, scale.panelPadding)
             .padding(.vertical, compact ? max(scale.panelPadding - 2, 6) : max(scale.panelPadding - 1, 7))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.09))
+            .background(Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous))
             .cadenceWidgetElevation(scale)
         }
@@ -402,7 +399,7 @@ struct MilestoneMomentumWidgetView: View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.white.opacity(0.10))
+                    .fill(Theme.surfaceHighlight)
                 Capsule()
                     .fill(tint)
                     .frame(width: max(8, proxy.size.width * max(0, min(progress, 1))))
@@ -416,8 +413,8 @@ struct MilestoneMomentumWidgetView: View {
     }
 
     private var headerBadges: [WidgetHeaderBadge] {
-        let overdueTint = Color(red: 1.0, green: 0.52, blue: 0.44)
-        let activeTint = Color(red: 0.48, green: 0.77, blue: 1.0)
+        let overdueTint = Theme.red
+        let activeTint = Theme.blueLight
 
         if widgetFamily == .systemSmall {
             if entry.snapshot.totalOverdueTaskCount > 0 {
