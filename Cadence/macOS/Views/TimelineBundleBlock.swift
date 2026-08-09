@@ -165,17 +165,6 @@ struct TimelineBundleBlock: View {
         isBundleComplete ? "checkmark.circle.fill" : "square.stack"
     }
 
-    /// The most urgent deadline in the bundle. Only two member names are ever drawn, so without a
-    /// block-level marker the deadlines of the "+N more" members would have nowhere to appear.
-    private var dueUrgency: CadenceDueUrgency? {
-        let urgencies = bundle.sortedTasks.compactMap {
-            CadenceDueUrgency.evaluate(dueDateKey: $0.dueDate, isDone: $0.isDone)
-        }
-        if urgencies.contains(.overdue) { return .overdue }
-        if urgencies.contains(.dueToday) { return .dueToday }
-        return urgencies.first
-    }
-
     private var bundleBlockBody: some View {
         let memberCount = bundle.sortedTasks.count
         let accent = bundleAccent
@@ -244,8 +233,6 @@ struct TimelineBundleBlock: View {
             }
             .padding(.horizontal, style.horizontalPadding)
             .padding(.vertical, style.verticalPadding)
-            // Keep text clear of the trailing due accent instead of letting it run underneath.
-            .padding(.trailing, dueUrgency == nil ? 0 : 8)
 
             Spacer(minLength: 0)
         }
@@ -264,16 +251,6 @@ struct TimelineBundleBlock: View {
                 }
             }
         )
-        .overlay {
-            // The leading strip is the bundle's own amber/green state accent, so the deadline
-            // marker sits on the opposite edge as an inset capsule — same treatment as task
-            // blocks — rather than restating itself in the strip the eye already reads as status.
-            if let dueUrgency {
-                TimelineDueEdgeAccent(urgency: dueUrgency, blockHeight: frame.height)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius))
-            }
-        }
         .overlay(
             RoundedRectangle(cornerRadius: style.cornerRadius)
                 .stroke(

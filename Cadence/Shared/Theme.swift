@@ -14,6 +14,13 @@ struct Theme {
 
     static let text = Color(hex: "#ededef")
     static let muted = Color(hex: "#a1a1aa")
+    /// Supporting text one stop below `muted`: the label half of a label/value pair, and captions
+    /// that annotate the thing above them rather than say anything on their own. It exists because
+    /// `muted` and `dim` are two stops too far apart to express "quieter than secondary, but still
+    /// ordinary reading text" — `dim` is reserved for genuinely de-emphasized or disabled content
+    /// and lands 9pt captions near 0.42 effective white on `bg`, which is too faint to read on a
+    /// device. Sits between the two, nearer `muted`.
+    static let subdued = Color(hex: "#95959e")
     static let dim = Color(hex: "#71717a")
 
     // MARK: - Extended neutral ramp

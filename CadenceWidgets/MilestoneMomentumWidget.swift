@@ -132,7 +132,7 @@ struct MilestoneMomentumWidgetView: View {
                 extraLargeLayout
             }
         }
-        .cadenceWidgetBackground([Theme.bg, Theme.surface])
+        .cadenceWidgetBackground(accent: Theme.purple)
     }
 
     private var smallLayout: some View {
@@ -247,7 +247,7 @@ struct MilestoneMomentumWidgetView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(compact ? "Priority" : "Priority milestone")
                             .font(.system(size: scale.captionFontSize, weight: .semibold))
-                            .foregroundStyle(Theme.muted)
+                            .foregroundStyle(Theme.subdued)
                         Text(goal.title)
                             .font(.system(size: compact ? scale.bodyFontSize + 2 : scale.titleSize, weight: .bold))
                             .foregroundStyle(Theme.text)

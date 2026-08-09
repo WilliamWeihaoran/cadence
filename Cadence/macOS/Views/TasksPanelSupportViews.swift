@@ -677,6 +677,12 @@ struct CollapsibleTaskGroupHeader: View {
     var accent: Color = Theme.dim
     let onToggle: () -> Void
 
+    @State private var isHovered = false
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+    }
+
     var body: some View {
         Button(action: onToggle) {
             HStack(spacing: 8) {
@@ -696,19 +702,20 @@ struct CollapsibleTaskGroupHeader: View {
                 Text("\(regularCount)")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(accent)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(accent.opacity(0.12))
-                    .clipShape(Capsule())
             }
             .foregroundStyle(Theme.dim)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .cadenceCard(background: Theme.surface.opacity(0.35), cornerRadius: Theme.radiusControl, shadowRadius: 8, shadowY: 3)
-            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
+            // Exactly one hover layer at one radius: the same neutral wash the task rows below
+            // use, transparent at rest and with no border. The previous treatment stacked a
+            // resting card, its shadow, and `CadencePlainButtonStyle`'s blue fill and stroke at a
+            // different radius, which made a hovered header read as a focused text field.
+            .background(shape.fill(TaskHoverVisuals.hoverFill(isHovered: isHovered)))
+            .contentShape(shape)
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
         .onTapGesture(count: 2, perform: onToggle)
     }
 }
@@ -760,6 +767,26 @@ struct StaticTaskGroupHeader: View {
     }
 }
 
+/// A picker enum with exactly two values, which reads better as a click-to-toggle than as a
+/// two-item menu. `CadenceEnumPickerBadge` renders conforming types as a single flipping button,
+/// so existing `CadenceEnumPickerBadge(title:selection:)` call sites need no change and every
+/// surface gets the same affordance.
+protocol CadenceToggleablePickerValue {
+    /// Glyph naming the *current* state. With the menu gone this is the only thing carrying it,
+    /// so it points the way the sort actually runs rather than being decorative.
+    var toggleGlyph: String { get }
+    /// Raw value one click flips to. Raw rather than `Self` so the generic badge can resolve it
+    /// through `T(rawValue:)` without opening an existential.
+    var toggledRawValue: String { get }
+}
+
+extension TaskSortDirection: CadenceToggleablePickerValue {
+    var toggleGlyph: String { self == .ascending ? "arrow.up" : "arrow.down" }
+    var toggledRawValue: String {
+        (self == .ascending ? TaskSortDirection.descending : TaskSortDirection.ascending).rawValue
+    }
+}
+
 struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>: View where T.RawValue == String {
     let title: String
     @Binding var selection: T
@@ -770,29 +797,31 @@ struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>
         Array(T.allCases).filter { item in !excluded.contains(where: { $0.id == item.id }) }
     }
 
+    @ViewBuilder
     var body: some View {
-        Button { showPicker.toggle() } label: {
-            HStack(spacing: 4) {
-                Image(systemName: titleIcon)
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-
-                Text(selection.rawValue)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 7, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            }
-            .padding(.horizontal, 7)
-            .frame(height: CadenceDesktopMetrics.compactControlHeight)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+        if let toggleable = selection as? CadenceToggleablePickerValue {
+            toggleBadge(toggleable)
+        } else {
+            menuBadge
         }
-        .buttonStyle(.cadencePlain)
+    }
+
+    /// Two-value form: one button that flips on click. The leading glyph is the state readout —
+    /// there is no menu to open and read the current value from.
+    private func toggleBadge(_ toggleable: CadenceToggleablePickerValue) -> some View {
+        CadenceQuietPillButton(state: .resting, action: {
+            if let next = T(rawValue: toggleable.toggledRawValue) { selection = next }
+        }) {
+            badgeLabel(icon: toggleable.toggleGlyph, iconWeight: .bold, showsChevron: false)
+        }
+        .accessibilityLabel("\(title), \(selection.rawValue)")
+        .help("\(title): \(selection.rawValue) — click to switch to \(toggleable.toggledRawValue)")
+    }
+
+    private var menuBadge: some View {
+        CadenceQuietPillButton(state: .resting, action: { showPicker.toggle() }) {
+            badgeLabel(icon: titleIcon, iconWeight: .semibold, showsChevron: true)
+        }
         .accessibilityLabel("\(title), \(selection.rawValue)")
         .help("\(title): \(selection.rawValue)")
         .popover(isPresented: $showPicker) {
@@ -827,12 +856,32 @@ struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>
         }
     }
 
+    /// Shared label so the toggle and menu forms are the same pill with the same metrics; only the
+    /// leading glyph and the trailing chevron differ.
+    private func badgeLabel(icon: String, iconWeight: Font.Weight, showsChevron: Bool) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: iconWeight))
+                .foregroundStyle(Theme.muted)
+
+            Text(selection.rawValue)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+
+            if showsChevron {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+            }
+        }
+    }
+
     private var titleIcon: String {
         switch title {
         case "Sort":
             return "arrow.up.arrow.down"
-        case "Order":
-            return "arrow.up"
         case "Group":
             return "square.3.layers.3d"
         default:

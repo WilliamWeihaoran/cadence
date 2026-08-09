@@ -57,7 +57,7 @@ struct TodayTasksWidgetView: View {
                 mediumLayout
             }
         }
-        .cadenceWidgetBackground([Theme.bg, Theme.surface])
+        .cadenceWidgetBackground(accent: Theme.blue, anchor: .topLeading)
     }
 
     private var smallLayout: some View {
@@ -293,7 +293,7 @@ struct TodayTasksWidgetView: View {
                         .foregroundStyle(Theme.text)
                     Text(subtitle)
                         .font(.system(size: scale.bodyFontSize, weight: .medium))
-                        .foregroundStyle(Theme.muted)
+                        .foregroundStyle(Theme.subdued)
                 }
 
                 VStack(spacing: scale.compactSectionSpacing) {
@@ -318,7 +318,7 @@ struct TodayTasksWidgetView: View {
                 if tasks.isEmpty {
                     Text("No more tasks in this lane.")
                         .font(.system(size: scale.bodyFontSize, weight: .medium))
-                        .foregroundStyle(Theme.muted)
+                        .foregroundStyle(Theme.subdued)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
                     VStack(spacing: scale.compactSectionSpacing) {
@@ -349,7 +349,7 @@ struct TodayTasksWidgetView: View {
                         if !task.containerName.isEmpty {
                             Text(task.containerName)
                                 .font(.system(size: scale.captionFontSize, weight: .medium))
-                                .foregroundStyle(Theme.muted)
+                                .foregroundStyle(Theme.subdued)
                                 .lineLimit(1)
                         }
                     }
@@ -380,7 +380,7 @@ struct TodayTasksWidgetView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: scale.captionFontSize, weight: .semibold))
-                .foregroundStyle(Theme.muted)
+                .foregroundStyle(Theme.subdued)
             Text("\(value)")
                 .font(.system(size: scale.metricValueSize + 1, weight: .black, design: .rounded))
                 .foregroundStyle(tint)
@@ -393,7 +393,7 @@ struct TodayTasksWidgetView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: scale.captionFontSize, weight: .semibold))
-                .foregroundStyle(Theme.muted)
+                .foregroundStyle(Theme.subdued)
             Text(value)
                 .font(.system(size: scale.bodyFontSize + 2, weight: .bold))
                 .foregroundStyle(tint)

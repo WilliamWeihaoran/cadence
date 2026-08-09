@@ -103,6 +103,98 @@ struct DesktopControlBar<Content: View>: View {
     }
 }
 
+/// The state a control-bar pill can be in. The fill ramp is
+/// `clear -> Theme.surfaceElevated -> Theme.surfaceHighlight`; nothing here draws a border or an
+/// accent tint, so a bar of mixed controls (tabs, sort, order, boolean filters) reads as one family.
+enum CadenceQuietPillState {
+    /// Unselected tab: bare text, no fill until hovered.
+    case quiet
+    /// Always present but carrying no on/off state (sort field, sort direction).
+    case resting
+    /// Selected tab or toggled-on filter.
+    case active
+}
+
+enum CadenceQuietPillMetrics {
+    static let cornerRadius = CadenceDesktopMetrics.controlCornerRadius
+    static let horizontalPadding: CGFloat = 10
+    /// Cluster spacing for a row of tabs. Deliberately tight: the selected pill's fill is what
+    /// separates the tabs, so a wide gap would read as unrelated buttons rather than one control.
+    static let clusterSpacing: CGFloat = 2
+}
+
+/// Shared chrome for every control in a page control bar: exactly one neutral fill layer at one
+/// radius, no border, no accent. State is carried by fill depth and label brightness.
+struct CadenceQuietPill: ViewModifier {
+    let state: CadenceQuietPillState
+    let isHovered: Bool
+
+    private var fill: Color {
+        switch state {
+        case .quiet:   return isHovered ? Theme.surfaceElevated : .clear
+        case .resting: return isHovered ? Theme.surfaceHighlight : Theme.surfaceElevated
+        case .active:  return Theme.surfaceHighlight
+        }
+    }
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: CadenceQuietPillMetrics.cornerRadius, style: .continuous)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, CadenceQuietPillMetrics.horizontalPadding)
+            .frame(height: CadenceDesktopMetrics.compactControlHeight)
+            .background(shape.fill(fill))
+            .contentShape(shape)
+    }
+}
+
+/// A button wearing `CadenceQuietPill`. It owns the hover state so call sites cannot accidentally
+/// stack a second hover background at a different radius on top of the pill's.
+///
+/// Uses `.plain` rather than `.cadencePlain` on purpose: that style paints its own blue fill and
+/// stroke at its own radius, which is the accent-bordered look this vocabulary replaces.
+struct CadenceQuietPillButton<Label: View>: View {
+    let state: CadenceQuietPillState
+    let action: () -> Void
+    @ViewBuilder let label: Label
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            label.modifier(CadenceQuietPill(state: state, isHovered: isHovered))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+}
+
+/// The app's one tab-bar item. Text only — no icon, no accent dot, no segmented-control trough.
+/// The selected tab is marked by a neutral `Theme.surfaceHighlight` fill plus a brighter label.
+///
+/// Both tab bars (All Tasks list/kanban, list-detail Tasks/Kanban/Notes/...) render through this,
+/// so they are literally the same control instead of two idioms for the same job.
+struct CadenceQuietTabButton: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        CadenceQuietPillButton(state: isSelected ? .active : .quiet, action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? Theme.text : Theme.dim)
+                // The label sits in a fixed-height frame, so a wrap would overflow the pill rather
+                // than grow it. Under compression this must truncate, never wrap.
+                .lineLimit(1)
+        }
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
 struct DesktopPrimaryActionButton: View {
     let title: String
     let systemImage: String
@@ -523,14 +615,13 @@ struct AllTasksPageView: View {
             Divider().background(Theme.borderSubtle)
 
             DesktopControlBar {
-                HStack(spacing: 4) {
+                HStack(spacing: CadenceQuietPillMetrics.clusterSpacing) {
                     ForEach(AllTasksViewMode.allCases, id: \.self) { viewMode in
-                        allTasksTabButton(viewMode)
+                        CadenceQuietTabButton(title: viewMode.rawValue, isSelected: mode == viewMode) {
+                            modeRaw = viewMode.rawValue
+                        }
                     }
                 }
-                .padding(4)
-                .background(Theme.surfaceElevated.opacity(0.38))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
 
                 Spacer(minLength: 12)
 
@@ -560,33 +651,6 @@ struct AllTasksPageView: View {
             }
         }
         .background(Theme.bg)
-    }
-
-    private func allTasksTabButton(_ tab: AllTasksViewMode) -> some View {
-        Button {
-            modeRaw = tab.rawValue
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: tab == .list ? "list.bullet" : "square.grid.3x2")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 14)
-                Text(tab.rawValue)
-                    .font(.system(size: 13, weight: mode == tab ? .semibold : .medium))
-            }
-            .foregroundStyle(mode == tab ? Theme.blue : Theme.dim)
-            .padding(.horizontal, 11)
-            .frame(height: 32)
-            .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(mode == tab ? Theme.blue.opacity(0.16) : Color.clear)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(mode == tab ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
-            }
-        }
-        .buttonStyle(.cadencePlain)
     }
 }
 #endif

@@ -129,7 +129,7 @@ struct HabitCheckInWidgetView: View {
                 largeLayout
             }
         }
-        .cadenceWidgetBackground([Theme.bg, Theme.surface])
+        .cadenceWidgetBackground(accent: Theme.green)
     }
 
     private var smallLayout: some View {

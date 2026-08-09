@@ -136,22 +136,53 @@ extension View {
     }
 }
 
+/// Which corner of the container gradient carries the heavy end of the accent wash. Today and
+/// Calendar both key off `Theme.blue`, so they are told apart by anchoring rather than by two
+/// different blues: Today's wash arrives with the header at the top-leading corner and fades out
+/// downward, while Calendar's pools at the bottom-trailing corner, where the neutral ramp is
+/// already at its lightest — which is what makes Calendar read as the deeper blue of the two.
+enum CadenceWidgetAccentAnchor {
+    case topLeading
+    case bottomTrailing
+}
+
 /// Widget surfaces resolve their colors from `Theme` like every in-app surface does. They used to
 /// carry their own hand-tuned `Color(red:...)` literals, which drifted into near-duplicate reds,
 /// blues, greens, and ambers that no longer matched anything in the app; the widget target now
 /// compiles `Theme.swift` directly so there is one palette instead of two.
 ///
-/// The container background is deliberately the neutral page ramp (`bg` → `surface`) for every
-/// widget: the per-widget hue tints that used to distinguish them lived only in these literals and
-/// had no token behind them. Identity is carried by the accent tints inside the widget instead.
+/// The container background is the neutral `bg → surface` page ramp with a low-alpha wash of the
+/// widget's own accent laid over it, so the four stay tellable apart on a crowded home screen
+/// without reintroducing four private background hues. One helper takes the accent rather than four
+/// near-copies taking four gradients.
+///
+/// The wash is deliberately asymmetric — heavy against the darker neutral stop, light against the
+/// lighter one. That is not a taste call: it keeps the composited result at or below the luminance
+/// of `Theme.surfaceElevated`, the opaque card fill that sits on top of it. Holding that ceiling
+/// buys two things at once. Cards still read as lifted above the background rather than sunk into
+/// it, and text drawn straight onto the container is never on a worse footing than the same text
+/// drawn on a card — which is the footing 9pt captions already ship on, so the tint costs no
+/// contrast that the design was not already spending.
 extension View {
-    func cadenceWidgetBackground(_ colors: [Color]) -> some View {
-        containerBackground(for: .widget) {
+    func cadenceWidgetBackground(
+        accent: Color,
+        anchor: CadenceWidgetAccentAnchor = .topLeading
+    ) -> some View {
+        let heavy = accent.opacity(0.08)
+        let light = accent.opacity(0.04)
+        return containerBackground(for: .widget) {
             LinearGradient(
-                colors: colors,
+                colors: [Theme.bg, Theme.surface],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
+            .overlay {
+                LinearGradient(
+                    colors: anchor == .topLeading ? [heavy, light] : [light, heavy],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
         }
     }
 }
@@ -186,7 +217,7 @@ struct CadenceWidgetMetricCard: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: scale.metricTitleSize, weight: .semibold))
-                .foregroundStyle(Theme.muted)
+                .foregroundStyle(Theme.subdued)
             Text(value)
                 .font(.system(size: scale.metricValueSize, weight: .black, design: .rounded))
                 .foregroundStyle(valueTint)

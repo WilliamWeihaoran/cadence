@@ -423,11 +423,6 @@ private struct ListDetailTabBarView: View {
     /// controls happened to be present and the bar visibly grew/shrank on every tab switch.
     private static let barHeight = CadenceDesktopMetrics.compactControlHeight + 20
 
-    /// The gap a reader *sees* between two tab labels is the cluster spacing plus the two
-    /// hover-pill paddings that sit between them. Solved for a ~20pt visual gap:
-    /// `2 * TabButton.horizontalPadding + spacing == 20`.
-    private static let tabClusterSpacing = 20 - 2 * TabButton.horizontalPadding
-
     var body: some View {
         HStack(spacing: 12) {
             tabCluster
@@ -439,9 +434,9 @@ private struct ListDetailTabBarView: View {
     }
 
     private var tabCluster: some View {
-        HStack(spacing: Self.tabClusterSpacing) {
+        HStack(spacing: CadenceQuietPillMetrics.clusterSpacing) {
             ForEach(ListDetailPage.allCases, id: \.self) { page in
-                TabButton(tab: page, isSelected: tab == page) {
+                CadenceQuietTabButton(title: page.rawValue, isSelected: tab == page) {
                     tab = page
                 }
             }
@@ -467,10 +462,14 @@ private struct ListDetailTabBarView: View {
         }
     }
 
+    /// Boolean filter, so unlike the sort/order controls beside it this one has a meaningful "on"
+    /// state. With the accent gone, it is carried by four neutral cues at once — brighter fill,
+    /// brighter label, filled glyph, and a shorter label — rather than by a blue outline.
     private var archivedColumnsButton: some View {
-        Button {
-            showArchivedKanbanColumns.toggle()
-        } label: {
+        CadenceQuietPillButton(
+            state: showArchivedKanbanColumns ? .active : .resting,
+            action: { showArchivedKanbanColumns.toggle() }
+        ) {
             HStack(spacing: 6) {
                 Image(systemName: showArchivedKanbanColumns ? "archivebox.fill" : "archivebox")
                     .font(.system(size: 11, weight: .semibold))
@@ -478,14 +477,10 @@ private struct ListDetailTabBarView: View {
                 Text(showArchivedKanbanColumns ? "Archived" : "Show Archived")
                     .font(.system(size: 11, weight: .semibold))
             }
-            .foregroundStyle(showArchivedKanbanColumns ? Theme.blue : Theme.dim)
-            .padding(.horizontal, 12)
-            .frame(height: CadenceDesktopMetrics.compactControlHeight)
-            .contentShape(Rectangle())
-            .background(showArchivedKanbanColumns ? Theme.blue.opacity(0.16) : Theme.surfaceElevated.opacity(0.92))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(showArchivedKanbanColumns ? Theme.text : Theme.dim)
         }
-        .buttonStyle(.cadencePlain)
+        .accessibilityLabel(showArchivedKanbanColumns ? "Hide archived columns" : "Show archived columns")
+        .accessibilityAddTraits(showArchivedKanbanColumns ? .isSelected : [])
     }
 }
 

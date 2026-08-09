@@ -119,7 +119,7 @@ struct CalendarSnapshotWidgetView: View {
                 extraLargeLayout
             }
         }
-        .cadenceWidgetBackground([Theme.bg, Theme.surface])
+        .cadenceWidgetBackground(accent: Theme.blue, anchor: .bottomTrailing)
     }
 
     private var smallLayout: some View {
@@ -240,7 +240,7 @@ struct CalendarSnapshotWidgetView: View {
         VStack(alignment: .leading, spacing: compact ? 4 : 5) {
             Text(day.weekdayLabel)
                 .font(.system(size: scale.captionFontSize, weight: .semibold))
-                .foregroundStyle(day.isToday ? Theme.blueLight : Theme.muted)
+                .foregroundStyle(day.isToday ? Theme.blueLight : Theme.subdued)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
@@ -254,7 +254,7 @@ struct CalendarSnapshotWidgetView: View {
             if day.totalCount == 0 {
                 Text("clear")
                     .font(.system(size: scale.captionFontSize, weight: .medium))
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(Theme.subdued)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             } else {
@@ -294,7 +294,7 @@ struct CalendarSnapshotWidgetView: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Next up")
                     .font(.system(size: scale.captionFontSize, weight: .semibold))
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(Theme.subdued)
                 Spacer(minLength: 4)
                 if let dueLabel = upcomingDueLabel {
                     Text(dueLabel)

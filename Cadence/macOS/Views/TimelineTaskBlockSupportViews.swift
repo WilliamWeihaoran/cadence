@@ -1,41 +1,6 @@
 #if os(macOS)
 import SwiftUI
 
-/// Trailing-edge deadline marker for timeline blocks, sized to cost zero vertical space so it
-/// survives the 22pt minimum block height where no text fits.
-///
-/// It deliberately does NOT live on the leading edge: that edge already carries a flush 3pt strip
-/// in the task's container color, so a due accent there would read as "this task changed lists".
-/// The shape differs from that strip too — an inset floating capsule rather than a full-bleed
-/// band — because a container's own color can itself be red or amber, and position alone would
-/// then be the only thing telling the two apart.
-struct TimelineDueEdgeAccent: View {
-    let urgency: CadenceDueUrgency
-    let blockHeight: CGFloat
-
-    private var verticalInset: CGFloat { blockHeight >= 34 ? 4 : 2 }
-
-    var body: some View {
-        ZStack(alignment: .trailing) {
-            // A 3.5pt capsule alone is easy to miss on a short block; the fade gives the marker
-            // presence at any height without claiming a line of its own.
-            LinearGradient(
-                colors: [urgency.tint.opacity(0), urgency.tint.opacity(0.24)],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: 16)
-
-            Capsule()
-                .fill(urgency.tint)
-                .frame(width: 3.5)
-                .padding(.vertical, verticalInset)
-                .padding(.trailing, 2)
-        }
-        .allowsHitTesting(false)
-    }
-}
-
 struct TimelineDraggedTaskPreview: View {
     let task: AppTask
     let startMinute: Int
@@ -254,10 +219,15 @@ func timelineBlockBody(
                                     .font(.system(size: 9, weight: .semibold))
                                     .foregroundStyle(dueUrgency?.tint ?? Theme.dim)
                                     .lineLimit(1)
+                                    .layoutPriority(1)
                             }
                         }
                     }
                 } else {
+                    // The shortest block that still draws text gets one clipped line for title,
+                    // duration, and deadline. A due date is a commitment and an estimate is not, so
+                    // the duration label is what yields when there is a deadline to print, and the
+                    // deadline outranks the title for width so the title truncates first.
                     let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes)
                     HStack(spacing: 4) {
                         Text(task.title)
@@ -265,7 +235,13 @@ func timelineBlockBody(
                             .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                             .lineLimit(1)
                         Spacer(minLength: 0)
-                        if label != "-/-" {
+                        if let dueLabel {
+                            Text(dueLabel)
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(dueUrgency?.tint ?? Theme.dim)
+                                .lineLimit(1)
+                                .layoutPriority(1)
+                        } else if label != "-/-" {
                             Text(label)
                                 .font(.system(size: 9))
                                 .foregroundStyle(Theme.dim)
@@ -277,8 +253,6 @@ func timelineBlockBody(
         }
         .padding(.horizontal, style.horizontalPadding)
         .padding(.vertical, style.verticalPadding)
-        // Keep text clear of the trailing due accent instead of letting it run underneath.
-        .padding(.trailing, dueUrgency == nil ? 0 : 8)
 
         Spacer(minLength: 0)
     }
@@ -310,13 +284,6 @@ func timelineBlockBody(
     .overlay {
         if task.isDone {
             DiagonalStripeOverlay()
-                .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius))
-        }
-    }
-    .overlay {
-        if let dueUrgency {
-            TimelineDueEdgeAccent(urgency: dueUrgency, blockHeight: frame.height)
-                .frame(maxWidth: .infinity, alignment: .trailing)
                 .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius))
         }
     }
