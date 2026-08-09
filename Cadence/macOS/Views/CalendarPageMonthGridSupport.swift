@@ -9,10 +9,9 @@ func monthStart(for date: Date, calendar: Calendar) -> Date {
 
 /// Index of the block that **renders** `date`.
 ///
-/// Distinct from `monthIndex(for:)`, which answers "which calendar month is this date in".
-/// The grid tiles months without repeating a day — a block starts on its month's first Sunday
-/// and carries the days before it as trailing fill on the previous block — so for roughly three
-/// days a month the two answers differ by one.
+/// Distinct from the calendar month `date` falls in: the grid tiles months without repeating a
+/// day — a block starts on its month's first Sunday and carries the days before it as trailing
+/// fill on the previous block — so for roughly three days a month the two answers differ by one.
 ///
 /// Every date -> scroll mapping wants *this* one. `CalendarMonthGridIdentifiers.day` is tagged
 /// with the rendering block, so a day id assembled from a calendar-month index simply does not
@@ -21,6 +20,16 @@ func monthStart(for date: Date, calendar: Calendar) -> Date {
 /// The block rule itself is not restated here: it is read from
 /// `CalendarMonthGridSupport.blockMonthStart(for:)`, the same helper `weeks(for:)` is built on,
 /// so this cannot drift away from the layout it is describing.
+///
+/// **Known gap at the very bottom of the window.** The result is clamped into
+/// `[0, totalMonths - 1]` by `monthIndex(for:)`. For a date in the leading 1–6 days of the
+/// *earliest* month in the window the rendering block is the month before it — index `-1` — and
+/// the clamp returns block `0`, which knowingly does **not** draw that date. There is no honest
+/// answer available: no block in the window renders that day at all. The invariant "the returned
+/// index names a block that actually draws this date" therefore holds everywhere except this one
+/// boundary, and the clamped value is deliberately a non-drawing block rather than a correction.
+/// Practically unreachable — the window is 120 months wide and centred on today — but pinned by
+/// `blockIndexClampsBelowTheWindowToAKnowinglyNonDrawingBlock` so it cannot change unnoticed.
 func blockIndex(for date: Date, currentMonthStart: Date, todayMonthIdx: Int, calendar: Calendar) -> Int {
     monthIndex(
         for: CalendarMonthGridSupport.blockMonthStart(for: date, calendar: calendar),
@@ -30,8 +39,13 @@ func blockIndex(for date: Date, currentMonthStart: Date, todayMonthIdx: Int, cal
     )
 }
 
-/// Index of the calendar month `date` falls in — the right question for *naming* a month, the
-/// wrong one for scrolling to a day. Use `blockIndex(for:...)` for the latter.
+/// Month-start -> window index arithmetic, plus the window clamp.
+///
+/// In production this is reached only through `blockIndex(for:)`, which hands it a *block's*
+/// month start; it is not a second, "name the calendar month" entry point for callers to choose
+/// between. It stays a separate function because tests exercise the index arithmetic and the
+/// clamp directly, and because keeping the clamp in one place is what makes the boundary note on
+/// `blockIndex(for:)` true of every path.
 func monthIndex(for date: Date, currentMonthStart: Date, todayMonthIdx: Int, calendar: Calendar) -> Int {
     let targetMonthStart = monthStart(for: date, calendar: calendar)
     let delta = calendar.dateComponents([.month], from: currentMonthStart, to: targetMonthStart).month ?? 0
@@ -41,8 +55,10 @@ func monthIndex(for date: Date, currentMonthStart: Date, todayMonthIdx: Int, cal
     // Dev-only diagnostic (never traps, never changes the return value): surfaces window-
     // boundary mismatches — e.g. the timeline's day buffer and the month grid's window use
     // different spans — that would otherwise silently clamp with no signal anything was off.
+    // Named for `blockIndex(for:)` because that is the only production path in; naming this
+    // function would send the reader looking for a call site that does not exist.
     if rawIndex != clampedIndex {
-        print("[CalendarMonthGrid] monthIndex(for:) computed an out-of-window index (\(rawIndex)); the anchor date fell outside the month grid's \(CalendarMonthGridMetrics.totalMonths)-month buffer and was silently clamped to \(clampedIndex).")
+        print("[CalendarMonthGrid] blockIndex(for:) resolved an out-of-window index (\(rawIndex)); the anchor date fell outside the month grid's \(CalendarMonthGridMetrics.totalMonths)-month buffer and was silently clamped to \(clampedIndex), a block that does not draw it.")
     }
     #endif
     return clampedIndex
@@ -187,6 +203,149 @@ enum CalendarMonthCellLayout {
         guard totalItems > capacity else { return (max(0, totalItems), 0) }
         let visible = max(0, capacity - 1)
         return (visible, totalItems - visible)
+    }
+}
+
+/// How a month-grid day cell presents its own date.
+///
+/// Four states rather than two, and that is the whole point. The grid tiles months *without*
+/// overlap — a block opens on its month's first Sunday and pads its final week from the next
+/// month — so 1–6 days of the next month are drawn on this block, and one of them can perfectly
+/// well be today. "Is today" and "belongs to another month" are independent facts, and a cell
+/// has to be able to state both at once.
+///
+/// The failure this replaces: the label styling asked `isToday` first and returned early, so
+/// today's cell was never dimmed even when it was a carried day on another month's page. On
+/// Jun 3 2026 that produced a page headed "May 2026" showing two cells labelled "3" — May 3 in
+/// the first row, Jun 3 in the last — with only the latter marked, and nothing on it saying why.
+enum CalendarMonthDayEmphasis: Equatable {
+    /// An ordinary day of the block's own month. Unchanged from before this state existed.
+    case inMonth
+    /// Today, drawn on its own month's page: the filled accent disc.
+    case inMonthToday
+    /// A day carried onto this block from the next month.
+    case outOfMonth
+    /// Today, carried onto this block from the next month — the case the old code could not say.
+    case outOfMonthToday
+
+    var isToday: Bool {
+        self == .inMonthToday || self == .outOfMonthToday
+    }
+
+    var isOutOfMonth: Bool {
+        self == .outOfMonth || self == .outOfMonthToday
+    }
+}
+
+extension CalendarMonthDayEmphasis {
+    /// How far `Theme.dim` is pulled back for a carried day. Named once so the two places that
+    /// dim out-of-month chrome cannot drift apart.
+    private static let outOfMonthLabelOpacity: Double = 0.58
+    /// Wash behind the cell on the page that owns today.
+    private static let todayCellWashOpacity: Double = 0.04
+    /// Stroke width of the hollow today marker used for a carried today.
+    static let todayRingWidth: CGFloat = 1.5
+
+    var dateLabelColor: Color {
+        switch self {
+        case .inMonth: return Theme.text
+        // Reads against the filled disc, not against the cell.
+        case .inMonthToday: return Theme.onColor
+        case .outOfMonth: return Theme.dim.opacity(Self.outOfMonthLabelOpacity)
+        // Not dimmed — dimming today would throw away the emphasis this cell has to keep. It
+        // takes the accent's *own* colour instead of the accent's contrast colour, because there
+        // is no filled disc behind it to contrast against.
+        case .outOfMonthToday: return Theme.blue
+        }
+    }
+
+    var dateLabelWeight: Font.Weight {
+        switch self {
+        case .inMonth: return .medium
+        case .inMonthToday: return .bold
+        case .outOfMonth: return .regular
+        // One stop below the in-month today, so the two never read as equals in the same grid.
+        case .outOfMonthToday: return .semibold
+        }
+    }
+
+    /// Filled accent disc — today, on the page that owns it. `nil` everywhere else.
+    var todayDiscFill: Color? {
+        self == .inMonthToday ? Theme.blue : nil
+    }
+
+    /// Hollow accent ring — today, visiting from the next month.
+    ///
+    /// Filled vs hollow is the second half of the answer to "how does one cell say *today* and
+    /// *not this month* at the same time": the marker is still unmistakably the today marker, in
+    /// the same colour and the same place, but an outline instead of a solid reads as the
+    /// lighter-weight version of it. Paired with the month abbreviation the cell now always
+    /// carries, and the recessed plate behind it, there is nothing left to confuse it with.
+    var todayRingStroke: Color? {
+        self == .outOfMonthToday ? Theme.blue : nil
+    }
+
+    /// Apple greys the whole out-of-month cell; this is that, in the app's own ramp. It applies
+    /// to a carried today as well, so the "not this month" band is unbroken — the ring, not the
+    /// backdrop, is what marks today there.
+    var cellBackground: Color {
+        switch self {
+        case .inMonth: return Theme.bg
+        case .inMonthToday: return Theme.blue.opacity(Self.todayCellWashOpacity)
+        case .outOfMonth, .outOfMonthToday: return Theme.surfaceRecessed
+        }
+    }
+}
+
+/// Resolves what a month-grid day cell says about its own date.
+///
+/// Pure and view-free so the labelling rule — the thing that actually removes the ambiguity —
+/// can be tested without standing up a grid.
+enum CalendarMonthDayLabelSupport {
+    static func emphasis(
+        for date: Date,
+        displayMonth: Date,
+        today: Date,
+        calendar: Calendar
+    ) -> CalendarMonthDayEmphasis {
+        let isOutOfMonth = !calendar.isDate(date, equalTo: displayMonth, toGranularity: .month)
+        let isToday = calendar.isDate(date, inSameDayAs: today)
+        switch (isOutOfMonth, isToday) {
+        case (false, false): return .inMonth
+        case (false, true): return .inMonthToday
+        case (true, false): return .outOfMonth
+        case (true, true): return .outOfMonthToday
+        }
+    }
+
+    /// Month abbreviation the cell must draw beside its day number, or `nil` when the page it is
+    /// on already says which month it is.
+    ///
+    /// Apple's paged grid can rely on "the 1st is always drawn on its own month's page", so
+    /// marking the 1st is enough to orient the reader. This grid tiles without overlap, so a
+    /// month whose 1st is not a Sunday has its first 1–6 days drawn on the *previous* page and
+    /// that guarantee is gone: a carried day only happened to name itself when it happened to be
+    /// the 1st. Every day drawn outside its block's month therefore names its month — the same
+    /// convention, adapted to a grid where the 1st is not a reliable landmark.
+    ///
+    /// Takes the already-resolved `emphasis` rather than re-deriving "is this out of month":
+    /// the grid draws hundreds of these, and one month comparison per cell is enough.
+    static func monthAbbreviation(
+        for date: Date,
+        emphasis: CalendarMonthDayEmphasis,
+        calendar: Calendar
+    ) -> String? {
+        let day = calendar.component(.day, from: date)
+        // The in-month 1st keeps the marker it has always had; out-of-month days all gain one.
+        guard emphasis.isOutOfMonth || day == 1 else { return nil }
+
+        // Month name taken from the same calendar the cell is measured in. A shared
+        // `DateFormatter` carries the *system* zone, so a grid running in another calendar would
+        // be the parse-in-one-zone/measure-in-another mistake again.
+        let month = calendar.component(.month, from: date)
+        let symbols = calendar.shortMonthSymbols
+        guard month >= 1, month <= symbols.count else { return nil }
+        return symbols[month - 1]
     }
 }
 

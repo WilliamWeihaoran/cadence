@@ -201,6 +201,44 @@ struct MonthEventChip: View {
     }
 }
 
+/// The date line at the top of a month cell: an optional month abbreviation, then the day number
+/// with today's marker.
+///
+/// Split out because the four `CalendarMonthDayEmphasis` states each want a different combination
+/// of colour, weight and marker shape, and reading that as one small view is what makes it
+/// obvious that a carried today gets *both* the marker and the month name.
+private struct MonthDayNumberLabel: View {
+    let dayNumber: String
+    /// `nil` when the page the cell sits on already names its month.
+    let monthAbbreviation: String?
+    let emphasis: CalendarMonthDayEmphasis
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Spacer(minLength: 0)
+            if let monthAbbreviation {
+                Text(monthAbbreviation)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(emphasis.dateLabelColor)
+            }
+            Text(dayNumber)
+                .font(.system(size: 12, weight: emphasis.dateLabelWeight))
+                .foregroundStyle(emphasis.dateLabelColor)
+                .frame(width: 24, height: 24)
+                .background {
+                    if let fill = emphasis.todayDiscFill {
+                        Circle().fill(fill)
+                    }
+                }
+                .overlay {
+                    if let stroke = emphasis.todayRingStroke {
+                        Circle().strokeBorder(stroke, lineWidth: CalendarMonthDayEmphasis.todayRingWidth)
+                    }
+                }
+        }
+    }
+}
+
 struct MonthDayCell: View {
     let date: Date
     let tasks: [AppTask]
@@ -216,24 +254,6 @@ struct MonthDayCell: View {
     private let cal = Calendar.current
 
     private var dateKey: String { DateFormatters.dateKey(from: date) }
-    private var isToday: Bool { cal.isDateInToday(date) }
-    private var isCurrentMonth: Bool {
-        cal.component(.month, from: date) == cal.component(.month, from: displayMonth) &&
-        cal.component(.year, from: date) == cal.component(.year, from: displayMonth)
-    }
-    private var isFirstDayOfMonth: Bool {
-        cal.component(.day, from: date) == 1
-    }
-
-    private var dateLabelColor: Color {
-        if isToday { return Theme.onColor }
-        return isCurrentMonth ? Theme.text : Theme.dim.opacity(0.58)
-    }
-
-    private var dateLabelWeight: Font.Weight {
-        if isToday { return .bold }
-        return isCurrentMonth ? .medium : .regular
-    }
 
     private var calendarEvents: [CalendarEventItem] {
         let _ = calendarManager.storeVersion
@@ -249,6 +269,15 @@ struct MonthDayCell: View {
         // Resolved once per body pass: `visibleEvents` reaches into EventKit, and the chip
         // lists, the cap and the overflow count all need the same answer.
         let events = visibleEvents
+        // Also once per pass. The old computed properties re-ran `isDateInToday` and a four-
+        // component month comparison on every access, several times per cell, across hundreds
+        // of cells.
+        let emphasis = CalendarMonthDayLabelSupport.emphasis(
+            for: date,
+            displayMonth: displayMonth,
+            today: Date(),
+            calendar: cal
+        )
         let layout = CalendarMonthCellLayout.chipLayout(
             totalItems: bundles.count + tasks.count + events.count,
             rowHeight: rowHeight
@@ -258,20 +287,15 @@ struct MonthDayCell: View {
         let eventChips = Array(events.prefix(max(0, layout.visible - bundleChips.count - taskChips.count)))
 
         return VStack(alignment: .leading, spacing: CalendarMonthCellLayout.headerChipSpacing) {
-            HStack(spacing: 4) {
-                Spacer(minLength: 0)
-                if isFirstDayOfMonth {
-                    Text(DateFormatters.monthAbbrev.string(from: date))
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(dateLabelColor)
-                }
-                Text(DateFormatters.dayNumber.string(from: date))
-                    .font(.system(size: 12, weight: dateLabelWeight))
-                    .foregroundStyle(dateLabelColor)
-                    .frame(width: 24, height: 24)
-                    .background(isToday ? Theme.blue : Color.clear)
-                    .clipShape(Circle())
-            }
+            MonthDayNumberLabel(
+                dayNumber: DateFormatters.dayNumber.string(from: date),
+                monthAbbreviation: CalendarMonthDayLabelSupport.monthAbbreviation(
+                    for: date,
+                    emphasis: emphasis,
+                    calendar: cal
+                ),
+                emphasis: emphasis
+            )
             .padding(.top, 6)
             .padding(.horizontal, 8)
             .frame(height: CalendarMonthCellLayout.headerHeight, alignment: .top)
@@ -303,7 +327,7 @@ struct MonthDayCell: View {
         // the clip has to eat the last chip, never the day number.
         .frame(height: rowHeight, alignment: .top)
         .clipped()
-        .background(isToday ? Theme.blue.opacity(0.04) : Theme.bg)
+        .background(emphasis.cellBackground)
         .overlay(alignment: .topTrailing) {
             Rectangle()
                 .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.columnGridOpacity))

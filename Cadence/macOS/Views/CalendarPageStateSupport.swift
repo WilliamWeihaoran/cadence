@@ -14,9 +14,10 @@ struct CalendarPageStateSupport {
     /// Aug 1 on, and so the header reads "July 2026" beside a highlighted cell labelled "Aug 1".
     /// The header names the page, and 27 of that page's 28 cells are July; renaming it August
     /// would misdescribe the other 96% of the screen, and would have to flip back to July the
-    /// instant the reader nudged the scroll wheel. The cell itself already carries the
-    /// distinction — out-of-block days are dimmed and the 1st of a month is drawn with its month
-    /// abbreviation — so nothing is ambiguous. Keeping `visibleMonthIdx` a single, unambiguous
+    /// instant the reader nudged the scroll wheel. The cell itself carries the distinction —
+    /// every day drawn outside the page's month is dimmed onto a recessed plate and names its own
+    /// month, today included (see `CalendarMonthDayEmphasis`) — so nothing is ambiguous even when
+    /// the marked cell is one of them. Keeping `visibleMonthIdx` a single, unambiguous
     /// block index is also what keeps `dateKeyForVisibleMonth` and the month -> timeline return
     /// path honest.
     static func visibleMonthLabel(visibleMonthIdx: Int, calendar: Calendar) -> String {

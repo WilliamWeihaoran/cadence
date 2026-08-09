@@ -1093,5 +1093,329 @@ struct CalendarBehaviorRegressionTests {
             ) == todayMonthIdx, "wrong block in \(zone)")
         }
     }
+
+    // MARK: - Out-of-month day labelling
+
+    /// May 2026 opens on a Friday, so its block runs Sun May 3 -> Sat Jun 6: six carried June
+    /// days on a page headed "May 2026". The worst case in the calendar, and the fixture for
+    /// everything below.
+    private static func may2026(_ calendar: Calendar) throws -> Date {
+        try #require(calendar.date(from: DateComponents(year: 2026, month: 5, day: 1)))
+    }
+
+    private static func day(_ year: Int, _ month: Int, _ day: Int, _ calendar: Calendar) throws -> Date {
+        try #require(calendar.date(from: DateComponents(year: year, month: month, day: day)))
+    }
+
+    /// Every day drawn outside its block's own month names that month — not only the 1st.
+    ///
+    /// Apple's paged grid can mark just the 1st, because a paged grid always draws the 1st on its
+    /// own month's page. This grid tiles without overlap, so June 2026's first six days are drawn
+    /// on May's page and only one of them is the 1st; the other five used to be bare numbers.
+    @Test func everyCarriedDayNamesItsOwnMonthNotOnlyTheFirst() throws {
+        let calendar = Self.gridCalendar()
+        let may = try Self.may2026(calendar)
+        let june = try Self.day(2026, 6, 1, calendar)
+
+        // The fixture itself: May's block is May 3 -> Jun 6, and June's block never draws them.
+        let mayDays = Self.renderedDays(month: may, calendar: calendar)
+        #expect(DateFormatters.dateKey(from: try #require(mayDays.first), calendar: calendar) == "2026-05-03")
+        #expect(DateFormatters.dateKey(from: try #require(mayDays.last), calendar: calendar) == "2026-06-06")
+        #expect(CalendarMonthGridSupport.leadingDaysRenderedInPreviousBlock(of: june, calendar: calendar) == 6)
+
+        let expectedJune = calendar.shortMonthSymbols[5]
+        for dayNumber in 1...6 {
+            let date = try Self.day(2026, 6, dayNumber, calendar)
+            let emphasis = CalendarMonthDayLabelSupport.emphasis(
+                for: date,
+                displayMonth: may,
+                today: try Self.day(2026, 5, 20, calendar),
+                calendar: calendar
+            )
+            #expect(emphasis == .outOfMonth)
+            #expect(CalendarMonthDayLabelSupport.monthAbbreviation(
+                for: date,
+                emphasis: emphasis,
+                calendar: calendar
+            ) == expectedJune, "Jun \(dayNumber) drew a bare number on May's page")
+        }
+
+        // A day of the page's own month still says nothing extra — only the 1st ever did, and
+        // that is unchanged.
+        let mayThird = try Self.day(2026, 5, 3, calendar)
+        let mayThirdEmphasis = CalendarMonthDayLabelSupport.emphasis(
+            for: mayThird,
+            displayMonth: may,
+            today: try Self.day(2026, 5, 20, calendar),
+            calendar: calendar
+        )
+        #expect(mayThirdEmphasis == .inMonth)
+        #expect(CalendarMonthDayLabelSupport.monthAbbreviation(
+            for: mayThird,
+            emphasis: mayThirdEmphasis,
+            calendar: calendar
+        ) == nil)
+
+        // February 2026 opens on a Sunday, so its 1st is drawn on its own page — the one case
+        // where an in-month cell is the 1st. It keeps its abbreviation.
+        let february = try Self.day(2026, 2, 1, calendar)
+        let februaryEmphasis = CalendarMonthDayLabelSupport.emphasis(
+            for: february,
+            displayMonth: february,
+            today: try Self.day(2026, 2, 20, calendar),
+            calendar: calendar
+        )
+        #expect(februaryEmphasis == .inMonth)
+        #expect(CalendarMonthDayLabelSupport.monthAbbreviation(
+            for: february,
+            emphasis: februaryEmphasis,
+            calendar: calendar
+        ) == calendar.shortMonthSymbols[1])
+    }
+
+    /// The defect, stated exactly: on Jun 3 2026 "Today" anchors May's block, and that page shows
+    /// two cells labelled "3" — May 3 in the first row, Jun 3 in the last.
+    ///
+    /// The old styling asked `isToday` first and returned early, so Jun 3 was drawn as an
+    /// ordinary in-month today: full-strength label, filled disc, no month marker, nothing at all
+    /// saying it belonged to the next month.
+    @Test func aCarriedDayThatIsAlsoTodayStillReadsAsOutOfMonth() throws {
+        let calendar = Self.gridCalendar()
+        let may = try Self.may2026(calendar)
+        let today = try Self.day(2026, 6, 3, calendar)
+
+        // Both cells really are on the same page, both really are labelled "3".
+        let drawnKeys = Set(Self.renderedDays(month: may, calendar: calendar).map {
+            DateFormatters.dateKey(from: $0, calendar: calendar)
+        })
+        #expect(drawnKeys.contains("2026-05-03"))
+        #expect(drawnKeys.contains("2026-06-03"))
+
+        let carriedToday = CalendarMonthDayLabelSupport.emphasis(
+            for: today,
+            displayMonth: may,
+            today: today,
+            calendar: calendar
+        )
+        let ownMonthDay = CalendarMonthDayLabelSupport.emphasis(
+            for: try Self.day(2026, 5, 3, calendar),
+            displayMonth: may,
+            today: today,
+            calendar: calendar
+        )
+
+        #expect(carriedToday == .outOfMonthToday)
+        #expect(ownMonthDay == .inMonth)
+
+        // Both signals at once: still today, still out of month.
+        #expect(carriedToday.isToday)
+        #expect(carriedToday.isOutOfMonth)
+
+        // The today marker survives — as a ring rather than a filled disc.
+        #expect(carriedToday.todayRingStroke != nil)
+        #expect(carriedToday.todayDiscFill == nil)
+        #expect(CalendarMonthDayEmphasis.inMonthToday.todayDiscFill != nil)
+        #expect(CalendarMonthDayEmphasis.inMonthToday.todayRingStroke == nil)
+
+        // ...and it is not styled as an in-month today, which is precisely what it used to be.
+        #expect(carriedToday.dateLabelColor != CalendarMonthDayEmphasis.inMonthToday.dateLabelColor)
+        #expect(carriedToday.dateLabelWeight != CalendarMonthDayEmphasis.inMonthToday.dateLabelWeight)
+        #expect(carriedToday.cellBackground != CalendarMonthDayEmphasis.inMonthToday.cellBackground)
+
+        // The month marker is the unambiguous half of the answer: the ringed "3" says "Jun 3".
+        #expect(CalendarMonthDayLabelSupport.monthAbbreviation(
+            for: today,
+            emphasis: carriedToday,
+            calendar: calendar
+        ) == calendar.shortMonthSymbols[5])
+        // The other "3" on the page carries no marker, so the two cannot be confused.
+        #expect(CalendarMonthDayLabelSupport.monthAbbreviation(
+            for: try Self.day(2026, 5, 3, calendar),
+            emphasis: ownMonthDay,
+            calendar: calendar
+        ) == nil)
+
+        // Carried today shares the out-of-month plate, so the "not this month" band is unbroken.
+        #expect(carriedToday.cellBackground == CalendarMonthDayEmphasis.outOfMonth.cellBackground)
+    }
+
+    /// Only carried cells and the carried-today case changed; the in-month states are pinned to
+    /// exactly what they rendered before.
+    @Test func inMonthCellAppearanceIsUnchanged() {
+        #expect(CalendarMonthDayEmphasis.inMonth.dateLabelColor == Theme.text)
+        #expect(CalendarMonthDayEmphasis.inMonth.dateLabelWeight == .medium)
+        #expect(CalendarMonthDayEmphasis.inMonth.cellBackground == Theme.bg)
+        #expect(CalendarMonthDayEmphasis.inMonth.todayDiscFill == nil)
+        #expect(CalendarMonthDayEmphasis.inMonth.todayRingStroke == nil)
+
+        #expect(CalendarMonthDayEmphasis.inMonthToday.dateLabelColor == Theme.onColor)
+        #expect(CalendarMonthDayEmphasis.inMonthToday.dateLabelWeight == .bold)
+        #expect(CalendarMonthDayEmphasis.inMonthToday.todayDiscFill == Theme.blue)
+        #expect(CalendarMonthDayEmphasis.inMonthToday.cellBackground != Theme.bg)
+
+        // Carried days stay dimmed, on a recessed plate, and never borrow an in-month colour.
+        #expect(CalendarMonthDayEmphasis.outOfMonth.dateLabelColor != Theme.text)
+        #expect(CalendarMonthDayEmphasis.outOfMonth.dateLabelColor != Theme.onColor)
+        #expect(CalendarMonthDayEmphasis.outOfMonth.dateLabelWeight == .regular)
+        #expect(CalendarMonthDayEmphasis.outOfMonth.cellBackground == Theme.surfaceRecessed)
+        #expect(CalendarMonthDayEmphasis.outOfMonthToday.cellBackground == Theme.surfaceRecessed)
+        #expect(CalendarMonthDayEmphasis.outOfMonthToday.dateLabelColor == Theme.blue)
+    }
+
+    /// The rule as a property, over every day the grid actually draws for two years: a cell
+    /// names a month exactly when the page it sits on does not already say which month it is.
+    @Test func everyRenderedDayNamesAMonthExactlyWhenItsPageDoesNot() throws {
+        let calendar = Self.gridCalendar()
+        let start = try Self.day(2026, 1, 1, calendar)
+        var carriedDaysSeen = 0
+        var markedInMonthFirsts = 0
+
+        for offset in 0..<24 {
+            let month = try #require(calendar.date(byAdding: .month, value: offset, to: start))
+            let monthNumber = calendar.component(.month, from: month)
+
+            for date in Self.renderedDays(month: month, calendar: calendar) {
+                let emphasis = CalendarMonthDayLabelSupport.emphasis(
+                    for: date,
+                    displayMonth: month,
+                    // A date the window never contains, so nothing here is today.
+                    today: try Self.day(1970, 1, 1, calendar),
+                    calendar: calendar
+                )
+                let abbreviation = CalendarMonthDayLabelSupport.monthAbbreviation(
+                    for: date,
+                    emphasis: emphasis,
+                    calendar: calendar
+                )
+                let dayNumber = calendar.component(.day, from: date)
+                let ownMonth = calendar.component(.month, from: date)
+                let key = DateFormatters.dateKey(from: date, calendar: calendar)
+
+                #expect(emphasis.isOutOfMonth == (ownMonth != monthNumber), "\(key) misclassified")
+
+                if emphasis.isOutOfMonth {
+                    carriedDaysSeen += 1
+                    // Names its *own* month, not the page's.
+                    #expect(abbreviation == calendar.shortMonthSymbols[ownMonth - 1], "\(key) named the wrong month")
+                } else if dayNumber == 1 {
+                    markedInMonthFirsts += 1
+                    #expect(abbreviation == calendar.shortMonthSymbols[ownMonth - 1])
+                } else {
+                    #expect(abbreviation == nil, "\(key) named a month its page already states")
+                }
+            }
+        }
+
+        // Two years of blocks carry plenty of days, and a handful of Sunday-start months put
+        // their own 1st on their own page.
+        #expect(carriedDaysSeen > 50)
+        #expect(markedInMonthFirsts > 0)
+    }
+
+    // MARK: - Window boundary and board hand-off
+
+    /// The one place `blockIndex(for:)` returns a block that does not draw the date it was asked
+    /// about, pinned rather than papered over.
+    ///
+    /// For a day in the leading 1–6 days of the window's earliest month, the rendering block is
+    /// the month *before* the window — index `-1` — and no block in the window draws that day at
+    /// all. The clamp lands on block 0, knowingly a non-drawing block, because there is no honest
+    /// alternative. Unreachable in production (the window is 120 months centred on today), but if
+    /// this ever changes it should change on purpose.
+    @Test func blockIndexClampsBelowTheWindowToAKnowinglyNonDrawingBlock() throws {
+        let calendar = Self.gridCalendar()
+        let currentMonthStart = try Self.day(2026, 7, 1, calendar)
+        let todayMonthIdx = CalendarMonthGridMetrics.todayMonthIndex
+
+        // Block 0 is the earliest month the window holds: 60 months before the centre.
+        let earliestMonth = try #require(calendar.date(byAdding: .month, value: -todayMonthIdx, to: currentMonthStart))
+        let carry = CalendarMonthGridSupport.leadingDaysRenderedInPreviousBlock(of: earliestMonth, calendar: calendar)
+        #expect(carry > 0, "fixture needs an earliest month that does not open on a Sunday")
+
+        let carriedDay = earliestMonth  // the 1st, which that block does not draw
+        let idx = blockIndex(
+            for: carriedDay,
+            currentMonthStart: currentMonthStart,
+            todayMonthIdx: todayMonthIdx,
+            calendar: calendar
+        )
+        #expect(idx == 0)
+
+        // The documented gap: block 0 does not draw it, and neither does any other block.
+        let block0Keys = Set(Self.renderedDays(month: earliestMonth, calendar: calendar).map {
+            DateFormatters.dateKey(from: $0, calendar: calendar)
+        })
+        #expect(!block0Keys.contains(DateFormatters.dateKey(from: carriedDay, calendar: calendar)))
+
+        // One day later the answer is honest again, which is why the gap is exactly this wide.
+        let firstDrawn = CalendarMonthGridSupport.blockFirstDay(of: earliestMonth, calendar: calendar)
+        #expect(blockIndex(
+            for: firstDrawn,
+            currentMonthStart: currentMonthStart,
+            todayMonthIdx: todayMonthIdx,
+            calendar: calendar
+        ) == 0)
+        #expect(block0Keys.contains(DateFormatters.dateKey(from: firstDrawn, calendar: calendar)))
+    }
+
+    /// Leaving the month grid for the board planner opens on the block's **first rendered day**,
+    /// not the 1st of its month — a day the page the reader came from actually drew.
+    ///
+    /// July 2026's block opens Jul 5; Jul 1 is drawn on June's page. Opening the planner on Jul 1
+    /// would name a day the reader was not looking at, and would round-trip back one block early.
+    @Test func boardAnchorForAMonthBlockOpensOnTheBlocksFirstRenderedDay() throws {
+        let calendar = Self.gridCalendar()
+        let todayMonthIdx = CalendarMonthGridMetrics.todayMonthIndex
+
+        // `boardAnchorDateKey` reads the real clock (it has no `today:` seam), so the block
+        // indices under test are taken relative to today's own block — never equal to it, so the
+        // "you were on today's page" shortcut cannot fire and the test cannot rot.
+        let currentMonthStart = CalendarMonthGridSupport.currentMonthStart(calendar: calendar)
+        let todayBlockIdx = blockIndex(
+            for: Date(),
+            currentMonthStart: currentMonthStart,
+            todayMonthIdx: todayMonthIdx,
+            calendar: calendar
+        )
+
+        var carriedMonthsChecked = 0
+        for offset in 1...12 {
+            let idx = todayBlockIdx + offset
+            let month = try #require(calendar.date(byAdding: .month, value: idx - todayMonthIdx, to: currentMonthStart))
+
+            let key = CalendarPageStateSupport.boardAnchorDateKey(
+                viewMode: .month,
+                visibleMonthIdx: idx,
+                // Deliberately non-nil: in month mode the timeline day must be ignored.
+                visibleTimelineDayIndex: 12,
+                anchorDateKey: "1970-01-01",
+                bufferStart: currentMonthStart,
+                currentMonthStart: currentMonthStart,
+                calendar: calendar
+            )
+
+            let drawn = Self.renderedDays(month: month, calendar: calendar)
+            let firstDrawnKey = DateFormatters.dateKey(from: try #require(drawn.first), calendar: calendar)
+            #expect(key == firstDrawnKey, "block \(idx) opened the board on \(key), which it does not draw first")
+
+            if CalendarMonthGridSupport.leadingDaysRenderedInPreviousBlock(of: month, calendar: calendar) > 0 {
+                carriedMonthsChecked += 1
+                // Explicitly *not* the 1st, which is the behavior being kept.
+                #expect(key != DateFormatters.dateKey(from: month, calendar: calendar))
+            }
+        }
+        // At most a couple of twelve consecutive months open on a Sunday.
+        #expect(carriedMonthsChecked >= 8)
+
+        // The worked example, pinned through the helper `boardAnchorDateKey` delegates to (which
+        // does take a `today:`): standing well outside July's block, July 2026 hands back Jul 5.
+        #expect(CalendarPageStateSupport.dateKeyForVisibleMonth(
+            visibleMonthIdx: todayMonthIdx,
+            todayMonthIdx: todayMonthIdx,
+            currentMonthStart: try Self.day(2026, 7, 1, calendar),
+            calendar: calendar,
+            today: try Self.day(2026, 12, 1, calendar)
+        ) == "2026-07-05")
+    }
 }
 #endif
