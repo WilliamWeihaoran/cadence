@@ -168,7 +168,7 @@ struct MarkdownListSupportTests {
             increase: true
         )
 
-        #expect(result?.text == "    • first\nplain\n    b. second")
+        #expect(result?.text == "    ◦ first\nplain\n    b. second")
         #expect(result?.selection == NSRange(location: 4, length: ((result?.text ?? "") as NSString).length - 4))
     }
 

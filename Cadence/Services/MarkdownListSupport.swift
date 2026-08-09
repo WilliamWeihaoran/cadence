@@ -89,7 +89,8 @@ enum MarkdownListSupport {
         case .todo, .done:
             return match.indentation + "○ "
         case .bullet, .dash, .plus:
-            return match.indentation + "• "
+            let level = visualLevel(forIndentation: match.indentation)
+            return match.indentation + unorderedMarker(forLevel: level) + " "
         case .ordered:
             return match.indentation + nextOrderedMarker(after: match.marker) + " "
         }
@@ -118,7 +119,7 @@ enum MarkdownListSupport {
             if increase {
                 changed = true
                 let indentedLine = String(repeating: " ", count: 4) + line
-                return remapOrderedMarkerIfNeeded(in: indentedLine, originalMatch: prefixMatch)
+                return remapListMarkerIfNeeded(in: indentedLine, originalMatch: prefixMatch)
             }
 
             let indentation = rawIndentation(in: line)
@@ -137,7 +138,7 @@ enum MarkdownListSupport {
 
             changed = true
             let outdentedLine = String(line.dropFirst(charactersToDrop))
-            return remapOrderedMarkerIfNeeded(in: outdentedLine, originalMatch: prefixMatch)
+            return remapListMarkerIfNeeded(in: outdentedLine, originalMatch: prefixMatch)
         }
 
         guard changed else { return nil }
@@ -266,6 +267,8 @@ enum MarkdownListSupport {
 
         let simplePrefixes: [(String, MarkdownListPrefixKind, String)] = [
             ("• ", .bullet, "• "),
+            ("◦ ", .bullet, "◦ "),
+            ("▪ ", .bullet, "▪ "),
             ("* ", .bullet, "* "),
             ("- ", .bullet, "- "),
             ("– ", .dash, "– "),
@@ -316,6 +319,8 @@ enum MarkdownListSupport {
         let nsTrimmed = trimmed as NSString
         let simplePrefixes: [(String, MarkdownListPrefixKind, String, Int)] = [
             ("• ", .bullet, "•", 2),
+            ("◦ ", .bullet, "◦", 2),
+            ("▪ ", .bullet, "▪", 2),
             ("* ", .bullet, "*", 2),
             ("- ", .bullet, "-", 2),
             ("– ", .dash, "–", 2),
@@ -355,13 +360,24 @@ enum MarkdownListSupport {
         )
     }
 
-    static func remapOrderedMarkerIfNeeded(in line: String, originalMatch: MarkdownListPrefixMatch) -> String {
-        guard originalMatch.kind == .ordered,
-              let updatedMatch = listPrefixMatch(in: line) else { return line }
+    static func remapListMarkerIfNeeded(in line: String, originalMatch: MarkdownListPrefixMatch) -> String {
+        guard let updatedMatch = listPrefixMatch(in: line) else { return line }
 
-        let updatedLevel = orderedLevel(forIndentation: updatedMatch.indentation)
-        let targetIndex = orderedIndex(for: updatedMatch.marker) ?? 1
-        let targetMarker = orderedMarker(for: updatedLevel, index: targetIndex)
+        let targetMarker: String
+        switch originalMatch.kind {
+        case .ordered:
+            let updatedLevel = orderedLevel(forIndentation: updatedMatch.indentation)
+            let targetIndex = orderedIndex(for: updatedMatch.marker) ?? 1
+            targetMarker = orderedMarker(for: updatedLevel, index: targetIndex)
+        case .bullet, .dash, .plus:
+            // Unlike the ordered marker (e.g. "1.", no trailing space), listPrefixMatch's
+            // bullet marker already includes the trailing space (e.g. "• ") — the
+            // replacement must match that shape or the splice below drops the space.
+            let updatedLevel = visualLevel(forIndentation: updatedMatch.indentation)
+            targetMarker = unorderedMarker(forLevel: updatedLevel) + " "
+        case .todo, .done:
+            return line
+        }
         guard updatedMatch.marker != targetMarker else { return line }
 
         let indentationCount = updatedMatch.indentation.count
@@ -381,6 +397,14 @@ enum MarkdownListSupport {
             return intToRoman(index) + "."
         default:
             return "\(index)."
+        }
+    }
+
+    static func unorderedMarker(forLevel level: Int) -> String {
+        switch level % 3 {
+        case 0: return "•"
+        case 1: return "◦"
+        default: return "▪"
         }
     }
 
@@ -508,7 +532,8 @@ enum MarkdownListSupport {
             return indentation + (state.lowercased() == "x" ? "✓ " : "○ ") + rest
         }
 
-        return indentation + "• " + rest
+        let level = visualLevel(forIndentation: indentation)
+        return indentation + unorderedMarker(forLevel: level) + " " + rest
     }
 
     private static func isMarkdownDividerLine(_ line: String) -> Bool {

@@ -33,8 +33,10 @@ enum MarkdownTypingTransformSupport {
             let range = NSRange(location: cursor - 2, length: 2)
             let snippet = text.substring(with: range)
             if ["* ", "- ", "+ "].contains(snippet),
-               MarkdownListSupport.indentationPrefix(in: text, replacingRange: range) != nil {
-                return replacing(text: text as String, range: range, with: "• ")
+               let indentation = MarkdownListSupport.indentationPrefix(in: text, replacingRange: range) {
+                let level = MarkdownListSupport.visualLevel(forIndentation: indentation)
+                let marker = MarkdownListSupport.unorderedMarker(forLevel: level)
+                return replacing(text: text as String, range: range, with: "\(marker) ")
             }
         }
 

@@ -371,10 +371,11 @@ enum MarkdownStylist {
         storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
         let markerLocation = lineStart + bullet.indentation.count
         switch bullet.marker {
-        case "•", "*":
+        case "•", "*", "◦", "▪":
             let bulletRange = NSRange(location: markerLocation, length: min(1, lineRange.length))
             storage.addAttribute(.foregroundColor, value: textColor, range: bulletRange)
-            storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 20), range: bulletRange)
+            let fontSize: CGFloat = bullet.marker == "▪" ? 14 : 20
+            storage.addAttribute(.font, value: NSFont.systemFont(ofSize: fontSize), range: bulletRange)
             addListMarkerSpacing(storage, markerRange: bulletRange)
         case "–", "-", "+":
             let markerRange = NSRange(location: markerLocation, length: min(1, max(0, lineRange.length - bullet.indentation.count)))
@@ -496,7 +497,7 @@ enum MarkdownStylist {
     private static func unorderedListMatch(in line: String) -> (indentation: String, marker: String)? {
         let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
         let trimmed = String(line.dropFirst(indentation.count))
-        let markers = ["• ", "* ", "- ", "– ", "+ ", "○ ", "✓ ", "● "]
+        let markers = ["• ", "◦ ", "▪ ", "* ", "- ", "– ", "+ ", "○ ", "✓ ", "● "]
         guard let prefix = markers.first(where: { trimmed.hasPrefix($0) }) else { return nil }
         return (indentation, String(prefix.prefix(1)))
     }
