@@ -20,7 +20,7 @@ struct CalendarPageStateSupport {
         todayDayIdx: Int,
         calendar: Calendar
     ) -> Int {
-        guard let anchorDate = DateFormatters.date(from: anchorDateKey) else { return todayDayIdx }
+        guard let anchorDate = DateFormatters.date(from: anchorDateKey, in: calendar) else { return todayDayIdx }
         let day = calendar.dateComponents([.day], from: bufferStart, to: calendar.startOfDay(for: anchorDate)).day ?? todayDayIdx
         return min(max(day, 0), calRenderDays - 1)
     }
@@ -45,7 +45,7 @@ struct CalendarPageStateSupport {
         todayMonthIdx: Int = todayMonthIndex,
         calendar: Calendar
     ) -> Int {
-        guard let anchorDate = DateFormatters.date(from: anchorDateKey) else { return todayMonthIdx }
+        guard let anchorDate = DateFormatters.date(from: anchorDateKey, in: calendar) else { return todayMonthIdx }
         return monthIndex(
             for: anchorDate,
             currentMonthStart: currentMonthStart,
@@ -198,7 +198,7 @@ struct CalendarPageStateSupport {
         calendar: Calendar
     ) -> (day: Int, hour: Int) {
         let day = min(max(
-            calendar.dateComponents([.day], from: bufferStart, to: calendar.startOfDay(for: DateFormatters.date(from: request.dateKey) ?? Date())).day ?? todayDayIdx,
+            calendar.dateComponents([.day], from: bufferStart, to: calendar.startOfDay(for: DateFormatters.date(from: request.dateKey, in: calendar) ?? Date())).day ?? todayDayIdx,
             0
         ), calRenderDays - 1)
         let hour = min(max(request.preferredHour - 1, calStartHour), calEndHour - 1)

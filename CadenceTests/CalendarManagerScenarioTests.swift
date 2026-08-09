@@ -61,37 +61,50 @@ struct CalendarManagerScenarioTests {
 
     // MARK: - 2. Authorization revoked mid-session is detected instead of staying stale
 
+    /// Whether this machine has actually granted Calendar access.
+    ///
+    /// These two tests used to hardcode `false`, on the stated assumption that no test machine
+    /// would have a live grant. That is not true of a developer's own Mac, where the app is
+    /// installed and authorized, and it made both fail there for a reason unrelated to the
+    /// behavior under test. Seeding the *opposite* of the live value keeps the assertion sharp on
+    /// either kind of machine: a handler that failed to re-derive would leave the seeded value in
+    /// place and still be caught.
+    private var liveAuthorization: Bool {
+        EKEventStore.authorizationStatus(for: .event) == .fullAccess
+    }
+
     @Test func staleCachedAuthorizationIsCorrectedWhenTheStoreChangeHandlerRuns() {
         let manager = CalendarManager.shared
         let originalAuthorized = manager.isAuthorized
         let originalVersion = manager.storeVersion
-        // Simulate a previous session in which the app had been granted access.
-        manager.isAuthorized = true
+        let live = liveAuthorization
+        // Simulate a previous session whose cached grant no longer matches reality.
+        manager.isAuthorized = !live
         defer { manager.isAuthorized = originalAuthorized }
 
         // The EKEventStoreChanged handler must re-derive authorization (not just bump the
         // refresh counter), so a revocation made outside the app while it keeps running is
-        // eventually reflected instead of caching `true` forever until the next relaunch.
+        // eventually reflected instead of caching the old answer until the next relaunch.
         manager.handleStoreChangeNotification()
 
         #expect(manager.storeVersion == originalVersion + 1)
-        // The test machine has no live Calendar grant, so the live authorization status is not
-        // `.fullAccess` — the handler must have brought `isAuthorized` back in line with reality.
-        #expect(manager.isAuthorized == false)
+        #expect(manager.isAuthorized == live)
     }
 
     @Test func refreshAuthorizationStateNeverThrowsAndReflectsLiveStatus() {
         let manager = CalendarManager.shared
         let originalAuthorized = manager.isAuthorized
         defer { manager.isAuthorized = originalAuthorized }
+        let live = liveAuthorization
 
+        // Converges from either direction, so neither a stuck `true` nor a stuck `false` passes.
         manager.isAuthorized = true
         manager.refreshAuthorizationState()
-        #expect(manager.isAuthorized == false)
+        #expect(manager.isAuthorized == live)
 
         manager.isAuthorized = false
         manager.refreshAuthorizationState()
-        #expect(manager.isAuthorized == false)
+        #expect(manager.isAuthorized == live)
     }
 
     // MARK: - 3. Moving an event to a missing/read-only calendar doesn't crash or corrupt the event

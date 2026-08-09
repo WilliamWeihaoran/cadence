@@ -89,6 +89,22 @@ enum DateFormatters {
         ymd.date(from: key)
     }
 
+    /// Resolves a `yyyy-MM-dd` key to midnight **in `calendar`'s own time zone**.
+    ///
+    /// `ymd` pins a locale but not a time zone, so it parses in the system zone. That is fine
+    /// whenever the result is measured with `Calendar.current` too, but any code that takes a
+    /// calendar as a parameter has to parse in that calendar or the two disagree: parsing
+    /// "2026-03-09" in UTC+8 and then counting days from it in America/New_York lands on the
+    /// previous day, which is how a DST-boundary offset silently became off-by-one.
+    static func date(from key: String, in calendar: Calendar) -> Date? {
+        let parts = key.split(separator: "-")
+        guard parts.count == 3,
+              let year = Int(parts[0]),
+              let month = Int(parts[1]),
+              let day = Int(parts[2]) else { return nil }
+        return calendar.date(from: DateComponents(year: year, month: month, day: day))
+    }
+
     /// Converts a `yyyy-MM-dd` storage key to a short display string: "Jan 15"
     static func shortDateString(from key: String) -> String {
         guard let date = ymd.date(from: key) else { return key }
