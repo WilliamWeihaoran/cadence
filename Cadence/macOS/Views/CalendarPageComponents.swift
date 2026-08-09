@@ -124,18 +124,25 @@ struct MonthGridView: View {
                     proxy: proxy,
                     todayMonthIdx: todayMonthIdx,
                     todayKey: DateFormatters.todayKey(),
-                    centersTodayCell: todayMonthOverflowsViewport(viewportHeight),
+                    currentMonthStart: currentMonthStart,
+                    calendar: cal,
+                    centersTodayCell: todayBlockOverflowsViewport(viewportHeight),
                     setProgrammaticScroll: { isProgrammaticScroll = $0 }
                 )
             }
         }
     }
 
-    /// True only when the window is too short to fit today's month, in which case the jump has
-    /// to scroll to today's row rather than trusting the month header to bring it on screen.
-    private func todayMonthOverflowsViewport(_ viewportHeight: CGFloat) -> Bool {
+    /// True only when the window is too short to fit the block that renders today, in which case
+    /// the jump has to scroll to today's row rather than trusting the block anchor to bring it
+    /// on screen.
+    ///
+    /// Measured against today's *rendering* block, not today's calendar month: on a day before
+    /// its month's first Sunday those are different blocks with different row counts, and it is
+    /// the block being scrolled to whose height decides whether today lands on screen.
+    private func todayBlockOverflowsViewport(_ viewportHeight: CGFloat) -> Bool {
         guard viewportHeight > 0 else { return true }
-        let weeks = weeksInMonth(currentMonthStart)
+        let weeks = weeksInMonth(CalendarMonthGridSupport.blockMonthStart(for: Date(), calendar: cal))
         return CalendarMonthGridMetrics.monthHeight(
             weeksInMonth: weeks,
             viewportHeight: viewportHeight

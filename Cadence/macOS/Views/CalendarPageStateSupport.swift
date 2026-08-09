@@ -4,6 +4,21 @@ import SwiftUI
 struct CalendarPageStateSupport {
     static let todayMonthIndex = CalendarMonthGridMetrics.todayMonthIndex
 
+    /// `visibleMonthIdx` is a **block** index throughout the calendar page: it is what
+    /// `handleScroll` writes (via `dominantMonthIndex`), what `handleAppear` scrolls to, and
+    /// what the header is named from. Every write to it must therefore come from
+    /// `blockIndex(for:)`, never from `monthIndex(for:)`.
+    ///
+    /// One consequence is deliberate: on a day before its month's first Sunday — Aug 1 2026,
+    /// say — jumping to "today" anchors *July's* block, because that is the page the grid draws
+    /// Aug 1 on, and so the header reads "July 2026" beside a highlighted cell labelled "Aug 1".
+    /// The header names the page, and 27 of that page's 28 cells are July; renaming it August
+    /// would misdescribe the other 96% of the screen, and would have to flip back to July the
+    /// instant the reader nudged the scroll wheel. The cell itself already carries the
+    /// distinction — out-of-block days are dimmed and the 1st of a month is drawn with its month
+    /// abbreviation — so nothing is ambiguous. Keeping `visibleMonthIdx` a single, unambiguous
+    /// block index is also what keeps `dateKeyForVisibleMonth` and the month -> timeline return
+    /// path honest.
     static func visibleMonthLabel(visibleMonthIdx: Int, calendar: Calendar) -> String {
         let currentMonthStart: Date = {
             var comps = calendar.dateComponents([.year, .month], from: Date())
@@ -45,8 +60,10 @@ struct CalendarPageStateSupport {
         todayMonthIdx: Int = todayMonthIndex,
         calendar: Calendar
     ) -> Int {
+        // Parsed in the grid's own calendar, then measured with that same calendar — parsing a
+        // key in the system zone and measuring it in another silently shifts a day.
         guard let anchorDate = DateFormatters.date(from: anchorDateKey, in: calendar) else { return todayMonthIdx }
-        return monthIndex(
+        return blockIndex(
             for: anchorDate,
             currentMonthStart: currentMonthStart,
             todayMonthIdx: todayMonthIdx,
@@ -54,6 +71,28 @@ struct CalendarPageStateSupport {
         )
     }
 
+    /// Index of the block that renders today — what "jump to today" and the grid's initial
+    /// position should target.
+    static func monthIndexForToday(
+        todayMonthIdx: Int = todayMonthIndex,
+        calendar: Calendar,
+        today: Date = Date()
+    ) -> Int {
+        blockIndex(
+            for: today,
+            currentMonthStart: CalendarMonthGridSupport.currentMonthStart(calendar: calendar, reference: today),
+            todayMonthIdx: todayMonthIdx,
+            calendar: calendar
+        )
+    }
+
+    /// The date a block stands for when the reader leaves the month grid.
+    ///
+    /// Inverse of `blockIndex(for:)`, and it has to actually invert it: returning the 1st of the
+    /// block's month would name a day the block does not draw whenever that month starts
+    /// mid-week, so month -> week -> month would come back one block early. The block's first
+    /// rendered day — its month's first Sunday — is both a true round trip and the first day the
+    /// reader was actually looking at.
     static func dateKeyForVisibleMonth(
         visibleMonthIdx: Int,
         todayMonthIdx: Int = todayMonthIndex,
@@ -61,8 +100,16 @@ struct CalendarPageStateSupport {
         calendar: Calendar,
         today: Date = Date()
     ) -> String {
-        if visibleMonthIdx == todayMonthIdx {
-            return DateFormatters.dateKey(from: today)
+        // "You were on the page showing today" — asked of the block, not of the calendar month,
+        // so the shortcut still fires on the days when those differ.
+        let todayBlockIdx = blockIndex(
+            for: today,
+            currentMonthStart: currentMonthStart,
+            todayMonthIdx: todayMonthIdx,
+            calendar: calendar
+        )
+        if visibleMonthIdx == todayBlockIdx {
+            return DateFormatters.dateKey(from: today, calendar: calendar)
         }
 
         let targetMonth = calendar.date(
@@ -70,7 +117,11 @@ struct CalendarPageStateSupport {
             value: visibleMonthIdx - todayMonthIdx,
             to: currentMonthStart
         ) ?? currentMonthStart
-        return DateFormatters.dateKey(from: targetMonth)
+        // Formatted with the grid's calendar, to match the `date(from:in:)` that reads it back.
+        return DateFormatters.dateKey(
+            from: CalendarMonthGridSupport.blockFirstDay(of: targetMonth, calendar: calendar),
+            calendar: calendar
+        )
     }
 
     static func boardAnchorDateKey(
@@ -113,6 +164,9 @@ struct CalendarPageStateSupport {
         return calendar.startOfDay(for: calendar.date(from: targetComponents) ?? shiftedMonth)
     }
 
+    /// Day-index form of `dateKeyForVisibleMonth`, expressed through it rather than beside it —
+    /// a second copy of "which day does this block stand for" is a second chance to disagree
+    /// with the grid.
     static func timelineDayIndexForMonthViewReturn(
         visibleMonthIdx: Int,
         todayMonthIdx: Int = todayMonthIndex,
@@ -121,16 +175,19 @@ struct CalendarPageStateSupport {
         calendar: Calendar,
         today: Date = Date()
     ) -> Int {
-        let currentMonthStart = monthStart(for: today, calendar: calendar)
-        let targetDate = visibleMonthIdx == todayMonthIdx
-            ? today
-            : (calendar.date(
-                byAdding: .month,
-                value: visibleMonthIdx - todayMonthIdx,
-                to: currentMonthStart
-            ) ?? currentMonthStart)
-        let day = calendar.dateComponents([.day], from: bufferStart, to: calendar.startOfDay(for: targetDate)).day ?? todayDayIdx
-        return min(max(day, 0), calRenderDays - 1)
+        let targetKey = dateKeyForVisibleMonth(
+            visibleMonthIdx: visibleMonthIdx,
+            todayMonthIdx: todayMonthIdx,
+            currentMonthStart: monthStart(for: today, calendar: calendar),
+            calendar: calendar,
+            today: today
+        )
+        return timelineDayIndex(
+            anchorDateKey: targetKey,
+            bufferStart: bufferStart,
+            todayDayIdx: todayDayIdx,
+            calendar: calendar
+        )
     }
 
     static func restoreTimelineScrollIfNeeded(

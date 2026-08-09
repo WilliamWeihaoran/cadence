@@ -252,21 +252,27 @@ struct CadenceTests {
         #expect(day == 2)
     }
 
-    @Test func monthToTimelineReturnUsesVisibleMonthInsteadOfStaleRememberedDate() throws {
+    /// Leaving the month grid returns to the day the *block* on screen was showing.
+    ///
+    /// `visibleMonthIdx` indexes the grid's rendered blocks, and a block opens on its month's
+    /// first Sunday rather than on the 1st. Today here is Fri May 1 2026, which the grid draws as
+    /// trailing fill on April's block (index 59) — so block 59 is the page holding today and
+    /// returns today, while block 60 opens on Sun May 3 and returns that.
+    @Test func monthToTimelineReturnUsesTheDayTheVisibleBlockWasShowing() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? calendar.timeZone
 
         let today = try #require(calendar.date(from: DateComponents(year: 2026, month: 5, day: 1)))
         let bufferStart = try #require(calendar.date(from: DateComponents(year: 2026, month: 1, day: 1)))
 
-        let currentMonthDay = CalendarPageStateSupport.timelineDayIndexForMonthViewReturn(
+        let mayBlockDay = CalendarPageStateSupport.timelineDayIndexForMonthViewReturn(
             visibleMonthIdx: 60,
             bufferStart: bufferStart,
             todayDayIdx: 120,
             calendar: calendar,
             today: today
         )
-        let previousMonthDay = CalendarPageStateSupport.timelineDayIndexForMonthViewReturn(
+        let blockHoldingTodayDay = CalendarPageStateSupport.timelineDayIndexForMonthViewReturn(
             visibleMonthIdx: 59,
             bufferStart: bufferStart,
             todayDayIdx: 120,
@@ -274,8 +280,10 @@ struct CadenceTests {
             today: today
         )
 
-        #expect(currentMonthDay == 120)
-        #expect(previousMonthDay == 90)
+        // Jan 1 + 122 days = May 3, May's first Sunday and the first cell of its block.
+        #expect(mayBlockDay == 122)
+        // Jan 1 + 120 days = May 1, i.e. today, because today is drawn on block 59.
+        #expect(blockHoldingTodayDay == 120)
     }
 
     @Test func calendarTitleUsesVisibleTimelineMonthAcrossBoundaries() throws {
@@ -330,7 +338,11 @@ struct CadenceTests {
             today: today
         )
 
-        #expect(previousMonthKey == "2026-04-01")
+        // April 2026 opens on Wed Apr 1, so its block starts at the first Sunday, Apr 5 — the
+        // first day that page actually draws. Handing back Apr 1 would name a day drawn on
+        // March's page, and the month -> week -> month round trip would come back a block early.
+        #expect(previousMonthKey == "2026-04-05")
+        // May 5 2026 is on May's own block, so returning to the timeline keeps today.
         #expect(currentMonthKey == "2026-05-05")
     }
 

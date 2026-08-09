@@ -7,6 +7,31 @@ func monthStart(for date: Date, calendar: Calendar) -> Date {
     return calendar.date(from: comps) ?? date
 }
 
+/// Index of the block that **renders** `date`.
+///
+/// Distinct from `monthIndex(for:)`, which answers "which calendar month is this date in".
+/// The grid tiles months without repeating a day — a block starts on its month's first Sunday
+/// and carries the days before it as trailing fill on the previous block — so for roughly three
+/// days a month the two answers differ by one.
+///
+/// Every date -> scroll mapping wants *this* one. `CalendarMonthGridIdentifiers.day` is tagged
+/// with the rendering block, so a day id assembled from a calendar-month index simply does not
+/// exist in the grid, and `ScrollViewProxy.scrollTo` ignores an unknown id without complaint.
+///
+/// The block rule itself is not restated here: it is read from
+/// `CalendarMonthGridSupport.blockMonthStart(for:)`, the same helper `weeks(for:)` is built on,
+/// so this cannot drift away from the layout it is describing.
+func blockIndex(for date: Date, currentMonthStart: Date, todayMonthIdx: Int, calendar: Calendar) -> Int {
+    monthIndex(
+        for: CalendarMonthGridSupport.blockMonthStart(for: date, calendar: calendar),
+        currentMonthStart: currentMonthStart,
+        todayMonthIdx: todayMonthIdx,
+        calendar: calendar
+    )
+}
+
+/// Index of the calendar month `date` falls in — the right question for *naming* a month, the
+/// wrong one for scrolling to a day. Use `blockIndex(for:...)` for the latter.
 func monthIndex(for date: Date, currentMonthStart: Date, todayMonthIdx: Int, calendar: Calendar) -> Int {
     let targetMonthStart = monthStart(for: date, calendar: calendar)
     let delta = calendar.dateComponents([.month], from: currentMonthStart, to: targetMonthStart).month ?? 0

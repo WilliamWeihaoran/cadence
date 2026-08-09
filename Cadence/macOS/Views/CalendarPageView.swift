@@ -20,7 +20,9 @@ struct CalendarPageView: View {
     @AppStorage("calendarZoomLevel") private var zoomLevel: Int = 1
     @AppStorage("calendarRememberedTimelineHour") private var rememberedScrollHour: Int = -1
     @AppStorage("calendarRememberedTimelineDateKey") private var anchorDateKey: String = ""
-    @State private var visibleMonthIdx: Int = CalendarMonthGridMetrics.todayMonthIndex  // index into MonthGridView's month window (CalendarMonthGridMetrics.totalMonths months wide)
+    // Index of the *block* MonthGridView renders, not of a calendar month — the two differ for
+    // the days before a month's first Sunday. See `CalendarPageStateSupport.visibleMonthLabel`.
+    @State private var visibleMonthIdx: Int = CalendarPageStateSupport.monthIndexForToday(calendar: .current)
     @State private var monthGridResetNonce: Int = 0
     @State private var isRestoringVerticalScroll = true
     @State private var isRestoringHorizontalScroll = true
@@ -300,7 +302,9 @@ struct CalendarPageView: View {
             isRestoringVerticalScroll = true
         }
         if viewMode == .month || presentation == .board {
-            visibleMonthIdx = CalendarMonthGridMetrics.todayMonthIndex
+            // The block that draws today, which on the days before a month's first Sunday is the
+            // previous month's block — the same one `handleTodayTrigger` is about to scroll to.
+            visibleMonthIdx = CalendarPageStateSupport.monthIndexForToday(calendar: cal)
         }
         scrollToTodayTrigger.toggle()
     }

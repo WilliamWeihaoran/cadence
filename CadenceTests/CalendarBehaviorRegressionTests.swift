@@ -748,5 +748,350 @@ struct CalendarBehaviorRegressionTests {
         #expect(CalendarChipDueMarkerSupport.label(dueDateKey: "2026-08-12", dayKey: "2026-08-12", calendar: calendar) == nil)
         #expect(CalendarChipDueMarkerSupport.label(dueDateKey: "", dayKey: "2026-08-12", calendar: calendar) == nil)
     }
+
+    // MARK: - Rendering block vs calendar month
+
+    private static func gridCalendar(_ zone: String = "America/New_York") -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: zone) ?? calendar.timeZone
+        return calendar
+    }
+
+    /// Every day the grid draws for one month block, in the order it draws them.
+    private static func renderedDays(month: Date, calendar: Calendar) -> [Date] {
+        CalendarMonthGridSupport.weeks(for: month, calendar: calendar)
+            .flatMap { $0 }
+            .compactMap { $0 }
+    }
+
+    /// The worked example, pinned: Aug 1 2026 is a Saturday, so August's block opens on Sun Aug 2
+    /// and Aug 1 is drawn as the final trailing cell of July's block. A "which month is this
+    /// date in" answer and a "which page draws it" answer differ here by one.
+    @Test func augustFirst2026IsDrawnOnJulysPageBecauseAugustOpensOnItsFirstSunday() throws {
+        let calendar = Self.gridCalendar()
+        let july = try #require(calendar.date(from: DateComponents(year: 2026, month: 7, day: 1)))
+        let august = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 1)))
+
+        // July 2026 starts Wed Jul 1, so its page runs Jul 5-31 — 27 days, padded by exactly
+        // one, and that pad is Aug 1.
+        let julyDays = Self.renderedDays(month: july, calendar: calendar)
+        #expect(julyDays.count == 28)
+        #expect(DateFormatters.dateKey(from: julyDays[0], calendar: calendar) == "2026-07-05")
+        #expect(DateFormatters.dateKey(from: julyDays[27], calendar: calendar) == "2026-08-01")
+
+        // August's own page therefore starts on Aug 2 and never draws Aug 1.
+        let augustDays = Self.renderedDays(month: august, calendar: calendar)
+        #expect(DateFormatters.dateKey(from: augustDays[0], calendar: calendar) == "2026-08-02")
+        #expect(!augustDays.contains { calendar.isDate($0, inSameDayAs: august) })
+
+        // The rendering block for Aug 1 is July's; the calendar month is still August.
+        let block = CalendarMonthGridSupport.blockMonthStart(for: august, calendar: calendar)
+        #expect(calendar.isDate(block, equalTo: july, toGranularity: .month))
+        #expect(calendar.isDate(monthStart(for: august, calendar: calendar), equalTo: august, toGranularity: .month))
+
+        // And in index terms: standing in August, Aug 1 lives one block back.
+        let currentMonthStart = monthStart(for: august, calendar: calendar)
+        let todayMonthIdx = CalendarMonthGridMetrics.todayMonthIndex
+        #expect(blockIndex(for: august, currentMonthStart: currentMonthStart, todayMonthIdx: todayMonthIdx, calendar: calendar) == todayMonthIdx - 1)
+        #expect(monthIndex(for: august, currentMonthStart: currentMonthStart, todayMonthIdx: todayMonthIdx, calendar: calendar) == todayMonthIdx)
+    }
+
+    /// One case per weekday a month can open on. The carry is 0 for a Sunday-start month and 6
+    /// for a Monday-start one, so June 2026 is the worst case: six of its days are drawn on
+    /// May's page before June's page begins.
+    @Test func everyStartingWeekdayCarriesTheRightNumberOfDaysOntoThePreviousPage() throws {
+        let calendar = Self.gridCalendar()
+        // 2026 happens to contain a month opening on each of the seven weekdays.
+        let cases: [(month: Int, weekday: Int, expectedCarry: Int)] = [
+            (2, 1, 0),  // Sunday
+            (6, 2, 6),  // Monday  - worst case
+            (9, 3, 5),  // Tuesday
+            (4, 4, 4),  // Wednesday
+            (1, 5, 3),  // Thursday
+            (5, 6, 2),  // Friday
+            (8, 7, 1),  // Saturday
+        ]
+
+        for testCase in cases {
+            let first = try #require(calendar.date(from: DateComponents(year: 2026, month: testCase.month, day: 1)))
+            #expect(calendar.component(.weekday, from: first) == testCase.weekday)
+
+            let carry = CalendarMonthGridSupport.leadingDaysRenderedInPreviousBlock(of: first, calendar: calendar)
+            #expect(carry == testCase.expectedCarry)
+
+            // The page opens on the first Sunday, which is `carry` days in...
+            let days = Self.renderedDays(month: first, calendar: calendar)
+            let firstDrawn = try #require(days.first)
+            #expect(calendar.component(.weekday, from: firstDrawn) == 1)
+            #expect(calendar.isDate(firstDrawn, inSameDayAs: CalendarMonthGridSupport.blockFirstDay(of: first, calendar: calendar)))
+            #expect(calendar.component(.day, from: firstDrawn) == testCase.expectedCarry + 1)
+
+            let previousMonth = try #require(calendar.date(byAdding: .month, value: -1, to: first))
+            let previousDays = Self.renderedDays(month: previousMonth, calendar: calendar)
+
+            // ...and each carried day is drawn on the previous page instead, with
+            // `blockMonthStart` agreeing about where it went.
+            for day in 1...max(1, testCase.expectedCarry) where day <= testCase.expectedCarry {
+                let date = try #require(calendar.date(from: DateComponents(year: 2026, month: testCase.month, day: day)))
+                #expect(!days.contains { calendar.isDate($0, inSameDayAs: date) })
+                #expect(previousDays.contains { calendar.isDate($0, inSameDayAs: date) })
+                #expect(calendar.isDate(
+                    CalendarMonthGridSupport.blockMonthStart(for: date, calendar: calendar),
+                    equalTo: previousMonth,
+                    toGranularity: .month
+                ))
+            }
+        }
+    }
+
+    /// Leap Februaries, including a Sunday-start one whose 29 days overflow four weeks by a
+    /// single day and pull six days of March onto February's page.
+    @Test func leapFebruariesTileWithoutLosingOrRepeatingADay() throws {
+        let calendar = Self.gridCalendar()
+
+        for year in [2024, 2028, 2032] {
+            let february = try #require(calendar.date(from: DateComponents(year: year, month: 2, day: 1)))
+            #expect(calendar.range(of: .day, in: .month, for: february)?.count == 29)
+
+            let days = Self.renderedDays(month: february, calendar: calendar)
+            #expect(days.count % 7 == 0)
+            // Whole weeks, opening on a Sunday and closing on a Saturday.
+            #expect(calendar.component(.weekday, from: try #require(days.first)) == 1)
+            #expect(calendar.component(.weekday, from: try #require(days.last)) == 7)
+
+            // Feb 29 is drawn exactly once, on the page `blockMonthStart` names.
+            let leapDay = try #require(calendar.date(from: DateComponents(year: year, month: 2, day: 29)))
+            let leapDayBlock = CalendarMonthGridSupport.blockMonthStart(for: leapDay, calendar: calendar)
+            let leapDayPage = Self.renderedDays(month: leapDayBlock, calendar: calendar)
+            #expect(leapDayPage.filter { calendar.isDate($0, inSameDayAs: leapDay) }.count == 1)
+        }
+
+        // Feb 2032 opens on a Sunday, so it carries nothing forward but still spills into March.
+        let feb2032 = try #require(calendar.date(from: DateComponents(year: 2032, month: 2, day: 1)))
+        #expect(CalendarMonthGridSupport.leadingDaysRenderedInPreviousBlock(of: feb2032, calendar: calendar) == 0)
+        let feb2032Days = Self.renderedDays(month: feb2032, calendar: calendar)
+        #expect(feb2032Days.count == 35)
+        #expect(DateFormatters.dateKey(from: try #require(feb2032Days.last), calendar: calendar) == "2032-03-06")
+    }
+
+    /// The property that would have caught this: over a wide window, the block index a date maps
+    /// to must be a block whose `weeks(for:)` actually draws that date — and only that one.
+    ///
+    /// Nothing tied the two notions together before, which is why "which month is this date in"
+    /// could stand in for "which page draws it" for years without anyone noticing that they part
+    /// company about three days a month.
+    @Test func everyDateResolvesToTheBlockThatActuallyDrawsIt() throws {
+        let calendar = Self.gridCalendar()
+        let windowMonths = 60
+        let currentMonthStart = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 1)))
+        let todayMonthIdx = CalendarMonthGridMetrics.todayMonthIndex
+
+        // Every day each block draws, keyed by block index.
+        var drawnBy: [Int: Set<String>] = [:]
+        for idx in (todayMonthIdx - windowMonths)...(todayMonthIdx + windowMonths) {
+            let month = try #require(calendar.date(byAdding: .month, value: idx - todayMonthIdx, to: currentMonthStart))
+            drawnBy[idx] = Set(
+                Self.renderedDays(month: month, calendar: calendar)
+                    .map { DateFormatters.dateKey(from: $0, calendar: calendar) }
+            )
+        }
+
+        // Walk every day of the interior of the window, so each date has both neighbours' blocks
+        // built and "drawn exactly once" is a meaningful claim.
+        var date = try #require(calendar.date(byAdding: .month, value: -(windowMonths - 1), to: currentMonthStart))
+        let end = try #require(calendar.date(byAdding: .month, value: windowMonths - 1, to: currentMonthStart))
+        var checkedDays = 0
+        var daysDrawnOffTheirOwnMonthsPage = 0
+
+        while date < end {
+            let key = DateFormatters.dateKey(from: date, calendar: calendar)
+            let idx = blockIndex(
+                for: date,
+                currentMonthStart: currentMonthStart,
+                todayMonthIdx: todayMonthIdx,
+                calendar: calendar
+            )
+
+            // The block it maps to draws it...
+            #expect(drawnBy[idx]?.contains(key) == true, "\(key) mapped to block \(idx), which does not draw it")
+            // ...and no other block does, so the tiling neither repeats nor drops a day.
+            #expect(drawnBy.filter { $0.value.contains(key) }.count == 1, "\(key) is drawn by more than one block")
+
+            let calendarMonthIdx = monthIndex(
+                for: date,
+                currentMonthStart: currentMonthStart,
+                todayMonthIdx: todayMonthIdx,
+                calendar: calendar
+            )
+            if idx != calendarMonthIdx {
+                daysDrawnOffTheirOwnMonthsPage += 1
+                // Only ever one block early, never later, never further.
+                #expect(idx == calendarMonthIdx - 1)
+            }
+
+            checkedDays += 1
+            date = try #require(calendar.date(byAdding: .day, value: 1, to: date))
+        }
+
+        #expect(checkedDays > 3_500)
+        // Roughly three days a month, i.e. the bug's blast radius — and emphatically not zero,
+        // which is what the old code assumed.
+        #expect(daysDrawnOffTheirOwnMonthsPage > checkedDays / 20)
+    }
+
+    /// The regression itself: the id "Today" scrolls to has to be an id the grid emits.
+    ///
+    /// `ScrollViewProxy.scrollTo` ignores an unknown id in silence, so keying the day id off
+    /// today's calendar month simply did nothing on the days when that is not the block drawing
+    /// today — and the month anchor beside it parked the reader on a page without today on it.
+    @Test func todayJumpTargetsAreIdsTheGridActuallyTags() throws {
+        let calendar = Self.gridCalendar()
+        let todayMonthIdx = CalendarMonthGridMetrics.todayMonthIndex
+
+        // Every day of a year that contains a month opening on each weekday, plus the worked
+        // example, each treated in turn as "today".
+        var today = try #require(calendar.date(from: DateComponents(year: 2026, month: 1, day: 1)))
+        let end = try #require(calendar.date(from: DateComponents(year: 2027, month: 1, day: 1)))
+        var jumpsLandingOnAnEarlierBlock = 0
+
+        while today < end {
+            let todayKey = DateFormatters.dateKey(from: today, calendar: calendar)
+            let currentMonthStart = CalendarMonthGridSupport.currentMonthStart(calendar: calendar, reference: today)
+
+            let targets = CalendarMonthGridInteractionSupport.todayJumpTargets(
+                todayKey: todayKey,
+                currentMonthStart: currentMonthStart,
+                todayMonthIdx: todayMonthIdx,
+                calendar: calendar
+            )
+
+            // Rebuild the ids `MonthWeeksView` tags its cells with, for the block the jump
+            // anchors and its neighbours.
+            var tagged: Set<String> = []
+            for idx in (todayMonthIdx - 1)...(todayMonthIdx + 1) {
+                let month = try #require(calendar.date(byAdding: .month, value: idx - todayMonthIdx, to: currentMonthStart))
+                for day in Self.renderedDays(month: month, calendar: calendar) {
+                    tagged.insert(CalendarMonthGridIdentifiers.day(
+                        monthIndex: idx,
+                        dateKey: DateFormatters.dateKey(from: day, calendar: calendar)
+                    ))
+                }
+            }
+
+            #expect(tagged.contains(targets.dayID), "no cell is tagged \(targets.dayID)")
+
+            // The month anchor and the day id name the same block, so the two scrolls agree.
+            let anchoredIdx = blockIndex(
+                for: today,
+                currentMonthStart: currentMonthStart,
+                todayMonthIdx: todayMonthIdx,
+                calendar: calendar
+            )
+            #expect(targets.monthID == CalendarMonthGridIdentifiers.month(anchoredIdx))
+            #expect(targets.dayID == CalendarMonthGridIdentifiers.day(monthIndex: anchoredIdx, dateKey: todayKey))
+
+            if anchoredIdx != todayMonthIdx {
+                jumpsLandingOnAnEarlierBlock += 1
+                // What the old code emitted on these days: an id no cell carries.
+                let staleID = CalendarMonthGridIdentifiers.day(monthIndex: todayMonthIdx, dateKey: todayKey)
+                #expect(!tagged.contains(staleID))
+            }
+
+            today = try #require(calendar.date(byAdding: .day, value: 1, to: today))
+        }
+
+        // 2026 has 33 such days — the "roughly three days a month" the bug was live for.
+        #expect(jumpsLandingOnAnEarlierBlock == 33)
+    }
+
+    /// Aug 1 2026 end to end: pressing "Today" anchors July's block, and — deliberately — the
+    /// header says July.
+    ///
+    /// `visibleMonthIdx` is a block index everywhere else in the page (it is what
+    /// `dominantMonthIndex` writes on every scroll), so the header naming the anchored block is
+    /// the only self-consistent choice. Naming August instead would misdescribe the 27 July
+    /// cells filling the page and would have to snap back to July on the first scroll event.
+    @Test func todayJumpOnAugustFirst2026AnchorsJulysBlockAndTheHeaderSaysJuly() throws {
+        let calendar = Self.gridCalendar()
+        let today = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 1, hour: 9)))
+        let todayMonthIdx = CalendarMonthGridMetrics.todayMonthIndex
+
+        let anchoredIdx = CalendarPageStateSupport.monthIndexForToday(
+            todayMonthIdx: todayMonthIdx,
+            calendar: calendar,
+            today: today
+        )
+        #expect(anchoredIdx == todayMonthIdx - 1)
+
+        // The header is derived from the same index the grid is scrolled to, so it names the
+        // page on screen rather than the month the highlighted cell belongs to.
+        let currentMonthStart = CalendarMonthGridSupport.currentMonthStart(calendar: calendar, reference: today)
+        let anchoredMonth = try #require(calendar.date(byAdding: .month, value: anchoredIdx - todayMonthIdx, to: currentMonthStart))
+        #expect(calendar.component(.month, from: anchoredMonth) == 7)
+
+        // ...and the page it names does contain today, which is the whole point.
+        let drawn = Self.renderedDays(month: anchoredMonth, calendar: calendar)
+        #expect(drawn.contains { calendar.isDate($0, inSameDayAs: today) })
+    }
+
+    /// The inverse has to actually invert: leaving a block and coming back must land on the same
+    /// block. Returning the 1st of the block's month would not, since for a month that opens
+    /// mid-week the 1st is drawn on the page before.
+    @Test func blockToDateKeyRoundTripsBackToTheSameBlock() throws {
+        let calendar = Self.gridCalendar()
+        let today = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 15, hour: 9)))
+        let todayMonthIdx = CalendarMonthGridMetrics.todayMonthIndex
+        let currentMonthStart = CalendarMonthGridSupport.currentMonthStart(calendar: calendar, reference: today)
+
+        for idx in (todayMonthIdx - 24)...(todayMonthIdx + 24) {
+            let key = CalendarPageStateSupport.dateKeyForVisibleMonth(
+                visibleMonthIdx: idx,
+                todayMonthIdx: todayMonthIdx,
+                currentMonthStart: currentMonthStart,
+                calendar: calendar,
+                today: today
+            )
+            let returned = CalendarPageStateSupport.monthIndexForTimelineAnchor(
+                anchorDateKey: key,
+                currentMonthStart: currentMonthStart,
+                todayMonthIdx: todayMonthIdx,
+                calendar: calendar
+            )
+            #expect(returned == idx, "block \(idx) round-tripped through \(key) to block \(returned)")
+
+            // The date it hands back is one the block draws, not merely one in its month.
+            let month = try #require(calendar.date(byAdding: .month, value: idx - todayMonthIdx, to: currentMonthStart))
+            let drawnKeys = Set(Self.renderedDays(month: month, calendar: calendar).map {
+                DateFormatters.dateKey(from: $0, calendar: calendar)
+            })
+            #expect(drawnKeys.contains(key))
+        }
+    }
+
+    /// Parsing a key in one zone and measuring it in another is how this codebase has been bitten
+    /// before, so the date -> block mapping is pinned across zones either side of UTC.
+    @Test func blockMappingIsStableAcrossTimeZones() throws {
+        let todayMonthIdx = CalendarMonthGridMetrics.todayMonthIndex
+
+        for zone in ["America/New_York", "Asia/Shanghai", "UTC", "Pacific/Kiritimati"] {
+            let calendar = Self.gridCalendar(zone)
+            let currentMonthStart = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 1)))
+
+            // Aug 1 sits on July's page; Aug 2, the first Sunday, opens August's.
+            #expect(CalendarPageStateSupport.monthIndexForTimelineAnchor(
+                anchorDateKey: "2026-08-01",
+                currentMonthStart: currentMonthStart,
+                todayMonthIdx: todayMonthIdx,
+                calendar: calendar
+            ) == todayMonthIdx - 1, "wrong block in \(zone)")
+
+            #expect(CalendarPageStateSupport.monthIndexForTimelineAnchor(
+                anchorDateKey: "2026-08-02",
+                currentMonthStart: currentMonthStart,
+                todayMonthIdx: todayMonthIdx,
+                calendar: calendar
+            ) == todayMonthIdx, "wrong block in \(zone)")
+        }
+    }
 }
 #endif

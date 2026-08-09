@@ -53,10 +53,39 @@ enum CalendarMonthGridInteractionSupport {
         }
     }
 
+    /// The two scroll ids a "Today" jump aims at, both keyed by the block that *renders* today.
+    ///
+    /// This used to key both off today's calendar-month index. For the ~3 days a month that fall
+    /// before their month's first Sunday, today's cell is tagged with the *previous* block's
+    /// index — so the day id built from the calendar month named no view in the hierarchy,
+    /// `scrollTo` dropped it silently, and the month anchor parked the user on a block that does
+    /// not contain today. Deriving both ids from `blockIndex(for:)` keeps them pointing at the
+    /// same block the grid tagged the cell with.
+    static func todayJumpTargets(
+        todayKey: String,
+        currentMonthStart: Date,
+        todayMonthIdx: Int,
+        calendar: Calendar
+    ) -> (monthID: String, dayID: String) {
+        let today = DateFormatters.date(from: todayKey, in: calendar) ?? Date()
+        let renderingBlockIdx = blockIndex(
+            for: today,
+            currentMonthStart: currentMonthStart,
+            todayMonthIdx: todayMonthIdx,
+            calendar: calendar
+        )
+        return (
+            CalendarMonthGridIdentifiers.month(renderingBlockIdx),
+            CalendarMonthGridIdentifiers.day(monthIndex: renderingBlockIdx, dateKey: todayKey)
+        )
+    }
+
     static func handleTodayTrigger(
         proxy: ScrollViewProxy,
         todayMonthIdx: Int,
         todayKey: String,
+        currentMonthStart: Date,
+        calendar: Calendar,
         /// False once a month block is exactly one screen tall — then anchoring the month at
         /// the top already puts every one of its days on screen, and additionally centring
         /// today's row would only drag the viewport across a month boundary and leave the page
@@ -64,13 +93,18 @@ enum CalendarMonthGridInteractionSupport {
         centersTodayCell: Bool,
         setProgrammaticScroll: @escaping (Bool) -> Void
     ) {
-        let monthID = CalendarMonthGridIdentifiers.month(todayMonthIdx)
+        let targets = todayJumpTargets(
+            todayKey: todayKey,
+            currentMonthStart: currentMonthStart,
+            todayMonthIdx: todayMonthIdx,
+            calendar: calendar
+        )
 
         // Guard the scroll so a scroll-geometry callback firing mid-jump can't recompute
         // `visibleMonthIdx` from the stale pre-jump offset and stomp the value the "Today"
         // jump just set.
         setProgrammaticScroll(true)
-        proxy.scrollTo(monthID, anchor: .top)
+        proxy.scrollTo(targets.monthID, anchor: .top)
 
         guard centersTodayCell else {
             DispatchQueue.main.asyncAfter(deadline: .now() + scrollSettleDelay) {
@@ -79,9 +113,8 @@ enum CalendarMonthGridInteractionSupport {
             return
         }
 
-        let dayID = CalendarMonthGridIdentifiers.day(monthIndex: todayMonthIdx, dateKey: todayKey)
         DispatchQueue.main.async {
-            proxy.scrollTo(dayID, anchor: .center)
+            proxy.scrollTo(targets.dayID, anchor: .center)
             DispatchQueue.main.asyncAfter(deadline: .now() + scrollSettleDelay) {
                 setProgrammaticScroll(false)
             }
