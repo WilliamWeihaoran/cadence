@@ -103,10 +103,7 @@ struct FocusBundleTaskRow: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                     .lineLimit(1)
-                Text(TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes))
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
+                TaskDetailLineLabel(parts: detailParts)
             }
 
             Spacer(minLength: 8)
@@ -129,6 +126,15 @@ struct FocusBundleTaskRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isSelected ? Theme.amber.opacity(0.18) : Color.clear, lineWidth: 1)
         }
+    }
+
+    private var detailParts: CadenceTaskDetailLine {
+        let todayKey = DateFormatters.todayKey()
+        return CadenceTaskDetailLine(
+            lead: TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes),
+            due: CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey),
+            isOverdue: !task.isDone && CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: todayKey)
+        )
     }
 
     private func focusRowIconButton(_ systemName: String, isDisabled: Bool, action: @escaping () -> Void) -> some View {

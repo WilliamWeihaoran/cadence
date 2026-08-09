@@ -17,6 +17,9 @@ struct CadenceMilestoneWidgetGoal: Identifiable, Hashable {
     let nextActionTitle: String?
     let linkedHabitCount: Int
     let dueTodayLabel: String
+    /// `yyyy-MM-dd` due date of the next action, empty when it has none. Defaulted so goal
+    /// literals that only care about the title stay source-compatible.
+    var nextActionDueDate: String = ""
 }
 
 struct CadenceMilestoneWidgetSnapshot: Hashable {
@@ -144,7 +147,8 @@ enum CadenceMilestoneWidgetSupport {
             overdueTaskCount: contribution.overdueTaskCount,
             nextActionTitle: contribution.nextActionTitle,
             linkedHabitCount: momentum.linkedHabitCount,
-            dueTodayLabel: momentum.dueTodayLabel
+            dueTodayLabel: momentum.dueTodayLabel,
+            nextActionDueDate: contribution.nextActionDueDate ?? ""
         )
     }
 

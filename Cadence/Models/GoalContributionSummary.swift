@@ -11,6 +11,9 @@ struct GoalContributionSummary {
     let overdueTaskCount: Int
     let recentCompletedCount: Int
     let nextActionTitle: String?
+    /// `yyyy-MM-dd` due date of the `nextActionTitle` task, `nil` when it has none. The next
+    /// action is picked partly *by* due date, so surfaces that show the title can show why.
+    let nextActionDueDate: String?
 
     /// Bug fix: this previously ignored `progressType` entirely and always computed a
     /// subtask completion ratio, even for goals configured with `progressType == .hours`.
@@ -119,8 +122,7 @@ enum GoalContributionResolver {
                 }
                 return lhs.order < rhs.order
             }
-            .first?
-            .title
+            .first
 
         let overdueCount = openTasks.filter { task in
             guard !task.dueDate.isEmpty, let due = DateFormatters.date(from: task.dueDate) else { return false }
@@ -142,7 +144,8 @@ enum GoalContributionResolver {
             focusMinutes: tasks.reduce(loggedMinutes(for: goal)) { $0 + max(0, $1.actualMinutes) },
             overdueTaskCount: overdueCount,
             recentCompletedCount: recentCompleted,
-            nextActionTitle: nextAction
+            nextActionTitle: nextAction?.title,
+            nextActionDueDate: nextAction.map(\.dueDate).flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 

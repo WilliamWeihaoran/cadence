@@ -243,10 +243,7 @@ struct TaskBundleTaskPickerPanel: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
-                    Text(candidateDetail(task))
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
+                    TaskDetailLineLabel(parts: candidateDetail(task))
                 }
                 Spacer(minLength: 8)
                 Text("\(max(task.estimatedMinutes, 5))m")
@@ -302,20 +299,31 @@ struct TaskBundleTaskPickerPanel: View {
         return score
     }
 
-    private func candidateDetail(_ task: AppTask) -> String {
+    /// `candidateSortScore` already ranks these rows by due date, so hiding every due date except
+    /// the bundle day's made the line contradict the ordering. The due marker now always renders
+    /// when the task has one; the container name is only the no-date fallback.
+    private func candidateDetail(_ task: AppTask) -> CadenceTaskDetailLine {
+        let todayKey = DateFormatters.todayKey()
+        var lead: String?
+
         if let existingBundle = task.bundle {
-            return "In \(existingBundle.displayTitle)"
+            lead = "In \(existingBundle.displayTitle)"
+        } else if task.scheduledDate == bundleDateKey {
+            lead = task.scheduledStartMin >= 0
+                ? "Scheduled \(TimeFormatters.timeString(from: task.scheduledStartMin))"
+                : "Planned this day"
         }
-        if task.scheduledDate == bundleDateKey {
-            return task.scheduledStartMin >= 0 ? "Scheduled \(TimeFormatters.timeString(from: task.scheduledStartMin))" : "Planned this day"
+
+        let due = CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)
+        if lead == nil && due == nil {
+            lead = task.containerName.isEmpty ? "Inbox" : task.containerName
         }
-        if task.dueDate == bundleDateKey {
-            return "Due this day"
-        }
-        if !task.containerName.isEmpty {
-            return task.containerName
-        }
-        return "Inbox"
+
+        return CadenceTaskDetailLine(
+            lead: lead,
+            due: due,
+            isOverdue: CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: todayKey)
+        )
     }
 }
 

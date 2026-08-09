@@ -378,6 +378,14 @@ private struct BundleTaskPopoverRow: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.dim)
                         .labelStyle(.titleAndIcon)
+
+                    if let dueLabel {
+                        Label(dueLabel, systemImage: isOverdue ? "exclamationmark.triangle.fill" : "calendar")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(isOverdue ? Theme.red : Theme.dim)
+                            .labelStyle(.titleAndIcon)
+                            .lineLimit(1)
+                    }
                 }
             }
 
@@ -396,6 +404,14 @@ private struct BundleTaskPopoverRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 11)
         .cadenceCard(background: Theme.surfaceElevated.opacity(0.62), cornerRadius: Theme.radiusCard, shadowRadius: 6, shadowY: 2)
+    }
+
+    private var dueLabel: String? {
+        CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: DateFormatters.todayKey())
+    }
+
+    private var isOverdue: Bool {
+        !task.isDone && CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: DateFormatters.todayKey())
     }
 
     private func rowIconButton(

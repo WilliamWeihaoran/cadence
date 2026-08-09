@@ -253,11 +253,8 @@ private struct FocusPickItemRow: View {
                         .foregroundStyle(Theme.text)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .lineLimit(1)
-                    Text(detail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
+                    detailLine
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .lineLimit(1)
                 }
 
                 Image(systemName: "play.fill")
@@ -312,21 +309,29 @@ private struct FocusPickItemRow: View {
         }
     }
 
-    private var detail: String {
+    @ViewBuilder
+    private var detailLine: some View {
         switch item {
         case .task(let task):
-            return FocusSessionSupport.sidebarDetail(for: task, todayKey: DateFormatters.todayKey(), fallback: "Ready to focus")
+            TaskDetailLineLabel(task: task, fallback: "Ready to focus", fontSize: 11)
         case .bundle(let bundle):
-            var parts = ["Bundle", "\(bundle.sortedTasks.count) task\(bundle.sortedTasks.count == 1 ? "" : "s")"]
-            if !bundle.dateKey.isEmpty {
-                parts.append(bundle.dateKey == DateFormatters.todayKey() ? "Today" : DateFormatters.relativeDate(from: bundle.dateKey))
-            }
-            parts.append(TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin))
-            if bundle.totalEstimatedMinutes > 0 {
-                parts.append("\(bundle.totalEstimatedMinutes)m tasks")
-            }
-            return parts.joined(separator: " / ")
+            Text(bundleDetail(bundle))
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
         }
+    }
+
+    private func bundleDetail(_ bundle: TaskBundle) -> String {
+        var parts = ["Bundle", "\(bundle.sortedTasks.count) task\(bundle.sortedTasks.count == 1 ? "" : "s")"]
+        if !bundle.dateKey.isEmpty {
+            parts.append(bundle.dateKey == DateFormatters.todayKey() ? "Today" : DateFormatters.relativeDate(from: bundle.dateKey))
+        }
+        parts.append(TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin))
+        if bundle.totalEstimatedMinutes > 0 {
+            parts.append("\(bundle.totalEstimatedMinutes)m tasks")
+        }
+        return parts.joined(separator: " / ")
     }
 
     private var tint: Color {

@@ -16,10 +16,6 @@ enum FocusSessionSupport {
         CadenceFocusSupport.readyTasks(from: tasks, todayKey: todayKey)
     }
 
-    static func sidebarDetail(for task: AppTask, todayKey: String, fallback: String) -> String {
-        CadenceFocusSupport.sidebarDetail(for: task, todayKey: todayKey, fallback: fallback)
-    }
-
     static func logSession(
         hours: Int,
         minutes: Int,

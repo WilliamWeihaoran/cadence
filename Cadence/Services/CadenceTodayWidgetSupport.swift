@@ -231,4 +231,38 @@ enum CadenceWidgetDateSupport {
     nonisolated static func dayNumberLabel(from date: Date) -> String {
         date.formatted(.dateTime.day())
     }
+
+    /// Compact due-date label for widget chrome: "Overdue", "Due today", "Due Fri" inside the
+    /// coming week, then "Due Aug 14".
+    ///
+    /// Returns `nil` — never a generic stand-in string — when the task has no due date, so a
+    /// task due later can never render identically to one with no deadline at all.
+    nonisolated static func dueLabel(for dueDate: String, todayKey: String) -> String? {
+        let key = dueDate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return nil }
+        if key < todayKey { return "Overdue" }
+        if key == todayKey { return "Due today" }
+        guard let date = parsedDate(fromKey: key) else { return "Due \(key)" }
+
+        // Weekday names are only unambiguous inside the next six days; past that the name would
+        // repeat and read as a nearer date than it is.
+        if let today = parsedDate(fromKey: todayKey),
+           let days = Calendar.current.dateComponents([.day], from: today, to: date).day,
+           days < 7 {
+            return "Due \(date.formatted(.dateTime.weekday(.abbreviated)))"
+        }
+        return "Due \(date.formatted(.dateTime.month(.abbreviated).day()))"
+    }
+
+    /// Parses a `yyyy-MM-dd` key without touching `DateFormatters`, whose statics are main-actor
+    /// isolated. Widget timeline providers run off the main actor, so every helper in this enum
+    /// has to stay `nonisolated` — same reason `dateKey(from:)` formats by hand.
+    nonisolated static func parsedDate(fromKey key: String) -> Date? {
+        let parts = key.split(separator: "-")
+        guard parts.count == 3,
+              let year = Int(parts[0]),
+              let month = Int(parts[1]),
+              let day = Int(parts[2]) else { return nil }
+        return Calendar.current.date(from: DateComponents(year: year, month: month, day: day))
+    }
 }

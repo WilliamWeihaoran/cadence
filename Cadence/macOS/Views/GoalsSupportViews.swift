@@ -243,11 +243,15 @@ struct GoalMissionCard: View {
                 .lineLimit(1)
 
                 if let nextAction = summary.nextActionTitle {
-                    Text(nextAction)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                        .padding(.top, 1)
+                    HStack(spacing: 6) {
+                        Text(nextAction)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        GoalDueDateLabel(dueDateKey: summary.nextActionDueDate ?? "")
+                    }
+                    .padding(.top, 1)
                 }
             }
             .padding(16)
@@ -387,6 +391,30 @@ struct GoalLinkedListRow: View {
     }
 }
 
+/// Due-date chip for goal surfaces, matching `MacTaskRow`'s flag-plus-relative-date treatment.
+/// Renders nothing for a task with no due date, so "no deadline" stays distinct from a real one;
+/// `fixedSize` keeps the date from being truncated by whatever text shares its row.
+private struct GoalDueDateLabel: View {
+    let dueDateKey: String
+    var fontSize: CGFloat = 11
+
+    var body: some View {
+        let key = dueDateKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !key.isEmpty {
+            let isOverdue = key < DateFormatters.todayKey()
+            HStack(spacing: 3) {
+                Image(systemName: "flag.fill")
+                    .font(.system(size: fontSize - 2, weight: .semibold))
+                Text(DateFormatters.relativeDate(from: key))
+                    .font(.system(size: fontSize, weight: .medium))
+            }
+            .foregroundStyle(isOverdue ? Theme.red : Theme.dim.opacity(0.68))
+            .lineLimit(1)
+            .fixedSize()
+        }
+    }
+}
+
 struct GoalTaskContributorRow: View {
     let task: AppTask
     let onDetach: (() -> Void)?
@@ -401,10 +429,13 @@ struct GoalTaskContributorRow: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                     .lineLimit(1)
-                Text(task.containerName.isEmpty ? "Inbox" : task.containerName)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(task.containerName.isEmpty ? "Inbox" : task.containerName)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                    GoalDueDateLabel(dueDateKey: task.dueDate, fontSize: 10)
+                }
             }
             Spacer()
             if let onDetach {

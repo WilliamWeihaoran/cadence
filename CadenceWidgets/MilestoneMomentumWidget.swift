@@ -40,11 +40,12 @@ struct MilestoneMomentumWidgetProvider: TimelineProvider {
     }
 
     private func placeholderSnapshot() -> CadenceMilestoneWidgetSnapshot {
+        let todayKey = CadenceWidgetDateSupport.dateKey(from: Date())
         let goals = [
-            placeholderGoal(title: "Launch habit widgets", colorHex: "#6FA8FF", progress: 0.68, overdue: 2, nextAction: "Ship the interactive check-in flow", linkedHabitCount: 4, dueTodayLabel: "2/4 today"),
-            placeholderGoal(title: "Summer reading rhythm", colorHex: "#FFB347", progress: 0.42, overdue: 0, nextAction: "Finish weekly review and sync notes", linkedHabitCount: 3, dueTodayLabel: "1/2 today"),
-            placeholderGoal(title: "Quarter planning reset", colorHex: "#8FE1D6", progress: 0.21, overdue: 1, nextAction: "Break down remaining planning tasks", linkedHabitCount: 1, dueTodayLabel: "No habits due"),
-            placeholderGoal(title: "Marathon base block", colorHex: "#FF7F7F", progress: 0.74, overdue: 0, nextAction: "Plan the next long run", linkedHabitCount: 2, dueTodayLabel: "1/1 today"),
+            placeholderGoal(title: "Launch habit widgets", colorHex: "#6FA8FF", progress: 0.68, overdue: 2, nextAction: "Ship the interactive check-in flow", nextActionDue: todayKey, linkedHabitCount: 4, dueTodayLabel: "2/4 today"),
+            placeholderGoal(title: "Summer reading rhythm", colorHex: "#FFB347", progress: 0.42, overdue: 0, nextAction: "Finish weekly review and sync notes", nextActionDue: "", linkedHabitCount: 3, dueTodayLabel: "1/2 today"),
+            placeholderGoal(title: "Quarter planning reset", colorHex: "#8FE1D6", progress: 0.21, overdue: 1, nextAction: "Break down remaining planning tasks", nextActionDue: todayKey, linkedHabitCount: 1, dueTodayLabel: "No habits due"),
+            placeholderGoal(title: "Marathon base block", colorHex: "#FF7F7F", progress: 0.74, overdue: 0, nextAction: "Plan the next long run", nextActionDue: "", linkedHabitCount: 2, dueTodayLabel: "1/1 today"),
         ]
 
         return CadenceMilestoneWidgetSnapshot(
@@ -79,6 +80,7 @@ struct MilestoneMomentumWidgetProvider: TimelineProvider {
         progress: Double,
         overdue: Int,
         nextAction: String,
+        nextActionDue: String,
         linkedHabitCount: Int,
         dueTodayLabel: String
     ) -> CadenceMilestoneWidgetGoal {
@@ -91,7 +93,8 @@ struct MilestoneMomentumWidgetProvider: TimelineProvider {
             overdueTaskCount: overdue,
             nextActionTitle: nextAction,
             linkedHabitCount: linkedHabitCount,
-            dueTodayLabel: dueTodayLabel
+            dueTodayLabel: dueTodayLabel,
+            nextActionDueDate: nextActionDue
         )
     }
 }
@@ -264,10 +267,22 @@ struct MilestoneMomentumWidgetView: View {
                 progressBar(progress: goal.progress, tint: Color(hex: goal.colorHex))
 
                 if let nextActionTitle = goal.nextActionTitle {
-                    Text(nextActionTitle)
-                        .font(.system(size: scale.bodyFontSize, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.70))
-                        .lineLimit(compact ? 2 : 3)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(nextActionTitle)
+                            .font(.system(size: scale.bodyFontSize, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.70))
+                            .lineLimit(compact ? 2 : 3)
+                        Spacer(minLength: 4)
+                        // `fixedSize` so a long next-action title wraps instead of squeezing the
+                        // date — the deadline is the part that must survive the layout.
+                        if let dueLabel = nextActionDueLabel(for: goal) {
+                            Text(dueLabel)
+                                .font(.system(size: scale.captionFontSize, weight: .semibold))
+                                .foregroundStyle(nextActionDueTint(for: goal))
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                    }
                 }
 
                 HStack(spacing: 6) {
@@ -298,6 +313,20 @@ struct MilestoneMomentumWidgetView: View {
             .clipShape(RoundedRectangle(cornerRadius: compact ? scale.cardCornerRadius : scale.cardCornerRadius + 1, style: .continuous))
             .cadenceWidgetElevation(scale)
         }
+    }
+
+    private func nextActionDueLabel(for goal: CadenceMilestoneWidgetGoal) -> String? {
+        CadenceWidgetDateSupport.dueLabel(for: goal.nextActionDueDate, todayKey: todayKey)
+    }
+
+    private func nextActionDueTint(for goal: CadenceMilestoneWidgetGoal) -> Color {
+        goal.nextActionDueDate < todayKey
+            ? Color(red: 1.0, green: 0.52, blue: 0.44)
+            : Color(red: 0.48, green: 0.77, blue: 1.0)
+    }
+
+    private var todayKey: String {
+        CadenceWidgetDateSupport.dateKey(from: entry.snapshot.date)
     }
 
     private var sidePanel: some View {

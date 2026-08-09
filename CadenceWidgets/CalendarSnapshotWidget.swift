@@ -64,7 +64,8 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
             statusMessage: nil,
             days: days,
             overdueCount: 2,
-            upcomingTitle: "Finish weekly planning review"
+            upcomingTitle: "Finish weekly planning review",
+            upcomingDueDate: CadenceWidgetDateSupport.dateKey(from: today)
         )
     }
 
@@ -286,16 +287,51 @@ struct CalendarSnapshotWidgetView: View {
     }
 
     private var agendaLabel: some View {
+        nextUpSection(titleLineLimit: 2)
+    }
+
+    /// The due label rides the caption row rather than sitting on its own line: these families are
+    /// already vertically tight, and `fixedSize` keeps the date from being scaled or clipped away.
+    private func nextUpSection(titleLineLimit: Int) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Next up")
-                .font(.system(size: scale.captionFontSize, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.58))
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Next up")
+                    .font(.system(size: scale.captionFontSize, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.58))
+                Spacer(minLength: 4)
+                if let dueLabel = upcomingDueLabel {
+                    Text(dueLabel)
+                        .font(.system(size: scale.captionFontSize, weight: .semibold))
+                        .foregroundStyle(upcomingDueTint)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
             Text(entry.snapshot.upcomingTitle ?? "Nothing urgent right now")
                 .font(.system(size: scale.bodyFontSize + 1, weight: .semibold))
                 .foregroundStyle(.white)
-                .lineLimit(2)
+                .lineLimit(titleLineLimit)
                 .minimumScaleFactor(0.85)
         }
+    }
+
+    private var upcomingDueLabel: String? {
+        guard entry.snapshot.upcomingTitle != nil else { return nil }
+        return CadenceWidgetDateSupport.dueLabel(
+            for: entry.snapshot.upcomingDueDate,
+            todayKey: todayKey
+        )
+    }
+
+    private var upcomingDueTint: Color {
+        let dueDate = entry.snapshot.upcomingDueDate
+        if dueDate < todayKey { return Color(red: 1.0, green: 0.52, blue: 0.44) }
+        if dueDate == todayKey { return Color(red: 1.0, green: 0.72, blue: 0.28) }
+        return Color(red: 0.48, green: 0.77, blue: 1.0)
+    }
+
+    private var todayKey: String {
+        CadenceWidgetDateSupport.dateKey(from: entry.snapshot.date)
     }
 
     private var agendaPanel: some View {
@@ -304,20 +340,11 @@ struct CalendarSnapshotWidgetView: View {
             CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)")
             CadenceWidgetMetricCard(title: "Due", value: "\(dueCount)")
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Next up")
-                    .font(.system(size: scale.captionFontSize, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.58))
-                Text(entry.snapshot.upcomingTitle ?? "Nothing urgent right now")
-                    .font(.system(size: scale.bodyFontSize + 1, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.85)
-            }
-            .padding(scale.panelPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.07))
-            .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
+            nextUpSection(titleLineLimit: 3)
+                .padding(scale.panelPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
         }
     }
 

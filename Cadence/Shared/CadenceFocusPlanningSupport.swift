@@ -28,6 +28,19 @@ struct CadenceFocusTimerState: Hashable {
     }
 }
 
+/// Segments of a one-line task detail: a context/scheduling `lead` and an independently styleable
+/// `due` marker. Kept apart so a row can render "Scheduled today / Overdue Aug 2" with only the
+/// overdue half in red.
+struct CadenceTaskDetailLine: Hashable {
+    let lead: String?
+    let due: String?
+    let isOverdue: Bool
+
+    var text: String {
+        [lead, due].compactMap { $0 }.joined(separator: " / ")
+    }
+}
+
 enum CadenceFocusSupport {
     static func readyTasks(from tasks: [AppTask], todayKey: String) -> [AppTask] {
         tasks
@@ -42,11 +55,58 @@ enum CadenceFocusSupport {
             }
     }
 
+    static func isOverdue(dueDateKey: String, todayKey: String) -> Bool {
+        !dueDateKey.isEmpty && dueDateKey < todayKey
+    }
+
+    /// Compact due-date label for focus and bundle rows. `nil` only when there is no due date at
+    /// all, so an absent label reliably means "no deadline". Overdue is spelled out rather than
+    /// left for the reader to infer from a bare past date, and the real day is always kept.
+    static func dueLabel(forDueDateKey key: String, todayKey: String) -> String? {
+        guard !key.isEmpty else { return nil }
+        if key == todayKey { return "Due today" }
+
+        let day = DateFormatters.shortDateString(from: key)
+        if key < todayKey { return "Overdue \(day)" }
+
+        // `DateFormatters.relativeDate` is anchored on the wall clock, which would disagree with a
+        // caller that passed a different `todayKey`; anchor the one relative word we use here instead.
+        if let today = DateFormatters.date(from: todayKey),
+           DateFormatters.dayOffset(from: key, relativeTo: today) == 1 {
+            return "Due tomorrow"
+        }
+        return "Due \(day)"
+    }
+
+    /// Detail line for focus rows, split into segments so surfaces can tint the due segment red
+    /// without staining the scheduling segment beside it.
+    ///
+    /// A due date always contributes when the task has one: falling through to the container name
+    /// swaps a deadline signal for a neutral list name, which reads as "no deadline". The container
+    /// name is a last resort for tasks that genuinely have no date to show.
+    static func sidebarDetailParts(
+        for task: AppTask,
+        todayKey: String,
+        fallback: String = "Ready"
+    ) -> CadenceTaskDetailLine {
+        let due = dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)
+        let overdue = isOverdue(dueDateKey: task.dueDate, todayKey: todayKey)
+
+        if task.scheduledDate == todayKey {
+            return CadenceTaskDetailLine(lead: "Scheduled today", due: due, isOverdue: overdue)
+        }
+        if due != nil {
+            return CadenceTaskDetailLine(lead: nil, due: due, isOverdue: overdue)
+        }
+        return CadenceTaskDetailLine(
+            lead: task.containerName.isEmpty ? fallback : task.containerName,
+            due: nil,
+            isOverdue: false
+        )
+    }
+
     static func sidebarDetail(for task: AppTask, todayKey: String, fallback: String = "Ready") -> String {
-        if task.scheduledDate == todayKey { return "Scheduled today" }
-        if task.dueDate == todayKey { return "Due today" }
-        if !task.containerName.isEmpty { return task.containerName }
-        return fallback
+        sidebarDetailParts(for: task, todayKey: todayKey, fallback: fallback).text
     }
 
     static func clockDisplay(elapsedSeconds: Int) -> String {

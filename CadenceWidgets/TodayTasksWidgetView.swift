@@ -8,21 +8,29 @@ private struct CadenceTodayTaskStatusPresentation {
 }
 
 private extension CadenceTodayWidgetTask {
+    /// "Scheduled" is reserved for tasks with no due date at all — a future due date keeps its
+    /// own dated label so the two are never collapsed into the same pill.
     func widgetStatus(for todayKey: String) -> CadenceTodayTaskStatusPresentation {
-        if !dueDate.isEmpty && dueDate < todayKey {
+        guard let dueLabel = CadenceWidgetDateSupport.dueLabel(for: dueDate, todayKey: todayKey) else {
             return CadenceTodayTaskStatusPresentation(
-                label: "Overdue",
+                label: "Scheduled",
+                tint: Color(red: 0.39, green: 0.71, blue: 1.0)
+            )
+        }
+        if dueDate < todayKey {
+            return CadenceTodayTaskStatusPresentation(
+                label: dueLabel,
                 tint: Color(red: 1.0, green: 0.45, blue: 0.41)
             )
         }
         if dueDate == todayKey {
             return CadenceTodayTaskStatusPresentation(
-                label: "Due today",
+                label: dueLabel,
                 tint: Color(red: 1.0, green: 0.72, blue: 0.28)
             )
         }
         return CadenceTodayTaskStatusPresentation(
-            label: "Scheduled",
+            label: dueLabel,
             tint: Color(red: 0.39, green: 0.71, blue: 1.0)
         )
     }
@@ -432,8 +440,11 @@ struct TodayTasksWidgetView: View {
         .buttonStyle(.plain)
     }
 
+    /// `fixedSize` keeps the dated labels intact when a long container name shares the row —
+    /// the container pill truncates instead of the due date scaling itself away.
     private func statusPill(_ status: CadenceTodayTaskStatusPresentation) -> some View {
         CadenceWidgetBadge(text: status.label, tint: status.tint)
+            .fixedSize()
     }
 
     private func containerPill(_ name: String) -> some View {

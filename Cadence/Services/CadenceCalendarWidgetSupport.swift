@@ -26,6 +26,9 @@ struct CadenceCalendarWidgetSnapshot: Hashable {
     let days: [CadenceCalendarWidgetDay]
     let overdueCount: Int
     let upcomingTitle: String?
+    /// `yyyy-MM-dd` due date of the `upcomingTitle` task, empty when it has none. Defaulted so
+    /// snapshot literals that only care about the title stay source-compatible.
+    var upcomingDueDate: String = ""
 
     var calendarURL: URL {
         CadenceDeepLink.calendar.url
@@ -77,10 +80,9 @@ enum CadenceCalendarWidgetSupport {
             !$0.dueDate.isEmpty && $0.dueDate < todayKey
         }.count
 
-        let upcomingTitle = CadenceTodayWidgetSupport
+        let upcomingTask = CadenceTodayWidgetSupport
             .todayTasks(from: openTasks, todayKey: todayKey)
-            .first?
-            .title
+            .first
 
         let totalVisibleCount = days.reduce(0) { $0 + $1.totalCount }
 
@@ -90,7 +92,8 @@ enum CadenceCalendarWidgetSupport {
             statusMessage: nil,
             days: days,
             overdueCount: overdueCount,
-            upcomingTitle: upcomingTitle
+            upcomingTitle: upcomingTask?.title,
+            upcomingDueDate: upcomingTask?.dueDate ?? ""
         )
     }
 
