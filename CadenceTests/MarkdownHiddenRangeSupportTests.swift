@@ -20,8 +20,19 @@ struct MarkdownHiddenRangeSupportTests {
         let storage = NSMutableAttributedString(string: "**bold**")
         storage.addAttribute(.cadenceMarkdownHidden, value: true, range: NSRange(location: 0, length: 2))
 
-        #expect(MarkdownHiddenRangeSupport.snappedCaretLocation(0, in: storage, preferringForward: true) == 2)
         #expect(MarkdownHiddenRangeSupport.snappedCaretLocation(1, in: storage, preferringForward: true) == 2)
+    }
+
+    @Test func doesNotSnapCaretRestingAtHiddenRangeBoundary() {
+        // A caret sitting exactly at the start of a hidden run (e.g. right before a
+        // closing "`"/"**" marker) is a normal resting place, not "stuck inside" it —
+        // typing there must extend the adjacent visible content instead of being
+        // ejected past the marker. Regression test for the caret-ejection bug where
+        // this snapped forward on every keystroke once restyling became synchronous.
+        let storage = NSMutableAttributedString(string: "**bold**")
+        storage.addAttribute(.cadenceMarkdownHidden, value: true, range: NSRange(location: 0, length: 2))
+
+        #expect(MarkdownHiddenRangeSupport.snappedCaretLocation(0, in: storage, preferringForward: true) == 0)
     }
 
     @Test func snapsCaretBackwardOutOfHiddenSyntax() {

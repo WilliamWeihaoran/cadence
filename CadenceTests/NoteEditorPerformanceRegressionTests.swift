@@ -25,14 +25,20 @@ struct NoteEditorPerformanceRegressionTests {
         #expect(!focusSource.matches(#"set:\s*\{\s*task\.notes\s*=\s*\$0\s*\}"#))
     }
 
-    @Test func markdownStylingUsesDebounceInsteadOfPerKeystrokeRestyle() throws {
+    @Test func markdownStylingRestylesSynchronouslyOnEveryKeystroke() throws {
+        // Styling used to be debounced (~180ms) to amortize the cost of recompiling
+        // NSRegularExpression patterns on every call. That regex-compilation cost is
+        // now eliminated (patterns are cached `static let`s), and the debounce's
+        // remaining effect was a visible "plain text, then pop to styled" delay on
+        // every list/heading/quote/divider marker. textDidChange now restyles
+        // immediately, matching textDidEndEditing's existing immediate call — no
+        // debounce scaffolding should remain.
         let source = try sourceFile("Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift")
 
-        #expect(source.contains("stylingDebounceDelay"))
-        #expect(source.contains("pendingStylingWorkItem?.cancel()"))
-        #expect(source.contains("scheduleStylingUpdate(for: textView)"))
-        #expect(!source.contains("stylingCoalescingDelay"))
-        #expect(!source.contains("stylingUpdateIsScheduled"))
+        #expect(!source.contains("stylingDebounceDelay"))
+        #expect(!source.contains("pendingStylingWorkItem"))
+        #expect(!source.contains("scheduleStylingUpdate"))
+        #expect(source.contains("applyStyling(to: textView, in: textView.enclosingScrollView)"))
     }
 }
 
