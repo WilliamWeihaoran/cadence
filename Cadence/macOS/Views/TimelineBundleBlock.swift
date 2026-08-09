@@ -165,9 +165,29 @@ struct TimelineBundleBlock: View {
         isBundleComplete ? "checkmark.circle.fill" : "square.stack"
     }
 
+    /// The deadline the block reports on its own title line: the earliest due date among members
+    /// that are still open. Keys are `yyyy-MM-dd`, so the lexical minimum is the earliest date and
+    /// therefore the most urgent. A finished member's deadline is settled and never sets the tone,
+    /// and members folded into "+N more" — or hidden entirely on a short block — are still counted,
+    /// which is the whole point: the per-member flags only ever cover the first two rows.
+    private var mostUrgentMemberDueDateKey: String? {
+        bundle.sortedTasks
+            .filter { !$0.isDone && !$0.dueDate.isEmpty }
+            .map(\.dueDate)
+            .min()
+    }
+
     private var bundleBlockBody: some View {
         let memberCount = bundle.sortedTasks.count
         let accent = bundleAccent
+        let todayKey = DateFormatters.todayKey()
+        let urgentDueKey = mostUrgentMemberDueDateKey
+        let dueLabel = urgentDueKey.flatMap {
+            CadenceFocusSupport.dueLabel(forDueDateKey: $0, todayKey: todayKey)
+        }
+        let dueTint = urgentDueKey
+            .flatMap { CadenceDueUrgency.evaluate(dueDateKey: $0, todayKey: todayKey) }?
+            .tint ?? Theme.dim
         return HStack(alignment: .top, spacing: 0) {
             accent
                 .frame(width: 3)
@@ -184,6 +204,12 @@ struct TimelineBundleBlock: View {
                         .lineLimit(1)
                 }
 
+                // The title line is the one thing every tier draws, so the block's deadline rides
+                // along here rather than with the member rows the short tiers drop. The block is
+                // hard-clipped, so the due text takes layout priority and the title truncates
+                // first: a deadline is a commitment, a bundle name is a label. The title also
+                // gives up its second line while sharing the row — a wrapped line here would be
+                // clipped away rather than shown.
                 HStack(spacing: 5) {
                     Image(systemName: bundleIcon)
                         .font(.system(size: 10, weight: .semibold))
@@ -192,7 +218,15 @@ struct TimelineBundleBlock: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(isBundleComplete ? Theme.dim : Theme.text)
                         .strikethrough(isBundleComplete, color: Theme.dim)
-                        .lineLimit(frame.height >= 42 ? 2 : 1)
+                        .lineLimit(dueLabel == nil && frame.height >= 42 ? 2 : 1)
+                    if let dueLabel {
+                        Spacer(minLength: 0)
+                        Text(dueLabel)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(dueTint)
+                            .lineLimit(1)
+                            .layoutPriority(1)
+                    }
                 }
 
                 if frame.height >= 58 {

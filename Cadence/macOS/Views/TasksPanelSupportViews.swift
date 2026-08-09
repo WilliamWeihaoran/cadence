@@ -189,9 +189,6 @@ struct ContainerPickerBadge: View {
     var inspectorRowLabel: String? = nil
 
     @State private var showPicker = false
-    @State private var searchQuery = ""
-    @State private var highlightIdx = 0
-    @FocusState private var isSearchFocused: Bool
 
     private var label: String {
         switch selection {
@@ -215,53 +212,6 @@ struct ContainerPickerBadge: View {
         case .area(let id):    return areas.first(where: { $0.id == id }).map { Color(hex: $0.colorHex) } ?? Theme.dim
         case .project(let id): return projects.first(where: { $0.id == id }).map { Color(hex: $0.colorHex) } ?? Theme.dim
         }
-    }
-
-    private var groupedContainers: [(context: Context, areas: [Area], projects: [Project])] {
-        contexts.compactMap { context in
-            let matchingAreas = areas
-                .filter { $0.isActive && $0.context?.id == context.id }
-                .sorted { $0.order < $1.order }
-            let matchingProjects = projects
-                .filter { $0.isActive && $0.context?.id == context.id }
-                .sorted { $0.order < $1.order }
-            guard !matchingAreas.isEmpty || !matchingProjects.isEmpty else { return nil }
-            return (context, matchingAreas, matchingProjects)
-        }
-    }
-
-    private func matches(_ name: String) -> Bool {
-        searchQuery.isEmpty || name.lowercased().hasPrefix(searchQuery.lowercased())
-    }
-
-    private var filteredGroupedContainers: [(context: Context, areas: [Area], projects: [Project])] {
-        groupedContainers.compactMap { group in
-            let filteredAreas = group.areas.filter { matches($0.name) }
-            let filteredProjects = group.projects.filter { matches($0.name) }
-            guard !filteredAreas.isEmpty || !filteredProjects.isEmpty else { return nil }
-            return (group.context, filteredAreas, filteredProjects)
-        }
-    }
-
-    private var flatFiltered: [TaskContainerSelection] {
-        var result: [TaskContainerSelection] = []
-        if matches("Inbox") { result.append(.inbox) }
-        for group in filteredGroupedContainers {
-            for area in group.areas { result.append(.area(area.id)) }
-            for project in group.projects { result.append(.project(project.id)) }
-        }
-        return result
-    }
-
-    private var highlightedTag: TaskContainerSelection? {
-        guard !flatFiltered.isEmpty else { return nil }
-        return flatFiltered[min(highlightIdx, flatFiltered.count - 1)]
-    }
-
-    private func selectHighlighted() {
-        guard let tag = highlightedTag else { return }
-        selection = tag
-        showPicker = false
     }
 
     /// Inbox is the *absence* of a list, so the inspector row reads it as an unset field.
@@ -314,112 +264,9 @@ struct ContainerPickerBadge: View {
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
-                    TextField("Search…", text: $searchQuery)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.text)
-                        .focused($isSearchFocused)
-                        .onSubmit { selectHighlighted() }
-                        .onKeyPress(.upArrow) {
-                            highlightIdx = TaskPickerHighlightSupport.clampedMovedIndex(highlightIdx, by: -1, count: flatFiltered.count)
-                            return .handled
-                        }
-                        .onKeyPress(.downArrow) {
-                            highlightIdx = TaskPickerHighlightSupport.clampedMovedIndex(highlightIdx, by: 1, count: flatFiltered.count)
-                            return .handled
-                        }
-                    if !searchQuery.isEmpty {
-                        Button { searchQuery = "" } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.dim.opacity(0.5))
-                        }
-                        .buttonStyle(.cadencePlain)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-
-                Divider().background(Theme.borderSubtle)
-
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        if matches("Inbox") {
-                            ContainerPickerRow(
-                                icon: "tray",
-                                name: "Inbox",
-                                color: Theme.dim,
-                                isHighlighted: highlightedTag == .inbox,
-                                action: {
-                                    selection = .inbox
-                                    showPicker = false
-                                }
-                            )
-                        }
-
-                        if !filteredGroupedContainers.isEmpty {
-                            Divider().background(Theme.borderSubtle).padding(.vertical, 2)
-
-                            ForEach(filteredGroupedContainers, id: \.context.id) { group in
-                                Text(group.context.name.uppercased())
-                                    .font(.system(size: 9, weight: .semibold))
-                                    .foregroundStyle(Color(hex: group.context.colorHex))
-                                    .kerning(0.6)
-                                    .padding(.horizontal, 12)
-                                    .padding(.top, 6)
-                                    .padding(.bottom, 2)
-
-                                ForEach(group.areas) { area in
-                                    ContainerPickerRow(
-                                        icon: area.icon,
-                                        name: area.name,
-                                        color: Color(hex: area.colorHex),
-                                        isHighlighted: highlightedTag == .area(area.id),
-                                        action: {
-                                            selection = .area(area.id)
-                                            showPicker = false
-                                        }
-                                    )
-                                }
-
-                                ForEach(group.projects) { project in
-                                    ContainerPickerRow(
-                                        icon: project.icon,
-                                        name: project.name,
-                                        color: Color(hex: project.colorHex),
-                                        isHighlighted: highlightedTag == .project(project.id),
-                                        action: {
-                                            selection = .project(project.id)
-                                            showPicker = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    .padding(.vertical, 6)
-                }
-                .frame(maxHeight: 320)
-            }
-            .frame(minWidth: 190)
-            .background(Theme.surfaceElevated)
-            .onAppear {
-                highlightIdx = 0
-                DispatchQueue.main.async { isSearchFocused = true }
-            }
-            .onChange(of: showPicker) { _, isShown in
-                if !isShown {
-                    searchQuery = ""
-                    highlightIdx = 0
-                }
-            }
-            .onChange(of: searchQuery) { _, _ in
-                highlightIdx = 0
+            ContainerPickerPopoverContent(contexts: contexts, areas: areas, projects: projects) { picked in
+                selection = picked
+                showPicker = false
             }
         }
     }
@@ -579,42 +426,6 @@ struct TaskSectionPickerBadge: View {
                 highlightIdx = 0
             }
         }
-    }
-}
-
-private struct ContainerPickerRow: View {
-    let icon: String
-    let name: String
-    let color: Color
-    let isHighlighted: Bool
-    let action: () -> Void
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 16)
-                Text(name).font(.system(size: 13)).foregroundStyle(Theme.text).lineLimit(1)
-                Spacer()
-                if isHighlighted {
-                    Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .background(rowBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.cadencePlain)
-        .onHover { isHovered = $0 }
-    }
-
-    private var rowBackground: Color {
-        if isHighlighted { return Theme.blue.opacity(0.08) }
-        if isHovered { return Theme.blue.opacity(0.06) }
-        return .clear
     }
 }
 
