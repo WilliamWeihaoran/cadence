@@ -58,10 +58,6 @@ struct TaskListKanbanColumn: View {
         VStack(alignment: .leading, spacing: 0) {
             header
 
-            Rectangle()
-                .fill(Theme.borderSubtle)
-                .frame(height: 1)
-
             columnTaskScroll
         }
         .kanbanColumnChrome(tint: color, isTargeted: isTargeted)
@@ -87,8 +83,7 @@ struct TaskListKanbanColumn: View {
     }
 
     private var header: some View {
-        KanbanColumnTitleRow(dotColor: color, title: title, count: sortedTasks.count)
-            .kanbanColumnHeaderPadding()
+        BoardColumnHeader(dotColor: color, title: title, count: sortedTasks.count)
     }
 
     private var columnTaskScroll: some View {

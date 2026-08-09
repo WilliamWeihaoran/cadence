@@ -3,6 +3,46 @@ import SwiftUI
 import SwiftData
 import EventKit
 
+/// Label text for `CalendarChipDueMarker`, split out so the wording is testable without a view.
+enum CalendarChipDueMarkerSupport {
+    /// `nil` when the chip already sits on its due date — the grid position states that itself.
+    static func label(dueDateKey: String, dayKey: String, calendar: Calendar = .current) -> String? {
+        guard !dueDateKey.isEmpty, dueDateKey != dayKey else { return nil }
+        guard let due = DateFormatters.date(from: dueDateKey, in: calendar) else { return dueDateKey }
+        let dueParts = calendar.dateComponents([.month, .day], from: due)
+        guard let dueMonth = dueParts.month, let dueDay = dueParts.day else { return dueDateKey }
+
+        // Ordinal day while the deadline stays inside the chip's own month, where the surrounding
+        // grid supplies the month; "MMM d" once it crosses into another month, where a bare day
+        // would be ambiguous. Both forms read as a date — a bare number next to a task title
+        // reads as a count of items, which is the mistake this replaces.
+        if let day = DateFormatters.date(from: dayKey, in: calendar),
+           calendar.isDate(due, equalTo: day, toGranularity: .month) {
+            return ordinal(dueDay)
+        }
+
+        // Month name taken from the same calendar the key was parsed in. A shared
+        // `DateFormatter` carries the *system* zone, so formatting a date parsed in some other
+        // calendar there is the parse-in-one-zone/measure-in-another mistake all over again.
+        let symbols = calendar.shortMonthSymbols
+        guard dueMonth >= 1, dueMonth <= symbols.count else { return dueDateKey }
+        return "\(symbols[dueMonth - 1]) \(dueDay)"
+    }
+
+    static func ordinal(_ day: Int) -> String {
+        switch day % 100 {
+        case 11, 12, 13: return "\(day)th"
+        default:
+            switch day % 10 {
+            case 1: return "\(day)st"
+            case 2: return "\(day)nd"
+            case 3: return "\(day)rd"
+            default: return "\(day)th"
+            }
+        }
+    }
+}
+
 /// Compact deadline marker for calendar chips.
 ///
 /// A chip is bucketed onto its scheduled day first (`CadenceScheduleSupport.monthTasksByDate`),
@@ -10,50 +50,154 @@ import EventKit
 /// carries the real due day: a bare "this has a deadline somewhere" dot would repeat the omission
 /// it exists to fix. Nothing is drawn when the chip already sits on its due date — the grid
 /// position states that itself.
+///
+/// It is plain tinted text rather than a filled pill: a badge-shaped `7` beside a task title
+/// reads as "7 items", and the whole point of the marker is to name a date.
 struct CalendarChipDueMarker: View {
     let dueDateKey: String
     /// `yyyy-MM-dd` of the day cell / column this chip is drawn in.
     let dayKey: String
     var isDone: Bool = false
+    var calendar: Calendar = .current
 
     private var urgency: CadenceDueUrgency? {
         guard !dueDateKey.isEmpty, dueDateKey != dayKey else { return nil }
         return CadenceDueUrgency.evaluate(dueDateKey: dueDateKey, isDone: isDone)
     }
 
-    /// Day number alone while the deadline stays inside the chip's own month, where the
-    /// surrounding grid supplies the month; "MMM d" once it crosses into another month, where a
-    /// bare number would be ambiguous.
-    private var label: String {
-        guard let due = DateFormatters.date(from: dueDateKey) else { return dueDateKey }
-        if let day = DateFormatters.date(from: dayKey),
-           Calendar.current.isDate(due, equalTo: day, toGranularity: .month) {
-            return DateFormatters.dayNumber.string(from: due)
-        }
-        return DateFormatters.shortDate.string(from: due)
-    }
-
     var body: some View {
-        if let urgency {
-            let isOverdue = urgency == .overdue
+        if let urgency,
+           let label = CalendarChipDueMarkerSupport.label(dueDateKey: dueDateKey, dayKey: dayKey, calendar: calendar) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
-                // Overdue gets a solid fill rather than another tinted wash, so it outranks a
-                // merely-later deadline at a glance instead of only differing in hue.
-                .foregroundStyle(isOverdue ? Theme.onColor : urgency.tint)
+                .foregroundStyle(urgency.tint)
                 .lineLimit(1)
                 .fixedSize()
-                .padding(.horizontal, 4)
-                .background(
-                    Capsule().fill(isOverdue ? Theme.red : urgency.tint.opacity(0.18))
-                )
-                .overlay(
-                    Capsule().stroke(isOverdue ? Color.clear : urgency.tint.opacity(0.45), lineWidth: 0.5)
-                )
                 // The chip is single-line and non-wrapping, so in a narrow month column the title
                 // must be what truncates — never the date this marker exists to show.
                 .layoutPriority(1)
         }
+    }
+}
+
+/// Shared chip chrome for the month grid.
+///
+/// Tasks get a faint neutral plate so each row stays its own click target; events keep the
+/// saturated filled plate they already had. Keeping the two fills different is deliberate —
+/// with the completion circle removed from events, fill is the only thing left distinguishing
+/// a calendar event from a task at a glance.
+private struct MonthChipPlate: ViewModifier {
+    let fill: AnyShapeStyle
+    var wash: AnyShapeStyle?
+    let border: Color
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: CalendarMonthCellLayout.chipHeight)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius).fill(fill)
+                    if let wash {
+                        RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius).fill(wash)
+                    }
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                    .stroke(border, lineWidth: 1)
+            )
+            .shadow(color: Theme.chipShadow, radius: 3, y: 1)
+    }
+}
+
+private extension View {
+    func monthChipPlate(fill: some ShapeStyle, wash: (any ShapeStyle)? = nil, border: Color) -> some View {
+        modifier(MonthChipPlate(
+            fill: AnyShapeStyle(fill),
+            wash: wash.map { AnyShapeStyle($0) },
+            border: border
+        ))
+    }
+}
+
+/// A task inside a month cell. Renders the same hollow completion circle the task rows use
+/// everywhere else in the app, tinted by deadline urgency rather than by list colour — the
+/// chip's own wash already carries the list.
+struct MonthTaskChip: View {
+    let task: AppTask
+    /// `yyyy-MM-dd` of the cell this chip is drawn in.
+    let dayKey: String
+
+    private var glyph: String {
+        if task.isCancelled { return "xmark.circle.fill" }
+        if task.isDone { return "checkmark.circle.fill" }
+        return "circle"
+    }
+
+    private var glyphTint: Color {
+        if task.isCancelled { return Theme.dim }
+        if task.isDone { return Theme.green }
+        // No due date is not urgency-free noise: it collapses to the same neutral `.later`
+        // tint, so only a real deadline ever colours the circle.
+        return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)?.tint ?? Theme.dim
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: glyph)
+                .font(.system(size: CalendarMonthCellLayout.completionGlyphSize, weight: .semibold))
+                .foregroundStyle(glyphTint)
+            Text(task.title)
+                .font(.system(size: 10))
+                .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                .lineLimit(1)
+            Spacer(minLength: 2)
+            CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dayKey, isDone: task.isDone)
+        }
+        .monthChipPlate(
+            fill: Theme.surfaceHover,
+            wash: Color(hex: task.containerColor).opacity(task.isDone ? 0.05 : 0.10),
+            border: Theme.borderSubtle
+        )
+    }
+}
+
+struct MonthBundleChip: View {
+    let bundle: TaskBundle
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "tray.full")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(Theme.amber)
+            Text(bundle.title.isEmpty ? "Task Bundle" : bundle.title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+        }
+        .monthChipPlate(
+            fill: Theme.surfaceHover,
+            wash: Theme.amber.opacity(0.14),
+            border: Theme.borderSubtle
+        )
+    }
+}
+
+struct MonthEventChip: View {
+    let event: CalendarEventItem
+
+    var body: some View {
+        Text(event.title)
+            .font(.system(size: 10))
+            .foregroundStyle(Theme.onColor)
+            .lineLimit(1)
+            .monthChipPlate(
+                fill: event.calendarColor.opacity(CalendarEventVisualStyle.chipFillOpacity()),
+                wash: Theme.subtleWash,
+                border: event.calendarColor.opacity(CalendarEventVisualStyle.chipBorderOpacity())
+            )
     }
 }
 
@@ -63,6 +207,9 @@ struct MonthDayCell: View {
     let bundles: [TaskBundle]
     let allTasks: [AppTask]
     let displayMonth: Date
+    /// Height the week row was given. Every cell in a row is pinned to it, so the offset table
+    /// the header is derived from stays an exact model of the layout.
+    var rowHeight: CGFloat = CalendarMonthGridMetrics.cellHeight
 
     @Environment(CalendarManager.self) private var calendarManager
 
@@ -98,17 +245,19 @@ struct MonthDayCell: View {
         return calendarEvents
     }
 
-    private var bundleChips: [TaskBundle] { Array(bundles.prefix(5)) }
-    private var taskChips: [AppTask] { Array(tasks.prefix(max(0, 5 - bundleChips.count))) }
-    private var eventChips: [CalendarEventItem] {
-        Array(visibleEvents.prefix(max(0, 5 - bundleChips.count - taskChips.count)))
-    }
-    private var overflow: Int {
-        bundles.count + tasks.count + visibleEvents.count - bundleChips.count - taskChips.count - eventChips.count
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        // Resolved once per body pass: `visibleEvents` reaches into EventKit, and the chip
+        // lists, the cap and the overflow count all need the same answer.
+        let events = visibleEvents
+        let layout = CalendarMonthCellLayout.chipLayout(
+            totalItems: bundles.count + tasks.count + events.count,
+            rowHeight: rowHeight
+        )
+        let bundleChips = Array(bundles.prefix(layout.visible))
+        let taskChips = Array(tasks.prefix(max(0, layout.visible - bundleChips.count)))
+        let eventChips = Array(events.prefix(max(0, layout.visible - bundleChips.count - taskChips.count)))
+
+        return VStack(alignment: .leading, spacing: CalendarMonthCellLayout.headerChipSpacing) {
             HStack(spacing: 4) {
                 Spacer(minLength: 0)
                 if isFirstDayOfMonth {
@@ -125,98 +274,35 @@ struct MonthDayCell: View {
             }
             .padding(.top, 6)
             .padding(.horizontal, 8)
+            .frame(height: CalendarMonthCellLayout.headerHeight, alignment: .top)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: CalendarMonthCellLayout.chipSpacing) {
                 ForEach(bundleChips) { bundle in
-                    HStack(spacing: 3) {
-                        Image(systemName: "tray.full")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(Theme.amber)
-                        Text(bundle.title.isEmpty ? "Task Bundle" : bundle.title)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        ZStack {
-                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                .fill(Theme.surfaceElevated)
-                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                .fill(Theme.amber.opacity(0.14))
-                        }
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                            .stroke(Theme.borderSubtle, lineWidth: 1)
-                    )
-                    .shadow(color: Theme.chipShadow, radius: 3, y: 1)
+                    MonthBundleChip(bundle: bundle)
                 }
                 ForEach(taskChips) { task in
-                    HStack(spacing: 3) {
-                        Circle()
-                            .fill(Color(hex: task.containerColor))
-                            .frame(width: 5, height: 5)
-                        Text(task.title)
-                            .font(.system(size: 10))
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(1)
-                        Spacer(minLength: 2)
-                        CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dateKey, isDone: task.isDone)
-                    }
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        ZStack {
-                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                .fill(Theme.surfaceElevated)
-                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                .fill(Color(hex: task.containerColor).opacity(task.isDone ? 0.06 : 0.12))
-                        }
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                            .stroke(Theme.borderSubtle, lineWidth: 1)
-                    )
-                    .shadow(color: Theme.chipShadow, radius: 3, y: 1)
+                    MonthTaskChip(task: task, dayKey: dateKey)
                 }
                 ForEach(eventChips) { event in
-                    Text(event.title)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.onColor)
-                        .lineLimit(1)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            ZStack {
-                                RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                    .fill(event.calendarColor.opacity(CalendarEventVisualStyle.chipFillOpacity()))
-                                RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                    .fill(Theme.subtleWash)
-                            }
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                                .stroke(event.calendarColor.opacity(CalendarEventVisualStyle.chipBorderOpacity()), lineWidth: 1)
-                        )
-                        .shadow(color: Theme.chipShadow, radius: 3, y: 1)
+                    MonthEventChip(event: event)
                 }
-                if overflow > 0 {
-                    Text("+ \(overflow) more")
+                if layout.overflow > 0 {
+                    Text("+ \(layout.overflow) more")
                         .font(.system(size: 9))
                         .foregroundStyle(Theme.dim)
                         .padding(.horizontal, 5)
+                        .frame(height: CalendarMonthCellLayout.chipHeight, alignment: .center)
                 }
             }
             .padding(.horizontal, 6)
 
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, minHeight: 130)
+        .frame(maxWidth: .infinity, alignment: .top)
+        // Top-aligned: if a very short window ever leaves the chip stack taller than its row,
+        // the clip has to eat the last chip, never the day number.
+        .frame(height: rowHeight, alignment: .top)
+        .clipped()
         .background(isToday ? Theme.blue.opacity(0.04) : Theme.bg)
         .overlay(alignment: .topTrailing) {
             Rectangle()
@@ -296,14 +382,20 @@ struct AllDayTaskChip: View {
     let dayKey: String
     @State private var showInspector = false
 
+    private var allDayGlyphTint: Color {
+        if task.isCancelled { return Theme.dim }
+        if task.isDone { return Theme.green }
+        return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)?.tint ?? Theme.dim
+    }
+
     var body: some View {
-        HStack(spacing: 3) {
-            Circle()
-                .fill(Color(hex: task.containerColor))
-                .frame(width: 5, height: 5)
+        HStack(spacing: 4) {
+            Image(systemName: task.isCancelled ? "xmark.circle.fill" : (task.isDone ? "checkmark.circle.fill" : "circle"))
+                .font(.system(size: CalendarMonthCellLayout.completionGlyphSize, weight: .semibold))
+                .foregroundStyle(allDayGlyphTint)
             Text(task.title)
                 .font(.system(size: 10))
-                .foregroundStyle(Theme.text)
+                .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                 .lineLimit(1)
             Spacer(minLength: 2)
             CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dayKey, isDone: task.isDone)

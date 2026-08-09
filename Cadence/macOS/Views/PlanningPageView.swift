@@ -48,7 +48,6 @@ struct PlanningPageView: View {
                         PlanningBucketColumn(
                             bucket: bucket,
                             tasks: buckets[bucket] ?? [],
-                            todayKey: todayKey,
                             isTargeted: targetedBucket == bucket,
                             onAddTask: { presentTaskCreation(in: bucket) }
                         )

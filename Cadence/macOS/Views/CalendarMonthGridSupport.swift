@@ -24,12 +24,50 @@ enum CalendarMonthGridSupport {
         cellHeight: CGFloat,
         calendar: Calendar
     ) -> [CGFloat] {
+        cumulativeOffsets(
+            totalMonths: totalMonths,
+            todayMonthIdx: todayMonthIdx,
+            currentMonthStart: currentMonthStart,
+            calendar: calendar
+        ) { weeks in CGFloat(weeks) * cellHeight }
+    }
+
+    /// Offset table for a viewport-sized grid, where each month block is exactly one screen tall.
+    ///
+    /// Derived from `CalendarMonthGridMetrics.monthHeight`, the same function the rendered rows
+    /// are sized with. That shared derivation is the point: the table is a model of the layout,
+    /// and a model built from different numbers than the layout drifts a little further with
+    /// every month until the header names a month the grid is not showing.
+    static func cumulativeOffsets(
+        totalMonths: Int,
+        todayMonthIdx: Int,
+        currentMonthStart: Date,
+        viewportHeight: CGFloat,
+        calendar: Calendar
+    ) -> [CGFloat] {
+        cumulativeOffsets(
+            totalMonths: totalMonths,
+            todayMonthIdx: todayMonthIdx,
+            currentMonthStart: currentMonthStart,
+            calendar: calendar
+        ) { weeks in
+            CalendarMonthGridMetrics.monthHeight(weeksInMonth: weeks, viewportHeight: viewportHeight)
+        }
+    }
+
+    private static func cumulativeOffsets(
+        totalMonths: Int,
+        todayMonthIdx: Int,
+        currentMonthStart: Date,
+        calendar: Calendar,
+        height: (Int) -> CGFloat
+    ) -> [CGFloat] {
         var offsets: [CGFloat] = []
         var y: CGFloat = 0
         for i in 0..<totalMonths {
             offsets.append(y)
             let month = calendar.date(byAdding: .month, value: i - todayMonthIdx, to: currentMonthStart) ?? currentMonthStart
-            y += CGFloat(weeksInMonth(month, calendar: calendar)) * cellHeight
+            y += height(weeksInMonth(month, calendar: calendar))
         }
         return offsets
     }

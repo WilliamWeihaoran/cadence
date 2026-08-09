@@ -11,6 +11,7 @@ enum CalendarMonthGridInteractionSupport {
         y: CGFloat,
         offsets: [CGFloat],
         totalMonths: Int,
+        viewportHeight: CGFloat = 0,
         visibleMonthIdx: inout Int,
         didInitialPosition: Bool,
         isProgrammaticScroll: Bool
@@ -19,10 +20,14 @@ enum CalendarMonthGridInteractionSupport {
         // flight, scroll-geometry callbacks reflect the stale pre-jump offset — ignore them
         // so they can't stomp a value that was just set intentionally.
         guard didInitialPosition, !isProgrammaticScroll else { return }
-        let visibleTopY = max(y, 0)
-        let computedFromTop = monthIndexForOffset(y: visibleTopY, offsets: offsets, totalMonths: totalMonths)
-        if visibleMonthIdx != computedFromTop {
-            visibleMonthIdx = computedFromTop
+        let computed = dominantMonthIndex(
+            topY: y,
+            viewportHeight: viewportHeight,
+            offsets: offsets,
+            totalMonths: totalMonths
+        )
+        if visibleMonthIdx != computed {
+            visibleMonthIdx = computed
         }
     }
 
@@ -52,18 +57,53 @@ enum CalendarMonthGridInteractionSupport {
         proxy: ScrollViewProxy,
         todayMonthIdx: Int,
         todayKey: String,
+        /// False once a month block is exactly one screen tall — then anchoring the month at
+        /// the top already puts every one of its days on screen, and additionally centring
+        /// today's row would only drag the viewport across a month boundary and leave the page
+        /// showing two half months.
+        centersTodayCell: Bool,
         setProgrammaticScroll: @escaping (Bool) -> Void
     ) {
         let monthID = CalendarMonthGridIdentifiers.month(todayMonthIdx)
-        let dayID = CalendarMonthGridIdentifiers.day(monthIndex: todayMonthIdx, dateKey: todayKey)
 
-        // Guard the two-step scroll (month, then day) so a scroll-geometry callback firing
-        // in the gap between them can't recompute `visibleMonthIdx` from the stale
-        // pre-jump offset and stomp the value the "Today" jump just set.
+        // Guard the scroll so a scroll-geometry callback firing mid-jump can't recompute
+        // `visibleMonthIdx` from the stale pre-jump offset and stomp the value the "Today"
+        // jump just set.
         setProgrammaticScroll(true)
         proxy.scrollTo(monthID, anchor: .top)
+
+        guard centersTodayCell else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + scrollSettleDelay) {
+                setProgrammaticScroll(false)
+            }
+            return
+        }
+
+        let dayID = CalendarMonthGridIdentifiers.day(monthIndex: todayMonthIdx, dateKey: todayKey)
         DispatchQueue.main.async {
             proxy.scrollTo(dayID, anchor: .center)
+            DispatchQueue.main.asyncAfter(deadline: .now() + scrollSettleDelay) {
+                setProgrammaticScroll(false)
+            }
+        }
+    }
+
+    /// Re-pins the grid to the month the header is naming after the window resizes.
+    ///
+    /// Row heights are derived from the viewport, so a resize rescales every month block and
+    /// the old scroll offset now points somewhere else entirely. Re-anchoring keeps the
+    /// on-screen month stable instead of sliding an arbitrary distance.
+    static func handleViewportHeightChange(
+        proxy: ScrollViewProxy,
+        visibleMonthIdx: Int,
+        didInitialPosition: Bool,
+        setProgrammaticScroll: @escaping (Bool) -> Void
+    ) {
+        guard didInitialPosition else { return }
+        let targetMonthIdx = min(max(visibleMonthIdx, 0), CalendarMonthGridMetrics.totalMonths - 1)
+        setProgrammaticScroll(true)
+        DispatchQueue.main.async {
+            proxy.scrollTo(CalendarMonthGridIdentifiers.month(targetMonthIdx), anchor: .top)
             DispatchQueue.main.asyncAfter(deadline: .now() + scrollSettleDelay) {
                 setProgrammaticScroll(false)
             }

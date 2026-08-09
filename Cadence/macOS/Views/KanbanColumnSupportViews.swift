@@ -49,6 +49,108 @@ extension KanbanColumnTitleRow where Trailing == EmptyView {
     }
 }
 
+/// The **one** column-header treatment, shared by all three board surfaces: the section/list
+/// kanban columns, the Planning page buckets, and the Calendar Board day columns. Same dot, same
+/// label size and casing, same count placement, same padding, same closing hairline. Paired with
+/// `KanbanColumnScroll`, which puts the add-task row in the same place on all three.
+///
+/// Exactly three things may differ per board, because they are genuinely different content:
+/// - `title` — bucket name / section name / weekday + date.
+/// - `trailing` — per-column controls (the section board's complete + overflow buttons).
+/// - `detail` — an optional second line (the section board's due-date row).
+///
+/// `accentRule` replaces the neutral hairline with a coloured one. The Calendar Board's *today*
+/// column is the single sanctioned user of it; nothing else should pass a colour here.
+struct BoardColumnHeader<Trailing: View, Detail: View>: View {
+    private let dotColor: Color
+    private let title: String
+    private let count: Int
+    private let accentRule: Color?
+    private let trailing: () -> Trailing
+    private let detail: () -> Detail
+
+    init(
+        dotColor: Color,
+        title: String,
+        count: Int,
+        accentRule: Color? = nil,
+        @ViewBuilder trailing: @escaping () -> Trailing,
+        @ViewBuilder detail: @escaping () -> Detail
+    ) {
+        self.dotColor = dotColor
+        self.title = title
+        self.count = count
+        self.accentRule = accentRule
+        self.trailing = trailing
+        self.detail = detail
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 5) {
+                KanbanColumnTitleRow(dotColor: dotColor, title: title, count: count, trailing: trailing)
+                detail()
+            }
+            .kanbanColumnHeaderPadding()
+
+            rule
+        }
+    }
+
+    @ViewBuilder
+    private var rule: some View {
+        if let accentRule {
+            // Same 1pt hairline slot as every other column — it just carries colour, so the
+            // exception costs no layout difference.
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [accentRule.opacity(0.85), accentRule.opacity(0.45), accentRule.opacity(0.16)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(height: 1)
+        } else {
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(height: 1)
+        }
+    }
+}
+
+extension BoardColumnHeader where Detail == EmptyView {
+    init(
+        dotColor: Color,
+        title: String,
+        count: Int,
+        accentRule: Color? = nil,
+        @ViewBuilder trailing: @escaping () -> Trailing
+    ) {
+        self.init(
+            dotColor: dotColor,
+            title: title,
+            count: count,
+            accentRule: accentRule,
+            trailing: trailing,
+            detail: { EmptyView() }
+        )
+    }
+}
+
+extension BoardColumnHeader where Trailing == EmptyView, Detail == EmptyView {
+    init(dotColor: Color, title: String, count: Int, accentRule: Color? = nil) {
+        self.init(
+            dotColor: dotColor,
+            title: title,
+            count: count,
+            accentRule: accentRule,
+            trailing: { EmptyView() },
+            detail: { EmptyView() }
+        )
+    }
+}
+
 /// The column is containerless at rest: no fill, no stroke. This layer only supplies a
 /// transparent-but-hit-testable region plus the *transient* drag-over wash, so a wall of
 /// columns never reads as a wall of color. Without it the drop destination, the section-reorder
@@ -149,6 +251,50 @@ struct KanbanColumnScroll<Content: View>: View {
     }
 }
 
+/// The collapsed/expanded "Completed N" row that closes a column's card stack. Shared by the
+/// section board and the Calendar Board so a completed pile reads the same on both.
+struct KanbanCompletedTasksToggle: View {
+    let count: Int
+    let isExpanded: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("Completed")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("\(count)")
+                    .font(.system(size: 10, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.green)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Theme.green.opacity(0.12))
+                    .clipShape(Capsule())
+                Spacer()
+            }
+            .foregroundStyle(Theme.dim)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background {
+                RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
+                    .fill(Theme.surface)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
+                    .strokeBorder(Theme.borderSubtle, lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
+        }
+        .buttonStyle(.cadencePlain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 4)
+    }
+}
+
 /// A card that can be picked up and that accepts a drop *in front of itself*. Used for every
 /// card on both boards.
 struct KanbanDraggableCard: View {
@@ -227,27 +373,34 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            titleRow
-
-            if !section.dueDate.isEmpty || !hideColumnDueDateIfEmpty {
-                dueDateRow
-                    .padding(.leading, 14)
-            }
-
-            if section.isCompleted || isPendingCompletion {
-                Text(section.isCompleted ? "Completed" : "Completing…")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.green)
-                    .padding(.leading, 14)
-            }
-        }
-        .kanbanColumnHeaderPadding()
+        BoardColumnHeader(
+            dotColor: dotColor,
+            title: section.name,
+            count: activeTaskCount,
+            trailing: { headerControls },
+            detail: { headerDetail }
+        )
         .onHover(perform: onHoverChanged)
     }
 
-    private var titleRow: some View {
-        KanbanColumnTitleRow(dotColor: dotColor, title: section.name, count: activeTaskCount) {
+    @ViewBuilder
+    private var headerDetail: some View {
+        if !section.dueDate.isEmpty || !hideColumnDueDateIfEmpty {
+            dueDateRow
+                .padding(.leading, 14)
+        }
+
+        if section.isCompleted || isPendingCompletion {
+            Text(section.isCompleted ? "Completed" : "Completing…")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Theme.green)
+                .padding(.leading, 14)
+        }
+    }
+
+    @ViewBuilder
+    private var headerControls: some View {
+        Group {
             Button(action: onToggleCompletion) {
                 TaskCompletionProgressGlyph(
                     icon: section.isCompleted ? "checkmark.circle.fill" : "circle",

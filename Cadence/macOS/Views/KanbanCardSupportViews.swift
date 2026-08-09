@@ -1,10 +1,13 @@
 #if os(macOS)
 import SwiftUI
 
+/// What a meta chip does when clicked. Every case must open something — a board chip is never
+/// decorative, so there is deliberately no "inert" case.
 enum KanbanMetaAction: Hashable {
-    case none
     case doDate
     case dueDate
+    /// Opens the same searchable list picker `ContainerPickerBadge` presents elsewhere.
+    case container
 }
 
 /// How a meta chip washes on hover. Deliberately separate from `KanbanMetaItem.tint`: the tint
@@ -32,11 +35,6 @@ struct KanbanMetaItem: Identifiable {
     /// container color into its hover.
     var hoverStyle: KanbanMetaHoverStyle = .neutral
     let action: KanbanMetaAction
-}
-
-enum KanbanCardPresentation {
-    case listBoard
-    case calendarBoard
 }
 
 struct KanbanMetaChip: View {
@@ -163,7 +161,7 @@ struct KanbanCardHeader: View {
 
 struct KanbanCardScheduleTopRow: View {
     let startTime: String?
-    let duration: String?
+    let duration: String
     let onDurationTap: (() -> Void)?
     var isDurationFocused = false
     var onDurationHoverChanged: (Bool) -> Void = { _ in }
@@ -179,14 +177,12 @@ struct KanbanCardScheduleTopRow: View {
 
             Spacer(minLength: 8)
 
-            if let duration {
-                KanbanDurationBadge(
-                    duration: duration,
-                    onTap: onDurationTap,
-                    isFocused: isDurationFocused,
-                    onHoverChanged: onDurationHoverChanged
-                )
-            }
+            KanbanDurationBadge(
+                duration: duration,
+                onTap: onDurationTap,
+                isFocused: isDurationFocused,
+                onHoverChanged: onDurationHoverChanged
+            )
         }
         .frame(height: 14)
     }

@@ -83,11 +83,9 @@ struct ListSectionKanbanColumn: View {
 
     private var columnBody: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // The hairline under the header is part of `BoardColumnHeader` itself, so all three
+            // boards close their header the same way without each column remembering to.
             columnHeader
-
-            Rectangle()
-                .fill(Theme.borderSubtle)
-                .frame(height: 1)
 
             columnTaskScroll
         }
@@ -242,42 +240,11 @@ struct ListSectionKanbanColumn: View {
     }
 
     private var completedTasksToggle: some View {
-        Button {
+        KanbanCompletedTasksToggle(count: completedTasks.count, isExpanded: showDoneTasks) {
             withAnimation(.easeInOut(duration: 0.18)) {
                 showDoneTasks.toggle()
             }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: showDoneTasks ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                Text("Completed")
-                    .font(.system(size: 11, weight: .semibold))
-                Text("\(completedTasks.count)")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Theme.green)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Theme.green.opacity(0.12))
-                    .clipShape(Capsule())
-                Spacer()
-            }
-            .foregroundStyle(Theme.dim)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background {
-                RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
-                    .fill(Theme.surface)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle, lineWidth: 1)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
         }
-        .buttonStyle(.cadencePlain)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 4)
     }
 
     private var completedTaskCards: some View {

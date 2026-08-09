@@ -23,7 +23,7 @@ struct CalendarBoardBundleCard: View {
             label
         }
         .buttonStyle(.cadencePlain)
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
         .onHover { isHovered = $0 }
         .draggable(TaskDragPayload.bundleString(for: bundle.id))
         .dropDestination(for: String.self) { items, _ in
@@ -57,12 +57,14 @@ struct CalendarBoardBundleCard: View {
                 metadata
             }
         }
-        .padding(10)
+        .padding(.leading, 14)
+        .padding(.trailing, 16)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
                 .strokeBorder(
                     isTargeted ? Theme.amber.opacity(0.74) : Theme.amber.opacity(isHovered ? 0.48 : 0.22),
                     lineWidth: isTargeted ? 1.25 : 1
@@ -87,9 +89,9 @@ struct CalendarBoardBundleCard: View {
 
     private var cardBackground: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
                 .fill(Theme.surfaceElevated.opacity(0.86))
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
                 .fill(Theme.amber.opacity(isTargeted ? 0.18 : (isHovered ? 0.12 : 0.07)))
         }
     }
@@ -155,7 +157,7 @@ struct CalendarBoardEventCard: View {
             label
         }
         .buttonStyle(.cadencePlain)
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
         .onHover { isHovered = $0 }
         .popover(isPresented: $showPopover, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             let editItem = item.editItem
@@ -210,12 +212,14 @@ struct CalendarBoardEventCard: View {
                 }
             }
         }
-        .padding(10)
+        .padding(.leading, 14)
+        .padding(.trailing, 16)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
                 .strokeBorder(
                     tint.opacity(CalendarEventVisualStyle.borderOpacity(isSelected: showPopover, isHovered: isHovered)),
                     lineWidth: isHovered || showPopover ? 1.25 : 1
@@ -225,9 +229,9 @@ struct CalendarBoardEventCard: View {
 
     private var cardBackground: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
                 .fill(Theme.surfaceElevated.opacity(CalendarEventVisualStyle.surfaceOpacity(isActive: isHovered || showPopover)))
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
                 .fill(tint.opacity(CalendarEventVisualStyle.tintOpacity(isSelected: showPopover, isHovered: isHovered)))
         }
     }
@@ -238,23 +242,29 @@ struct CalendarBoardEventCard: View {
     }
 }
 
+/// The event/bundle chip. Deliberately **not** a `KanbanMetaChip`: an event has no completion
+/// circle, no list, no estimate, and cannot be edited field-by-field from the card, so its chips
+/// stay read-only and carry the calendar's own colour. It borrows the task chip's geometry —
+/// same corner radius, same padding, same icon/label sizes — so the two read as one family
+/// without pretending an event is a task.
 struct CalendarBoardMetadataChip: View {
     let title: String
     let systemImage: String
     let tint: Color
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             Image(systemName: systemImage)
-                .font(.system(size: 8, weight: .semibold))
+                .font(.system(size: 9, weight: .semibold))
+                .frame(width: 10)
             Text(title)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
         }
         .foregroundStyle(tint)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
         .background(tint.opacity(CalendarEventVisualStyle.chipTintOpacity()))
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }

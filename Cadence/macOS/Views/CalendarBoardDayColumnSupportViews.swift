@@ -22,6 +22,7 @@ struct CalendarBoardDayColumn: View {
     @State private var recentlyBundledTaskID: UUID?
     @State private var recentlyBundledTaskDropExpiresAt = Date.distantPast
     @State private var isCompletedCollapsed = true
+    @State private var isHovered = false
 
     private var isToday: Bool {
         dateKey == DateFormatters.todayKey()
@@ -47,16 +48,20 @@ struct CalendarBoardDayColumn: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             header
-            todayAccent
-            addTaskButton
-            content
-            completedFooter
+
+            // Same scroll container the kanban columns use, so "Add task" sits last in the
+            // column here exactly as it does there.
+            KanbanColumnScroll(isColumnHovered: isHovered, onAddTask: onAddTask) {
+                content
+                completedFooter
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
         .frame(maxHeight: .infinity, alignment: .top)
+        .onHover { isHovered = $0 }
         .background(laneBackground)
         .overlay(alignment: .trailing) {
             Rectangle()
@@ -80,94 +85,22 @@ struct CalendarBoardDayColumn: View {
         .accessibilityLabel("\(DateFormatters.longDate.string(from: date)), \(totalCount) scheduled item\(totalCount == 1 ? "" : "s")")
     }
 
+    /// The shared board header. The only things that differ from a kanban or Planning column are
+    /// the label text (weekday + date) and — for today only — the amber rule in place of the
+    /// neutral hairline, which is the single sanctioned exception to the shared treatment.
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(DateFormatters.dayOfWeek.string(from: date))
-                    .font(.system(size: 21, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                Text(DateFormatters.shortDate.string(from: date))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            if isToday {
-                Text("Today")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.amber)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(Theme.amber.opacity(0.13))
-                    .clipShape(Capsule())
-            }
-
-            Text("\(totalCount)")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(isToday ? Theme.amber : Theme.dim)
-                .frame(minWidth: 26, minHeight: 24)
-                .background((isToday ? Theme.amber : Theme.surfaceElevated).opacity(isToday ? 0.14 : 0.82))
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
-        .padding(.horizontal, 2)
-    }
-
-    @ViewBuilder
-    private var todayAccent: some View {
-        if isToday {
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: [Theme.amber.opacity(0.82), Theme.amber.opacity(0.44), Theme.amber.opacity(0.16)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(height: 2)
-                .padding(.horizontal, 2)
-                .shadow(color: Theme.amber.opacity(0.22), radius: 8, y: 2)
-                .accessibilityHidden(true)
-        }
-    }
-
-    private var addTaskButton: some View {
-        Button(action: onAddTask) {
-            HStack(spacing: 8) {
-                Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .semibold))
-                Text("Add task")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(Theme.dim)
-            .padding(.horizontal, 12)
-            .frame(height: 36)
-            .background(Theme.surfaceElevated.opacity(0.70))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.50), lineWidth: 1)
-            }
-        }
-        .buttonStyle(.cadencePlain)
-        .help("Add a task planned for \(DateFormatters.shortDate.string(from: date))")
+        BoardColumnHeader(
+            dotColor: isToday ? Theme.amber : Theme.dim,
+            title: "\(DateFormatters.dayOfWeek.string(from: date)) · \(DateFormatters.shortDate.string(from: date))",
+            count: activeItems.count,
+            accentRule: isToday ? Theme.amber : nil
+        )
     }
 
     @ViewBuilder
     private var content: some View {
-        if !activeItems.isEmpty {
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(activeItems) { item in
-                        columnItemView(item)
-                    }
-                }
-                .padding(.bottom, 4)
-            }
-            .scrollIndicators(.hidden)
+        ForEach(activeItems) { item in
+            columnItemView(item)
         }
     }
 
@@ -175,50 +108,25 @@ struct CalendarBoardDayColumn: View {
     private var completedFooter: some View {
         if !completedTasks.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Button {
+                KanbanCompletedTasksToggle(count: completedTasks.count, isExpanded: !isCompletedCollapsed) {
                     withAnimation(.snappy(duration: 0.16)) {
                         isCompletedCollapsed.toggle()
                     }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: isCompletedCollapsed ? "chevron.right" : "chevron.down")
-                            .font(.system(size: 10, weight: .bold))
-                            .frame(width: 12)
-                        Text("Completed")
-                            .font(.system(size: 12, weight: .semibold))
-                        Spacer(minLength: 0)
-                        Text("\(completedTasks.count)")
-                            .font(.system(size: 11, weight: .bold))
-                            .monospacedDigit()
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(Theme.surfaceElevated.opacity(0.72))
-                            .clipShape(Capsule())
-                    }
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 10)
-                    .frame(height: 34)
-                    .background(Theme.surfaceElevated.opacity(0.42))
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(Theme.borderSubtle.opacity(0.35), lineWidth: 1)
-                    }
                 }
-                .buttonStyle(.cadencePlain)
 
                 if !isCompletedCollapsed {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
                         ForEach(completedTasks.sorted { lhs, rhs in
                             CalendarBoardPlannerSupport.boardTaskSort(lhs, rhs)
                         }) { task in
-                            KanbanCard(task: task, presentation: .calendarBoard)
+                            KanbanCard(task: task, showsContainerChip: true)
                                 .draggable(TaskDragPayload.string(for: task.id))
                         }
                     }
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
+            .padding(.top, 6)
         }
     }
 
@@ -242,7 +150,7 @@ struct CalendarBoardDayColumn: View {
                 }
             )
         case .task(let task):
-            KanbanCard(task: task, presentation: .calendarBoard)
+            KanbanCard(task: task, showsContainerChip: true)
                 .draggable(TaskDragPayload.string(for: task.id))
         }
     }

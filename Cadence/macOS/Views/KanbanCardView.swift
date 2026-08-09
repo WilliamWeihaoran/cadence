@@ -2,9 +2,18 @@
 import SwiftUI
 import SwiftData
 
+/// The **one** task card used by every board surface: the list/section kanban boards, the
+/// Planning page buckets, and the Calendar Board day columns. Density is fixed and identical
+/// everywhere — completion circle, title, estimate, do/due chips, tags, subtasks — so the three
+/// boards cannot drift apart again.
+///
+/// The only per-board knob is `showsContainerChip`, and it exists because the information is
+/// genuinely redundant on some boards: a section column already sits inside one list, and an
+/// All Tasks list column *is* a list, so repeating the name on every card there is noise.
+/// Cross-list boards (Planning, Calendar Board) show it.
 struct KanbanCard: View {
     @Bindable var task: AppTask
-    var presentation: KanbanCardPresentation = .listBoard
+    var showsContainerChip: Bool = false
 
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
@@ -18,6 +27,8 @@ struct KanbanCard: View {
     @State private var doDatePickerDate: Date = Date()
     @State private var doDateViewMonth: Date = Date()
     @State private var showDurationPicker = false
+    @State private var showContainerPicker = false
+    @State private var showTagPicker = false
     @State private var isHovered = false
     @State private var isPointerOverCard = false
     @State private var isAttributeFocused = false
@@ -29,7 +40,7 @@ struct KanbanCard: View {
                 if hasScheduleTopRow {
                     KanbanCardScheduleTopRow(
                         startTime: scheduleStartLabel,
-                        duration: scheduleDurationLabel,
+                        duration: estimateLabel,
                         onDurationTap: openDurationPicker,
                         isDurationFocused: showDurationPicker,
                         onDurationHoverChanged: setAttributeFocused
@@ -38,7 +49,12 @@ struct KanbanCard: View {
 
                 cardHeader
 
-                CompactTagStrip(tags: task.sortedTags, limit: 3)
+                KanbanCardTagStrip(
+                    task: task,
+                    isPresented: $showTagPicker,
+                    onOpen: openTagPicker,
+                    onHoverChanged: setAttributeFocused
+                )
 
                 if !metadataRows.isEmpty {
                     KanbanMetadataRows(
@@ -134,13 +150,19 @@ struct KanbanCard: View {
         )
     }
 
+    /// One layout for every board. Row 1 is the date pair, row 2 the list chip when the board
+    /// isn't already scoped to a single list.
     private var metadataRows: [[KanbanMetaItem]] {
-        switch presentation {
-        case .listBoard:
-            listBoardMetadataRows
-        case .calendarBoard:
-            calendarBoardMetadataRows
-        }
+        var rows: [[KanbanMetaItem]] = []
+
+        var dateRow: [KanbanMetaItem] = []
+        if let doDateMetaItem { dateRow.append(doDateMetaItem) }
+        if let dueDateMetaItem { dateRow.append(dueDateMetaItem) }
+        if !dateRow.isEmpty { rows.append(dateRow) }
+
+        if showsContainerChip { rows.append([contextMetaItem]) }
+
+        return rows
     }
 
     private var doDateMetaItem: KanbanMetaItem? {
@@ -173,31 +195,6 @@ struct KanbanCard: View {
         )
     }
 
-    private var listBoardMetadataRows: [[KanbanMetaItem]] {
-        var row: [KanbanMetaItem] = []
-        if let doDateMetaItem {
-            row.append(doDateMetaItem)
-        }
-        if let dueDateMetaItem {
-            row.append(dueDateMetaItem)
-        }
-        return row.isEmpty ? [] : [row]
-    }
-
-    private var calendarBoardMetadataRows: [[KanbanMetaItem]] {
-        var primary: [KanbanMetaItem] = []
-
-        if let dueDateItem = concreteDueDateMetaItem {
-            primary.append(dueDateItem)
-        }
-
-        if primary.count >= 2 {
-            return [primary, [contextMetaItem]]
-        }
-        primary.append(contextMetaItem)
-        return [primary]
-    }
-
     private var contextMetaItem: KanbanMetaItem {
         KanbanMetaItem(
             id: "list",
@@ -209,20 +206,7 @@ struct KanbanCard: View {
             tint: Color(hex: task.containerColor),
             textColor: Theme.dim,
             hoverStyle: .neutral,
-            action: .none
-        )
-    }
-
-    private var concreteDueDateMetaItem: KanbanMetaItem? {
-        guard !task.dueDate.isEmpty else { return nil }
-        return KanbanMetaItem(
-            id: "due-date",
-            icon: "flag.fill",
-            text: DateFormatters.relativeDate(from: task.dueDate),
-            tint: Theme.red,
-            textColor: isOverdue ? Theme.red : Theme.dim,
-            hoverStyle: .semantic(Theme.red),
-            action: .dueDate
+            action: .container
         )
     }
 
@@ -231,7 +215,7 @@ struct KanbanCard: View {
     }
 
     private var headerDurationBadge: String? {
-        scheduleStartLabel == nil ? scheduleDurationLabel : nil
+        scheduleStartLabel == nil ? estimateLabel : nil
     }
 
     private var scheduleStartLabel: String? {
@@ -239,16 +223,23 @@ struct KanbanCard: View {
         return TimeFormatters.timeString(from: task.scheduledStartMin).lowercased()
     }
 
-    private var scheduleDurationLabel: String? {
-        guard task.estimatedMinutes > 0 else { return nil }
-        return KanbanCardStateSupport.compactDurationLabel(task.estimatedMinutes)
+    /// Always rendered, even with no estimate set — the badge *is* the estimate picker, so
+    /// hiding it when the value is empty would leave the field unreachable from the card.
+    private var estimateLabel: String {
+        task.estimatedMinutes > 0 ? KanbanCardStateSupport.compactDurationLabel(task.estimatedMinutes) : "—"
     }
 
     @ViewBuilder
     private func metaChip(_ item: KanbanMetaItem) -> some View {
         switch item.action {
-        case .none:
-            KanbanMetaChip(item: item, onHoverChanged: setAttributeFocused)
+        case .container:
+            KanbanContainerMetaButton(
+                item: item,
+                task: task,
+                isPresented: $showContainerPicker,
+                onOpen: openContainerPicker,
+                onHoverChanged: setAttributeFocused
+            )
         case .doDate:
             KanbanDateMetaButton(
                 item: item,
@@ -348,6 +339,18 @@ struct KanbanCard: View {
         syncInteractiveHoverState()
     }
 
+    private func openContainerPicker() {
+        showContainerPicker = true
+        setAttributeFocused(true)
+        syncInteractiveHoverState()
+    }
+
+    private func openTagPicker() {
+        showTagPicker = true
+        setAttributeFocused(true)
+        syncInteractiveHoverState()
+    }
+
     private func openTaskInspectorFromCardTap() {
         guard !isAttributeFocused && !isPresentingInlinePopover else { return }
         showTaskInspector = true
@@ -427,7 +430,7 @@ struct KanbanCard: View {
     }
 
     private var isPresentingInlinePopover: Bool {
-        showDueDatePicker || showDoDatePicker || showDurationPicker
+        showDueDatePicker || showDoDatePicker || showDurationPicker || showContainerPicker || showTagPicker
     }
 
     /// Merely hovering a chip no longer cancels the card's own hover — the two coexist, so the
