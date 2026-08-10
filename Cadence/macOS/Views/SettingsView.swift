@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(AISettingsManager.self) private var aiSettingsManager
     @Environment(AppleAccountManager.self) private var appleAccountManager
     @Environment(NotificationManager.self) private var notificationManager
+    @Environment(RemindersManager.self) private var remindersManager
     @Environment(\.modelContext) private var modelContext
     @AppStorage(NotificationManager.notificationsEnabledDefaultsKey) private var notificationsEnabled = false
     @AppStorage("listDetailDefaultPage") private var listDetailDefaultPage = ListDetailPage.tasks.rawValue
@@ -125,6 +126,12 @@ struct SettingsView: View {
             switch selectedCategory {
             case .calendar:
                 SettingsStatusBadge(title: calendarManager.isAuthorized ? "Connected" : "Not connected", isActive: calendarManager.isAuthorized)
+            case .reminders:
+                let remindersState = RemindersConnectionState.resolve(
+                    isAuthorized: remindersManager.isAuthorized,
+                    isDenied: remindersManager.isDenied
+                )
+                SettingsStatusBadge(title: remindersState.badgeTitle, isActive: remindersState.isConnected)
             case .notifications:
                 SettingsStatusBadge(
                     title: notificationManager.isAuthorized && notificationsEnabled ? "Enabled" : "Off",
@@ -205,6 +212,8 @@ struct SettingsView: View {
                 projects: projects,
                 modelContext: modelContext
             )
+        case .reminders:
+            SettingsRemindersSection(remindersManager: remindersManager)
         case .notifications:
             SettingsNotificationsSection(
                 notificationManager: notificationManager,

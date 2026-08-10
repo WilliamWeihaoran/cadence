@@ -157,17 +157,10 @@ struct TaskDetailScheduleGroupSection: View {
             // planned time is purple (goal/effort planning), logged time is green (done work).
             TaskInspectorEstimateFieldRow(value: $task.estimatedMinutes, iconColor: Theme.purple)
 
-            TaskInspectorFieldDivider()
-
-            // Rendered unconditionally, like Do/Due/Estimate: when this row was gated on
-            // `actualMinutes > 0`, the picker's Clear tore down the very row hosting the open
-            // popover, and actual minutes then became unreachable from the inspector.
-            TaskInspectorEstimateFieldRow(
-                value: $task.actualMinutes,
-                label: "Actual",
-                icon: "stopwatch",
-                iconColor: Theme.green
-            )
+            // No "Actual" row: logged time is measured, not typed. The focus timer accumulates
+            // `actualMinutes`, and Focus's log-session popover is where a session gets corrected —
+            // an inspector field invited hand-editing a number that is supposed to be a record.
+            // The value still reads out wherever it means something, e.g. the timeline's "45/60m".
 
             TaskInspectorFieldDivider()
 

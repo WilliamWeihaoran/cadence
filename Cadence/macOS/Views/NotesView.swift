@@ -82,10 +82,17 @@ private struct DailyNotesPage: View {
     @Environment(\.modelContext) private var modelContext
     @State private var selectedNoteID: UUID?
 
+    /// Every daily note, in date order. Selection and the editor's reference set resolve against
+    /// this, not against `listedNotes` — a day you jumped to from the header picker but have not
+    /// written in yet has no row, and must still stay open in the editor.
     private var notes: [Note] {
         allNotes
             .filter { $0.kind == .daily }
             .sorted { $0.dateKey > $1.dateKey }
+    }
+
+    private var listedNotes: [Note] {
+        NotesListVisibility.dailyNotes(notes, todayKey: DateFormatters.todayKey())
     }
 
     private var selectedNote: Note? {
@@ -95,26 +102,28 @@ private struct DailyNotesPage: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                NotesListHeader(title: "Daily Notes")
+                NotesListHeader(title: "Daily Notes", onPickDate: openNote(forDate:))
 
-                NotesGroupedListColumn(
-                    groups: NotesListGrouping.monthGroups(for: notes, dateKey: { $0.dateKey })
-                ) { note in
-                    DailyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
-                        .onTapGesture { selectedNoteID = note.id }
-                }
-
-                if notes.isEmpty {
+                if listedNotes.isEmpty {
                     Spacer()
                     EmptyStateView(
-                        message: "No notes yet",
-                        subtitle: "Notes are created automatically each day",
+                        message: "Nothing written yet",
+                        subtitle: "Days you write on appear here. Pick a date above to open one.",
                         icon: "doc.text"
                     )
                     Spacer()
+                } else {
+                    NotesGroupedListColumn(
+                        groups: NotesListGrouping.monthGroups(for: listedNotes, dateKey: { $0.dateKey })
+                    ) { note in
+                        DailyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
+                            .onTapGesture { selectedNoteID = note.id }
+                    }
                 }
             }
-            .frame(minWidth: 200, idealWidth: 240)
+            .frame(minWidth: NotesListMetrics.columnMinWidth,
+                   idealWidth: NotesListMetrics.columnIdealWidth,
+                   maxWidth: NotesListMetrics.columnMaxWidth)
             .background(Theme.surface)
 
             if let note = selectedNote {
@@ -128,24 +137,27 @@ private struct DailyNotesPage: View {
                 NotesEditorPlaceholder(title: "Select a note")
             }
         }
-        .onAppear { loadOrCreateToday() }
+        .onAppear { openNote(forDateKey: DateFormatters.todayKey()) }
         .onChange(of: notes.map(\.id)) { _, _ in
             normalizeSelection()
         }
     }
 
-    private func loadOrCreateToday() {
-        let key = DateFormatters.todayKey()
+    private func openNote(forDate date: Date) {
+        openNote(forDateKey: DateFormatters.dateKey(from: date))
+    }
+
+    private func openNote(forDateKey key: String) {
         if let existing = notes.first(where: { $0.dateKey == key }) {
             selectedNoteID = existing.id
-        } else if let note = try? CadenceCoreNoteSupport.note(for: .today, in: modelContext) {
+        } else if let note = try? NoteMigrationService.dailyNote(for: key, in: modelContext) {
             selectedNoteID = note.id
         }
     }
 
     private func normalizeSelection() {
         guard let selectedNoteID, !notes.contains(where: { $0.id == selectedNoteID }) else { return }
-        self.selectedNoteID = notes.first?.id
+        self.selectedNoteID = listedNotes.first?.id ?? notes.first?.id
     }
 }
 
@@ -161,6 +173,10 @@ private struct WeeklyNotesPage: View {
             .sorted { $0.weekKey > $1.weekKey }
     }
 
+    private var listedNotes: [Note] {
+        NotesListVisibility.weeklyNotes(notes, currentWeekKey: DateFormatters.currentWeekKey())
+    }
+
     private var selectedNote: Note? {
         notes.first { $0.id == selectedNoteID }
     }
@@ -168,29 +184,33 @@ private struct WeeklyNotesPage: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                NotesListHeader(title: "Weekly Notes")
+                // The picker takes a day, not a week: weeks have no handle you can point at, and
+                // "the week containing this date" is how anyone actually locates one.
+                NotesListHeader(title: "Weekly Notes", onPickDate: openNote(forDate:))
 
-                NotesGroupedListColumn(
-                    groups: NotesListGrouping.monthGroups(
-                        for: notes,
-                        dateKey: { NotesListGrouping.weekStartDateKey(forWeekKey: $0.weekKey) }
-                    )
-                ) { note in
-                    WeeklyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
-                        .onTapGesture { selectedNoteID = note.id }
-                }
-
-                if notes.isEmpty {
+                if listedNotes.isEmpty {
                     Spacer()
                     EmptyStateView(
-                        message: "No weekly notes yet",
-                        subtitle: "Weekly notes are created automatically",
+                        message: "Nothing written yet",
+                        subtitle: "Weeks you write in appear here. Pick a date above to open one.",
                         icon: "doc.text"
                     )
                     Spacer()
+                } else {
+                    NotesGroupedListColumn(
+                        groups: NotesListGrouping.monthGroups(
+                            for: listedNotes,
+                            dateKey: { NotesListGrouping.weekStartDateKey(forWeekKey: $0.weekKey) }
+                        )
+                    ) { note in
+                        WeeklyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
+                            .onTapGesture { selectedNoteID = note.id }
+                    }
                 }
             }
-            .frame(minWidth: 200, idealWidth: 240)
+            .frame(minWidth: NotesListMetrics.columnMinWidth,
+                   idealWidth: NotesListMetrics.columnIdealWidth,
+                   maxWidth: NotesListMetrics.columnMaxWidth)
             .background(Theme.surface)
 
             if let note = selectedNote {
@@ -204,24 +224,27 @@ private struct WeeklyNotesPage: View {
                 NotesEditorPlaceholder(title: "Select a week")
             }
         }
-        .onAppear { loadOrCreateThisWeek() }
+        .onAppear { openNote(forWeekKey: DateFormatters.currentWeekKey()) }
         .onChange(of: notes.map(\.id)) { _, _ in
             normalizeSelection()
         }
     }
 
-    private func loadOrCreateThisWeek() {
-        let key = DateFormatters.currentWeekKey()
+    private func openNote(forDate date: Date) {
+        openNote(forWeekKey: DateFormatters.weekKey(from: date))
+    }
+
+    private func openNote(forWeekKey key: String) {
         if let existing = notes.first(where: { $0.weekKey == key }) {
             selectedNoteID = existing.id
-        } else if let note = try? CadenceCoreNoteSupport.note(for: .week, in: modelContext) {
+        } else if let note = try? NoteMigrationService.weeklyNote(for: key, in: modelContext) {
             selectedNoteID = note.id
         }
     }
 
     private func normalizeSelection() {
         guard let selectedNoteID, !notes.contains(where: { $0.id == selectedNoteID }) else { return }
-        self.selectedNoteID = notes.first?.id
+        self.selectedNoteID = listedNotes.first?.id ?? notes.first?.id
     }
 }
 
@@ -303,16 +326,13 @@ private struct MeetingNotesPage: View {
             VStack(spacing: 0) {
                 NotesListHeader(title: "Event Notes")
 
-                NotesGroupedListColumn(
-                    groups: NotesListGrouping.monthGroups(for: notes, dateKey: { Self.dayKey(for: $0) })
-                ) { note in
-                    MeetingNoteListRow(note: note, isSelected: selectedNoteID == note.id, showsDate: false)
-                        .onTapGesture {
-                            selectedNoteID = note.id
-                            requestedNoteID = nil
-                        }
-                }
-
+                // Deliberately unfiltered, and deliberately without a date picker. The hide-empty
+                // rule exists because daily/weekly notes are created *for* you, one per period,
+                // so most rows say nothing. An event note only exists because you made one from a
+                // calendar event, there is one per event rather than one per day, and its row
+                // carries the event's own title — so it never renders as "Empty" and filtering
+                // would only hide notes you deliberately created. There is also no date that
+                // would create one: the way in is the calendar event, not a day.
                 if notes.isEmpty {
                     Spacer()
                     EmptyStateView(
@@ -321,9 +341,21 @@ private struct MeetingNotesPage: View {
                         icon: "doc.text"
                     )
                     Spacer()
+                } else {
+                    NotesGroupedListColumn(
+                        groups: NotesListGrouping.monthGroups(for: notes, dateKey: { Self.dayKey(for: $0) })
+                    ) { note in
+                        MeetingNoteListRow(note: note, isSelected: selectedNoteID == note.id, showsDate: false)
+                            .onTapGesture {
+                                selectedNoteID = note.id
+                                requestedNoteID = nil
+                            }
+                    }
                 }
             }
-            .frame(minWidth: 200, idealWidth: 260)
+            .frame(minWidth: NotesListMetrics.columnMinWidth,
+                   idealWidth: NotesListMetrics.columnIdealWidth,
+                   maxWidth: NotesListMetrics.columnMaxWidth)
             .background(Theme.surface)
 
             if let note = selectedNote {
@@ -378,6 +410,9 @@ private struct MeetingNotesPage: View {
 
 private struct NotesListHeader: View {
     let title: String
+    /// Present on the tabs whose list is filtered. Empty days no longer have a row, so the header
+    /// carries the one control that can still reach them.
+    var onPickDate: ((Date) -> Void)? = nil
 
     var body: some View {
         HStack {
@@ -385,12 +420,54 @@ private struct NotesListHeader: View {
                 .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(Theme.text)
             Spacer()
+            if let onPickDate {
+                NotesDateJumpButton(onPick: onPickDate)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 12)
 
         Divider().background(Theme.borderSubtle)
+    }
+}
+
+/// "Go to date" for a filtered note list.
+///
+/// Wraps the shared `MonthCalendarPanel` rather than growing a second month grid — this is the same
+/// calendar the task inspector and create sheet use, so the picker behaves identically wherever it
+/// appears. Picking a day hands the date back and closes; the page creates or opens that day's note
+/// and selects it. The note stays out of the list until it has something in it, which is the point:
+/// the list is an index of days you wrote on, and this is how you write on a new one.
+private struct NotesDateJumpButton: View {
+    let onPick: (Date) -> Void
+
+    @State private var isOpen = false
+    @State private var selection = Date()
+    @State private var viewMonth = Date()
+
+    var body: some View {
+        CadenceQuietPillButton(state: .quiet, action: { isOpen = true }) {
+            Image(systemName: "calendar")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.muted)
+        }
+        .help("Go to date")
+        .accessibilityLabel("Go to date")
+        .popover(isPresented: $isOpen, arrowEdge: .bottom) {
+            MonthCalendarPanel(
+                selection: Binding(
+                    get: { selection },
+                    set: { newValue in
+                        selection = newValue
+                        isOpen = false
+                        onPick(newValue)
+                    }
+                ),
+                viewMonth: $viewMonth,
+                isOpen: $isOpen
+            )
+        }
     }
 }
 

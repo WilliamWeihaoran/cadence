@@ -208,7 +208,7 @@ struct MonthEventChip: View {
             }
         }
         .monthChipPlate(
-            fill: event.calendarColor.opacity(CalendarEventVisualStyle.chipFillOpacity()),
+            fill: CalendarEventVisualStyle.chipFill(for: event.calendarColor),
             wash: Theme.subtleWash,
             border: event.calendarColor.opacity(CalendarEventVisualStyle.chipBorderOpacity())
         )
@@ -496,7 +496,7 @@ struct AllDayEventChip: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                    .fill(eventColor.opacity(CalendarEventVisualStyle.chipFillOpacity()))
+                    .fill(CalendarEventVisualStyle.chipFill(for: eventColor))
                 RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
                     .fill(Theme.subtleWash)
             }

@@ -4,20 +4,6 @@ import AppKit
 import EventKit
 import SwiftData
 
-// MARK: - Muted event fill
-
-/// Calendar events are read-only, so their block uses a SOLID but desaturated/darkened
-/// version of the calendar's own (often bright) color rather than the raw hue — this keeps
-/// a busy day from turning into a wall of saturated color while still being color-coded.
-private extension Color {
-    func mutedEventFill() -> Color {
-        let ns = NSColor(self).usingColorSpace(.deviceRGB) ?? NSColor(self)
-        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
-        ns.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        return Color(NSColor(hue: hue, saturation: saturation * 0.5, brightness: min(brightness, 0.4), alpha: 1))
-    }
-}
-
 // MARK: - Timeline Event Block
 
 struct TimelineEventBlock: View {
@@ -316,27 +302,27 @@ struct TimelineEventBlock: View {
             if frame.height >= 36 {
                 Text(timeRangeLabel)
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.onColorSecondary)
+                    .foregroundStyle(secondaryLabelColor)
                     .lineLimit(1)
             }
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Image(systemName: "calendar")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.onColorSecondary)
+                    .foregroundStyle(secondaryLabelColor)
                 Text(item.title)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.onColor)
+                    .foregroundStyle(CalendarEventVisualStyle.primaryLabelColor)
                     .lineLimit(2)
                 if item.isRecurringSeriesMember {
                     Image(systemName: "repeat")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(Theme.onColorTertiary)
+                        .foregroundStyle(CalendarEventVisualStyle.tertiaryLabelColor(isSelected: isSelected, isHovered: isHovered))
                 }
             }
             if frame.height >= 54 && !item.calendarTitle.isEmpty {
                 Text(item.calendarTitle)
                     .font(.system(size: 9))
-                    .foregroundStyle(Theme.onColorSecondary)
+                    .foregroundStyle(secondaryLabelColor)
                     .lineLimit(1)
             }
         }
@@ -344,15 +330,13 @@ struct TimelineEventBlock: View {
         .padding(.vertical, style.verticalPadding)
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
         .clipped()
+        // Hover and selection are carried by the fill's own luminance ladder, not by a white wash
+        // stacked on top of it. A wash was the wrong lever here: it lifts the block by draining
+        // the hue it is supposed to be showing, which is half of why these blocks read as washed
+        // out. `CalendarEventVisualStyle.fillLuminance` brightens the calendar's colour instead.
         .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(item.calendarColor.mutedEventFill())
-                RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(TimelineHoverVisuals.hoverFill(tint: Theme.onColor, isHovered: isHovered && !isSelected, opacity: 0.04))
-                RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(Theme.onColor.opacity(CalendarEventVisualStyle.blockHighlightOpacity(isSelected: isSelected, isHovered: isHovered)))
-            }
+            RoundedRectangle(cornerRadius: style.cornerRadius)
+                .fill(CalendarEventVisualStyle.fill(for: item.calendarColor, isSelected: isSelected, isHovered: isHovered))
         )
         .overlay(
             RoundedRectangle(cornerRadius: style.cornerRadius)
@@ -385,6 +369,12 @@ struct TimelineEventBlock: View {
     private var timeRangeLabel: String {
         TimeFormatters.timeRange(startMin: effectiveStartMin,
                                  endMin: effectiveStartMin + effectiveDuration)
+    }
+
+    /// Read three times in the block body, so it is resolved once against the same state the fill
+    /// is — the two have to move together or the brighter hover fill eats the label.
+    private var secondaryLabelColor: Color {
+        CalendarEventVisualStyle.secondaryLabelColor(isSelected: isSelected, isHovered: isHovered)
     }
 }
 #endif

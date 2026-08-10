@@ -6,6 +6,7 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
     case sync
     case dataSafety
     case calendar
+    case reminders
     case notifications
     case contexts
     case lists
@@ -25,6 +26,7 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
         case .sync: return "Account & Sync"
         case .dataSafety: return "Data Safety"
         case .calendar: return "Calendar"
+        case .reminders: return "Reminders"
         case .notifications: return "Notifications"
         case .contexts: return "Contexts"
         case .lists: return "Lists"
@@ -49,6 +51,8 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
             return "Backups, counts, and storage."
         case .calendar:
             return "Access and linked calendars."
+        case .reminders:
+            return "Apple Reminders access."
         case .notifications:
             return "Task and habit reminders."
         case .contexts:
@@ -77,6 +81,9 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
         case .sync: return "icloud.fill"
         case .dataSafety: return "externaldrive.fill.badge.timemachine"
         case .calendar: return "calendar"
+        // Same glyph the Inbox already uses for its Apple Reminders section, so the
+        // two surfaces read as the same integration.
+        case .reminders: return "checklist"
         case .notifications: return "bell.fill"
         case .contexts: return "square.stack.3d.up.fill"
         case .lists: return CadenceFeatureDestination.lists.systemImage
@@ -100,6 +107,9 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
         case .dataSafety:
             return Theme.amber
         case .calendar:
+            return Theme.purple
+        case .reminders:
+            // Matches the purple accent the Inbox already gives Apple Reminders.
             return Theme.purple
         case .notifications:
             return Theme.amber

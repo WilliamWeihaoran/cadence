@@ -9,6 +9,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case lists
     case tags
     case calendar
+    case reminders
     case notifications
     case ai
     case dataSafety
@@ -25,6 +26,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .lists: return .lists
         case .tags: return .tags
         case .calendar: return .calendar
+        case .reminders: return .reminders
         case .notifications: return .notifications
         case .ai: return .ai
         case .dataSafety: return .dataSafety
@@ -62,7 +64,7 @@ private struct SettingsCategoryGroup: Identifiable {
         ),
         SettingsCategoryGroup(
             title: "Connections",
-            categories: [.calendar, .notifications, .ai]
+            categories: [.calendar, .reminders, .notifications, .ai]
         ),
         SettingsCategoryGroup(
             title: "Account & Safety",

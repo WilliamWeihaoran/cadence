@@ -484,6 +484,10 @@ struct TaskInspectorEstimateRollerPopover: View {
             isFocused: focusedColumn == id
         )
         .focusable()
+        // The column already says it has focus, with its own blue stroke. AppKit's ring is drawn
+        // outside the frame and wraps the whole scroll view, so leaving it on stated the same
+        // thing twice at two different sizes — which read as a stray box, not as focus.
+        .focusEffectDisabled()
         .focused($focusedColumn, equals: id)
         .onKeyPress(.upArrow) { step(-1, in: values, selection: selection); return .handled }
         .onKeyPress(.downArrow) { step(1, in: values, selection: selection); return .handled }

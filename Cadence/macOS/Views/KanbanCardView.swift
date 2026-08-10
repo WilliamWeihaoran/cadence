@@ -134,7 +134,9 @@ struct KanbanCard: View {
             TaskDetailPopover(task: task)
         }
         .popover(isPresented: $showDurationPicker, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
-            EstimatePickerPopoverContent(value: durationBinding) {
+            // The same roller the inspector uses. A card and an inspector editing one field
+            // through two different controls is how the two drifted apart in the first place.
+            TaskInspectorEstimateRollerPopover(value: durationBinding, title: "ESTIMATE") {
                 showDurationPicker = false
             }
         }

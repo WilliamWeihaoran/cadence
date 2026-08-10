@@ -15,6 +15,24 @@ enum NotesListMetrics {
     /// Matches `rowHorizontalPadding` so the header's left edge and the day-number column's left
     /// edge sit on the same line.
     static let headerHorizontalPadding: CGFloat = rowHorizontalPadding
+
+    // MARK: - Column width
+    //
+    // `HSplitView` only honours `idealWidth` when the pane is also bounded: given `minWidth` and
+    // `idealWidth` alone it treats the pane as infinitely growable and splits the window down the
+    // middle, which is how a column of day numbers ended up ~800pt wide in a maximized window and
+    // wider than the editor beside it. `maxWidth` is what actually pins it. The divider is still
+    // draggable — between `columnMinWidth` and `columnMaxWidth`.
+    //
+    // 280 sizes to the content: a row spends 20pt on the day-number slot, 9pt of spacing, 2×10pt of
+    // row padding and 2×8pt of column padding — 65pt of chrome — leaving ~215pt for the preview.
+    // At 12pt system that is roughly 40 characters, which is a full clause of the first line and
+    // the most a one-line truncated preview can use. Anything past that is spent on whitespace the
+    // editor wants back.
+
+    static let columnMinWidth: CGFloat = 220
+    static let columnIdealWidth: CGFloat = 280
+    static let columnMaxWidth: CGFloat = 380
 }
 
 // MARK: - Month grouping
@@ -68,15 +86,21 @@ enum NotesListGrouping {
     }
 }
 
-/// Month header for a grouped note list. Same grammar as the sidebar's context headers —
-/// uppercase, `Theme.dim`, 10pt semibold, kerned — so the two columns read as one app.
+/// Month header for a grouped note list. Uppercase and kerned, like the sidebar's context headers.
+///
+/// It is deliberately *not* at `Theme.dim` any more. `dim` is the de-emphasis stop, and at 10pt on
+/// `Theme.surface` it lands around 3.8:1 — below the 4.5:1 floor for small text, and dimmer than
+/// the `Theme.muted` day numbers it is supposed to be heading, so the header read as the quietest
+/// thing in its own group. `Theme.muted` at 11pt bold clears 7.2:1 and out-weights a 12pt medium
+/// day number, while staying below the `Theme.text` used for today's row so the brightest thing on
+/// screen is still content rather than chrome.
 struct NotesMonthHeader: View {
     let title: String
 
     var body: some View {
         Text(title)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.dim)
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(Theme.muted)
             .kerning(0.8)
             .lineLimit(1)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -180,13 +204,20 @@ struct NoteListDayRow: View {
 // MARK: - Shared note text
 
 private enum NoteRowText {
+    /// "Looks empty" for row styling — the same body-measured rule the list filter uses, so a row
+    /// can never be listed as written and dimmed as blank at the same time. A tagged-but-unwritten
+    /// note is listed (its tags live there) and still reads as empty, which is what it looks like.
     static func isEmpty(_ note: Note) -> Bool {
-        note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        NotesListVisibility.isBlankBody(
+            NotesListVisibility.previewBody(note),
+            displayTitle: note.displayTitle
+        )
     }
 
-    /// First line with anything on it, or `nil` for a note that is still blank.
+    /// First line with anything on it, or `nil` for a note that is still blank. Measured against
+    /// the body: previewing the raw content would show `---` for every tagged note.
     static func preview(_ note: Note) -> String? {
-        note.content
+        NotesListVisibility.previewBody(note)
             .components(separatedBy: "\n")
             .lazy
             .map { $0.trimmingCharacters(in: .whitespaces) }

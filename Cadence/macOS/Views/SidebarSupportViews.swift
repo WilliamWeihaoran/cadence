@@ -156,11 +156,15 @@ struct SidebarNavRow: View {
     }
 
     private var backgroundFill: Color {
+        // Two distinct steps up the neutral ramp. Hover was `surfaceElevated` at 0.6, which
+        // composited to roughly two luminance steps above a near-black page and read as
+        // nothing at all; selection now takes the stop above it so the states stay apart
+        // instead of both landing on the same plate.
         if isSelected {
-            return Theme.surfaceElevated
+            return Theme.surfaceHighlight
         }
         if isHovered {
-            return Theme.surfaceElevated.opacity(0.6)
+            return Theme.surfaceElevated
         }
         return Color.clear
     }
@@ -265,7 +269,10 @@ struct SidebarListRow: View {
             HStack(spacing: SidebarMetrics.listIconLabelSpacing) {
                 Image(systemName: icon)
                     .font(.system(size: SidebarMetrics.listIconSize, weight: .semibold))
-                    .foregroundStyle(isSelected ? color : Theme.dim)
+                    // Hover lights the glyph as well as selection: pointing at a row is already
+                    // a statement of intent, and the colour is the fastest confirmation of which
+                    // list is under the cursor. Idle rows stay neutral, which is the whole point.
+                    .foregroundStyle(isSelected || isHovered ? color : Theme.dim)
                     .frame(width: SidebarMetrics.listIconSlotWidth)
 
                 Text(label)
@@ -308,11 +315,15 @@ struct SidebarListRow: View {
     }
 
     private var backgroundFill: Color {
+        // Two distinct steps up the neutral ramp. Hover was `surfaceElevated` at 0.6, which
+        // composited to roughly two luminance steps above a near-black page and read as
+        // nothing at all; selection now takes the stop above it so the states stay apart
+        // instead of both landing on the same plate.
         if isSelected {
-            return Theme.surfaceElevated
+            return Theme.surfaceHighlight
         }
         if isHovered {
-            return Theme.surfaceElevated.opacity(0.6)
+            return Theme.surfaceElevated
         }
         return Color.clear
     }

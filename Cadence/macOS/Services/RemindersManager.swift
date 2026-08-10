@@ -33,9 +33,12 @@ final class RemindersManager {
         refreshAuthorizationState()
     }
 
+    /// `.authorized` is the pre-macOS-14 spelling of `.fullAccess` — the same enum case with
+    /// the same raw value, not a second state — so matching `.fullAccess` alone still accepts
+    /// every status that used to pass here. This also matches `CalendarManager`.
     func refreshAuthorizationState() {
         let status = EKEventStore.authorizationStatus(for: .reminder)
-        isAuthorized = status == .fullAccess || status == .authorized
+        isAuthorized = status == .fullAccess
 
         if isAuthorized {
             startObserving()
@@ -50,7 +53,7 @@ final class RemindersManager {
     @discardableResult
     func requestAccess() async -> Bool {
         let status = EKEventStore.authorizationStatus(for: .reminder)
-        if status == .fullAccess || status == .authorized {
+        if status == .fullAccess {
             refreshAuthorizationState()
             return true
         }
@@ -120,7 +123,10 @@ final class RemindersManager {
         self.storeObserver = nil
     }
 
-    private static func makeItem(from reminder: EKReminder) -> AppleReminderItem {
+    /// `nonisolated` because `fetchReminders` already calls this from EventKit's background
+    /// completion queue — the annotation states where the work actually happens rather than
+    /// moving it. Both helpers are pure functions over their arguments.
+    nonisolated private static func makeItem(from reminder: EKReminder) -> AppleReminderItem {
         AppleReminderItem(
             id: reminder.calendarItemIdentifier,
             title: reminder.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
@@ -132,7 +138,7 @@ final class RemindersManager {
         )
     }
 
-    private static func sortItems(_ lhs: AppleReminderItem, _ rhs: AppleReminderItem) -> Bool {
+    nonisolated private static func sortItems(_ lhs: AppleReminderItem, _ rhs: AppleReminderItem) -> Bool {
         switch (lhs.dueDate, rhs.dueDate) {
         case let (left?, right?) where left != right:
             return left < right
