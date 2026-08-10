@@ -8,6 +8,12 @@ enum TaskDetailPresentationMode {
     case subtasksOnly
 }
 
+/// The inspector's identity block: priority tile + title + estimate on one row, then the task's
+/// tags and its `List › Section` breadcrumb indented under the title.
+///
+/// Tags used to sit under a heading that said NOTES, which read as "these tag the note" — they
+/// are the task's tags and always were. Placement used to be a labelled two-row well; here it is
+/// one line of context under the title, which is where "where does this live" belongs.
 struct TaskDetailHeaderSection: View {
     @Bindable var task: AppTask
     @Binding var showPriorityPicker: Bool
@@ -17,44 +23,77 @@ struct TaskDetailHeaderSection: View {
     let tags: [Tag]
     let taskContainerBinding: Binding<TaskContainerSelection>
     let taskTagsBinding: Binding<[Tag]>
+    let availableSections: [String]
     let onCreateTag: (String) -> Tag
 
+    /// Priority tile width + the title row's spacing, so everything under the title row lines up
+    /// with the title text rather than with the tile.
+    private static let tileSize: CGFloat = 28
+    private static let titleRowSpacing: CGFloat = 10
+    private static var titleColumnInset: CGFloat { tileSize + titleRowSpacing }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            // The header tile *is* the priority control. It used to be a decorative container
-            // glyph, with the real priority control duplicated on the right — two affordances
-            // for one field.
-            Button { showPriorityPicker.toggle() } label: {
-                TaskPriorityMarkControl(priority: task.priority)
-            }
-            .buttonStyle(.cadencePlain)
-            .fixedSize()
-            .help("Priority")
-            .popover(isPresented: $showPriorityPicker, arrowEdge: .bottom) {
-                TaskPriorityPickerPopover(priority: $task.priority, isPresented: $showPriorityPicker)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: Self.titleRowSpacing) {
+                // The header tile *is* the priority control. It used to be a decorative container
+                // glyph, with the real priority control duplicated on the right — two affordances
+                // for one field.
+                Button { showPriorityPicker.toggle() } label: {
+                    TaskPriorityMarkControl(priority: task.priority)
+                }
+                .buttonStyle(.cadencePlain)
+                .fixedSize()
+                .help("Priority")
+                .popover(isPresented: $showPriorityPicker, arrowEdge: .bottom) {
+                    TaskPriorityPickerPopover(priority: $task.priority, isPresented: $showPriorityPicker)
+                }
+
+                TaskTitleEntryField(
+                    title: $task.title,
+                    priority: $task.priority,
+                    placeholder: "Task title",
+                    font: .system(size: 13, weight: .medium),
+                    previewFont: .system(size: 13, weight: .medium),
+                    lineLimit: 1...8,
+                    suppressInitialSelection: true,
+                    contexts: contexts,
+                    areas: areas,
+                    projects: projects,
+                    allTags: tags,
+                    containerSelection: taskContainerBinding,
+                    sectionName: $task.sectionName,
+                    selectedTags: taskTagsBinding,
+                    onCreateTag: onCreateTag
+                )
+                .lineSpacing(4)
+                // minHeight + .leading centres the single-line title against the 28pt badge while
+                // still letting a wrapped title grow downward. The title keeps the flexible slot;
+                // the estimate chip is fixed-size, so a long title wraps instead of squeezing it.
+                .frame(maxWidth: .infinity, minHeight: Self.tileSize, alignment: .leading)
+
+                TaskInspectorEstimateChip(value: $task.estimatedMinutes)
             }
 
-            TaskTitleEntryField(
-                title: $task.title,
-                priority: $task.priority,
-                placeholder: "Task title",
-                font: .system(size: 13, weight: .medium),
-                previewFont: .system(size: 13, weight: .medium),
-                lineLimit: 1...8,
-                suppressInitialSelection: true,
-                contexts: contexts,
-                areas: areas,
-                projects: projects,
-                allTags: tags,
-                containerSelection: taskContainerBinding,
-                sectionName: $task.sectionName,
-                selectedTags: taskTagsBinding,
-                onCreateTag: onCreateTag
-            )
-            .lineSpacing(4)
-            // minHeight + .leading centres the single-line title against the 28pt badge while
-            // still letting a wrapped title grow downward.
-            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+            VStack(alignment: .leading, spacing: 6) {
+                // The task's tags, bound to `task.tags`. `AppTask.notes` is a `String`, so there
+                // is no note here to tag — the old placement under NOTES only implied one.
+                TagPickerControl(
+                    selectedTags: taskTagsBinding,
+                    allTags: tags,
+                    onCreateTag: onCreateTag,
+                    triggerSymbol: "plus"
+                )
+
+                TaskDetailPlacementBreadcrumb(
+                    task: task,
+                    contexts: contexts,
+                    areas: areas,
+                    projects: projects,
+                    taskContainerBinding: taskContainerBinding,
+                    availableSections: availableSections
+                )
+            }
+            .padding(.leading, Self.titleColumnInset)
         }
     }
 
@@ -102,8 +141,8 @@ struct TaskPriorityPickerPopover: View {
     }
 }
 
-/// "SCHEDULE" — do date, due date, estimate, repeat. Every row opens the same picker it
-/// always has; only the row chrome changed.
+/// "SCHEDULE" — do date, due date, repeat. Every row opens the same picker it always has.
+/// Estimate left this well for the title row: it is a property of the task, not a date.
 struct TaskDetailScheduleGroupSection: View {
     @Bindable var task: AppTask
 
@@ -151,12 +190,6 @@ struct TaskDetailScheduleGroupSection: View {
                 )
             )
 
-            TaskInspectorFieldDivider()
-
-            // Glyph tints are the colours these concepts already carry elsewhere in the app:
-            // planned time is purple (goal/effort planning), logged time is green (done work).
-            TaskInspectorEstimateFieldRow(value: $task.estimatedMinutes, iconColor: Theme.purple)
-
             // No "Actual" row: logged time is measured, not typed. The focus timer accumulates
             // `actualMinutes`, and Focus's log-session popover is where a session gets corrected —
             // an inspector field invited hand-editing a number that is supposed to be a record.
@@ -169,9 +202,12 @@ struct TaskDetailScheduleGroupSection: View {
     }
 }
 
-/// "PLACEMENT" — list + section. Both rows present the full container/section pickers
-/// (search box, arrow-key highlight, the lot); only the trigger is drawn as a field row.
-struct TaskDetailPlacementGroupSection: View {
+/// `China › Documents` — where the task lives, on one line under the title.
+///
+/// This replaced a "PLACEMENT" well holding a List row and a Section row. Both segments still
+/// present the full container/section pickers (search box, arrow-key highlight, the lot); only
+/// the trigger changed.
+struct TaskDetailPlacementBreadcrumb: View {
     @Bindable var task: AppTask
     let contexts: [Context]
     let areas: [Area]
@@ -179,23 +215,42 @@ struct TaskDetailPlacementGroupSection: View {
     let taskContainerBinding: Binding<TaskContainerSelection>
     let availableSections: [String]
 
+    /// A task in the Inbox has nowhere to be sectioned, so `Inbox › Default` would be a chevron
+    /// pointing at a non-choice. The segment appears as soon as there is a section worth naming:
+    /// more than one to pick from, or a single one the user actually named.
+    private var showsSectionSegment: Bool {
+        let sections = availableSections
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if sections.count > 1 { return true }
+        guard let only = sections.first else { return false }
+        return only.caseInsensitiveCompare(TaskSectionDefaults.defaultName) != .orderedSame
+    }
+
     var body: some View {
-        TaskInspectorRecessedSection(title: "Placement") {
+        HStack(spacing: 2) {
             ContainerPickerBadge(
                 selection: taskContainerBinding,
                 contexts: contexts,
                 areas: areas,
                 projects: projects,
-                inspectorRowLabel: "List"
+                breadcrumbSegment: true
             )
 
-            TaskInspectorFieldDivider()
+            if showsSectionSegment {
+                Text("›")
+                    .font(TaskInspectorBreadcrumbMetrics.font)
+                    .foregroundStyle(Theme.dim)
+                    .accessibilityHidden(true)
 
-            TaskSectionPickerBadge(
-                selection: $task.sectionName,
-                sections: availableSections,
-                inspectorRowLabel: "Section"
-            )
+                TaskSectionPickerBadge(
+                    selection: $task.sectionName,
+                    sections: availableSections,
+                    breadcrumbSegment: true
+                )
+            }
+
+            Spacer(minLength: 0)
         }
     }
 }

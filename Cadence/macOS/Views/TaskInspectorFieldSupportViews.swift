@@ -21,6 +21,19 @@ enum TaskInspectorFieldRowMetrics {
     static let groupLabelKerning: CGFloat = 0.54
 }
 
+/// Shared metrics for the inspector's `List › Section` breadcrumb. The segments themselves are
+/// `ContainerPickerBadge` / `TaskSectionPickerBadge` in `breadcrumbSegment` mode — the same
+/// pickers the chips elsewhere present, drawn as bare text.
+enum TaskInspectorBreadcrumbMetrics {
+    static let font = Font.system(size: 11, weight: .medium)
+    static let segmentHeight: CGFloat = 20
+    static let segmentHorizontalPadding: CGFloat = 5
+    /// Caps one segment so a long list name cannot push the section out of the panel; the text
+    /// still takes its intrinsic width when it is shorter.
+    static let maxSegmentWidth: CGFloat = 128
+    static let hoverCornerRadius: CGFloat = 5
+}
+
 /// One line of the inspector overview list: leading glyph, field name, value flush right.
 struct TaskInspectorFieldRow<Value: View>: View {
     let label: String
@@ -367,28 +380,52 @@ struct InspectorPickerHover: ViewModifier {
     }
 }
 
-/// Estimate field row: whole row opens the roller picker.
-struct TaskInspectorEstimateFieldRow: View {
+/// Estimate as a compact chip for the inspector's title row.
+///
+/// It used to be a field row inside the SCHEDULE well. An estimate is a property of the task the
+/// way its priority is, not a date you pick, so it now sits beside the title with the priority
+/// tile — the two things you set while naming the task. Same roller popover either way.
+struct TaskInspectorEstimateChip: View {
     @Binding var value: Int
-    var label: String = "Estimate"
-    var icon: String = "timer"
-    var iconColor: Color = Theme.purple
+    /// Uppercase heading for the roller panel.
+    var title: String = "ESTIMATE"
     @State private var showPicker = false
 
+    private var isSet: Bool { value > 0 }
+
     var body: some View {
-        TaskInspectorFieldButtonRow(
-            label: label,
-            icon: icon,
-            iconColor: iconColor,
-            valueText: value > 0 ? CadenceTaskPresentationSupport.estimateLabel(minutes: value) : "None",
-            isSet: value > 0
-        ) {
-            showPicker.toggle()
+        Button { showPicker.toggle() } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "timer")
+                    .font(.system(size: 10, weight: .semibold))
+                    // Purple is the app's planned-time colour, as it was on the old row's glyph.
+                    .foregroundStyle(isSet ? Theme.purple : Theme.dim)
+                Text(isSet ? CadenceTaskPresentationSupport.estimateLabel(minutes: value) : "Est")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isSet ? Theme.text : Theme.dim)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 8)
+            .frame(minHeight: 28)
+            .background(Theme.surfaceElevated)
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(Theme.borderSubtle, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.cadencePlain)
+        // The title beside it is an editable field: without this the chip is treated as flexible
+        // and a long title squeezes it down to its glyph.
+        .fixedSize()
+        // Buttons take key focus under Full Keyboard Access; leaving the chip out of the focus
+        // ring means clicking it cannot pull the caret out of a title being typed.
+        .focusable(false)
+        .help("Estimate")
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
-            // The popover heading follows the row, so the "Actual" row cannot present a panel
-            // titled ESTIMATE.
-            TaskInspectorEstimateRollerPopover(value: $value, title: label.uppercased()) {
+            TaskInspectorEstimateRollerPopover(value: $value, title: title) {
                 showPicker = false
             }
         }

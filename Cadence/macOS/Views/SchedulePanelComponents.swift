@@ -78,19 +78,11 @@ struct TaskDetailPopover: View {
                         tags: tags,
                         taskContainerBinding: taskContainerBinding,
                         taskTagsBinding: taskTagsBinding,
+                        availableSections: availableSections,
                         onCreateTag: createTag
                     )
 
                     TaskDetailScheduleGroupSection(task: task)
-
-                    TaskDetailPlacementGroupSection(
-                        task: task,
-                        contexts: contexts,
-                        areas: areas,
-                        projects: projects,
-                        taskContainerBinding: taskContainerBinding,
-                        availableSections: availableSections
-                    )
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(task.title.isEmpty ? "Untitled task" : task.title)
@@ -122,17 +114,12 @@ struct TaskDetailPopover: View {
 
                 if presentationMode == .full {
                     TaskInspectorSectionGroup(title: "Notes") {
-                        TagPickerControl(
-                            selectedTags: taskTagsBinding,
-                            allTags: tags,
-                            onCreateTag: createTag
-                        )
                         TaskDetailNotesSection(task: task)
                     }
 
-                    TaskInspectorSectionGroup(title: "Actions") {
-                        TaskDetailActionsSection(task: task)
-                    }
+                    // No "Actions" heading: a label over two buttons at the foot of the panel
+                    // names something the buttons already say.
+                    TaskDetailActionsSection(task: task)
                 }
             }
             .padding(14)

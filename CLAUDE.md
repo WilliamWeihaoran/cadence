@@ -359,13 +359,13 @@ TimeFormatters.durationLabel(actual: Int, estimated: Int)  // "45/60m"
 `EstimatePickerControl` **and** `EstimatePickerPopoverContent` (Shared/Components) are now
 **iOS-only** — every caller is under `Cadence/iOS/`. macOS uses its own two-column roller
 (`TaskInspectorEstimateRollerPopover` / `EstimateRollerColumn`, in
-`TaskInspectorFieldSupportViews.swift`) behind `TaskInspectorEstimateFieldRow`.
+`TaskInspectorFieldSupportViews.swift`) behind `TaskInspectorEstimateChip`.
 
 **Performance:** `MacTaskRow` does NOT read `TaskCompletionAnimationManager` directly. The completion button and animated background are extracted into `TaskCompletionButton` and `TaskRowBackground` sub-view structs, each with their own `@Environment(TaskCompletionAnimationManager.self)`. This scopes SwiftUI observation so only those small sub-views re-render on animation ticks — not every visible row.
 
 **`ContainerPickerBadge` / `TaskSectionPickerBadge` (TasksPanelSupportViews.swift):** Both popovers open with a search bar auto-focused. Search filters by `hasPrefix` (case-insensitive). Navigation: ↑↓ arrows or `Enter` to select the highlighted item. The highlighted item is tracked by `highlightIdx` (index into `flatFiltered` / `filteredSections`), resets to 0 on query change or close. List name capped at 80pt (60 compact), section name at 70pt — both truncate with `…`. Rows use dedicated `ContainerPickerRow` / `SectionPickerRow` View structs (not `@ViewBuilder` functions) with `let isHighlighted: Bool` for reliable in-place updates. Checkmark follows `isHighlighted`, so the rows deliberately carry **no** `isSelected` property. Hover + highlight share a single `rowBackground` computed property.
 
-Both badges also take an optional `inspectorRowLabel:`. When set, the trigger renders as a full-bleed `TaskInspectorFieldRow` (label left, plain value right) instead of a chip, so the task inspector's List/Section rows match the date/estimate/repeat rows around them; the popover is identical either way. The inspector-row value always shows the **real** name (`Inbox` / `Default`) — the dim `isSet: false` styling is what conveys "unset", so the row and its picker never disagree.
+Both badges also take `breadcrumbSegment: Bool`. When set, the trigger renders as one segment of the task inspector's `List › Section` breadcrumb — icon + name (list) or bare name (section), no pill, no chevron, sized to its text — instead of a chip; the popover is identical either way. A breadcrumb segment takes the inspector's own hover layer (`InspectorPickerHover`, radius 5) rather than `cadencePlain`, whose radius-10 fill would draw a chip around text that is deliberately not one. The value always shows the **real** name (`Inbox` / `Default`) — dimmer styling is what conveys "unset", so the segment and its picker never disagree.
 
 ## Today view task scope
 The Today **tasks** column only includes tasks that are **do today**, **due today**, **past do** (over-do), or **past due**, plus work tied to **sections due today**. A one-time **rollover** banner can appear when there are over-do tasks from the previous day; dismissing it merges those tasks into normal grouping.
@@ -469,14 +469,17 @@ Shared behavior for the popovers:
 
 ## Task Inspector
 The shared task inspector (opened from timeline blocks, calendar board cards, and task rows) is
-composed from `SchedulePanelPopoverSupportViews` (stateful wrapper + header/schedule/placement
-sections) plus `TaskInspector*SupportViews` (field-row primitives, content sections, recurrence).
-Current shape:
+composed from `SchedulePanelPopoverSupportViews` (stateful wrapper + header/schedule sections and
+the placement breadcrumb) plus `TaskInspector*SupportViews` (field-row primitives, content
+sections, recurrence). Current shape, top to bottom: title row, tags, breadcrumb, SCHEDULE,
+SUBTASKS, NOTES, action buttons.
 - **The header tile *is* the priority control.** It used to be a decorative container glyph with a duplicate priority control on the right — two affordances for one field. Tapping the tile opens `TaskPriorityPickerPopover`.
+- **Estimate is a chip at the trailing edge of the title row** (`TaskInspectorEstimateChip`), not a row in the SCHEDULE well — an estimate is a property of the task like its priority, not a date. It is `fixedSize`, so a long title wraps instead of squeezing it, and non-focusable, so clicking it cannot pull the caret out of a title being edited. Same **two-column roller** popover (`TaskInspectorEstimateRollerPopover`) the row used; still not the iOS `EstimatePickerPopoverContent`.
+- **Tags sit directly under the title**, indented to the title column, as a chip strip with a `+`. They are `task.tags` and always were — they previously sat under a heading reading NOTES, which implied tagging a task also tagged a note. (`AppTask.notes` is a `String`; there is no note object to tag.)
+- **Placement is one breadcrumb line** under the tags — `China › Documents` (`TaskDetailPlacementBreadcrumb`), replacing a "PLACEMENT" well with a List row and a Section row. Each segment opens its full picker. The section segment is omitted when the container has nothing to choose between — an Inbox task reads simply `Inbox`.
 - **No "Actual" row.** Logged time is measured, not typed; the focus timer accumulates it.
-- Estimate uses a **two-column roller** popover (`TaskInspectorEstimateRollerPopover`), not the iOS `EstimatePickerPopoverContent`.
 - Repeat is an inline row + picker panel, not a dialog (see Recurrence above).
-- List/Section rows render as full-bleed `TaskInspectorFieldRow`s via the shared badges' `inspectorRowLabel:` parameter, so they match the date/estimate/repeat rows around them.
+- The Mark done / Unschedule / delete buttons carry **no group heading** — a label over two buttons at the foot of the panel names what the buttons already say.
 
 ## Calendar / Events
 - The Calendar page has two **presentations** (`CadenceCalendarPresentation`): **Timeline** and **Board**. Timeline has Week / 2 Weeks / Month view modes (`CadenceCalendarViewMode`; the picker exposes Week and Month).
