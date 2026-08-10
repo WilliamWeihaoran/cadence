@@ -28,7 +28,6 @@ struct CadenceFeatureSection: Identifiable, Hashable {
 
 enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
     case today
-    case planning
     case allTasks
     case focus
     case inbox
@@ -44,7 +43,6 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
 
     static let desktopSidebarOrder: [CadenceFeatureDestination] = [
         .today,
-        .planning,
         .allTasks,
         .focus,
         .inbox,
@@ -88,7 +86,7 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
 
     var isPrimaryNavigation: Bool {
         switch self {
-        case .today, .planning, .allTasks, .focus, .inbox, .calendar:
+        case .today, .allTasks, .focus, .inbox, .calendar:
             return true
         case .notes, .lists, .goals, .habits, .search, .settings:
             return false
@@ -99,7 +97,7 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .goals, .habits:
             return true
-        case .today, .planning, .allTasks, .focus, .inbox, .calendar, .notes, .lists, .search, .settings:
+        case .today, .allTasks, .focus, .inbox, .calendar, .notes, .lists, .search, .settings:
             return false
         }
     }
@@ -108,7 +106,7 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .search, .settings:
             return true
-        case .today, .planning, .allTasks, .focus, .inbox, .calendar, .notes, .lists, .goals, .habits:
+        case .today, .allTasks, .focus, .inbox, .calendar, .notes, .lists, .goals, .habits:
             return false
         }
     }
@@ -116,7 +114,6 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .today: return "Today"
-        case .planning: return "Planning"
         case .allTasks: return "All Tasks"
         case .focus: return "Focus"
         case .inbox: return "Inbox"
@@ -140,7 +137,6 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
     var subtitle: String {
         switch self {
         case .today: return "Plan the current day"
-        case .planning: return "Triage every list by date"
         case .allTasks: return "Review active and completed work"
         case .focus: return "Run focused sessions"
         case .inbox: return "Capture and triage"
@@ -157,7 +153,6 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
     var searchSummary: String {
         switch self {
         case .today: return "Tasks, notes, and schedule"
-        case .planning: return "Overdue, today, this week, later, unscheduled"
         case .allTasks: return "Full task index"
         case .focus: return "Timer and current work"
         case .inbox: return "Capture and triage"
@@ -175,8 +170,6 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .today:
             return "today plan tasks notes schedule agenda do date due date"
-        case .planning:
-            return "planning schedule backlog upcoming overdue triage later unscheduled this week"
         case .allTasks:
             return "all tasks task index completed active priority due scheduled"
         case .focus:
@@ -207,7 +200,6 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
     var systemImage: String {
         switch self {
         case .today: return "sun.max.fill"
-        case .planning: return "calendar.day.timeline.left"
         case .allTasks: return "checklist"
         case .focus: return "timer"
         case .inbox: return "tray.fill"
@@ -228,7 +220,6 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
     var defaultColorHex: String {
         switch self {
         case .today: return "#FFB84D"
-        case .planning: return "#9E8CFF"
         case .allTasks: return "#5AA2FF"
         case .focus: return "#FF6B6B"
         case .inbox: return "#5AA2FF"
@@ -281,7 +272,7 @@ enum CadenceFeatureBadgeSupport {
                 return habitCount > 0 ? habitCount : nil
             case .lists:
                 return activeListCount > 0 ? activeListCount : nil
-            case .planning, .focus, .calendar, .notes, .search, .settings:
+            case .focus, .calendar, .notes, .search, .settings:
                 return nil
             }
         }

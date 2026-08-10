@@ -176,7 +176,7 @@ struct SidebarView: View {
     // groups — reordering in Settings still moves a row, it just can't move it past the
     // lists into the other group.
     private static let primaryFeatures: [CadenceFeatureDestination] = [
-        .today, .inbox, .planning, .calendar, .allTasks
+        .today, .inbox, .calendar, .allTasks
     ]
     private static let secondaryFeatures: [CadenceFeatureDestination] = [
         .notes, .focus, .goals, .habits

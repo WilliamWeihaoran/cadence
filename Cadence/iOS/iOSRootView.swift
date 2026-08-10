@@ -140,8 +140,7 @@ private struct iOSCompactRootShell: View {
         switch destination {
         case .today:
             iPadTodayView()
-        // Planning is a macOS-only page for now; iOS falls back to All Tasks.
-        case .planning, .allTasks:
+        case .allTasks:
             iOSAllTasksView()
         case .focus:
             iOSFocusView()

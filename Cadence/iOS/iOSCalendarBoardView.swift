@@ -30,12 +30,16 @@ struct iOSCalendarBoardPlanner: View {
         horizontalSizeClass == .regular ? 20 : 14
     }
 
+    /// No `notBefore`: this board has no Overdue rail, so it keeps its full leading buffer and
+    /// stays scrollable into the past. The floor is the macOS board's, where the rails cover it.
     private var activeWindowStartDate: Date {
         windowStartDate ?? CalendarBoardPlannerSupport.plannerWindowStart(for: anchorDate, calendar: calendar)
     }
 
+    /// Folds due-only work into its due day. Without an Unscheduled rail these day columns are the
+    /// only place a card can appear, so bucketing strictly on the do date would hide it entirely.
     private var boardTasksByDate: [String: [AppTask]] {
-        CalendarBoardPlannerSupport.tasksByBoardDate(from: allTasks)
+        CalendarBoardPlannerSupport.tasksByBoardDateFoldingDueDates(from: allTasks)
     }
 
     var body: some View {
@@ -106,9 +110,14 @@ struct iOSCalendarBoardPlanner: View {
 
     private func recenterWindowIfNeeded(_ proxy: ScrollViewProxy, visibleDayIndex dayIndex: Int, visibleDate: Date) {
         guard !isProgrammaticScroll else { return }
-        guard CalendarBoardPlannerSupport.shouldRecenter(dayIndex: dayIndex, renderDays: renderDays) else { return }
+        guard let startDate = CalendarBoardPlannerSupport.recenteredWindowStart(
+            visibleDayIndex: dayIndex,
+            visibleDate: visibleDate,
+            currentWindowStart: activeWindowStartDate,
+            renderDays: renderDays,
+            calendar: calendar
+        ) else { return }
 
-        let startDate = CalendarBoardPlannerSupport.plannerWindowStart(for: visibleDate, calendar: calendar)
         let recenteredDayIndex = CalendarBoardPlannerSupport.dayIndex(
             for: visibleDate,
             bufferStart: startDate,

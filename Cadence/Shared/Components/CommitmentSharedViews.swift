@@ -3,7 +3,6 @@ import SwiftUI
 
 struct CommitmentPageHeader<Accessory: View, Controls: View>: View {
     let title: String
-    let subtitle: String
     var titleSize: CGFloat = CadenceDesktopMetrics.pageTitleSize
     @ViewBuilder let accessory: Accessory
     @ViewBuilder let controls: Controls
@@ -11,14 +10,9 @@ struct CommitmentPageHeader<Accessory: View, Controls: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.system(size: titleSize, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                    Text(subtitle)
-                        .font(.system(size: CadenceDesktopMetrics.secondaryTextSize))
-                        .foregroundStyle(Theme.dim)
-                }
+                Text(title)
+                    .font(.system(size: titleSize, weight: .bold))
+                    .foregroundStyle(Theme.text)
 
                 Spacer(minLength: 20)
 

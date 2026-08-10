@@ -66,7 +66,7 @@ struct iOSLinkedNoteEditorSheet: View {
         case .weekly: return "Weekly note"
         case .permanent: return "Notepad"
         case .list: return "Linked note"
-        case .meeting: return "Meeting note"
+        case .meeting: return "Event note"
         }
     }
 

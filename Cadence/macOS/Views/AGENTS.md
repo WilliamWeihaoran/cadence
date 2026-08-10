@@ -14,8 +14,9 @@ Feature views in this folder are actively refactored into thin roots plus suppor
 
 - `TasksPanel*` - Today/all-task list orchestration, task rows, completion animation scoping, grouping/sorting.
 - `SchedulePanel*`, `Timeline*`, `CalendarPage*` - timeline rendering, schedule state, drag-to-create, event/task block layout.
-- `Kanban*` - list/all-task kanban boards, card state, section support.
-- `ListDetail*`, `ListPlanningView`, `ListNotesView`, `LinksView` - area/project detail tabs.
+- `Kanban*` - list/all-task kanban boards, card state, section support. `KanbanCard`, `BoardColumnHeader` and `KanbanColumnScroll` are shared with the Calendar Board — parameterize them, never fork them.
+- `CalendarBoard*` - the Calendar page's Board mode: day columns plus the pinned Overdue/Unscheduled rails that replaced the Planning page.
+- `ListDetail*`, `ListNotesView`, `LinksView` - area/project detail tabs.
 - `FocusView*` - focus timer, task/bundle picker, log-session popovers, focus sidebar.
 - `QuickCreateChoice*` - drag-to-create task/event/bundle popover and support views.
 - `Settings*` - settings shell and category sections.

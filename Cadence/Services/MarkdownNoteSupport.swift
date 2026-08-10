@@ -296,7 +296,7 @@ extension NoteKind {
         case .list:
             return "List"
         case .meeting:
-            return "Meeting"
+            return "Event"
         }
     }
 }

@@ -8,6 +8,15 @@ let kanbanSectionColorOptions: [String] = [
 let kanbanColumnReorderAnimation = Animation.spring(response: 0.34, dampingFraction: 0.82, blendDuration: 0.12)
 let kanbanColumnStateAnimation = Animation.spring(response: 0.26, dampingFraction: 0.88, blendDuration: 0.08)
 let kanbanColumnWidth: CGFloat = 236
+/// The Calendar Board's day columns run wider than a kanban column because they stack calendar
+/// events and bundle blocks above the task cards, not task cards alone.
+let calendarBoardDayColumnWidth: CGFloat = 306
+/// The Overdue / Unscheduled rails are inboxes rather than days, so they sit narrower than a day
+/// column. `BoardColumnHeader` fills whatever width it is handed, so the narrower rail still lines
+/// its dot, label, count and closing hairline up with the day columns beside it.
+let calendarBoardRailWidth: CGFloat = 248
+let calendarBoardColumnSpacing: CGFloat = 14
+let calendarBoardHorizontalPadding: CGFloat = 22
 /// Kanban columns are containerless (no fill, no border). This radius is only used for the
 /// transient drop-target wash / dashed outline and the search-navigation highlight ring.
 let kanbanColumnCornerRadius: CGFloat = 10

@@ -48,6 +48,17 @@ enum NoteActionSupport {
     }
 }
 
+/// Which page of the Actions popover is showing.
+///
+/// Export and Move are drill-down submenus rather than expand-in-place sections: expanding them
+/// inline pushed everything below out of view, and inside a popover that is the difference
+/// between a menu and a scrolling list.
+private enum NoteActionPage {
+    case root
+    case export
+    case move
+}
+
 struct NoteActionMenu: View {
     let note: Note
     var area: Area?
@@ -63,7 +74,7 @@ struct NoteActionMenu: View {
     @State private var errorMessage: String?
     @State private var isRunning = false
     @State private var showsPicker = false
-    @State private var isMoveSectionExpanded = false
+    @State private var page: NoteActionPage = .root
 
     private var showsMoveDestinationSection: Bool {
         note.kind == .list && (!areas.isEmpty || !projects.isEmpty)
@@ -75,121 +86,95 @@ struct NoteActionMenu: View {
 
     var body: some View {
         actionButton
-            .overlay(alignment: .topTrailing) {
-                if showsPicker {
-                    pickerCard
+            // A real popover, not a card overlaid on the trigger. The old inline card was
+            // positioned with `.offset(y: 42)` inside the note header, so the header's bounds
+            // squeezed and clipped it; a popover is its own window and cannot be.
+            .popover(isPresented: $showsPicker, arrowEdge: .bottom) {
+                NoteActionPickerCard {
+                    switch page {
+                    case .root: rootPage
+                    case .export: exportPage
+                    case .move: movePage
+                    }
                 }
             }
-        .zIndex(showsPicker ? 1_000 : 0)
-        .sheet(item: $payload, content: reviewSheet)
-        .alert("AI Action Failed", isPresented: Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { errorMessage = nil }
-        } message: {
-            Text(errorMessage ?? "")
-        }
+            .onChange(of: showsPicker) { _, isShowing in
+                if !isShowing { page = .root }
+            }
+            .sheet(item: $payload, content: reviewSheet)
+            .alert("AI Action Failed", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
     }
 
     private var actionButton: some View {
-        Button {
-            withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
-                showsPicker.toggle()
-            }
-        } label: {
+        CadenceQuietPillButton(state: showsPicker ? .active : .resting, action: { showsPicker.toggle() }) {
             HStack(spacing: 6) {
                 if isRunning {
                     ProgressView()
                         .controlSize(.small)
                         .scaleEffect(0.65)
                 } else {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "ellipsis")
                         .font(.system(size: 12, weight: .semibold))
                 }
                 Text("Actions")
-                    .font(.system(size: 12, weight: .semibold))
-                Image(systemName: showsPicker ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.muted)
+                    .font(.system(size: 12, weight: .medium))
             }
-            .foregroundStyle(Theme.blue)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Theme.blue.opacity(0.12))
-            .clipShape(Capsule())
+            .foregroundStyle(Theme.muted)
         }
-        .buttonStyle(.cadencePlain)
         .fixedSize()
         .help("Note actions")
     }
 
-    private var pickerCard: some View {
-        NoteActionPickerCard {
-            exportSection
-            moveDestinationSection
-            Divider().background(Theme.borderSubtle.opacity(0.9))
-            aiSection
+    // MARK: - Pages
+
+    @ViewBuilder
+    private var rootPage: some View {
+        NoteActionPickerRow(icon: "square.and.arrow.up", title: "Export", trailingSymbol: "chevron.right") {
+            page = .export
+        }
+
+        if showsMoveDestinationSection {
+            NoteActionPickerRow(icon: "tray.full", title: "Move Note", trailingSymbol: "chevron.right") {
+                page = .move
+            }
+        }
+
+        NoteActionPickerDivider()
+
+        aiSection
+
+        if onDelete != nil {
+            NoteActionPickerDivider()
             deleteSection
         }
-        .offset(y: 42)
-        .zIndex(1_000)
-        .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity), removal: .opacity))
     }
 
-    private var exportSection: some View {
-        NoteActionPickerSection(title: "Export") {
-            NoteActionPickerRow(icon: "doc.text", title: "Export Markdown") {
-                dismissPicker()
-                NoteExportService.export(note, as: .markdown)
-            }
-            NoteActionPickerRow(icon: "doc.richtext", title: "Export PDF") {
-                dismissPicker()
-                NoteExportService.export(note, as: .pdf, imageAssets: imageAssetsReferencedByNote())
-            }
-            NoteActionPickerRow(icon: "link", title: "Copy Note Link") {
-                dismissPicker()
-                NoteActionSupport.copyMarkdownLink(to: note)
-            }
+    @ViewBuilder
+    private var exportPage: some View {
+        NoteActionSubmenuHeader(title: "Export") { page = .root }
+        NoteActionPickerRow(icon: "doc.text", title: "Export Markdown") {
+            dismissPicker()
+            NoteExportService.export(note, as: .markdown)
+        }
+        NoteActionPickerRow(icon: "doc.richtext", title: "Export PDF") {
+            dismissPicker()
+            NoteExportService.export(note, as: .pdf, imageAssets: imageAssetsReferencedByNote())
         }
     }
 
     @ViewBuilder
-    private var moveDestinationSection: some View {
-        if showsMoveDestinationSection {
-            Divider().background(Theme.borderSubtle.opacity(0.9))
-
-            NoteActionPickerSection(title: "Organize") {
-                moveNoteRow
-                expandedMoveDestinations
-            }
-        }
-    }
-
-    private var moveNoteRow: some View {
-        NoteActionPickerRow(
-            icon: "tray.full",
-            title: "Move Note",
-            subtitle: "Change which list owns this note",
-            trailingSymbol: isMoveSectionExpanded ? "chevron.up" : "chevron.down"
-        ) {
-            withAnimation(.spring(response: 0.24, dampingFraction: 0.9)) {
-                isMoveSectionExpanded.toggle()
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var expandedMoveDestinations: some View {
-        if isMoveSectionExpanded {
-            VStack(alignment: .leading, spacing: 6) {
-                noListDestination
-                areaDestinations
-                projectDestinations
-            }
-            .padding(.top, 2)
-            .padding(.leading, 8)
-        }
+    private var movePage: some View {
+        NoteActionSubmenuHeader(title: "Move Note") { page = .root }
+        noListDestination
+        areaDestinations
+        projectDestinations
     }
 
     private var noListDestination: some View {
@@ -237,43 +222,38 @@ struct NoteActionMenu: View {
         }
     }
 
+    @ViewBuilder
     private var aiSection: some View {
-        NoteActionPickerSection(title: "AI") {
-            NoteActionPickerRow(
-                icon: "text.magnifyingglass",
-                title: "Summarize Note",
-                subtitle: aiSettingsManager.hasAPIKey ? "Generate a concise recap" : "Add an API key to enable AI",
-                isEnabled: canRunAI
-            ) {
-                dismissPicker()
-                runSummary()
-            }
-            NoteActionPickerRow(
-                icon: "sparkles.rectangle.stack",
-                title: "Extract Tasks",
-                subtitle: aiSettingsManager.hasAPIKey ? "Turn notes into task drafts" : "Add an API key to enable AI",
-                isEnabled: canRunAI
-            ) {
-                dismissPicker()
-                runTaskExtraction()
-            }
+        NoteActionPickerRow(
+            icon: "text.magnifyingglass",
+            title: "Summarize Note",
+            subtitle: aiSettingsManager.hasAPIKey ? "Generate a concise recap" : "Add an API key to enable AI",
+            isEnabled: canRunAI
+        ) {
+            dismissPicker()
+            runSummary()
+        }
+        NoteActionPickerRow(
+            icon: "sparkles.rectangle.stack",
+            title: "Extract Tasks",
+            subtitle: aiSettingsManager.hasAPIKey ? "Turn notes into task drafts" : "Add an API key to enable AI",
+            isEnabled: canRunAI
+        ) {
+            dismissPicker()
+            runTaskExtraction()
         }
     }
 
     @ViewBuilder
     private var deleteSection: some View {
         if let onDelete {
-            Divider().background(Theme.borderSubtle.opacity(0.9))
-
-            NoteActionPickerSection(title: "Danger") {
-                NoteActionPickerRow(
-                    icon: "trash",
-                    title: "Delete Note",
-                    tint: Theme.red
-                ) {
-                    dismissPicker()
-                    onDelete()
-                }
+            NoteActionPickerRow(
+                icon: "trash",
+                title: "Delete Note",
+                tint: Theme.red
+            ) {
+                dismissPicker()
+                onDelete()
             }
         }
     }
@@ -307,9 +287,7 @@ struct NoteActionMenu: View {
     }
 
     private func dismissPicker() {
-        withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
-            showsPicker = false
-        }
+        showsPicker = false
     }
 
     private func imageAssetsReferencedByNote() -> [MarkdownImageAsset] {
@@ -353,45 +331,66 @@ struct NoteActionMenu: View {
 }
 
 private enum NoteActionPickerMetrics {
-    static let width: CGFloat = 280
+    static let width: CGFloat = 260
     static let maxHeight: CGFloat = 430
 }
 
+/// The popover's content shell. No shadow or corner clipping of its own — the popover window
+/// supplies both; drawing a second card inside one is how the old inline version ended up looking
+/// like a card floating on a card.
 private struct NoteActionPickerCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
                 content
             }
-            .padding(10)
+            .padding(6)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(width: NoteActionPickerMetrics.width)
         .frame(maxHeight: NoteActionPickerMetrics.maxHeight, alignment: .top)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous)
-                .fill(Theme.surfaceElevated.opacity(0.98))
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
-        .shadow(color: Theme.overlayCardShadow, radius: 22, x: 0, y: 14)
+        .background(Theme.surface)
     }
 }
 
-private struct NoteActionPickerSection<Content: View>: View {
+private struct NoteActionPickerDivider: View {
+    var body: some View {
+        Divider()
+            .background(Theme.borderSubtle)
+            .padding(.vertical, 4)
+    }
+}
+
+/// Back bar for a drill-down submenu page.
+private struct NoteActionSubmenuHeader: View {
     let title: String
-    @ViewBuilder let content: Content
+    let onBack: () -> Void
+
+    @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .kerning(0.8)
-                .padding(.horizontal, 4)
-            content
+        Button(action: onBack) {
+            HStack(spacing: 8) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 10, weight: .bold))
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Theme.muted)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                    .fill(isHovered ? Theme.surfaceHighlight : Color.clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -408,6 +407,11 @@ private struct NoteActionSubsectionLabel: View {
     }
 }
 
+/// One row of the Actions popover.
+///
+/// Exactly one hover layer at one radius. This previously stacked `.cadencePlain`'s blue fill at
+/// radius 10 under `.cadenceHoverHighlight`'s blue fill at radius 12, which is why the highlight
+/// had a visible double edge.
 private struct NoteActionPickerRow: View {
     let icon: String
     let title: String
@@ -416,6 +420,8 @@ private struct NoteActionPickerRow: View {
     var isEnabled: Bool = true
     var trailingSymbol: String? = nil
     let action: () -> Void
+
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
@@ -446,21 +452,17 @@ private struct NoteActionPickerRow: View {
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, subtitle == nil ? 8 : 9)
+            .padding(.vertical, subtitle == nil ? 7 : 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.clear)
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                    .fill(isHovered && isEnabled ? Theme.surfaceHighlight : Color.clear)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.plain)
         .disabled(!isEnabled)
-        .cadenceHoverHighlight(
-            cornerRadius: 12,
-            fillColor: isEnabled ? Theme.blue.opacity(0.08) : Color.clear,
-            strokeColor: isEnabled ? Theme.blue.opacity(0.12) : Color.clear
-        )
+        .onHover { isHovered = $0 }
     }
 }
 

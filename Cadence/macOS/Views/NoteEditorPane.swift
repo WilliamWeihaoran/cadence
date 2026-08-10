@@ -8,10 +8,6 @@ private struct NoteEditorDerivedState {
     var backlinks: [Note] = []
     var unlinkedMentions: [Note] = []
     var outline: [MarkdownOutlineItem] = []
-    var metadata = MarkdownNoteMetadata(
-        frontmatter: MarkdownFrontmatter(properties: [:], range: nil),
-        tags: []
-    )
 }
 
 struct NoteEditorPane: View {
@@ -41,7 +37,6 @@ struct NoteEditorPane: View {
     @State private var linkedTaskForPopover: AppTask?
     @State private var embeddedTaskEditRequest: TaskEmbedFieldEditRequest?
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
-    @State private var isInspectorCollapsed = false
     @State private var loadedNoteID: UUID?
     @State private var derivedState = NoteEditorDerivedState()
     @State private var isEditorFocused = false
@@ -69,10 +64,15 @@ struct NoteEditorPane: View {
         Binding(
             get: { note.tags ?? [] },
             set: { newTags in
-                let names = newTags.map(\.name) + MarkdownMetadataParser.inlineTagNames(in: note.content)
-                note.tags = TagSupport.resolveTags(named: names, in: modelContext)
-                note.content = MarkdownMetadataParser.content(note.content, replacingFrontmatterTags: newTags.map(\.name))
-                note.updatedAt = Date()
+                // Single write path: `setTags` resolves the `Tag` rows, folds in inline `#tags`
+                // already in the body, and mirrors the result into the note's frontmatter so the
+                // YAML stays in sync with the chips even though the block is never rendered.
+                TagSupport.setTags(
+                    named: newTags.map(\.name),
+                    on: note,
+                    in: modelContext,
+                    writeFrontmatter: true
+                )
                 editorContent = note.content
                 loadedNoteID = note.id
                 refreshDerivedState(for: note.content)
@@ -88,9 +88,11 @@ struct NoteEditorPane: View {
         switch note.kind {
         case .daily: return "Daily"
         case .weekly: return "Weekly"
-        case .permanent: return "Permanent"
+        case .permanent: return "Notepad"
         case .list: return "Note"
-        case .meeting: return "Meeting"
+        // Label only. `NoteKind.meeting`'s raw value is persisted in `Note.kindRaw`, so the case
+        // itself must keep its name.
+        case .meeting: return "Event"
         }
     }
 
@@ -114,6 +116,22 @@ struct NoteEditorPane: View {
         !derivedState.linkedNotes.isEmpty ||
         !derivedState.linkedTasks.isEmpty ||
         !derivedState.backlinks.isEmpty
+    }
+
+    /// Templates are only offered while the note is still blank. Same notion of "blank" that
+    /// `applyTemplate` uses, so the chips vanish exactly when applying one would start appending
+    /// rather than filling.
+    ///
+    /// Measured against the body, not the raw content: a note that has only been tagged carries a
+    /// frontmatter block the user cannot see, and it should still read as empty.
+    private var isNoteBlank: Bool {
+        let source = loadedNoteID == note.id ? editorContent : note.content
+        return isBlankBody(MarkdownMetadataParser.splitFrontmatter(in: source).body)
+    }
+
+    private func isBlankBody(_ body: String) -> Bool {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || trimmed == "# \(note.displayTitle)"
     }
 
     @ViewBuilder
@@ -143,11 +161,17 @@ struct NoteEditorPane: View {
                     .foregroundStyle(Theme.dim)
                     .lineLimit(1)
             }
+            // Tag strip: editable chips plus a "+" affordance, sitting directly under the title.
+            // This is the note's whole metadata surface now — frontmatter is kept in the file for
+            // portability but never rendered, so these chips are the only place tags are read or
+            // written. Writes go through `TagSupport.setTags(...writeFrontmatter: true)`.
             TagPickerControl(
                 selectedTags: noteTagsBinding,
                 allTags: tags,
-                onCreateTag: createTag
+                onCreateTag: createTag,
+                triggerSymbol: "plus"
             )
+            .padding(.top, 2)
         }
         .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
     }
@@ -159,20 +183,7 @@ struct NoteEditorPane: View {
 
     private var headerControls: some View {
         HStack(spacing: 8) {
-            Button {
-                isInspectorCollapsed.toggle()
-            } label: {
-                Image(systemName: isInspectorCollapsed ? "rectangle.split.2x1" : "rectangle.split.2x1.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isInspectorCollapsed ? Theme.muted : Theme.blue)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        RoundedRectangle(cornerRadius: 9)
-                            .fill(isInspectorCollapsed ? Theme.surfaceElevated.opacity(0.72) : Theme.blue.opacity(0.14))
-                    )
-            }
-            .buttonStyle(.cadencePlain)
-            .help(isInspectorCollapsed ? "Show note sidebar" : "Hide note sidebar")
+            NoteOutlineJumpButton(outline: derivedState.outline, onJump: jumpToOutline)
 
             if let headerAccessory {
                 headerAccessory
@@ -187,9 +198,11 @@ struct NoteEditorPane: View {
             if headerStyle == .full {
                 noteHeader
                     .zIndex(50)
+                // Hairline under the tag strip: the header (title + tags) is metadata, everything
+                // below it is the note.
+                Divider().background(Theme.borderSubtle)
             }
             if hasReferenceStripContent {
-                Divider().background(Theme.borderSubtle)
                 NoteReferenceStrip(
                     linkedNotes: derivedState.linkedNotes,
                     linkedTasks: derivedState.linkedTasks,
@@ -198,57 +211,50 @@ struct NoteEditorPane: View {
                 )
                 .zIndex(10)
             }
-            HSplitView {
-                MarkdownEditor(
-                    text: contentBinding,
-                    toolbarAccessory: toolbarAccessory,
-                    referenceNotes: relatedNotes.filter { $0.id != note.id },
-                    referenceTasks: relatedTasks,
-                    onOpenNoteReference: openNoteReference,
-                    onOpenTaskReference: openTaskReference,
-                    onCreateEmbeddedTask: createEmbeddedTask,
-                    onToggleEmbeddedTask: toggleEmbeddedTask,
-                    onToggleEmbeddedSubtask: toggleEmbeddedSubtask,
-                    onRenameEmbeddedTask: renameEmbeddedTask,
-                    onOpenEmbeddedTask: openEmbeddedTask,
-                    onEditEmbeddedTask: editEmbeddedTask,
-                    onHoverEmbeddedTask: hoverEmbeddedTask,
-                    onEditingChanged: handleEditorFocusChange,
-                    onTextViewChanged: { editorTextView = $0 }
+            if isNoteBlank {
+                NoteTemplateChipStrip(
+                    templates: NoteTemplateLibrary.templates(for: note.kind, overridesRaw: noteTemplateOverridesRaw),
+                    onApply: applyTemplate
                 )
-                .frame(minWidth: 360)
-                .popover(item: $linkedTaskForPopover) { task in
-                    TaskDetailPopover(task: task)
-                        .frame(width: 380)
-                }
-                .popover(item: $embeddedTaskEditRequest) { request in
-                    if let task = embeddedTask(id: request.taskID) {
-                        TaskEmbedFieldEditorPopover(task: task, initialField: request.field) {
-                            refreshEmbeddedTask(task)
-                        }
-                    } else {
-                        Text("Task no longer exists")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.dim)
-                            .padding()
+                .zIndex(5)
+            }
+            MarkdownEditor(
+                text: contentBinding,
+                toolbarAccessory: toolbarAccessory,
+                referenceNotes: relatedNotes.filter { $0.id != note.id },
+                referenceTasks: relatedTasks,
+                onOpenNoteReference: openNoteReference,
+                onOpenTaskReference: openTaskReference,
+                onCreateEmbeddedTask: createEmbeddedTask,
+                onToggleEmbeddedTask: toggleEmbeddedTask,
+                onToggleEmbeddedSubtask: toggleEmbeddedSubtask,
+                onRenameEmbeddedTask: renameEmbeddedTask,
+                onOpenEmbeddedTask: openEmbeddedTask,
+                onEditEmbeddedTask: editEmbeddedTask,
+                onHoverEmbeddedTask: hoverEmbeddedTask,
+                onEditingChanged: handleEditorFocusChange,
+                onTextViewChanged: { editorTextView = $0 }
+            )
+            .zIndex(0)
+            .popover(item: $linkedTaskForPopover) { task in
+                TaskDetailPopover(task: task)
+                    .frame(width: 380)
+            }
+            .popover(item: $embeddedTaskEditRequest) { request in
+                if let task = embeddedTask(id: request.taskID) {
+                    TaskEmbedFieldEditorPopover(task: task, initialField: request.field) {
+                        refreshEmbeddedTask(task)
                     }
-                }
-
-                if !isInspectorCollapsed {
-                    NoteMarkdownSidePanel(
-                        outline: derivedState.outline,
-                        metadata: derivedState.metadata,
-                        templates: NoteTemplateLibrary.templates(for: note.kind, overridesRaw: noteTemplateOverridesRaw),
-                        unlinkedMentions: derivedState.unlinkedMentions,
-                        onJumpToOutline: jumpToOutline,
-                        onInsertFrontmatter: insertFrontmatter,
-                        onApplyTemplate: applyTemplate,
-                        onLinkMention: linkMention
-                    )
-                    .frame(minWidth: 220, idealWidth: 240, maxWidth: 290)
+                } else {
+                    Text("Task no longer exists")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim)
+                        .padding()
                 }
             }
-            .zIndex(0)
+
+            NoteUnlinkedMentionsFooter(mentions: derivedState.unlinkedMentions, onLink: linkMention)
+                .zIndex(5)
         }
         .background(Theme.surface)
         .onAppear {
@@ -345,8 +351,7 @@ struct NoteEditorPane: View {
                 content: content,
                 in: relatedReferenceNotes
             ),
-            outline: MarkdownOutlineParser.items(in: content),
-            metadata: MarkdownMetadataParser.metadata(in: content)
+            outline: MarkdownOutlineParser.items(in: content)
         )
     }
 
@@ -527,19 +532,13 @@ struct NoteEditorPane: View {
         editorTextView.scrollRangeToVisible(NSRange(location: safeLocation, length: 0))
     }
 
-    private func insertFrontmatter() {
-        let metadata = MarkdownMetadataParser.metadata(in: editorContent)
-        guard metadata.frontmatter.range == nil else { return }
-        replaceEditorContent(MarkdownMetadataParser.frontmatterInsertion(title: note.displayTitle) + editorContent)
-    }
-
     private func applyTemplate(_ template: NoteTemplate) {
-        let trimmed = editorContent.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed == "# \(note.displayTitle)" {
-            replaceEditorContent(template.body)
-        } else {
-            replaceEditorContent(editorContent.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n" + template.body)
-        }
+        // Split the frontmatter off first and put it back after. The block is invisible, so
+        // rewriting `editorContent` wholesale would silently take the note's tags with it.
+        let parts = MarkdownMetadataParser.splitFrontmatter(in: editorContent)
+        let trimmedBody = parts.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newBody = isBlankBody(parts.body) ? template.body : trimmedBody + "\n\n" + template.body
+        replaceEditorContent(MarkdownMetadataParser.content(frontmatter: parts.frontmatter, body: newBody))
     }
 
     private func linkMention(_ mentionedNote: Note) {

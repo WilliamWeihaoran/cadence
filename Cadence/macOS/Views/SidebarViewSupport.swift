@@ -3,7 +3,6 @@ import SwiftUI
 
 enum SidebarStaticDestination: String, CaseIterable, Identifiable {
     case today
-    case planning
     case allTasks
     case focus
     case inbox
@@ -16,7 +15,6 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
     var item: SidebarItem {
         switch self {
         case .today: return .today
-        case .planning: return .planning
         case .allTasks: return .allTasks
         case .focus: return .focus
         case .inbox: return .inbox
@@ -29,7 +27,6 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
     var feature: CadenceFeatureDestination {
         switch self {
         case .today: return .today
-        case .planning: return .planning
         case .allTasks: return .allTasks
         case .focus: return .focus
         case .inbox: return .inbox

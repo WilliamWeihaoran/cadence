@@ -4,9 +4,24 @@ import SwiftData
 
 struct NotesView: View {
     enum NotesPage: String, CaseIterable {
-        case daily = "Daily"
-        case weekly = "Weekly"
-        case meeting = "Meeting"
+        case daily
+        case weekly
+        case notepad
+        case meeting
+
+        /// User-facing label, deliberately separate from the case name.
+        ///
+        /// `meeting` keeps its case name because `NoteKind.meeting`'s raw value is persisted in
+        /// `Note.kindRaw` — renaming the model case would orphan every existing meeting note.
+        /// Only the label reads "Event Notes".
+        var title: String {
+            switch self {
+            case .daily: return "Daily"
+            case .weekly: return "Weekly"
+            case .notepad: return "Notepad"
+            case .meeting: return "Event Notes"
+            }
+        }
     }
 
     @Environment(NotesNavigationManager.self) private var notesNavigationManager
@@ -15,26 +30,19 @@ struct NotesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
+            // The app's one tab-bar control. This used to be a bespoke blue-underline bar; blue is
+            // reserved for things that are actually selected or actionable, and a tab bar is
+            // neither special nor worth a second idiom.
+            HStack(spacing: CadenceQuietPillMetrics.clusterSpacing) {
                 ForEach(NotesPage.allCases, id: \.self) { page in
-                    Button {
+                    CadenceQuietTabButton(title: page.title, isSelected: self.page == page) {
                         self.page = page
-                    } label: {
-                        Text(page.rawValue)
-                            .font(.system(size: 13, weight: self.page == page ? .semibold : .regular))
-                            .foregroundStyle(self.page == page ? Theme.text : Theme.dim)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .overlay(alignment: .bottom) {
-                                if self.page == page {
-                                    Rectangle().fill(Theme.blue).frame(height: 2)
-                                }
-                            }
                     }
-                    .buttonStyle(.cadencePlain)
                 }
                 Spacer()
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
             .background(Theme.surface)
 
             Divider().background(Theme.borderSubtle)
@@ -45,6 +53,8 @@ struct NotesView: View {
                     DailyNotesPage()
                 case .weekly:
                     WeeklyNotesPage()
+                case .notepad:
+                    NotepadPage()
                 case .meeting:
                     MeetingNotesPage(requestedNoteID: $requestedMeetingNoteID)
                 }
@@ -87,14 +97,11 @@ private struct DailyNotesPage: View {
             VStack(spacing: 0) {
                 NotesListHeader(title: "Daily Notes")
 
-                ScrollView {
-                    VStack(spacing: 2) {
-                        ForEach(notes) { note in
-                            DailyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
-                                .onTapGesture { selectedNoteID = note.id }
-                        }
-                    }
-                    .padding(8)
+                NotesGroupedListColumn(
+                    groups: NotesListGrouping.monthGroups(for: notes, dateKey: { $0.dateKey })
+                ) { note in
+                    DailyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
+                        .onTapGesture { selectedNoteID = note.id }
                 }
 
                 if notes.isEmpty {
@@ -163,14 +170,14 @@ private struct WeeklyNotesPage: View {
             VStack(spacing: 0) {
                 NotesListHeader(title: "Weekly Notes")
 
-                ScrollView {
-                    VStack(spacing: 2) {
-                        ForEach(notes) { note in
-                            WeeklyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
-                                .onTapGesture { selectedNoteID = note.id }
-                        }
-                    }
-                    .padding(8)
+                NotesGroupedListColumn(
+                    groups: NotesListGrouping.monthGroups(
+                        for: notes,
+                        dateKey: { NotesListGrouping.weekStartDateKey(forWeekKey: $0.weekKey) }
+                    )
+                ) { note in
+                    WeeklyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
+                        .onTapGesture { selectedNoteID = note.id }
                 }
 
                 if notes.isEmpty {
@@ -218,6 +225,50 @@ private struct WeeklyNotesPage: View {
     }
 }
 
+/// The Notepad tab.
+///
+/// `NoteKind.permanent` is a singleton — `NoteMigrationService.permanentNote(in:)` returns the one
+/// permanent note or creates it — so there is nothing to list. This tab is the editor at full
+/// width rather than a one-row list column beside it. Backed by the existing kind; no new
+/// `NoteKind` was introduced.
+private struct NotepadPage: View {
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Environment(\.modelContext) private var modelContext
+    @State private var noteID: UUID?
+
+    private var notes: [Note] {
+        allNotes.filter { $0.kind == .permanent }
+    }
+
+    private var note: Note? {
+        notes.first { $0.id == noteID } ?? notes.first
+    }
+
+    var body: some View {
+        Group {
+            if let note {
+                NoteEditorPane(
+                    note: note,
+                    relatedNotes: allNotes,
+                    relatedTasks: allTasks
+                )
+            } else {
+                NotesEditorPlaceholder(title: "No notepad yet")
+            }
+        }
+        .onAppear { loadOrCreateNotepad() }
+    }
+
+    private func loadOrCreateNotepad() {
+        if let existing = notes.first {
+            noteID = existing.id
+            return
+        }
+        noteID = (try? CadenceCoreNoteSupport.note(for: .notepad, in: modelContext))?.id
+    }
+}
+
 private struct MeetingNotesPage: View {
     @Binding var requestedNoteID: UUID?
 
@@ -228,7 +279,19 @@ private struct MeetingNotesPage: View {
     @State private var selectedNoteID: UUID?
 
     private var notes: [Note] {
-        allNotes.filter { $0.kind == .meeting }
+        allNotes
+            .filter { $0.kind == .meeting }
+            // Sorted by the meeting's own day, not by last edit: the list is grouped under month
+            // headers now, and an edit-ordered list would jump between months row to row.
+            .sorted {
+                let left = Self.dayKey(for: $0)
+                let right = Self.dayKey(for: $1)
+                return left == right ? $0.updatedAt > $1.updatedAt : left > right
+            }
+    }
+
+    private static func dayKey(for note: Note) -> String {
+        note.eventDateKey.isEmpty ? DateFormatters.dateKey(from: note.updatedAt) : note.eventDateKey
     }
 
     private var selectedNote: Note? {
@@ -238,19 +301,16 @@ private struct MeetingNotesPage: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                NotesListHeader(title: "Meeting Notes")
+                NotesListHeader(title: "Event Notes")
 
-                ScrollView {
-                    VStack(spacing: 2) {
-                        ForEach(notes) { note in
-                            MeetingNoteListRow(note: note, isSelected: selectedNoteID == note.id)
-                                .onTapGesture {
-                                    selectedNoteID = note.id
-                                    requestedNoteID = nil
-                                }
+                NotesGroupedListColumn(
+                    groups: NotesListGrouping.monthGroups(for: notes, dateKey: { Self.dayKey(for: $0) })
+                ) { note in
+                    MeetingNoteListRow(note: note, isSelected: selectedNoteID == note.id, showsDate: false)
+                        .onTapGesture {
+                            selectedNoteID = note.id
+                            requestedNoteID = nil
                         }
-                    }
-                    .padding(8)
                 }
 
                 if notes.isEmpty {

@@ -359,10 +359,10 @@ struct CalendarBehaviorRegressionTests {
         task.scheduledDate = "2026-06-02"
         task.dueDate = "2026-06-02"
 
-        let perDay = CalendarBoardPlannerSupport.tasks(on: "2026-06-02", from: [task])
+        let folded = CalendarBoardPlannerSupport.tasksByBoardDateFoldingDueDates(from: [task])
         let grouped = CalendarBoardPlannerSupport.tasksByBoardDate(from: [task])
 
-        #expect(perDay.map(\.id) == [task.id])
+        #expect(folded["2026-06-02"]?.map(\.id) == [task.id])
         #expect(grouped["2026-06-02"]?.map(\.id) == [task.id])
     }
 
@@ -389,12 +389,11 @@ struct CalendarBehaviorRegressionTests {
         )
         SchedulingActions.addTask(bundled, to: bundle)
 
-        let result = CalendarBoardPlannerSupport.tasks(
-            on: "2026-06-02",
+        let result = CalendarBoardPlannerSupport.tasksByBoardDate(
             from: [cancelled, bundled, completed, active]
         )
 
-        #expect(result.map(\.title) == ["Active", "Completed"])
+        #expect(result["2026-06-02"]?.map(\.title) == ["Active", "Completed"])
     }
 
     @Test func crossMidnightTimedEventSegmentsOnlyRenderOnTouchedDays() throws {

@@ -40,7 +40,7 @@ struct iOSEventNoteEditorSheet: View {
         NavigationStack {
             editorLayout
             .background(Theme.surface.ignoresSafeArea())
-            .navigationTitle("Meeting Note")
+            .navigationTitle("Event Note")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

@@ -152,8 +152,7 @@ struct HabitsView: View {
     private var leftPane: some View {
         VStack(spacing: 0) {
             CommitmentPageHeader(
-                title: "Habits",
-                subtitle: "Rhythms that feed your goals."
+                title: "Habits"
             ) {
                 CadenceActionButton(
                     title: "New Habit",

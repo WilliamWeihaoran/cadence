@@ -485,7 +485,7 @@ private enum iOSCompactNotesPage: String, CaseIterable, Identifiable {
         switch self {
         case .today: return "Today"
         case .week: return "Week"
-        case .meetings: return "Meetings"
+        case .meetings: return "Event Notes"
         case .notepad: return "Notepad"
         }
     }

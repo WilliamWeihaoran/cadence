@@ -8,7 +8,7 @@ enum GlobalSearchCategory: String, CaseIterable {
     case projects = "Projects"
     case tasks = "Tasks"
     case events = "Calendar Events"
-    case meetingNotes = "Meeting Notes"
+    case meetingNotes = "Event Notes"
     case goals = "Goals"
     case habits = "Habits"
 }
@@ -194,7 +194,6 @@ extension GlobalSearchPageDefinition {
     static var all: [GlobalSearchPageDefinition] {
         [
             .init(label: "Today", item: .today, icon: "sun.max.fill", tintHex: Theme.amber.globalSearchHexString() ?? "#FFB84D", baseSubtitle: "Daily dashboard and timeline", aliases: "today dashboard daily", toggleable: .today),
-            .init(label: "Planning", item: .planning, icon: CadenceFeatureDestination.planning.systemImage, tintHex: Theme.purple.globalSearchHexString() ?? "#9E8CFF", baseSubtitle: CadenceFeatureDestination.planning.searchSummary, aliases: CadenceFeatureDestination.planning.searchKeywords, toggleable: .planning),
             .init(label: "All Tasks", item: .allTasks, icon: "checklist", tintHex: Theme.blue.globalSearchHexString() ?? "#5AA2FF", baseSubtitle: "Everything across your workspace", aliases: "tasks all", toggleable: .allTasks),
             .init(label: "Inbox", item: .inbox, icon: "tray.fill", tintHex: Theme.blue.globalSearchHexString() ?? "#5AA2FF", baseSubtitle: "Unsorted capture tasks", aliases: "inbox capture", toggleable: .inbox),
             .init(label: "Focus", item: .focus, icon: "timer", tintHex: Theme.red.globalSearchHexString() ?? "#FF6B6B", baseSubtitle: "Focus timer and active task", aliases: "focus timer pomodoro", toggleable: .focus),

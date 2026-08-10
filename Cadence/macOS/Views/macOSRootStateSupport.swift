@@ -10,8 +10,6 @@ struct RootDetailContent: View {
         switch selection {
         case .today, .none:
             TodayView()
-        case .planning:
-            PlanningPageView()
         case .allTasks:
             AllTasksPageView()
         case .inbox:

@@ -187,9 +187,6 @@ extension CadenceFeatureDestination {
     var item: iOSSidebarItem {
         switch self {
         case .today: return .today
-        // Planning is a macOS-only surface for now. iOS routes it to All Tasks so the
-        // shared destination enum stays exhaustive without building a whole screen.
-        case .planning: return .allTasks
         case .allTasks: return .allTasks
         case .focus: return .focus
         case .inbox: return .inbox

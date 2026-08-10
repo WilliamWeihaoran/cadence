@@ -61,6 +61,7 @@ struct CalendarPageView: View {
                 setViewMode: { setTimelineMode($0) },
                 setPresentation: { setPresentation($0) },
                 moveBoardWindow: { moveBoardWindow(by: $0) },
+                canMoveBoardWindowBack: canMoveBoardWindowBack,
                 zoomLevel: $zoomLevel
             )
 
@@ -156,7 +157,7 @@ struct CalendarPageView: View {
         }
         .onChange(of: selectedBoardDate) { _, newDate in
             guard presentation == .board else { return }
-            anchorDateKey = DateFormatters.dateKey(from: newDate)
+            persistBoardDate(newDate)
         }
     }
 
@@ -178,7 +179,7 @@ struct CalendarPageView: View {
 
     private func setTimelineMode(_ mode: CadenceCalendarViewMode) {
         if presentation == .board {
-            anchorDateKey = DateFormatters.dateKey(from: selectedBoardDate)
+            persistBoardDate(selectedBoardDate)
             visibleTimelineDayIndex = CalendarPageStateSupport.timelineDayIndex(
                 anchorDateKey: anchorDateKey,
                 bufferStart: bufferStart,
@@ -214,7 +215,11 @@ struct CalendarPageView: View {
         pendingDayPersistence?.cancel()
         pendingDayPersistence = nil
 
-        anchorDateKey = CalendarPageStateSupport.boardAnchorDateKey(
+        // Read the calendar's remembered day, but do **not** write the board's clamped version of
+        // it back — `anchorDateKey` is where the *timeline* was, and merely opening the Board must
+        // not overwrite a remembered past day with today. `persistBoardDate` writes it only once
+        // the board has actually been moved somewhere else.
+        let boardAnchorKey = CalendarPageStateSupport.boardAnchorDateKey(
             viewMode: viewMode,
             visibleMonthIdx: visibleMonthIdx,
             visibleTimelineDayIndex: visibleTimelineDayIndex,
@@ -224,17 +229,37 @@ struct CalendarPageView: View {
             calendar: cal
         )
 
-        selectedBoardDate = cal.startOfDay(for: DateFormatters.date(from: anchorDateKey) ?? Date())
+        // The board's day columns start at today, so an anchor inherited from the timeline or
+        // month view has to be clamped before it becomes the board's selection.
+        selectedBoardDate = CalendarBoardPlannerSupport.clampedBoardDate(
+            DateFormatters.date(from: boardAnchorKey, in: cal) ?? Date(),
+            calendar: cal
+        )
+    }
+
+    /// Writes the board's position into the calendar's remembered day — unless that position is
+    /// only the clamped image of what is already remembered, in which case the remembered day is
+    /// a past timeline position the board is standing in for, and gets left alone.
+    private func persistBoardDate(_ date: Date) {
+        guard let key = CalendarBoardPlannerSupport.rememberedDateKeyWriteBack(
+            boardDate: date,
+            rememberedKey: anchorDateKey,
+            calendar: cal
+        ) else { return }
+        anchorDateKey = key
+    }
+
+    private var canMoveBoardWindowBack: Bool {
+        CalendarBoardPlannerSupport.canMoveWindow(from: selectedBoardDate, by: -1, calendar: cal)
     }
 
     private func moveBoardWindow(by delta: Int) {
         guard presentation == .board else { return }
-        selectedBoardDate = CalendarBoardPlannerSupport.dateByMovingWindow(
-            selectedBoardDate,
-            by: delta,
+        // `selectedBoardDate`'s own `onChange` persists the move.
+        selectedBoardDate = CalendarBoardPlannerSupport.clampedBoardDate(
+            CalendarBoardPlannerSupport.dateByMovingWindow(selectedBoardDate, by: delta, calendar: cal),
             calendar: cal
         )
-        anchorDateKey = DateFormatters.dateKey(from: selectedBoardDate)
     }
 
     private func restoreTimelineScrollIfNeeded(vProxy: ScrollViewProxy, hProxy: ScrollViewProxy) {

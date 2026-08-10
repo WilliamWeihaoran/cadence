@@ -173,8 +173,7 @@ struct GoalsView: View {
 
     private var header: some View {
         CommitmentPageHeader(
-            title: "Goals",
-            subtitle: "Directions and the milestones underneath them."
+            title: "Goals"
         ) {
             HStack(spacing: 10) {
                 GoalsViewModeToggle(selection: goalsViewModeBinding)

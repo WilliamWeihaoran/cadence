@@ -36,14 +36,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         sharedKind.title
     }
 
-    var subtitle: String {
-        sharedKind.subtitle
-    }
-
-    var detailDescription: String {
-        sharedKind.detailDescription
-    }
-
     var icon: String {
         sharedKind.icon
     }
@@ -77,6 +69,43 @@ private struct SettingsCategoryGroup: Identifiable {
             categories: [.account, .dataSafety]
         )
     ]
+}
+
+/// Sizing for the settings category rail. The rail is the same kind of object as the
+/// main sidebar — a narrow column of destinations — so it borrows `SidebarMetrics`
+/// rather than restating its own row padding, glyph slot, and radius. Deriving them
+/// keeps the two columns from drifting apart, and keeps every row here on one pair of
+/// left edges: glyphs at `horizontalInset + rowHorizontalPadding`, labels one
+/// `iconSlotWidth + iconLabelSpacing` further in.
+enum SettingsRailMetrics {
+    // MARK: Column
+
+    static let columnWidth: CGFloat = 248
+    static let horizontalInset: CGFloat = 16
+    static let verticalInset: CGFloat = 22
+    static let titleFontSize: CGFloat = 24
+    static let titleBottomSpacing: CGFloat = 18
+
+    // MARK: Rows
+
+    static let rowHorizontalPadding: CGFloat = SidebarMetrics.listRowHorizontalPadding
+    static let rowVerticalPadding: CGFloat = SidebarMetrics.listRowVerticalPadding
+    static let rowCornerRadius: CGFloat = SidebarMetrics.listRowCornerRadius
+    static let rowSpacing: CGFloat = SidebarMetrics.listRowSpacing
+    static let iconSlotWidth: CGFloat = SidebarMetrics.iconSlotWidth
+    static let iconLabelSpacing: CGFloat = SidebarMetrics.iconLabelSpacing
+    static let labelFontSize: CGFloat = SidebarMetrics.listLabelFontSize
+    static let trailingGap: CGFloat = SidebarMetrics.listTrailingGap
+    /// Between the sidebar's list glyph (12) and its nav glyph (15): these rows are
+    /// destinations, but there are eleven of them, so they stay under the nav weight.
+    static let iconSize: CGFloat = 14
+
+    // MARK: Group headers
+
+    static let groupHeaderFontSize: CGFloat = SidebarMetrics.contextHeaderFontSize
+    static let groupHeaderKerning: CGFloat = SidebarMetrics.contextHeaderKerning
+    static let groupHeaderBottomSpacing: CGFloat = SidebarMetrics.contextHeaderBottomSpacing
+    static let groupSpacing: CGFloat = SidebarMetrics.contextSectionBottomSpacing
 }
 
 struct SettingsCard<Content: View>: View {
@@ -114,19 +143,16 @@ struct SettingsRail: View {
     @Binding var selectedCategory: SettingsCategory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Settings")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                Text("Preferences, organization, integrations, and safety.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.dim)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        VStack(alignment: .leading, spacing: SettingsRailMetrics.titleBottomSpacing) {
+            Text("Settings")
+                .font(.system(size: SettingsRailMetrics.titleFontSize, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, SettingsRailMetrics.rowHorizontalPadding)
 
+            // Still a ScrollView: the eleven rows fit in a normal window, but this is
+            // the only thing keeping the last group reachable in a very short one.
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: SettingsRailMetrics.groupSpacing) {
                     ForEach(SettingsCategoryGroup.all) { group in
                         SettingsRailGroup(
                             group: group,
@@ -134,14 +160,11 @@ struct SettingsRail: View {
                         )
                     }
                 }
-                .padding(.bottom, 12)
             }
-
-            Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 22)
-        .frame(width: 248)
+        .padding(.horizontal, SettingsRailMetrics.horizontalInset)
+        .padding(.vertical, SettingsRailMetrics.verticalInset)
+        .frame(width: SettingsRailMetrics.columnWidth)
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.surface.opacity(0.58))
     }
@@ -152,14 +175,14 @@ private struct SettingsRailGroup: View {
     @Binding var selectedCategory: SettingsCategory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: SettingsRailMetrics.groupHeaderBottomSpacing) {
             Text(group.title.uppercased())
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(Theme.dim.opacity(0.78))
-                .tracking(1.1)
-                .padding(.horizontal, 12)
+                .font(.system(size: SettingsRailMetrics.groupHeaderFontSize, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .kerning(SettingsRailMetrics.groupHeaderKerning)
+                .padding(.horizontal, SettingsRailMetrics.rowHorizontalPadding)
 
-            VStack(spacing: 6) {
+            VStack(spacing: SettingsRailMetrics.rowSpacing) {
                 ForEach(group.categories) { category in
                     SettingsRailButton(
                         category: category,
@@ -177,47 +200,50 @@ private struct SettingsRailButton: View {
     let isSelected: Bool
     let action: () -> Void
 
+    @State private var isHovered = false
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(isSelected ? category.tint : Color.clear)
-                    .frame(width: 3, height: 22)
+            HStack(spacing: SettingsRailMetrics.iconLabelSpacing) {
+                // The glyph is neutral until this is the row you are on — colour marks
+                // the current category rather than tinting all eleven at once.
+                Image(systemName: category.icon)
+                    .font(.system(size: SettingsRailMetrics.iconSize, weight: .semibold))
+                    .foregroundStyle(isSelected ? category.tint : Theme.dim)
+                    .frame(width: SettingsRailMetrics.iconSlotWidth)
 
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(category.tint.opacity(isSelected ? 0.22 : 0.14))
-                    .frame(width: 30, height: 30)
-                    .overlay {
-                        Image(systemName: category.icon)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(category.tint)
-                    }
+                Text(category.title)
+                    .font(.system(size: SettingsRailMetrics.labelFontSize, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(category.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(isSelected ? Theme.text : Theme.text.opacity(0.92))
-                    Text(category.subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(2)
-                }
-
-                Spacer()
+                Spacer(minLength: SettingsRailMetrics.trailingGap)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.horizontal, SettingsRailMetrics.rowHorizontalPadding)
+            .padding(.vertical, SettingsRailMetrics.rowVerticalPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? Theme.surfaceElevated : Color.clear)
+                RoundedRectangle(cornerRadius: SettingsRailMetrics.rowCornerRadius, style: .continuous)
+                    .fill(backgroundFill)
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isSelected ? category.tint.opacity(0.18) : Theme.borderSubtle.opacity(0.001), lineWidth: 1)
-            }
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.plain)
         .accessibilityIdentifier("settings.category.\(category.rawValue)")
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(.easeOut(duration: 0.12), value: isSelected)
+    }
+
+    private var backgroundFill: Color {
+        if isSelected {
+            return Theme.surfaceElevated
+        }
+        if isHovered {
+            return Theme.surfaceElevated.opacity(0.6)
+        }
+        return Color.clear
     }
 }
 
@@ -233,7 +259,6 @@ struct SettingsDetailHeader<TrailingContent: View>: View {
     var body: some View {
         CadenceSettingsHeader(
             title: category.title,
-            subtitle: category.detailDescription,
             icon: category.icon,
             tint: category.tint
         ) {

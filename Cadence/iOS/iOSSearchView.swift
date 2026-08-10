@@ -363,8 +363,7 @@ struct iOSSearchView: View {
             switch destination {
             case .today:
                 iPadTodayView()
-            // Planning is a macOS-only page for now; iOS falls back to All Tasks.
-            case .planning, .allTasks:
+            case .allTasks:
                 iOSAllTasksView()
             case .focus:
                 iOSFocusView()
@@ -457,8 +456,7 @@ struct iOSSearchView: View {
     }
 
     private var searchableFeatureDestinations: [CadenceFeatureDestination] {
-        // `.planning` has no iOS surface yet, so it stays out of iOS search results.
-        CadenceFeatureDestination.allCases.filter { $0 != .search && $0 != .planning }
+        CadenceFeatureDestination.allCases.filter { $0 != .search }
     }
 
     @ViewBuilder
@@ -584,7 +582,7 @@ struct iOSSearchView: View {
         case .list:
             return [note.area?.name, note.project?.name].compactMap { $0 }.first ?? "List note"
         case .meeting:
-            return note.eventDateKey.isEmpty ? "Meeting note" : "Meeting / \(note.eventDateKey)"
+            return note.eventDateKey.isEmpty ? "Event note" : "Event / \(note.eventDateKey)"
         }
     }
 

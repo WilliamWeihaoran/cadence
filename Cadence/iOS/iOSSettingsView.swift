@@ -121,7 +121,6 @@ struct iOSSettingsView: View {
     private var settingsHeader: some View {
         iOSSettingsPageHeader(
             title: selectedCategory.title,
-            subtitle: selectedCategory.detailDescription,
             icon: selectedCategory.icon,
             tint: selectedCategory.tint
         ) {

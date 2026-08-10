@@ -28,8 +28,8 @@ struct ProjectDetailLoader: View {
 
 // MARK: - Detail View
 
-/// Per-list pages. Planning used to live here; it is now a first-level `Planning`
-/// destination that spans every list, so there is no per-list planning tab.
+/// Per-list pages. Planning used to live here, then briefly as its own first-level page;
+/// both are gone — the Calendar Board's Overdue and Unscheduled rails do that job now.
 enum ListDetailPage: String, CaseIterable, Identifiable {
     case tasks     = "Tasks"
     case kanban    = "Kanban"

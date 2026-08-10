@@ -356,7 +356,7 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var eventNoteCard: some View {
-        iOSCalendarEventEditorSection(title: "Meeting Note") {
+        iOSCalendarEventEditorSection(title: "Event Note") {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "doc.text")
                     .font(.system(size: 16, weight: .semibold))

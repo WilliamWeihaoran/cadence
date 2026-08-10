@@ -3,10 +3,16 @@ import EventKit
 import SwiftData
 import SwiftUI
 
+/// The Calendar Board: day columns that scroll horizontally, flanked by two pinned rails.
+///
+/// The rails are what the retired Planning page turned into. Overdue and Unscheduled were two of
+/// its five buckets; the other three (Today / This Week / Later) *are* day columns here, so they
+/// needed no equivalent. Everything else Planning did — its bucketing, its drag-to-reschedule, its
+/// drag-back-to-unscheduled, its "N unscheduled · N overdue" summary — lives on this surface now.
 struct CalendarPageBoardView: View {
-    private static let columnWidth: CGFloat = 306
-    private static let columnSpacing: CGFloat = 14
-    private static let horizontalPadding: CGFloat = 22
+    private static let columnWidth = calendarBoardDayColumnWidth
+    private static let columnSpacing = calendarBoardColumnSpacing
+    private static let horizontalPadding = calendarBoardHorizontalPadding
 
     let anchorDate: Date
     @Binding var selectedDate: Date
@@ -18,7 +24,10 @@ struct CalendarPageBoardView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
-    @State private var isUpdatingSelectedDateFromScroll = false
+    @Environment(TaskCreationManager.self) private var taskCreationManager
+    /// Latches a `selectedDate` write this view made itself, so the `anchorDate` change it comes
+    /// back as does not re-run `resetWindowAndScroll` and re-scroll the board a second time.
+    @State private var isEchoingSelectedDate = false
     @State private var isProgrammaticScroll = false
     @State private var windowStartDate: Date?
 
@@ -28,17 +37,67 @@ struct CalendarPageBoardView: View {
         CalendarBoardPlannerSupport.plannerRenderDayCount
     }
 
+    /// Floored at today: this board's Overdue rail already shows every past-dated card, so a past
+    /// day column would show the same card twice.
     private var activeWindowStartDate: Date {
-        windowStartDate ?? CalendarBoardPlannerSupport.plannerWindowStart(for: anchorDate, calendar: calendar)
+        windowStartDate ?? CalendarBoardPlannerSupport.plannerWindowStart(
+            for: anchorDate,
+            notBefore: Date(),
+            calendar: calendar
+        )
     }
 
     private var boardTasksByDate: [String: [AppTask]] {
         CalendarBoardPlannerSupport.tasksByBoardDate(from: allTasks)
     }
 
+    private var railTasks: [CalendarBoardRail: [AppTask]] {
+        CalendarBoardPlannerSupport.railTasks(from: allTasks, todayKey: DateFormatters.todayKey())
+    }
+
     var body: some View {
+        let rails = railTasks
+
+        VStack(spacing: 0) {
+            summary(rails)
+
+            HStack(spacing: 0) {
+                rail(.overdue, tasks: rails[.overdue] ?? [])
+                dayColumns
+                rail(.unscheduled, tasks: rails[.unscheduled] ?? [])
+            }
+        }
+        .background(Theme.bg)
+    }
+
+    /// The Planning page's "N unscheduled · N overdue" line, kept because it is the one thing the
+    /// rails cannot say on their own: each header counts its own pile, this reads both at a glance.
+    /// Indented to the toolbar's page padding, not the board's, so it lines up under "Calendar".
+    private func summary(_ rails: [CalendarBoardRail: [AppTask]]) -> some View {
+        Text(CalendarBoardPlannerSupport.railSummaryLine(rails))
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(Theme.dim)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, CadenceDesktopMetrics.pageHorizontalPadding)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+    }
+
+    private func rail(_ rail: CalendarBoardRail, tasks: [AppTask]) -> some View {
+        // Only the Unscheduled rail takes drops or offers an add row; the Overdue rail gets `nil`
+        // for both because a card cannot be dragged — or created — *into* being late.
+        let add = CalendarBoardPlannerSupport.addAction(for: .rail(rail))
+        return CalendarBoardRailColumn(
+            rail: rail,
+            tasks: tasks,
+            onAddTask: add.map { action in { addTask(action) } },
+            onDrop: { items in rail == .unscheduled ? unschedule(items) : false }
+        )
+    }
+
+    private var dayColumns: some View {
         let tasksByDate = boardTasksByDate
-        ScrollViewReader { proxy in
+        return ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: Self.columnSpacing) {
                     ForEach(0..<renderDays, id: \.self) { dayIndex in
@@ -55,7 +114,11 @@ struct CalendarPageBoardView: View {
                             allBundles: allBundles,
                             areas: areas,
                             projects: projects,
-                            onAddTask: { createTask(on: dateKey) },
+                            onAddTask: {
+                                if let action = CalendarBoardPlannerSupport.addAction(for: .day(dateKey)) {
+                                    addTask(action)
+                                }
+                            },
                             onDropTaskOnDay: { task in schedule(task, on: dateKey) },
                             onDropBundleOnDay: { bundle in move(bundle, on: dateKey) },
                             onDropTaskOnBundle: { task, bundle in
@@ -68,11 +131,11 @@ struct CalendarPageBoardView: View {
                     }
                 }
                 .padding(.horizontal, Self.horizontalPadding)
-                .padding(.vertical, 18)
+                .padding(.bottom, 18)
             }
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.always, axes: .horizontal)
-            .background(Theme.bg)
+            .frame(maxWidth: .infinity)
             .onScrollGeometryChange(for: Int.self) { geometry in
                 visibleDayIndex(for: geometry.contentOffset.x)
             } action: { _, dayIndex in
@@ -82,8 +145,8 @@ struct CalendarPageBoardView: View {
                 resetWindowAndScroll(proxy, to: anchorDate, animated: false)
             }
             .onChange(of: anchorDate) { _, newDate in
-                if isUpdatingSelectedDateFromScroll {
-                    isUpdatingSelectedDateFromScroll = false
+                if isEchoingSelectedDate {
+                    isEchoingSelectedDate = false
                     return
                 }
                 resetWindowAndScroll(proxy, to: newDate, animated: true)
@@ -98,11 +161,26 @@ struct CalendarPageBoardView: View {
     }
 
     private func resetWindowAndScroll(_ proxy: ScrollViewProxy, to date: Date, animated: Bool) {
-        let startDate = CalendarBoardPlannerSupport.plannerWindowStart(for: date, calendar: calendar)
+        // A remembered anchor can point into the past (the timeline and month views browse
+        // freely), but the board no longer renders past days — so clamp, and write the clamp back
+        // so the toolbar title agrees with the column the board actually lands on. `selectedDate`
+        // is the same state this view reads as `anchorDate`, so latch the write: unlatched it
+        // returns as an anchor change and scrolls the board a second time, animated, on appear.
+        let clampedDate = CalendarBoardPlannerSupport.clampedBoardDate(date, calendar: calendar)
+        if !calendar.isDate(clampedDate, inSameDayAs: selectedDate) {
+            isEchoingSelectedDate = true
+            selectedDate = clampedDate
+        }
+
+        let startDate = CalendarBoardPlannerSupport.plannerWindowStart(
+            for: clampedDate,
+            notBefore: Date(),
+            calendar: calendar
+        )
         isProgrammaticScroll = true
         windowStartDate = startDate
         let target = CalendarBoardPlannerSupport.dayIndex(
-            for: date,
+            for: clampedDate,
             bufferStart: startDate,
             calendar: calendar,
             renderDays: renderDays
@@ -115,9 +193,18 @@ struct CalendarPageBoardView: View {
 
     private func recenterWindowIfNeeded(_ proxy: ScrollViewProxy, visibleDayIndex dayIndex: Int, visibleDate: Date) {
         guard !isProgrammaticScroll else { return }
-        guard CalendarBoardPlannerSupport.shouldRecenter(dayIndex: dayIndex, renderDays: renderDays) else { return }
+        // The window rests against its leading edge here — today is column 0 — so proximity alone
+        // would fire on nearly every column crossing in the first six weeks and yank the board
+        // mid-scroll. Only recenter when the window would genuinely move.
+        guard let startDate = CalendarBoardPlannerSupport.recenteredWindowStart(
+            visibleDayIndex: dayIndex,
+            visibleDate: visibleDate,
+            currentWindowStart: activeWindowStartDate,
+            renderDays: renderDays,
+            notBefore: Date(),
+            calendar: calendar
+        ) else { return }
 
-        let startDate = CalendarBoardPlannerSupport.plannerWindowStart(for: visibleDate, calendar: calendar)
         let recenteredDayIndex = CalendarBoardPlannerSupport.dayIndex(
             for: visibleDate,
             bufferStart: startDate,
@@ -150,25 +237,55 @@ struct CalendarPageBoardView: View {
         guard !isProgrammaticScroll else { return }
         let date = CalendarBoardPlannerSupport.date(at: dayIndex, bufferStart: activeWindowStartDate, calendar: calendar)
         if !calendar.isDate(date, inSameDayAs: selectedDate) {
-            isUpdatingSelectedDateFromScroll = true
+            isEchoingSelectedDate = true
             selectedDate = date
         }
         recenterWindowIfNeeded(proxy, visibleDayIndex: dayIndex, visibleDate: date)
     }
 
-    private func createTask(on dateKey: String) {
-        let task = AppTask(title: "New Task")
-        task.scheduledDate = dateKey
-        task.scheduledStartMin = -1
-        modelContext.insert(task)
-        try? modelContext.save()
+    /// A day column's "+" inserts inline — the column supplies the do date. The Unscheduled rail
+    /// has no date to supply, so it opens the create sheet instead of dropping an untitled card
+    /// into the backlog; that is what the Planning page's add row did before this board absorbed it.
+    private func addTask(_ action: CalendarBoardAddAction) {
+        switch action {
+        case .presentCreateSheet:
+            taskCreationManager.present()
+        case .insertInline(let dateKey):
+            let task = AppTask(title: "New Task")
+            task.scheduledDate = dateKey
+            task.scheduledStartMin = -1
+            modelContext.insert(task)
+            try? modelContext.save()
+        }
     }
 
-    private func schedule(_ task: AppTask, on dateKey: String) {
+    /// The Unscheduled rail's drop. Clears the do date *and* the timeline slot together — an
+    /// earlier version of this drag wrote only one of the two, which left the card bucketed
+    /// exactly where it started and made the drop look like it had done nothing.
+    private func unschedule(_ items: [String]) -> Bool {
+        guard let action = CalendarBoardPlannerSupport.dropAction(for: .rail(.unscheduled)),
+              let payload = items.first,
+              let taskID = TaskDragPayload.taskID(from: payload),
+              let task = allTasks.first(where: { $0.id == taskID }) else { return false }
+
         if task.bundle != nil {
             SchedulingActions.removeTaskFromBundle(task, keepOnBundleDate: false)
         }
-        task.scheduledDate = dateKey
+        withAnimation(kanbanCardReorderAnimation) {
+            CalendarBoardPlannerSupport.apply(action, to: task)
+        }
+        try? modelContext.save()
+        return true
+    }
+
+    /// A day column's drop. Goes through the same `apply` the Unscheduled rail uses, so both
+    /// directions of the drag write the one field the board buckets on.
+    private func schedule(_ task: AppTask, on dateKey: String) {
+        guard let action = CalendarBoardPlannerSupport.dropAction(for: .day(dateKey)) else { return }
+        if task.bundle != nil {
+            SchedulingActions.removeTaskFromBundle(task, keepOnBundleDate: false)
+        }
+        CalendarBoardPlannerSupport.apply(action, to: task)
         if task.estimatedMinutes <= 0 {
             task.estimatedMinutes = 30
         }

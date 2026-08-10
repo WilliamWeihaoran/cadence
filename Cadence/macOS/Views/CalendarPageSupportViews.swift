@@ -11,6 +11,7 @@ struct CalendarPageToolbar: View {
     let setViewMode: (CadenceCalendarViewMode) -> Void
     let setPresentation: (CadenceCalendarPresentation) -> Void
     let moveBoardWindow: (Int) -> Void
+    let canMoveBoardWindowBack: Bool
     @Binding var zoomLevel: Int
 
     var body: some View {
@@ -34,7 +35,10 @@ struct CalendarPageToolbar: View {
             }
 
             if presentation == .board {
-                CalendarBoardWindowNavigationControl(moveWindow: moveBoardWindow)
+                CalendarBoardWindowNavigationControl(
+                    moveWindow: moveBoardWindow,
+                    canMoveBack: canMoveBoardWindowBack
+                )
             }
 
             CalendarViewModeControl(
@@ -118,13 +122,16 @@ private struct CalendarViewModeControl: View {
 
 private struct CalendarBoardWindowNavigationControl: View {
     let moveWindow: (Int) -> Void
+    /// The board's day columns are floored at today, so from the first week there is nowhere back
+    /// to go. The arrow reads disabled rather than silently doing nothing.
+    let canMoveBack: Bool
 
     var body: some View {
         HStack(spacing: 6) {
-            CalendarIconGhostButton(systemImage: "chevron.left", isEnabled: true) {
+            CalendarIconGhostButton(systemImage: "chevron.left", isEnabled: canMoveBack) {
                 moveWindow(-1)
             }
-            .help("Previous 7 days")
+            .help(canMoveBack ? "Previous 7 days" : "Board starts at today")
 
             CalendarIconGhostButton(systemImage: "chevron.right", isEnabled: true) {
                 moveWindow(1)

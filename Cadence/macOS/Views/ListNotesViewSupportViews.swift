@@ -163,7 +163,8 @@ struct ListEventNoteSectionRows: View {
 
     var body: some View {
         ForEach(notes) { note in
-            MeetingNoteListRow(note: note, isSelected: selectedNoteID == note.id, showsPreview: false)
+            // No month header above this section, so the row spells its own date out.
+            MeetingNoteListRow(note: note, isSelected: selectedNoteID == note.id, showsDate: true)
                 .onTapGesture {
                     onSelect(note)
                 }

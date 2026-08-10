@@ -52,20 +52,17 @@ struct CadenceSettingsStatusBadge: View {
 
 struct CadenceSettingsHeader<TrailingContent: View>: View {
     let title: String
-    let subtitle: String
     let icon: String
     let tint: Color
     @ViewBuilder let trailingContent: TrailingContent
 
     init(
         title: String,
-        subtitle: String,
         icon: String,
         tint: Color,
         @ViewBuilder trailingContent: () -> TrailingContent = { EmptyView() }
     ) {
         self.title = title
-        self.subtitle = subtitle
         self.icon = icon
         self.tint = tint
         self.trailingContent = trailingContent()
@@ -73,7 +70,9 @@ struct CadenceSettingsHeader<TrailingContent: View>: View {
 
     var body: some View {
         CadenceSettingsCard {
-            HStack(alignment: .top, spacing: 14) {
+            // Single-line row now that the description is gone, so the glyph, title,
+            // and badge center against each other instead of hanging from the top.
+            HStack(alignment: .center, spacing: 14) {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(tint.opacity(0.18))
                     .frame(width: 42, height: 42)
@@ -83,15 +82,9 @@ struct CadenceSettingsHeader<TrailingContent: View>: View {
                             .foregroundStyle(tint)
                     }
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(title)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Theme.text)
 
                 Spacer(minLength: 0)
                 trailingContent

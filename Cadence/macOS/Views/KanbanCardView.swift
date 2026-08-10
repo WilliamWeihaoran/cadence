@@ -2,15 +2,15 @@
 import SwiftUI
 import SwiftData
 
-/// The **one** task card used by every board surface: the list/section kanban boards, the
-/// Planning page buckets, and the Calendar Board day columns. Density is fixed and identical
-/// everywhere — completion circle, title, estimate, do/due chips, tags, subtasks — so the three
-/// boards cannot drift apart again.
+/// The **one** task card used by every board surface: the list/section kanban boards, and the
+/// Calendar Board's day columns and pinned rails. Density is fixed and identical everywhere —
+/// completion circle, title, estimate, do/due chips, tags, subtasks — so the boards cannot drift
+/// apart again.
 ///
 /// The only per-board knob is `showsContainerChip`, and it exists because the information is
 /// genuinely redundant on some boards: a section column already sits inside one list, and an
 /// All Tasks list column *is* a list, so repeating the name on every card there is noise.
-/// Cross-list boards (Planning, Calendar Board) show it.
+/// The Calendar Board is cross-list, so it shows it on both its day columns and its rails.
 struct KanbanCard: View {
     @Bindable var task: AppTask
     var showsContainerChip: Bool = false

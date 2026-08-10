@@ -260,8 +260,44 @@ enum MarkdownStylist {
         applyLinks(storage, text: nsText)
         applyWikiLinks(storage, text: nsText)
         applyCodeFences(storage, text: nsText)
+        // Last, so no earlier pass can style the block back into view.
+        applyFrontmatter(storage, text: text)
 
         storage.endEditing()
+    }
+
+    /// Renders a note's YAML frontmatter at zero height.
+    ///
+    /// The block is kept in `note.content` for portability with other markdown tools, but Cadence
+    /// never shows it: `title`/`status` are not read back anywhere, and tags are edited through the
+    /// note header's `Tag` chips, which mirror themselves into the block. Reuses the same
+    /// `cadenceMarkdownHidden` machinery as inline syntax markers rather than adding a second
+    /// hiding mechanism, and additionally tags the run with `cadenceMarkdownFrontmatter` so
+    /// `MarkdownHiddenRangeSupport` can apply the stricter block caret rule to it.
+    private static func applyFrontmatter(_ storage: NSTextStorage, text: String) {
+        guard let parsed = MarkdownMetadataParser.frontmatterRange(in: text), parsed.length > 0 else { return }
+
+        // Swallow the blank lines that conventionally follow the block, so the body starts at the
+        // top of the editor instead of under a stack of empty rows.
+        let nsText = text as NSString
+        var end = min(NSMaxRange(parsed), storage.length)
+        while end < storage.length, nsText.character(at: end) == 10 { end += 1 }
+
+        let range = NSRange(location: 0, length: end)
+        guard range.length > 0 else { return }
+
+        hide(storage, range)
+        storage.addAttribute(.cadenceMarkdownFrontmatter, value: true, range: range)
+
+        // `hide` shrinks the glyphs but each newline still opens a line box, so the block would
+        // leave a few points of dead space above the first paragraph without this.
+        let collapsed = NSMutableParagraphStyle()
+        collapsed.lineSpacing = 0
+        collapsed.paragraphSpacing = 0
+        collapsed.paragraphSpacingBefore = 0
+        collapsed.minimumLineHeight = 0.1
+        collapsed.maximumLineHeight = 0.1
+        storage.addAttribute(.paragraphStyle, value: collapsed, range: range)
     }
 
     // MARK: - Line Dispatch

@@ -593,6 +593,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     }
 
     func snapCaretAwayFromHiddenMarkdown(preferringForward: Bool) {
+        clampSelectionOutOfHiddenFrontmatter()
         let selection = selectedRange()
         guard selection.length == 0 else { return }
         let snapped = MarkdownHiddenRangeSupport.snappedCaretLocation(
@@ -603,6 +604,38 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         if snapped != selection.location {
             setSelectedRange(NSRange(location: snapped, length: 0))
         }
+    }
+
+    /// Pushes any selection that reaches into the hidden frontmatter block down to the first
+    /// character of the body.
+    ///
+    /// The block renders at zero height, so no position inside it is reachable by eye. Anything
+    /// that lands there — a click above the first visible line, Cmd+Up, Home on the first line —
+    /// gets moved out. For a *ranged* selection only the leading edge moves, which is what keeps
+    /// Cmd+A then typing from silently deleting the YAML: the replacement starts at the body.
+    func clampSelectionOutOfHiddenFrontmatter() {
+        guard let textStorage else { return }
+        let bodyStart = MarkdownHiddenRangeSupport.bodyStartLocation(in: textStorage)
+        guard bodyStart > 0 else { return }
+        let selection = selectedRange()
+        guard selection.location < bodyStart else { return }
+        let end = max(NSMaxRange(selection), bodyStart)
+        setSelectedRange(NSRange(location: bodyStart, length: min(end, textStorage.length) - bodyStart))
+    }
+
+    override func selectAll(_ sender: Any?) {
+        super.selectAll(sender)
+        clampSelectionOutOfHiddenFrontmatter()
+    }
+
+    /// `true` when the caret is parked on the first body character of a note whose frontmatter is
+    /// hidden — i.e. the only thing behind it is invisible YAML.
+    func isCaretAtHiddenFrontmatterBoundary() -> Bool {
+        guard let textStorage else { return false }
+        let bodyStart = MarkdownHiddenRangeSupport.bodyStartLocation(in: textStorage)
+        guard bodyStart > 0 else { return false }
+        let selection = selectedRange()
+        return selection.length == 0 && selection.location <= bodyStart
     }
 
     func replaceEmbeddedTaskReferenceTitle(id: UUID, title: String) {
@@ -1204,6 +1237,16 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         scheduleTagPickerUpdate(for: textView)
     }
 
+    /// Catches every way the caret can reach the hidden frontmatter block that does not route
+    /// through `doCommandBy` — clicking above the first visible line, Cmd+Up, Home, page-up,
+    /// find-and-select. Deliberately frontmatter-only: it must not re-introduce the
+    /// snap-on-every-selection-change behaviour that used to eject carets resting at the leading
+    /// edge of an inline marker.
+    func textViewDidChangeSelection(_ notification: Notification) {
+        guard let textView = notification.object as? CadenceTextView else { return }
+        textView.clampSelectionOutOfHiddenFrontmatter()
+    }
+
     func textDidBeginEditing(_ notification: Notification) {
         parent.onEditingChanged(true)
     }
@@ -1335,6 +1378,13 @@ extension MarkdownEditorCoordinator {
 
     private func handleDeletionCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool? {
         if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
+            // At the top of the body there is nothing behind the caret but the hidden frontmatter
+            // block. Swallow the keystroke instead of letting it chew invisible characters — the
+            // user would see nothing happen while the block quietly came apart.
+            if let cadenceTextView = textView as? CadenceTextView,
+               cadenceTextView.isCaretAtHiddenFrontmatterBoundary() {
+                return true
+            }
             if slashCommandPicker.isShown {
                 scheduleSlashCommandPickerUpdate(for: textView)
             }

@@ -49,10 +49,13 @@ extension KanbanColumnTitleRow where Trailing == EmptyView {
     }
 }
 
-/// The **one** column-header treatment, shared by all three board surfaces: the section/list
-/// kanban columns, the Planning page buckets, and the Calendar Board day columns. Same dot, same
-/// label size and casing, same count placement, same padding, same closing hairline. Paired with
-/// `KanbanColumnScroll`, which puts the add-task row in the same place on all three.
+/// The **one** column-header treatment, shared by every board surface: the section/list kanban
+/// columns, and the Calendar Board's day columns and pinned rails. Same dot, same label size and
+/// casing, same count placement, same padding, same closing hairline. Paired with
+/// `KanbanColumnScroll`, which puts the add-task row in the same place on all of them.
+///
+/// It is width-agnostic on purpose: the Calendar Board's rails are narrower than its day columns
+/// and still line up, because the header fills whatever width its column hands it.
 ///
 /// Exactly three things may differ per board, because they are genuinely different content:
 /// - `title` — bucket name / section name / weekday + date.
@@ -228,7 +231,10 @@ extension View {
 /// structural instead of something each board has to remember.
 struct KanbanColumnScroll<Content: View>: View {
     let isColumnHovered: Bool
-    let onAddTask: () -> Void
+    /// `nil` drops the add-task row. The Calendar Board's Overdue rail is the only caller that
+    /// passes it: overdue is a derived state, so "add a task here" has no meaning — the same
+    /// reason the rail refuses drops.
+    let onAddTask: (() -> Void)?
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -236,7 +242,9 @@ struct KanbanColumnScroll<Content: View>: View {
             VStack(alignment: .leading, spacing: 8) {
                 content()
                 // Replaces the old header "+" chip; always genuinely last in the column.
-                KanbanColumnAddTaskRow(isColumnHovered: isColumnHovered, action: onAddTask)
+                if let onAddTask {
+                    KanbanColumnAddTaskRow(isColumnHovered: isColumnHovered, action: onAddTask)
+                }
             }
             .padding(.horizontal, 4)
             .padding(.top, 8)

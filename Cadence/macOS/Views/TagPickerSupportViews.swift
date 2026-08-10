@@ -7,6 +7,11 @@ struct TagPickerControl: View {
     let allTags: [Tag]
     let onCreateTag: (String) -> Tag
     var showsLabel: Bool = false
+    /// Glyph on the picker trigger. Defaults to the tag icon, which reads as "this is the tag
+    /// control" — right inside a task inspector, where it sits in a column of labelled fields.
+    /// The note header passes `"plus"`: there the chips are the subject and the trigger's only
+    /// job is "add one".
+    var triggerSymbol: String = "tag.fill"
 
     @State private var isPresented = false
 
@@ -26,7 +31,7 @@ struct TagPickerControl: View {
                 isPresented.toggle()
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "tag.fill")
+                    Image(systemName: triggerSymbol)
                         .font(.system(size: 10, weight: .semibold))
                     if showsLabel {
                         Text("Tags")

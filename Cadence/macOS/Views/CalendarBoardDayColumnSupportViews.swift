@@ -85,9 +85,9 @@ struct CalendarBoardDayColumn: View {
         .accessibilityLabel("\(DateFormatters.longDate.string(from: date)), \(totalCount) scheduled item\(totalCount == 1 ? "" : "s")")
     }
 
-    /// The shared board header. The only things that differ from a kanban or Planning column are
-    /// the label text (weekday + date) and — for today only — the amber rule in place of the
-    /// neutral hairline, which is the single sanctioned exception to the shared treatment.
+    /// The shared board header. The only things that differ from a kanban column or one of this
+    /// board's rails are the label text (weekday + date) and — for today only — the amber rule in
+    /// place of the neutral hairline, which is the single sanctioned exception to the treatment.
     private var header: some View {
         BoardColumnHeader(
             dotColor: isToday ? Theme.amber : Theme.dim,

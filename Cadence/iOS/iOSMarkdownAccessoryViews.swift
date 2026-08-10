@@ -166,7 +166,7 @@ private struct iOSMarkdownNoteReferenceRow: View {
         case .list:
             return "Linked note"
         case .meeting:
-            return note.eventDateKey.isEmpty ? "Meeting note" : "Meeting · \(note.eventDateKey)"
+            return note.eventDateKey.isEmpty ? "Event note" : "Event · \(note.eventDateKey)"
         }
     }
 

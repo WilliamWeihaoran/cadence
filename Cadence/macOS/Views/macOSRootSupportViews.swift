@@ -6,7 +6,6 @@ import AppKit
 struct DesktopPageHeader<TrailingContent: View>: View {
     let eyebrow: String?
     let title: String
-    let subtitle: String?
     let count: Int?
     let systemImage: String?
     let tint: Color
@@ -15,7 +14,6 @@ struct DesktopPageHeader<TrailingContent: View>: View {
     init(
         eyebrow: String? = nil,
         title: String,
-        subtitle: String? = nil,
         count: Int? = nil,
         systemImage: String? = nil,
         tint: Color = Theme.blue,
@@ -23,7 +21,6 @@ struct DesktopPageHeader<TrailingContent: View>: View {
     ) {
         self.eyebrow = eyebrow
         self.title = title
-        self.subtitle = subtitle
         self.count = count
         self.systemImage = systemImage
         self.tint = tint
@@ -42,7 +39,7 @@ struct DesktopPageHeader<TrailingContent: View>: View {
                         .clipShape(RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius, style: .continuous))
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     if let eyebrow {
                         Text(eyebrow.uppercased())
                             .font(.system(size: 10, weight: .semibold))
@@ -64,13 +61,6 @@ struct DesktopPageHeader<TrailingContent: View>: View {
                                 .background(tint.opacity(0.12))
                                 .clipShape(Capsule())
                         }
-                    }
-
-                    if let subtitle, !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(.system(size: CadenceDesktopMetrics.secondaryTextSize))
-                            .foregroundStyle(Theme.dim)
-                            .lineLimit(2)
                     }
                 }
             }
@@ -604,8 +594,7 @@ struct AllTasksPageView: View {
         VStack(spacing: 0) {
             DesktopPageHeader(
                 eyebrow: "Tasks",
-                title: "All Tasks",
-                subtitle: "Browse everything by do date, list, or board."
+                title: "All Tasks"
             ) {
                 DesktopPrimaryActionButton(title: "New Task", systemImage: "plus") {
                     taskCreationManager.present()

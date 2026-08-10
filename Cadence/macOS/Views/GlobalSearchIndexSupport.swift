@@ -234,7 +234,7 @@ enum GlobalSearchIndexSupport {
                     dateLabel = DateFormatters.shortDate.string(from: date)
                 }
             } else {
-                dateLabel = "Meeting note"
+                dateLabel = "Event note"
             }
             let tagText = note.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
             guard matches(query: query, fields: [title, note.content, dateLabel, tagText]) else { return nil }

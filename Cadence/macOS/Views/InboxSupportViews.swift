@@ -16,7 +16,6 @@ struct InboxHeaderView: View {
         DesktopPageHeader(
             eyebrow: "Tasks",
             title: "Inbox",
-            subtitle: "Unsorted tasks and Apple Reminders land here.",
             count: activeTaskCount
         ) {
             DesktopPrimaryActionButton(title: "New Task", systemImage: "plus", action: onNewTask)

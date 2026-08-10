@@ -6,10 +6,6 @@ private struct TaskNoteDerivedState {
     var linkedNotes: [Note] = []
     var linkedTasks: [AppTask] = []
     var outline: [MarkdownOutlineItem] = []
-    var metadata = MarkdownNoteMetadata(
-        frontmatter: MarkdownFrontmatter(properties: [:], range: nil),
-        tags: []
-    )
     var unlinkedMentions: [Note] = []
 }
 
@@ -28,7 +24,6 @@ struct TaskNoteEditorPane: View {
     @State private var linkedTaskForPopover: AppTask?
     @State private var embeddedTaskEditRequest: TaskEmbedFieldEditRequest?
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
-    @State private var isInspectorCollapsed = false
     @State private var editorContent = ""
     @State private var loadedTaskID: UUID?
     @State private var derivedState = TaskNoteDerivedState()
@@ -51,23 +46,19 @@ struct TaskNoteEditorPane: View {
         !derivedState.linkedNotes.isEmpty || !derivedState.linkedTasks.isEmpty
     }
 
+    /// Templates only show while the note is still blank — same rule as `applyTemplate`'s
+    /// fill-vs-append branch.
+    private var isNoteBlank: Bool {
+        let source = loadedTaskID == task.id ? editorContent : task.notes
+        return MarkdownMetadataParser.splitFrontmatter(in: source).body
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
+    }
+
     private var toolbarAccessory: AnyView {
         AnyView(
             HStack(spacing: 8) {
-                Button {
-                    isInspectorCollapsed.toggle()
-                } label: {
-                    Image(systemName: isInspectorCollapsed ? "rectangle.split.2x1" : "rectangle.split.2x1.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(isInspectorCollapsed ? Theme.muted : Theme.blue)
-                        .frame(width: 30, height: 30)
-                        .background(
-                            RoundedRectangle(cornerRadius: 9)
-                                .fill(isInspectorCollapsed ? Theme.surfaceElevated.opacity(0.72) : Theme.blue.opacity(0.14))
-                        )
-                }
-                .buttonStyle(.cadencePlain)
-                .help(isInspectorCollapsed ? "Show note sidebar" : "Hide note sidebar")
+                NoteOutlineJumpButton(outline: derivedState.outline, onJump: jumpToOutline)
 
                 HStack(spacing: 8) {
                     Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
@@ -120,56 +111,47 @@ struct TaskNoteEditorPane: View {
                     onOpenNote: onOpenNote
                 )
             }
-            HSplitView {
-                MarkdownEditor(
-                    text: noteContentBinding,
-                    toolbarAccessory: toolbarAccessory,
-                    referenceNotes: relatedNotes,
-                    referenceTasks: relatedTasks,
-                    onOpenNoteReference: openNoteReference,
-                    onOpenTaskReference: openTaskReference,
-                    onCreateEmbeddedTask: createEmbeddedTask,
-                    onToggleEmbeddedTask: toggleEmbeddedTask,
-                    onToggleEmbeddedSubtask: toggleEmbeddedSubtask,
-                    onRenameEmbeddedTask: renameEmbeddedTask,
-                    onOpenEmbeddedTask: openEmbeddedTask,
-                    onEditEmbeddedTask: editEmbeddedTask,
-                    onHoverEmbeddedTask: hoverEmbeddedTask,
-                    onEditingChanged: handleEditorFocusChange,
-                    onTextViewChanged: { editorTextView = $0 }
+            if isNoteBlank {
+                NoteTemplateChipStrip(
+                    templates: NoteTemplateLibrary.templates(for: .list, overridesRaw: noteTemplateOverridesRaw),
+                    onApply: applyTemplate
                 )
-                .frame(minWidth: 360)
-                .popover(item: $linkedTaskForPopover) { linkedTask in
-                    TaskDetailPopover(task: linkedTask)
-                        .frame(width: 380)
-                }
-                .popover(item: $embeddedTaskEditRequest) { request in
-                    if let embeddedTask = embeddedTask(id: request.taskID) {
-                        TaskEmbedFieldEditorPopover(task: embeddedTask, initialField: request.field) {
-                            refreshEmbeddedTask(embeddedTask)
-                        }
-                    } else {
-                        Text("Task no longer exists")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.dim)
-                            .padding()
+            }
+            MarkdownEditor(
+                text: noteContentBinding,
+                toolbarAccessory: toolbarAccessory,
+                referenceNotes: relatedNotes,
+                referenceTasks: relatedTasks,
+                onOpenNoteReference: openNoteReference,
+                onOpenTaskReference: openTaskReference,
+                onCreateEmbeddedTask: createEmbeddedTask,
+                onToggleEmbeddedTask: toggleEmbeddedTask,
+                onToggleEmbeddedSubtask: toggleEmbeddedSubtask,
+                onRenameEmbeddedTask: renameEmbeddedTask,
+                onOpenEmbeddedTask: openEmbeddedTask,
+                onEditEmbeddedTask: editEmbeddedTask,
+                onHoverEmbeddedTask: hoverEmbeddedTask,
+                onEditingChanged: handleEditorFocusChange,
+                onTextViewChanged: { editorTextView = $0 }
+            )
+            .popover(item: $linkedTaskForPopover) { linkedTask in
+                TaskDetailPopover(task: linkedTask)
+                    .frame(width: 380)
+            }
+            .popover(item: $embeddedTaskEditRequest) { request in
+                if let embeddedTask = embeddedTask(id: request.taskID) {
+                    TaskEmbedFieldEditorPopover(task: embeddedTask, initialField: request.field) {
+                        refreshEmbeddedTask(embeddedTask)
                     }
-                }
-
-                if !isInspectorCollapsed {
-                    NoteMarkdownSidePanel(
-                        outline: derivedState.outline,
-                        metadata: derivedState.metadata,
-                        templates: NoteTemplateLibrary.templates(for: .list, overridesRaw: noteTemplateOverridesRaw),
-                        unlinkedMentions: derivedState.unlinkedMentions,
-                        onJumpToOutline: jumpToOutline,
-                        onInsertFrontmatter: insertFrontmatter,
-                        onApplyTemplate: applyTemplate,
-                        onLinkMention: linkMention
-                    )
-                    .frame(minWidth: 220, idealWidth: 240, maxWidth: 290)
+                } else {
+                    Text("Task no longer exists")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim)
+                        .padding()
                 }
             }
+
+            NoteUnlinkedMentionsFooter(mentions: derivedState.unlinkedMentions, onLink: linkMention)
         }
         .background(Theme.surface)
         .onAppear {
@@ -259,7 +241,6 @@ struct TaskNoteEditorPane: View {
                 tasks: relatedTasks.filter { $0.id != task.id }
             ),
             outline: MarkdownOutlineParser.items(in: content),
-            metadata: MarkdownMetadataParser.metadata(in: content),
             unlinkedMentions: NoteUnlinkedMentionResolver.unlinkedMentions(
                 noteID: task.id,
                 content: content,
@@ -429,19 +410,13 @@ struct TaskNoteEditorPane: View {
         editorTextView.scrollRangeToVisible(NSRange(location: safeLocation, length: 0))
     }
 
-    private func insertFrontmatter() {
-        let currentMetadata = MarkdownMetadataParser.metadata(in: editorContent)
-        guard currentMetadata.frontmatter.range == nil else { return }
-        replaceEditorContent(MarkdownMetadataParser.frontmatterInsertion(title: taskTitle) + editorContent)
-    }
-
     private func applyTemplate(_ template: NoteTemplate) {
-        let trimmed = editorContent.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            replaceEditorContent(template.body)
-        } else {
-            replaceEditorContent(trimmed + "\n\n" + template.body)
-        }
+        // Same split-and-restore as `NoteEditorPane.applyTemplate`: a leading `---` block renders
+        // at zero height, so a wholesale rewrite would destroy content the user cannot see.
+        let parts = MarkdownMetadataParser.splitFrontmatter(in: editorContent)
+        let trimmedBody = parts.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newBody = trimmedBody.isEmpty ? template.body : trimmedBody + "\n\n" + template.body
+        replaceEditorContent(MarkdownMetadataParser.content(frontmatter: parts.frontmatter, body: newBody))
     }
 
     private func linkMention(_ mentionedNote: Note) {
