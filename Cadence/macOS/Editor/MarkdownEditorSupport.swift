@@ -609,7 +609,13 @@ enum MarkdownStylist {
             let open = NSRange(location: full.location, length: 1)
             let close = NSRange(location: full.location + full.length - 1, length: 1)
             let content = NSRange(location: full.location + 1, length: full.length - 2)
-            storage.addAttribute(.font, value: monoFont, range: content)
+            // Scale relative to whatever's already on this range (e.g. a heading's bold
+            // font, already applied by this point) instead of a flat size, so inline code
+            // inside a heading isn't a tiny, misaligned-looking pill next to huge text —
+            // matches how the bold/italic passes above already read the ambient font.
+            let existingFont = storage.attribute(.font, at: content.location, effectiveRange: nil) as? NSFont ?? baseFont
+            let codeFont = NSFont.monospacedSystemFont(ofSize: existingFont.pointSize * (monoFont.pointSize / baseFont.pointSize), weight: .regular)
+            storage.addAttribute(.font, value: codeFont, range: content)
             storage.addAttribute(.foregroundColor, value: greenColor, range: content)
             storage.addAttribute(.cadenceMarkdownInlineCode, value: true, range: content)
             hide(storage, open)

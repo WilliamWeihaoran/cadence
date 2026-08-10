@@ -8,12 +8,19 @@ enum MarkdownEditorMetrics {
     static let textInset: CGFloat = 20
     static let lineFragmentPadding: CGFloat = 5
     static let firstTextColumnInset: CGFloat = textInset + lineFragmentPadding
+    /// Height of the format toolbar above the text. Exposed so an overlay drawn over the whole
+    /// `MarkdownEditor` — the empty-body placeholder — can sit on the first text line rather than
+    /// on top of the toolbar.
+    static let toolbarHeight: CGFloat = 44
 }
 
 struct MarkdownEditor: View {
     @Binding var text: String
     var showsToolbar = true
     var toolbarAccessory: AnyView? = nil
+    /// Templates offered inside the `/` command menu, alongside the built-in commands. One of the
+    /// three routes to a template now that they no longer take a row above the note.
+    var slashTemplates: [NoteTemplate] = []
     var referenceNotes: [Note] = []
     var referenceTasks: [AppTask] = []
     var onOpenNoteReference: (UUID?, String) -> Void = { _, _ in }
@@ -72,6 +79,7 @@ struct MarkdownEditor: View {
 
             MarkdownEditorView(
                 text: $text,
+                slashCommands: MarkdownSlashCommand.all + MarkdownSlashCommand.templateCommands(for: slashTemplates),
                 imageAssets: imageAssets,
                 onCreateImages: createAssets,
                 onResizeImage: resizeImage,
@@ -162,7 +170,7 @@ struct MarkdownEditor: View {
 }
 
 private struct MarkdownEditorToolbar: View {
-    private static let height: CGFloat = 44
+    private static let height: CGFloat = MarkdownEditorMetrics.toolbarHeight
 
     let textView: CadenceTextView?
     let noteSuggestions: [MarkdownReferenceSuggestion]
@@ -352,6 +360,9 @@ private struct MarkdownToolbarTextButton: View {
 
 struct MarkdownEditorView: NSViewRepresentable {
     @Binding var text: String
+    /// The `/` menu's command list. Defaults to the built-ins; callers that have templates append
+    /// them, so the picker is per-note-kind without the editor knowing what a note kind is.
+    var slashCommands: [MarkdownSlashCommand] = MarkdownSlashCommand.all
     var imageAssets: [MarkdownImageAsset] = []
     var onCreateImages: ([NSImage], [URL]) -> [MarkdownImageAsset] = { _, _ in [] }
     var onResizeImage: (UUID, CGFloat) -> Void = { _, _ in }

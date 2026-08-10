@@ -374,13 +374,45 @@ enum NoteMigrationService {
         return note
     }
 
+    /// The *primary* notepad note — the oldest one — creating it if the store has none.
+    ///
+    /// Notepad is no longer a singleton in the Notes tab, but this accessor still is, and
+    /// deliberately: its callers are the single-editor notepad surfaces (the Today note panel's
+    /// Notepad tab, the iOS notes panel, the MCP write service) which want one stable note, not a
+    /// list. "Oldest" is what makes it stable — a plain `first` over an unordered fetch would
+    /// return a different note run to run once more than one exists, so those surfaces would show
+    /// a different notepad each launch. Oldest is also the note an upgrading user already had, so
+    /// nothing they were looking at moves.
+    ///
+    /// Use `permanentNotes(in:)` where a list is wanted and `createPermanentNote(in:)` to add one.
     @discardableResult
     static func permanentNote(in context: ModelContext) throws -> Note {
-        let existing = try context.fetch(FetchDescriptor<Note>())
-            .first { $0.kind == .permanent }
-        if let existing { return existing }
+        if let existing = try permanentNotes(in: context).first { return existing }
 
         let note = Note(kind: .permanent, title: "Notepad")
+        context.insert(note)
+        try context.save()
+        return note
+    }
+
+    /// Every notepad note, oldest first. Never creates one.
+    static func permanentNotes(in context: ModelContext) throws -> [Note] {
+        try context.fetch(FetchDescriptor<Note>())
+            .filter { $0.kind == .permanent }
+            .sorted {
+                $0.createdAt == $1.createdAt
+                    ? $0.id.uuidString < $1.id.uuidString
+                    : $0.createdAt < $1.createdAt
+            }
+    }
+
+    /// Adds a notepad note. Always inserts — this is the "New Note" button, not a lookup.
+    ///
+    /// Seeded with its title as a `# Heading` so the body's H1 is the rename control from the
+    /// first keystroke, the same way list notes work.
+    @discardableResult
+    static func createPermanentNote(in context: ModelContext, title: String = "Untitled") throws -> Note {
+        let note = Note(kind: .permanent, title: title, content: "# \(title)\n\n")
         context.insert(note)
         try context.save()
         return note
@@ -428,8 +460,16 @@ enum NoteMigrationService {
         return true
     }
 
+    /// Permanent notes are excluded on purpose.
+    ///
+    /// `canonicalKey` maps every permanent note to the single key `"permanent"`, which is exactly
+    /// right for the migration guard — one legacy `PermNote` must not be copied in twice, and must
+    /// not be copied in at all if the app already made a notepad note before the migration ran —
+    /// but it is no longer a statement about duplication. Notepad holds as many notes as the user
+    /// makes, so counting them as duplicates would report a healthy store as broken and grow the
+    /// count every time they wrote something down.
     private static func canonicalDuplicateCount(in notes: [Note]) -> Int {
-        let counts = Dictionary(grouping: notes, by: canonicalKey(for:))
+        let counts = Dictionary(grouping: notes.filter { $0.kind != .permanent }, by: canonicalKey(for:))
             .mapValues(\.count)
         return counts.values.reduce(0) { total, count in
             count > 1 ? total + count - 1 : total

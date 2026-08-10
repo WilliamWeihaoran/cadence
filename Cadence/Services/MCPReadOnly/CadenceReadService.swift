@@ -399,7 +399,12 @@ final class CadenceReadService {
         let notes = try fetchNotes()
         let daily = notes.first { $0.kind == .daily && $0.dateKey == resolvedDateKey }
         let weekly = notes.first { $0.kind == .weekly && $0.weekKey == resolvedWeekKey }
-        let permanent = notes.first { $0.kind == .permanent }
+        // Oldest, matching `NoteMigrationService.permanentNote(in:)`. Notepad holds many notes
+        // now, and a bare `first` over an unordered fetch would put a different one in the
+        // snapshot from one read to the next.
+        let permanent = notes
+            .filter { $0.kind == .permanent }
+            .min { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
 
         return CadenceCoreNotesSnapshot(
             dateKey: resolvedDateKey,

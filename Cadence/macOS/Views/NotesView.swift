@@ -248,47 +248,118 @@ private struct WeeklyNotesPage: View {
     }
 }
 
-/// The Notepad tab.
+/// The Notepad tab: undated notes, as many as you like.
 ///
-/// `NoteKind.permanent` is a singleton — `NoteMigrationService.permanentNote(in:)` returns the one
-/// permanent note or creates it — so there is nothing to list. This tab is the editor at full
-/// width rather than a one-row list column beside it. Backed by the existing kind; no new
-/// `NoteKind` was introduced.
+/// It used to be a single editor at full width, because `NoteKind.permanent` was reached only
+/// through `NoteMigrationService.permanentNote(in:)`, which returns *the* permanent note or makes
+/// it. That accessor still exists and still returns one note — the Today panel's Notepad tab and
+/// iOS both want exactly one — but it is no longer the only way in: this page lists
+/// `permanentNotes` and adds to them. An upgrading user's one notepad note is the oldest, so it is
+/// the last row and the note every other surface still opens.
+///
+/// No new `NoteKind` was introduced.
 private struct NotepadPage: View {
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
-    @State private var noteID: UUID?
+    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
+    @State private var selectedNoteID: UUID?
 
+    /// Unfiltered — see `NotesListVisibility.notepadNotes`. A notepad note only exists because it
+    /// was asked for, so a blank one is a note you are about to write in, not noise.
     private var notes: [Note] {
-        allNotes.filter { $0.kind == .permanent }
+        NotesListVisibility.notepadNotes(allNotes)
     }
 
-    private var note: Note? {
-        notes.first { $0.id == noteID } ?? notes.first
+    private var selectedNote: Note? {
+        notes.first { $0.id == selectedNoteID }
     }
 
     var body: some View {
-        Group {
-            if let note {
+        HSplitView {
+            VStack(spacing: 0) {
+                NotesListHeader(title: "Notepad", onCreate: createNote)
+
+                if notes.isEmpty {
+                    Spacer()
+                    EmptyStateView(
+                        message: "No notes yet",
+                        subtitle: "Notepad holds notes that belong to no particular day.",
+                        icon: "doc.text"
+                    )
+                    Spacer()
+                } else {
+                    NotesGroupedListColumn(
+                        groups: NotesListGrouping.monthGroups(
+                            for: notes,
+                            dateKey: { DateFormatters.dateKey(from: $0.createdAt) }
+                        )
+                    ) { note in
+                        NotepadNoteListRow(note: note, isSelected: selectedNoteID == note.id)
+                            .onTapGesture { selectedNoteID = note.id }
+                    }
+                }
+            }
+            .frame(minWidth: NotesListMetrics.columnMinWidth,
+                   idealWidth: NotesListMetrics.columnIdealWidth,
+                   maxWidth: NotesListMetrics.columnMaxWidth)
+            .background(Theme.surface)
+
+            if let note = selectedNote {
                 NoteEditorPane(
                     note: note,
                     relatedNotes: allNotes,
-                    relatedTasks: allTasks
+                    relatedTasks: allTasks,
+                    onOpenNote: { selectedNoteID = $0.id },
+                    onDelete: { deleteNote(note) }
                 )
+                // Per-note text view, so undo history does not leak between notes.
+                .id(note.id)
             } else {
-                NotesEditorPlaceholder(title: "No notepad yet")
+                NotesEditorPlaceholder(title: "Select a note")
             }
         }
         .onAppear { loadOrCreateNotepad() }
+        .onChange(of: notes.map(\.id)) { _, _ in
+            normalizeSelection()
+        }
     }
 
+    /// Opens the newest note, creating the first one if the store has none. Uses the shared
+    /// singleton accessor for that first note rather than inserting directly, so a user upgrading
+    /// into this page lands on the note they already had instead of a second, empty one.
     private func loadOrCreateNotepad() {
         if let existing = notes.first {
-            noteID = existing.id
+            selectedNoteID = existing.id
             return
         }
-        noteID = (try? CadenceCoreNoteSupport.note(for: .notepad, in: modelContext))?.id
+        selectedNoteID = (try? CadenceCoreNoteSupport.note(for: .notepad, in: modelContext))?.id
+    }
+
+    private func createNote() {
+        guard let note = try? NoteMigrationService.createPermanentNote(in: modelContext) else { return }
+        selectedNoteID = note.id
+    }
+
+    private func deleteNote(_ note: Note) {
+        let noteID = note.id
+        let title = note.displayTitle
+        deleteConfirmationManager.present(
+            title: "Delete Note?",
+            message: "This will permanently delete \"\(title)\"."
+        ) {
+            guard let current = notes.first(where: { $0.id == noteID }) else { return }
+            if selectedNoteID == noteID {
+                selectedNoteID = notes.first { $0.id != noteID }?.id
+            }
+            modelContext.delete(current)
+            modelContext.deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: [noteID])
+        }
+    }
+
+    private func normalizeSelection() {
+        guard selectedNoteID == nil || !notes.contains(where: { $0.id == selectedNoteID }) else { return }
+        selectedNoteID = notes.first?.id
     }
 }
 
@@ -413,6 +484,10 @@ private struct NotesListHeader: View {
     /// Present on the tabs whose list is filtered. Empty days no longer have a row, so the header
     /// carries the one control that can still reach them.
     var onPickDate: ((Date) -> Void)? = nil
+    /// Present on Notepad only. Daily and weekly notes are created by reaching a date, so their
+    /// header carries a date picker instead; a notepad note has no date to reach, so the only way
+    /// to make one is to say so.
+    var onCreate: (() -> Void)? = nil
 
     var body: some View {
         HStack {
@@ -422,6 +497,15 @@ private struct NotesListHeader: View {
             Spacer()
             if let onPickDate {
                 NotesDateJumpButton(onPick: onPickDate)
+            }
+            if let onCreate {
+                CadenceQuietPillButton(state: .quiet, action: onCreate) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                }
+                .help("New note")
+                .accessibilityLabel("New note")
             }
         }
         .padding(.horizontal, 16)

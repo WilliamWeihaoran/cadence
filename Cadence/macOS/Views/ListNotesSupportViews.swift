@@ -46,8 +46,11 @@ struct TaskNoteEditorPane: View {
         !derivedState.linkedNotes.isEmpty || !derivedState.linkedTasks.isEmpty
     }
 
-    /// Templates only show while the note is still blank — same rule as `applyTemplate`'s
-    /// fill-vs-append branch.
+    private var templates: [NoteTemplate] {
+        NoteTemplateLibrary.templates(for: .list, overridesRaw: noteTemplateOverridesRaw)
+    }
+
+    /// Drives the empty-body placeholder — same rule as `applyTemplate`'s fill-vs-append branch.
     private var isNoteBlank: Bool {
         let source = loadedTaskID == task.id ? editorContent : task.notes
         return MarkdownMetadataParser.splitFrontmatter(in: source).body
@@ -111,15 +114,10 @@ struct TaskNoteEditorPane: View {
                     onOpenNote: onOpenNote
                 )
             }
-            if isNoteBlank {
-                NoteTemplateChipStrip(
-                    templates: NoteTemplateLibrary.templates(for: .list, overridesRaw: noteTemplateOverridesRaw),
-                    onApply: applyTemplate
-                )
-            }
             MarkdownEditor(
                 text: noteContentBinding,
                 toolbarAccessory: toolbarAccessory,
+                slashTemplates: templates,
                 referenceNotes: relatedNotes,
                 referenceTasks: relatedTasks,
                 onOpenNoteReference: openNoteReference,
@@ -134,6 +132,9 @@ struct TaskNoteEditorPane: View {
                 onEditingChanged: handleEditorFocusChange,
                 onTextViewChanged: { editorTextView = $0 }
             )
+            .overlay(alignment: .topLeading) {
+                NoteEmptyBodyPlaceholder(templates: templates, isVisible: isNoteBlank, onApply: applyTemplate)
+            }
             .popover(item: $linkedTaskForPopover) { linkedTask in
                 TaskDetailPopover(task: linkedTask)
                     .frame(width: 380)

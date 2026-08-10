@@ -10,6 +10,11 @@ enum NotesListMetrics {
     /// Fixed leading slot for the day number so one- and two-digit days line up as a single
     /// column instead of ragging against the preview text.
     static let dayNumberWidth: CGFloat = 20
+    /// Gap between the day-number slot and the title. Wider than the 9pt it started at: at 9pt the
+    /// number and the first word of the preview read as one run of text, so a column of rows read
+    /// as mush rather than as a number column with titles beside it. 14pt is a clear word-space
+    /// gap at 12pt type without turning the slot into a second column of whitespace.
+    static let dayNumberSpacing: CGFloat = 14
     static let rowHorizontalPadding: CGFloat = 10
     static let rowVerticalPadding: CGFloat = 6
     /// Matches `rowHorizontalPadding` so the header's left edge and the day-number column's left
@@ -24,15 +29,20 @@ enum NotesListMetrics {
     // wider than the editor beside it. `maxWidth` is what actually pins it. The divider is still
     // draggable — between `columnMinWidth` and `columnMaxWidth`.
     //
-    // 280 sizes to the content: a row spends 20pt on the day-number slot, 9pt of spacing, 2×10pt of
-    // row padding and 2×8pt of column padding — 65pt of chrome — leaving ~215pt for the preview.
-    // At 12pt system that is roughly 40 characters, which is a full clause of the first line and
-    // the most a one-line truncated preview can use. Anything past that is spent on whitespace the
-    // editor wants back.
+    // These are the previous 220/280/380 scaled to 80%, rounded to whole 10s: the column was sized
+    // for a preview long enough to read as a sentence, and it does not need to be — the row is an
+    // index entry, not the note.
+    //
+    // At the 224pt ideal a row spends 20pt on the day-number slot, 14pt of spacing, 2×10pt of row
+    // padding and 2×8pt of column padding — 70pt of chrome — leaving ~154pt for the preview. At
+    // 12pt system that is roughly 25 characters: "Shipped the invoice rec…", which is the first
+    // phrase of the first line and enough to tell two notes apart. The 300pt maximum still reaches
+    // ~37 characters for anyone who drags the divider out; the 180pt minimum keeps ~18, which is
+    // short but still more than the day number it sits beside.
 
-    static let columnMinWidth: CGFloat = 220
-    static let columnIdealWidth: CGFloat = 280
-    static let columnMaxWidth: CGFloat = 380
+    static let columnMinWidth: CGFloat = 180
+    static let columnIdealWidth: CGFloat = 224
+    static let columnMaxWidth: CGFloat = 300
 }
 
 // MARK: - Month grouping
@@ -88,19 +98,21 @@ enum NotesListGrouping {
 
 /// Month header for a grouped note list. Uppercase and kerned, like the sidebar's context headers.
 ///
-/// It is deliberately *not* at `Theme.dim` any more. `dim` is the de-emphasis stop, and at 10pt on
-/// `Theme.surface` it lands around 3.8:1 — below the 4.5:1 floor for small text, and dimmer than
-/// the `Theme.muted` day numbers it is supposed to be heading, so the header read as the quietest
-/// thing in its own group. `Theme.muted` at 11pt bold clears 7.2:1 and out-weights a 12pt medium
-/// day number, while staying below the `Theme.text` used for today's row so the brightest thing on
-/// screen is still content rather than chrome.
+/// It has climbed twice. `Theme.dim` at 10pt lands 3.84:1 on `Theme.surface` — below the 4.5:1
+/// floor for small text, and *dimmer* than the rows it heads, so the header was the quietest thing
+/// in its own group. `Theme.muted` at 11pt bold reached 7.24:1, but the rows beside it are also
+/// `Theme.muted`: identical colour, so the header out-read a row by weight alone and still lost.
+/// `Theme.text` is 15.86:1 on `Theme.surface` and 2.19:1 against the `Theme.muted` day numbers and
+/// titles beside it — a header that plainly out-reads its own rows, which is the whole job. It is
+/// the same stop the app uses for primary content everywhere else, and uppercase + kerning keep it
+/// legible as chrome rather than mistakable for a note title.
 struct NotesMonthHeader: View {
     let title: String
 
     var body: some View {
         Text(title)
             .font(.system(size: 11, weight: .bold))
-            .foregroundStyle(Theme.muted)
+            .foregroundStyle(Theme.text)
             .kerning(0.8)
             .lineLimit(1)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -149,20 +161,37 @@ struct NoteListDayRow: View {
 
     @State private var isHovered = false
 
+    /// One fill, one radius, three states.
+    ///
+    /// Selection used to be `Theme.surfaceElevated`, which is 1.07:1 against the `Theme.surface`
+    /// the column is drawn on — a 4-value step you cannot see without a colour picker, and only
+    /// 1.03:1 away from the hover fill, so the open note was indistinguishable from whatever the
+    /// pointer happened to be over. `Theme.blue.opacity(0.16)` composites to 1.26:1 on
+    /// `Theme.surface`: still quiet, but *hued*, so it separates from every grey in the column at a
+    /// glance rather than by brightness. It is the same fill the markdown slash-command and
+    /// reference pickers already use for their highlighted row, so selection reads the same way
+    /// everywhere. Blue is spent here because a selected row is exactly what blue is reserved for.
     private var fill: Color {
-        if isSelected { return Theme.surfaceElevated }
+        if isSelected { return Theme.blue.opacity(0.16) }
         return isHovered ? Theme.surfaceHover : .clear
     }
 
     /// Empty notes recede — number and label both — so the rows that actually say something are
-    /// what the eye lands on.
+    /// what the eye lands on. The selected row climbs to `Theme.text` for the same reason the fill
+    /// changed: the fill alone is a hint, and the title going from 7.24:1 to 12.56:1 on the tinted
+    /// plate is what actually reads as "this is the one that is open".
     private var foreground: Color {
-        if isEmphasized { return Theme.text }
+        if isSelected || isEmphasized { return Theme.text }
         return isEmptyNote ? Theme.dim : Theme.muted
     }
 
+    private var titleWeight: Font.Weight {
+        if isSelected { return .semibold }
+        return isEmphasized ? .semibold : .regular
+    }
+
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 9) {
+        HStack(alignment: .firstTextBaseline, spacing: NotesListMetrics.dayNumberSpacing) {
             Text(dayLabel)
                 .font(.system(size: 12, weight: isEmphasized ? .bold : .medium).monospacedDigit())
                 .foregroundStyle(foreground)
@@ -170,7 +199,7 @@ struct NoteListDayRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 12, weight: isEmphasized ? .semibold : .regular))
+                    .font(.system(size: 12, weight: titleWeight))
                     .foregroundStyle(foreground)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -222,6 +251,17 @@ private enum NoteRowText {
             .lazy
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .first(where: { !$0.isEmpty })
+    }
+
+    /// Preview for a note whose title is carried by a `# Heading` at the top of its own body.
+    /// `preview` would return that heading, so the row would print the same string twice — once as
+    /// its title and once as its detail.
+    static func previewBelowTitleHeading(_ note: Note) -> String? {
+        NotesListVisibility.previewBody(note)
+            .components(separatedBy: "\n")
+            .lazy
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty && $0 != "# \(note.displayTitle)" }
     }
 
     static func dayLabel(forDateKey key: String, fallback: Date) -> String {
@@ -325,6 +365,34 @@ struct MeetingNoteListRow: View {
             dayLabel: NoteRowText.dayLabel(forDateKey: eventDayKey, fallback: note.updatedAt),
             title: note.displayTitle,
             detail: detail,
+            isEmphasized: false,
+            isEmptyNote: NoteRowText.isEmpty(note),
+            isSelected: isSelected,
+            tags: note.sortedTags
+        )
+    }
+}
+
+// MARK: - Notepad
+
+/// One notepad note.
+///
+/// A notepad note has no date of its own, so the leading slot carries the day it was created —
+/// which is also what the column is grouped and sorted by, so the numbers still descend inside a
+/// month header exactly like the dated tabs. The title is the note's own title, kept in step with
+/// the `# Heading` at the top of the body; the second line previews the body under it.
+struct NotepadNoteListRow: View {
+    let note: Note
+    let isSelected: Bool
+
+    var body: some View {
+        NoteListDayRow(
+            dayLabel: NoteRowText.dayLabel(
+                forDateKey: DateFormatters.dateKey(from: note.createdAt),
+                fallback: note.createdAt
+            ),
+            title: note.displayTitle,
+            detail: NoteRowText.previewBelowTitleHeading(note),
             isEmphasized: false,
             isEmptyNote: NoteRowText.isEmpty(note),
             isSelected: isSelected,

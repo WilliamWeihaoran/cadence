@@ -1698,7 +1698,11 @@ extension MarkdownEditorCoordinator {
 
 extension MarkdownEditorCoordinator {
     private func updateSlashCommandPicker(for textView: NSTextView) {
-        slashCommandPicker.update(for: textView, context: currentSlashCommandContext(in: textView)) { [weak self] command, context in
+        slashCommandPicker.update(
+            for: textView,
+            context: currentSlashCommandContext(in: textView),
+            commands: parent.slashCommands
+        ) { [weak self] command, context in
             self?.applySlashCommand(command, context: context, in: textView)
         }
     }

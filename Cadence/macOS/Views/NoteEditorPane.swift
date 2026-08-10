@@ -84,18 +84,6 @@ struct NoteEditorPane: View {
         note.kind == .list || note.kind == .meeting
     }
 
-    private var kindLabel: String {
-        switch note.kind {
-        case .daily: return "Daily"
-        case .weekly: return "Weekly"
-        case .permanent: return "Notepad"
-        case .list: return "Note"
-        // Label only. `NoteKind.meeting`'s raw value is persisted in `Note.kindRaw`, so the case
-        // itself must keep its name.
-        case .meeting: return "Event"
-        }
-    }
-
     private var headerTitle: String {
         switch note.kind {
         case .daily:
@@ -118,9 +106,13 @@ struct NoteEditorPane: View {
         !derivedState.backlinks.isEmpty
     }
 
-    /// Templates are only offered while the note is still blank. Same notion of "blank" that
-    /// `applyTemplate` uses, so the chips vanish exactly when applying one would start appending
-    /// rather than filling.
+    private var templates: [NoteTemplate] {
+        NoteTemplateLibrary.templates(for: note.kind, overridesRaw: noteTemplateOverridesRaw)
+    }
+
+    /// Drives the empty-body placeholder — one of the three routes to a template, and the only one
+    /// that shows itself. Same notion of "blank" that `applyTemplate` uses, so the placeholder
+    /// disappears exactly when applying one would start appending rather than filling.
     ///
     /// Measured against the body, not the raw content: a note that has only been tagged carries a
     /// frontmatter block the user cannot see, and it should still read as empty.
@@ -134,26 +126,41 @@ struct NoteEditorPane: View {
         return trimmed.isEmpty || trimmed == "# \(note.displayTitle)"
     }
 
+    /// The note's entire header: one row.
+    ///
+    /// It used to be four stacked rows — an eyebrow spelling out the tab you were already looking
+    /// at, the title, the tag control, and a strip of template chips. The eyebrow is gone because
+    /// "DAILY" above a note you opened from the Daily tab is a label for nobody, and the templates
+    /// are gone from here permanently: they are a thing you reach for once, at the start of an
+    /// empty note, and they had taken a permanent row at the top of every note forever. They live
+    /// in the empty body's placeholder, the `/` menu, and the Actions popover now.
+    ///
+    /// What is left reads left to right as title, then the note's metadata, then what you can do
+    /// to it. Below this there is one more row — the format toolbar — and then the note.
     @ViewBuilder
     private var noteHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(kindLabel.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim).kerning(0.8)
-                Spacer()
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                if shouldEditTitle {
+                    TextField("Note title", text: titleBinding)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                } else {
+                    Text(headerTitle)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                Spacer(minLength: 8)
+
+                noteTagControl
                 headerControls
             }
-            if shouldEditTitle {
-                TextField("Note title", text: titleBinding)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Theme.text)
-            } else {
-                Text(headerTitle)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Theme.text)
-            }
+            // Only the linked-event sheet sets this; the four Notes tabs leave it nil and stay at
+            // one row.
             if let headerDetail,
                !headerDetail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(headerDetail)
@@ -161,24 +168,35 @@ struct NoteEditorPane: View {
                     .foregroundStyle(Theme.dim)
                     .lineLimit(1)
             }
-            // Tag strip: editable chips plus a "+" affordance, sitting directly under the title.
-            // This is the note's whole metadata surface now — frontmatter is kept in the file for
-            // portability but never rendered, so these chips are the only place tags are read or
-            // written. Writes go through `TagSupport.setTags(...writeFrontmatter: true)`.
-            TagPickerControl(
-                selectedTags: noteTagsBinding,
-                allTags: tags,
-                onCreateTag: createTag,
-                triggerSymbol: "plus"
-            )
-            .padding(.top, 2)
         }
-        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
+        .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 10)
     }
 
+    /// Editable chips plus a "+" to add one. This is the note's whole metadata surface —
+    /// frontmatter is kept in the file for portability but never rendered, so these chips are the
+    /// only place tags are read or written. Writes go through
+    /// `TagSupport.setTags(...writeFrontmatter: true)`.
+    private var noteTagControl: some View {
+        TagPickerControl(
+            selectedTags: noteTagsBinding,
+            allTags: tags,
+            onCreateTag: createTag,
+            triggerSymbol: "plus"
+        )
+        .fixedSize()
+    }
+
+    /// Compact surfaces (the list-detail Notes tab) have no header row of their own — a list
+    /// note's title is the `# Heading` at the top of its own body. They get the same three
+    /// controls in the same order, parked in the format toolbar, so the two read as one component.
     private var toolbarAccessory: AnyView? {
         guard headerStyle == .compact else { return nil }
-        return AnyView(headerControls)
+        return AnyView(
+            HStack(spacing: 10) {
+                noteTagControl
+                headerControls
+            }
+        )
     }
 
     private var headerControls: some View {
@@ -188,7 +206,14 @@ struct NoteEditorPane: View {
             if let headerAccessory {
                 headerAccessory
             } else {
-                NoteActionMenu(note: note, area: area, project: project, onDelete: onDelete)
+                NoteActionMenu(
+                    note: note,
+                    area: area,
+                    project: project,
+                    templates: templates,
+                    onApplyTemplate: applyTemplate,
+                    onDelete: onDelete
+                )
             }
         }
     }
@@ -211,16 +236,10 @@ struct NoteEditorPane: View {
                 )
                 .zIndex(10)
             }
-            if isNoteBlank {
-                NoteTemplateChipStrip(
-                    templates: NoteTemplateLibrary.templates(for: note.kind, overridesRaw: noteTemplateOverridesRaw),
-                    onApply: applyTemplate
-                )
-                .zIndex(5)
-            }
             MarkdownEditor(
                 text: contentBinding,
                 toolbarAccessory: toolbarAccessory,
+                slashTemplates: templates,
                 referenceNotes: relatedNotes.filter { $0.id != note.id },
                 referenceTasks: relatedTasks,
                 onOpenNoteReference: openNoteReference,
@@ -236,6 +255,9 @@ struct NoteEditorPane: View {
                 onTextViewChanged: { editorTextView = $0 }
             )
             .zIndex(0)
+            .overlay(alignment: .topLeading) {
+                NoteEmptyBodyPlaceholder(templates: templates, isVisible: isNoteBlank, onApply: applyTemplate)
+            }
             .popover(item: $linkedTaskForPopover) { task in
                 TaskDetailPopover(task: task)
                     .frame(width: 380)
@@ -365,8 +387,17 @@ struct NoteEditorPane: View {
         refreshDerivedState(for: content)
     }
 
+    /// The `# Heading` at the top of the body *is* the rename control for the kinds whose title is
+    /// otherwise unreachable.
+    ///
+    /// `.permanent` joined `.list` here when Notepad stopped being a singleton: a notepad note has
+    /// a row in a list now, so it needs a name, and its header renders that name as plain text
+    /// rather than a field. Rather than grow a rename UI, it reuses the mechanism list notes have
+    /// always used. Daily and weekly are excluded because their titles are their date keys, and
+    /// meeting/list notes with an editable header field do not need it — well, `.list` does, since
+    /// the list-detail Notes tab hides the header entirely.
     private func syncTitleFromH1IfNeeded(in content: String) {
-        guard note.kind == .list else { return }
+        guard note.kind == .list || note.kind == .permanent else { return }
         let firstLine = content.prefix(while: { $0 != "\n" })
         guard firstLine.hasPrefix("# ") else { return }
         let h1Text = String(firstLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)

@@ -55,6 +55,7 @@ enum NoteActionSupport {
 /// between a menu and a scrolling list.
 private enum NoteActionPage {
     case root
+    case templates
     case export
     case move
 }
@@ -63,6 +64,10 @@ struct NoteActionMenu: View {
     let note: Note
     var area: Area?
     var project: Project?
+    /// Templates for this note's kind. Empty where the caller has no template story — the "Start
+    /// With" row then does not render at all.
+    var templates: [NoteTemplate] = []
+    var onApplyTemplate: ((NoteTemplate) -> Void)?
     var onAppendSummary: ((String) -> Void)?
     var onDelete: (() -> Void)?
 
@@ -93,6 +98,7 @@ struct NoteActionMenu: View {
                 NoteActionPickerCard {
                     switch page {
                     case .root: rootPage
+                    case .templates: templatesPage
                     case .export: exportPage
                     case .move: movePage
                     }
@@ -134,8 +140,22 @@ struct NoteActionMenu: View {
 
     // MARK: - Pages
 
+    private var showsTemplatesSection: Bool {
+        onApplyTemplate != nil && !templates.isEmpty
+    }
+
     @ViewBuilder
     private var rootPage: some View {
+        // Templates used to be a chip strip pinned above every note. They are one of the things you
+        // do *to* a note, so this is where they belong — and unlike the strip, this route is still
+        // there after the note has something in it, where applying a template appends rather than
+        // fills.
+        if showsTemplatesSection {
+            NoteActionPickerRow(icon: "doc.on.doc", title: "Start With", trailingSymbol: "chevron.right") {
+                page = .templates
+            }
+        }
+
         NoteActionPickerRow(icon: "square.and.arrow.up", title: "Export", trailingSymbol: "chevron.right") {
             page = .export
         }
@@ -153,6 +173,17 @@ struct NoteActionMenu: View {
         if onDelete != nil {
             NoteActionPickerDivider()
             deleteSection
+        }
+    }
+
+    @ViewBuilder
+    private var templatesPage: some View {
+        NoteActionSubmenuHeader(title: "Start With") { page = .root }
+        ForEach(templates) { template in
+            NoteActionPickerRow(icon: "doc.text", title: template.title, subtitle: template.subtitle) {
+                dismissPicker()
+                onApplyTemplate?(template)
+            }
         }
     }
 

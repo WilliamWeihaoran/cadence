@@ -99,6 +99,7 @@ final class MarkdownSlashCommandPickerController {
     func update(
         for textView: NSTextView,
         context: MarkdownSlashCommandContext?,
+        commands allCommands: [MarkdownSlashCommand] = MarkdownSlashCommand.all,
         onSelect: @escaping (MarkdownSlashCommand, MarkdownSlashCommandContext) -> Void
     ) {
         self.textView = textView
@@ -109,7 +110,7 @@ final class MarkdownSlashCommandPickerController {
             return
         }
 
-        let filtered = MarkdownSlashCommand.all.filter {
+        let filtered = allCommands.filter {
             context.query.isEmpty || $0.id.localizedCaseInsensitiveContains(context.query) || $0.title.localizedCaseInsensitiveContains(context.query)
         }
 

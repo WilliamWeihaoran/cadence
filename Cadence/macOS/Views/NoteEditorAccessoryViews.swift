@@ -7,8 +7,11 @@ import SwiftUI
 //
 // - Outline    -> a toolbar button, because you reach for an outline to navigate a long note,
 //                 not while writing one.
-// - Templates  -> chips shown only while the note is still empty, because that is the one moment
-//                 a template helps; offering to replace existing text is noise.
+// - Templates  -> off the header entirely. They were a strip of chips above the note, shown while
+//                 it was empty; even then they were a permanent row of chrome between the title
+//                 and the first line of writing. They now have three homes, none of them a header
+//                 row: the placeholder inside the empty body (below), the `/` command menu, and
+//                 the Actions popover's "Start With" page.
 // - Mentions   -> one quiet line at the foot of the note, with no permanent section header.
 //
 // The panel's fourth card, "Properties"/"Add frontmatter", was deleted outright rather than
@@ -102,34 +105,57 @@ private struct NoteOutlineJumpRow: View {
 
 // MARK: - Templates
 
-/// Template chips for a still-empty note. Renders nothing once the note has content, so the
-/// caller can hand it the note's emptiness and forget about it.
-struct NoteTemplateChipStrip: View {
+/// Ghost text on the first line of an empty note.
+///
+/// This replaces the template chip strip, and it is deliberately not a strip: it sits *inside* the
+/// note, on the line the caret is already on, drawn in the same left column the text will occupy.
+/// It costs no layout — an empty note has nothing there — and it disappears the moment a character
+/// lands, rather than sitting above every note forever waiting for one.
+///
+/// The prose is non-interactive so clicking anywhere in the empty body still places the caret,
+/// which is the thing you actually came here to do. Only the template names take clicks.
+struct NoteEmptyBodyPlaceholder: View {
     let templates: [NoteTemplate]
+    let isVisible: Bool
     let onApply: (NoteTemplate) -> Void
 
     var body: some View {
-        if !templates.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    Text("Start with")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
-                        .fixedSize()
+        if isVisible {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Start writing, or press / for commands.")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.dim)
+                    .allowsHitTesting(false)
 
-                    ForEach(templates) { template in
-                        NoteTemplateChip(template: template) { onApply(template) }
+                if !templates.isEmpty {
+                    HStack(spacing: 4) {
+                        Text("Start with")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .fixedSize()
+                            .allowsHitTesting(false)
+
+                        ForEach(Array(templates.enumerated()), id: \.element.id) { index, template in
+                            if index > 0 {
+                                Text("·")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Theme.dim)
+                                    .allowsHitTesting(false)
+                            }
+                            NoteTemplateTextButton(template: template) { onApply(template) }
+                        }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
             }
-            .background(Theme.surface)
+            .padding(.leading, MarkdownEditorMetrics.firstTextColumnInset)
+            .padding(.top, MarkdownEditorMetrics.toolbarHeight + MarkdownEditorMetrics.textInset)
         }
     }
 }
 
-private struct NoteTemplateChip: View {
+/// A template name as a word, not a capsule. The chip version read as a control you had to deal
+/// with; inside placeholder prose the same name reads as an offer you can ignore.
+private struct NoteTemplateTextButton: View {
     let template: NoteTemplate
     let action: () -> Void
 
@@ -138,13 +164,17 @@ private struct NoteTemplateChip: View {
     var body: some View {
         Button(action: action) {
             Text(template.title)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(isHovered ? Theme.text : Theme.muted)
                 .lineLimit(1)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(isHovered ? Theme.surfaceHighlight : Theme.surfaceElevated))
-                .contentShape(Capsule())
+                .fixedSize()
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                        .fill(isHovered ? Theme.surfaceHighlight : Color.clear)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }

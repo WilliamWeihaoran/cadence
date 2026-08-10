@@ -62,5 +62,30 @@ enum NotesListVisibility {
     static func weeklyNotes(_ notes: [Note], currentWeekKey: String) -> [Note] {
         listed(notes) { $0.weekKey == currentWeekKey }
     }
+
+    /// Notepad tab: **everything**, blank or not.
+    ///
+    /// The hide-empty rule exists because daily and weekly notes are created *for* you — opening
+    /// the tab on a day you never wrote on makes a row — so an unfiltered column is mostly days
+    /// that say nothing. A notepad note is the opposite: it only exists because you pressed "New
+    /// Note", there is no period that manufactures one, and there is no "today" to pin. Filtering
+    /// blanks here would make a note vanish the instant you created it, before you could type in
+    /// it, and would leave no row to select or delete it from.
+    ///
+    /// Sorted newest-created first. `updatedAt` was the obvious alternative and is wrong: the
+    /// editor commits content about a second after you stop typing, so an edit-ordered column
+    /// would yank the row you are writing in to the top — across a month header — mid-sentence.
+    /// `createdAt` never changes, so the column holds still, and it is the only date a note with
+    /// no subject date actually has. `order` exists but nothing sets it for this kind and there is
+    /// no drag-to-reorder here, so it would only ever be creation order spelled less honestly.
+    static func notepadNotes(_ notes: [Note]) -> [Note] {
+        notes
+            .filter { $0.kind == .permanent }
+            .sorted {
+                $0.createdAt == $1.createdAt
+                    ? $0.id.uuidString > $1.id.uuidString
+                    : $0.createdAt > $1.createdAt
+            }
+    }
 }
 #endif

@@ -109,6 +109,106 @@ struct NotesListVisibilityTests {
         #expect(listed.map(\.id) == [thisWeek.id, pastWritten.id])
     }
 
+    // MARK: - Notepad
+
+    @discardableResult
+    private func notepad(
+        _ title: String,
+        content: String = "",
+        createdAt: Date,
+        in context: ModelContext
+    ) -> Note {
+        let note = Note(kind: .permanent, title: title, content: content, createdAt: createdAt)
+        context.insert(note)
+        return note
+    }
+
+    /// The rule Notepad does *not* share with Daily and Weekly. There is no "today" to pin a
+    /// notepad note to, so if blank notes were filtered a note would vanish the instant you made
+    /// one — before you could type in it, and with no row left to select or delete it from.
+    @Test func newlyCreatedBlankNotepadNoteIsListed() throws {
+        let context = try makeContext()
+        let blank = notepad("Untitled", createdAt: Date(), in: context)
+        let seeded = notepad("Untitled", content: "# Untitled\n\n", createdAt: Date(), in: context)
+
+        // Both read as empty by the shared body rule...
+        #expect(NotesListVisibility.hasContent(blank) == false)
+        #expect(NotesListVisibility.hasContent(seeded) == false)
+        // ...and both are listed anyway.
+        let listed = NotesListVisibility.notepadNotes([blank, seeded]).map(\.id)
+        #expect(listed.count == 2)
+        #expect(Set(listed) == Set([blank.id, seeded.id]))
+    }
+
+    @Test func notepadOrdersNewestCreatedFirst() throws {
+        let context = try makeContext()
+        let oldest = notepad("Oldest", content: "a", createdAt: Date(timeIntervalSince1970: 1_000), in: context)
+        let middle = notepad("Middle", content: "b", createdAt: Date(timeIntervalSince1970: 2_000), in: context)
+        let newest = notepad("Newest", content: "c", createdAt: Date(timeIntervalSince1970: 3_000), in: context)
+
+        let listed = NotesListVisibility.notepadNotes([oldest, newest, middle])
+
+        #expect(listed.map(\.id) == [newest.id, middle.id, oldest.id])
+    }
+
+    /// The reason the order key is `createdAt` and not `updatedAt`: the editor commits content
+    /// about a second after you stop typing, so an edit-ordered column would yank the row you are
+    /// writing in to the top of the list — across a month header — mid-sentence.
+    @Test func notepadOrderDoesNotMoveWhenANoteIsEdited() throws {
+        let context = try makeContext()
+        let older = notepad("Older", content: "a", createdAt: Date(timeIntervalSince1970: 1_000), in: context)
+        let newer = notepad("Newer", content: "b", createdAt: Date(timeIntervalSince1970: 2_000), in: context)
+
+        #expect(NotesListVisibility.notepadNotes([older, newer]).map(\.id) == [newer.id, older.id])
+
+        older.content = "a lot more words than before"
+        older.updatedAt = Date()
+
+        #expect(NotesListVisibility.notepadNotes([older, newer]).map(\.id) == [newer.id, older.id])
+    }
+
+    @Test func notepadListIgnoresOtherNoteKinds() throws {
+        let context = try makeContext()
+        let note = notepad("Kept", content: "x", createdAt: Date(), in: context)
+        let daily = daily("2026-08-09", content: "not a notepad note", in: context)
+        let list = Note(kind: .list, title: "List note", content: "also not")
+        context.insert(list)
+
+        #expect(NotesListVisibility.notepadNotes([note, daily, list]).map(\.id) == [note.id])
+    }
+
+    /// Deleting is the only way a notepad note leaves the column, since nothing filters it.
+    @Test func deletedNotepadNoteLeavesTheList() throws {
+        let context = try makeContext()
+        let kept = notepad("Kept", content: "a", createdAt: Date(timeIntervalSince1970: 1_000), in: context)
+        let doomed = notepad("Doomed", content: "b", createdAt: Date(timeIntervalSince1970: 2_000), in: context)
+        try context.save()
+
+        #expect(NotesListVisibility.notepadNotes(try context.fetch(FetchDescriptor<Note>())).count == 2)
+
+        context.delete(doomed)
+        try context.save()
+
+        let listed = NotesListVisibility.notepadNotes(try context.fetch(FetchDescriptor<Note>()))
+        #expect(listed.map(\.id) == [kept.id])
+    }
+
+    /// Notepad rows group under the month they were created in, which is the only date they have.
+    @Test func notepadGroupsUnderCreationMonth() throws {
+        let context = try makeContext()
+        let aug = notepad("Aug", content: "a", createdAt: DateFormatters.date(from: "2026-08-09")!, in: context)
+        let jul = notepad("Jul", content: "b", createdAt: DateFormatters.date(from: "2026-07-02")!, in: context)
+
+        let groups = NotesListGrouping.monthGroups(
+            for: NotesListVisibility.notepadNotes([jul, aug]),
+            dateKey: { DateFormatters.dateKey(from: $0.createdAt) }
+        )
+
+        #expect(groups.map(\.id) == ["2026-08", "2026-07"])
+        #expect(groups[0].notes.map(\.id) == [aug.id])
+        #expect(groups[1].notes.map(\.id) == [jul.id])
+    }
+
     // MARK: - Month grouping over the filtered list
 
     @Test func monthGroupingFormsRunsOverTheFilteredList() throws {

@@ -49,6 +49,32 @@ struct MarkdownSlashCommand: Identifiable {
         .init(id: "link", title: "Note Link", subtitle: "Insert [[link]]", replacement: (indentation: "", text: "[[]]", caretOffset: 2)),
         .init(id: "task", title: "Task Reference", subtitle: "Insert [[task:]]", replacement: (indentation: "", text: "[[task:]]", caretOffset: 7))
     ]
+
+    /// Note templates as `/` commands — one of the three places templates live now that they no
+    /// longer take a row above every note.
+    ///
+    /// The frontmatter block is stripped from the inserted body. A template's `---\ntags: [...]---`
+    /// only means anything at the very top of a note; dropped at the caret it is a horizontal rule
+    /// followed by stray YAML. The header route (`NoteEditorPane.applyTemplate`) splits and
+    /// re-merges frontmatter properly because it is replacing the whole note; this one is an
+    /// insertion, so it inserts only the part that survives being inserted.
+    ///
+    /// These are deliberately absent from `typedMutation`'s auto-transform, which fires on the
+    /// space after a bare `/word`: turning a stray "/checklist " into eight lines of markdown is
+    /// not a thing anyone typed on purpose. Templates come from the picker, where you can see what
+    /// you are choosing.
+    static func templateCommands(for templates: [NoteTemplate]) -> [MarkdownSlashCommand] {
+        templates.map { template in
+            let body = MarkdownMetadataParser.splitFrontmatter(in: template.body).body
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return MarkdownSlashCommand(
+                id: template.id,
+                title: template.title,
+                subtitle: template.subtitle,
+                replacement: (indentation: "", text: body, caretOffset: body.count)
+            )
+        }
+    }
 }
 
 struct MarkdownSlashCommandContext {

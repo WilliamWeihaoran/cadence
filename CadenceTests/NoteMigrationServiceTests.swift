@@ -79,6 +79,67 @@ struct NoteMigrationServiceTests {
         #expect(try context.fetch(FetchDescriptor<Note>()).count == 3)
     }
 
+    /// Notepad holds many notes now, but the single-note surfaces (the Today panel's Notepad tab,
+    /// iOS, the MCP write service) still go through `permanentNote(in:)` and must keep landing on
+    /// the *same* note every time. An unordered `first` would hand them a different one run to run
+    /// once more than one exists.
+    @Test func permanentNoteKeepsReturningTheOldestNotepadNote() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        // The note an upgrading user already had.
+        let original = try NoteMigrationService.permanentNote(in: context)
+        original.content = "Everything I already wrote down"
+        try context.save()
+
+        let second = try NoteMigrationService.createPermanentNote(in: context)
+        let third = try NoteMigrationService.createPermanentNote(in: context, title: "Reading list")
+
+        #expect(try NoteMigrationService.permanentNote(in: context).id == original.id)
+        #expect(try NoteMigrationService.permanentNotes(in: context).map(\.id) == [original.id, second.id, third.id])
+        #expect(try NoteMigrationService.permanentNotes(in: context).first?.content == "Everything I already wrote down")
+    }
+
+    /// A new notepad note is seeded with its title as an H1, because that heading is the rename
+    /// control — `NoteEditorPane` syncs it back to `note.title` for `.permanent` the same way it
+    /// always has for `.list`.
+    @Test func createPermanentNoteSeedsItsTitleHeading() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let note = try NoteMigrationService.createPermanentNote(in: context, title: "Reading list")
+
+        #expect(note.kind == .permanent)
+        #expect(note.title == "Reading list")
+        #expect(note.content == "# Reading list\n\n")
+    }
+
+    /// The legacy `PermNote` is a singleton, so its migration guard must survive Notepad becoming
+    /// plural: the user's one legacy note lands once, appears first, and is not duplicated by the
+    /// notes they made afterwards. And a store full of notepad notes is not a store full of
+    /// canonical duplicates.
+    @Test func legacyPermanentNoteMigratesOnceAlongsideNewNotepadNotes() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let legacy = PermNote()
+        legacy.content = "Legacy notepad content"
+        context.insert(legacy)
+        try context.save()
+
+        try NoteMigrationService.migrateIfNeeded(in: context, source: "test-first")
+        try NoteMigrationService.createPermanentNote(in: context)
+        try NoteMigrationService.createPermanentNote(in: context)
+        let report = try NoteMigrationService.migrateIfNeeded(in: context, source: "test-second")
+
+        let notepadNotes = try NoteMigrationService.permanentNotes(in: context)
+        #expect(notepadNotes.count == 3)
+        #expect(notepadNotes.first?.id == legacy.id)
+        #expect(notepadNotes.first?.content == "Legacy notepad content")
+        #expect(report.insertedPermanent == 0)
+        #expect(report.canonicalDuplicateCount == 0)
+        #expect(try NoteMigrationService.healthCheck(in: context).canonicalDuplicateCount == 0)
+    }
+
     @Test func migrationSkipsCanonicalDuplicateWithoutCreatingSecondCoreNote() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
