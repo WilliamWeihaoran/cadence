@@ -44,44 +44,45 @@ struct EditAreaSheet: View {
                 dismiss()
             }
         ) {
-            ListEditorNameField(name: $name)
+            ListEditorIdentityHeader(
+                name: $name,
+                colorHex: $selectedColor,
+                icon: $selectedIcon,
+                placeholder: "Area name…"
+            )
 
             TaskInspectorRecessedGroup {
-                ListEditorAppearanceRows(colorHex: $selectedColor, icon: $selectedIcon)
-
                 if calendarManager.isAuthorized {
-                    TaskInspectorFieldDivider()
                     ListEditorCalendarRow(
                         calendars: calendarManager.availableCalendars,
                         selectedID: $selectedCalendarID
                     )
+                    TaskInspectorFieldDivider()
                 }
 
-                TaskInspectorFieldDivider()
-                ListEditorToggleRow(
+                ListEditorCheckRow(
                     label: "Hide empty task due date",
-                    icon: "calendar.badge.exclamationmark",
                     isOn: $hideDueDateIfEmpty
                 )
 
                 TaskInspectorFieldDivider()
-                ListEditorToggleRow(
+                ListEditorCheckRow(
                     label: "Hide empty column due date",
-                    icon: "rectangle.split.3x1",
                     isOn: $hideSectionDueDateIfEmpty
                 )
-            }
 
-            TaskInspectorRecessedSection(title: "Lifecycle") {
+                TaskInspectorFieldDivider()
                 ListEditorStatusRow(
                     noun: "Area",
                     statusLabel: statusLabel,
-                    isActive: area.isActive,
                     onSelect: apply
                 )
-                TaskInspectorFieldDivider()
-                ListEditorDeleteRow(title: "Delete Area") { showDeleteConfirmation = true }
             }
+        } footerLeading: {
+            ListEditorArchiveButton(isArchived: area.isArchived, noun: "Area") {
+                apply(area.isArchived ? .active : .archived)
+            }
+            ListEditorDeleteButton(title: "Delete") { showDeleteConfirmation = true }
         }
         .accessibilityIdentifier("edit.area.sheet")
         .confirmationDialog(
@@ -187,19 +188,20 @@ struct EditProjectSheet: View {
                 dismiss()
             }
         ) {
-            ListEditorNameField(name: $name, placeholder: "Project name…")
+            ListEditorIdentityHeader(
+                name: $name,
+                colorHex: $selectedColor,
+                icon: $selectedIcon,
+                placeholder: "Project name…"
+            )
 
             TaskInspectorRecessedGroup {
                 TaskInspectorDateControl(
                     label: "Due",
-                    icon: "flag.fill",
-                    activeColor: Theme.red,
+                    reservesIconSlot: false,
                     isOn: $hasDueDate,
                     date: $dueDate
                 )
-
-                TaskInspectorFieldDivider()
-                ListEditorAppearanceRows(colorHex: $selectedColor, icon: $selectedIcon)
 
                 if calendarManager.isAuthorized {
                     TaskInspectorFieldDivider()
@@ -210,30 +212,29 @@ struct EditProjectSheet: View {
                 }
 
                 TaskInspectorFieldDivider()
-                ListEditorToggleRow(
+                ListEditorCheckRow(
                     label: "Hide empty task due date",
-                    icon: "calendar.badge.exclamationmark",
                     isOn: $hideDueDateIfEmpty
                 )
 
                 TaskInspectorFieldDivider()
-                ListEditorToggleRow(
+                ListEditorCheckRow(
                     label: "Hide empty column due date",
-                    icon: "rectangle.split.3x1",
                     isOn: $hideSectionDueDateIfEmpty
                 )
-            }
 
-            TaskInspectorRecessedSection(title: "Lifecycle") {
+                TaskInspectorFieldDivider()
                 ListEditorStatusRow(
                     noun: "Project",
                     statusLabel: statusLabel,
-                    isActive: project.isActive,
                     onSelect: apply
                 )
-                TaskInspectorFieldDivider()
-                ListEditorDeleteRow(title: "Delete Project") { showDeleteConfirmation = true }
             }
+        } footerLeading: {
+            ListEditorArchiveButton(isArchived: project.isArchived, noun: "Project") {
+                apply(project.isArchived ? .active : .archived)
+            }
+            ListEditorDeleteButton(title: "Delete") { showDeleteConfirmation = true }
         }
         .accessibilityIdentifier("edit.project.sheet")
         .confirmationDialog(

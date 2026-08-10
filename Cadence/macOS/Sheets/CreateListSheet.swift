@@ -59,33 +59,32 @@ struct CreateListSheet: View {
                 }
             }
 
-            ListEditorNameField(name: $name)
+            ListEditorIdentityHeader(
+                name: $name,
+                colorHex: $selectedColor,
+                icon: $selectedIcon,
+                placeholder: listType == .area ? "Area name…" : "Project name…"
+            )
 
             TaskInspectorRecessedGroup {
                 if listType == .project {
                     TaskInspectorDateControl(
                         label: "Due",
-                        icon: "flag.fill",
-                        activeColor: Theme.red,
+                        reservesIconSlot: false,
                         isOn: $hasDueDate,
                         date: $dueDate
                     )
                     TaskInspectorFieldDivider()
                 }
 
-                ListEditorAppearanceRows(colorHex: $selectedColor, icon: $selectedIcon)
-
-                TaskInspectorFieldDivider()
-                ListEditorToggleRow(
+                ListEditorCheckRow(
                     label: "Hide empty task due date",
-                    icon: "calendar.badge.exclamationmark",
                     isOn: $hideDueDateIfEmpty
                 )
 
                 TaskInspectorFieldDivider()
-                ListEditorToggleRow(
+                ListEditorCheckRow(
                     label: "Hide empty column due date",
-                    icon: "rectangle.split.3x1",
                     isOn: $hideSectionDueDateIfEmpty
                 )
             }

@@ -12,68 +12,19 @@ struct CreateContextSheet: View {
     @State private var selectedIcon = "square.stack.fill"
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("New Context")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
-                .padding(.bottom, 20)
-
-            Divider().background(Theme.borderSubtle)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    fieldLabel("Name")
-                    TextField("e.g. Work, School, Personal", text: $name)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.text)
-                        .padding(10)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
-
-                    fieldLabel("Color")
-                    ColorGrid(selected: $selectedColor)
-
-                    fieldLabel("Icon")
-                    IconGrid(selected: $selectedIcon)
-                }
-                .padding(24)
-            }
-
-            Divider().background(Theme.borderSubtle)
-
-            HStack {
-                Spacer()
-                CadenceActionButton(
-                    title: "Cancel",
-                    role: .ghost,
-                    size: .compact
-                ) {
-                    dismiss()
-                }
-                CadenceActionButton(
-                    title: "Create",
-                    role: .primary,
-                    size: .compact,
-                    isDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty
-                ) {
-                    create()
-                }
-            }
-            .padding(16)
+        ListEditorSheetShell(
+            title: "New Context",
+            confirmTitle: "Create",
+            isConfirmDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty,
+            onConfirm: create
+        ) {
+            ListEditorIdentityHeader(
+                name: $name,
+                colorHex: $selectedColor,
+                icon: $selectedIcon,
+                placeholder: "e.g. Work, School, Personal"
+            )
         }
-        .frame(width: 420, height: 620)
-        .background(Theme.surface)
-    }
-
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            .kerning(0.8)
     }
 
     private func create() {
@@ -108,15 +59,17 @@ struct ColorGrid: View {
     /// Trimming the palette must not silently re-colour anything already saved: a stored hex that
     /// is no longer offered is appended so its owner still shows a selected swatch. It disappears
     /// from the grid as soon as the user picks something else.
-    private var offeredColors: [String] {
+    ///
+    /// Static so the sheets' one-line colour strip obeys the same rule from the same source.
+    static func offeredColors(for selected: String) -> [String] {
         let stored = selected.trimmingCharacters(in: .whitespaces)
-        guard !stored.isEmpty, !Self.colors.contains(where: { matches($0, stored) }) else {
-            return Self.colors
+        guard !stored.isEmpty, !colors.contains(where: { matches($0, stored) }) else {
+            return colors
         }
-        return Self.colors + [stored]
+        return colors + [stored]
     }
 
-    private func matches(_ lhs: String, _ rhs: String) -> Bool {
+    static func matches(_ lhs: String, _ rhs: String) -> Bool {
         lhs.caseInsensitiveCompare(rhs) == .orderedSame
     }
 
@@ -125,8 +78,8 @@ struct ColorGrid: View {
             columns: Array(repeating: .init(.fixed(swatchSize + 4), spacing: spacing), count: columns),
             spacing: spacing
         ) {
-            ForEach(offeredColors, id: \.self) { hex in
-                let isSelected = matches(hex, selected)
+            ForEach(Self.offeredColors(for: selected), id: \.self) { hex in
+                let isSelected = Self.matches(hex, selected)
                 Circle()
                     .fill(Color(hex: hex))
                     .frame(width: swatchSize, height: swatchSize)

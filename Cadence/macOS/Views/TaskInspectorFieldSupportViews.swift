@@ -28,6 +28,10 @@ struct TaskInspectorFieldRow<Value: View>: View {
     /// an icon still align with their neighbours.
     var icon: String? = nil
     var iconColor: Color = Theme.dim
+    /// Keeps the leading slot when `icon` is `nil`, so one iconless row still lines up with iconed
+    /// neighbours. Set `false` for a group where *no* row has an icon — otherwise every label in it
+    /// is indented past an empty column.
+    var reservesIconSlot: Bool = true
     @ViewBuilder let value: Value
 
     var body: some View {
@@ -39,7 +43,7 @@ struct TaskInspectorFieldRow<Value: View>: View {
                         .foregroundStyle(iconColor)
                 }
             }
-            .frame(width: TaskInspectorFieldRowMetrics.iconSlot, alignment: .leading)
+            .frame(width: icon == nil && !reservesIconSlot ? 0 : TaskInspectorFieldRowMetrics.iconSlot, alignment: .leading)
 
             Text(label)
                 .font(TaskInspectorFieldRowMetrics.labelFont)
@@ -151,13 +155,20 @@ struct TaskInspectorFieldButtonRow: View {
     /// Semantic tint for the glyph — the colour the field's concept already carries elsewhere in
     /// the app (do = blue, due = red, estimate = purple, actual = green, repeat = amber).
     var iconColor: Color = Theme.dim
+    /// See `TaskInspectorFieldRow.reservesIconSlot`.
+    var reservesIconSlot: Bool = true
     let valueText: String
     let isSet: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            TaskInspectorFieldRow(label: label, icon: icon, iconColor: iconColor) {
+            TaskInspectorFieldRow(
+                label: label,
+                icon: icon,
+                iconColor: iconColor,
+                reservesIconSlot: reservesIconSlot
+            ) {
                 TaskInspectorFieldValueText(text: valueText, isSet: isSet)
             }
             .contentShape(Rectangle())
@@ -174,6 +185,8 @@ struct TaskInspectorDateControl: View {
     var icon: String? = nil
     /// Tint used by the picker's quick pills.
     var activeColor: Color = Theme.blue
+    /// See `TaskInspectorFieldRow.reservesIconSlot`.
+    var reservesIconSlot: Bool = true
     @Binding var isOn: Bool
     @Binding var date: Date
 
@@ -194,6 +207,7 @@ struct TaskInspectorDateControl: View {
             // The glyph reuses the field's own accent rather than taking a second parameter —
             // "Do is blue, Due is red" is one fact, and two knobs could disagree.
             iconColor: activeColor,
+            reservesIconSlot: reservesIconSlot,
             valueText: displayValue,
             isSet: isOn
         ) {
