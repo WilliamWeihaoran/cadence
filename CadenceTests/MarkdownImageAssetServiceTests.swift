@@ -24,6 +24,19 @@ struct MarkdownImageAssetServiceTests {
         #expect(references.map(\.altText) == ["Diagram", ""])
     }
 
+    /// Alt text written before escaping existed can end in a lone backslash. The widened
+    /// pattern's `\\.` branch swallows the closing `]` unless the trailing `\\?` lets the
+    /// backslash stand alone — and an unmatched reference is what gets the image collected.
+    @Test func legacyAltTextEndingInABackslashStillResolvesItsAsset() {
+        let id = UUID()
+        for label in [#"photo\"#, #"C:\path\"#, #"a\"#, #"\"#] {
+            let text = "![\(label)](cadence-image://\(id.uuidString))"
+            let references = MarkdownImageAssetService.references(in: text)
+            #expect(references.count == 1, "alt text \(label) must still resolve its asset")
+            #expect(references.first?.id == id)
+        }
+    }
+
     @Test func altTextContainingABracketStillResolvesItsAsset() {
         // A file called "chart [v2].png" seeds that alt text. If the emitted reference stops
         // matching, the note renders raw markdown *and* the asset reads as unreferenced — which

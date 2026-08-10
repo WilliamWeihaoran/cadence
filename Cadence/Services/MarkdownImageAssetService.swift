@@ -33,7 +33,14 @@ enum MarkdownImageAssetService {
     /// Alt text is escaped on write, so the reader has to accept `\]` and `\\` inside the label.
     /// A pattern that stops at the first `]` cannot match a reference whose alt text contains one
     /// — and an unmatched reference reads as an orphaned asset, which is what deletes the image.
-    static let altTextPattern = #"(?:[^\]\n\\]|\\.)*"#
+    ///
+    /// The trailing `\\?` is not decoration. Alt text written *before* any escaping existed can end
+    /// in a lone backslash (`![photo\](…)`), and without it the `\\.` branch swallows the closing
+    /// `]`, leaving nothing to end the label — so the reference goes unmatched and the image gets
+    /// collected, which is the exact failure this pattern was widened to prevent. Such a label is
+    /// genuinely ambiguous with an escaped `]`, and it resolves as the latter; reading the caption
+    /// slightly wrong is survivable, deleting the image is not.
+    static let altTextPattern = #"(?:[^\]\n\\]|\\.)*\\?"#
 
     private static let imageReferenceRegex = try! NSRegularExpression(pattern: #"(?m)^!\[("# + altTextPattern + #")\]\(cadence-image://([0-9A-Fa-f-]{36})\)\s*$"#)
 
