@@ -88,7 +88,7 @@ enum MarkdownListSupport {
         )
     }
 
-    static func continuation(after line: String) -> String? {
+    static func continuation(after line: String, precededBy previousMarker: String? = nil) -> String? {
         guard let match = listPrefixMatch(in: line) else { return nil }
         switch match.kind {
         case .todo, .done:
@@ -98,7 +98,8 @@ enum MarkdownListSupport {
             return match.indentation + unorderedMarker(forLevel: level) + " "
         case .ordered:
             let level = orderedLevel(forIndentation: match.indentation)
-            return match.indentation + nextOrderedMarker(after: match.marker, atLevel: level) + " "
+            let marker = nextOrderedMarker(after: match.marker, atLevel: level, precededBy: previousMarker)
+            return match.indentation + marker + " "
         }
     }
 
@@ -218,12 +219,42 @@ enum MarkdownListSupport {
     }
 
     /// `c`, `d`, `i`, `l`, `m`, `v` and `x` are both list letters and roman numerals, so a lone
-    /// letter is ambiguous on its own. Only the marker's indentation level says which family it
-    /// belongs to — pass it, or "c." in an `a. b. c.` list reads as 100 and the list continues at
-    /// "ci." instead of "d.".
-    private static func prefersRomanNumerals(atLevel level: Int?) -> Bool {
-        guard let level else { return false }
-        return orderedMarker(for: level, index: 1) == "i."
+    /// letter is ambiguous: "c." is the third item of an `a. b. c.` list and also roman 100.
+    /// Three things can settle it, in descending order of how much they actually know:
+    ///   1. the marker directly above it in the same run — "b." before "c." means letters, "iv."
+    ///      before "v." means roman, because only one reading continues the count;
+    ///   2. the level's own alphabet, at the levels that have one;
+    ///   3. failing both, "i." — the one lone letter a hand-written outline plausibly opens with,
+    ///      where every other lone letter reads as a lettered list.
+    /// Level alone is not enough: it says nothing at the numeric levels, which is where both an
+    /// `a. b. c.` list and an `i. ii. iii.` outline get written.
+    private static func readsAsRomanNumeral(
+        _ bare: String,
+        atLevel level: Int?,
+        precededBy previousMarker: String?
+    ) -> Bool {
+        guard let roman = romanToInt(bare.lowercased()) else { return false }
+        guard let letter = letterIndex(for: bare) else { return true }
+
+        if let previousMarker, let previousIndex = orderedIndex(for: previousMarker, atLevel: level) {
+            if previousIndex + 1 == letter { return false }
+            if previousIndex + 1 == roman { return true }
+        }
+        if let levelPrefersRoman = levelAlphabetPrefersRomanNumerals(level) {
+            return levelPrefersRoman
+        }
+        return bare.lowercased() == "i"
+    }
+
+    /// Whether a level's own markers are roman ("i.") or letters ("a."); nil at the numeric
+    /// levels, where neither alphabet is native and the level is no evidence either way.
+    private static func levelAlphabetPrefersRomanNumerals(_ level: Int?) -> Bool? {
+        guard let level else { return nil }
+        switch orderedMarker(for: level, index: 1) {
+        case "i.": return true
+        case "a.": return false
+        default: return nil
+        }
     }
 
     private static func letterIndex(for bare: String) -> Int? {
@@ -234,26 +265,48 @@ enum MarkdownListSupport {
         return Int(scalar.value - 96)
     }
 
-    static func orderedIndex(for marker: String, atLevel level: Int? = nil) -> Int? {
+    private static func bareMarker(_ marker: String) -> String {
         let normalized = marker.trimmingCharacters(in: .whitespaces)
-        let bare = normalized.hasSuffix(".") || normalized.hasSuffix(")") ? String(normalized.dropLast()) : normalized
+        return normalized.hasSuffix(".") || normalized.hasSuffix(")") ? String(normalized.dropLast()) : normalized
+    }
+
+    /// The marker the line at `lineRange` is continuing from: the closest ordered item above it at
+    /// the same indentation level, stepping over any nested sublist between them. A run ends at the
+    /// first line that is not an ordered item, so anything above that belongs to a different list.
+    static func precedingOrderedMarker(in text: NSString, before lineRange: NSRange, atLevel level: Int) -> String? {
+        var location = min(max(0, lineRange.location), text.length)
+        while location > 0 {
+            let previousRange = text.lineRange(for: NSRange(location: location - 1, length: 0))
+            let previousLine = text.substring(with: previousRange).trimmingCharacters(in: .newlines)
+            guard let match = listPrefixMatch(in: previousLine), match.kind == .ordered else { return nil }
+            let previousLevel = orderedLevel(forIndentation: match.indentation)
+            if previousLevel == level { return match.marker }
+            if previousLevel < level { return nil }
+            location = previousRange.location
+        }
+        return nil
+    }
+
+    static func orderedIndex(for marker: String, atLevel level: Int? = nil, precededBy previousMarker: String? = nil) -> Int? {
+        let bare = bareMarker(marker)
         if let number = Int(bare) {
             return number
         }
-        if prefersRomanNumerals(atLevel: level) {
-            return romanToInt(bare.lowercased()) ?? letterIndex(for: bare)
+        if readsAsRomanNumeral(bare, atLevel: level, precededBy: previousMarker) {
+            return romanToInt(bare.lowercased())
         }
         return letterIndex(for: bare) ?? romanToInt(bare.lowercased())
     }
 
-    static func nextOrderedMarker(after marker: String, atLevel level: Int? = nil) -> String {
+    static func nextOrderedMarker(after marker: String, atLevel level: Int? = nil, precededBy previousMarker: String? = nil) -> String {
         let normalized = marker.trimmingCharacters(in: .whitespaces)
         let delimiter = normalized.hasSuffix(")") ? ")" : "."
-        let bare = normalized.hasSuffix(".") || normalized.hasSuffix(")") ? String(normalized.dropLast()) : normalized
+        let bare = bareMarker(normalized)
         if let number = Int(bare) {
             return "\(number + 1)\(delimiter)"
         }
-        if !prefersRomanNumerals(atLevel: level), let next = nextLetterMarker(after: bare, delimiter: delimiter) {
+        if !readsAsRomanNumeral(bare, atLevel: level, precededBy: previousMarker),
+           let next = nextLetterMarker(after: bare, delimiter: delimiter) {
             return next
         }
         if let romanValue = romanToInt(bare.lowercased()) {

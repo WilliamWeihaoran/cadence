@@ -70,7 +70,18 @@ enum MarkdownTypingTransformSupport {
     private static func orderedListMutation(in text: NSString, cursor: Int) -> MarkdownFormatMutation? {
         guard let ordered = typedOrderedPrefixMatch(in: text, cursor: cursor) else { return nil }
         let level = MarkdownListSupport.orderedLevel(forIndentation: ordered.indentation)
-        let typedIndex = MarkdownListSupport.orderedIndex(for: ordered.marker, atLevel: level) ?? 1
+        // A typed "V." after a "4." is the fifth item, not the twenty-second letter; the run above
+        // the caret is the only thing that can say so.
+        let previousMarker = MarkdownListSupport.precedingOrderedMarker(
+            in: text,
+            before: ordered.range,
+            atLevel: level
+        )
+        let typedIndex = MarkdownListSupport.orderedIndex(
+            for: ordered.marker,
+            atLevel: level,
+            precededBy: previousMarker
+        ) ?? 1
         let normalizedMarker = MarkdownListSupport.orderedMarker(for: level, index: typedIndex)
         let replacement = ordered.indentation + normalizedMarker + " "
         return replacing(

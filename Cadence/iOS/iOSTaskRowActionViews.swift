@@ -316,6 +316,7 @@ struct iOSTaskRowRecurrenceScopeDialogModifier: ViewModifier {
     let task: AppTask
     @Binding var pendingRecurrenceRule: TaskRecurrenceRule?
     @Environment(\.modelContext) private var modelContext
+    @State private var seriesLookupFailed = false
 
     private var isPresented: Binding<Bool> {
         Binding(
@@ -346,14 +347,31 @@ struct iOSTaskRowRecurrenceScopeDialogModifier: ViewModifier {
         } message: {
             Text("Choose whether this repeat change applies only here or to this task and future instances.")
         }
+        .alert("Couldn't Update the Series", isPresented: $seriesLookupFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Cadence couldn't load the rest of this repeating task, so nothing was changed. Try again.")
+        }
     }
 
     private func applyPendingRecurrenceRule(scope: CadenceTaskRecurrenceEditScope) {
         guard let pendingRecurrenceRule else { return }
-        // Same set and same ordering the `@Query(sort: \AppTask.order)` this replaced produced.
-        let allTasks = (try? modelContext.fetch(
-            FetchDescriptor<AppTask>(sortBy: [SortDescriptor(\.order)])
-        )) ?? []
+
+        // "This and future" is the only scope that needs the rest of the series, and a failed
+        // fetch must not quietly downgrade it to a one-occurrence edit — the user asked to change
+        // a series, and changing one instance instead is a different, silent answer. Same set and
+        // same ordering the `@Query(sort: \AppTask.order)` this replaced produced.
+        var allTasks: [AppTask] = []
+        if scope == .thisAndFuture {
+            do {
+                allTasks = try modelContext.fetch(FetchDescriptor<AppTask>(sortBy: [SortDescriptor(\.order)]))
+            } catch {
+                self.pendingRecurrenceRule = nil
+                seriesLookupFailed = true
+                return
+            }
+        }
+
         CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
             pendingRecurrenceRule,
             to: task,

@@ -151,6 +151,20 @@ struct TagSupportTests {
         #expect(MarkdownMetadataParser.metadata(in: content).tags == ["followup"])
     }
 
+    @Test func rawHTMLAttributesDoNotBecomeTags() throws {
+        // An autolink has no spaces; a real HTML tag does, so `<a href="#quickstart">` slipped
+        // past the mask and invented a "quickstart" tag at the next launch.
+        let content = """
+        <a href="#quickstart">Quick start</a> and <img src="x.png" alt="#hero">.
+
+        Prose stays prose: a < b, 1<2, and 3 <4> 5.
+
+        See `code` #realtag.
+        """
+
+        #expect(MarkdownMetadataParser.metadata(in: content).tags == ["realtag"])
+    }
+
     @Test func noteMarkdownSyncCreatesTagsAndAssignments() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)

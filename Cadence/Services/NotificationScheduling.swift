@@ -48,24 +48,38 @@ struct NotificationReconcileDiff: Equatable {
     let identifiersToRemove: [String]
     let requestsToAdd: [CadenceNotificationRequest]
 
+    /// The platform keeps at most this many pending local notifications per app and silently drops
+    /// the rest, so the desired set is trimmed here rather than left to the OS to truncate however
+    /// it likes.
+    static let pendingRequestLimit = 64
+
     /// Every desired request is re-added, including ones whose identifier is already pending.
     /// The identifier encodes only the task/habit UUID — the fire date and title live in the
     /// pending request itself — so "already pending" says nothing about whether the pending copy
     /// is still correct. Skipping those meant rescheduling a task to a new time, or renaming it,
     /// never reached the OS. `UNUserNotificationCenter.add` replaces a pending request with the
-    /// same identifier, so re-adding is an update, not a duplicate. The desired set is bounded by
-    /// tasks with a future date plus habits with a reminder time, well inside the platform's
-    /// 64-pending limit, so re-adding all of them is cheaper than tracking content hashes.
+    /// same identifier, so re-adding is an update, not a duplicate.
+    ///
+    /// The desired set is *not* inherently small — one request per future-scheduled task, per
+    /// future due date, and per reminding habit, so roughly forty dated tasks already pass the
+    /// limit. It is therefore capped at the soonest `pendingRequestLimit` fire dates: whatever
+    /// falls off is weeks out and will be picked up by a later reconcile long before it fires,
+    /// whereas letting the OS choose loses an arbitrary subset of *today's* reminders. The
+    /// overflow is also removed from pending rather than left behind, so the pending set converges
+    /// on exactly the window this computed rather than on a stale union with previous passes.
     static func make(
         desired: [CadenceNotificationRequest],
         pendingIdentifiers: [String]
     ) -> NotificationReconcileDiff {
-        let desiredIdentifiers = Set(desired.map(\.identifier))
+        let scheduled = desired
+            .sorted { ($0.fireDate, $0.identifier) < ($1.fireDate, $1.identifier) }
+            .prefix(pendingRequestLimit)
+        let desiredIdentifiers = Set(scheduled.map(\.identifier))
         let managedPending = Set(pendingIdentifiers.filter(NotificationIdentifiers.isManaged))
 
         return NotificationReconcileDiff(
             identifiersToRemove: managedPending.subtracting(desiredIdentifiers).sorted(),
-            requestsToAdd: desired.sorted { $0.identifier < $1.identifier }
+            requestsToAdd: scheduled.sorted { $0.identifier < $1.identifier }
         )
     }
 }

@@ -57,6 +57,25 @@ struct MarkdownLineBreakSupportTests {
         #expect(quotedList.replacement == "\n> - ")
     }
 
+    @Test func continuesRunsOfMarkersThatAreBothLettersAndRomanNumerals() throws {
+        // Pressing return has the whole note to read, so the markers above the caret decide
+        // whether a lone "v."/"c." is roman or the 22nd/3rd letter.
+        let roman = "i. one\nii. two\niii. three\niv. four\nv. five"
+        let lettered = "a. alpha\nb. beta\nc. gamma"
+
+        let continuedRoman = try #require(MarkdownLineBreakSupport.mutation(
+            in: roman,
+            selection: NSRange(location: (roman as NSString).length, length: 0)
+        ))
+        let continuedLettered = try #require(MarkdownLineBreakSupport.mutation(
+            in: lettered,
+            selection: NSRange(location: (lettered as NSString).length, length: 0)
+        ))
+
+        #expect(continuedRoman.replacement == "\nvi. ")
+        #expect(continuedLettered.replacement == "\nd. ")
+    }
+
     @Test func doesNotContinueEmptyQuoteMarkers() {
         let mutation = MarkdownLineBreakSupport.mutation(
             in: "> ",

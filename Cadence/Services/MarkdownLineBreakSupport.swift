@@ -18,6 +18,7 @@ enum MarkdownLineBreakSupport {
         let line = rawLine.trimmingCharacters(in: .newlines)
 
         if let listMutation = listMutation(
+            in: nsText,
             line: line,
             lineRange: safeLineRange,
             selection: safeSelection
@@ -35,6 +36,7 @@ enum MarkdownLineBreakSupport {
     }
 
     private static func listMutation(
+        in text: NSString,
         line: String,
         lineRange: NSRange,
         selection: NSRange
@@ -50,7 +52,17 @@ enum MarkdownLineBreakSupport {
             )
         }
 
-        let replacement = "\n\(continuedListPrefix(for: prefixMatch))"
+        // Which alphabet a lone "v."/"c." belongs to depends on the run above it, and pressing
+        // return is the one path that has the whole note to read.
+        let previousMarker = prefixMatch.kind == .ordered
+            ? MarkdownListSupport.precedingOrderedMarker(
+                in: text,
+                before: lineRange,
+                atLevel: MarkdownListSupport.orderedLevel(forIndentation: prefixMatch.indentation)
+            )
+            : nil
+
+        let replacement = "\n\(continuedListPrefix(for: prefixMatch, precededBy: previousMarker))"
         return MarkdownLineBreakMutation(
             replacementRange: selection,
             replacement: replacement,
@@ -72,12 +84,19 @@ enum MarkdownLineBreakSupport {
         return quotePrefix
     }
 
-    private static func continuedListPrefix(for prefixMatch: MarkdownListPrefixMatch) -> String {
+    private static func continuedListPrefix(
+        for prefixMatch: MarkdownListPrefixMatch,
+        precededBy previousMarker: String? = nil
+    ) -> String {
         switch prefixMatch.kind {
         case .ordered:
             let level = MarkdownListSupport.orderedLevel(forIndentation: prefixMatch.indentation)
             return prefixMatch.indentation
-                + MarkdownListSupport.nextOrderedMarker(after: prefixMatch.marker, atLevel: level)
+                + MarkdownListSupport.nextOrderedMarker(
+                    after: prefixMatch.marker,
+                    atLevel: level,
+                    precededBy: previousMarker
+                )
                 + " "
         case .todo, .done:
             return prefixMatch.indentation + "○ "

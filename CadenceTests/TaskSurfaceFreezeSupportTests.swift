@@ -107,7 +107,7 @@ struct TaskSurfaceFreezeSupportTests {
         var primary: [FrozenTaskGroupSnapshot]? = nil
         var secondary: [Never]? = nil
 
-        TaskSurfaceFreezeCoordinator.capture(
+        let didCapture = TaskSurfaceFreezeCoordinator.capture(
             frozenOrder: &frozenOrder,
             primarySnapshot: &primary,
             secondarySnapshot: &secondary,
@@ -118,6 +118,10 @@ struct TaskSurfaceFreezeSupportTests {
 
         // Capture must not clobber an order snapshot that was already taken this hover.
         #expect(frozenOrder?.map(\.title) == ["a"])
+        // The return value is what the observers guard on: reporting `true` here would write the
+        // bindings back on every row boundary the pointer crosses, which is the rebuild storm the
+        // signal exists to prevent.
+        #expect(didCapture == false)
     }
 
     @Test func captureSkipsAnEmptyPrimarySnapshotSoGroupBoundariesStayLive() {
@@ -130,7 +134,7 @@ struct TaskSurfaceFreezeSupportTests {
         var primary: [FrozenTaskGroupSnapshot]? = nil
         var secondary: [Never]? = nil
 
-        TaskSurfaceFreezeCoordinator.capture(
+        let didCapture = TaskSurfaceFreezeCoordinator.capture(
             frozenOrder: &frozenOrder,
             primarySnapshot: &primary,
             secondarySnapshot: &secondary,
@@ -141,6 +145,10 @@ struct TaskSurfaceFreezeSupportTests {
 
         #expect(frozenOrder != nil)
         #expect(primary == nil)
+        // Order was captured even though the snapshot was skipped, so the write-back must happen —
+        // reporting `false` here would leave the surface unfrozen and rows re-sorting under the
+        // pointer.
+        #expect(didCapture == true)
     }
 
     @Test func captureStoresANonEmptyPrimarySnapshotOnlyOnce() {
@@ -150,7 +158,7 @@ struct TaskSurfaceFreezeSupportTests {
         var primary: [FrozenTaskGroupSnapshot]? = nil
         var secondary: [Never]? = nil
 
-        TaskSurfaceFreezeCoordinator.capture(
+        let firstCapture = TaskSurfaceFreezeCoordinator.capture(
             frozenOrder: &frozenOrder,
             primarySnapshot: &primary,
             secondarySnapshot: &secondary,
@@ -159,11 +167,12 @@ struct TaskSurfaceFreezeSupportTests {
             sourceSecondarySnapshot: []
         )
         #expect(primary?.first?.id == "g1")
+        #expect(firstCapture == true)
 
         // A later capture call (e.g. re-hovering the same row) with a different
         // "current" snapshot must not replace the one taken at hover start.
         let laterSnapshot = [FrozenTaskGroupSnapshot(id: "g2", title: "G2", accent: .red, taskIDs: [a.id])]
-        TaskSurfaceFreezeCoordinator.capture(
+        let secondCapture = TaskSurfaceFreezeCoordinator.capture(
             frozenOrder: &frozenOrder,
             primarySnapshot: &primary,
             secondarySnapshot: &secondary,
@@ -172,6 +181,7 @@ struct TaskSurfaceFreezeSupportTests {
             sourceSecondarySnapshot: []
         )
         #expect(primary?.first?.id == "g1")
+        #expect(secondCapture == false)
     }
 
     @Test func releaseClearsAllCapturedSnapshots() {

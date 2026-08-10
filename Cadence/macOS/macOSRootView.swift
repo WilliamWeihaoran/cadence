@@ -283,6 +283,9 @@ private struct NotificationReconcileObserver: View {
 
     var body: some View {
         Color.clear
+            // SwiftUI's `Color.clear` is hit-testable, unlike UIKit's. This one is a full-window
+            // background, so without this it would sit in front of the shell for pointer events.
+            .allowsHitTesting(false)
             .onChange(of: scenePhase) { _, phase in
                 guard phase != .active else { return }
                 CadenceWidgetRefreshCenter.reloadAllWidgets()

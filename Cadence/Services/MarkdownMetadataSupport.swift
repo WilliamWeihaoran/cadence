@@ -256,11 +256,17 @@ enum MarkdownMetadataParser {
         return tags
     }
 
-    /// Link destinations, autolinks and inline code are not prose, so a `#` inside them is a URL
-    /// fragment or a hex colour rather than a tag. Tag sync runs unattended at launch and *inserts*
-    /// what it finds, so anything it misreads becomes a `Tag` row the user never created.
+    /// Link destinations, autolinks, raw HTML tags and inline code are not prose, so a `#` inside
+    /// them is a URL fragment or a hex colour rather than a tag. Tag sync runs unattended at launch
+    /// and *inserts* what it finds, so anything it misreads becomes a `Tag` row the user never
+    /// created.
+    ///
+    /// The autolink branch cannot cover an HTML tag that carries attributes, because those contain
+    /// spaces — hence the separate branch for `<a href="#quickstart">`. That branch insists on a
+    /// tag name straight after the `<` and on an `=` inside, so comparisons stay prose: `a < b` and
+    /// `1<2` have no tag name after the `<`, and `<y and z>` has no attribute.
     nonisolated private static let nonProseRegex = try? NSRegularExpression(
-        pattern: #"`[^`\n]*`|\]\([^)\n]*\)|<[^>\s]+>|https?://[^\s)]+"#
+        pattern: #"`[^`\n]*`|\]\([^)\n]*\)|<[^>\s]+>|<[A-Za-z][A-Za-z0-9-]*\s[^<>\n]*=[^<>\n]*>|https?://[^\s)]+"#
     )
 
     nonisolated private static func maskingNonProse(in line: String) -> String {

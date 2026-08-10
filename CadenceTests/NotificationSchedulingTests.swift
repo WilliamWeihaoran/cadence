@@ -252,6 +252,32 @@ struct NotificationSchedulingTests {
         #expect(Set(diff.identifiersToRemove) == Set([first, second]))
     }
 
+    @Test func reconcileDiffKeepsOnlyAsManyRequestsAsThePlatformWillHold() {
+        // iOS holds 64 pending requests per app and silently drops the overflow, so the cap has
+        // to be ours and it has to keep the ones that fire first.
+        let base = date("2026-06-10", hour: 9)
+        let desired = (0..<80).map { offset in
+            CadenceNotificationRequest(
+                identifier: NotificationIdentifiers.taskStart(taskID: UUID()),
+                kind: .taskStart,
+                title: "Task \(offset)",
+                body: "Starting now",
+                fireDate: base.addingTimeInterval(TimeInterval(offset) * 3600)
+            )
+        }
+
+        let diff = NotificationReconcileDiff.make(
+            desired: desired.shuffled(),
+            pendingIdentifiers: desired.map(\.identifier)
+        )
+
+        #expect(diff.requestsToAdd.count == 64)
+        #expect(Set(diff.requestsToAdd.map(\.identifier)) == Set(desired.prefix(64).map(\.identifier)))
+        // The overflow has to be removed rather than left pending, or the requests the OS kept
+        // last time survive as a stale, arbitrary subset.
+        #expect(Set(diff.identifiersToRemove) == Set(desired.suffix(16).map(\.identifier)))
+    }
+
     // MARK: - HabitNotificationReconcileSupport.reconcileInput
 
     @Test func reconcileInputIsNilWhenEitherFetchFailed() {

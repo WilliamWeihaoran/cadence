@@ -23,15 +23,25 @@ struct MarkdownTypingTransformSupportTests {
     }
 
     @Test func typedSingleLetterMarkersUseTheirAlphabetPosition() throws {
-        // "c"/"x"/"m" are also roman numerals, but at a level whose markers are letters they are
-        // the 3rd/24th/13th item, not 100/10/1000.
+        // "c"/"m" are also roman numerals, but a lone letter opening a list is the 3rd/13th item,
+        // not 100/1000. "i." is the exception: nobody opens a lettered list at its 9th letter.
         let c = try #require(MarkdownTypingTransformSupport.mutation(in: "c. ", cursor: 3))
         let m = try #require(MarkdownTypingTransformSupport.mutation(in: "m. ", cursor: 3))
         let roman = try #require(MarkdownTypingTransformSupport.mutation(in: "iv. ", cursor: 4))
+        let outline = try #require(MarkdownTypingTransformSupport.mutation(in: "I. ", cursor: 3))
 
         #expect(c.text == "3. ")
         #expect(m.text == "13. ")
         #expect(roman.text == "4. ")
+        #expect(outline.text == "1. ")
+    }
+
+    @Test func typedMarkerReadsTheRunItIsJoining() throws {
+        // Typed after "4.", "V." is the fifth item, not the twenty-second.
+        let text = "4. four\nV. "
+        let mutation = try #require(MarkdownTypingTransformSupport.mutation(in: text, cursor: (text as NSString).length))
+
+        #expect(mutation.text == "4. four\n5. ")
     }
 
     @Test func normalizesTypedChecklistShortcuts() throws {

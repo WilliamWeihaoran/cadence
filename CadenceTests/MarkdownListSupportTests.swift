@@ -197,6 +197,23 @@ struct MarkdownListSupportTests {
         #expect(MarkdownListSupport.continuation(after: "        iii. third") == "        iv. ")
     }
 
+    @Test func topLevelSingleLetterMarkersReadAsTheListTheyOpen() {
+        // Level 0's own markers are numbers, so neither alphabet is native and the lone letter
+        // has to speak for itself: "i." is how a hand-written roman outline starts, every other
+        // lone letter is a lettered list.
+        #expect(MarkdownListSupport.continuation(after: "i. first") == "ii. ")
+        #expect(MarkdownListSupport.continuation(after: "c. gamma") == "d. ")
+        #expect(MarkdownListSupport.continuation(after: "I. FIRST") == "II. ")
+    }
+
+    @Test func theRunAboveAMarkerSettlesWhichAlphabetItBelongsTo() {
+        // "v." is both the 22nd letter and roman 5; only one reading continues the marker above it.
+        #expect(MarkdownListSupport.continuation(after: "v. five", precededBy: "iv.") == "vi. ")
+        #expect(MarkdownListSupport.continuation(after: "x. ten", precededBy: "ix.") == "xi. ")
+        #expect(MarkdownListSupport.continuation(after: "i. ninth", precededBy: "h.") == "j. ")
+        #expect(MarkdownListSupport.continuation(after: "        c. hundredth", precededBy: "        xcix.") == "        ci. ")
+    }
+
 #if os(macOS)
     @MainActor @Test func toolbarTodoListUsesCanonicalTodoMarker() {
         let textView = NSTextView()
