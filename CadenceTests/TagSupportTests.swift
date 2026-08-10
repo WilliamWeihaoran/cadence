@@ -137,6 +137,20 @@ struct TagSupportTests {
         #expect(metadata.tags == ["bug", "enhancement"])
     }
 
+    @Test func urlFragmentsAndCodeSpansDoNotBecomeTags() throws {
+        // Tag sync runs unattended at launch and *inserts* whatever it finds, so anything it
+        // mistakes for a tag becomes a row the user never created.
+        let content = """
+        See [Docs](https://example.com/#quickstart) and [Anchor](#top).
+
+        Set `background: #ff6b6b` in the theme, or read <https://example.com/#anchor>.
+
+        Real #followup here.
+        """
+
+        #expect(MarkdownMetadataParser.metadata(in: content).tags == ["followup"])
+    }
+
     @Test func noteMarkdownSyncCreatesTagsAndAssignments() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)

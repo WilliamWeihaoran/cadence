@@ -51,27 +51,43 @@ struct SidebarView: View {
         )
     }
 
-    // All Tasks counts only work inside still-active areas/projects; everything else
-    // counts against the full task set. `fullBadgeSnapshot` already returns nil for the
-    // badge-less destinations (focus, calendar, notes…), so a default branch here stays
-    // correct even if new destinations are added to the enum.
-    private func count(for destination: SidebarStaticDestination) -> Int? {
-        switch destination {
-        case .allTasks:
-            return activeContainerBadgeSnapshot.count(for: destination.feature)
-        default:
-            return fullBadgeSnapshot.count(for: destination.feature)
+    /// Both snapshots for one render, built once. Each `Snapshot.init` makes three full passes
+    /// over the task list, and this used to be called once per destination — with
+    /// `primaryNavItems` itself evaluated twice in a single `body`, about eleven snapshots per
+    /// render. Nothing is retained between passes.
+    private struct BadgeCounts {
+        let full: CadenceFeatureBadgeSupport.Snapshot
+        let activeContainers: CadenceFeatureBadgeSupport.Snapshot
+
+        // All Tasks counts only work inside still-active areas/projects; everything else
+        // counts against the full task set. `full` already returns nil for the badge-less
+        // destinations (focus, calendar, notes…), so a default branch here stays correct
+        // even if new destinations are added to the enum.
+        func count(for destination: SidebarStaticDestination) -> Int? {
+            switch destination {
+            case .allTasks:
+                return activeContainers.count(for: destination.feature)
+            default:
+                return full.count(for: destination.feature)
+            }
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let badgeCounts = BadgeCounts(
+            full: fullBadgeSnapshot,
+            activeContainers: activeContainerBadgeSnapshot
+        )
+        let primaryItems = navItems(for: Self.primaryFeatures, badgeCounts: badgeCounts)
+        let secondaryItems = navItems(for: Self.secondaryFeatures, badgeCounts: badgeCounts)
+
+        return VStack(alignment: .leading, spacing: 0) {
             SidebarAppHeader { globalSearchManager.present() }
                 .padding(.top, SidebarMetrics.topInset)
                 .padding(.bottom, SidebarMetrics.headerBottomSpacing)
 
-            if !primaryNavItems.isEmpty {
-                navGroup(primaryNavItems, emphasis: .primary)
+            if !primaryItems.isEmpty {
+                navGroup(primaryItems, emphasis: .primary)
                     .padding(.bottom, SidebarMetrics.groupSpacing)
 
                 SidebarSectionDivider()
@@ -81,7 +97,7 @@ struct SidebarView: View {
 
             SidebarSectionDivider()
 
-            bottomGroup
+            bottomGroup(secondaryItems: secondaryItems)
         }
         .padding(.horizontal, SidebarMetrics.horizontalInset)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -113,9 +129,9 @@ struct SidebarView: View {
 
     /// Secondary nav plus Settings. Pinned to the bottom of the column by the lists
     /// region above it, which is the only part that flexes.
-    private var bottomGroup: some View {
+    private func bottomGroup(secondaryItems: [SidebarNavItem]) -> some View {
         VStack(spacing: SidebarMetrics.rowSpacing) {
-            navGroup(secondaryNavItems, emphasis: .secondary)
+            navGroup(secondaryItems, emphasis: .secondary)
 
             SidebarNavRow(
                 icon: CadenceFeatureDestination.settings.systemImage,
@@ -185,15 +201,10 @@ struct SidebarView: View {
     private static let staticDestinationFeatures: Set<CadenceFeatureDestination> =
         Set(SidebarStaticDestination.allCases.map(\.feature))
 
-    private var primaryNavItems: [SidebarNavItem] {
-        navItems(for: Self.primaryFeatures)
-    }
-
-    private var secondaryNavItems: [SidebarNavItem] {
-        navItems(for: Self.secondaryFeatures)
-    }
-
-    private func navItems(for features: [CadenceFeatureDestination]) -> [SidebarNavItem] {
+    private func navItems(
+        for features: [CadenceFeatureDestination],
+        badgeCounts: BadgeCounts
+    ) -> [SidebarNavItem] {
         let featureSet = Set(features)
         var items: [SidebarNavItem] = []
 
@@ -228,7 +239,7 @@ struct SidebarView: View {
                     icon: destination.icon,
                     label: destination.label,
                     tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
-                    count: count(for: destination),
+                    count: badgeCounts.count(for: destination),
                     accessibilityID: "sidebar.destination.\(destination.rawValue)"
                 )
             }

@@ -222,7 +222,7 @@ struct CalendarTimelineHeaderStrip: View {
     let colWidth: CGFloat
     let totalDaysWidth: CGFloat
     let timelineViewportWidth: CGFloat
-    @ObservedObject var scrollState: CalendarTimelineScrollState
+    let scrollState: CalendarTimelineScrollState
     let eventCache: CalendarEventDayCache
     let unscheduledTasksByDate: [String: [AppTask]]
 
@@ -308,7 +308,7 @@ struct CalendarTimelineViewport: View {
     @Binding var externalJumpDayIndex: Int?
     @Binding var externalJumpHour: Int?
     let externalJumpToken: UUID?
-    @ObservedObject var timelineScrollState: CalendarTimelineScrollState
+    let timelineScrollState: CalendarTimelineScrollState
     let eventCache: CalendarEventDayCache
     let onPersistVisibleTimelineDay: (Int) -> Void
     let onPersistVisibleTimelineHour: (Int) -> Void

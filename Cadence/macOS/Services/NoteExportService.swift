@@ -58,14 +58,6 @@ enum NoteExportService {
         }
     }
 
-    static func exportMarkdown(_ note: Note) {
-        export(note, as: .markdown)
-    }
-
-    static func exportPDF(_ note: Note, imageAssets: [MarkdownImageAsset] = []) {
-        export(note, as: .pdf, imageAssets: imageAssets)
-    }
-
     @MainActor
     private static func presentSavePanelOnMainQueue(
         suggestedName: String,

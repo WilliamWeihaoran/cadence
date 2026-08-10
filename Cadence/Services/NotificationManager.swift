@@ -56,9 +56,15 @@ final class NotificationManager: NSObject {
     // MARK: - Reconciliation
 
     /// Diffs the desired notification set (computed from current SwiftData state) against
-    /// `UNUserNotificationCenter`'s currently pending requests and does the minimal add/remove
-    /// to converge. Idempotent — safe to call repeatedly from multiple trigger points (scenePhase
-    /// checkpoints, task/habit create/complete/cancel/delete fast paths).
+    /// `UNUserNotificationCenter`'s currently pending requests and converges. Idempotent — safe to
+    /// call repeatedly from multiple trigger points (scenePhase checkpoints, task/habit
+    /// create/complete/cancel/delete fast paths).
+    ///
+    /// The diffing rules live in `NotificationReconcileDiff.make` because this method early-returns
+    /// under test; keep any new decision-making there rather than inline here.
+    ///
+    /// An empty `tasks`/`habits` pair means "cancel everything", so callers must pass real fetched
+    /// state — never a failed fetch coerced to an empty array. See `HabitNotificationReconcileSupport`.
     func reconcile(
         tasks: [AppTask],
         habits: [Habit],
@@ -80,18 +86,18 @@ final class NotificationManager: NSObject {
             dueReminderHour: dueReminderHour,
             dueReminderMinute: dueReminderMinute
         )
-        let desired = Dictionary(uniqueKeysWithValues: plan.all.map { ($0.identifier, $0) })
 
         let pending = await center.pendingNotificationRequests()
-        let managedPendingIDs = Set(pending.map(\.identifier).filter(Self.isManagedIdentifier))
+        let diff = NotificationReconcileDiff.make(
+            desired: plan.all,
+            pendingIdentifiers: pending.map(\.identifier)
+        )
 
-        let toRemove = managedPendingIDs.subtracting(desired.keys)
-        if !toRemove.isEmpty {
-            center.removePendingNotificationRequests(withIdentifiers: Array(toRemove))
+        if !diff.identifiersToRemove.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: diff.identifiersToRemove)
         }
 
-        let toAdd = desired.filter { !managedPendingIDs.contains($0.key) }
-        for (_, request) in toAdd {
+        for request in diff.requestsToAdd {
             let content = Self.makeContent(for: request)
             let components = Calendar.current.dateComponents(
                 [.year, .month, .day, .hour, .minute, .second],
@@ -123,7 +129,7 @@ final class NotificationManager: NSObject {
     func cancelAll() async {
         guard !Self.isTestEnvironment else { return }
         let pending = await center.pendingNotificationRequests()
-        let managedIDs = pending.map(\.identifier).filter(Self.isManagedIdentifier)
+        let managedIDs = pending.map(\.identifier).filter(NotificationIdentifiers.isManaged)
         guard !managedIDs.isEmpty else { return }
         center.removePendingNotificationRequests(withIdentifiers: managedIDs)
     }
@@ -136,10 +142,6 @@ final class NotificationManager: NSObject {
         content.body = request.body
         content.sound = .default
         return content
-    }
-
-    private static func isManagedIdentifier(_ identifier: String) -> Bool {
-        identifier.hasPrefix("task-start-") || identifier.hasPrefix("task-due-") || identifier.hasPrefix("habit-reminder-")
     }
 
     /// Reuses the same test-mode detection as `CadenceUITestSupport`/`CadenceAppDelegate` so unit

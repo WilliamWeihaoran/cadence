@@ -38,7 +38,10 @@ enum NoteReferenceParser {
     }
 
     nonisolated static func taskReferences(in content: String) -> [NoteTaskReference] {
-        matches(in: content, pattern: #"\[\[task:(.+?)\]\]"#)
+        // Case-insensitive to match the renderer and the link target, both of which lowercase the
+        // prefix — otherwise "[[Task:…]]" draws and navigates as a task but never reaches linked
+        // tasks or backlinks.
+        matches(in: content, pattern: #"(?i)\[\[task:(.+?)\]\]"#)
             .map(parseTaskReference)
             .filter { !$0.rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }

@@ -326,11 +326,14 @@ struct HoverFreezeObserver: View {
                         primarySnapshot: frozenListGroups,
                         secondarySnapshot: frozenFlatSections
                     )
-                    freezeState.captureIfNeeded(
+                    // Only write back when something was actually frozen. Writing an unchanged
+                    // value into a `@State` binding still invalidates the owning panel, and this
+                    // fires on every row boundary the pointer crosses.
+                    guard freezeState.captureIfNeeded(
                         naturalTasks: naturalTasks,
                         sourcePrimarySnapshot: listGroupSnapshot,
                         sourceSecondarySnapshot: flatSectionSnapshot
-                    )
+                    ) else { return }
                     frozenOrder = freezeState.frozenOrder
                     frozenListGroups = freezeState.primarySnapshot
                     frozenFlatSections = freezeState.secondarySnapshot

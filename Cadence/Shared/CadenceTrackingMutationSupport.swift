@@ -86,11 +86,6 @@ enum CadenceTrackingMutationSupport {
         return resolved
     }
 
-    static func archiveGoal(_ goal: Goal, modelContext: ModelContext) {
-        goal.status = .done
-        try? modelContext.save()
-    }
-
     private static func nextOrder<T>(in items: [T], order: (T) -> Int) -> Int {
         (items.map(order).max() ?? -1) + 1
     }

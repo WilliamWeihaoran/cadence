@@ -34,8 +34,6 @@ struct macOSRootView: View {
     @Environment(CalendarNavigationManager.self) private var calendarNavigationManager
     @Environment(TaskSubtaskEntryManager.self) private var taskSubtaskEntryManager
     @Environment(\.modelContext) private var modelContext
-    @Query private var allTasksForNotifications: [AppTask]
-    @Query private var allHabitsForNotifications: [Habit]
     @State private var activeModelContext: ModelContext?
     @State private var dataRefreshID = UUID()
     @State private var mcpRefreshCoordinator = CadenceMCPRefreshCoordinator()
@@ -83,6 +81,9 @@ struct macOSRootView: View {
             }
         }
         .modelContext(currentModelContext)
+        // Attached *after* `.modelContext(...)` on purpose: like the `@Query`s it replaces, the
+        // observer must resolve against the inherited context, not `currentModelContext`.
+        .background { NotificationReconcileObserver() }
         .ignoresSafeArea(.container, edges: .top)
         .onOpenURL { url in
             CadenceDeepLinkManager.shared.handle(url)
@@ -110,13 +111,9 @@ struct macOSRootView: View {
             )
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else {
-                CadenceWidgetRefreshCenter.reloadAllWidgets()
-                let tasks = allTasksForNotifications
-                let habits = allHabitsForNotifications
-                Task { await NotificationManager.shared.reconcile(tasks: tasks, habits: habits) }
-                return
-            }
+            // The leaving-active half of this (widget reload + notification reconcile) lives in
+            // `NotificationReconcileObserver` so its two unbounded `@Query`s stay off the root.
+            guard phase == .active else { return }
             if hasPendingExternalDataRefresh || mcpRefreshCoordinator.shouldRefreshForCurrentMarker() {
                 scheduleAppDataRefreshIfPossible()
             }
@@ -272,6 +269,27 @@ struct macOSRootView: View {
         case .calendar:
             selection = .calendar
         }
+    }
+}
+
+/// Owns the two unbounded `@Query`s the notification reconcile needs, so they sit on a leaf view
+/// rendered in `.background { }` instead of on `macOSRootView` itself — the same shape as
+/// `HoverFreezeObserver`. Nothing else changes: the reconcile still runs on exactly the same
+/// scene-phase transitions with exactly the same task/habit sets.
+private struct NotificationReconcileObserver: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @Query private var allTasks: [AppTask]
+    @Query private var allHabits: [Habit]
+
+    var body: some View {
+        Color.clear
+            .onChange(of: scenePhase) { _, phase in
+                guard phase != .active else { return }
+                CadenceWidgetRefreshCenter.reloadAllWidgets()
+                let tasks = allTasks
+                let habits = allHabits
+                Task { await NotificationManager.shared.reconcile(tasks: tasks, habits: habits) }
+            }
     }
 }
 

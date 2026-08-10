@@ -315,5 +315,36 @@ struct TaskWorkflowRecurrenceTests {
         )
         #expect(Set(targets.map(\.id)) == Set(chain.map(\.id)))
     }
+
+    // MARK: - 8. Every completion entry point advances the series, not just the macOS ones
+
+    @Test func focusTimerCompletionSpawnsNextOccurrenceLikeEveryOtherCompletionPath() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        // A long-stale do date so the expected successor date is "tomorrow" for any wall clock the
+        // suite could run under — `complete` takes no injectable `now`.
+        let task = makeRecurringTask(rule: .daily, scheduledDate: "2020-01-01")
+        context.insert(task)
+        try context.save()
+
+        // The shared focus helper is the iOS focus timer's only completion path; macOS's focus
+        // timer routes through `TaskWorkflowService.markDone`. Both must land on the same series
+        // behavior or a recurring task silently dies when finished on the wrong platform.
+        CadenceFocusSupport.complete(task, elapsedSeconds: 25 * 60, modelContext: context)
+        try context.save()
+
+        #expect(task.isDone)
+        #expect(task.actualMinutes == 25)
+
+        guard let next = try spawnedTask(for: task, in: context) else {
+            Issue.record("Completing a recurring task in the focus timer must still spawn the next occurrence")
+            return
+        }
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+        #expect(next.scheduledDate == DateFormatters.dateKey(from: tomorrow))
+        #expect(next.recurrenceRule == .daily)
+        #expect(next.recurrenceSeriesID == task.recurrenceSeriesID)
+    }
 }
 #endif

@@ -318,25 +318,6 @@ enum CalendarEventDragPayload {
     }
 }
 
-enum CalendarEventPresentationDiagnostics {
-    static func summary(for item: CalendarEventItem) -> String {
-        [
-            "eventID=\(item.eventIdentifier)",
-            "segmentID=\(item.id)",
-            "seriesID=\(item.seriesIdentifier)",
-            "recurring=\(item.isRecurringSeriesMember)",
-            "occurrence=\(item.occurrenceDateKey):\(item.occurrenceStartMin)",
-            "date=\(item.dateKey)",
-            "start=\(item.startMin)",
-            "duration=\(item.durationMinutes)",
-            "eventDate=\(item.eventDateKey)",
-            "eventStart=\(item.eventStartMin)",
-            "eventDuration=\(item.eventDurationMinutes)",
-            "title=\(item.title)"
-        ].joined(separator: " ")
-    }
-}
-
 enum CalendarEventVisualStyle {
 
     // MARK: - Event fill

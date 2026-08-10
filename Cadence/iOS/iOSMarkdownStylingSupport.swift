@@ -771,7 +771,7 @@ enum iOSMarkdownStyler {
         excludedRanges: [NSRange],
         inlineCodeRanges: [NSRange]
     ) {
-        applyRegex(#"!\[([^\]\n]*)\]\(cadence-image://([0-9A-Fa-f-]{36})\)"#, in: markdown) { match in
+        applyRegex(#"!\[("# + MarkdownImageAssetService.altTextPattern + #")\]\(cadence-image://([0-9A-Fa-f-]{36})\)"#, in: markdown) { match in
             guard shouldStyleInline(match.range(at: 0), excluding: excludedRanges, protecting: inlineCodeRanges) else { return }
             guard match.numberOfRanges >= 3 else { return }
             let label = match.range(at: 1)

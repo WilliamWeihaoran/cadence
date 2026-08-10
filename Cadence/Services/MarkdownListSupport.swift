@@ -44,7 +44,12 @@ struct MarkdownListIndentationResult: Equatable {
 }
 
 enum MarkdownListSupport {
-    private static let orderedMarkerRegex = try! NSRegularExpression(pattern: #"^((?:\d+|[A-Za-z]+|[ivxlcdmIVXLCDM]+)[.)])\s"#)
+    /// Lettered markers are a *single* letter ("a.", "b."); anything longer has to spell a roman
+    /// numeral. Allowing any run of letters turned every "Mr. ", "Fig. " and "Note. " at the left
+    /// margin into a list item.
+    static let orderedMarkerPattern = #"(?:\d+|[A-Za-z]|[ivxlcdmIVXLCDM]+)[.)]"#
+
+    private static let orderedMarkerRegex = try! NSRegularExpression(pattern: #"^("# + orderedMarkerPattern + #")\s"#)
     private static let bulletCheckboxRegex = try! NSRegularExpression(pattern: #"^([*+-])\s+(?:\[([ xX])\]\s+)?"#)
 
     static func normalizedMarkdownListPrefixes(in text: String) -> String {
@@ -92,7 +97,8 @@ enum MarkdownListSupport {
             let level = visualLevel(forIndentation: match.indentation)
             return match.indentation + unorderedMarker(forLevel: level) + " "
         case .ordered:
-            return match.indentation + nextOrderedMarker(after: match.marker) + " "
+            let level = orderedLevel(forIndentation: match.indentation)
+            return match.indentation + nextOrderedMarker(after: match.marker, atLevel: level) + " "
         }
     }
 
@@ -198,8 +204,7 @@ enum MarkdownListSupport {
     }
 
     static func orderedMarker(forIndentation indentation: String) -> String {
-        let level = min(indentation.count / 4, 4)
-        return orderedMarker(for: level, index: 1)
+        orderedMarker(for: orderedLevel(forIndentation: indentation), index: 1)
     }
 
     static func orderedLevel(forIndentation indentation: String) -> Int {
@@ -212,43 +217,62 @@ enum MarkdownListSupport {
         return min(max(1, (width + 3) / 4), 4)
     }
 
-    static func orderedIndex(for marker: String) -> Int? {
+    /// `c`, `d`, `i`, `l`, `m`, `v` and `x` are both list letters and roman numerals, so a lone
+    /// letter is ambiguous on its own. Only the marker's indentation level says which family it
+    /// belongs to — pass it, or "c." in an `a. b. c.` list reads as 100 and the list continues at
+    /// "ci." instead of "d.".
+    private static func prefersRomanNumerals(atLevel level: Int?) -> Bool {
+        guard let level else { return false }
+        return orderedMarker(for: level, index: 1) == "i."
+    }
+
+    private static func letterIndex(for bare: String) -> Int? {
+        guard bare.count == 1, let scalar = bare.lowercased().unicodeScalars.first,
+              (97...122).contains(scalar.value) else {
+            return nil
+        }
+        return Int(scalar.value - 96)
+    }
+
+    static func orderedIndex(for marker: String, atLevel level: Int? = nil) -> Int? {
         let normalized = marker.trimmingCharacters(in: .whitespaces)
         let bare = normalized.hasSuffix(".") || normalized.hasSuffix(")") ? String(normalized.dropLast()) : normalized
         if let number = Int(bare) {
             return number
         }
-        if let romanValue = romanToInt(bare.lowercased()) {
-            return romanValue
+        if prefersRomanNumerals(atLevel: level) {
+            return romanToInt(bare.lowercased()) ?? letterIndex(for: bare)
         }
-        if bare.count == 1, let scalar = bare.lowercased().unicodeScalars.first,
-           (97...122).contains(scalar.value) {
-            return Int(scalar.value - 96)
-        }
-        return nil
+        return letterIndex(for: bare) ?? romanToInt(bare.lowercased())
     }
 
-    static func nextOrderedMarker(after marker: String) -> String {
+    static func nextOrderedMarker(after marker: String, atLevel level: Int? = nil) -> String {
         let normalized = marker.trimmingCharacters(in: .whitespaces)
         let delimiter = normalized.hasSuffix(")") ? ")" : "."
         let bare = normalized.hasSuffix(".") || normalized.hasSuffix(")") ? String(normalized.dropLast()) : normalized
         if let number = Int(bare) {
             return "\(number + 1)\(delimiter)"
         }
+        if !prefersRomanNumerals(atLevel: level), let next = nextLetterMarker(after: bare, delimiter: delimiter) {
+            return next
+        }
         if let romanValue = romanToInt(bare.lowercased()) {
             let next = intToRoman(romanValue + 1)
             return bare.first?.isUppercase == true ? "\(next.uppercased())\(delimiter)" : "\(next)\(delimiter)"
         }
-        if bare.count == 1, let scalar = bare.unicodeScalars.first {
-            let value = scalar.value
-            if (65...90).contains(value), let next = UnicodeScalar(min(value + 1, 90)) {
-                return String(next).lowercased() + delimiter
-            }
-            if (97...122).contains(value), let next = UnicodeScalar(min(value + 1, 122)) {
-                return String(next) + delimiter
-            }
+        return nextLetterMarker(after: bare, delimiter: delimiter) ?? marker
+    }
+
+    private static func nextLetterMarker(after bare: String, delimiter: String) -> String? {
+        guard bare.count == 1, let scalar = bare.unicodeScalars.first else { return nil }
+        let value = scalar.value
+        if (65...90).contains(value), let next = UnicodeScalar(min(value + 1, 90)) {
+            return String(next).lowercased() + delimiter
         }
-        return marker
+        if (97...122).contains(value), let next = UnicodeScalar(min(value + 1, 122)) {
+            return String(next) + delimiter
+        }
+        return nil
     }
 
     static func listPrefixMatch(in line: String) -> MarkdownListPrefixMatch? {
@@ -367,7 +391,10 @@ enum MarkdownListSupport {
         switch originalMatch.kind {
         case .ordered:
             let updatedLevel = orderedLevel(forIndentation: updatedMatch.indentation)
-            let targetIndex = orderedIndex(for: updatedMatch.marker) ?? 1
+            // The marker still belongs to the level the line came *from*, so that is the alphabet
+            // it has to be read in before being rewritten into the new level's.
+            let originalLevel = orderedLevel(forIndentation: originalMatch.indentation)
+            let targetIndex = orderedIndex(for: updatedMatch.marker, atLevel: originalLevel) ?? 1
             targetMarker = orderedMarker(for: updatedLevel, index: targetIndex)
         case .bullet, .dash, .plus:
             // Unlike the ordered marker (e.g. "1.", no trailing space), listPrefixMatch's

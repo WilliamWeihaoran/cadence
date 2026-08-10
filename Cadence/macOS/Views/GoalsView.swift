@@ -76,7 +76,11 @@ struct GoalsView: View {
     }
 
     private var visibleGoals: [Goal] {
-        goalGroups.flatMap { group in
+        Self.visibleGoals(in: goalGroups)
+    }
+
+    private static func visibleGoals(in groups: [GoalMissionGroup]) -> [Goal] {
+        groups.flatMap { group in
             (group.parentGoal.map { [$0] } ?? []) + group.goals
         }
     }
@@ -89,7 +93,12 @@ struct GoalsView: View {
     }
 
     var body: some View {
-        content
+        // `goalGroups` re-runs `matchesFilters` over every goal — and with a non-empty search
+        // box that means a full `GoalContributionResolver.summary` walk per goal. Build the
+        // grouping once per pass and hand it to the body-time readers.
+        let groups = goalGroups
+
+        return content(groups: groups)
             .background(Theme.bg)
             .sheet(isPresented: $showCreateGoal) {
                 CreateGoalSheet()
@@ -114,7 +123,7 @@ struct GoalsView: View {
                     selectedGoalID = visibleGoals.first?.id ?? allGoals.first?.id
                 }
             }
-            .onChange(of: visibleGoals.map(\.id)) {
+            .onChange(of: Self.visibleGoals(in: groups).map(\.id)) {
                 guard let selectedGoalID,
                       visibleGoals.contains(where: { $0.id == selectedGoalID }) || trimmedQuery.isEmpty
                 else {
@@ -125,10 +134,10 @@ struct GoalsView: View {
     }
 
     @ViewBuilder
-    private var content: some View {
+    private func content(groups: [GoalMissionGroup]) -> some View {
         if goalsViewMode == .timeline {
             GoalTimelineView(
-                groups: goalGroups,
+                groups: groups,
                 selectedGoalID: $selectedGoalID,
                 viewMode: goalsViewModeBinding,
                 scale: timelineScaleBinding,
@@ -141,16 +150,16 @@ struct GoalsView: View {
                 }
             )
         } else {
-            missionContent
+            missionContent(groups: groups)
         }
     }
 
-    private var missionContent: some View {
+    private func missionContent(groups: [GoalMissionGroup]) -> some View {
         HSplitView {
             VStack(spacing: 0) {
                 header
                 Divider().background(Theme.borderSubtle)
-                goalList
+                goalList(groups: groups)
             }
             .frame(minWidth: 560, idealWidth: 760)
             .background(Theme.bg)
@@ -203,9 +212,9 @@ struct GoalsView: View {
         }
     }
 
-    private var goalList: some View {
+    private func goalList(groups: [GoalMissionGroup]) -> some View {
         Group {
-            if goalGroups.isEmpty {
+            if groups.isEmpty {
                 EmptyStateView(
                     message: searchText.isEmpty ? "No goals yet" : "No matching goals",
                     subtitle: searchText.isEmpty ? "Create a goal for an ongoing direction, then nest milestones inside it." : "Try a different search or status.",
@@ -215,7 +224,7 @@ struct GoalsView: View {
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 18) {
-                        ForEach(goalGroups) { group in
+                        ForEach(groups) { group in
                             GoalMissionGroupView(
                                 group: group,
                                 selectedGoalID: selectedGoalID,

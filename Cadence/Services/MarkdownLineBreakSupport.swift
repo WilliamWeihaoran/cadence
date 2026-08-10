@@ -75,7 +75,10 @@ enum MarkdownLineBreakSupport {
     private static func continuedListPrefix(for prefixMatch: MarkdownListPrefixMatch) -> String {
         switch prefixMatch.kind {
         case .ordered:
-            return prefixMatch.indentation + MarkdownListSupport.nextOrderedMarker(after: prefixMatch.marker) + " "
+            let level = MarkdownListSupport.orderedLevel(forIndentation: prefixMatch.indentation)
+            return prefixMatch.indentation
+                + MarkdownListSupport.nextOrderedMarker(after: prefixMatch.marker, atLevel: level)
+                + " "
         case .todo, .done:
             return prefixMatch.indentation + "○ "
         case .bullet, .dash, .plus:

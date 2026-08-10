@@ -1,7 +1,8 @@
-#if os(macOS)
-import AppKit
 import Foundation
 import Testing
+#if os(macOS)
+import AppKit
+#endif
 
 @testable import Cadence
 
@@ -172,6 +173,31 @@ struct MarkdownListSupportTests {
         #expect(result?.selection == NSRange(location: 4, length: ((result?.text ?? "") as NSString).length - 4))
     }
 
+    @Test func tabIndentationResolvesToTheSameOrderedLevelForToolbarAndTyping() {
+        // The toolbar reads the marker straight from the indentation string while typing goes
+        // through orderedLevel; when the two disagreed a tab-indented line got "1." from one and
+        // "a." from the other.
+        #expect(MarkdownListSupport.orderedLevel(forIndentation: "\t") == 1)
+        #expect(MarkdownListSupport.orderedMarker(forIndentation: "\t") == "a.")
+        #expect(MarkdownListSupport.orderedMarker(forIndentation: "    ") == "a.")
+    }
+
+    @Test func proseThatOpensWithAnAbbreviationIsNotAList() {
+        #expect(MarkdownListSupport.listPrefixMatch(in: "Mr. Smith called") == nil)
+        #expect(MarkdownListSupport.listPrefixMatch(in: "Fig. 3 shows the split") == nil)
+        #expect(MarkdownListSupport.continuation(after: "Note. see below") == nil)
+        #expect(MarkdownListSupport.listPrefixMatch(in: "a. alpha")?.kind == .ordered)
+        #expect(MarkdownListSupport.listPrefixMatch(in: "iv. roman")?.kind == .ordered)
+    }
+
+    @Test func letteredListsContinuePastTheLettersThatAreAlsoRomanNumerals() {
+        // Level 1 markers are letters, so "c." is the third item; level 2 markers are roman.
+        #expect(MarkdownListSupport.continuation(after: "    c. gamma") == "    d. ")
+        #expect(MarkdownListSupport.continuation(after: "    x. twentyfourth") == "    y. ")
+        #expect(MarkdownListSupport.continuation(after: "        iii. third") == "        iv. ")
+    }
+
+#if os(macOS)
     @MainActor @Test func toolbarTodoListUsesCanonicalTodoMarker() {
         let textView = NSTextView()
         textView.string = "write this"
@@ -190,5 +216,5 @@ struct MarkdownListSupportTests {
         #expect(MarkdownKeyboardShortcutSupport.apply(.todoList, in: textView))
         #expect(textView.string == "write this")
     }
-}
 #endif
+}

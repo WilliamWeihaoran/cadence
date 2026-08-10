@@ -42,11 +42,6 @@ enum CadenceTaskMutationSupport {
         try? modelContext.save()
     }
 
-    static func setGoal(_ goal: Goal?, for task: AppTask, modelContext: ModelContext) {
-        task.goal = goal
-        try? modelContext.save()
-    }
-
     static func scheduleToday(_ task: AppTask, modelContext: ModelContext) {
         task.scheduledDate = DateFormatters.todayKey()
         try? modelContext.save()
@@ -110,11 +105,6 @@ enum CadenceTaskMutationSupport {
     static func dueNextWeek(_ task: AppTask, modelContext: ModelContext, calendar: Calendar = .current) {
         let nextWeek = calendar.date(byAdding: .day, value: 7, to: Date()) ?? Date()
         task.dueDate = DateFormatters.dateKey(from: nextWeek)
-        try? modelContext.save()
-    }
-
-    static func setDueDate(_ dateKey: String, for task: AppTask, modelContext: ModelContext) {
-        task.dueDate = dateKey
         try? modelContext.save()
     }
 
@@ -204,17 +194,6 @@ enum CadenceTaskMutationSupport {
             area: area,
             project: project,
             sectionName: sectionName,
-            allTasks: allTasks
-        )
-        try? modelContext.save()
-    }
-
-    static func moveToInbox(_ task: AppTask, allTasks: [AppTask], modelContext: ModelContext) {
-        assignContainer(
-            task,
-            area: nil,
-            project: nil,
-            sectionName: TaskSectionDefaults.defaultName,
             allTasks: allTasks
         )
         try? modelContext.save()

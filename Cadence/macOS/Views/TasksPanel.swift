@@ -63,6 +63,10 @@ struct TasksPanel: View {
 
     private var todayKey: String { DateFormatters.todayKey() }
 
+    /// Expensive: four filters, a full sort, a `sectionConfigs` decode per active list, and a
+    /// pass over every completed task ever created. Build it **once per body pass** and thread
+    /// the value down (`body` does exactly that) — the eleven forwarding computed properties
+    /// this replaced each rebuilt the whole thing on every access.
     private var derivedState: TasksPanelDerivedState {
         TasksPanelDerivedState(
             allTasks: allTasks,
@@ -75,27 +79,17 @@ struct TasksPanel: View {
         )
     }
 
-    private var overdue: [AppTask] { derivedState.overdue }
-    private var dueTodayTasks: [AppTask] { derivedState.dueTodayTasks }
-    private var doTodayTasks: [AppTask] { derivedState.doTodayTasks }
-    private var overdoTasks: [AppTask] { derivedState.overdoTasks }
-    private var todayGroupedTaskItems: [AppTask] { derivedState.todayGroupedTaskItems(showRolloverNotice: shouldShowRolloverNotice) }
-    private var todayEligibleTasks: [AppTask] { derivedState.todayEligibleTasks }
-    private var overdueListSummaries: [TodayOverdueListSummary] { derivedState.overdueListSummaries }
-    private var overdueSectionSummaries: [TodayOverdueSectionSummary] { derivedState.overdueSectionSummaries }
-    private var shouldShowRolloverNotice: Bool {
-        mode == .todayOverview && !overdoTasks.isEmpty && rolloverNoticeDismissedDate != todayKey
+    private func shouldShowRolloverNotice(_ derived: TasksPanelDerivedState) -> Bool {
+        mode == .todayOverview && !derived.overdoTasks.isEmpty && rolloverNoticeDismissedDate != todayKey
     }
-    private var byDoDateBaseTasks: [AppTask] { derivedState.byDoDateBaseTasks }
-    private var byDoDateBaseSortedTasks: [AppTask] { derivedState.byDoDateBaseSortedTasks }
+
     private func applyFreeze(_ sorted: [AppTask]) -> [AppTask] {
         applyFrozenTaskOrder(sorted, frozen: frozenTaskOrder)
     }
 
-    private var byDoDateSortedTasks: [AppTask] {
-        applyFreeze(byDoDateBaseSortedTasks)
+    private func byDoDateSortedTasks(_ derived: TasksPanelDerivedState) -> [AppTask] {
+        applyFreeze(derived.byDoDateBaseSortedTasks)
     }
-    private var doneTasks: [AppTask] { derivedState.doneTasks }
 
     private var dropCoordinator: TasksPanelDropCoordinator {
         TasksPanelDropCoordinator(
@@ -157,11 +151,18 @@ struct TasksPanel: View {
     }
 
     var body: some View {
-        panelShell
+        let derived = derivedState
+
+        // Split into two statements purely to keep the type checker inside its time budget —
+        // one chain off a `let`-bound `derived` was enough to blow it.
+        let shell = panelShell(derived: derived)
             .background(
                 Color.clear.contentShape(Rectangle()).onTapGesture { clearAppEditingFocus() }
             )
             .background(Theme.surface)
+            .background { hoverFreezeObserver(derived: derived) }
+
+        return shell
             .onAppear {
                 isCompletedCollapsed = true
             }
@@ -174,10 +175,9 @@ struct TasksPanel: View {
             .onChange(of: localGroupingMode) { _, v in
                 UserDefaults.standard.set(v.rawValue, forKey: udPrefix + "GroupingMode")
             }
-            .background { hoverFreezeObserver }
     }
 
-    private var panelShell: some View {
+    private func panelShell(derived: TasksPanelDerivedState) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if showsHeader {
                 headerSection
@@ -185,9 +185,9 @@ struct TasksPanel: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
-                    taskSections
-                    completedSection
-                    emptyStateSection
+                    taskSections(derived: derived)
+                    completedSection(derived: derived)
+                    emptyStateSection(derived: derived)
                 }
                 .padding(.top, showsHeader && mode == .todayOverview ? 12 : 0)
                 .padding(.bottom, 16)
@@ -210,33 +210,35 @@ struct TasksPanel: View {
     }
 
     @ViewBuilder
-    private var taskSections: some View {
+    private func taskSections(derived: TasksPanelDerivedState) -> some View {
         switch mode {
         case .todayOverview:
-            todayOverviewSections
+            todayOverviewSections(derived: derived)
         case .byDoDate:
-            byDoDateSections
+            byDoDateSections(derived: derived)
         }
     }
 
     @ViewBuilder
-    private var todayOverviewSections: some View {
-        if shouldShowRolloverNotice {
-            TasksPanelRolloverNoticeSectionView(tasks: overdoTasks) {
+    private func todayOverviewSections(derived: TasksPanelDerivedState) -> some View {
+        let showsRollover = shouldShowRolloverNotice(derived)
+
+        if showsRollover {
+            TasksPanelRolloverNoticeSectionView(tasks: derived.overdoTasks) {
                 rollOverPastDoTasks()
             }
         }
-        if !overdueListSummaries.isEmpty {
-            overdueListsSection
+        if !derived.overdueListSummaries.isEmpty {
+            overdueListsSection(summaries: derived.overdueListSummaries)
         }
-        if !overdueSectionSummaries.isEmpty {
-            overdueSectionsSection
+        if !derived.overdueSectionSummaries.isEmpty {
+            overdueSectionsSection(summaries: derived.overdueSectionSummaries)
         }
 
         if enableControls {
-            todayControlledSections
+            todayControlledSections(derived: derived)
         } else {
-            let groups = groupedTasks(todayGroupedTaskItems)
+            let groups = groupedTasks(derived.todayGroupedTaskItems(showRolloverNotice: showsRollover))
             if !groups.isEmpty {
                 todayListSections(groups: groups)
             }
@@ -244,8 +246,11 @@ struct TasksPanel: View {
     }
 
     @ViewBuilder
-    private var todayControlledSections: some View {
-        let todayTasks = shouldShowRolloverNotice ? todayGroupedTaskItems : todayEligibleTasks
+    private func todayControlledSections(derived: TasksPanelDerivedState) -> some View {
+        let showsRollover = shouldShowRolloverNotice(derived)
+        let todayTasks = showsRollover
+            ? derived.todayGroupedTaskItems(showRolloverNotice: true)
+            : derived.todayEligibleTasks
         let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
 
         switch activeGroupingMode {
@@ -261,7 +266,7 @@ struct TasksPanel: View {
             if let frozenSections = resolvedFrozenFlatSections {
                 frozenFlatSections(frozenSections, tasksByID: tasksByID)
             } else {
-                todayDateSections
+                todayDateSections(derived: derived)
             }
         case .byList:
             todayListSections(groups: groupedTasks(todayTasks))
@@ -271,16 +276,17 @@ struct TasksPanel: View {
     }
 
     @ViewBuilder
-    private var todayDateSections: some View {
-        if !overdue.isEmpty { liveFlatSection(label: "Past Due", tasks: overdue, labelColor: Theme.red) }
-        if !overdoTasks.isEmpty { liveFlatSection(label: "Past Do", tasks: overdoTasks, labelColor: Theme.amber) }
-        if !dueTodayTasks.isEmpty { liveFlatSection(label: "Due Today", tasks: dueTodayTasks, labelColor: Theme.red.opacity(0.85)) }
-        if !doTodayTasks.isEmpty { liveFlatSection(label: "Do Today", tasks: doTodayTasks, labelColor: Theme.blue) }
+    private func todayDateSections(derived: TasksPanelDerivedState) -> some View {
+        if !derived.overdue.isEmpty { liveFlatSection(label: "Past Due", tasks: derived.overdue, labelColor: Theme.red) }
+        if !derived.overdoTasks.isEmpty { liveFlatSection(label: "Past Do", tasks: derived.overdoTasks, labelColor: Theme.amber) }
+        if !derived.dueTodayTasks.isEmpty { liveFlatSection(label: "Due Today", tasks: derived.dueTodayTasks, labelColor: Theme.red.opacity(0.85)) }
+        if !derived.doTodayTasks.isEmpty { liveFlatSection(label: "Do Today", tasks: derived.doTodayTasks, labelColor: Theme.blue) }
     }
 
     @ViewBuilder
-    private var byDoDateSections: some View {
+    private func byDoDateSections(derived: TasksPanelDerivedState) -> some View {
         let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+        let sortedTasks = byDoDateSortedTasks(derived)
 
         switch activeGroupingMode {
         case .none:
@@ -288,27 +294,27 @@ struct TasksPanel: View {
                 frozenSections: resolvedFrozenFlatSections,
                 tasksByID: tasksByID,
                 label: "Tasks",
-                tasks: byDoDateSortedTasks,
+                tasks: sortedTasks,
                 labelColor: Theme.dim
             )
         case .byDate:
             if let frozenSections = resolvedFrozenFlatSections {
                 frozenFlatSections(frozenSections, tasksByID: tasksByID)
             } else {
-                byDoDateDateSections
+                byDoDateDateSections(sortedTasks: sortedTasks)
             }
         case .byList:
-            byDoDateListSections
+            byDoDateListSections(sortedTasks: sortedTasks)
         case .byPriority:
-            prioritySections(tasks: byDoDateSortedTasks, frozenSections: resolvedFrozenFlatSections, tasksByID: tasksByID)
+            prioritySections(tasks: sortedTasks, frozenSections: resolvedFrozenFlatSections, tasksByID: tasksByID)
         }
     }
 
     @ViewBuilder
-    private var byDoDateDateSections: some View {
-        let todayTasks = byDoDateSortedTasks.filter { $0.scheduledDate == todayKey }
-        let upcomingTasks = byDoDateSortedTasks.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate != todayKey }
-        let unscheduledTasks = byDoDateSortedTasks.filter { taskIsUnscheduled($0) }
+    private func byDoDateDateSections(sortedTasks: [AppTask]) -> some View {
+        let todayTasks = sortedTasks.filter { $0.scheduledDate == todayKey }
+        let upcomingTasks = sortedTasks.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate != todayKey }
+        let unscheduledTasks = sortedTasks.filter { taskIsUnscheduled($0) }
 
         if !todayTasks.isEmpty {
             liveFlatSection(label: "Do Today", tasks: todayTasks, labelColor: Theme.blue, dropKey: "date:today")
@@ -322,8 +328,8 @@ struct TasksPanel: View {
     }
 
     @ViewBuilder
-    private var byDoDateListSections: some View {
-        ForEach(groupedTasks(byDoDateSortedTasks)) { group in
+    private func byDoDateListSections(sortedTasks: [AppTask]) -> some View {
+        ForEach(groupedTasks(sortedTasks)) { group in
             TasksPanelGroupSectionView(
                 group: group,
                 dragOverTaskID: $dragOverTaskID,
@@ -397,10 +403,10 @@ struct TasksPanel: View {
     }
 
     @ViewBuilder
-    private var completedSection: some View {
-        if !doneTasks.isEmpty {
+    private func completedSection(derived: TasksPanelDerivedState) -> some View {
+        if !derived.doneTasks.isEmpty {
             TasksPanelCompletedSectionView(
-                tasks: doneTasks,
+                tasks: derived.doneTasks,
                 mode: mode,
                 contexts: contexts,
                 areas: areas,
@@ -414,8 +420,8 @@ struct TasksPanel: View {
     }
 
     @ViewBuilder
-    private var emptyStateSection: some View {
-        if isEmptyState {
+    private func emptyStateSection(derived: TasksPanelDerivedState) -> some View {
+        if derived.isEmptyState(for: mode) {
             EmptyStateView(
                 message: mode == .byDoDate ? "No tasks yet" : "Nothing for today",
                 subtitle: mode == .byDoDate ? "Add a task above to get started" : "Due-today and do-today tasks will appear here",
@@ -425,15 +431,15 @@ struct TasksPanel: View {
         }
     }
 
-    private var hoverFreezeObserver: some View {
+    private func hoverFreezeObserver(derived: TasksPanelDerivedState) -> some View {
         HoverFreezeObserver(
             frozenOrder: $frozenTaskOrder,
             frozenListGroups: $frozenListGroups,
             frozenFlatSections: $frozenFlatSections,
             naturalTasks: mode == .todayOverview
-                ? todayEligibleTasks.sorted(by: compareTasksForCurrentSort)
-                : byDoDateSortedTasks,
-            listGroupSnapshot: currentFrozenListSnapshotForHover(),
+                ? derived.todayEligibleTasks.sorted(by: compareTasksForCurrentSort)
+                : byDoDateSortedTasks(derived),
+            listGroupSnapshot: currentFrozenListSnapshotForHover(derived),
             // Intentional: keep flat/date/priority section trees live while hovering.
             // Capturing section snapshots swaps the row tree under the pointer and
             // can create hover-enter/exit refresh jitter in grouped Today views.
@@ -441,16 +447,19 @@ struct TasksPanel: View {
         )
     }
 
-    private func currentFrozenListSnapshotForHover() -> [FrozenTodayTaskGroup] {
+    private func currentFrozenListSnapshotForHover(_ derived: TasksPanelDerivedState) -> [FrozenTodayTaskGroup] {
+        guard activeGroupingMode == .byList else { return [] }
         let snapshotTasks = mode == .todayOverview
-            ? (shouldShowRolloverNotice ? todayGroupedTaskItems : todayEligibleTasks)
-            : byDoDateSortedTasks
-        return activeGroupingMode == .byList ? currentFrozenListGroupSnapshot(for: snapshotTasks) : []
+            ? (shouldShowRolloverNotice(derived)
+                ? derived.todayGroupedTaskItems(showRolloverNotice: true)
+                : derived.todayEligibleTasks)
+            : byDoDateSortedTasks(derived)
+        return currentFrozenListGroupSnapshot(for: snapshotTasks)
     }
 
     private func rollOverPastDoTasks() {
         withAnimation(.easeOut(duration: 0.2)) {
-            for task in overdoTasks {
+            for task in derivedState.overdoTasks {
                 SchedulingActions.rollOverTaskToToday(task, todayKey: todayKey, in: modelContext)
             }
             rolloverNoticeDismissedDate = todayKey
@@ -498,7 +507,7 @@ struct TasksPanel: View {
         .background(Theme.surface)
     }
 
-    private var overdueListsSection: some View {
+    private func overdueListsSection(summaries: [TodayOverdueListSummary]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Past Due Lists")
                 .font(.system(size: 11, weight: .semibold))
@@ -508,7 +517,7 @@ struct TasksPanel: View {
                 .padding(.horizontal, 16)
 
             VStack(spacing: 8) {
-                ForEach(overdueListSummaries) { summary in
+                ForEach(summaries) { summary in
                     TodayOverdueListCard(summary: summary) {
                         openOverdueListSummary(summary)
                     }
@@ -519,7 +528,7 @@ struct TasksPanel: View {
         }
     }
 
-    private var overdueSectionsSection: some View {
+    private func overdueSectionsSection(summaries: [TodayOverdueSectionSummary]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Past Due Sections")
                 .font(.system(size: 11, weight: .semibold))
@@ -529,7 +538,7 @@ struct TasksPanel: View {
                 .padding(.horizontal, 16)
 
             VStack(spacing: 8) {
-                ForEach(overdueSectionSummaries) { summary in
+                ForEach(summaries) { summary in
                     TodayOverdueSectionCard(summary: summary) {
                         openOverdueSectionSummary(summary)
                     }
@@ -626,19 +635,24 @@ struct TasksPanel: View {
         }
     }
 
-    private func currentFrozenFlatSectionSnapshot() -> [FrozenFlatTaskSection] {
+    /// Currently unreferenced: `hoverFreezeObserver` deliberately passes `flatSectionSnapshot: []`
+    /// (see the comment there) so flat/date/priority section trees stay live while hovering.
+    /// Kept as the counterpart to `currentFrozenListGroupSnapshot` should that ever change.
+    private func currentFrozenFlatSectionSnapshot(derived: TasksPanelDerivedState) -> [FrozenFlatTaskSection] {
         switch mode {
         case .todayOverview:
-            let todayTasks = shouldShowRolloverNotice ? todayGroupedTaskItems : todayEligibleTasks
+            let todayTasks = shouldShowRolloverNotice(derived)
+                ? derived.todayGroupedTaskItems(showRolloverNotice: true)
+                : derived.todayEligibleTasks
             switch activeGroupingMode {
             case .none:
                 return [makeFlatSection(id: "today-tasks", title: "Today Tasks", tasks: todayTasks, labelColor: Theme.dim)].compactMap { $0 }
             case .byDate:
                 return [
-                    makeFlatSection(id: "past-due", title: "Past Due", tasks: overdue, labelColor: Theme.red),
-                    makeFlatSection(id: "past-do", title: "Past Do", tasks: overdoTasks, labelColor: Theme.amber),
-                    makeFlatSection(id: "due-today", title: "Due Today", tasks: dueTodayTasks, labelColor: Theme.red.opacity(0.85)),
-                    makeFlatSection(id: "do-today", title: "Do Today", tasks: doTodayTasks, labelColor: Theme.blue)
+                    makeFlatSection(id: "past-due", title: "Past Due", tasks: derived.overdue, labelColor: Theme.red),
+                    makeFlatSection(id: "past-do", title: "Past Do", tasks: derived.overdoTasks, labelColor: Theme.amber),
+                    makeFlatSection(id: "due-today", title: "Due Today", tasks: derived.dueTodayTasks, labelColor: Theme.red.opacity(0.85)),
+                    makeFlatSection(id: "do-today", title: "Do Today", tasks: derived.doTodayTasks, labelColor: Theme.blue)
                 ].compactMap { $0 }
             case .byList:
                 return []
@@ -655,6 +669,7 @@ struct TasksPanel: View {
             }
         case .byDoDate:
             let todayK = todayKey
+            let byDoDateSortedTasks = byDoDateSortedTasks(derived)
             switch activeGroupingMode {
             case .none:
                 return [makeFlatSection(id: "tasks", title: "Tasks", tasks: byDoDateSortedTasks, labelColor: Theme.dim)].compactMap { $0 }
@@ -705,10 +720,6 @@ struct TasksPanel: View {
     }
 
     // MARK: - Section builders
-
-    private var isEmptyState: Bool {
-        derivedState.isEmptyState(for: mode)
-    }
 
     private func taskIsUnscheduled(_ task: AppTask) -> Bool {
         task.scheduledDate.isEmpty

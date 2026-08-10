@@ -1,7 +1,9 @@
 import Foundation
 
 enum MarkdownTypingTransformSupport {
-    private static let typedOrderedPrefixRegex = try! NSRegularExpression(pattern: #"^([ \t]*)((?:\d+|[A-Za-z]+|[ivxlcdmIVXLCDM]+)[.)]) $"#)
+    private static let typedOrderedPrefixRegex = try! NSRegularExpression(
+        pattern: #"^([ \t]*)("# + MarkdownListSupport.orderedMarkerPattern + #") $"#
+    )
 
     static func mutation(in text: String, cursor: Int) -> MarkdownFormatMutation? {
         let nsText = text as NSString
@@ -68,7 +70,7 @@ enum MarkdownTypingTransformSupport {
     private static func orderedListMutation(in text: NSString, cursor: Int) -> MarkdownFormatMutation? {
         guard let ordered = typedOrderedPrefixMatch(in: text, cursor: cursor) else { return nil }
         let level = MarkdownListSupport.orderedLevel(forIndentation: ordered.indentation)
-        let typedIndex = MarkdownListSupport.orderedIndex(for: ordered.marker) ?? 1
+        let typedIndex = MarkdownListSupport.orderedIndex(for: ordered.marker, atLevel: level) ?? 1
         let normalizedMarker = MarkdownListSupport.orderedMarker(for: level, index: typedIndex)
         let replacement = ordered.indentation + normalizedMarker + " "
         return replacing(

@@ -7,15 +7,6 @@ enum TasksPanelMode {
     case byDoDate
 }
 
-enum TaskFilterDoDate: String, CaseIterable, Identifiable {
-    case any = "Any Do Date"
-    case today = "Do Today"
-    case overdue = "Overdue"
-    case scheduled = "Scheduled"
-    case unscheduled = "Unscheduled"
-    var id: String { rawValue }
-}
-
 enum TaskSortField: String, CaseIterable, Identifiable {
     case custom = "Custom"
     case date = "Date"

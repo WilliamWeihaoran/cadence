@@ -24,6 +24,36 @@ struct MarkdownImageAssetServiceTests {
         #expect(references.map(\.altText) == ["Diagram", ""])
     }
 
+    @Test func altTextContainingABracketStillResolvesItsAsset() {
+        // A file called "chart [v2].png" seeds that alt text. If the emitted reference stops
+        // matching, the note renders raw markdown *and* the asset reads as unreferenced — which
+        // is what deletes the image data out from under a live reference.
+        let asset = MarkdownImageAsset(
+            data: Data([1]),
+            mimeType: "image/png",
+            originalFilename: "chart [v2].png",
+            altText: "chart [v2]",
+            pixelWidth: 100,
+            pixelHeight: 80,
+            displayWidth: 100
+        )
+        let markdown = MarkdownImageAssetService.markdown(for: asset)
+
+        let references = MarkdownImageAssetService.references(in: markdown)
+
+        #expect(references.map(\.id) == [asset.id])
+        #expect(references.first?.altText == "chart [v2]")
+        #expect(MarkdownImageAssetService.unreferencedAssets(allAssets: [asset], markdownTexts: [markdown]).isEmpty)
+    }
+
+    @Test func referencesAlreadyWrittenWithAnEscapedBracketStillResolve() {
+        let id = UUID()
+        let markdown = "![chart [v2\\]](cadence-image://\(id.uuidString))"
+
+        #expect(MarkdownImageAssetService.references(in: markdown).map(\.id) == [id])
+        #expect(MarkdownImageAssetService.references(in: markdown).first?.altText == "chart [v2]")
+    }
+
     @Test func findsUnreferencedAssetsAcrossMarkdownFields() {
         let referencedID = UUID()
         let orphanID = UUID()

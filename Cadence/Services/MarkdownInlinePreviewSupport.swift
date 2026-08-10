@@ -175,7 +175,7 @@ enum MarkdownInlinePreviewSupport {
 
     private static func imageMatches(in markdown: String) -> [InlineMatch] {
         guard let regex = try? NSRegularExpression(
-            pattern: #"!\[([^\]\n]*)\]\(cadence-image://([0-9A-Fa-f-]{36})\)"#
+            pattern: #"!\[("# + MarkdownImageAssetService.altTextPattern + #")\]\(cadence-image://([0-9A-Fa-f-]{36})\)"#
         ) else { return [] }
 
         let nsMarkdown = markdown as NSString
@@ -184,7 +184,9 @@ enum MarkdownInlinePreviewSupport {
             let labelRange = match.range(at: 1)
             guard labelRange.location != NSNotFound else { return nil }
 
-            let label = nsMarkdown.substring(with: labelRange).trimmingCharacters(in: .whitespacesAndNewlines)
+            let label = MarkdownImageAssetService
+                .unescapedAltText(nsMarkdown.substring(with: labelRange))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             return InlineMatch(
                 fullRange: match.range(at: 0),
                 contentRange: labelRange,

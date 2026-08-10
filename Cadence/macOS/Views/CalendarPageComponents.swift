@@ -28,6 +28,7 @@ struct MonthGridView: View {
     let allTasks: [AppTask]
     let tasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
+    let eventCache: CalendarEventDayCache
     @Binding var visibleMonthIdx: Int
     let scrollToTodayTrigger: Bool
 
@@ -82,6 +83,7 @@ struct MonthGridView: View {
                             tasksByDate: tasksByDate,
                             bundlesByDate: bundlesByDate,
                             allTasks: allTasks,
+                            eventCache: eventCache,
                             rowHeight: CalendarMonthGridMetrics.rowHeight(
                                 weeksInMonth: weeksInMonth(month),
                                 viewportHeight: viewportHeight
@@ -156,6 +158,7 @@ struct MonthWeeksView: View {
     let tasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
     let allTasks: [AppTask]
+    let eventCache: CalendarEventDayCache
     let rowHeight: CGFloat
 
     private let cal = Calendar.current
@@ -173,6 +176,7 @@ struct MonthWeeksView: View {
                                 bundles: bundlesByDate[key] ?? [],
                                 allTasks: allTasks,
                                 displayMonth: month,
+                                eventCache: eventCache,
                                 rowHeight: rowHeight
                             )
                             .id(CalendarMonthGridIdentifiers.day(monthIndex: monthIndex, dateKey: key))

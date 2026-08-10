@@ -93,19 +93,24 @@ import Foundation
     private func dailyBasedStreak(referenceToday today: Date, calendar: Calendar) -> Int {
         let counts = completionCountsByDate()
         let requiredPerDay = frequencyType == .daysOfWeek ? 1 : max(1, targetCount)
+        // Decoded once for the whole walk rather than once per day inspected. `frequencyDays`
+        // allocates a `JSONDecoder` on every read and this loop can visit hundreds of days.
+        // Deliberately a local, not a stored property: nothing here can outlive the walk and
+        // drift from `frequencyDaysRaw`.
+        let days = frequencyDays
 
         func isSatisfied(_ date: Date) -> Bool {
             (counts[DateFormatters.dateKey(from: date, calendar: calendar)] ?? 0) >= requiredPerDay
         }
 
-        guard var cursor = Self.mostRecentDueDate(onOrBefore: today, habit: self, calendar: calendar) else {
+        guard var cursor = Self.mostRecentDueDate(onOrBefore: today, habit: self, frequencyDays: days, calendar: calendar) else {
             return 0
         }
 
         if !isSatisfied(cursor) {
             guard calendar.isDate(cursor, inSameDayAs: today),
                   let dayBefore = calendar.date(byAdding: .day, value: -1, to: cursor),
-                  let fallback = Self.mostRecentDueDate(onOrBefore: dayBefore, habit: self, calendar: calendar),
+                  let fallback = Self.mostRecentDueDate(onOrBefore: dayBefore, habit: self, frequencyDays: days, calendar: calendar),
                   isSatisfied(fallback) else {
                 return 0
             }
@@ -120,7 +125,7 @@ import Foundation
             iterations += 1
             if iterations >= maxIterations { break }
             guard let dayBefore = calendar.date(byAdding: .day, value: -1, to: cursor),
-                  let previousDue = Self.mostRecentDueDate(onOrBefore: dayBefore, habit: self, calendar: calendar) else {
+                  let previousDue = Self.mostRecentDueDate(onOrBefore: dayBefore, habit: self, frequencyDays: days, calendar: calendar) else {
                 break
             }
             cursor = previousDue
@@ -128,11 +133,11 @@ import Foundation
         return streak
     }
 
-    private static func mostRecentDueDate(onOrBefore date: Date, habit: Habit, calendar: Calendar) -> Date? {
+    private static func mostRecentDueDate(onOrBefore date: Date, habit: Habit, frequencyDays: [Int], calendar: Calendar) -> Date? {
         var cursor = date
         var iterations = 0
         let maxIterations = 3800
-        while !habit.isDue(on: cursor, calendar: calendar) {
+        while !habit.isDue(on: cursor, frequencyDays: frequencyDays, calendar: calendar) {
             guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { return nil }
             cursor = previous
             iterations += 1
@@ -204,6 +209,13 @@ import Foundation
     /// `HabitInsights.swift` isn't included in every target that compiles `Habit.swift` (e.g.
     /// `CadenceMCPServer`), but `currentStreak(asOf:calendar:)` above needs this.
     func isDue(on date: Date, calendar: Calendar = .current) -> Bool {
+        isDue(on: date, frequencyDays: frequencyDays, calendar: calendar)
+    }
+
+    /// Variant that takes an already-decoded `frequencyDays`, so a caller walking many dates for
+    /// one habit pays the JSON decode once instead of per date. Not a cache: the value is a
+    /// parameter with the lifetime of the caller's loop, never stored on the model.
+    private func isDue(on date: Date, frequencyDays: [Int], calendar: Calendar = .current) -> Bool {
         switch frequencyType {
         case .daily:
             return true

@@ -62,9 +62,12 @@ enum CadenceMilestoneWidgetSupport {
             state: activeGoals.isEmpty ? .empty : .ready,
             statusMessage: nil,
             totalGoalCount: activeGoals.count,
-            totalOverdueTaskCount: activeGoals.reduce(0) { partial, goal in
-                partial + GoalContributionResolver.summary(for: goal, now: now).overdueTaskCount
-            },
+            // Union, not sum: `activeGoals` holds both directions and their nested milestones, and
+            // a direction's contributing tasks already include its milestones', so adding the
+            // per-goal counts reports the same overdue task once per level it hangs under.
+            totalOverdueTaskCount: activeGoals.reduce(into: Set<UUID>()) { partial, goal in
+                partial.formUnion(GoalContributionResolver.overdueTasks(for: goal, now: now).map(\.id))
+            }.count,
             visibleGoals: visibleGoals
         )
     }

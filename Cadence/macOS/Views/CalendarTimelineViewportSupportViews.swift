@@ -41,7 +41,7 @@ struct CalendarTimelineDayScroller: View {
     @Binding var didRestoreTimelineScroll: Bool
     @Binding var externalJumpDayIndex: Int?
     let externalJumpToken: UUID?
-    @ObservedObject var timelineScrollState: CalendarTimelineScrollState
+    let timelineScrollState: CalendarTimelineScrollState
     let eventCache: CalendarEventDayCache
     let onPersistVisibleTimelineDay: (Int) -> Void
     let onRestoreTimelineScrollIfNeeded: (ScrollViewProxy) -> Void

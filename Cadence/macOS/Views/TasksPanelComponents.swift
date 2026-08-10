@@ -441,12 +441,20 @@ private struct TaskCompletionButton: View {
 
     var body: some View {
         Button { handleTap() } label: {
-            TimelineView(.animation) { context in
-                TaskCompletionProgressGlyph(
-                    icon: icon,
-                    color: color,
-                    progress: pendingProgress(now: context.date)
-                )
+            // Gated exactly like `TaskRowBackground` below: `TimelineView(.animation)` drives a
+            // display-link redraw for as long as it is in the hierarchy, so an ungated one here
+            // re-evaluated every visible row's completion glyph at screen refresh rate forever,
+            // even though `pendingProgress` returns nil unless the task is mid-completion.
+            if isPendingCompletion || isPendingCancel {
+                TimelineView(.animation) { context in
+                    TaskCompletionProgressGlyph(
+                        icon: icon,
+                        color: color,
+                        progress: pendingProgress(now: context.date)
+                    )
+                }
+            } else {
+                TaskCompletionProgressGlyph(icon: icon, color: color, progress: nil)
             }
         }
         .buttonStyle(.cadencePlain)

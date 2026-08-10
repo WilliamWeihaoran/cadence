@@ -102,13 +102,18 @@ struct GlobalSearchSection: Identifiable {
 }
 
 enum GlobalSearchMatcher {
+    /// Decorate–sort–undecorate. `matchScore` folds and regex-strips both fields on every call,
+    /// so scoring inside the comparator cost O(n log n) normalizations of the same strings;
+    /// scoring once up front makes it O(n) with an identical ordering (same score, same
+    /// `Int.min` treatment for non-matches, same case-insensitive title tiebreak).
     nonisolated static func rankResults(_ results: [GlobalSearchResult], query: String) -> [GlobalSearchResult] {
-        results.sorted { lhs, rhs in
-            let leftScore = matchScore(query: query, lhs.title, lhs.subtitle) ?? Int.min
-            let rightScore = matchScore(query: query, rhs.title, rhs.subtitle) ?? Int.min
-            if leftScore != rightScore { return leftScore > rightScore }
-            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
-        }
+        results
+            .map { (result: $0, score: matchScore(query: query, $0.title, $0.subtitle) ?? Int.min) }
+            .sorted { lhs, rhs in
+                if lhs.score != rhs.score { return lhs.score > rhs.score }
+                return lhs.result.title.localizedCaseInsensitiveCompare(rhs.result.title) == .orderedAscending
+            }
+            .map(\.result)
     }
 
     nonisolated static func matchScore(query: String, _ fields: String...) -> Int? {

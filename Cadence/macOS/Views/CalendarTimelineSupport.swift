@@ -72,8 +72,15 @@ struct DayBoundaryScrollTargetBehavior: ScrollTargetBehavior {
     }
 }
 
-final class CalendarTimelineScrollState: ObservableObject {
-    @Published private(set) var headerOffset: CGFloat = 0
+/// `@Observable`, deliberately not `ObservableObject`. `headerOffset` is written on every
+/// horizontal scroll frame, and `ObservableObject` invalidates *every* subscriber on any
+/// `@Published` change regardless of what each one reads — which meant the whole
+/// `CalendarPageView` body (three filter/group passes over every task) re-ran per scroll
+/// frame just because it holds the object. With `@Observable`, only the views that actually
+/// read `headerOffset` — `CalendarTimelineHeaderStrip` — are invalidated.
+@Observable
+final class CalendarTimelineScrollState {
+    private(set) var headerOffset: CGFloat = 0
 
     func setHeaderOffset(_ newValue: CGFloat) {
         guard abs(headerOffset - newValue) >= 0.1 else { return }
@@ -87,7 +94,12 @@ final class CalendarTimelineScrollState: ObservableObject {
 }
 
 final class CalendarEventDayCache {
-    private let maxCachedDays = 42
+    /// Sized for the *month grid*, which is the largest consumer: a realized month block is 42
+    /// cells and two or three blocks can be alive in the lazy stack at once. At the old bound of
+    /// 42 the grid evicted its own working set within a single pass and every rebuild went back
+    /// to EventKit for all of them. Correctness does not depend on this number — the whole cache
+    /// is dropped when `CalendarManager.storeVersion` changes.
+    private let maxCachedDays = 256
     private var cachedStoreVersion: Int?
     private var timedEventsByDate: [String: [EKEvent]] = [:]
     private var allDayEventsByDate: [String: [EKEvent]] = [:]

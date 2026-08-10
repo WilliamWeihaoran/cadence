@@ -375,54 +375,6 @@ struct CadenceTests {
     }
 #endif
 
-    @Test func calendarBoardSummaryLimitsMarkersAndCountsOverflow() {
-        let dateKey = "2026-05-27"
-        let tasks = (0..<3).map { index in
-            let task = AppTask(title: "Task \(index)")
-            task.scheduledDate = dateKey
-            task.order = index
-            return task
-        }
-        let bundles = [
-            TaskBundle(title: "Bundle 1", dateKey: dateKey, startMin: 540, durationMinutes: 30),
-            TaskBundle(title: "Bundle 2", dateKey: dateKey, startMin: 600, durationMinutes: 30)
-        ]
-        let events = [
-            CadenceCalendarBoardMarker(id: "event-1", kind: .event, color: Theme.purple, isCompleted: false, count: 1),
-            CadenceCalendarBoardMarker(id: "event-2", kind: .event, color: Theme.blue, isCompleted: false, count: 1)
-        ]
-
-        let summary = CadenceCalendarBoardSupport.daySummary(
-            dateKey: dateKey,
-            tasks: tasks,
-            bundles: bundles,
-            eventMarkers: events,
-            maxTaskMarkers: 2,
-            maxEventMarkers: 1,
-            maxBundleMarkers: 1
-        )
-
-        #expect(summary.dateKey == dateKey)
-        let taskKindsAreTasks = summary.taskMarkers.allSatisfy { marker in
-            if case .task = marker.kind { return true }
-            return false
-        }
-        let firstEventIsEvent: Bool = {
-            guard let kind = summary.eventMarkers.first?.kind else { return false }
-            if case .event = kind { return true }
-            return false
-        }()
-
-        #expect(summary.taskMarkers.count == 1)
-        #expect(summary.taskMarkers.first?.count == 3)
-        #expect(taskKindsAreTasks)
-        #expect(summary.eventMarkers.count == 1)
-        #expect(firstEventIsEvent)
-        #expect(summary.bundleCount == 1)
-        #expect(summary.overflowCount == 2)
-        #expect(summary.totalCount == 7)
-    }
-
     @Test func calendarBoardUsesMonthTitleAndNavigationSemantics() throws {
         let calendar = Calendar.current
         let date = try #require(calendar.date(from: DateComponents(year: 2026, month: 5, day: 27, hour: 12)))

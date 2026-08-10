@@ -193,4 +193,88 @@ struct NotificationSchedulingTests {
         #expect(Set(plan.taskDues.map(\.identifier)) == Set([NotificationIdentifiers.taskDue(taskID: dueTask.id)]))
         #expect(Set(plan.habitReminders.map(\.identifier)) == Set([NotificationIdentifiers.habitReminder(habitID: remindingHabit.id)]))
     }
+
+    // MARK: - NotificationReconcileDiff
+
+    private func request(_ identifier: String, title: String = "Standup", hour: Int = 9) -> CadenceNotificationRequest {
+        CadenceNotificationRequest(
+            identifier: identifier,
+            kind: .taskStart,
+            title: title,
+            body: "Starting now",
+            fireDate: date("2026-06-10", hour: hour)
+        )
+    }
+
+    @Test func reconcileDiffReAddsAlreadyPendingRequestsSoRescheduledTimesTakeEffect() {
+        let taskID = UUID()
+        let identifier = NotificationIdentifiers.taskStart(taskID: taskID)
+        // The identifier only encodes the task's UUID — the fire date and title live in the pending
+        // request. Skipping IDs that are already pending leaves the stale 09:00 request in place.
+        let desired = [request(identifier, title: "Standup", hour: 15)]
+
+        let diff = NotificationReconcileDiff.make(desired: desired, pendingIdentifiers: [identifier])
+
+        #expect(diff.identifiersToRemove.isEmpty)
+        #expect(diff.requestsToAdd == desired)
+    }
+
+    @Test func reconcileDiffRemovesManagedPendingIdentifiersThatAreNoLongerDesired() {
+        let staleID = NotificationIdentifiers.taskDue(taskID: UUID())
+        let liveID = NotificationIdentifiers.taskStart(taskID: UUID())
+
+        let diff = NotificationReconcileDiff.make(
+            desired: [request(liveID)],
+            pendingIdentifiers: [staleID, liveID]
+        )
+
+        #expect(diff.identifiersToRemove == [staleID])
+        #expect(diff.requestsToAdd.map(\.identifier) == [liveID])
+    }
+
+    @Test func reconcileDiffLeavesUnmanagedPendingIdentifiersAlone() {
+        let foreignID = "some-other-feature-\(UUID().uuidString)"
+
+        let diff = NotificationReconcileDiff.make(desired: [], pendingIdentifiers: [foreignID])
+
+        #expect(diff.identifiersToRemove.isEmpty)
+        #expect(diff.requestsToAdd.isEmpty)
+    }
+
+    @Test func reconcileDiffWithEmptyDesiredSetClearsEveryManagedPendingIdentifier() {
+        let first = NotificationIdentifiers.taskStart(taskID: UUID())
+        let second = NotificationIdentifiers.habitReminder(habitID: UUID())
+
+        let diff = NotificationReconcileDiff.make(desired: [], pendingIdentifiers: [first, second])
+
+        // An empty desired set is destructive by design, which is exactly why callers must never
+        // hand `reconcile` an empty list that actually means "the fetch failed".
+        #expect(Set(diff.identifiersToRemove) == Set([first, second]))
+    }
+
+    // MARK: - HabitNotificationReconcileSupport.reconcileInput
+
+    @Test func reconcileInputIsNilWhenEitherFetchFailed() {
+        #expect(HabitNotificationReconcileSupport.reconcileInput(tasks: nil, habits: []) == nil)
+        #expect(HabitNotificationReconcileSupport.reconcileInput(tasks: [], habits: nil) == nil)
+        #expect(HabitNotificationReconcileSupport.reconcileInput(tasks: nil, habits: nil) == nil)
+    }
+
+    @Test func reconcileInputPassesThroughAGenuinelyEmptyStore() {
+        let input = HabitNotificationReconcileSupport.reconcileInput(tasks: [], habits: [])
+
+        #expect(input != nil)
+        #expect(input?.tasks.isEmpty == true)
+        #expect(input?.habits.isEmpty == true)
+    }
+
+    @Test func reconcileInputPassesThroughFetchedEntities() {
+        let task = AppTask(title: "Standup")
+        let habit = Habit(title: "Meditate")
+
+        let input = HabitNotificationReconcileSupport.reconcileInput(tasks: [task], habits: [habit])
+
+        #expect(input?.tasks.map(\.id) == [task.id])
+        #expect(input?.habits.map(\.id) == [habit.id])
+    }
 }

@@ -2,14 +2,15 @@
 import SwiftUI
 
 enum TaskSurfaceFreezeOverloadSupport {
+    @discardableResult
     static func captureSingleSnapshot<PrimarySnapshot>(
         frozenOrder: inout [AppTask]?,
         primarySnapshot: inout [PrimarySnapshot]?,
         naturalTasks: [AppTask],
         sourcePrimarySnapshot: [PrimarySnapshot]
-    ) {
+    ) -> Bool {
         var secondarySnapshot: [Never]? = nil
-        TaskSurfaceFreezeCoordinator.capture(
+        return TaskSurfaceFreezeCoordinator.capture(
             frozenOrder: &frozenOrder,
             primarySnapshot: &primarySnapshot,
             secondarySnapshot: &secondarySnapshot,

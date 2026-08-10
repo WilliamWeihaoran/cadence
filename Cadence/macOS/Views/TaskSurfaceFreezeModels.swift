@@ -6,11 +6,14 @@ struct TaskSurfaceFreezeState<PrimarySnapshot, SecondarySnapshot> {
     var primarySnapshot: [PrimarySnapshot]?
     var secondarySnapshot: [SecondarySnapshot]?
 
+    /// `true` when this call actually froze something. See `TaskSurfaceFreezeCoordinator.capture`
+    /// for why callers must not write the result back to their bindings otherwise.
+    @discardableResult
     mutating func captureIfNeeded(
         naturalTasks: [AppTask],
         sourcePrimarySnapshot: [PrimarySnapshot],
         sourceSecondarySnapshot: [SecondarySnapshot]
-    ) {
+    ) -> Bool {
         TaskSurfaceFreezeSupport.captureIfNeeded(
             frozenOrder: &frozenOrder,
             primarySnapshot: &primarySnapshot,

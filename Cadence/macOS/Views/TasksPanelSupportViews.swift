@@ -556,28 +556,6 @@ struct CompletedSectionHeader: View {
     }
 }
 
-struct StaticTaskGroupHeader: View {
-    let title: String
-    let overdueCount: Int?
-    let regularCount: Int
-
-    var body: some View {
-        CollapsibleTaskGroupHeader(
-            title: title,
-            isCollapsed: false,
-            overdueCount: overdueCount,
-            regularCount: regularCount,
-            onToggle: {}
-        )
-        .allowsHitTesting(false)
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.radiusControl)
-                .fill(Color.clear)
-                .allowsHitTesting(false)
-        }
-    }
-}
-
 /// A picker enum with exactly two values, which reads better as a click-to-toggle than as a
 /// two-item menu. `CadenceEnumPickerBadge` renders conforming types as a single flipping button,
 /// so existing `CadenceEnumPickerBadge(title:selection:)` call sites need no change and every

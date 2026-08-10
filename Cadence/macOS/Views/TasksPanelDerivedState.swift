@@ -107,12 +107,30 @@ struct TasksPanelDerivedState {
 
         byDoDateBaseTasks = CadenceTaskQuerySupport.openTasks(from: allTasks)
         byDoDateBaseSortedTasks = byDoDateBaseTasks.taskSorted(by: sortField, direction: sortDirection)
+        // Built once, not once per completed task: `DateFormatters.dateKey(from:)` was being
+        // called for every completed task the user has ever created, on every rebuild. The
+        // half-open day range is the same predicate — `dateKey(from:) == todayKey` is exactly
+        // "falls inside today's calendar day" for the same calendar `todayKey` came from.
+        let calendar = Calendar.current
+        let todayRange: Range<Date>? = {
+            guard let parsedToday = DateFormatters.date(from: todayKey) else { return nil }
+            let dayStart = calendar.startOfDay(for: parsedToday)
+            // `startOfDay` on both ends rather than `dayStart + 1 day`, so a DST day whose
+            // midnight does not exist still ends on tomorrow's real first instant.
+            guard let nextDay = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
+            return dayStart..<calendar.startOfDay(for: nextDay)
+        }()
         doneTasks = allTasks
             .filter { task in
                 guard task.isDone || task.isCancelled else { return false }
                 guard mode == .todayOverview else { return true }
                 guard let completedAt = task.completedAt else { return false }
-                return DateFormatters.dateKey(from: completedAt) == todayKey
+                guard let todayRange else {
+                    // Unreachable in practice (`todayKey` is produced by the same formatter);
+                    // keep the original per-task comparison as the safety net.
+                    return DateFormatters.dateKey(from: completedAt) == todayKey
+                }
+                return todayRange.contains(completedAt)
             }
             .sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
     }

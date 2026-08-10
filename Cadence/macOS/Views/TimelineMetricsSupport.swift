@@ -115,36 +115,5 @@ enum TimelineMetricsSupport {
         }
         return (taskLayouts, bundleLayouts, eventLayouts)
     }
-
-    static func computeTaskLayouts(_ tasks: [AppTask]) -> [TimelineBlockLayout] {
-        let sorted = tasks.sorted { $0.scheduledStartMin < $1.scheduledStartMin }
-        var layouts: [TimelineBlockLayout] = []
-
-        for task in sorted {
-            let tStart = task.scheduledStartMin
-            let tEnd = tStart + max(task.estimatedMinutes > 0 ? task.estimatedMinutes : 30, 5)
-            let overlapping = layouts.filter { layout in
-                let oStart = layout.task.scheduledStartMin
-                let oEnd = oStart + max(layout.task.estimatedMinutes > 0 ? layout.task.estimatedMinutes : 30, 5)
-                return tStart < oEnd && tEnd > oStart
-            }
-            let usedCols = Set(overlapping.map(\.column))
-            var col = 0
-            while usedCols.contains(col) { col += 1 }
-            layouts.append(TimelineBlockLayout(task: task, column: col, totalColumns: 1))
-        }
-
-        return layouts.map { layout in
-            let tStart = layout.task.scheduledStartMin
-            let tEnd = tStart + max(layout.task.estimatedMinutes > 0 ? layout.task.estimatedMinutes : 30, 5)
-            let overlapping = layouts.filter { candidate in
-                let oStart = candidate.task.scheduledStartMin
-                let oEnd = oStart + max(candidate.task.estimatedMinutes > 0 ? candidate.task.estimatedMinutes : 30, 5)
-                return tStart < oEnd && tEnd > oStart
-            }
-            let totalCols = (overlapping.map(\.column).max() ?? 0) + 1
-            return TimelineBlockLayout(task: layout.task, column: layout.column, totalColumns: totalCols)
-        }
-    }
 }
 #endif

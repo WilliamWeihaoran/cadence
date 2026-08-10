@@ -307,9 +307,4 @@ func timelineBlockBody(
         y: TimelineHoverVisuals.shadowY(isActive: showHover || showSelection)
     )
 }
-
-func timelineDragPreview(task: AppTask, style: TimelineBlockStyle) -> some View {
-    Color.clear
-        .frame(width: 1, height: 1)
-}
 #endif

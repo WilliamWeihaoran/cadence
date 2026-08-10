@@ -25,16 +25,6 @@ enum RootCommandActionSupport {
         }
     }
 
-    static func handleCompletion(context: RootCommandContext) -> NSEvent? {
-        guard !context.taskCreationManager.isPresented else { return nil }
-        if let task = context.hoveredTaskManager.hoveredTask {
-            context.taskCompletionAnimationManager.toggleCompletion(for: task)
-            return nil
-        }
-        if context.hoveredSectionManager.triggerToggleComplete() { return nil }
-        return nil
-    }
-
     static func handleCancellation(context: RootCommandContext) -> NSEvent? {
         guard !context.taskCreationManager.isPresented,
               let task = context.hoveredTaskManager.hoveredTask else { return nil }

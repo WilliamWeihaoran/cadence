@@ -212,18 +212,6 @@ struct PersistenceController {
         guard let storeURL = try? resolvedStoreURL() else { return }
         try? FileManager.default.removeItem(at: storeURL.deletingLastPathComponent())
     }
-
-    private static func deleteStoreFiles() {
-        guard let storeDirectoryURL = try? CadenceStoreSupport.primaryStoreDirectoryURL() else { return }
-        if let files = try? FileManager.default.contentsOfDirectory(at: storeDirectoryURL, includingPropertiesForKeys: nil) {
-            for file in files where file.lastPathComponent.contains(".store") {
-                try? FileManager.default.removeItem(at: file)
-            }
-        }
-        for name in ["default.store-wal", "default.store-shm"] {
-            try? FileManager.default.removeItem(at: storeDirectoryURL.appendingPathComponent(name))
-        }
-    }
 }
 
 enum StoreBackupReason: String, Codable {
@@ -267,14 +255,6 @@ enum StoreBackupManager {
     private static let dailyStartupRetentionDays = 7
     private static let weeklyStartupRetentionWeeks = 4
     private static let maxPreRestoreBackups = 5
-
-    private static let copiedStoreItemNames = [
-        "default.store",
-        "default.store-wal",
-        "default.store-shm",
-        ".default_SUPPORT",
-        "default_ckAssets",
-    ]
 
     private static let folderDateFormatter: DateFormatter = {
         let formatter = DateFormatter()

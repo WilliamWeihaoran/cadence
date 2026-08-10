@@ -13,9 +13,11 @@ struct iOSTaskRow: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
-    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @Query(sort: \Area.order) private var areas: [Area]
-    @Query(sort: \Project.order) private var projects: [Project]
+    // No `@Query` here on purpose. A list can have twenty of these rows alive at once, and a
+    // task/area/project query per row meant twenty live fetches plus twenty observation
+    // registrations re-firing on any write — for data only the context menu and the recurrence
+    // dialog ever read. The queries now live in the context-menu *content* (only instantiated
+    // when the menu is presented), the same trick `KanbanContainerMetaButton` documents.
     @State private var showDetail = false
     @State private var showDeleteConfirmation = false
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
@@ -26,14 +28,6 @@ struct iOSTaskRow: View {
 
     private var isCompact: Bool {
         density == .compact
-    }
-
-    private var activeAreas: [Area] {
-        areas.filter(\.isActive)
-    }
-
-    private var activeProjects: [Project] {
-        projects.filter(\.isActive)
     }
 
     var body: some View {
@@ -66,9 +60,6 @@ struct iOSTaskRow: View {
             .contextMenu {
                 iOSTaskRowContextMenu(
                     task: task,
-                    allTasks: allTasks,
-                    activeAreas: activeAreas,
-                    activeProjects: activeProjects,
                     showDetail: $showDetail,
                     showDeleteConfirmation: $showDeleteConfirmation,
                     pendingRecurrenceRule: $pendingRecurrenceRule
@@ -76,7 +67,6 @@ struct iOSTaskRow: View {
             }
             .iOSTaskRowRecurrenceScopeDialog(
                 task: task,
-                allTasks: allTasks,
                 pendingRecurrenceRule: $pendingRecurrenceRule
             )
             .alert("Delete Task?", isPresented: $showDeleteConfirmation) {

@@ -35,7 +35,7 @@ struct CalendarPageView: View {
     @State private var externalJumpHour: Int?
     @State private var externalJumpToken: UUID?
     @State private var calendarEventDayCache = CalendarEventDayCache()
-    @StateObject private var timelineScrollState = CalendarTimelineScrollState()
+    @State private var timelineScrollState = CalendarTimelineScrollState()
 
     private let cal = Calendar.current
     private var bufferStart: Date {
@@ -82,6 +82,7 @@ struct CalendarPageView: View {
                     allTasks: allTasks,
                     tasksByDate: tasksByDateForMonth,
                     bundlesByDate: bundlesByDate,
+                    eventCache: calendarEventDayCache,
                     visibleMonthIdx: $visibleMonthIdx,
                     scrollToTodayTrigger: scrollToTodayTrigger
                 )

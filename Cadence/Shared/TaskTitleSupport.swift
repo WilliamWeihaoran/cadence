@@ -17,10 +17,6 @@ enum TaskTitleSupport {
         return trimmed.isEmpty ? fallback : trimmed
     }
 
-    static func titleBeforeContainerShortcut(in title: String) -> String? {
-        trailingInlineShortcut(in: title, marker: "~")?.prefix
-    }
-
     static func containerShortcut(in title: String) -> TaskTitleInlineShortcut? {
         trailingInlineShortcut(in: title, marker: "~")
     }

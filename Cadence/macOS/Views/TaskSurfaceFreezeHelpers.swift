@@ -19,11 +19,14 @@ struct TaskGroupFreezeObserver: View {
                         primarySnapshot: frozenGroups,
                         secondarySnapshot: nil
                     )
-                    freezeState.captureIfNeeded(
+                    // See `TaskSurfaceFreezeCoordinator.capture`: writing an unchanged value back
+                    // into a `@State` binding still invalidates the host surface, and this runs
+                    // every time the hovered row changes.
+                    guard freezeState.captureIfNeeded(
                         naturalTasks: naturalTasks,
                         sourcePrimarySnapshot: groupSnapshot,
                         sourceSecondarySnapshot: []
-                    )
+                    ) else { return }
                     frozenOrder = freezeState.frozenOrder
                     frozenGroups = freezeState.primarySnapshot
                 } else if !isPointerInsideSurface, frozenOrder != nil || frozenGroups != nil {

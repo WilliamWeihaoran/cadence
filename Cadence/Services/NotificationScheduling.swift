@@ -33,6 +33,41 @@ enum NotificationIdentifiers {
     static func habitReminder(habitID: UUID) -> String {
         "habit-reminder-\(habitID.uuidString)"
     }
+
+    /// Whether an identifier belongs to Cadence's reconciled set. Anything else pending in the
+    /// notification centre is somebody else's and must survive a reconcile untouched.
+    nonisolated static func isManaged(_ identifier: String) -> Bool {
+        identifier.hasPrefix("task-start-") || identifier.hasPrefix("task-due-") || identifier.hasPrefix("habit-reminder-")
+    }
+}
+
+/// The add/remove work a single reconcile pass must perform. Split out of `NotificationManager`
+/// so the diffing rules are a pure, testable function — the manager's own `reconcile` early-returns
+/// under test, so anything left inside it is effectively unverifiable.
+struct NotificationReconcileDiff: Equatable {
+    let identifiersToRemove: [String]
+    let requestsToAdd: [CadenceNotificationRequest]
+
+    /// Every desired request is re-added, including ones whose identifier is already pending.
+    /// The identifier encodes only the task/habit UUID — the fire date and title live in the
+    /// pending request itself — so "already pending" says nothing about whether the pending copy
+    /// is still correct. Skipping those meant rescheduling a task to a new time, or renaming it,
+    /// never reached the OS. `UNUserNotificationCenter.add` replaces a pending request with the
+    /// same identifier, so re-adding is an update, not a duplicate. The desired set is bounded by
+    /// tasks with a future date plus habits with a reminder time, well inside the platform's
+    /// 64-pending limit, so re-adding all of them is cheaper than tracking content hashes.
+    static func make(
+        desired: [CadenceNotificationRequest],
+        pendingIdentifiers: [String]
+    ) -> NotificationReconcileDiff {
+        let desiredIdentifiers = Set(desired.map(\.identifier))
+        let managedPending = Set(pendingIdentifiers.filter(NotificationIdentifiers.isManaged))
+
+        return NotificationReconcileDiff(
+            identifiersToRemove: managedPending.subtracting(desiredIdentifiers).sorted(),
+            requestsToAdd: desired.sorted { $0.identifier < $1.identifier }
+        )
+    }
 }
 
 enum TaskNotificationPlanner {

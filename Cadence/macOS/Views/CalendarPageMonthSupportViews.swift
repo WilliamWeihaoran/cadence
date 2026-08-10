@@ -259,6 +259,12 @@ struct MonthDayCell: View {
     let bundles: [TaskBundle]
     let allTasks: [AppTask]
     let displayMonth: Date
+    /// Shared with the timeline day columns. Without it every cell ran its own synchronous
+    /// `EKEventStore.events(matching:)` — 42 cells per realized month block, re-run on every
+    /// task edit and every month boundary crossed. The cache is keyed by
+    /// `CalendarManager.storeVersion` and dropped wholesale when that changes, so it cannot
+    /// disagree with EventKit.
+    let eventCache: CalendarEventDayCache
     /// Height the week row was given. Every cell in a row is pinned to it, so the offset table
     /// the header is derived from stays an exact model of the layout.
     var rowHeight: CGFloat = CalendarMonthGridMetrics.cellHeight
@@ -270,8 +276,7 @@ struct MonthDayCell: View {
     private var dateKey: String { DateFormatters.dateKey(from: date) }
 
     private var calendarEvents: [CalendarEventItem] {
-        let _ = calendarManager.storeVersion
-        return CalendarEventItem.timedSegments(from: calendarManager.fetchEvents(for: date), for: date)
+        CalendarEventItem.timedSegments(from: eventCache.timedEvents(for: date, calendarManager: calendarManager), for: date)
     }
 
     private var visibleEvents: [CalendarEventItem] {

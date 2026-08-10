@@ -50,8 +50,9 @@ struct CompleteTaskIntent: AppIntent {
         guard !task.isCancelled else { return false }
         guard !task.isDone else { return false }
 
-        task.status = .done
-        task.completedAt = Date()
+        // Same shared workflow every in-app completion path uses, so completing a recurring task
+        // from a widget button or the "Complete Task" App Intent still spawns the next occurrence.
+        CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
         try modelContext.save()
         return true
     }

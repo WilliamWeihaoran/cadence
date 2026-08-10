@@ -26,18 +26,23 @@ struct GoalInspectorView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
+        // Both resolvers recurse the goal's sub-goals and re-sort/re-parse every contributing
+        // task; run each once per pass instead of once per read site.
+        let summary = self.summary
+        let contributingTasks = self.contributingTasks
+
+        return ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 16) {
-                inspectorHeader
+                inspectorHeader(summary: summary)
                 contributorLists
-                allWorkSection
+                allWorkSection(contributingTasks: contributingTasks)
             }
             .padding(20)
         }
         .background(Theme.surface)
     }
 
-    private var inspectorHeader: some View {
+    private func inspectorHeader(summary: GoalContributionSummary) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(goal.title)
@@ -128,7 +133,7 @@ struct GoalInspectorView: View {
     }
 
     @ViewBuilder
-    private var allWorkSection: some View {
+    private func allWorkSection(contributingTasks: [AppTask]) -> some View {
         if !contributingTasks.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 GoalSectionHeading(title: "Contributing Work", count: contributingTasks.count)

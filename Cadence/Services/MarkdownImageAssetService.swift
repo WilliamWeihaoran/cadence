@@ -30,7 +30,12 @@ struct MarkdownImageRenderAsset {
 #endif
 
 enum MarkdownImageAssetService {
-    private static let imageReferenceRegex = try! NSRegularExpression(pattern: #"(?m)^!\[([^\]\n]*)\]\(cadence-image://([0-9A-Fa-f-]{36})\)\s*$"#)
+    /// Alt text is escaped on write, so the reader has to accept `\]` and `\\` inside the label.
+    /// A pattern that stops at the first `]` cannot match a reference whose alt text contains one
+    /// — and an unmatched reference reads as an orphaned asset, which is what deletes the image.
+    static let altTextPattern = #"(?:[^\]\n\\]|\\.)*"#
+
+    private static let imageReferenceRegex = try! NSRegularExpression(pattern: #"(?m)^!\[("# + altTextPattern + #")\]\(cadence-image://([0-9A-Fa-f-]{36})\)\s*$"#)
 
     static let urlScheme = "cadence-image"
     static let maxLongEdge: CGFloat = 2400
@@ -52,7 +57,7 @@ enum MarkdownImageAssetService {
             else { return nil }
             return MarkdownImageReference(
                 id: id,
-                altText: nsText.substring(with: match.range(at: 1)),
+                altText: unescapedAltText(nsText.substring(with: match.range(at: 1))),
                 range: match.range
             )
         }
@@ -186,7 +191,27 @@ enum MarkdownImageAssetService {
     }
 
     private static func escapedAltText(_ value: String) -> String {
-        value.replacingOccurrences(of: "]", with: "\\]")
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "]", with: "\\]")
+    }
+
+    /// Undoes `escapedAltText`. A backslash before anything else is left alone, so alt text that
+    /// predates the escaping (a raw `C:\path`) still reads back the way it was written.
+    static func unescapedAltText(_ value: String) -> String {
+        var result = ""
+        var iterator = value.makeIterator()
+        var pending: Character? = iterator.next()
+        while let character = pending {
+            pending = iterator.next()
+            guard character == "\\", let next = pending, next == "\\" || next == "]" else {
+                result.append(character)
+                continue
+            }
+            result.append(next)
+            pending = iterator.next()
+        }
+        return result
     }
 
 #if os(macOS)

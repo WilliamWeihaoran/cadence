@@ -245,14 +245,35 @@ enum MarkdownMetadataParser {
                 continue
             }
 
-            let nsLine = line as NSString
-            regex?.enumerateMatches(in: line, range: NSRange(location: 0, length: nsLine.length)) { match, _, _ in
+            let scannable = maskingNonProse(in: line)
+            let nsLine = scannable as NSString
+            regex?.enumerateMatches(in: scannable, range: NSRange(location: 0, length: nsLine.length)) { match, _, _ in
                 guard let match, match.numberOfRanges > 1 else { return }
                 tags.append(nsLine.substring(with: match.range(at: 1)))
             }
         }
 
         return tags
+    }
+
+    /// Link destinations, autolinks and inline code are not prose, so a `#` inside them is a URL
+    /// fragment or a hex colour rather than a tag. Tag sync runs unattended at launch and *inserts*
+    /// what it finds, so anything it misreads becomes a `Tag` row the user never created.
+    nonisolated private static let nonProseRegex = try? NSRegularExpression(
+        pattern: #"`[^`\n]*`|\]\([^)\n]*\)|<[^>\s]+>|https?://[^\s)]+"#
+    )
+
+    nonisolated private static func maskingNonProse(in line: String) -> String {
+        guard let nonProseRegex else { return line }
+        let nsLine = line as NSString
+        let matches = nonProseRegex.matches(in: line, range: NSRange(location: 0, length: nsLine.length))
+        guard !matches.isEmpty else { return line }
+
+        let masked = NSMutableString(string: line)
+        for match in matches.reversed() {
+            masked.replaceCharacters(in: match.range, with: String(repeating: " ", count: match.range.length))
+        }
+        return masked as String
     }
 
     nonisolated private static func orderedUnique(_ values: [String]) -> [String] {

@@ -206,7 +206,12 @@ struct GoalMissionCard: View {
     }
 
     var body: some View {
-        Button(action: onSelect) {
+        // One walk per body pass. `GoalContributionResolver.summary` recurses the goal's
+        // sub-goals, dedupes through a `Set`, sorts every open task and parses a date string
+        // per open task — and the card reads eight different fields off it.
+        let summary = self.summary
+
+        return Button(action: onSelect) {
             VStack(alignment: .leading, spacing: 13) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {

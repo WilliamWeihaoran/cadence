@@ -50,6 +50,18 @@ struct NoteReferenceSupportTests {
         #expect(references[1].fallbackTitle == "Renamed task")
     }
 
+    @Test func taskReferencesMatchTheSameCasingTheRendererAccepts() {
+        // The renderer and the link target lowercase the prefix, so "[[Task:…]]" draws and
+        // navigates as a task. Parsing it case-sensitively left it out of linked tasks and
+        // backlinks — visibly a reference, invisible to everything that counts them.
+        let content = "- [[Task:Draft changelog]]\n- [[TASK:Ship it]]"
+
+        let references = NoteReferenceParser.taskReferences(in: content)
+
+        #expect(references.map(\.fallbackTitle) == ["Draft changelog", "Ship it"])
+        #expect(NoteReferenceParser.noteLinks(in: content).isEmpty)
+    }
+
     @Test func embeddedTaskDraftTitlesParseChecklistInputs() {
         #expect(MarkdownTaskEmbedParser.draftTitle(in: "() Draft note task") == "Draft note task")
         #expect(MarkdownTaskEmbedParser.draftTitle(in: "( ) Draft note task") == "Draft note task")

@@ -240,6 +240,37 @@ struct WidgetSupportTests {
         #expect(done.completedAt == Date(timeIntervalSince1970: 100))
     }
 
+    @Test func completeTaskIntentSpawnsNextOccurrenceForRecurringTasks() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        // Long-stale do date so the successor's expected date is "tomorrow" under any wall clock.
+        let recurring = AppTask(title: "Daily standup")
+        recurring.recurrenceRule = .daily
+        recurring.scheduledDate = "2020-01-01"
+        modelContext.insert(recurring)
+        try modelContext.save()
+
+        let changed = try CompleteTaskIntent.completeTask(taskID: recurring.id.uuidString, in: modelContext)
+
+        #expect(changed)
+        #expect(recurring.isDone)
+
+        guard let spawnedID = recurring.recurrenceSpawnedTaskID else {
+            Issue.record("Completing a recurring task from the widget/App Intent must still advance the series")
+            return
+        }
+        let tasks = try modelContext.fetch(FetchDescriptor<AppTask>())
+        guard let next = tasks.first(where: { $0.id == spawnedID }) else {
+            Issue.record("Expected the spawned next occurrence to be persisted")
+            return
+        }
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+        #expect(next.scheduledDate == DateFormatters.dateKey(from: tomorrow))
+        #expect(next.recurrenceRule == .daily)
+        #expect(next.recurrenceSeriesID == recurring.recurrenceSeriesID)
+    }
+
     @Test func captureTaskIntentCreatesInboxAndTodayTasks() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
@@ -346,6 +377,33 @@ struct WidgetSupportTests {
         )
 
         #expect(goals.map(\.title) == ["Overdue launch", "Routine upkeep"])
+    }
+
+    @Test func milestoneWidgetCountsEachOverdueTaskOnceAcrossNestedGoals() {
+        let now = DateFormatters.date(from: "2026-05-11")!
+
+        let area = Area(name: "Launch")
+        let first = AppTask(title: "Fix blocker")
+        first.dueDate = "2026-05-08"
+        let second = AppTask(title: "Ship changelog")
+        second.dueDate = "2026-05-09"
+        area.tasks = [first, second]
+
+        // A direction and its one milestone. `contributingTasks` walks sub-goals, so the direction's
+        // summary already contains the milestone's tasks — summing both summaries double-counts.
+        let direction = Goal(title: "Ship v2")
+        let milestone = Goal(title: "Beta cut")
+        direction.subGoals = [milestone]
+        milestone.parentGoal = direction
+        milestone.listLinks = [GoalListLink(goal: milestone, area: area)]
+
+        let snapshot = CadenceMilestoneWidgetSupport.snapshot(
+            from: [direction, milestone],
+            now: now,
+            limit: 4
+        )
+
+        #expect(snapshot.totalOverdueTaskCount == 2)
     }
 
     @Test func calendarWidgetSnapshotSeparatesDueAndScheduledCounts() {

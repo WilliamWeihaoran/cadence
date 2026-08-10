@@ -154,7 +154,11 @@ struct HabitListCard: View {
     }
 
     var body: some View {
-        Button(action: onSelect) {
+        // `currentStreak` walks the habit's completion history day by day; reading it twice on
+        // one line walked it twice per row per pass.
+        let streak = habit.currentStreak
+
+        return Button(action: onSelect) {
             HStack(spacing: 12) {
                 HabitIconTile(habit: habit, size: 32, iconSize: 14)
 
@@ -169,7 +173,7 @@ struct HabitListCard: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.dim)
 
-                        Text(habit.currentStreak > 0 ? "\(habit.currentStreak)d streak" : "no streak")
+                        Text(streak > 0 ? "\(streak)d streak" : "no streak")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Theme.amber)
 

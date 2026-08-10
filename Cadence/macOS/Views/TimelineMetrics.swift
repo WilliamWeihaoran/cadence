@@ -116,8 +116,4 @@ func computeUnifiedLayouts(
 ) -> (tasks: [TimelineBlockLayout], bundles: [TimelineBundleLayout], events: [TimelineEventLayout]) {
     TimelineMetricsSupport.computeUnifiedLayouts(tasks: tasks, bundles: bundles, events: events)
 }
-
-func computeTimelineLayouts(_ tasks: [AppTask]) -> [TimelineBlockLayout] {
-    TimelineMetricsSupport.computeTaskLayouts(tasks)
-}
 #endif

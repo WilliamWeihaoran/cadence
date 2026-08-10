@@ -4,12 +4,13 @@ import SwiftUI
 enum TaskSurfaceFreezeSupport {
     static let releaseAnimation = Animation.spring(response: 0.34, dampingFraction: 0.86, blendDuration: 0.08)
 
+    @discardableResult
     static func captureIfNeeded<PrimarySnapshot>(
         frozenOrder: inout [AppTask]?,
         primarySnapshot: inout [PrimarySnapshot]?,
         naturalTasks: [AppTask],
         sourcePrimarySnapshot: [PrimarySnapshot]
-    ) {
+    ) -> Bool {
         TaskSurfaceFreezeOverloadSupport.captureSingleSnapshot(
             frozenOrder: &frozenOrder,
             primarySnapshot: &primarySnapshot,
@@ -18,6 +19,7 @@ enum TaskSurfaceFreezeSupport {
         )
     }
 
+    @discardableResult
     static func captureIfNeeded<PrimarySnapshot, SecondarySnapshot>(
         frozenOrder: inout [AppTask]?,
         primarySnapshot: inout [PrimarySnapshot]?,
@@ -25,7 +27,7 @@ enum TaskSurfaceFreezeSupport {
         naturalTasks: [AppTask],
         sourcePrimarySnapshot: [PrimarySnapshot],
         sourceSecondarySnapshot: [SecondarySnapshot]
-    ) {
+    ) -> Bool {
         TaskSurfaceFreezeCoordinator.capture(
             frozenOrder: &frozenOrder,
             primarySnapshot: &primarySnapshot,

@@ -35,13 +35,6 @@ import Foundation
     var isArchived: Bool { status == .archived }
     var isActive: Bool { status == .active }
 
-    var completionRate: Double {
-        let all = tasks ?? []
-        let total = all.filter { $0.status != .cancelled }.count
-        guard total > 0 else { return 0 }
-        return Double(all.filter { $0.isDone }.count) / Double(total)
-    }
-
     init(name: String, context: Context? = nil, area: Area? = nil, colorHex: String = "#4ecb71") {
         self.name = name
         self.context = context

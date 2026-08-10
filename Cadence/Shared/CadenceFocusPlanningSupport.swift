@@ -125,10 +125,12 @@ enum CadenceFocusSupport {
         }
     }
 
+    /// Completion must route through `CadenceTaskRecurrenceWorkflowSupport` rather than setting
+    /// `status`/`completedAt` inline: a recurring task finished here would otherwise go done with no
+    /// successor, silently ending the series on whichever platform happened to use this helper.
     static func complete(_ task: AppTask, elapsedSeconds: Int, modelContext: ModelContext) {
         logElapsedSeconds(elapsedSeconds, to: task)
-        task.status = .done
-        task.completedAt = Date()
+        CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
         try? modelContext.save()
     }
 

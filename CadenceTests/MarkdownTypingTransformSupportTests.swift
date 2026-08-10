@@ -13,6 +13,27 @@ struct MarkdownTypingTransformSupportTests {
         #expect(mutation.selection == NSRange(location: 2, length: 0))
     }
 
+    @Test func leavesSentenceOpeningAbbreviationsAlone() {
+        // "a."/"b." lettered lists are a single letter; a whole word before the period is prose.
+        #expect(MarkdownTypingTransformSupport.mutation(in: "Mr. ", cursor: 4) == nil)
+        #expect(MarkdownTypingTransformSupport.mutation(in: "Dr. ", cursor: 4) == nil)
+        #expect(MarkdownTypingTransformSupport.mutation(in: "Fig. ", cursor: 5) == nil)
+        #expect(MarkdownTypingTransformSupport.mutation(in: "Note. ", cursor: 6) == nil)
+        #expect(MarkdownTypingTransformSupport.mutation(in: "vs. ", cursor: 4) == nil)
+    }
+
+    @Test func typedSingleLetterMarkersUseTheirAlphabetPosition() throws {
+        // "c"/"x"/"m" are also roman numerals, but at a level whose markers are letters they are
+        // the 3rd/24th/13th item, not 100/10/1000.
+        let c = try #require(MarkdownTypingTransformSupport.mutation(in: "c. ", cursor: 3))
+        let m = try #require(MarkdownTypingTransformSupport.mutation(in: "m. ", cursor: 3))
+        let roman = try #require(MarkdownTypingTransformSupport.mutation(in: "iv. ", cursor: 4))
+
+        #expect(c.text == "3. ")
+        #expect(m.text == "13. ")
+        #expect(roman.text == "4. ")
+    }
+
     @Test func normalizesTypedChecklistShortcuts() throws {
         let todo = try #require(MarkdownTypingTransformSupport.mutation(in: "[ ] ", cursor: 4))
         let done = try #require(MarkdownTypingTransformSupport.mutation(in: "[x] ", cursor: 4))

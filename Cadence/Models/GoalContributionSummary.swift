@@ -100,6 +100,23 @@ enum GoalContributionResolver {
         }
     }
 
+    /// The goal's open, past-due contributing tasks. Exposed as tasks rather than only as a count
+    /// so callers that roll several goals up can union them: `contributingTasks` already walks
+    /// sub-goals, so a direction's tasks include its milestones' tasks and adding the two counts
+    /// together reports each overdue task twice.
+    static func overdueTasks(for goal: Goal, now: Date = Date()) -> [AppTask] {
+        overdueTasks(among: contributingTasks(for: goal), now: now)
+    }
+
+    private static func overdueTasks(among tasks: [AppTask], now: Date) -> [AppTask] {
+        let today = Calendar.current.startOfDay(for: now)
+        return tasks.filter { task in
+            guard !task.isDone else { return false }
+            guard !task.dueDate.isEmpty, let due = DateFormatters.date(from: task.dueDate) else { return false }
+            return due < today
+        }
+    }
+
     static func summary(for goal: Goal, now: Date = Date()) -> GoalContributionSummary {
         let tasks = contributingTasks(for: goal)
         let calendar = Calendar.current
@@ -124,10 +141,7 @@ enum GoalContributionResolver {
             }
             .first
 
-        let overdueCount = openTasks.filter { task in
-            guard !task.dueDate.isEmpty, let due = DateFormatters.date(from: task.dueDate) else { return false }
-            return due < today
-        }.count
+        let overdueCount = overdueTasks(among: tasks, now: now).count
 
         let recentCompleted = tasks.filter { task in
             guard let completedAt = task.completedAt else { return false }

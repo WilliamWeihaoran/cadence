@@ -61,15 +61,26 @@ struct iOSTaskRowLeadingSwipeActions: View {
     }
 }
 
+/// The queries live here rather than on `iOSTaskRow`: this view is the context menu's *content*,
+/// so it is only instantiated when the menu is actually presented, whereas the row that hosts it
+/// exists once per visible task.
 struct iOSTaskRowContextMenu: View {
     let task: AppTask
-    let allTasks: [AppTask]
-    let activeAreas: [Area]
-    let activeProjects: [Project]
     @Binding var showDetail: Bool
     @Binding var showDeleteConfirmation: Bool
     @Binding var pendingRecurrenceRule: TaskRecurrenceRule?
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
+
+    private var activeAreas: [Area] {
+        areas.filter(\.isActive)
+    }
+
+    private var activeProjects: [Project] {
+        projects.filter(\.isActive)
+    }
 
     private var availableSectionNames: [String] {
         let rawNames = task.area?.sectionNames ?? task.project?.sectionNames ?? []
@@ -298,9 +309,11 @@ struct iOSTaskRowContextMenu: View {
     }
 }
 
+/// Takes no `allTasks` list: a `ViewModifier` renders as part of its host row, so a `@Query`
+/// here would cost exactly what one on the row costs. The series lookup is instead fetched at
+/// the moment the user picks a scope, which happens at most once per presented dialog.
 struct iOSTaskRowRecurrenceScopeDialogModifier: ViewModifier {
     let task: AppTask
-    let allTasks: [AppTask]
     @Binding var pendingRecurrenceRule: TaskRecurrenceRule?
     @Environment(\.modelContext) private var modelContext
 
@@ -337,6 +350,10 @@ struct iOSTaskRowRecurrenceScopeDialogModifier: ViewModifier {
 
     private func applyPendingRecurrenceRule(scope: CadenceTaskRecurrenceEditScope) {
         guard let pendingRecurrenceRule else { return }
+        // Same set and same ordering the `@Query(sort: \AppTask.order)` this replaced produced.
+        let allTasks = (try? modelContext.fetch(
+            FetchDescriptor<AppTask>(sortBy: [SortDescriptor(\.order)])
+        )) ?? []
         CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
             pendingRecurrenceRule,
             to: task,
@@ -351,12 +368,10 @@ struct iOSTaskRowRecurrenceScopeDialogModifier: ViewModifier {
 extension View {
     func iOSTaskRowRecurrenceScopeDialog(
         task: AppTask,
-        allTasks: [AppTask],
         pendingRecurrenceRule: Binding<TaskRecurrenceRule?>
     ) -> some View {
         modifier(iOSTaskRowRecurrenceScopeDialogModifier(
             task: task,
-            allTasks: allTasks,
             pendingRecurrenceRule: pendingRecurrenceRule
         ))
     }
