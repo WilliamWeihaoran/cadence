@@ -85,7 +85,16 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
     var scheduledStartMin: Int = -1     // minutes from midnight (-1 = not scheduled)
     var estimatedMinutes: Int = 30
     var actualMinutes: Int = 0          // cumulative actual time logged
-    var calendarEventID: String = ""    // EKEvent identifier
+    /// EKEvent identifier for a task attached to a calendar event.
+    ///
+    /// **Nothing writes this a non-empty value.** Every write site clears it, and no attach UI
+    /// exists on either platform — the feature is gone, whatever it once was. Do not delete the
+    /// property or its readers: values written by an earlier build may still be on disk or in
+    /// CloudKit, and the readers exist to handle exactly those (clearing stale identifiers in
+    /// `CalendarLinkedTaskSupport`, deleting a linked event with its task in `TaskDeleteHelpers`,
+    /// repairing relationships in `DataIntegrityRepairService`). There is no `SchemaMigrationPlan`,
+    /// so dropping a stored property drops data rather than tidying anything.
+    var calendarEventID: String = ""
     var recurrenceRaw: String = TaskRecurrenceRule.none.rawValue
     var recurrenceSpawnedTaskIDRaw: String = ""
     var recurrenceSeriesIDRaw: String = ""

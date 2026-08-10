@@ -593,6 +593,26 @@ struct TaskInspectorEstimateRollerPopover: View {
 
 /// One roller column. The centre band is drawn *behind* the scrolling rows so it tints the well
 /// rather than the glyphs sitting in it.
+/// Caps how far one gesture can carry the roller.
+///
+/// `.viewAligned` snaps to a row but says nothing about distance, so a flick lands wherever
+/// momentum takes it — at a 26pt row a light trackpad push crosses a dozen values, which reads
+/// as the control running away from you rather than as scrolling. Clamping the landing point to
+/// a few rows either side of where the gesture started keeps a flick feeling like a nudge, and
+/// still lets a deliberate drag move as far as the finger actually travels.
+private struct EstimateRollerScrollBehavior: ScrollTargetBehavior {
+    let rowHeight: CGFloat
+    let maxRowsPerGesture: CGFloat
+
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        let origin = context.originalTarget.rect.minY
+        let limit = rowHeight * maxRowsPerGesture
+        let bounded = min(max(target.rect.minY, origin - limit), origin + limit)
+        // Land on a whole row regardless, so the centre band never holds a half value.
+        target.rect.origin.y = (bounded / rowHeight).rounded() * rowHeight
+    }
+}
+
 private struct EstimateRollerColumn: View {
     let values: [Int]
     let unit: String
@@ -600,6 +620,9 @@ private struct EstimateRollerColumn: View {
     let isFocused: Bool
 
     private static let rowHeight: CGFloat = 26
+    /// Deliberately small. The presets below the rollers cover the common values, so these are
+    /// for adjusting by a step or two — precision matters more here than range.
+    private static let maxRowsPerGesture: CGFloat = 3
     private static let visibleRows: CGFloat = 5
     private static let cornerRadius: CGFloat = 8
 
@@ -631,7 +654,12 @@ private struct EstimateRollerColumn: View {
             .scrollTargetLayout()
         }
         .scrollIndicators(.hidden)
-        .scrollTargetBehavior(.viewAligned)
+        .scrollTargetBehavior(
+            EstimateRollerScrollBehavior(
+                rowHeight: Self.rowHeight,
+                maxRowsPerGesture: Self.maxRowsPerGesture
+            )
+        )
         // Lets the first and last rows reach the centre band instead of stopping at the edges.
         .contentMargins(.vertical, (viewportHeight - Self.rowHeight) / 2, for: .scrollContent)
         .scrollPosition(id: centeredValue, anchor: .center)

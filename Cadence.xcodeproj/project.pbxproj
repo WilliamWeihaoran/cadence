@@ -56,7 +56,6 @@
 		B10000002FCE000000000204 /* Cadence/Services/CadenceDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000104 /* Cadence/Services/CadenceDeepLink.swift */; };
 		B10000002FCE000000000205 /* Cadence/Services/CadenceTodayWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000105 /* Cadence/Services/CadenceTodayWidgetSupport.swift */; };
 		B10000002FCE000000000206 /* Cadence/Services/CadenceWidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000106 /* Cadence/Services/CadenceWidgetIntents.swift */; };
-		B10000002FCE0000000002A0 /* Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000022B /* Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift */; };
 		B10000002FCE000000000207 /* Cadence/Models/ModelEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000103 /* Cadence/Models/ModelEnums.swift */; };
 		B10000002FCE000000000208 /* Cadence/Models/Context.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000104 /* Cadence/Models/Context.swift */; };
 		B10000002FCE000000000209 /* Cadence/Models/Area.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000105 /* Cadence/Models/Area.swift */; };
@@ -87,6 +86,7 @@
 		B10000002FCE000000000222 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000116 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift */; };
 		B10000002FCE000000000223 /* Cadence/Services/CadenceCalendarWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000117 /* Cadence/Services/CadenceCalendarWidgetSupport.swift */; };
 		B10000002FCE000000000299 /* Cadence/Shared/Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000199 /* Cadence/Shared/Theme.swift */; };
+		B10000002FCE0000000002A0 /* Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000022B /* Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */

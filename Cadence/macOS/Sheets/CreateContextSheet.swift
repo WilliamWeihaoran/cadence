@@ -92,36 +92,52 @@ struct CreateContextSheet: View {
 
 struct ColorGrid: View {
     @Binding var selected: String
+    var columns: Int = 8
+    var swatchSize: CGFloat = 28
+    var spacing: CGFloat = 8
 
+    /// One lap of the hue wheel plus a single neutral. A list's colour only earns its place if you
+    /// can tell it apart from its neighbours in the sidebar, so the palette holds no second blue,
+    /// no second green, and no second grey — the old 23 offered three near-identical greys and two
+    /// near-whites, which is five swatches for one decision.
     static let colors = [
-        // Blues & purples
-        "#4a9eff", "#2563eb", "#6366f1", "#a78bfa", "#c084fc",
-        // Greens
-        "#4ecb71", "#22c55e", "#34d399", "#14b8a6",
-        // Reds & pinks
-        "#ff6b6b", "#ef4444", "#f472b6", "#e879f9",
-        // Ambers & oranges
-        "#ffa94d", "#fb923c", "#f59e0b", "#fbbf24",
-        // Cyans & teals
-        "#38bdf8", "#06b6d4",
-        // Neutrals
-        "#94a3b8", "#6b7a99", "#e2e8f0", "#ffffff",
+        "#4a9eff", "#6366f1", "#a78bfa", "#e879f9", "#f472b6", "#ff6b6b",
+        "#ffa94d", "#fbbf24", "#4ecb71", "#14b8a6", "#06b6d4", "#6b7a99",
     ]
 
+    /// Trimming the palette must not silently re-colour anything already saved: a stored hex that
+    /// is no longer offered is appended so its owner still shows a selected swatch. It disappears
+    /// from the grid as soon as the user picks something else.
+    private var offeredColors: [String] {
+        let stored = selected.trimmingCharacters(in: .whitespaces)
+        guard !stored.isEmpty, !Self.colors.contains(where: { matches($0, stored) }) else {
+            return Self.colors
+        }
+        return Self.colors + [stored]
+    }
+
+    private func matches(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.caseInsensitiveCompare(rhs) == .orderedSame
+    }
+
     var body: some View {
-        LazyVGrid(columns: Array(repeating: .init(.fixed(32)), count: 8), spacing: 8) {
-            ForEach(Self.colors, id: \.self) { hex in
+        LazyVGrid(
+            columns: Array(repeating: .init(.fixed(swatchSize + 4), spacing: spacing), count: columns),
+            spacing: spacing
+        ) {
+            ForEach(offeredColors, id: \.self) { hex in
+                let isSelected = matches(hex, selected)
                 Circle()
                     .fill(Color(hex: hex))
-                    .frame(width: 28, height: 28)
+                    .frame(width: swatchSize, height: swatchSize)
                     .overlay(
                         Circle()
-                            .strokeBorder(Theme.onColor.opacity(selected == hex ? 1 : 0), lineWidth: 2)
+                            .strokeBorder(Theme.onColor.opacity(isSelected ? 1 : 0), lineWidth: 2)
                     )
                     .overlay(
                         Circle()
                             .strokeBorder(Color(hex: hex).opacity(0.4), lineWidth: 3)
-                            .scaleEffect(selected == hex ? 1.3 : 1)
+                            .scaleEffect(isSelected ? 1.3 : 1)
                     )
                     .onTapGesture { selected = hex }
             }
@@ -154,19 +170,24 @@ struct IconGrid: View {
         "trophy.fill", "medal.fill", "crown.fill", "building.2.fill",
     ]
 
-    let columns = Array(repeating: GridItem(.fixed(40)), count: 8)
+    var columns: Int = 8
+    var cellSize: CGFloat = 36
+    var spacing: CGFloat = 6
 
     var body: some View {
-        LazyVGrid(columns: columns, spacing: 6) {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.fixed(cellSize), spacing: spacing), count: columns),
+            spacing: spacing
+        ) {
             ForEach(Self.icons, id: \.self) { icon in
                 ZStack {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(selected == icon ? Theme.blue.opacity(0.2) : Theme.surfaceElevated)
                     Image(systemName: icon)
-                        .font(.system(size: 16))
+                        .font(.system(size: cellSize * 0.44))
                         .foregroundStyle(selected == icon ? Theme.blue : Theme.dim)
                 }
-                .frame(width: 36, height: 36)
+                .frame(width: cellSize, height: cellSize)
                 .onTapGesture { selected = icon }
             }
         }

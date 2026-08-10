@@ -42,120 +42,54 @@ struct CreateListSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("New List")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                Spacer()
-                Text("in \(context.name)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 24)
-            .padding(.bottom, 20)
-
-            Divider().background(Theme.borderSubtle)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // Type
-                    fieldLabel("Type")
-                    HStack(spacing: 8) {
-                        ForEach(ListType.allCases, id: \.self) { type in
-                            TypeButton(type: type, isSelected: listType == type) {
-                                listType = type
-                                selectedIcon = type.defaultIcon
-                                selectedColor = type.defaultColor
-                            }
-                        }
+        ListEditorSheetShell(
+            title: "New List",
+            titleTrailing: "in \(context.name)",
+            confirmTitle: "Create",
+            isConfirmDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty,
+            onConfirm: create
+        ) {
+            HStack(spacing: 8) {
+                ForEach(ListType.allCases, id: \.self) { type in
+                    TypeButton(type: type, isSelected: listType == type) {
+                        listType = type
+                        selectedIcon = type.defaultIcon
+                        selectedColor = type.defaultColor
                     }
-
-                    // Name
-                    fieldLabel("Name")
-                    TextField("List name…", text: $name)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.text)
-                        .padding(10)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
-
-                    // Due date (projects only)
-                    if listType == .project {
-                        fieldLabel("Due Date")
-                        HStack(spacing: 8) {
-                            Toggle("", isOn: $hasDueDate)
-                                .labelsHidden()
-                                .toggleStyle(.switch)
-                                .scaleEffect(0.75)
-                            if hasDueDate {
-                                CadenceDatePicker(selection: $dueDate)
-                            } else {
-                                Text("None")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Theme.dim)
-                            }
-                        }
-                    }
-
-                    // Color
-                    fieldLabel("Color")
-                    ColorGrid(selected: $selectedColor)
-
-                    // Icon
-                    fieldLabel("Icon")
-                    IconGrid(selected: $selectedIcon)
-
-                    fieldLabel("Task Due Date Display")
-                    Toggle("Hide due date if empty", isOn: $hideDueDateIfEmpty)
-                        .toggleStyle(.switch)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.text)
-
-                    fieldLabel("Column Due Date Display")
-                    Toggle("Hide column due date if empty", isOn: $hideSectionDueDateIfEmpty)
-                        .toggleStyle(.switch)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.text)
-                }
-                .padding(24)
-            }
-
-            Divider().background(Theme.borderSubtle)
-
-            HStack {
-                Spacer()
-                CadenceActionButton(
-                    title: "Cancel",
-                    role: .ghost,
-                    size: .compact
-                ) {
-                    dismiss()
-                }
-                CadenceActionButton(
-                    title: "Create",
-                    role: .primary,
-                    size: .compact,
-                    isDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty
-                ) {
-                    create()
                 }
             }
-            .padding(16)
+
+            ListEditorNameField(name: $name)
+
+            TaskInspectorRecessedGroup {
+                if listType == .project {
+                    TaskInspectorDateControl(
+                        label: "Due",
+                        icon: "flag.fill",
+                        activeColor: Theme.red,
+                        isOn: $hasDueDate,
+                        date: $dueDate
+                    )
+                    TaskInspectorFieldDivider()
+                }
+
+                ListEditorAppearanceRows(colorHex: $selectedColor, icon: $selectedIcon)
+
+                TaskInspectorFieldDivider()
+                ListEditorToggleRow(
+                    label: "Hide empty task due date",
+                    icon: "calendar.badge.exclamationmark",
+                    isOn: $hideDueDateIfEmpty
+                )
+
+                TaskInspectorFieldDivider()
+                ListEditorToggleRow(
+                    label: "Hide empty column due date",
+                    icon: "rectangle.split.3x1",
+                    isOn: $hideSectionDueDateIfEmpty
+                )
+            }
         }
-        .frame(width: 420, height: listType == .project ? 660 : 620)
-        .background(Theme.surface)
-    }
-
-    @ViewBuilder
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            .kerning(0.8)
     }
 
     private func create() {

@@ -11,6 +11,141 @@ import SwiftData
 @Suite(.serialized)
 @MainActor
 struct CalendarBehaviorRegressionTests {
+    // MARK: - Recurrence detection
+    //
+    // A one-off event created from the calendar page used to come back wearing a repeat glyph and
+    // raising a "Change recurring event?" scope dialog on every edit, because the predicate also
+    // tested `event.occurrenceDate != nil`. EventKit sets `occurrenceDate` on any event that has a
+    // start date, recurring or not, so that clause was true for literally every saved event.
+
+    private static func scratchEvent(
+        title: String,
+        start: Date,
+        durationMinutes: Int = 30
+    ) -> EKEvent {
+        let event = EKEvent(eventStore: EKEventStore())
+        event.title = title
+        event.startDate = start
+        event.endDate = start.addingTimeInterval(TimeInterval(durationMinutes * 60))
+        return event
+    }
+
+    @Test func oneOffEventWithAStartDateIsNotARecurringSeriesMember() throws {
+        let calendar = Calendar.current
+        let start = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 9)))
+        let event = Self.scratchEvent(title: "One-off sync", start: start)
+
+        // Guards the reasoning, not just the result: the bug was believing this was nil.
+        #expect(event.occurrenceDate != nil)
+        #expect(!CadenceEventNoteSupport.isRecurringSeriesMember(event))
+        #expect(!CalendarEventIdentity.isRecurringSeriesMember(event))
+        #expect(!CalendarEventItem(event: event).isRecurringSeriesMember)
+    }
+
+    @Test func eventCarryingARecurrenceRuleIsARecurringSeriesMember() throws {
+        let calendar = Calendar.current
+        let start = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 9)))
+        let event = Self.scratchEvent(title: "Weekly sync", start: start)
+        event.recurrenceRules = [EKRecurrenceRule(recurrenceWith: .weekly, interval: 1, end: nil)]
+
+        #expect(CadenceEventNoteSupport.isRecurringSeriesMember(event))
+        #expect(CalendarEventIdentity.isRecurringSeriesMember(event))
+        #expect(CalendarEventItem(event: event).isRecurringSeriesMember)
+    }
+
+    @Test func detachedOccurrenceIsASeriesMemberEvenWithoutRulesOfItsOwn() {
+        // `isDetached` is read-only on EKEvent, so the flag combination is asserted directly.
+        #expect(CadenceEventNoteSupport.isRecurringSeriesMember(hasRecurrenceRules: false, isDetached: true))
+        #expect(CadenceEventNoteSupport.isRecurringSeriesMember(hasRecurrenceRules: true, isDetached: false))
+        #expect(CadenceEventNoteSupport.isRecurringSeriesMember(hasRecurrenceRules: true, isDetached: true))
+        #expect(!CadenceEventNoteSupport.isRecurringSeriesMember(hasRecurrenceRules: false, isDetached: false))
+    }
+
+    @Test func onlySeriesMembersGetAnOccurrenceScopedIdentifier() throws {
+        let calendar = Calendar.current
+        let start = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 9)))
+        let oneOff = Self.scratchEvent(title: "One-off sync", start: start)
+        let repeating = Self.scratchEvent(title: "Weekly sync", start: start)
+        repeating.recurrenceRules = [EKRecurrenceRule(recurrenceWith: .weekly, interval: 1, end: nil)]
+
+        let oneOffID = CadenceEventNoteSupport.identifier(for: oneOff)
+        let repeatingID = CadenceEventNoteSupport.identifier(for: repeating)
+
+        #expect(oneOffID == CadenceEventNoteSupport.rawIdentifier(for: oneOff))
+        #expect(!oneOffID.contains("#occurrence="))
+        #expect(repeatingID.contains("#occurrence="))
+        #expect(CadenceEventNoteSupport.lookupIdentifier(from: repeatingID)
+            == CadenceEventNoteSupport.rawIdentifier(for: repeating))
+        #expect(CadenceEventNoteSupport.matches(oneOff, identifier: oneOffID))
+    }
+
+    // MARK: - Event notes written before the predicate was fixed
+    //
+    // While every event read as recurring, every event note was stored against an
+    // occurrence-scoped `calendarEventID`. Reopening a one-off event now asks with the bare
+    // identifier, so those notes must still resolve rather than sprouting a second note.
+
+    @Test func occurrenceScopedNoteFromBeforeTheFixIsReopenedForAOneOffEvent() throws {
+        let legacyID = "event-1#occurrence=2026-08-10:540"
+        let note = Note(
+            kind: .meeting,
+            title: "Kickoff",
+            content: "Existing notes",
+            calendarEventID: legacyID,
+            calendarID: "calendar-1",
+            eventDateKey: "2026-08-10",
+            eventStartMin: 540,
+            eventEndMin: 570
+        )
+
+        let reopened = try #require(CadenceEventNoteSupport.noteForEditing(
+            calendarEventID: "event-1",
+            eventTitle: "Kickoff",
+            calendarID: "calendar-1",
+            eventDateKey: "2026-08-10",
+            eventStartMin: 540,
+            eventEndMin: 570,
+            notes: [note],
+            insert: { _ in Issue.record("Must reuse the existing event note, not create a duplicate") }
+        ))
+
+        #expect(reopened.id == note.id)
+        #expect(reopened.content == "Existing notes")
+        // Adopting it also migrates it, so the lookup is exact from here on.
+        #expect(reopened.calendarEventID == "event-1")
+    }
+
+    @Test func occurrenceScopedNoteIsAdoptedEvenWhenItsDateMetadataWentStale() throws {
+        // The date/title fallback cannot help here — this is the case only the identifier-shape
+        // migration covers.
+        let note = Note(
+            kind: .meeting,
+            title: "Kickoff",
+            content: "Existing notes",
+            calendarEventID: "event-1#occurrence=2026-08-10:540",
+            calendarID: "",
+            eventDateKey: "",
+            eventStartMin: -1,
+            eventEndMin: -1
+        )
+
+        let reopened = try #require(CadenceEventNoteSupport.note(for: "event-1", in: [note]))
+
+        #expect(reopened.id == note.id)
+    }
+
+    @Test func perOccurrenceNotesOfARealSeriesAreNeverCollapsedTogether() throws {
+        let first = Note(kind: .meeting, title: "Weekly", calendarEventID: "event-1#occurrence=2026-08-10:540")
+        let second = Note(kind: .meeting, title: "Weekly", calendarEventID: "event-1#occurrence=2026-08-17:540")
+
+        // Asking with one occurrence's identifier returns only that occurrence's note.
+        #expect(CadenceEventNoteSupport.note(for: "event-1#occurrence=2026-08-17:540", in: [first, second])?.id == second.id)
+        // An ambiguous base is left to the date/title fallback rather than guessed at.
+        #expect(CadenceEventNoteSupport.note(for: "event-1", in: [first, second]) == nil)
+        // A note belonging to a different event is never adopted.
+        #expect(CadenceEventNoteSupport.note(for: "event-2", in: [first]) == nil)
+    }
+
     @Test func timelineHeaderRangeTracksBodyLeadingDay() {
         let colWidth: CGFloat = 120
         let offsetX = CGFloat(2.4) * colWidth

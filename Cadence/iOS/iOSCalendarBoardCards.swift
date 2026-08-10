@@ -63,7 +63,7 @@ struct iOSCalendarBoardEventItem: Identifiable {
         title = iOSCalendarEventSupport.title(for: event)
         calendarTitle = event.calendar?.title ?? "Apple Calendar"
         isAllDay = event.isAllDay
-        isRecurring = event.hasRecurrenceRules
+        isRecurring = CadenceEventNoteSupport.isRecurringSeriesMember(event)
         color = iOSCalendarEventSupport.color(for: event.calendar)
 
         if event.isAllDay {

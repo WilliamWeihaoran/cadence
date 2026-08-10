@@ -28,104 +28,61 @@ struct EditAreaSheet: View {
         _hideSectionDueDateIfEmpty = State(initialValue: area.hideSectionDueDateIfEmpty)
     }
 
-    var body: some View {
-        sheetBody(title: "Edit Area") {
-            area.name = name
-            area.colorHex = selectedColor
-            area.icon = selectedIcon
-            area.linkedCalendarID = selectedCalendarID
-            area.hideDueDateIfEmpty = hideDueDateIfEmpty
-            area.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
-            dismiss()
-        }
+    private var statusLabel: String {
+        if area.isDone { return "Completed" }
+        if area.isArchived { return "Archived" }
+        return "Active"
     }
 
-    @ViewBuilder
-    private func sheetBody(title: String, onSave: @escaping () -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
-                .padding(.bottom, 20)
+    var body: some View {
+        ListEditorSheetShell(
+            title: "Edit Area",
+            confirmTitle: "Save",
+            isConfirmDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty,
+            onConfirm: {
+                applyEdits()
+                dismiss()
+            }
+        ) {
+            ListEditorNameField(name: $name)
 
-            Divider().background(Theme.borderSubtle)
+            TaskInspectorRecessedGroup {
+                ListEditorAppearanceRows(colorHex: $selectedColor, icon: $selectedIcon)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    fieldLabel("Name")
-                    TextField("List name…", text: $name)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.text)
-                        .padding(10)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
-
-                    fieldLabel("Color")
-                    ColorGrid(selected: $selectedColor)
-
-                    fieldLabel("Icon")
-                    IconGrid(selected: $selectedIcon)
-
-                    fieldLabel("Task Due Date Display")
-                    Toggle("Hide due date if empty", isOn: $hideDueDateIfEmpty)
-                        .toggleStyle(.switch)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.text)
-
-                    fieldLabel("Column Due Date Display")
-                    Toggle("Hide column due date if empty", isOn: $hideSectionDueDateIfEmpty)
-                        .toggleStyle(.switch)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.text)
-
-                    if calendarManager.isAuthorized {
-                        fieldLabel("Apple Calendar")
-                        CadenceCalendarPickerButton(
-                            calendars: calendarManager.availableCalendars,
-                            selectedID: $selectedCalendarID
-                        )
-                    }
-
-                    fieldLabel("Lifecycle")
-                    lifecycleCard(
-                        isDone: area.isDone,
-                        isArchived: area.isArchived,
-                        onToggleDone: toggleDone,
-                        onToggleArchived: toggleArchived,
-                        onDelete: { showDeleteConfirmation = true }
+                if calendarManager.isAuthorized {
+                    TaskInspectorFieldDivider()
+                    ListEditorCalendarRow(
+                        calendars: calendarManager.availableCalendars,
+                        selectedID: $selectedCalendarID
                     )
                 }
-                .padding(24)
+
+                TaskInspectorFieldDivider()
+                ListEditorToggleRow(
+                    label: "Hide empty task due date",
+                    icon: "calendar.badge.exclamationmark",
+                    isOn: $hideDueDateIfEmpty
+                )
+
+                TaskInspectorFieldDivider()
+                ListEditorToggleRow(
+                    label: "Hide empty column due date",
+                    icon: "rectangle.split.3x1",
+                    isOn: $hideSectionDueDateIfEmpty
+                )
             }
 
-            Divider().background(Theme.borderSubtle)
-
-            HStack {
-                Spacer()
-                CadenceActionButton(
-                    title: "Cancel",
-                    role: .ghost,
-                    size: .compact
-                ) {
-                    dismiss()
-                }
-                CadenceActionButton(
-                    title: "Save",
-                    role: .primary,
-                    size: .compact,
-                    isDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty
-                ) {
-                    onSave()
-                }
+            TaskInspectorRecessedSection(title: "Lifecycle") {
+                ListEditorStatusRow(
+                    noun: "Area",
+                    statusLabel: statusLabel,
+                    isActive: area.isActive,
+                    onSelect: apply
+                )
+                TaskInspectorFieldDivider()
+                ListEditorDeleteRow(title: "Delete Area") { showDeleteConfirmation = true }
             }
-            .padding(16)
         }
-        .frame(width: 420, height: 600)
-        .background(Theme.surface)
         .accessibilityIdentifier("edit.area.sheet")
         .confirmationDialog(
             "Delete Area?",
@@ -139,58 +96,26 @@ struct EditAreaSheet: View {
         }
     }
 
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            .kerning(0.8)
+    private func applyEdits() {
+        area.name = name
+        area.colorHex = selectedColor
+        area.icon = selectedIcon
+        area.linkedCalendarID = selectedCalendarID
+        area.hideDueDateIfEmpty = hideDueDateIfEmpty
+        area.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
     }
 
-    @ViewBuilder
-    private func lifecycleCard(
-        isDone: Bool,
-        isArchived: Bool,
-        onToggleDone: @escaping () -> Void,
-        onToggleArchived: @escaping () -> Void,
-        onDelete: @escaping () -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            LifecycleButton(
-                title: isDone ? "Reopen Area" : "Complete Area",
-                subtitle: isDone ? "Bring this area back into the active sidebar." : "Hide it from the active sidebar but keep it restorable.",
-                tint: Theme.green,
-                action: onToggleDone
-            )
-            LifecycleButton(
-                title: isArchived ? "Unarchive Area" : "Archive Area",
-                subtitle: isArchived ? "Return this area to the active sidebar." : "Store it away without deleting its tasks and documents.",
-                tint: Theme.amber,
-                action: onToggleArchived
-            )
-            LifecycleButton(
-                title: "Delete Area",
-                subtitle: "Permanently remove the area and everything inside it.",
-                tint: Theme.red,
-                action: onDelete
-            )
-        }
-    }
-
-    private func toggleDone() {
-        if area.isDone {
+    /// A lifecycle change still closes the sheet, so the pending field edits are written first
+    /// rather than thrown away by the dismissal.
+    private func apply(_ choice: ListEditorLifecycleChoice) {
+        applyEdits()
+        switch choice {
+        case .active:
             area.status = .active
-        } else {
+        case .completed:
             area.status = .done
             TaskContainerLifecycleService.completeRemainingActiveTasks(in: area, includingChildProjects: true, in: modelContext)
-        }
-        try? modelContext.save()
-        dismiss()
-    }
-
-    private func toggleArchived() {
-        if area.isArchived {
-            area.status = .active
-        } else {
+        case .archived:
             area.status = .archived
             TaskContainerLifecycleService.cancelRemainingActiveTasks(in: area, includingChildProjects: true, in: modelContext)
         }
@@ -240,100 +165,77 @@ struct EditProjectSheet: View {
         }
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Edit Project")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
-                .padding(.bottom, 20)
-
-            Divider().background(Theme.borderSubtle)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    fieldLabel("Name")
-                    TextField("Project name…", text: $name)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.text)
-                        .padding(10)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
-
-                    fieldLabel("Due Date")
-                    HStack(spacing: 8) {
-                        Toggle("", isOn: $hasDueDate)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            .scaleEffect(0.75)
-                        if hasDueDate {
-                            CadenceDatePicker(selection: $dueDate)
-                        } else {
-                            Text("None")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Theme.dim)
-                        }
-                    }
-
-                    fieldLabel("Color")
-                    ColorGrid(selected: $selectedColor)
-
-                    fieldLabel("Icon")
-                    IconGrid(selected: $selectedIcon)
-
-                    fieldLabel("Task Due Date Display")
-                    Toggle("Hide due date if empty", isOn: $hideDueDateIfEmpty)
-                        .toggleStyle(.switch)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.text)
-
-                    fieldLabel("Column Due Date Display")
-                    Toggle("Hide column due date if empty", isOn: $hideSectionDueDateIfEmpty)
-                        .toggleStyle(.switch)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.text)
-
-                    if calendarManager.isAuthorized {
-                        fieldLabel("Apple Calendar")
-                        CadenceCalendarPickerButton(
-                            calendars: calendarManager.availableCalendars,
-                            selectedID: $selectedCalendarID
-                        )
-                    }
-
-                    fieldLabel("Lifecycle")
-                    lifecycleCard
-                }
-                .padding(24)
-            }
-
-            Divider().background(Theme.borderSubtle)
-
-            HStack {
-                Spacer()
-                CadenceActionButton(
-                    title: "Cancel",
-                    role: .ghost,
-                    size: .compact
-                ) {
-                    dismiss()
-                }
-                CadenceActionButton(
-                    title: "Save",
-                    role: .primary,
-                    size: .compact,
-                    isDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty
-                ) {
-                    save()
-                }
-            }
-            .padding(16)
+    /// Projects can also be paused or cancelled, so the row reports the stored status instead of
+    /// assuming it is one of the three the picker offers.
+    private var statusLabel: String {
+        switch project.status {
+        case .active:    return "Active"
+        case .done:      return "Completed"
+        case .archived:  return "Archived"
+        case .paused:    return "Paused"
+        case .cancelled: return "Cancelled"
         }
-        .frame(width: 420, height: 640)
-        .background(Theme.surface)
+    }
+
+    var body: some View {
+        ListEditorSheetShell(
+            title: "Edit Project",
+            confirmTitle: "Save",
+            isConfirmDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty,
+            onConfirm: {
+                applyEdits()
+                dismiss()
+            }
+        ) {
+            ListEditorNameField(name: $name, placeholder: "Project name…")
+
+            TaskInspectorRecessedGroup {
+                TaskInspectorDateControl(
+                    label: "Due",
+                    icon: "flag.fill",
+                    activeColor: Theme.red,
+                    isOn: $hasDueDate,
+                    date: $dueDate
+                )
+
+                TaskInspectorFieldDivider()
+                ListEditorAppearanceRows(colorHex: $selectedColor, icon: $selectedIcon)
+
+                if calendarManager.isAuthorized {
+                    TaskInspectorFieldDivider()
+                    ListEditorCalendarRow(
+                        calendars: calendarManager.availableCalendars,
+                        selectedID: $selectedCalendarID
+                    )
+                }
+
+                TaskInspectorFieldDivider()
+                ListEditorToggleRow(
+                    label: "Hide empty task due date",
+                    icon: "calendar.badge.exclamationmark",
+                    isOn: $hideDueDateIfEmpty
+                )
+
+                TaskInspectorFieldDivider()
+                ListEditorToggleRow(
+                    label: "Hide empty column due date",
+                    icon: "rectangle.split.3x1",
+                    isOn: $hideSectionDueDateIfEmpty
+                )
+            }
+
+            TaskInspectorRecessedSection(title: "Lifecycle") {
+                ListEditorStatusRow(
+                    noun: "Project",
+                    statusLabel: statusLabel,
+                    isActive: project.isActive,
+                    onSelect: apply
+                )
+                TaskInspectorFieldDivider()
+                ListEditorDeleteRow(title: "Delete Project") { showDeleteConfirmation = true }
+            }
+        }
+        .accessibilityIdentifier("edit.project.sheet")
         .confirmationDialog(
             "Delete Project?",
             isPresented: $showDeleteConfirmation,
@@ -346,7 +248,7 @@ struct EditProjectSheet: View {
         }
     }
 
-    private func save() {
+    private func applyEdits() {
         project.name = name
         project.colorHex = selectedColor
         project.icon = selectedIcon
@@ -354,54 +256,17 @@ struct EditProjectSheet: View {
         project.linkedCalendarID = selectedCalendarID
         project.hideDueDateIfEmpty = hideDueDateIfEmpty
         project.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
-        dismiss()
     }
 
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            .kerning(0.8)
-    }
-
-    private var lifecycleCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            LifecycleButton(
-                title: project.isDone ? "Reopen Project" : "Complete Project",
-                subtitle: project.isDone ? "Bring this project back into the active sidebar." : "Hide it from the active sidebar but keep it restorable.",
-                tint: Theme.green,
-                action: toggleDone
-            )
-            LifecycleButton(
-                title: project.isArchived ? "Unarchive Project" : "Archive Project",
-                subtitle: project.isArchived ? "Return this project to the active sidebar." : "Store it away without deleting its tasks and documents.",
-                tint: Theme.amber,
-                action: toggleArchived
-            )
-            LifecycleButton(
-                title: "Delete Project",
-                subtitle: "Permanently remove the project and everything inside it.",
-                tint: Theme.red,
-                action: { showDeleteConfirmation = true }
-            )
-        }
-    }
-
-    private func toggleDone() {
-        if project.isDone {
+    private func apply(_ choice: ListEditorLifecycleChoice) {
+        applyEdits()
+        switch choice {
+        case .active:
             project.status = .active
-        } else {
+        case .completed:
             project.status = .done
             TaskContainerLifecycleService.completeRemainingActiveTasks(in: project, in: modelContext)
-        }
-        try? modelContext.save()
-        dismiss()
-    }
-
-    private func toggleArchived() {
-        if project.isArchived {
-            project.status = .active
-        } else {
+        case .archived:
             project.status = .archived
             TaskContainerLifecycleService.cancelRemainingActiveTasks(in: project, in: modelContext)
         }
@@ -413,59 +278,6 @@ struct EditProjectSheet: View {
         modelContext.deleteProject(project)
         try? modelContext.save()
         dismiss()
-    }
-}
-
-// MARK: - Shared lifecycle button
-
-private struct LifecycleButton: View {
-    let title: String
-    let subtitle: String
-    let tint: Color
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(tint.opacity(isHovered ? 0.24 : 0.16))
-                    .frame(width: 30, height: 30)
-                    .overlay {
-                        Circle()
-                            .fill(tint)
-                            .frame(width: isHovered ? 9 : 8, height: isHovered ? 9 : 8)
-                    }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer()
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surfaceElevated.opacity(isHovered ? 0.96 : 1))
-            .background(tint.opacity(isHovered ? 0.08 : 0.02))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(tint.opacity(isHovered ? 0.52 : 0.24), lineWidth: isHovered ? 1.2 : 1)
-            )
-            .shadow(color: tint.opacity(isHovered ? 0.14 : 0), radius: 8, x: 0, y: 4)
-            .offset(y: isHovered ? -1 : 0)
-            .contentShape(RoundedRectangle(cornerRadius: 10))
-            .animation(.easeOut(duration: 0.12), value: isHovered)
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
     }
 }
 

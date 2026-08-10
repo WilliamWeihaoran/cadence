@@ -231,23 +231,17 @@ struct CalendarAllDayEventItem: Identifiable {
     }
 }
 
+/// macOS-facing name for event identity. Every member forwards to `CadenceEventNoteSupport`, which
+/// is the one implementation — this used to be a byte-for-byte copy of it, and the two drifted in
+/// exactly the way a duplicate always does: a wrong recurrence predicate had to be found and fixed
+/// twice. Keep the forwarding; do not re-inline a body here.
 enum CalendarEventIdentity {
-    private static let occurrenceSeparator = "#occurrence="
-
     static func rawIdentifier(for event: EKEvent) -> String {
-        if let eventIdentifier = event.eventIdentifier, !eventIdentifier.isEmpty {
-            return eventIdentifier
-        }
-        let itemIdentifier = event.calendarItemIdentifier
-        return itemIdentifier.isEmpty ? fallbackIdentifier(for: event) : itemIdentifier
+        CadenceEventNoteSupport.rawIdentifier(for: event)
     }
 
     static func identifier(for event: EKEvent) -> String {
-        let baseIdentifier = rawIdentifier(for: event)
-        guard let occurrenceDate = recurringOccurrenceDate(for: event) else {
-            return baseIdentifier
-        }
-        return occurrenceIdentifier(baseIdentifier: baseIdentifier, occurrenceDate: occurrenceDate)
+        CadenceEventNoteSupport.identifier(for: event)
     }
 
     static func occurrenceIdentifier(
@@ -255,41 +249,27 @@ enum CalendarEventIdentity {
         occurrenceDate: Date,
         calendar: Calendar = .current
     ) -> String {
-        let components = calendar.dateComponents([.hour, .minute], from: occurrenceDate)
-        let occurrenceMinute = ((components.hour ?? 0) * 60) + (components.minute ?? 0)
-        return "\(baseIdentifier)\(occurrenceSeparator)\(DateFormatters.dateKey(from: occurrenceDate)):\(occurrenceMinute)"
+        CadenceEventNoteSupport.occurrenceIdentifier(
+            baseIdentifier: baseIdentifier,
+            occurrenceDate: occurrenceDate,
+            calendar: calendar
+        )
     }
 
     static func lookupIdentifier(from identifier: String) -> String {
-        identifier.components(separatedBy: occurrenceSeparator).first ?? identifier
+        CadenceEventNoteSupport.lookupIdentifier(from: identifier)
     }
 
     static func matches(_ event: EKEvent, identifier: String) -> Bool {
-        identifier == self.identifier(for: event) || identifier == rawIdentifier(for: event)
+        CadenceEventNoteSupport.matches(event, identifier: identifier)
     }
 
     static func isRecurringSeriesMember(_ event: EKEvent) -> Bool {
-        event.hasRecurrenceRules || event.isDetached || event.occurrenceDate != nil
+        CadenceEventNoteSupport.isRecurringSeriesMember(event)
     }
 
     static func startMinute(for date: Date, calendar: Calendar = .current) -> Int {
-        let components = calendar.dateComponents([.hour, .minute], from: date)
-        return ((components.hour ?? 0) * 60) + (components.minute ?? 0)
-    }
-
-    private static func recurringOccurrenceDate(for event: EKEvent) -> Date? {
-        guard isRecurringSeriesMember(event) else { return nil }
-        return event.occurrenceDate
-    }
-
-    private static func fallbackIdentifier(for event: EKEvent) -> String {
-        let start = event.startDate ?? event.occurrenceDate ?? Date.distantPast
-        let startMinute = startMinute(for: start)
-        let calendarID = event.calendar?.calendarIdentifier ?? "calendar"
-        let title = (event.title ?? "untitled")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "|", with: "-")
-        return "event-fallback|\(calendarID)|\(DateFormatters.dateKey(from: start))|\(startMinute)|\(title)"
+        CadenceEventNoteSupport.startMinute(for: date, calendar: calendar)
     }
 }
 

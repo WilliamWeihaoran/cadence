@@ -482,7 +482,16 @@ Current shape:
 - The Calendar page has two **presentations** (`CadenceCalendarPresentation`): **Timeline** and **Board**. Timeline has Week / 2 Weeks / Month view modes (`CadenceCalendarViewMode`; the picker exposes Week and Month).
 - **Board** is what the Planning page became — horizontally scrolling day columns flanked by two pinned rails, **Overdue** and **Unscheduled**. Planning's other three buckets (Today / This Week / Later) *are* day columns here, so they needed no equivalent; its bucketing, drag-to-reschedule, drag-back-to-unscheduled, and "N unscheduled · N overdue" summary all live on this surface now. Files: `CalendarPageBoardSupportViews`, `CalendarBoardDayColumnSupportViews`, `CalendarBoardRailSupportViews`, `CalendarBoardItemSupportViews`, plus `Shared/CadenceCalendarPlanningSupport.swift` (rails, drop targets, `CalendarBoardPlannerSupport`).
 - The Board reuses the kanban `KanbanCard` / `BoardColumnHeader` / `KanbanColumnScroll` components. Parameterize them; do not fork.
-- Tasks can attach to existing calendar events from the task inspector
+- **Tasks cannot be attached to calendar events.** `AppTask.calendarEventID` exists and is still
+  read, but **nothing writes it a non-empty value** — every write site clears it
+  (`SchedulingService` ×7, `CalendarLinkedTaskSupport`), and no attach UI exists on either
+  platform. The readers are deliberate and must stay: they clear stale identifiers
+  (`CalendarLinkedTaskSupport`), delete a linked event when its task is deleted
+  (`TaskDeleteHelpers`), and repair relationships (`DataIntegrityRepairService`) — all for values
+  written by an earlier build that may still be on disk or in CloudKit. The field is a stored
+  SwiftData property and there is no `SchemaMigrationPlan`, so removing it would drop data rather
+  than clean anything up. Restoring the feature means building an event picker and deciding the
+  two-way sync semantics; it is not a matter of re-adding one assignment.
 - Calendar events can have linked notes; reopening the same event reopens the same linked note instead of creating duplicates
 - Timeline/today schedule export uses SwiftUI-native exporter flow rather than manual AppKit save panels
 - `CalendarVisibilityPreferences` controls which EventKit calendars render; `CalendarWorkHoursPreferences` sets the work-hours window the timeline emphasizes
@@ -624,7 +633,6 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Focus timer with log session popover (logs actual minutes, propagates to goals/areas/projects)
 - [x] Area/Project detail: Tasks, Kanban, Notes, Links, Completed (`ListDetailPage`). **Planning is deleted** — `ListDetailPage.resolved(_:)` maps a persisted "Planning" value back to `.tasks` so the Settings default-page picker never lands empty
 - [x] Recurring tasks: end conditions (never / on date / after N) and a `thisTask` vs `thisAndFuture` edit scope shown as an inline "APPLY TO" row rather than a system dialog
-- [x] Attach tasks to existing calendar events
 - [x] Linked notes for calendar events
 - [x] Area/Project lifecycle: complete, archive, delete; completed/archived lists recoverable from Settings
 - [x] Section-based kanban with editable/reorderable/archiveable columns (Cmd+E on section header; autosave section editor)
@@ -667,3 +675,5 @@ Local notification scheduling (`Cadence/Services/NotificationScheduling.swift` +
 
 ## What's Not Built Yet
 - [ ] watchOS target
+- [ ] Attaching a task to an existing calendar event. This was listed as built and is not — see
+      the note under "Calendar / Events". `AppTask.calendarEventID` has readers but no writer.

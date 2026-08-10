@@ -38,13 +38,54 @@ enum CadenceEventNoteSupport {
         identifier == self.identifier(for: event) || identifier == rawIdentifier(for: event)
     }
 
+    /// The single definition of "this event belongs to a repeating series". `CalendarEventIdentity`
+    /// and the iOS event editor both route here — three copies of this predicate existed before,
+    /// and the wrong one shipped in all three.
+    ///
+    /// `occurrenceDate` is deliberately **not** part of the test. EventKit declares it
+    /// `null_unspecified` and documents it as "nil for new events until you set startDate", so it
+    /// is non-nil for every event that has ever been given a start date — recurring or not.
+    /// Including it made the predicate unconditionally true, which is why a freshly created
+    /// one-off event came back wearing a repeat glyph and raising a "Change recurring event?"
+    /// scope dialog on every edit.
+    ///
+    /// `isDetached` stays: a detached occurrence is an instance whose attributes diverged from the
+    /// series, and it is not guaranteed to carry the series' rules on its own copy.
+    static func isRecurringSeriesMember(hasRecurrenceRules: Bool, isDetached: Bool) -> Bool {
+        hasRecurrenceRules || isDetached
+    }
+
     static func isRecurringSeriesMember(_ event: EKEvent) -> Bool {
-        event.hasRecurrenceRules || event.isDetached || event.occurrenceDate != nil
+        isRecurringSeriesMember(hasRecurrenceRules: event.hasRecurrenceRules, isDetached: event.isDetached)
     }
 
     static func note(for calendarEventID: String, in notes: [Note]) -> Note? {
         guard !calendarEventID.isEmpty else { return nil }
-        return notes.first { $0.kind == .meeting && $0.calendarEventID == calendarEventID }
+        if let exact = notes.first(where: { $0.kind == .meeting && $0.calendarEventID == calendarEventID }) {
+            return exact
+        }
+        return legacyOccurrenceScopedNote(for: calendarEventID, in: notes)
+    }
+
+    /// Adopts a note written before `isRecurringSeriesMember` was fixed.
+    ///
+    /// While the predicate was always true, `identifier(for:)` appended `#occurrence=<day>:<min>`
+    /// to **every** event — including one-off ones. Those notes are on disk. Now that a one-off
+    /// event resolves to its bare identifier, the exact-ID lookup above would miss them and a
+    /// second note would be created beside the user's existing one.
+    ///
+    /// This only fires when the caller asked with a *base* identifier, which after the fix happens
+    /// only for events that are not series members — so a genuine series' per-occurrence notes are
+    /// never collapsed onto one another. An ambiguous base (more than one candidate) is left to
+    /// the date/title fallback rather than guessed at.
+    private static func legacyOccurrenceScopedNote(for baseIdentifier: String, in notes: [Note]) -> Note? {
+        guard baseIdentifier == lookupIdentifier(from: baseIdentifier) else { return nil }
+        let candidates = notes.filter { note in
+            note.kind == .meeting
+                && note.calendarEventID != baseIdentifier
+                && lookupIdentifier(from: note.calendarEventID) == baseIdentifier
+        }
+        return candidates.count == 1 ? candidates.first : nil
     }
 
     static func note(

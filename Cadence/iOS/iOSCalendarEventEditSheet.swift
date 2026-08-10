@@ -113,7 +113,7 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var isRecurringEvent: Bool {
-        event.hasRecurrenceRules || event.isDetached || event.occurrenceDate != nil
+        CadenceEventNoteSupport.isRecurringSeriesMember(event)
     }
 
     private var eventNoteID: String {

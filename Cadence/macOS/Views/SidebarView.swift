@@ -102,6 +102,15 @@ struct SidebarView: View {
         .padding(.horizontal, SidebarMetrics.horizontalInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surface)
+        // The tonal step from Theme.surface to the page's Theme.bg is real but small on a
+        // near-black palette, so without an edge the sidebar and whatever column it abuts —
+        // the notes list especially — read as one continuous region. The hairline is what
+        // actually separates them; the tone alone does not carry it.
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(width: 1)
+        }
         .sheet(item: $contextForNewList) { ctx in
             CreateListSheet(context: ctx)
         }
