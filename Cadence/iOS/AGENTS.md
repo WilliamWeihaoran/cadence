@@ -1,6 +1,6 @@
 # iOS Guide
 
-The iOS/iPadOS app is a large, actively-developed surface (~55 files covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings) — not early/stubbed. Do not assume macOS feature parity by default; check the actual view file.
+The iOS/iPadOS app is a large, actively-developed surface (64 files covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings) — not early/stubbed. Do not assume macOS feature parity by default; check the actual view file.
 
 ## Working Rules
 

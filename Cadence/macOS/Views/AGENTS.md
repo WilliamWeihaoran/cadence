@@ -15,8 +15,12 @@ Feature views in this folder are actively refactored into thin roots plus suppor
 - `TasksPanel*` - Today/all-task list orchestration, task rows, completion animation scoping, grouping/sorting.
 - `SchedulePanel*`, `Timeline*`, `CalendarPage*` - timeline rendering, schedule state, drag-to-create, event/task block layout.
 - `Kanban*` - list/all-task kanban boards, card state, section support. `KanbanCard`, `BoardColumnHeader` and `KanbanColumnScroll` are shared with the Calendar Board — parameterize them, never fork them.
-- `CalendarBoard*` - the Calendar page's Board mode: day columns plus the pinned Overdue/Unscheduled rails that replaced the Planning page.
-- `ListDetail*`, `ListNotesView`, `LinksView` - area/project detail tabs.
+- `CalendarBoard*`, `CalendarPageBoardSupportViews` - the Calendar page's Board mode: day columns plus the pinned Overdue/Unscheduled rails that replaced the Planning page. Rails, drop targets, and window math live in `Shared/CadenceCalendarPlanningSupport.swift`.
+- `ListDetail*`, `ListNotes*`, `LinksView` - area/project detail tabs (Tasks, Kanban, Notes, Links, Completed — Planning is gone from `ListDetailPage`, and `resolved(_:)` maps stale saved values back to `.tasks`).
+- `TaskInspector*`, `SchedulePanelPopoverSupportViews` - the task inspector. Generic field-row primitives, content sections, and the recurrence control live in `TaskInspector*`; only the stateful popover wrapper and the inspector's own header/schedule/placement sections live under `SchedulePanel*`. Do not park shared primitives in `SchedulePanel*`.
+- `Notes*`, `NoteEditorPane`, `NoteEditor*`, `NoteReferenceSupportViews`, `NoteActionReviewSheets`, `AIActionsSupportViews` - the Notes surface and its AI actions. Under active rewrite; read the file before trusting any description of it.
+- `TaskSurfaceFreeze*` - shared hover-freeze models/coordinator used by Today, Inbox, and list-detail task surfaces.
+- `TaskTitleEntryField*`, `TaskTitleInlineTagPicker`, `Tag*`, `ContainerPickerSupportViews` - the shared title field with inline `~` list/section search and `#` tag entry, plus the pickers behind it.
 - `FocusView*` - focus timer, task/bundle picker, log-session popovers, focus sidebar.
 - `QuickCreateChoice*` - drag-to-create task/event/bundle popover and support views.
 - `Settings*` - settings shell and category sections.
