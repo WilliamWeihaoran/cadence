@@ -187,17 +187,31 @@ struct MonthBundleChip: View {
 
 struct MonthEventChip: View {
     let event: CalendarEventItem
+    var calendar: Calendar = .current
 
     var body: some View {
-        Text(event.title)
-            .font(.system(size: 10))
-            .foregroundStyle(Theme.onColor)
-            .lineLimit(1)
-            .monthChipPlate(
-                fill: event.calendarColor.opacity(CalendarEventVisualStyle.chipFillOpacity()),
-                wash: Theme.subtleWash,
-                border: event.calendarColor.opacity(CalendarEventVisualStyle.chipBorderOpacity())
-            )
+        HStack(spacing: 4) {
+            Text(event.title)
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.onColor)
+                .lineLimit(1)
+            if let time = event.chipTimeLabel(calendar: calendar) {
+                Spacer(minLength: 2)
+                Text(time)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.onColorSecondary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    // Same rule as the due marker: the chip is one non-wrapping line in a column
+                    // a seventh of the grid wide, so the title is what gives up room.
+                    .layoutPriority(1)
+            }
+        }
+        .monthChipPlate(
+            fill: event.calendarColor.opacity(CalendarEventVisualStyle.chipFillOpacity()),
+            wash: Theme.subtleWash,
+            border: event.calendarColor.opacity(CalendarEventVisualStyle.chipBorderOpacity())
+        )
     }
 }
 
@@ -327,7 +341,17 @@ struct MonthDayCell: View {
         // the clip has to eat the last chip, never the day number.
         .frame(height: rowHeight, alignment: .top)
         .clipped()
-        .background(emphasis.cellBackground)
+        // Plate first, then today's wash on top of it. Two layers rather than one colour because
+        // the in-month plate is opaque and the wash is not: today's cell is a washed *in-month*
+        // cell, not a wash floating over whatever is behind the grid.
+        .background {
+            ZStack {
+                emphasis.cellBackground
+                if let wash = emphasis.cellWash {
+                    wash
+                }
+            }
+        }
         .overlay(alignment: .topTrailing) {
             Rectangle()
                 .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.columnGridOpacity))

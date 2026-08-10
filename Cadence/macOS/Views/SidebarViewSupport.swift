@@ -145,6 +145,40 @@ enum SidebarMetrics {
     /// disabled-looking wash — these are real destinations, just less-travelled ones.
     static let secondaryIconOpacity: Double = 0.8
 
+    // MARK: Lists section
+
+    /// The lists region shares the nav rows' left edge rather than indenting under its
+    /// own heading: context header label, list glyph, and nav glyph all start at
+    /// `horizontalInset + rowHorizontalPadding`, and list labels land on the same x as
+    /// nav labels. These are derived from the nav values instead of restated so the two
+    /// halves of the column can't drift apart again.
+    static let listRowHorizontalPadding: CGFloat = SidebarMetrics.rowHorizontalPadding
+    static let listIconSlotWidth: CGFloat = SidebarMetrics.iconSlotWidth
+    static let listIconLabelSpacing: CGFloat = SidebarMetrics.iconLabelSpacing
+    static let listRowCornerRadius: CGFloat = SidebarMetrics.rowCornerRadius
+    static let listRowSpacing: CGFloat = SidebarMetrics.rowSpacing
+    static let listIconSize: CGFloat = 12
+    static let listLabelFontSize: CGFloat = 13
+    static let listRowVerticalPadding: CGFloat = 7
+    /// Minimum gap between a truncating list name and its trailing due-date flag.
+    static let listTrailingGap: CGFloat = 8
+
+    // MARK: Context headers
+
+    static let contextHeaderFontSize: CGFloat = 10
+    static let contextHeaderKerning: CGFloat = 0.8
+    static let contextHeaderTopPadding: CGFloat = 3
+    static let contextHeaderBottomSpacing: CGFloat = 6
+    static let contextSectionBottomSpacing: CGFloat = 8
+    static let contextAddButtonSize: CGFloat = 16
+    static let contextAddIconSize: CGFloat = 9
+
+    // MARK: List due-date flag
+
+    static let listDueDateIconSize: CGFloat = 9
+    static let listDueDateFontSize: CGFloat = 10
+    static let listDueDateSpacing: CGFloat = 4
+
     // MARK: Count badges
 
     static let badgeFontSize: CGFloat = 10

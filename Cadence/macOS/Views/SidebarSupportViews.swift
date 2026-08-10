@@ -204,6 +204,18 @@ struct SidebarSectionDivider: View {
     }
 }
 
+/// One area/project row.
+///
+/// The glyph is **neutral except when the row is selected**, where it takes the list's
+/// own `colorHex`. Seven saturated hues stacked down the column read as noise; spending
+/// colour only on the current list makes it mean "you are here". Hover deliberately does
+/// not colour it — that would put two rows in colour at once.
+///
+/// This is a sidebar presentation choice only: every other surface (task rows, board
+/// cards, month chips, the inspector's List row) still renders the list's own colour.
+///
+/// Hover and selection share **one** background layer at **one** radius, same rule as
+/// `SidebarNavRow` and `TaskInspectorFieldButtonRow`.
 struct SidebarListRow: View {
     enum Kind {
         case area
@@ -244,43 +256,37 @@ struct SidebarListRow: View {
         "sidebar-\(kind.label)-\(label)"
     }
 
+    private var isSelected: Bool { selection == item }
+
     var body: some View {
         Button {
             selection = item
         } label: {
-            HStack(spacing: 8) {
-                Label {
-                    Text(label)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(selection == item ? Theme.text : Theme.muted)
-                } icon: {
-                    Image(systemName: icon)
-                        .foregroundStyle(color)
-                        .font(.system(size: 12, weight: .semibold))
-                }
+            HStack(spacing: SidebarMetrics.listIconLabelSpacing) {
+                Image(systemName: icon)
+                    .font(.system(size: SidebarMetrics.listIconSize, weight: .semibold))
+                    .foregroundStyle(isSelected ? color : Theme.dim)
+                    .frame(width: SidebarMetrics.listIconSlotWidth)
 
-                Spacer(minLength: 8)
+                Text(label)
+                    .font(.system(size: SidebarMetrics.listLabelFontSize, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: SidebarMetrics.listTrailingGap)
 
                 if let dueDateKey, !dueDateKey.isEmpty, onSetDueDate != nil {
                     dueDateBadge(dueDateKey)
                 }
             }
-            .padding(.leading, 10)
-            .padding(.trailing, 10)
-            .padding(.vertical, 7)
+            .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
+            .padding(.vertical, SidebarMetrics.listRowVerticalPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selection == item ? Color.clear : (isHovered ? Theme.surfaceElevated.opacity(0.72) : Color.clear))
+                RoundedRectangle(cornerRadius: SidebarMetrics.listRowCornerRadius, style: .continuous)
+                    .fill(backgroundFill)
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(selection == item ? Color.clear : Theme.borderSubtle.opacity(isHovered ? 0.68 : 0), lineWidth: 1)
-            }
-            .overlay(alignment: .leading) {
-                Rectangle()
-                    .fill(selection == item ? color : Color.clear)
-                    .frame(width: 2)
-            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -298,29 +304,40 @@ struct SidebarListRow: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: isHovered)
-        .animation(.easeOut(duration: 0.12), value: selection == item)
+        .animation(.easeOut(duration: 0.12), value: isSelected)
     }
 
+    private var backgroundFill: Color {
+        if isSelected {
+            return Theme.surfaceElevated
+        }
+        if isHovered {
+            return Theme.surfaceElevated.opacity(0.6)
+        }
+        return Color.clear
+    }
+
+    /// Bare tinted text rather than a filled pill: as a capsule this annotation carried
+    /// more weight than the list name it annotates.
     @ViewBuilder
     private func dueDateBadge(_ key: String) -> some View {
         Button {
             openDueDatePicker(key)
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: SidebarMetrics.listDueDateSpacing) {
                 Image(systemName: "flag.fill")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: SidebarMetrics.listDueDateIconSize, weight: .semibold))
                     .foregroundStyle(Theme.red)
                 Text(DateFormatters.relativeDate(from: key))
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: SidebarMetrics.listDueDateFontSize, weight: .semibold))
                     .foregroundStyle(key < DateFormatters.todayKey() ? Theme.red : Theme.dim)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(Theme.surfaceElevated.opacity(isHovered ? 0.9 : 0.7))
-            .clipShape(Capsule())
+            .fixedSize()
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.plain)
+        .help("Set due date")
         .popover(isPresented: $showDueDatePicker) {
             CadenceQuickDatePopover(
                 selection: Binding(

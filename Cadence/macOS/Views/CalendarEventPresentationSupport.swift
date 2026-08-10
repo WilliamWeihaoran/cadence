@@ -118,6 +118,43 @@ struct CalendarEventItem: Identifiable {
     }
 }
 
+/// Time text for a month-cell event chip, split out so the segment rule is testable without a view.
+enum CalendarEventChipTimeSupport {
+    /// `nil` whenever no single time describes the chip: an all-day event has none, and a middle
+    /// segment of a multi-day event fills its whole day, so either endpoint would name a time that
+    /// day never sees.
+    static func label(
+        isAllDay: Bool,
+        isMultiDayTimedEvent: Bool,
+        isFirstSegment: Bool,
+        isLastSegment: Bool,
+        eventStartMin: Int,
+        eventEndMin: Int
+    ) -> String? {
+        guard !isAllDay else { return nil }
+        guard isMultiDayTimedEvent else { return TimeFormatters.timeString(from: eventStartMin) }
+        if isFirstSegment { return TimeFormatters.timeString(from: eventStartMin) }
+        if isLastSegment { return "ends \(TimeFormatters.timeString(from: eventEndMin))" }
+        return nil
+    }
+}
+
+extension CalendarEventItem {
+    /// Start time for the day the event begins, `ends <time>` on the day it finishes, nothing in
+    /// between. Minutes come off the event's own stored values and off `eventEndDate` measured in
+    /// the same calendar the segment was cut in — never a separately-zoned formatter.
+    func chipTimeLabel(calendar: Calendar = .current) -> String? {
+        CalendarEventChipTimeSupport.label(
+            isAllDay: ekEvent.isAllDay,
+            isMultiDayTimedEvent: isMultiDayTimedEvent,
+            isFirstSegment: isFirstSegment,
+            isLastSegment: isLastSegment,
+            eventStartMin: eventStartMin,
+            eventEndMin: CalendarEventIdentity.startMinute(for: eventEndDate, calendar: calendar)
+        )
+    }
+}
+
 struct CalendarBoardEventDisplayItem: Identifiable {
     let id: String
     let title: String

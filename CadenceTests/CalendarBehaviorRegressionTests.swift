@@ -749,6 +749,58 @@ struct CalendarBehaviorRegressionTests {
         #expect(CalendarChipDueMarkerSupport.label(dueDateKey: "", dayKey: "2026-08-12", calendar: calendar) == nil)
     }
 
+    @Test func monthChipTimeFollowsWhichSegmentOfTheEventTheDayIs() {
+        // A single-day event is its own first and last segment: plain start time.
+        #expect(CalendarEventChipTimeSupport.label(
+            isAllDay: false,
+            isMultiDayTimedEvent: false,
+            isFirstSegment: true,
+            isLastSegment: true,
+            eventStartMin: 22 * 60 + 29,
+            eventEndMin: 23 * 60 + 30
+        ) == "10:29 PM")
+
+        // Day it starts: the start time, even though the day it draws on has no end.
+        #expect(CalendarEventChipTimeSupport.label(
+            isAllDay: false,
+            isMultiDayTimedEvent: true,
+            isFirstSegment: true,
+            isLastSegment: false,
+            eventStartMin: 22 * 60 + 29,
+            eventEndMin: 12 * 60 + 55
+        ) == "10:29 PM")
+
+        // Day it finishes: the end time, labelled so it cannot be read as a start.
+        #expect(CalendarEventChipTimeSupport.label(
+            isAllDay: false,
+            isMultiDayTimedEvent: true,
+            isFirstSegment: false,
+            isLastSegment: true,
+            eventStartMin: 22 * 60 + 29,
+            eventEndMin: 12 * 60 + 55
+        ) == "ends 12:55 PM")
+
+        // A middle day runs midnight to midnight, so neither endpoint is a fact about it.
+        #expect(CalendarEventChipTimeSupport.label(
+            isAllDay: false,
+            isMultiDayTimedEvent: true,
+            isFirstSegment: false,
+            isLastSegment: false,
+            eventStartMin: 22 * 60 + 29,
+            eventEndMin: 12 * 60 + 55
+        ) == nil)
+
+        // All-day events have no time to show at any position.
+        #expect(CalendarEventChipTimeSupport.label(
+            isAllDay: true,
+            isMultiDayTimedEvent: false,
+            isFirstSegment: true,
+            isLastSegment: true,
+            eventStartMin: 0,
+            eventEndMin: 0
+        ) == nil)
+    }
+
     // MARK: - Rendering block vs calendar month
 
     private static func gridCalendar(_ zone: String = "America/New_York") -> Calendar {
@@ -1239,27 +1291,53 @@ struct CalendarBehaviorRegressionTests {
         #expect(carriedToday.cellBackground == CalendarMonthDayEmphasis.outOfMonth.cellBackground)
     }
 
-    /// Only carried cells and the carried-today case changed; the in-month states are pinned to
-    /// exactly what they rendered before.
-    @Test func inMonthCellAppearanceIsUnchanged() {
+    /// Marker shape and label colour per state. Backgrounds are pinned separately, in
+    /// `outOfMonthCellsAreOnAVisiblyDifferentPlateFromTheDisplayedMonth`.
+    @Test func eachEmphasisStateKeepsItsOwnMarkerAndLabel() {
         #expect(CalendarMonthDayEmphasis.inMonth.dateLabelColor == Theme.text)
         #expect(CalendarMonthDayEmphasis.inMonth.dateLabelWeight == .medium)
-        #expect(CalendarMonthDayEmphasis.inMonth.cellBackground == Theme.bg)
         #expect(CalendarMonthDayEmphasis.inMonth.todayDiscFill == nil)
         #expect(CalendarMonthDayEmphasis.inMonth.todayRingStroke == nil)
 
         #expect(CalendarMonthDayEmphasis.inMonthToday.dateLabelColor == Theme.onColor)
         #expect(CalendarMonthDayEmphasis.inMonthToday.dateLabelWeight == .bold)
         #expect(CalendarMonthDayEmphasis.inMonthToday.todayDiscFill == Theme.blue)
-        #expect(CalendarMonthDayEmphasis.inMonthToday.cellBackground != Theme.bg)
 
-        // Carried days stay dimmed, on a recessed plate, and never borrow an in-month colour.
+        // Carried days stay dimmed and never borrow an in-month colour.
         #expect(CalendarMonthDayEmphasis.outOfMonth.dateLabelColor != Theme.text)
         #expect(CalendarMonthDayEmphasis.outOfMonth.dateLabelColor != Theme.onColor)
         #expect(CalendarMonthDayEmphasis.outOfMonth.dateLabelWeight == .regular)
-        #expect(CalendarMonthDayEmphasis.outOfMonth.cellBackground == Theme.surfaceRecessed)
-        #expect(CalendarMonthDayEmphasis.outOfMonthToday.cellBackground == Theme.surfaceRecessed)
         #expect(CalendarMonthDayEmphasis.outOfMonthToday.dateLabelColor == Theme.blue)
+    }
+
+    /// The greying is a *band*, and a band only exists if the two plates actually differ.
+    ///
+    /// The failure this pins: in-month `Theme.bg` (#09090b) against out-of-month
+    /// `Theme.surfaceRecessed` (#0d0d0f) — four units on a near-black plate, and inverted, with
+    /// the "recessed" cell drawn lighter than the page it sat on. `Theme.bg` has no room below
+    /// it, so the displayed month is what moves: it takes `Theme.surface` and the carried days
+    /// fall back to the app background.
+    @Test func outOfMonthCellsAreOnAVisiblyDifferentPlateFromTheDisplayedMonth() {
+        let inMonth = CalendarMonthDayEmphasis.inMonth.cellBackground
+        let outOfMonth = CalendarMonthDayEmphasis.outOfMonth.cellBackground
+
+        #expect(inMonth != outOfMonth)
+        #expect(inMonth == Theme.surface)
+        #expect(outOfMonth == Theme.bg)
+        // Specifically not the old pairing, in either direction.
+        #expect(inMonth != Theme.surfaceRecessed)
+        #expect(outOfMonth != Theme.surfaceRecessed)
+
+        // Today does not opt out of its own month's plate: it is the wash, layered on top, that
+        // marks it — so a washed today still reads as part of the page it belongs to.
+        #expect(CalendarMonthDayEmphasis.inMonthToday.cellBackground == inMonth)
+        #expect(CalendarMonthDayEmphasis.inMonthToday.cellWash != nil)
+        #expect(CalendarMonthDayEmphasis.inMonth.cellWash == nil)
+        #expect(CalendarMonthDayEmphasis.outOfMonth.cellWash == nil)
+        // A carried today must not pick up the wash — that would break the grey band it belongs
+        // to and leave two cells on the page washed as "today's month".
+        #expect(CalendarMonthDayEmphasis.outOfMonthToday.cellWash == nil)
+        #expect(CalendarMonthDayEmphasis.outOfMonthToday.cellBackground == outOfMonth)
     }
 
     /// The rule as a property, over every day the grid actually draws for two years: a cell

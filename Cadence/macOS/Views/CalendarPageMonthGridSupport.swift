@@ -238,9 +238,18 @@ enum CalendarMonthDayEmphasis: Equatable {
 }
 
 extension CalendarMonthDayEmphasis {
-    /// How far `Theme.dim` is pulled back for a carried day. Named once so the two places that
-    /// dim out-of-month chrome cannot drift apart.
-    private static let outOfMonthLabelOpacity: Double = 0.58
+    /// How far `Theme.dim` is pulled back for a carried day. Named once so the day number and the
+    /// month abbreviation beside it cannot drift apart.
+    ///
+    /// 0.50, down from 0.58. Composited on the carried plate (`Theme.bg`) that is #3d3d43 rather
+    /// than #47474d — 1.84:1 against its own cell, down from 2.11:1 — while the in-month number
+    /// stays `Theme.text` at 15.9:1. This is close to the floor, and deliberately so: Apple's own
+    /// other-month numeral is `tertiaryLabelColor`, white at 0.25, which lands near 2.3:1 on its
+    /// cell, so the label was never the part that was too bright and a darker one alone cannot buy
+    /// the separation this grid was missing. Past here it stops being *grey* and starts being
+    /// unreadable — 0.35 gives 1.45:1, at which a 12pt numeral no longer resolves. The band that
+    /// reads at a glance is `cellBackground` below; this is the supporting half.
+    private static let outOfMonthLabelOpacity: Double = 0.50
     /// Wash behind the cell on the page that owns today.
     private static let todayCellWashOpacity: Double = 0.04
     /// Stroke width of the hollow today marker used for a carried today.
@@ -280,20 +289,47 @@ extension CalendarMonthDayEmphasis {
     /// *not this month* at the same time": the marker is still unmistakably the today marker, in
     /// the same colour and the same place, but an outline instead of a solid reads as the
     /// lighter-weight version of it. Paired with the month abbreviation the cell now always
-    /// carries, and the recessed plate behind it, there is nothing left to confuse it with.
+    /// carries, and the dropped-back plate under it, there is nothing left to confuse it with.
     var todayRingStroke: Color? {
         self == .outOfMonthToday ? Theme.blue : nil
     }
 
-    /// Apple greys the whole out-of-month cell; this is that, in the app's own ramp. It applies
-    /// to a carried today as well, so the "not this month" band is unbroken — the ring, not the
-    /// backdrop, is what marks today there.
+    /// Apple greys the whole out-of-month cell; this is that, in the app's own ramp — and the
+    /// relationship is deliberately *inverted* rather than "paint the carried cells darker".
+    ///
+    /// `Theme.bg` is #09090b. There is no useful room below it, so the previous arrangement —
+    /// in-month `bg` (#09090b) against out-of-month `surfaceRecessed` (#0d0d0f) — was four units
+    /// on a near-black plate: invisible, and backwards, since the "recessed" stop is *lighter*
+    /// than the page it was meant to sit under. Lifting the displayed month onto `Theme.surface`
+    /// instead makes that month the page and lets the carried days fall back to the app
+    /// background, which is a real step (L* 5.98 vs 2.51, a 2.4x luminance ratio, against L* 1.18
+    /// the wrong way before) and needs no colour below black.
+    ///
+    /// It stops at `surface` rather than reaching higher on the ramp because the chips inside a
+    /// cell are plated in `surfaceHover` — by definition the hover lift *for* `surface`. One stop
+    /// further and the chips would read as holes punched into the cell instead of cards sitting
+    /// on it, which trades one legibility problem for another.
+    ///
+    /// The carried plate covers a carried today too, so the "not this month" band is unbroken —
+    /// the ring, not the backdrop, is what marks today there.
     var cellBackground: Color {
         switch self {
-        case .inMonth: return Theme.bg
-        case .inMonthToday: return Theme.blue.opacity(Self.todayCellWashOpacity)
-        case .outOfMonth, .outOfMonthToday: return Theme.surfaceRecessed
+        case .inMonth, .inMonthToday: return Theme.surface
+        case .outOfMonth, .outOfMonthToday: return Theme.bg
         }
+    }
+
+    /// Accent wash drawn *over* `cellBackground`, on the page that owns today. `nil` everywhere
+    /// else.
+    ///
+    /// Split from the plate because today's cell now has to be both things at once: the raised
+    /// in-month plate, so it stays visibly part of the displayed month, plus the wash that marks
+    /// it. It used to be the wash *instead of* a plate, floating over whatever the grid happened
+    /// to put behind the cell. Raising the plate makes the wash read more, not less — composited
+    /// it is #15191f on the in-month #131316 (ΔL* 2.6), where before it was #0c0f15 on #09090b
+    /// (ΔL* 1.8).
+    var cellWash: Color? {
+        self == .inMonthToday ? Theme.blue.opacity(Self.todayCellWashOpacity) : nil
     }
 }
 

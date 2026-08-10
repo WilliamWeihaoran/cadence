@@ -103,36 +103,36 @@ struct ContextSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 7) {
-                Image(systemName: context.icon)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Color(hex: context.colorHex).opacity(0.75))
-                    .frame(width: 12)
-
+        VStack(alignment: .leading, spacing: SidebarMetrics.contextHeaderBottomSpacing) {
+            // Label plus "+", nothing else: the glyph and the hairline rule this header
+            // used to carry drew more attention than the list names underneath it.
+            HStack(spacing: SidebarMetrics.listIconLabelSpacing) {
                 Text(context.name.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: SidebarMetrics.contextHeaderFontSize, weight: .semibold))
                     .foregroundStyle(Theme.dim)
-                    .kerning(0.8)
+                    .kerning(SidebarMetrics.contextHeaderKerning)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
-                Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.5))
-                    .frame(height: 1)
+                Spacer(minLength: SidebarMetrics.listTrailingGap)
 
                 Button(action: onAddList) {
                     Image(systemName: "plus")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: SidebarMetrics.contextAddIconSize, weight: .semibold))
                         .foregroundStyle(Theme.dim.opacity(0.8))
-                        .frame(width: 16, height: 16)
+                        .frame(
+                            width: SidebarMetrics.contextAddButtonSize,
+                            height: SidebarMetrics.contextAddButtonSize
+                        )
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
             }
-            .padding(.horizontal, 2)
-            .padding(.top, 3)
+            .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
+            .padding(.top, SidebarMetrics.contextHeaderTopPadding)
 
             if hasLists {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: SidebarMetrics.listRowSpacing) {
                     // Top drop zone — lets the user drag any item to the first position
                     if let firstItem = listEntries.first?.dragItem {
                         Color.clear
@@ -154,29 +154,28 @@ struct ContextSection: View {
                         }
                     }
                 }
-                .padding(.leading, 7)
             } else {
                 Button(action: onAddList) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: SidebarMetrics.listIconLabelSpacing) {
                         Image(systemName: "plus.circle")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: SidebarMetrics.listIconSize, weight: .semibold))
+                            .frame(width: SidebarMetrics.listIconSlotWidth)
                         Text("Add first list")
-                            .font(.system(size: 12, weight: .medium))
-                        Spacer()
+                            .font(.system(size: SidebarMetrics.listLabelFontSize, weight: .medium))
+                        Spacer(minLength: SidebarMetrics.listTrailingGap)
                     }
                     .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
+                    .padding(.vertical, SidebarMetrics.listRowVerticalPadding)
                     .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: SidebarMetrics.listRowCornerRadius, style: .continuous)
                             .fill(Theme.surfaceElevated.opacity(0.55))
                     )
                 }
                 .buttonStyle(.cadencePlain)
-                .padding(.leading, 4)
             }
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, SidebarMetrics.contextSectionBottomSpacing)
         .sheet(item: $areaForEdit) { area in
             EditAreaSheet(area: area)
         }
