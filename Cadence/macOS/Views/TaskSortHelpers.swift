@@ -1,14 +1,11 @@
 #if os(macOS)
 import Foundation
 
-func taskPriorityRank(_ priority: TaskPriority) -> Int {
-    switch priority {
-    case .none: return 0
-    case .low: return 1
-    case .medium: return 2
-    case .high: return 3
-    }
-}
+/// Free-function spelling of `TaskPriority.rank`, kept because the sort comparators below read
+/// better with it. This was a seventh hand-written copy of the same switch — and the one driving
+/// every macOS task sort — missed by an earlier consolidation because it is spelled
+/// `taskPriorityRank` rather than `priorityRank`.
+func taskPriorityRank(_ priority: TaskPriority) -> Int { priority.rank }
 
 private func taskSortFallbackPrecedes(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
     if lhs.order != rhs.order { return lhs.order < rhs.order }
