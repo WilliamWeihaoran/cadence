@@ -217,6 +217,23 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
         return trimmed.isEmpty ? TaskSectionDefaults.defaultName : trimmed
     }
 
+    /// Whether this task lives somewhere the user can currently navigate to.
+    ///
+    /// Completed and archived lists are hidden from the sidebar, All Tasks, the kanban boards and
+    /// every container picker, so a task inside one is real but unreachable. An inbox task — no
+    /// area, no project — is always reachable.
+    ///
+    /// This existed as four independent copies of the same six lines (`SidebarView`,
+    /// `AllTasksListView`, `KanbanBoardSupport`, and the goal resolver's Next Action filter). They
+    /// agreed, which is exactly the state that precedes drift — every bug found this session came
+    /// from one idea implemented more than once. `ProjectStatus` has five cases and `AreaStatus`
+    /// three, so "which of them count as visible" is a real decision, made once, here.
+    var isInActiveContainer: Bool {
+        if let project { return project.isActive }
+        if let area { return area.isActive }
+        return true
+    }
+
     var hidesEmptyDueDateInList: Bool {
         if let project {
             return project.hideDueDateIfEmpty

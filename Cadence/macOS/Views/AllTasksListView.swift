@@ -28,7 +28,7 @@ struct AllTasksListView: View {
     private var todayKey: String { DateFormatters.todayKey() }
 
     private var visibleTaskUniverse: [AppTask] {
-        allTasks.filter(isTaskInActiveContainer)
+        allTasks.filter(CadenceTaskQuerySupport.isInActiveContainer)
     }
 
     private var activeTasks: [AppTask] {
@@ -57,16 +57,6 @@ struct AllTasksListView: View {
 
     private var tasksByID: [UUID: AppTask] {
         Dictionary(uniqueKeysWithValues: visibleTaskUniverse.map { ($0.id, $0) })
-    }
-
-    private func isTaskInActiveContainer(_ task: AppTask) -> Bool {
-        if let project = task.project {
-            return project.isActive
-        }
-        if let area = task.area {
-            return area.isActive
-        }
-        return true
     }
 
     private func flatSections(from activeTasks: [AppTask]) -> [AllTasksFlatSection] {

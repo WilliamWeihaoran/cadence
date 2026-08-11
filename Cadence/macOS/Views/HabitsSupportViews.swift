@@ -589,6 +589,11 @@ struct HabitHeatmap: View {
     /// Anchoring on the week containing today and counting back puts the current week in the
     /// final column, where a heatmap's most recent week belongs.
     enum HabitHeatmapGrid {
+        struct Cell {
+            let date: Date
+            let key: String
+        }
+
         static func startDate(weeks: Int, today: Date, calendar: Calendar) -> Date {
             let startOfToday = calendar.startOfDay(for: today)
             let weekday = calendar.component(.weekday, from: startOfToday)
@@ -596,14 +601,21 @@ struct HabitHeatmap: View {
             return calendar.date(byAdding: .day, value: -(max(1, weeks) - 1) * 7, to: startOfThisWeek) ?? startOfThisWeek
         }
 
-        /// Every `yyyy-MM-dd` key the grid draws, in render order.
-        static func dateKeys(weeks: Int, today: Date, calendar: Calendar) -> [String] {
+        /// Every cell the grid draws, in render order. **The view body iterates this**, rather
+        /// than re-deriving the same sequence inline — when it did, this type had no production
+        /// caller at all and the tests over it proved nothing about what was on screen.
+        static func cells(weeks: Int, today: Date, calendar: Calendar) -> [Cell] {
             let start = startDate(weeks: weeks, today: today, calendar: calendar)
             return (0..<(max(1, weeks) * 7)).compactMap { offset in
-                calendar.date(byAdding: .day, value: offset, to: start).map {
-                    DateFormatters.dateKey(from: $0, calendar: calendar)
-                }
+                guard let raw = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
+                let day = calendar.startOfDay(for: raw)
+                return Cell(date: day, key: DateFormatters.dateKey(from: day, calendar: calendar))
             }
+        }
+
+        /// Every `yyyy-MM-dd` key the grid draws, in render order.
+        static func dateKeys(weeks: Int, today: Date, calendar: Calendar) -> [String] {
+            cells(weeks: weeks, today: today, calendar: calendar).map(\.key)
         }
     }
 
@@ -628,7 +640,8 @@ struct HabitHeatmap: View {
     }
 
     var body: some View {
-        let fmt = DateFormatters.ymd
+        let cells = HabitHeatmapGrid.cells(weeks: weeks, today: Date(), calendar: cal)
+        let now = Date()
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .topLeading) {
                 Color.clear.frame(height: 16)
@@ -644,13 +657,12 @@ struct HabitHeatmap: View {
                 ForEach(0..<weeks, id: \.self) { weekIdx in
                     VStack(spacing: gap) {
                         ForEach(0..<7, id: \.self) { dayOfWeek in
-                            let dayOffset = weekIdx * 7 + dayOfWeek
-                            let date = cal.date(byAdding: .day, value: dayOffset, to: startDate) ?? startDate
-                            let key = fmt.string(from: date)
-                            let isDone = completionDates.contains(key)
+                            let index = weekIdx * 7 + dayOfWeek
+                            let cell: HabitHeatmapGrid.Cell? = index < cells.count ? cells[index] : nil
+                            let isDone = cell.map { completionDates.contains($0.key) } ?? false
                             // Live now that the grid runs through the end of the current week:
                             // the days after today in that final column are drawn empty.
-                            let isFuture = date > Date()
+                            let isFuture = cell.map { $0.date > now } ?? true
 
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(isFuture ? Color.clear : (isDone ? Color(hex: habit.colorHex) : Theme.borderSubtle))

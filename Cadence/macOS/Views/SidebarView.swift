@@ -24,15 +24,7 @@ struct SidebarView: View {
     @State private var contextForNewList: Context? = nil
 
     private var tasksInActiveContainers: [AppTask] {
-        allTasks.filter { task in
-            if let project = task.project {
-                return project.isActive
-            }
-            if let area = task.area {
-                return area.isActive
-            }
-            return true
-        }
+        allTasks.filter(CadenceTaskQuerySupport.isInActiveContainer)
     }
 
     private var fullBadgeSnapshot: CadenceFeatureBadgeSupport.Snapshot {

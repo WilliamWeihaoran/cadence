@@ -146,11 +146,7 @@ enum GoalContributionResolver {
         // Completed and archived lists are hidden from the sidebar, All Tasks, and every picker —
         // a next action inside one names a task the user cannot navigate to. Progress deliberately
         // still counts those tasks: archiving a finished project must not walk a goal backwards.
-        let actionableTasks = openTasks.filter { task in
-            if let project = task.project { return project.isActive }
-            if let area = task.area { return area.isActive }
-            return true
-        }
+        let actionableTasks = openTasks.filter(\.isInActiveContainer)
 
         let nextAction = actionableTasks
             .sorted { lhs, rhs in
