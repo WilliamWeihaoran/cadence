@@ -99,17 +99,26 @@ final class NotificationManager: NSObject {
 
         for request in diff.requestsToAdd {
             let content = Self.makeContent(for: request)
-            let components = Calendar.current.dateComponents(
-                request.kind.triggerComponents,
-                from: request.fireDate
+            let osRequest = UNNotificationRequest(
+                identifier: request.identifier,
+                content: content,
+                trigger: Self.makeTrigger(for: request)
             )
-            let trigger = UNCalendarNotificationTrigger(
-                dateMatching: components,
-                repeats: request.kind.repeatsDaily
-            )
-            let osRequest = UNNotificationRequest(identifier: request.identifier, content: content, trigger: trigger)
             try? await center.add(osRequest)
         }
+    }
+
+    /// The exact trigger `reconcile` schedules, as a standalone function.
+    ///
+    /// `reconcile` early-returns under test, so anything built inline inside it is unverifiable:
+    /// asserting `NotificationKind.repeatsDaily` proved only that the enum agreed with itself,
+    /// and reverting this construction to a hardcoded one-shot left the suite green while the OS
+    /// still received a habit reminder that fired once and expired. Constructing a trigger touches
+    /// no notification centre, so pulling it out here makes the one line that carries the repeat
+    /// semantics to the OS directly testable.
+    static func makeTrigger(for request: CadenceNotificationRequest) -> UNCalendarNotificationTrigger {
+        let spec = request.triggerSpec()
+        return UNCalendarNotificationTrigger(dateMatching: spec.components, repeats: spec.repeats)
     }
 
     /// Cancels a specific set of tasks' pending notifications directly — cheaper than a full

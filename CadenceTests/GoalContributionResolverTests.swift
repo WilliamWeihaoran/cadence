@@ -218,6 +218,37 @@ struct GoalContributionResolverTests {
         #expect(summary.doneTodayCount == 1)
     }
 
+    /// "This week" has to mean the same week the habit's own streak means. The resolver read the
+    /// locale's week (Sunday-start in en_US) while `Habit.weeklyStreak` pins ISO Monday weeks.
+    ///
+    /// Evaluated on a **Sunday**, which is the only day the two definitions disagree about — the
+    /// existing momentum test pins a Thursday, where both weeks contain the same completions and
+    /// the assertion cannot tell them apart.
+    @Test func thisWeekUsesIsoMondayWeeksNotTheLocaleWeek() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let goal = Goal(title: "Health")
+        let habit = Habit(title: "Run", goal: goal)
+        habit.frequencyType = .timesPerWeek
+        habit.targetCount = 3
+
+        modelContext.insert(goal)
+        modelContext.insert(habit)
+        // 2026-05-03 is a Sunday. Under ISO it closes the week that opened Mon 2026-04-27; under a
+        // Sunday-start week it *opens* a new one, so these three completions would read as 0.
+        for key in ["2026-04-27", "2026-04-29", "2026-05-01"] {
+            modelContext.insert(HabitCompletion(date: key, habit: habit))
+        }
+        try modelContext.save()
+
+        let sunday = try #require(DateFormatters.date(from: "2026-05-03"))
+        let summary = GoalHabitMomentumResolver.summary(for: goal, now: sunday)
+
+        #expect(summary.thisWeekCount == 3)
+        #expect(habit.currentStreak(asOf: sunday) == 1)
+    }
+
     @Test func taskContainerNamePrefersListOverGoal() {
         let context = Context(name: "Personal")
         let area = Area(name: "Life", context: context, colorHex: "#22cc88")

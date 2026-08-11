@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Testing
+import UserNotifications
 @testable import Cadence
 
 /// Covers the habit numbers that are *rendered next to each other* and therefore have to agree.
@@ -114,6 +115,93 @@ struct HabitInsightsAuditTests {
         #expect(makeHabit(frequency: .daily).bestStreak() == 0)
     }
 
+    /// The walk is bounded, and the bound must be anchored at **today** rather than at the first
+    /// check-in. Anchoring it at the earliest completion meant one stray backdated or imported row
+    /// from years ago pushed all recent history outside the window — an unbroken 100-day streak
+    /// reported a "best" of 1, which is worse than the 366-day cap this replaced.
+    @Test func aVeryOldStrayCompletionDoesNotPushRecentHistoryOutOfTheWindow() {
+        let habit = makeHabit(frequency: .daily)
+        let calendar = Calendar.current
+        let today = DateFormatters.date(from: "2026-06-19") ?? Date()
+
+        var keys: [String] = []
+        for offset in 0..<100 {
+            if let day = calendar.date(byAdding: .day, value: -offset, to: today) {
+                keys.append(DateFormatters.dateKey(from: day))
+            }
+        }
+        // One row from fifteen years ago, well outside any sane iteration bound.
+        if let ancient = calendar.date(byAdding: .year, value: -15, to: today) {
+            keys.append(DateFormatters.dateKey(from: ancient))
+        }
+        complete(habit, keys)
+
+        #expect(habit.currentStreak(asOf: today) == 100)
+        #expect(habit.bestStreak(asOf: today) == 100)
+    }
+
+    /// `date(byAdding: .day,)` preserves wall-clock time, so a spring-forward that happens *at
+    /// midnight* — Santiago and Havana, not New York — drifts the cursor to 01:00 permanently.
+    /// Once drifted, a `startOfDay`-bounded comparison silently drops a day at the boundary, and
+    /// the day it dropped was today.
+    @Test func bestStreakSurvivesAMidnightDSTTransition() {
+        var calendar = Calendar(identifier: .gregorian)
+        guard let santiago = TimeZone(identifier: "America/Santiago") else {
+            Issue.record("America/Santiago unavailable")
+            return
+        }
+        calendar.timeZone = santiago
+
+        let habit = makeHabit(frequency: .daily)
+        // 2026-09-06 is a midnight spring-forward in Santiago; span it in both directions.
+        guard let end = DateFormatters.date(from: "2026-09-25", in: calendar) else {
+            Issue.record("could not build reference date")
+            return
+        }
+        var keys: [String] = []
+        for offset in 0..<50 {
+            if let day = calendar.date(byAdding: .day, value: -offset, to: end) {
+                keys.append(DateFormatters.dateKey(from: day, calendar: calendar))
+            }
+        }
+        complete(habit, keys)
+
+        let current = habit.currentStreak(asOf: end, calendar: calendar)
+        let best = habit.bestStreak(asOf: end, calendar: calendar)
+
+        #expect(current == 50)
+        #expect(best == 50)
+        #expect(best >= current)
+    }
+
+    /// `HabitInsights.bestStreak` is the *property*, and it is the only thing the iOS detail view
+    /// reads. Every other test here calls the method, so reverting the property to the old
+    /// calendar-day scan left the whole suite green while the shipped tile stayed wrong.
+    @Test func theBestStreakPropertyTheUIReadsUsesTheFrequencyAwareWalk() {
+        let habit = makeHabit(frequency: .daysOfWeek, days: [1, 3, 5])
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+
+        // Six weeks of this habit's *own* due days, counted back from today, so the property's
+        // built-in `Date()` sees a real streak. No two of these are consecutive calendar days,
+        // which is exactly what the old implementation could not count.
+        var keys: [String] = []
+        var found = 0
+        var offset = 0
+        while found < 18, offset < 200 {
+            if let day = calendar.date(byAdding: .day, value: -offset, to: today),
+               habit.isDue(on: day, calendar: calendar) {
+                keys.append(DateFormatters.dateKey(from: day, calendar: calendar))
+                found += 1
+            }
+            offset += 1
+        }
+        complete(habit, keys)
+
+        #expect(habit.bestStreak == 18)
+        #expect(habit.bestStreak >= habit.currentStreak)
+    }
+
     /// A habit reminder is a standing "every day at this time". Building it as a one-shot trigger
     /// matched on `.year/.month/.day` meant it fired once and was then consumed — only a
     /// `scenePhase` reconcile could re-add it, so leaving the app open ended the reminder
@@ -128,6 +216,103 @@ struct HabitInsightsAuditTests {
             #expect(kind.triggerComponents.contains(.day))
             #expect(kind.triggerComponents.contains(.year))
         }
+    }
+
+    /// Asserting the enum alone proved nothing: `NotificationManager` built the trigger inline, so
+    /// reverting the adapter to a hardcoded one-shot left this file green while the OS still got a
+    /// reminder that fired once. `triggerSpec` is the value the manager actually passes, and
+    /// `reconcile` early-returns under test, so this is the only place the two can be tied
+    /// together.
+    @Test func theTriggerSpecTheManagerSchedulesMatchesTheKindsRepeatRules() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+        let fireDate = calendar.date(from: DateComponents(year: 2026, month: 6, day: 19, hour: 9, minute: 30)) ?? Date()
+
+        let habitSpec = CadenceNotificationRequest(
+            identifier: "habit-reminder-x",
+            kind: .habitReminder,
+            title: "Meditate",
+            body: "Time to check in",
+            fireDate: fireDate
+        ).triggerSpec(calendar: calendar)
+
+        #expect(habitSpec.repeats == true)
+        #expect(habitSpec.components.hour == 9)
+        #expect(habitSpec.components.minute == 30)
+        // A repeating trigger that carries a calendar date matches that date once and never again,
+        // which is the exact shape of the original bug.
+        #expect(habitSpec.components.day == nil)
+        #expect(habitSpec.components.month == nil)
+        #expect(habitSpec.components.year == nil)
+
+        let taskSpec = CadenceNotificationRequest(
+            identifier: "task-due-x",
+            kind: .taskDue,
+            title: "Ship it",
+            body: "Due today",
+            fireDate: fireDate
+        ).triggerSpec(calendar: calendar)
+
+        #expect(taskSpec.repeats == false)
+        #expect(taskSpec.components.year == 2026)
+        #expect(taskSpec.components.month == 6)
+        #expect(taskSpec.components.day == 19)
+    }
+
+    /// And the trigger the manager actually hands the OS, not just the spec it could have used.
+    /// Testing `triggerSpec` alone still allowed the adapter to ignore it — this asserts the
+    /// object that gets scheduled.
+    @Test func theTriggerTheManagerHandsTheOSRepeatsForHabitsAndNotForTasks() {
+        let fireDate = Date()
+
+        let habitTrigger = NotificationManager.makeTrigger(
+            for: CadenceNotificationRequest(
+                identifier: "habit-reminder-x",
+                kind: .habitReminder,
+                title: "Meditate",
+                body: "Time to check in",
+                fireDate: fireDate
+            )
+        )
+        #expect(habitTrigger.repeats == true)
+        #expect(habitTrigger.dateComponents.day == nil)
+        #expect(habitTrigger.dateComponents.hour != nil)
+
+        let taskTrigger = NotificationManager.makeTrigger(
+            for: CadenceNotificationRequest(
+                identifier: "task-due-x",
+                kind: .taskDue,
+                title: "Ship it",
+                body: "Due today",
+                fireDate: fireDate
+            )
+        )
+        #expect(taskTrigger.repeats == false)
+        #expect(taskTrigger.dateComponents.day != nil)
+        #expect(taskTrigger.dateComponents.year != nil)
+    }
+
+    /// iOS reads a goal's habits through `CadenceGoalGroupSupport`, not through the momentum
+    /// resolver, so recursing in one and not the other produced a fresh cross-platform
+    /// disagreement: the iPhone goal list said "0 habits" while the Milestone widget on the same
+    /// phone said "0/2 habits today".
+    @Test func theGoalGroupHabitsIOSReadsIncludeMilestoneHabits() {
+        let direction = Goal(title: "Get healthy")
+        let milestone = Goal(title: "Run a 10k")
+        milestone.parentGoal = direction
+        direction.subGoals = [milestone]
+
+        let onDirection = Habit(title: "Sleep 8h", goal: direction)
+        onDirection.order = 0
+        let onMilestone = Habit(title: "Run", goal: milestone)
+        onMilestone.order = 1
+        direction.habits = [onDirection]
+        milestone.habits = [onMilestone]
+
+        let habits = CadenceGoalGroupSupport.habits(for: direction)
+
+        #expect(habits.map(\.title) == ["Sleep 8h", "Run"])
+        #expect(CadenceGoalGroupSupport.summary(for: direction).activeHabitCount == 2)
     }
 
     /// The 52-week heatmap anchored on `today - 52*7` and then rounded *backwards* to a week

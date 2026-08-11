@@ -92,7 +92,7 @@ enum GoalContributionResolver {
     /// Tasks pointed straight at this goal (or one of its sub-goals) rather than reached through a
     /// linked list. Deduped and cancel-filtered the same way `contributingTasks` is, so this is a
     /// true subset of it and can never exceed `totalTasks`.
-    private static func directTasks(for goal: Goal, visitedGoalIDs: Set<UUID> = []) -> [AppTask] {
+    static func directTasks(for goal: Goal, visitedGoalIDs: Set<UUID> = []) -> [AppTask] {
         guard !visitedGoalIDs.contains(goal.id) else { return [] }
         let nextVisited = visitedGoalIDs.union([goal.id])
         let own = goal.tasks ?? []
@@ -213,7 +213,7 @@ enum GoalHabitMomentumResolver {
     /// so a habit attached to a milestone showed up nowhere on its direction — "0 habits" on the
     /// same card whose percentage that milestone's tasks were moving. Both habit editors offer
     /// milestones as attachment targets, so this is the normal way to attach one.
-    private static func linkedHabits(for goal: Goal, visitedGoalIDs: Set<UUID> = []) -> [Habit] {
+    static func linkedHabits(for goal: Goal, visitedGoalIDs: Set<UUID> = []) -> [Habit] {
         guard !visitedGoalIDs.contains(goal.id) else { return [] }
         let nextVisited = visitedGoalIDs.union([goal.id])
         let own = goal.habits ?? []

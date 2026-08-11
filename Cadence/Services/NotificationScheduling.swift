@@ -39,6 +39,17 @@ struct CadenceNotificationRequest: Equatable {
     let title: String
     let body: String
     let fireDate: Date
+
+    /// Exactly what `NotificationManager` hands `UNCalendarNotificationTrigger`, as a pure value.
+    ///
+    /// The manager used to build these two inline, so nothing connected `NotificationKind`'s
+    /// repeat rules to the trigger actually scheduled: reverting the adapter to a hardcoded
+    /// one-shot left the whole suite green while the enum kept confidently reporting otherwise.
+    /// `reconcile` early-returns under test by design, so this is the only seam where the two can
+    /// be checked against each other.
+    func triggerSpec(calendar: Calendar = .current) -> (components: DateComponents, repeats: Bool) {
+        (calendar.dateComponents(kind.triggerComponents, from: fireDate), kind.repeatsDaily)
+    }
 }
 
 /// Centralizes deterministic notification identifier formats so the scheduler (add) and the

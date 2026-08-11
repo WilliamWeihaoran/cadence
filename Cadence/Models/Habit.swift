@@ -122,11 +122,19 @@ import Foundation
 
         var best = 0
         var run = 0
-        var cursor = earliest
+        // Walk **backwards from today**, not forwards from the first check-in.
+        //
+        // Anchoring the iteration bound at `earliest` meant the window covered the oldest ~10.4
+        // years of history, so a single stray backdated or imported row from long ago pushed all
+        // recent history past the bound: an unbroken 100-day current streak plus one check-in 15
+        // years back reported Best 1. That is strictly worse than the 366-day cap this replaced,
+        // which at least stayed anchored to today. Anchored here, the bound can only ever drop
+        // history *older* than the window, so `Best >= Current` really does hold.
+        var cursor = today
         var iterations = 0
         let maxIterations = 3800 // same ~10y bound the current-streak walk uses
 
-        while cursor <= today, iterations < maxIterations {
+        while cursor >= earliest, iterations < maxIterations {
             iterations += 1
             if isDue(on: cursor, frequencyDays: days, calendar: calendar) {
                 let satisfied = (counts[DateFormatters.dateKey(from: cursor, calendar: calendar)] ?? 0) >= requiredPerDay
@@ -140,8 +148,12 @@ import Foundation
                     run = 0
                 }
             }
-            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
-            cursor = next
+            // Re-normalized every step. `date(byAdding: .day,)` keeps the wall-clock time, so a
+            // spring-forward that happens *at midnight* (Santiago, Havana) shifts the cursor to
+            // 01:00 permanently — after which `cursor >= earliest`/`<= today` comparisons against
+            // a `startOfDay` bound are off by an hour and silently drop a day at the boundary.
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = calendar.startOfDay(for: previous)
         }
         return best
     }
@@ -158,31 +170,35 @@ import Foundation
             for _ in 0..<7 {
                 total += counts[DateFormatters.dateKey(from: cursor, calendar: isoCalendar)] ?? 0
                 guard let next = isoCalendar.date(byAdding: .day, value: 1, to: cursor) else { break }
-                cursor = next
+                cursor = isoCalendar.startOfDay(for: next)
             }
             return total
         }
 
-        guard var cursor = isoCalendar.dateInterval(of: .weekOfYear, for: earliest)?.start,
+        guard let earliestWeekStart = isoCalendar.dateInterval(of: .weekOfYear, for: earliest)?.start,
               let currentWeekStart = isoCalendar.dateInterval(of: .weekOfYear, for: today)?.start
         else { return 0 }
 
         var best = 0
         var run = 0
+        var cursor = currentWeekStart
         var iterations = 0
         let maxIterations = 600 // ~11.5y of weeks, matching `weeklyStreak`
 
-        while cursor <= currentWeekStart, iterations < maxIterations {
+        // Backwards from the current week, for the same reason the day walk is: a bound anchored
+        // at the earliest completion can push recent weeks out of the window entirely.
+        while cursor >= earliestWeekStart, iterations < maxIterations {
             iterations += 1
             if weekTotal(startingAt: cursor) >= target {
                 run += 1
                 best = max(best, run)
-            } else if cursor != currentWeekStart {
+            } else if !isoCalendar.isDate(cursor, inSameDayAs: currentWeekStart) {
                 // The still-in-progress week is forgiven, exactly as `weeklyStreak` forgives it.
+                // Compared by day rather than by `==`: exact `Date` equality is a DST trap.
                 run = 0
             }
-            guard let next = isoCalendar.date(byAdding: .day, value: 7, to: cursor) else { break }
-            cursor = next
+            guard let previous = isoCalendar.date(byAdding: .day, value: -7, to: cursor) else { break }
+            cursor = isoCalendar.startOfDay(for: previous)
         }
         return best
     }

@@ -555,8 +555,12 @@ final class CadenceReadService {
         }
         let contribution = GoalContributionResolver.summary(for: goal)
         let habitMomentum = GoalHabitMomentumResolver.summary(for: goal)
-        let directTasks = (goal.tasks ?? [])
-            .filter { !$0.isCancelled }
+        // These arrays must use the same traversal as the counts beside them in the response.
+        // `directTaskCount` and `linkedHabitCount` recurse into milestones; while these two read
+        // the goal's own relationship flat, one payload could report `directTaskCount: 1` next to
+        // an empty `directTasks: []`, which is harder for a consumer to reason about than the
+        // constant `0` it replaced.
+        let directTasks = GoalContributionResolver.directTasks(for: goal)
             .sorted(by: taskSort)
             .map { taskSummary($0, allTasks: tasks) }
 
@@ -587,7 +591,7 @@ final class CadenceReadService {
             },
             directTasks: directTasks,
             subGoals: (goal.subGoals ?? []).map(goalSummary),
-            habits: (goal.habits ?? []).map(habitSummary)
+            habits: GoalHabitMomentumResolver.linkedHabits(for: goal).map(habitSummary)
         )
     }
 

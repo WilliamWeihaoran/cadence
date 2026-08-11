@@ -179,8 +179,15 @@ enum CadenceGoalGroupSupport {
         (goal.subGoals ?? []).sorted { $0.order < $1.order }
     }
 
+    /// Habits attached to this goal **or to any of its milestones**.
+    ///
+    /// This read `goal.habits` flat while `GoalContributionResolver` recursed sub-goals for tasks,
+    /// so iOS rendered a milestone-attached habit's task contribution in the percentage and "0
+    /// habits" beside it — and once the momentum resolver started recursing, the iPhone's goal
+    /// list ("3 milestones / 0 habits") disagreed with the Milestone widget on the same phone
+    /// ("0/2 habits today"). One traversal, shared, so the two cannot drift again.
     static func habits(for goal: Goal) -> [Habit] {
-        (goal.habits ?? []).sorted { $0.order < $1.order }
+        GoalHabitMomentumResolver.linkedHabits(for: goal).sorted { $0.order < $1.order }
     }
 
     static func summary(for goal: Goal) -> CadenceGoalGroupSummary {

@@ -104,13 +104,28 @@ enum CadenceMilestoneWidgetSupport {
         from goals: [Goal],
         now: Date = Date()
     ) -> [Goal] {
-        goals
+        // Decorated before sorting rather than resolved inside the comparator. Both resolvers
+        // walk the goal's whole sub-tree, and a comparator runs O(n log n) times — so this was
+        // four full tree walks per comparison, inside a widget timeline where the CPU and memory
+        // budget is hard. Now it is two per goal, once.
+        let decorated = goals
             .filter { $0.status == .active }
-            .sorted { lhs, rhs in
-                let lhsSummary = GoalContributionResolver.summary(for: lhs, now: now)
-                let rhsSummary = GoalContributionResolver.summary(for: rhs, now: now)
-                let lhsMomentum = GoalHabitMomentumResolver.summary(for: lhs, now: now)
-                let rhsMomentum = GoalHabitMomentumResolver.summary(for: rhs, now: now)
+            .map { goal in
+                (
+                    goal: goal,
+                    summary: GoalContributionResolver.summary(for: goal, now: now),
+                    momentum: GoalHabitMomentumResolver.summary(for: goal, now: now)
+                )
+            }
+
+        return decorated
+            .sorted { lhsEntry, rhsEntry in
+                let lhs = lhsEntry.goal
+                let rhs = rhsEntry.goal
+                let lhsSummary = lhsEntry.summary
+                let rhsSummary = rhsEntry.summary
+                let lhsMomentum = lhsEntry.momentum
+                let rhsMomentum = rhsEntry.momentum
 
                 if lhsSummary.overdueTaskCount != rhsSummary.overdueTaskCount {
                     return lhsSummary.overdueTaskCount > rhsSummary.overdueTaskCount
@@ -133,6 +148,7 @@ enum CadenceMilestoneWidgetSupport {
                 }
                 return normalizedTitle(lhs.title) < normalizedTitle(rhs.title)
             }
+            .map(\.goal)
     }
 
     private static func widgetGoal(
