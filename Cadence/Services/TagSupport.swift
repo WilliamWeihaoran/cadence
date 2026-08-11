@@ -71,7 +71,9 @@ enum TagSupport {
     @discardableResult
     static func seedDefaultTags(in context: ModelContext, saveChanges: Bool = true) -> Bool {
         var changed = deduplicateTags(in: context, save: false)
-        let existing = (try? context.fetch(FetchDescriptor<Tag>())) ?? []
+        // `?? []` here re-seeded all seven default tags as duplicates on a failed read, because
+        // "no tags exist" is exactly what an unreadable table looks like.
+        guard let existing = try? context.fetch(FetchDescriptor<Tag>()) else { return changed }
         var existingBySlug = tagsBySlug(existing)
         for (index, definition) in defaultTags.enumerated() {
             let slug = slug(for: definition.name)
@@ -102,7 +104,8 @@ enum TagSupport {
     @discardableResult
     static func deduplicateTags(in context: ModelContext, save: Bool = true) -> Bool {
         var changed = false
-        let existing = (try? context.fetch(FetchDescriptor<Tag>())) ?? []
+        // A failed read produced no groups, so the repair no-oped while reporting the store clean.
+        guard let existing = try? context.fetch(FetchDescriptor<Tag>()) else { return false }
         let grouped = Dictionary(grouping: existing) { stableSlug(for: $0) }
 
         for (_, duplicates) in grouped where duplicates.count > 1 {
@@ -124,11 +127,25 @@ enum TagSupport {
         return changed
     }
 
-    static func resolveTags(named names: [String], in context: ModelContext) -> [Tag] {
+    /// Matches each name to an existing tag or creates one. Returns `nil` — having created
+    /// nothing — when the tag table could not be read.
+    ///
+    /// This used to coerce a failed fetch to `[]`, which meant *no existing tag could ever
+    /// match*, so every name minted a brand-new duplicate `Tag`. The callers that overwrite a
+    /// model's tag set with the result then re-pointed the task or note at the duplicates,
+    /// severing it from the canonical tag. Run unattended by `syncAllNoteTagsFromMarkdown` at
+    /// launch, one failed read was enough to re-point every note in the store at a parallel set
+    /// of duplicate tags while the originals silently dropped to zero usage. `nextOrderBase` also
+    /// collapsed to 0, scrambling tag order.
+    ///
+    /// Optional rather than empty so the compiler makes each caller say what it wants: the
+    /// inline pickers fall back to an unsaved `Tag`, and the three overwriting callers refuse to
+    /// write anything at all.
+    static func resolveTags(named names: [String], in context: ModelContext) -> [Tag]? {
         let normalizedNames = normalizedTagNames(names)
         guard !normalizedNames.isEmpty else { return [] }
 
-        let existing = (try? context.fetch(FetchDescriptor<Tag>())) ?? []
+        guard let existing = try? context.fetch(FetchDescriptor<Tag>()) else { return nil }
         var bySlug = tagsBySlug(existing)
         let nextOrderBase = (existing.map(\.order).max() ?? -1) + 1
 
@@ -145,12 +162,13 @@ enum TagSupport {
     }
 
     static func setTags(named names: [String], on task: AppTask, in context: ModelContext) {
-        task.tags = resolveTags(named: names, in: context)
+        guard let resolved = resolveTags(named: names, in: context) else { return }
+        task.tags = resolved
     }
 
     static func setTags(named names: [String], on note: Note, in context: ModelContext, writeFrontmatter: Bool) {
         let resolvedNames = writeFrontmatter ? names + MarkdownMetadataParser.inlineTagNames(in: note.content) : names
-        let resolved = resolveTags(named: resolvedNames, in: context)
+        guard let resolved = resolveTags(named: resolvedNames, in: context) else { return }
         note.tags = resolved
         if writeFrontmatter {
             note.content = MarkdownMetadataParser.content(note.content, replacingFrontmatterTags: names)
@@ -161,7 +179,7 @@ enum TagSupport {
     @discardableResult
     static func syncNoteTagsFromMarkdown(_ note: Note, in context: ModelContext) -> Bool {
         let tagNames = MarkdownMetadataParser.metadata(in: note.content).tags
-        let resolved = resolveTags(named: tagNames, in: context)
+        guard let resolved = resolveTags(named: tagNames, in: context) else { return false }
         guard tagSlugs(note.tags ?? []) != tagSlugs(resolved) else { return false }
         note.tags = resolved
         note.updatedAt = Date()
@@ -171,7 +189,8 @@ enum TagSupport {
     @discardableResult
     static func syncAllNoteTagsFromMarkdown(in context: ModelContext, saveChanges: Bool = true) -> Bool {
         var changed = false
-        let notes = (try? context.fetch(FetchDescriptor<Note>())) ?? []
+        // `?? []` reported "nothing needed syncing" when the notes simply could not be read.
+        guard let notes = try? context.fetch(FetchDescriptor<Note>()) else { return false }
         for note in notes {
             changed = syncNoteTagsFromMarkdown(note, in: context) || changed
         }

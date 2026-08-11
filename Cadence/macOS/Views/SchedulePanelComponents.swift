@@ -175,7 +175,7 @@ struct TaskDetailPopover: View {
     }
 
     private func createTag(_ name: String) -> Tag {
-        TagSupport.resolveTags(named: [name], in: modelContext).first ?? Tag(name: name)
+        TagSupport.resolveTags(named: [name], in: modelContext)?.first ?? Tag(name: name)
     }
 }
 #endif

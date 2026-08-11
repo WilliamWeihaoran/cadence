@@ -138,7 +138,7 @@ struct KanbanTagPickerPopover: View {
             ),
             allTags: allTags,
             onCreateTag: { name in
-                TagSupport.resolveTags(named: [name], in: modelContext).first ?? Tag(name: name)
+                TagSupport.resolveTags(named: [name], in: modelContext)?.first ?? Tag(name: name)
             }
         )
     }

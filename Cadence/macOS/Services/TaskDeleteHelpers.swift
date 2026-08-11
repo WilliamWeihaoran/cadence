@@ -8,17 +8,41 @@ extension ModelContext {
         deleteTasks(withIDs: [taskID])
     }
 
-    func deleteTasks(withIDs taskIDs: Set<UUID>) {
-        guard !taskIDs.isEmpty else { return }
+    /// Deletes the given tasks and everything hanging off them. Returns `false` — having changed
+    /// nothing — when the store could not be read.
+    ///
+    /// Both fetches below used to be `(try? fetch(…)) ?? []`, which made a failed read
+    /// indistinguishable from an empty store, and every consequence of that confusion was
+    /// destructive rather than merely inert:
+    ///
+    /// - An empty `allTasks` matched no IDs, so the `tasks.isEmpty` guard aborted the delete —
+    ///   but `cancelTaskState` had already torn down focus/hover/subtask-entry state, and the
+    ///   cascade callers went on to delete the list regardless. `Area.tasks` and `Project.tasks`
+    ///   nullify rather than cascade, so the list's tasks did not die with it: they reappeared in
+    ///   Inbox with no container.
+    /// - An empty `Subtask` fetch skipped the unlink-and-delete loop while the parent tasks were
+    ///   deleted anyway, leaving `Subtask` rows with `parentTask == nil` — invisible, unreachable,
+    ///   and syncing to CloudKit forever.
+    /// - An empty `allTasks` also gave `repairDanglingRecurrenceLinks` nothing to re-point, so the
+    ///   predecessor kept believing its successor was alive and the series silently stalled.
+    ///
+    /// Returning a failure and touching nothing is the only safe reading of "I could not read the
+    /// store"; the callers abort the whole cascade on it.
+    @discardableResult
+    func deleteTasks(withIDs taskIDs: Set<UUID>) -> Bool {
+        guard !taskIDs.isEmpty else { return true }
 
+        guard let allTasks = try? fetch(FetchDescriptor<AppTask>()),
+              let allSubtasks = try? fetch(FetchDescriptor<Subtask>())
+        else { return false }
+
+        let tasks = allTasks.filter { taskIDs.contains($0.id) }
+        guard !tasks.isEmpty else { return true }
+
+        // Only now that the reads have succeeded and there is real work to do.
         cancelTaskState(for: taskIDs)
 
-        let descriptor = FetchDescriptor<AppTask>()
-        let allTasks = (try? fetch(descriptor)) ?? []
-        let tasks = allTasks.filter { taskIDs.contains($0.id) }
-        guard !tasks.isEmpty else { return }
-
-        let subtasks = ((try? fetch(FetchDescriptor<Subtask>())) ?? [])
+        let subtasks = allSubtasks
             .filter { subtask in
                 guard let parentTask = subtask.parentTask else { return false }
                 return taskIDs.contains(parentTask.id)
@@ -48,6 +72,7 @@ extension ModelContext {
 
         // Cheaper than a full reconcile since we already know exactly which tasks were removed.
         Task { await NotificationManager.shared.cancel(taskIDs: Array(taskIDs)) }
+        return true
     }
 
     private func cancelTaskState(for taskIDs: Set<UUID>) {

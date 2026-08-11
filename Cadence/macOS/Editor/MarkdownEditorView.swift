@@ -159,7 +159,7 @@ struct MarkdownEditor: View {
     }
 
     private func createInlineTag(_ name: String) -> MarkdownTagSuggestion? {
-        guard let tag = TagSupport.resolveTags(named: [name], in: modelContext).first else { return nil }
+        guard let tag = TagSupport.resolveTags(named: [name], in: modelContext)?.first else { return nil }
         if tag.isArchived {
             tag.isArchived = false
         }

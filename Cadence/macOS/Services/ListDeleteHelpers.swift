@@ -3,7 +3,13 @@ import Foundation
 import SwiftData
 
 extension ModelContext {
-    func deleteContext(_ context: Context) {
+    // Each cascade below deletes its list *and* its tasks. `deleteTasks(withIDs:)` returns false
+    // when it could not read the store, and in that case the tasks are still there — so deleting
+    // the list anyway would not cascade to them (`Area.tasks`/`Project.tasks` nullify rather than
+    // cascade); it would cut them loose into Inbox with no container. Aborting the whole cascade
+    // leaves the user's data exactly as it was, which is the only outcome they can recover from.
+    @discardableResult
+    func deleteContext(_ context: Context) -> Bool {
         let areas = Array(context.areas ?? [])
         let contextProjects = Array(context.projects ?? [])
         let pursuits = Array(context.pursuits ?? [])
@@ -40,7 +46,7 @@ extension ModelContext {
         )
         let completions = uniqueHabitCompletions(from: habits.flatMap { Array($0.completions ?? []) })
 
-        deleteTasks(withIDs: Set(tasks.map(\.id)))
+        guard deleteTasks(withIDs: Set(tasks.map(\.id))) else { return false }
         delete(notes)
         delete(documents)
         deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
@@ -60,38 +66,43 @@ extension ModelContext {
         if !habitIDs.isEmpty {
             Task { await NotificationManager.shared.cancel(habitIDs: habitIDs) }
         }
+        return true
     }
 
-    func deleteProject(_ project: Project) {
+    @discardableResult
+    func deleteProject(_ project: Project) -> Bool {
         let tasks = Array(project.tasks ?? [])
         let notes = uniqueNotes(from: Array(project.notes ?? [])).filter { $0.kind == .list }
         let documents = uniqueDocuments(from: Array(project.documents ?? []))
         let deletedNoteIDs = Set(notes.map(\.id))
         delete(uniqueGoalListLinks(from: Array(project.goalLinks ?? [])))
-        deleteTasks(withIDs: Set(uniqueTasks(from: tasks).map(\.id)))
+        guard deleteTasks(withIDs: Set(uniqueTasks(from: tasks).map(\.id))) else { return false }
         delete(notes)
         delete(documents)
         deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
         delete(uniqueLinks(from: Array(project.links ?? [])))
         delete(project)
+        return true
     }
 
-    func deleteArea(_ area: Area) {
+    @discardableResult
+    func deleteArea(_ area: Area) -> Bool {
         let tasks = Array(area.tasks ?? [])
         let projects = uniqueProjects(from: Array(area.projects ?? []))
         let notes = uniqueNotes(from: Array(area.notes ?? [])).filter { $0.kind == .list }
         let documents = uniqueDocuments(from: Array(area.documents ?? []))
         let deletedNoteIDs = Set(notes.map(\.id))
         delete(uniqueGoalListLinks(from: Array(area.goalLinks ?? [])))
-        deleteTasks(withIDs: Set(uniqueTasks(from: tasks).map(\.id)))
+        guard deleteTasks(withIDs: Set(uniqueTasks(from: tasks).map(\.id))) else { return false }
         for project in projects {
-            deleteProject(project)
+            guard deleteProject(project) else { return false }
         }
         delete(notes)
         delete(documents)
         deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
         delete(uniqueLinks(from: Array(area.links ?? [])))
         delete(area)
+        return true
     }
 
     private func delete<T: PersistentModel>(_ models: [T]) {
@@ -130,7 +141,14 @@ extension ModelContext {
 
     func deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: Set<UUID> = []) {
         guard let assets = try? fetch(FetchDescriptor<MarkdownImageAsset>()), !assets.isEmpty else { return }
-        let remainingMarkdown = ((try? fetch(FetchDescriptor<Note>())) ?? [])
+        // This fetch decides which images are still *referenced*, so `?? []` on a failed read did
+        // not mean "collect nothing" — it meant "nothing in this store references any image", and
+        // every asset the user had ever pasted into any note was deleted while the notes kept
+        // their now-dangling references. One failed read during a single project delete could
+        // take out the entire image library, unrecoverably. A failure must skip the collection;
+        // deferring garbage until the next delete costs nothing.
+        guard let allNotes = try? fetch(FetchDescriptor<Note>()) else { return }
+        let remainingMarkdown = allNotes
             .filter { !excludingNoteIDs.contains($0.id) }
             .map(\.content)
         let unreferenced = MarkdownImageAssetService.unreferencedAssets(

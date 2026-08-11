@@ -30,7 +30,7 @@ struct TagSupportTests {
         context.insert(Cadence.Tag(name: "Bug", slug: "bug", colorHex: "#ff6b6b", order: 0))
         context.insert(Cadence.Tag(name: "Bug copy", slug: "bug", colorHex: "#7b8492", order: 1))
 
-        let resolved = TagSupport.resolveTags(named: ["bug", "docs"], in: context)
+        let resolved = try #require(TagSupport.resolveTags(named: ["bug", "docs"], in: context))
 
         #expect(resolved.map(\.slug) == ["bug", "docs"])
         #expect(try context.fetch(FetchDescriptor<Cadence.Tag>()).filter { $0.slug == "bug" }.count == 2)

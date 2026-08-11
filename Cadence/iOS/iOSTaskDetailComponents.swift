@@ -355,8 +355,7 @@ struct iOSTaskTagEditorSection: View {
         let name = trimmedNewTagName
         guard !name.isEmpty else { return }
 
-        let resolved = TagSupport.resolveTags(named: [name], in: modelContext)
-        guard let tag = resolved.first else { return }
+        guard let tag = TagSupport.resolveTags(named: [name], in: modelContext)?.first else { return }
         if !isSelected(tag) {
             task.tags = TagSupport.sorted((task.tags ?? []) + [tag])
         }
