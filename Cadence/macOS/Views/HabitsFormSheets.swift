@@ -82,7 +82,11 @@ struct CreateHabitSheet: View {
         habit.icon = selectedIcon
         habit.colorHex = selectedColor
         habit.frequencyType = frequencyType
-        habit.order = habits.count
+        // `habits.count` collides after any deletion: delete the habit at order 1 of four and
+        // the remaining orders are 0, 2, 3 while the count is 3, so the next habit created lands
+        // on 3 twice. `@Query(sort: \.order)` then has an unstable tie and the two swap places
+        // between renders and between devices. iOS's shared path already uses max + 1.
+        habit.order = (habits.map(\.order).max() ?? -1) + 1
         habit.applyFrequency(
             frequencyType,
             selectedDays: selectedDays,
@@ -103,6 +107,7 @@ struct EditHabitSheet: View {
     let habit: Habit
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Context.order) private var allContexts: [Context]
     @Query(sort: \Goal.order) private var allGoals: [Goal]
 
@@ -159,6 +164,7 @@ struct EditHabitSheet: View {
             actionTitle: "Save",
             canSave: canSave,
             actionTint: Color(hex: selectedColor),
+            onDelete: requestDelete,
             onCancel: { dismiss() },
             onSave: save
         ) {
@@ -177,6 +183,24 @@ struct EditHabitSheet: View {
                 contexts: allContexts,
                 goals: goalChoices
             )
+        }
+    }
+
+    /// Dismisses first, then raises the app's confirmation overlay. The sheet is a separate
+    /// window, so leaving it up behind the overlay would put two modal layers on screen at once.
+    private func requestDelete() {
+        let habit = habit
+        let modelContext = modelContext
+        let completionCount = (habit.completions ?? []).count
+        let title = habit.title
+        dismiss()
+        DeleteConfirmationManager.shared.present(
+            title: "Delete Habit",
+            message: completionCount > 0
+                ? "\"\(title)\" and its \(completionCount) recorded check-in\(completionCount == 1 ? "" : "s") will be deleted. This cannot be undone."
+                : "\"\(title)\" will be deleted. This cannot be undone."
+        ) {
+            modelContext.deleteHabit(habit)
         }
     }
 
@@ -209,6 +233,9 @@ private struct HabitFormSheetShell<Content: View>: View {
     let actionTitle: String
     let canSave: Bool
     let actionTint: Color?
+    /// Present only when editing. Sits on the leading edge, away from Save, so the destructive
+    /// action can never be the one a reflexive click lands on.
+    var onDelete: (() -> Void)? = nil
     let onCancel: () -> Void
     let onSave: () -> Void
     @ViewBuilder let content: () -> Content
@@ -232,6 +259,16 @@ private struct HabitFormSheetShell<Content: View>: View {
             Divider().background(Theme.borderSubtle)
 
             HStack {
+                if let onDelete {
+                    CadenceActionButton(
+                        title: "Delete",
+                        systemImage: "trash",
+                        role: .ghost,
+                        size: .compact,
+                        tint: Theme.red,
+                        action: onDelete
+                    )
+                }
                 Spacer()
                 CadenceActionButton(
                     title: "Cancel",

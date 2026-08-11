@@ -192,14 +192,7 @@ enum GoalContributionResolver {
         return tasks.filter { seen.insert($0.id).inserted }
     }
 
-    private static func priorityRank(_ priority: TaskPriority) -> Int {
-        switch priority {
-        case .high: return 3
-        case .medium: return 2
-        case .low: return 1
-        case .none: return 0
-        }
-    }
+    private static func priorityRank(_ priority: TaskPriority) -> Int { priority.rank }
 }
 
 enum GoalHabitMomentumResolver {

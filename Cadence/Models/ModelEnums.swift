@@ -17,6 +17,25 @@ enum TaskPriority: String, Codable, CaseIterable, Hashable {
         }
     }
 
+    /// Sort weight, high to none. Every "sort by priority" in the app means this.
+    ///
+    /// This existed as six independent `switch` statements — in `CadenceTaskQuerySupport`, in
+    /// `CadenceCalendarPlanningSupport` (private, *the same folder*), in `GoalContributionSummary`,
+    /// in the Today widget, and twice under `iOS/`. They agreed, which is the state that precedes
+    /// drift; every bug found in this repo's audits came from one idea implemented more than once.
+    /// The ordering is a property of the enum, so it lives on the enum.
+    ///
+    /// `nonisolated` because widget timeline providers run off the main actor and this module
+    /// defaults to `MainActor` isolation.
+    nonisolated var rank: Int {
+        switch self {
+        case .high:   return 3
+        case .medium: return 2
+        case .low:    return 1
+        case .none:   return 0
+        }
+    }
+
     var nextCycled: TaskPriority {
         switch self {
         case .none: return .low

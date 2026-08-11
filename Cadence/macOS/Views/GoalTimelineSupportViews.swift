@@ -6,9 +6,18 @@ struct GoalTimelineRow: Identifiable {
     let kind: GoalTimelineRowKind
     let height: CGFloat
 
+    /// The goal this row draws a bar for.
+    ///
+    /// Group rows carry their direction in `GoalMissionGroup.parentGoal`, and this used to return
+    /// `nil` for them — so a top-level direction never got a bar on the Gantt. Directions are
+    /// *only* ever group rows, which meant the timeline drew a left-rail label and a permanently
+    /// blank track for every direction, while Mission mode on the same page rendered it fine.
+    /// A goal's date range not appearing on the view whose whole job is date ranges.
     var goal: Goal? {
-        if case .goal(let goal) = kind { return goal }
-        return nil
+        switch kind {
+        case .goal(let goal): return goal
+        case .group(let group): return group.parentGoal
+        }
     }
 
     static func group(_ group: GoalMissionGroup, height: CGFloat) -> GoalTimelineRow {
@@ -215,8 +224,13 @@ struct GoalTimelineGoalRailRow: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.borderSubtle.opacity(0.55)).frame(height: 1)
         }
-        .onTapGesture(perform: onSelect)
+        // Higher count first: attached the other way round the single-tap recognizer consumes
+        // the event and `onEdit` never fires. Every other double-tap site in the app attaches
+        // `count: 2` alone, so this pair was the only place the ordering mattered — and it left
+        // Timeline mode with no working way to edit a goal at all, since its toolbar has no
+        // Edit button either.
         .onTapGesture(count: 2, perform: onEdit)
+        .onTapGesture(perform: onSelect)
     }
 }
 

@@ -202,14 +202,9 @@ enum CadenceTaskQuerySupport {
         return task
     }
 
-    static func priorityRank(_ priority: TaskPriority) -> Int {
-        switch priority {
-        case .high: return 3
-        case .medium: return 2
-        case .low: return 1
-        case .none: return 0
-        }
-    }
+    /// Free-function spelling of `TaskPriority.rank`, kept because several sort comparators here
+    /// read better with it. The definition lives on the enum.
+    static func priorityRank(_ priority: TaskPriority) -> Int { priority.rank }
 
     private static func todayRank(_ task: AppTask, todayKey: String) -> Int {
         if !task.dueDate.isEmpty && task.dueDate < todayKey { return 0 }

@@ -29,11 +29,13 @@ struct GoalInspectorView: View {
         // Both resolvers recurse the goal's sub-goals and re-sort/re-parse every contributing
         // task; run each once per pass instead of once per read site.
         let summary = self.summary
+        let habitMomentum = self.habitMomentum
         let contributingTasks = self.contributingTasks
 
         return ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 16) {
                 inspectorHeader(summary: summary)
+                signalGrid(summary: summary, habitMomentum: habitMomentum)
                 contributorLists
                 allWorkSection(contributingTasks: contributingTasks)
             }
@@ -95,12 +97,32 @@ struct GoalInspectorView: View {
         }
     }
 
-    private var signalGrid: some View {
+    /// Focus, momentum, habit momentum and overdue, as tiles.
+    ///
+    /// This was written complete and never referenced from `body` — Swift emits no warning for an
+    /// unused private computed property, so it sat dead from the day the file was written. The
+    /// effect was that macOS's goal inspector showed none of these signals while iOS showed some
+    /// of them, and `GoalHabitMomentumResolver` was resolved on every inspector render purely to
+    /// be discarded. Both resolvers are now passed in, matching the once-per-pass rule above.
+    ///
+    /// The original also carried a "Deadline" tile repeating `goal.daysSummary`, which the header
+    /// prints two lines above it; a tile that restates its own header is the pattern this codebase
+    /// already removed from page subtitles.
+    private func signalGrid(
+        summary: GoalContributionSummary,
+        habitMomentum: GoalHabitMomentumSummary
+    ) -> some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            GoalSignalTile(title: "Deadline", value: goal.daysSummary, icon: "flag.fill", color: goal.isOverdue ? Theme.red : Theme.amber)
             GoalSignalTile(title: "Focus", value: summary.focusLabel, icon: "clock.fill", color: Theme.blue)
             GoalSignalTile(title: "Momentum", value: "\(summary.recentCompletedCount) done", icon: "sparkline", color: Theme.green)
-            GoalSignalTile(title: "Habit Momentum", value: habitMomentum.linkedHabitCount == 0 ? "No habits" : habitMomentum.dueTodayLabel, icon: "flame.fill", color: habitMomentum.doneTodayCount >= habitMomentum.dueTodayCount && habitMomentum.dueTodayCount > 0 ? Theme.green : Theme.amber)
+            GoalSignalTile(
+                title: "Habit Momentum",
+                value: habitMomentum.linkedHabitCount == 0 ? "No habits" : habitMomentum.dueTodayLabel,
+                icon: "flame.fill",
+                color: habitMomentum.dueTodayCount > 0 && habitMomentum.doneTodayCount >= habitMomentum.dueTodayCount
+                    ? Theme.green
+                    : Theme.amber
+            )
             GoalSignalTile(title: "Overdue", value: "\(summary.overdueTaskCount)", icon: "exclamationmark.triangle.fill", color: summary.overdueTaskCount > 0 ? Theme.red : Theme.dim)
         }
     }
@@ -113,7 +135,7 @@ struct GoalInspectorView: View {
                     Text("No lists attached")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                    Text("Attach one area or project. Its active tasks will count toward this goal.")
+                    Text("Attach an area or project so its tasks count toward this goal. Tasks assigned to the goal directly count too.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)

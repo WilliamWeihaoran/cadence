@@ -72,8 +72,10 @@ struct GoalTimelineBarView: View {
             barContent
                 .frame(width: max(40, frame.width), height: 28)
                 .offset(x: frame.x)
-                .onTapGesture(perform: onSelect)
+                // Higher count first — see `GoalTimelineRowBackground`. Reversed, the single-tap
+                // recognizer swallows the event and double-click-to-edit never fires.
                 .onTapGesture(count: 2, perform: onEdit)
+                .onTapGesture(perform: onSelect)
         }
     }
 

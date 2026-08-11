@@ -72,8 +72,12 @@ extension Habit {
         }
     }
 
+    /// Completions inside the **ISO Monday week**, matching `Habit.weeklyStreak` and
+    /// `GoalHabitMomentumResolver`. Reading `Calendar.current`'s week meant a US user saw the
+    /// streak badge and the goal card both counting a Mon/Wed/Fri week as satisfied while this
+    /// number read "0 this week" — every Sunday, because the locale week had already rolled over.
     var thisWeekCount: Int {
-        let cal = Calendar.current
+        let cal = Habit.isoWeekCalendar()
         let start = cal.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
         let keys = completionDateKeys
         var count = 0

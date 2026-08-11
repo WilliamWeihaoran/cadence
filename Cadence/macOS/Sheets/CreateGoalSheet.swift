@@ -197,6 +197,16 @@ struct CreateGoalSheet: View {
             Divider().background(Theme.borderSubtle)
 
             HStack {
+                if isEditing {
+                    CadenceActionButton(
+                        title: "Delete",
+                        systemImage: "trash",
+                        role: .ghost,
+                        size: .compact,
+                        tint: Theme.red,
+                        action: requestDelete
+                    )
+                }
                 Spacer()
                 CadenceActionButton(
                     title: "Cancel",
@@ -237,6 +247,26 @@ struct CreateGoalSheet: View {
             .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(Theme.dim)
             .kerning(0.8)
+    }
+
+    /// Dismisses first, then raises the app's confirmation overlay — the sheet is its own window,
+    /// so leaving it up would stack two modal layers. The message names the milestones that go
+    /// with it, since deleting a direction takes its whole tree and that is not obvious from the
+    /// button. Linked lists, habits and tasks survive; only the relationships are severed.
+    private func requestDelete() {
+        guard let goal = editingGoal else { return }
+        let modelContext = modelContext
+        let title = goal.title
+        let milestoneCount = (goal.subGoals ?? []).count
+        dismiss()
+        DeleteConfirmationManager.shared.present(
+            title: "Delete Goal",
+            message: milestoneCount > 0
+                ? "\"\(title)\" and its \(milestoneCount) milestone\(milestoneCount == 1 ? "" : "s") will be deleted. Linked lists, habits and tasks are kept. This cannot be undone."
+                : "\"\(title)\" will be deleted. Linked lists, habits and tasks are kept. This cannot be undone."
+        ) {
+            modelContext.deleteGoal(goal)
+        }
     }
 
     private func save() {
