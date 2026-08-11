@@ -2,13 +2,10 @@ import Foundation
 import SwiftUI
 
 enum CadenceTaskQuerySupport {
-    /// Free-function spelling of `AppTask.isInActiveContainer`, so `filter(...)` call sites read
-    /// the same as the other predicates in this enum. The definition lives on the model because
-    /// `Models/` is compiled by every target and `Shared/` is not — the same constraint that put
-    /// `Habit.isDue` in `Habit.swift`.
-    static func isInActiveContainer(_ task: AppTask) -> Bool {
-        task.isInActiveContainer
-    }
+    // `isInActiveContainer` is a property on `AppTask` (in `Models/`, which every target compiles,
+    // unlike `Shared/`). There is deliberately no free-function wrapper here: passing a
+    // main-actor-isolated static method *reference* to `filter` strips its isolation and warns,
+    // which is exactly what the wrapper caused at three call sites. Use `filter(\.isInActiveContainer)`.
 
     static func activeTodayTasks(
         from tasks: [AppTask],

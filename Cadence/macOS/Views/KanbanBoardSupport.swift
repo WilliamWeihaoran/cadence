@@ -52,7 +52,7 @@ struct KanbanListColumnModel: Identifiable {
 
 enum KanbanBoardSupport {
     static func activeTasks(from allTasks: [AppTask]) -> [AppTask] {
-        let tasksInActiveContainers = allTasks.filter(CadenceTaskQuerySupport.isInActiveContainer)
+        let tasksInActiveContainers = allTasks.filter(\.isInActiveContainer)
         return CadenceTaskQuerySupport.openTasks(from: tasksInActiveContainers)
     }
 

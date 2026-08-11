@@ -28,7 +28,7 @@ struct AllTasksListView: View {
     private var todayKey: String { DateFormatters.todayKey() }
 
     private var visibleTaskUniverse: [AppTask] {
-        allTasks.filter(CadenceTaskQuerySupport.isInActiveContainer)
+        allTasks.filter(\.isInActiveContainer)
     }
 
     private var activeTasks: [AppTask] {

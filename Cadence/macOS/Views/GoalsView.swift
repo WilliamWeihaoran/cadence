@@ -36,43 +36,8 @@ struct GoalsView: View {
             || ((summary.nextActionTitle ?? "").lowercased().contains(q))
     }
 
-    private var filteredGoals: [Goal] {
-        allGoals.filter(matchesFilters)
-    }
-
-    /// Top-level goals become groups; everything nested beneath one is shown as its milestones.
-    /// Descendants are flattened depth-first so a deeper chain can never hide a goal entirely.
     private var goalGroups: [GoalMissionGroup] {
-        GoalAssignmentRules
-            .topLevelGoals(from: allGoals)
-            .compactMap { parent in
-                let milestones = nestedGoals(under: parent).filter(matchesFilters)
-                guard matchesFilters(parent) || !milestones.isEmpty else { return nil }
-                return GoalMissionGroup(
-                    id: parent.id.uuidString,
-                    title: parent.title,
-                    icon: parent.icon,
-                    colorHex: parent.colorHex,
-                    parentGoal: parent,
-                    goals: milestones
-                )
-            }
-    }
-
-    private func nestedGoals(under goal: Goal) -> [Goal] {
-        var visited: Set<UUID> = [goal.id]
-        var result: [Goal] = []
-
-        func walk(_ parent: Goal) {
-            for child in GoalAssignmentRules.milestones(of: parent) where !visited.contains(child.id) {
-                visited.insert(child.id)
-                result.append(child)
-                walk(child)
-            }
-        }
-
-        walk(goal)
-        return result
+        GoalMissionGrouping.groups(from: allGoals, matches: matchesFilters)
     }
 
     private var visibleGoals: [Goal] {

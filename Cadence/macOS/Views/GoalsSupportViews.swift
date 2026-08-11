@@ -37,7 +37,79 @@ struct GoalMissionGroup: Identifiable {
     let icon: String
     let colorHex: String
     var parentGoal: Goal? = nil
+    /// Milestones that survived the page's filter, i.e. the ones actually rendered.
     let goals: [Goal]
+    /// Milestones the direction owns that the current filter dropped.
+    ///
+    /// Without this the header counted only the surviving milestones while the percentage beside
+    /// it was resolved from *all* of them, so the default `.active` filter over a direction whose
+    /// milestones are all done read "0 milestones · 50%" directly above "No milestones under this
+    /// goal yet" — the screen quoting progress from work it simultaneously said did not exist.
+    var hiddenMilestoneCount: Int = 0
+
+    /// Owned milestones, filtered or not. This is what the percentage is computed over.
+    var ownedMilestoneCount: Int { goals.count + hiddenMilestoneCount }
+
+    /// Label for the header's milestone count. Says "N of M" whenever the filter is hiding some,
+    /// so the count and the percentage next to it are talking about the same set of milestones.
+    var milestoneCountLabel: String {
+        guard hiddenMilestoneCount > 0 else {
+            return goals.count == 1 ? "1 milestone" : "\(goals.count) milestones"
+        }
+        return "\(goals.count) of \(ownedMilestoneCount) milestones"
+    }
+
+    /// Shown in place of the milestone list when nothing survived the filter. "No milestones yet"
+    /// is only true when the direction genuinely owns none; otherwise it names the hidden ones.
+    var emptyMilestonesText: String {
+        guard hiddenMilestoneCount > 0 else {
+            return "No milestones under this goal yet."
+        }
+        return hiddenMilestoneCount == 1
+            ? "1 milestone is hidden by the current filter."
+            : "\(hiddenMilestoneCount) milestones are hidden by the current filter."
+    }
+}
+
+/// Builds the Goals page's direction/milestone grouping. Lives here, out of `GoalsView`, so the
+/// agreement between what a group counts and what it renders is testable without a view.
+enum GoalMissionGrouping {
+    /// Top-level goals become groups; everything nested beneath one is shown as its milestones.
+    /// Descendants are flattened depth-first so a deeper chain can never hide a goal entirely.
+    static func groups(from allGoals: [Goal], matches: (Goal) -> Bool) -> [GoalMissionGroup] {
+        GoalAssignmentRules
+            .topLevelGoals(from: allGoals)
+            .compactMap { parent in
+                let owned = nestedGoals(under: parent)
+                let milestones = owned.filter(matches)
+                guard matches(parent) || !milestones.isEmpty else { return nil }
+                return GoalMissionGroup(
+                    id: parent.id.uuidString,
+                    title: parent.title,
+                    icon: parent.icon,
+                    colorHex: parent.colorHex,
+                    parentGoal: parent,
+                    goals: milestones,
+                    hiddenMilestoneCount: owned.count - milestones.count
+                )
+            }
+    }
+
+    static func nestedGoals(under goal: Goal) -> [Goal] {
+        var visited: Set<UUID> = [goal.id]
+        var result: [Goal] = []
+
+        func walk(_ parent: Goal) {
+            for child in GoalAssignmentRules.milestones(of: parent) where !visited.contains(child.id) {
+                visited.insert(child.id)
+                result.append(child)
+                walk(child)
+            }
+        }
+
+        walk(goal)
+        return result
+    }
 }
 
 struct GoalHeaderMetric: View {
@@ -79,7 +151,7 @@ struct GoalMissionGroupView: View {
             if let parentGoal = group.parentGoal {
                 GoalDirectionHeaderCard(
                     goal: parentGoal,
-                    milestoneCount: group.goals.count,
+                    milestoneCountLabel: group.milestoneCountLabel,
                     isSelected: selectedGoalID == parentGoal.id,
                     onSelect: { onSelect(parentGoal) }
                 )
@@ -94,7 +166,7 @@ struct GoalMissionGroupView: View {
 
             Group {
                 if group.goals.isEmpty {
-                    GoalInlineEmpty(text: "No milestones under this goal yet.")
+                    GoalInlineEmpty(text: group.emptyMilestonesText)
                 } else {
                     VStack(spacing: 10) {
                         ForEach(group.goals) { goal in
@@ -116,7 +188,9 @@ struct GoalMissionGroupView: View {
 /// not just its milestones.
 struct GoalDirectionHeaderCard: View {
     let goal: Goal
-    let milestoneCount: Int
+    /// Pre-rendered by `GoalMissionGroup` so the count can say "1 of 4" when the filter is hiding
+    /// milestones whose work the percentage on the same row is still counting.
+    let milestoneCountLabel: String
     let isSelected: Bool
     let onSelect: () -> Void
 
@@ -150,7 +224,7 @@ struct GoalDirectionHeaderCard: View {
                     }
 
                     HStack(spacing: 10) {
-                        Text(milestoneCount == 1 ? "1 milestone" : "\(milestoneCount) milestones")
+                        Text(milestoneCountLabel)
                         Text((goal.habits ?? []).count == 1 ? "1 habit" : "\((goal.habits ?? []).count) habits")
                         if let context = goal.context {
                             Text(context.name)

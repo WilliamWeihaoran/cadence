@@ -24,7 +24,7 @@ struct SidebarView: View {
     @State private var contextForNewList: Context? = nil
 
     private var tasksInActiveContainers: [AppTask] {
-        allTasks.filter(CadenceTaskQuerySupport.isInActiveContainer)
+        allTasks.filter(\.isInActiveContainer)
     }
 
     private var fullBadgeSnapshot: CadenceFeatureBadgeSupport.Snapshot {
