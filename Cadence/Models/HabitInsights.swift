@@ -41,21 +41,12 @@ extension Habit {
         }
     }
 
-    /// Kept as a property because that is how the iOS detail view reads it; the implementation
-    /// moved to `Habit.bestStreak(asOf:calendar:)` so it shares `currentStreak`'s definition of
-    /// a streak instead of inventing a second, incompatible one.
+    /// Kept as a property because that is how the iOS detail view reads it
+    /// (`iOSFeatureDetailViews.swift`); the implementation lives on `Habit.bestStreak(asOf:calendar:)`
+    /// so it shares `currentStreak`'s definition of a streak instead of inventing a second,
+    /// incompatible one. Not dead — a dead-code pass removed it once and broke the build.
     var bestStreak: Int {
         bestStreak()
-    }
-
-    var recentCompletionLabels: [String] {
-        let sorted = (completions ?? [])
-            .sorted { $0.date > $1.date }
-            .prefix(5)
-        return sorted.compactMap { completion in
-            guard let date = DateFormatters.date(from: completion.date) else { return nil }
-            return DateFormatters.longDate.string(from: date)
-        }
     }
 
     var last7DayCount: Int {
@@ -70,35 +61,6 @@ extension Habit {
             guard let date = cal.date(byAdding: .day, value: -offset, to: today) else { return nil }
             return keys.contains(DateFormatters.dateKey(from: date))
         }
-    }
-
-    /// Completions inside the **ISO Monday week**, matching `Habit.weeklyStreak` and
-    /// `GoalHabitMomentumResolver`. Reading `Calendar.current`'s week meant a US user saw the
-    /// streak badge and the goal card both counting a Mon/Wed/Fri week as satisfied while this
-    /// number read "0 this week" — every Sunday, because the locale week had already rolled over.
-    var thisWeekCount: Int {
-        let cal = Habit.isoWeekCalendar()
-        let start = cal.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
-        let keys = completionDateKeys
-        var count = 0
-        for i in 0..<7 {
-            guard let date = cal.date(byAdding: .day, value: i, to: start), date <= Date() else { continue }
-            if keys.contains(DateFormatters.dateKey(from: date)) {
-                count += 1
-            }
-        }
-        return count
-    }
-
-    var last7DaySummary: String {
-        "\(last7DayCount) check-ins"
-    }
-
-    var thisWeekSummary: String {
-        if frequencyType == .timesPerWeek {
-            return "Target \(targetCount) times"
-        }
-        return "So far this week"
     }
 
     var last30DayCompletionRate: Int {

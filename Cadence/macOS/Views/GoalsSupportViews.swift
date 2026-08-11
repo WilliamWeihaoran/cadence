@@ -2,21 +2,10 @@
 import SwiftUI
 import SwiftData
 
-extension Goal {
-    var dependsOnGoalIDs: [UUID] {
-        get {
-            guard !dependsOnGoalIDsJSON.isEmpty,
-                  let data = dependsOnGoalIDsJSON.data(using: .utf8),
-                  let strings = try? JSONDecoder().decode([String].self, from: data)
-            else { return [] }
-            return strings.compactMap { UUID(uuidString: $0) }
-        }
-        set {
-            let strings = newValue.map(\.uuidString)
-            dependsOnGoalIDsJSON = (try? String(data: JSONEncoder().encode(strings), encoding: .utf8)) ?? ""
-        }
-    }
-}
+// `Goal.dependsOnGoalIDsJSON` had a full JSON get/set accessor here with zero readers and zero
+// writers — a goal-dependency feature that never shipped. The accessor is gone; the stored
+// property stays, because there is no `SchemaMigrationPlan` and dropping a stored SwiftData
+// property discards whatever is already on disk and in CloudKit rather than tidying it up.
 
 enum GoalStatusFilter: CaseIterable {
     case active, paused, done, all
