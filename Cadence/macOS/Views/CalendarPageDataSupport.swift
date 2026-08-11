@@ -23,7 +23,7 @@ enum CalendarPageDataSupport {
     }
 
     static func bundlesByDate(_ bundles: [TaskBundle]) -> [String: [TaskBundle]] {
-        CadenceScheduleSupport.bundlesByDate(bundles)
+        CadenceScheduleSupport.bundlesByDate(bundles, includeCompleted: false)
     }
 
     static func handleViewModeChange(

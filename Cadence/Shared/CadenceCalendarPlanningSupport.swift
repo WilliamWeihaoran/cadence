@@ -435,26 +435,25 @@ enum CadenceScheduleSupport {
     static let calendarStartHour = 6
     static let calendarEndHour = 23
 
-    static func tasks(on dateKey: String, from tasks: [AppTask], includeCompleted: Bool = true) -> [AppTask] {
-        tasks
-            .filter { task in
-                guard !task.isCancelled else { return false }
-                guard includeCompleted || !task.isDone else { return false }
-                return task.scheduledDate == dateKey || task.dueDate == dateKey
-            }
-            .sorted {
-                if $0.scheduledStartMin != $1.scheduledStartMin {
-                    return $0.scheduledStartMin < $1.scheduledStartMin
-                }
-                return $0.order < $1.order
-            }
-    }
+    // `includeCompleted` is deliberately **not** defaulted on any function below.
+    //
+    // There were five siblings over the same data carrying three different default polarities
+    // (`tasks` true, `scheduledTasks` false, `bundles` true, `tasksByScheduledDate` false,
+    // `bundlesByDate` false), so a caller could not form a habit — each call needed the
+    // declaration open to know what it did. The result was visible: the macOS calendar page
+    // draws completed *tasks* (it passed `true`) but drops completed *bundles* (it took the
+    // default), and macOS's schedule panel keeps completed items while iPad Today drops them,
+    // in both cases purely according to whether someone typed the argument. Requiring it makes
+    // each surface's choice a statement rather than an accident.
+    //
+    // The sixth, `tasks(on:from:includeCompleted:)`, was deleted outright — it had no callers,
+    // and it was the source of the `= true` precedent the other two copied.
 
     static func scheduledTasks(
         on dateKey: String,
         from tasks: [AppTask],
-        includeCompleted: Bool = false,
-        excludeBundled: Bool = false
+        includeCompleted: Bool,
+        excludeBundled: Bool
     ) -> [AppTask] {
         tasks
             .filter {
@@ -472,7 +471,7 @@ enum CadenceScheduleSupport {
             }
     }
 
-    static func bundles(on dateKey: String, from bundles: [TaskBundle], includeCompleted: Bool = true) -> [TaskBundle] {
+    static func bundles(on dateKey: String, from bundles: [TaskBundle], includeCompleted: Bool) -> [TaskBundle] {
         bundles
             .filter { $0.dateKey == dateKey && (includeCompleted || !$0.isCompleted) }
             .sorted { $0.startMin < $1.startMin }
@@ -553,7 +552,7 @@ enum CadenceScheduleSupport {
         }
     }
 
-    static func tasksByScheduledDate(_ tasks: [AppTask], includeCompleted: Bool = false) -> [String: [AppTask]] {
+    static func tasksByScheduledDate(_ tasks: [AppTask], includeCompleted: Bool) -> [String: [AppTask]] {
         var result: [String: [AppTask]] = [:]
         for task in tasks where task.bundle == nil &&
             task.scheduledStartMin >= 0 &&
@@ -596,7 +595,7 @@ enum CadenceScheduleSupport {
         return result.mapValues { CadenceTaskQuerySupport.sortedTasks($0, sortMode: .priority) }
     }
 
-    static func bundlesByDate(_ bundles: [TaskBundle], includeCompleted: Bool = false) -> [String: [TaskBundle]] {
+    static func bundlesByDate(_ bundles: [TaskBundle], includeCompleted: Bool) -> [String: [TaskBundle]] {
         var result: [String: [TaskBundle]] = [:]
         for bundle in bundles where includeCompleted || !bundle.isCompleted {
             result[bundle.dateKey, default: []].append(bundle)

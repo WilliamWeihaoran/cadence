@@ -42,7 +42,7 @@ struct iPadTodayView: View {
     }
 
     private var compactScheduleTasks: [AppTask] {
-        CadenceScheduleSupport.scheduledTasks(on: todayKey, from: allTasks)
+        CadenceScheduleSupport.scheduledTasks(on: todayKey, from: allTasks, includeCompleted: false, excludeBundled: false)
             .filter { $0.scheduledStartMin >= 0 }
             .prefix(3)
             .map { $0 }

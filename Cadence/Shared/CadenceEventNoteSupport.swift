@@ -122,14 +122,23 @@ enum CadenceEventNoteSupport {
         }
     }
 
+    /// Finds the note for an event, or creates one.
+    ///
+    /// `calendarID` / `eventDateKey` / `eventStartMin` / `eventEndMin` are **required**, and used
+    /// to be defaulted to `""` / `""` / `-1` / `-1`. Every one of those defaults fails the guard
+    /// in `note(for:eventTitle:calendarID:…)` above, so accepting them did not degrade the
+    /// date/title fallback — it switched it off entirely and fell straight through to `insert()`.
+    /// That fallback exists precisely because EventKit hands out a new identifier for the same
+    /// event, so the short call spelling was the one that produced a duplicate note every time the
+    /// user reopened an event. No caller ever used the defaults; only the failure mode survived.
     @discardableResult
     static func noteForEditing(
         calendarEventID: String,
         eventTitle: String,
-        calendarID: String = "",
-        eventDateKey: String = "",
-        eventStartMin: Int = -1,
-        eventEndMin: Int = -1,
+        calendarID: String,
+        eventDateKey: String,
+        eventStartMin: Int,
+        eventEndMin: Int,
         nativeNotes: String? = nil,
         notes: [Note],
         insert: (Note) -> Void

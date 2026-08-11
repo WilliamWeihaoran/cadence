@@ -87,14 +87,16 @@ enum EventNoteSupport {
         )
     }
 
+    // Defaults deliberately absent, mirroring `CadenceEventNoteSupport.noteForEditing` — this
+    // wrapper re-declared them, so the unsafe short spelling was available here too.
     @discardableResult
     static func noteForEditing(
         calendarEventID: String,
         eventTitle: String,
-        calendarID: String = "",
-        eventDateKey: String = "",
-        eventStartMin: Int = -1,
-        eventEndMin: Int = -1,
+        calendarID: String,
+        eventDateKey: String,
+        eventStartMin: Int,
+        eventEndMin: Int,
         nativeNotes: String? = nil,
         notes: [Note],
         insert: (Note) -> Void

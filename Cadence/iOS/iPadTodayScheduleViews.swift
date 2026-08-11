@@ -16,7 +16,7 @@ struct iOSSchedulePanel: View {
     }
 
     private var scheduledTasks: [AppTask] {
-        CadenceScheduleSupport.scheduledTasks(on: todayKey, from: allTasks)
+        CadenceScheduleSupport.scheduledTasks(on: todayKey, from: allTasks, includeCompleted: false, excludeBundled: false)
     }
 
     private var todayBundles: [TaskBundle] {

@@ -39,7 +39,7 @@ struct iOSCalendarView: View {
     }
 
     private var scheduledTasksByDate: [String: [AppTask]] {
-        CadenceScheduleSupport.tasksByScheduledDate(allTasks)
+        CadenceScheduleSupport.tasksByScheduledDate(allTasks, includeCompleted: false)
     }
 
     private var unscheduledTasksByDate: [String: [AppTask]] {
@@ -51,7 +51,7 @@ struct iOSCalendarView: View {
     }
 
     private var bundlesByDate: [String: [TaskBundle]] {
-        CadenceScheduleSupport.bundlesByDate(allBundles)
+        CadenceScheduleSupport.bundlesByDate(allBundles, includeCompleted: false)
     }
 
     private var visibleDates: [Date] {
