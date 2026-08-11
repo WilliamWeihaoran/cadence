@@ -133,6 +133,14 @@ private struct DailyNotesPage: View {
                     relatedTasks: allTasks,
                     onOpenNote: { selectedNoteID = $0.id }
                 )
+                // Per-note editor, matching the Notepad tab. Without it the pane is reused
+                // across a note switch: `.onChange(of: note.id)` then cancels the pending
+                // 15-second content sync and overwrites the buffer, so up to fifteen seconds of
+                // typing is discarded silently. Tearing the pane down instead fires
+                // `.onDisappear` while `note` still points at the note being left, which flushes
+                // it. It also stops the NSTextView's undo stack and its hit-test caches from
+                // leaking into the next note.
+                .id(note.id)
             } else {
                 NotesEditorPlaceholder(title: "Select a note")
             }
@@ -220,6 +228,14 @@ private struct WeeklyNotesPage: View {
                     relatedTasks: allTasks,
                     onOpenNote: { selectedNoteID = $0.id }
                 )
+                // Per-note editor, matching the Notepad tab. Without it the pane is reused
+                // across a note switch: `.onChange(of: note.id)` then cancels the pending
+                // 15-second content sync and overwrites the buffer, so up to fifteen seconds of
+                // typing is discarded silently. Tearing the pane down instead fires
+                // `.onDisappear` while `note` still points at the note being left, which flushes
+                // it. It also stops the NSTextView's undo stack and its hit-test caches from
+                // leaking into the next note.
+                .id(note.id)
             } else {
                 NotesEditorPlaceholder(title: "Select a week")
             }
@@ -436,6 +452,14 @@ private struct MeetingNotesPage: View {
                     relatedTasks: allTasks,
                     onOpenNote: { selectedNoteID = $0.id }
                 )
+                // Per-note editor, matching the Notepad tab. Without it the pane is reused
+                // across a note switch: `.onChange(of: note.id)` then cancels the pending
+                // 15-second content sync and overwrites the buffer, so up to fifteen seconds of
+                // typing is discarded silently. Tearing the pane down instead fires
+                // `.onDisappear` while `note` still points at the note being left, which flushes
+                // it. It also stops the NSTextView's undo stack and its hit-test caches from
+                // leaking into the next note.
+                .id(note.id)
             } else {
                 NotesEditorPlaceholder(title: "Select a meeting note")
             }

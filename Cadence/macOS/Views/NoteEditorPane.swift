@@ -329,10 +329,13 @@ struct NoteEditorPane: View {
 
     private func scheduleFallbackContentSync(for content: String) {
         pendingFallbackContentSyncTask?.cancel()
+        // The note this content belongs to, captured now. Fifteen seconds is long enough for the
+        // pane to be looking at a different note by the time the task fires.
+        let noteID = note.id
         pendingFallbackContentSyncTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: MarkdownEditorSyncTiming.fallbackContentCommitDelay)
             guard !Task.isCancelled else { return }
-            persistEditorContentIfNeeded(content)
+            persistEditorContentIfNeeded(content, noteID: noteID)
             pendingFallbackContentSyncTask = nil
         }
     }
@@ -342,7 +345,7 @@ struct NoteEditorPane: View {
         pendingDerivedStateTask = nil
         pendingFallbackContentSyncTask?.cancel()
         pendingFallbackContentSyncTask = nil
-        persistEditorContentIfNeeded(editorContent)
+        persistEditorContentIfNeeded(editorContent, noteID: loadedNoteID ?? note.id)
         refreshDerivedState(for: editorContent)
     }
 
@@ -352,8 +355,17 @@ struct NoteEditorPane: View {
         flushPendingEditorContent()
     }
 
-    private func persistEditorContentIfNeeded(_ content: String) {
-        guard note.content != content || loadedNoteID != note.id else { return }
+    /// Writes the buffer back to the note it came from, and only to that note.
+    ///
+    /// The guard used to be `note.content != content || loadedNoteID != note.id`, whose second
+    /// clause *forced the write through* during a note switch — the one moment `content` belongs
+    /// to a different note than `note` does. That is not a harmless mix-up: `syncTitleFromH1IfNeeded`
+    /// below would rename the newly-opened note from the previous note's `# Heading`, and
+    /// `onPersistContent` is wired to the event-note sheet, which pushes the body into the user's
+    /// real Calendar event. `NotePanel` already threads an id through its debounce for this reason.
+    private func persistEditorContentIfNeeded(_ content: String, noteID: UUID) {
+        guard note.id == noteID else { return }
+        guard note.content != content else { return }
         note.content = content
         note.updatedAt = Date()
         syncTitleFromH1IfNeeded(in: content)
@@ -383,7 +395,9 @@ struct NoteEditorPane: View {
         pendingFallbackContentSyncTask?.cancel()
         pendingFallbackContentSyncTask = nil
         editorContent = content
-        persistEditorContentIfNeeded(content)
+        // Synchronous and user-initiated (template apply / mention link), so `note` is the note
+        // the content is for.
+        persistEditorContentIfNeeded(content, noteID: note.id)
         refreshDerivedState(for: content)
     }
 
