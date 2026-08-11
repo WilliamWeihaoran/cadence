@@ -18,7 +18,6 @@ struct TimelineDayCanvas: View {
     let showCurrentTimeDot: Bool
     var showHalfHourMarks: Bool = false
     var showWorkHoursHighlight = false
-    let dropBehavior: TimelineDropBehavior
     var usesTaskPanelForTaskCreation = true
     let onCreateTask: (String, Int, Int, TaskContainerSelection, String, String, [String]) -> Void
     let onCreateBundle: (String, Int, Int, [AppTask]) -> Void

@@ -81,11 +81,6 @@ enum CalendarVisualStyle {
     static let selectedCardShadow = Theme.overlayCardShadow
 }
 
-enum TimelineDropBehavior {
-    case wholeColumn
-    case perHour
-}
-
 func computeTimelineBlockFrame(
     startMinute: Int,
     durationMinutes: Int,

@@ -554,7 +554,6 @@ struct CalDayColumn: View {
             showCurrentTimeDot: true,
             showHalfHourMarks: showHalfHourMarks,
             showWorkHoursHighlight: true,
-            dropBehavior: .perHour,
             usesTaskPanelForTaskCreation: false,
             onCreateTask: { title, startMin, endMin, containerSelection, sectionName, notes, subtaskTitles in
                 SchedulingActions.createTask(

@@ -114,7 +114,6 @@ struct SchedulePanelTimelineViewport: View {
                 showCurrentTimeDot: true,
                 showHalfHourMarks: zoomLevel == 3,
                 showWorkHoursHighlight: true,
-                dropBehavior: .perHour,
                 onCreateTask: onCreateTask,
                 onCreateBundle: onCreateBundle,
                 onDropTaskAtMinute: onDropTaskAtMinute,
