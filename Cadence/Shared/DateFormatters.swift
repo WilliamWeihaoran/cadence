@@ -73,9 +73,29 @@ enum DateFormatters {
         ymd.string(from: date)
     }
 
-    /// Converts a `Date` to a `yyyy-MM-dd` storage key using the supplied calendar's day components.
+    /// The calendar every `yyyy-MM-dd` storage key is expressed in: **always Gregorian**, with
+    /// the time zone taken from `calendar`.
+    ///
+    /// `ymd` pins `en_US_POSIX`, so every key ever written to the store is Gregorian. Anything
+    /// that derives the same key from `calendar.dateComponents` instead must therefore force
+    /// Gregorian too, or it produces a string that cannot match stored data. `Calendar.current`
+    /// is not Gregorian everywhere: region Thailand defaults to Buddhist, and Japanese and
+    /// Islamic calendars are one Settings tap away. For 2026-08-11 those yield `2569-08-11`,
+    /// `0008-08-11` (the year is era-relative) and `1448-02-27` respectively — none of which
+    /// matches anything on disk.
+    ///
+    /// The time zone still comes from the caller, because *that* genuinely differs by call site
+    /// and getting it wrong is the off-by-one-day DST bug this file already documents below.
+    static func storageCalendar(inheritingTimeZoneFrom calendar: Calendar) -> Calendar {
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = calendar.timeZone
+        return gregorian
+    }
+
+    /// Converts a `Date` to a `yyyy-MM-dd` storage key, read in `calendar`'s time zone.
     static func dateKey(from date: Date, calendar: Calendar) -> String {
-        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        let components = storageCalendar(inheritingTimeZoneFrom: calendar)
+            .dateComponents([.year, .month, .day], from: date)
         return String(
             format: "%04d-%02d-%02d",
             components.year ?? 0,
@@ -102,7 +122,9 @@ enum DateFormatters {
               let year = Int(parts[0]),
               let month = Int(parts[1]),
               let day = Int(parts[2]) else { return nil }
-        return calendar.date(from: DateComponents(year: year, month: month, day: day))
+        // Keys are Gregorian (see `storageCalendar`); only the time zone is the caller's.
+        return storageCalendar(inheritingTimeZoneFrom: calendar)
+            .date(from: DateComponents(year: year, month: month, day: day))
     }
 
     /// Converts a `yyyy-MM-dd` storage key to a short display string: "Jan 15"

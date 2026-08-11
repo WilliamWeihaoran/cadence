@@ -113,8 +113,18 @@ enum CadenceFocusSupport {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
+    /// Elapsed stopwatch seconds as whole logged minutes.
+    ///
+    /// Nearest-minute, not rounded up. macOS's timer used to ceil, so ten 61-second sessions
+    /// reported twenty minutes of work for ten minutes done, and the same stopwatch reading
+    /// logged a different number on each platform. Logged time is a record; systematic
+    /// over-reporting is worse than losing a partial minute.
+    static func minutes(fromElapsedSeconds seconds: Int) -> Int {
+        max(0, Int((Double(seconds) / 60.0).rounded()))
+    }
+
     static func logElapsedSeconds(_ seconds: Int, to task: AppTask) {
-        let minutes = max(0, Int((Double(seconds) / 60.0).rounded()))
+        let minutes = minutes(fromElapsedSeconds: seconds)
         guard minutes > 0 else { return }
 
         task.actualMinutes += minutes

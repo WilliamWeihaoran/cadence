@@ -22,7 +22,7 @@ struct iOSCalendarMonthGrid: View {
 
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
-                    ForEach(calendar.shortWeekdaySymbols, id: \.self) { symbol in
+                    ForEach(CadenceScheduleSupport.weekdaySymbols(calendar: calendar), id: \.self) { symbol in
                         Text(symbol)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Theme.dim)

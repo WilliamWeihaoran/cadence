@@ -58,14 +58,21 @@ final class FocusManager {
         wantsNavToFocus = true
     }
 
-    /// Commits elapsed seconds (rounded UP to nearest minute) into the task's actualMinutes.
+    /// Commits elapsed seconds into the task's `actualMinutes` **and its list's `loggedMinutes`**.
     /// Pauses and resets the stopwatch so the next session starts fresh.
+    ///
+    /// This used to add to `actualMinutes` only, so running the timer never moved
+    /// `project.loggedMinutes` — which an hours-mode goal reads. Two things made that hard to
+    /// notice: macOS's *manual* "log session" sheet does roll up, so typing 25 minutes and
+    /// running the timer for 25 minutes produced different totals on the same Mac; and the
+    /// bundle branch below rolls up too, so a bundle timer credited the list and a single-task
+    /// timer did not. It now goes through the same shared helper iOS uses.
     func commitElapsed() {
         guard elapsed > 0 else { return }
-        let minutes = (elapsed + 59) / 60
+        let minutes = CadenceFocusSupport.minutes(fromElapsedSeconds: elapsed)
         switch activeSession {
         case .task(let task):
-            task.actualMinutes += minutes
+            CadenceFocusSupport.logElapsedSeconds(elapsed, to: task)
         case .bundle(let bundle):
             FocusSessionSupport.distributeBundleMinutes(
                 minutes,

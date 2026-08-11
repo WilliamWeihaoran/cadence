@@ -42,25 +42,46 @@ import Foundation
         self.colorHex = colorHex
     }
 
+    /// The **unarchived** section names, as a plain list.
+    ///
+    /// The getter hides archived columns, so the setter has to put them back: it used to rebuild
+    /// `sectionConfigs` from `newValue` alone, which meant every archived column was destroyed by
+    /// any write. That is not theoretical — `iOSListEditorViews` edits a list purely through this
+    /// property, so opening a list on iPhone and tapping Save with no changes at all silently
+    /// deleted every archived column, with no undo and no other copy of the data. A view that
+    /// filters on read must restore on write, or it is a delete in disguise.
+    ///
+    /// Known remaining limitation: matching is by name, so *renaming* a column on a surface that
+    /// writes through here still mints a fresh config and loses that column's colour and due
+    /// date. Fixing that needs identity in the editor UI (iOS has no per-column colour or due
+    /// date control at all yet) rather than a smarter guess here.
     var sectionNames: [String] {
         get {
             sectionConfigs.filter { !$0.isArchived }.map(\.name)
         }
         set {
-            let existingByName = Dictionary(uniqueKeysWithValues: sectionConfigs.map { ($0.name.lowercased(), $0) })
-            sectionConfigs = newValue.map { name in
-                if let existing = existingByName[name.lowercased()] {
+            let existing = sectionConfigs
+            let existingByName = Dictionary(existing.map { ($0.name.lowercased(), $0) }) { first, _ in first }
+            let keptNames = Set(newValue.map { $0.lowercased() })
+            let visible: [TaskSectionConfig] = newValue.map { name in
+                if let match = existingByName[name.lowercased()] {
                     return TaskSectionConfig(
-                        uuid: existing.uuid,
+                        uuid: match.uuid,
                         name: name,
-                        colorHex: existing.colorHex,
-                        dueDate: existing.dueDate,
-                        isCompleted: existing.isCompleted,
+                        colorHex: match.colorHex,
+                        dueDate: match.dueDate,
+                        isCompleted: match.isCompleted,
                         isArchived: false
                     )
                 }
                 return TaskSectionConfig(name: name)
             }
+            // Archived columns are invisible to this property's getter, so `newValue` can never
+            // mention them and their absence must not be read as a deletion.
+            let preservedArchived = existing.filter {
+                $0.isArchived && !keptNames.contains($0.name.lowercased())
+            }
+            sectionConfigs = visible + preservedArchived
         }
     }
 

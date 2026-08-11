@@ -216,12 +216,32 @@ enum CadenceTodayWidgetSupport {
 }
 
 enum CadenceWidgetDateSupport {
-    nonisolated static func dateKey(from date: Date) -> String {
-        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+    /// Gregorian regardless of `Calendar.current`'s identifier, matching `DateFormatters.ymd`,
+    /// which is what every stored key was written with. Formatting by hand here is a deliberate
+    /// main-actor workaround (see `parsedDate` below) — but reading the components off
+    /// `Calendar.current` made the workaround introduce a calendar divergence: under a Buddhist
+    /// current calendar this returned `"2569-08-11"`, which matches no row in the store, so the
+    /// Today and Calendar widgets rendered permanently empty and every task read "Overdue".
+    nonisolated static func storageCalendar(inheritingTimeZoneFrom calendar: Calendar) -> Calendar {
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = calendar.timeZone
+        return gregorian
+    }
+
+    /// Calendar-injectable core. The `Calendar.current` convenience below is what the widget
+    /// actually calls, but a test host is always Gregorian, so without a seam no assertion here
+    /// can tell a correct implementation from one that reads `Calendar.current`'s components.
+    nonisolated static func dateKey(from date: Date, calendar: Calendar) -> String {
+        let components = storageCalendar(inheritingTimeZoneFrom: calendar)
+            .dateComponents([.year, .month, .day], from: date)
         let year = components.year ?? 0
         let month = components.month ?? 1
         let day = components.day ?? 1
         return String(format: "%04d-%02d-%02d", year, month, day)
+    }
+
+    nonisolated static func dateKey(from date: Date) -> String {
+        dateKey(from: date, calendar: .current)
     }
 
     nonisolated static func weekdayLabel(from date: Date) -> String {
@@ -281,6 +301,7 @@ enum CadenceWidgetDateSupport {
               let year = Int(parts[0]),
               let month = Int(parts[1]),
               let day = Int(parts[2]) else { return nil }
-        return Calendar.current.date(from: DateComponents(year: year, month: month, day: day))
+        return storageCalendar(inheritingTimeZoneFrom: .current)
+            .date(from: DateComponents(year: year, month: month, day: day))
     }
 }

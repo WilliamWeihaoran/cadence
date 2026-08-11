@@ -520,6 +520,22 @@ enum CadenceScheduleSupport {
         }
     }
 
+    /// Column headings for a grid built by `monthGridDays`, in that grid's own column order.
+    ///
+    /// `Calendar.shortWeekdaySymbols` is indexed by weekday *number*, so `[0]` is always Sunday
+    /// no matter what `firstWeekday` is: it is localized in content but fixed in order. The grid
+    /// below snaps to `firstWeekday` via `dateInterval(of: .weekOfMonth)`, so pairing the two
+    /// directly labelled every cell with the wrong weekday outside Sunday-first regions — in
+    /// Germany the header read `So Mo Di…` over columns that started on Monday, and in Saudi
+    /// Arabia the skew was six columns. The labels being in the right language is what made it
+    /// hard to see. Rotating here keeps the headings and the columns derived from one place.
+    static func weekdaySymbols(calendar: Calendar = .current) -> [String] {
+        let symbols = calendar.shortWeekdaySymbols
+        let offset = calendar.firstWeekday - 1
+        guard symbols.count == 7, offset > 0, offset < 7 else { return symbols }
+        return Array(symbols[offset...] + symbols[..<offset])
+    }
+
     static func monthGridDays(for monthDate: Date, calendar: Calendar = .current) -> [Date] {
         guard let monthInterval = calendar.dateInterval(of: .month, for: monthDate),
               let gridStart = calendar.dateInterval(of: .weekOfMonth, for: monthInterval.start)?.start,
