@@ -100,10 +100,13 @@ final class NotificationManager: NSObject {
         for request in diff.requestsToAdd {
             let content = Self.makeContent(for: request)
             let components = Calendar.current.dateComponents(
-                [.year, .month, .day, .hour, .minute, .second],
+                request.kind.triggerComponents,
                 from: request.fireDate
             )
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            let trigger = UNCalendarNotificationTrigger(
+                dateMatching: components,
+                repeats: request.kind.repeatsDaily
+            )
             let osRequest = UNNotificationRequest(identifier: request.identifier, content: content, trigger: trigger)
             try? await center.add(osRequest)
         }

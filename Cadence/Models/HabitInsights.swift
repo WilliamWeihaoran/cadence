@@ -41,22 +41,11 @@ extension Habit {
         }
     }
 
+    /// Kept as a property because that is how the iOS detail view reads it; the implementation
+    /// moved to `Habit.bestStreak(asOf:calendar:)` so it shares `currentStreak`'s definition of
+    /// a streak instead of inventing a second, incompatible one.
     var bestStreak: Int {
-        let dates = completionDateKeys
-        let cal = Calendar.current
-        var best = 0
-        var current = 0
-        let today = cal.startOfDay(for: Date())
-        for i in stride(from: 365, through: 0, by: -1) {
-            guard let date = cal.date(byAdding: .day, value: -i, to: today) else { continue }
-            if dates.contains(DateFormatters.dateKey(from: date)) {
-                current += 1
-                best = max(best, current)
-            } else {
-                current = 0
-            }
-        }
-        return best
+        bestStreak()
     }
 
     var recentCompletionLabels: [String] {

@@ -75,11 +75,29 @@ enum GoalContributionResolver {
     private static func contributingTasks(for goal: Goal, visitedGoalIDs: Set<UUID>) -> [AppTask] {
         guard !visitedGoalIDs.contains(goal.id) else { return [] }
         let nextVisited = visitedGoalIDs.union([goal.id])
+        // `goal.tasks` — the inverse of `AppTask.goal` — was omitted here, so a task assigned
+        // straight to a goal contributed nothing to its progress. iOS's task sheet writes exactly
+        // that relationship, recurrence and duplication copy it forward, and `CadenceReadService`
+        // already counts those tasks, so the same goal reported different numbers depending on
+        // which surface asked. Directly-assigned work is the most explicit statement a user can
+        // make about what a goal is made of; it counts.
+        let directTasks = goal.tasks ?? []
         let listTasks = (goal.listLinks ?? []).flatMap(\.tasks)
         let subGoalTasks = (goal.subGoals ?? []).flatMap {
             contributingTasks(for: $0, visitedGoalIDs: nextVisited)
         }
-        return dedupe(listTasks + subGoalTasks).filter { !$0.isCancelled }
+        return dedupe(directTasks + listTasks + subGoalTasks).filter { !$0.isCancelled }
+    }
+
+    /// Tasks pointed straight at this goal (or one of its sub-goals) rather than reached through a
+    /// linked list. Deduped and cancel-filtered the same way `contributingTasks` is, so this is a
+    /// true subset of it and can never exceed `totalTasks`.
+    private static func directTasks(for goal: Goal, visitedGoalIDs: Set<UUID> = []) -> [AppTask] {
+        guard !visitedGoalIDs.contains(goal.id) else { return [] }
+        let nextVisited = visitedGoalIDs.union([goal.id])
+        let own = goal.tasks ?? []
+        let nested = (goal.subGoals ?? []).flatMap { directTasks(for: $0, visitedGoalIDs: nextVisited) }
+        return dedupe(own + nested).filter { !$0.isCancelled }
     }
 
     private static func linkedListCount(for goal: Goal, visitedGoalIDs: Set<UUID> = []) -> Int {
@@ -124,7 +142,17 @@ enum GoalContributionResolver {
         let recentStart = calendar.date(byAdding: .day, value: -7, to: today) ?? today
         let openTasks = tasks.filter { !$0.isDone }
 
-        let nextAction = openTasks
+        // Next Action is a suggestion to go do something, so it has to be something you can reach.
+        // Completed and archived lists are hidden from the sidebar, All Tasks, and every picker —
+        // a next action inside one names a task the user cannot navigate to. Progress deliberately
+        // still counts those tasks: archiving a finished project must not walk a goal backwards.
+        let actionableTasks = openTasks.filter { task in
+            if let project = task.project { return project.isActive }
+            if let area = task.area { return area.isActive }
+            return true
+        }
+
+        let nextAction = actionableTasks
             .sorted { lhs, rhs in
                 if lhs.priority != rhs.priority {
                     return priorityRank(lhs.priority) > priorityRank(rhs.priority)
@@ -153,7 +181,7 @@ enum GoalContributionResolver {
             targetHours: goal.targetHours,
             totalTasks: tasks.count,
             completedTasks: tasks.filter(\.isDone).count,
-            directTaskCount: 0,
+            directTaskCount: directTasks(for: goal).count,
             linkedListCount: linkedListCount(for: goal),
             focusMinutes: tasks.reduce(loggedMinutes(for: goal)) { $0 + max(0, $1.actualMinutes) },
             overdueTaskCount: overdueCount,
@@ -179,12 +207,32 @@ enum GoalContributionResolver {
 }
 
 enum GoalHabitMomentumResolver {
+    /// Habits attached to this goal *and* to its sub-goals.
+    ///
+    /// This used to read `goal.habits` flat while `GoalContributionResolver` recursed sub-goals,
+    /// so a habit attached to a milestone showed up nowhere on its direction — "0 habits" on the
+    /// same card whose percentage that milestone's tasks were moving. Both habit editors offer
+    /// milestones as attachment targets, so this is the normal way to attach one.
+    private static func linkedHabits(for goal: Goal, visitedGoalIDs: Set<UUID> = []) -> [Habit] {
+        guard !visitedGoalIDs.contains(goal.id) else { return [] }
+        let nextVisited = visitedGoalIDs.union([goal.id])
+        let own = goal.habits ?? []
+        let nested = (goal.subGoals ?? []).flatMap { linkedHabits(for: $0, visitedGoalIDs: nextVisited) }
+        var seen = Set<UUID>()
+        return (own + nested).filter { seen.insert($0.id).inserted }
+    }
+
     static func summary(for goal: Goal, now: Date = Date()) -> GoalHabitMomentumSummary {
-        let habits = goal.habits ?? []
+        let habits = linkedHabits(for: goal)
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: now)
         let todayKey = DateFormatters.dateKey(from: today)
-        let weekStart = calendar.dateInterval(of: .weekOfYear, for: today)?.start ?? today
+        // `Habit.weeklyStreak` forces ISO 8601 Monday weeks, and `Habit.weekdayIndex` is Monday=1.
+        // Reading `Calendar.current`'s week here instead put "this week" on a Sunday boundary in
+        // en_US, so a Mon/Wed/Fri habit reported 0 completions this week on the Sunday that the
+        // streak still counted as satisfied. One vocabulary for "week", and it is the habit's.
+        let isoCalendar = Habit.isoWeekCalendar(inheritingTimeZoneFrom: calendar)
+        let weekStart = isoCalendar.dateInterval(of: .weekOfYear, for: today)?.start ?? today
 
         var dueToday = 0
         var doneToday = 0
@@ -193,7 +241,7 @@ enum GoalHabitMomentumResolver {
 
         for habit in habits {
             let keys = Set((habit.completions ?? []).map(\.date))
-            if isHabit(habit, dueOn: today, calendar: calendar) {
+            if habit.isDue(on: today, calendar: calendar) {
                 dueToday += 1
                 if keys.contains(todayKey) {
                     doneToday += 1
@@ -224,20 +272,9 @@ enum GoalHabitMomentumResolver {
         )
     }
 
-    private static func isHabit(_ habit: Habit, dueOn date: Date, calendar: Calendar) -> Bool {
-        switch habit.frequencyType {
-        case .daily:
-            return true
-        case .daysOfWeek:
-            return habit.frequencyDays.contains(Habit.weekdayIndex(for: date, calendar: calendar))
-        case .timesPerWeek:
-            return true
-        case .monthly:
-            let day = calendar.component(.day, from: date)
-            let target = habit.frequencyDays.first ?? 1
-            let range = calendar.range(of: .day, in: .month, for: date)
-            let lastDay = range?.upperBound.advanced(by: -1) ?? 31
-            return day == min(max(1, target), lastDay)
-        }
-    }
+    // `isHabit(_:dueOn:calendar:)` used to live here as a line-for-line fork of `Habit.isDue`.
+    // The fork had a real reason once — `isDue` lived in `HabitInsights.swift`, which the
+    // `CadenceMCPServer` target does not compile — but `isDue` moved into `Habit.swift`, which
+    // that target *does* compile, so since then the copy has been pure drift risk. It is gone;
+    // this resolver now asks the habit itself, and any change to due-ness reaches both surfaces.
 }

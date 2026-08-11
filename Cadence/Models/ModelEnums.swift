@@ -192,9 +192,12 @@ enum GoalProgressType: String, Codable, CaseIterable, Hashable {
     case subtasks = "subtasks"
     case hours    = "hours"
 
+    /// The `.subtasks` raw value is persisted and stays as it is; the label does not.
+    /// This mode counts whole `AppTask` rows — `Subtask` is a different model that never takes
+    /// part in the ratio — so "Subtasks" named something the number has nothing to do with.
     var label: String {
         switch self {
-        case .subtasks: return "Subtasks"
+        case .subtasks: return "Tasks"
         case .hours:    return "Hours"
         }
     }

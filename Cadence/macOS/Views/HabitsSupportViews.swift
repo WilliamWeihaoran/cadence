@@ -580,15 +580,37 @@ struct HabitHeatmap: View {
         Set((habit.completions ?? []).map { $0.date })
     }
 
+    /// The heatmap's date math, pulled out of the view so it can be asserted on.
+    ///
+    /// The grid used to anchor on `today - weeks * 7` and then round *backwards* to the start of
+    /// that week, so its last cell landed between one and seven days before today — today's own
+    /// check-in never appeared, on any day of the week. (`isFuture` in the body was consequently
+    /// unreachable, which is the clearest evidence the grid was meant to run through today.)
+    /// Anchoring on the week containing today and counting back puts the current week in the
+    /// final column, where a heatmap's most recent week belongs.
+    enum HabitHeatmapGrid {
+        static func startDate(weeks: Int, today: Date, calendar: Calendar) -> Date {
+            let startOfToday = calendar.startOfDay(for: today)
+            let weekday = calendar.component(.weekday, from: startOfToday)
+            let startOfThisWeek = calendar.date(byAdding: .day, value: -(weekday - 1), to: startOfToday) ?? startOfToday
+            return calendar.date(byAdding: .day, value: -(max(1, weeks) - 1) * 7, to: startOfThisWeek) ?? startOfThisWeek
+        }
+
+        /// Every `yyyy-MM-dd` key the grid draws, in render order.
+        static func dateKeys(weeks: Int, today: Date, calendar: Calendar) -> [String] {
+            let start = startDate(weeks: weeks, today: today, calendar: calendar)
+            return (0..<(max(1, weeks) * 7)).compactMap { offset in
+                calendar.date(byAdding: .day, value: offset, to: start).map {
+                    DateFormatters.dateKey(from: $0, calendar: calendar)
+                }
+            }
+        }
+    }
+
     private var cal: Calendar { Calendar.current }
 
     private var startDate: Date {
-        let today = cal.startOfDay(for: Date())
-        let daysBack = weeks * 7
-        let rawStart = cal.date(byAdding: .day, value: -daysBack, to: today) ?? today
-        let weekday = cal.component(.weekday, from: rawStart)
-        let offset = weekday - 1
-        return cal.date(byAdding: .day, value: -offset, to: rawStart) ?? rawStart
+        HabitHeatmapGrid.startDate(weeks: weeks, today: Date(), calendar: cal)
     }
 
     private var months: [(label: String, weekCol: Int)] {
@@ -626,6 +648,8 @@ struct HabitHeatmap: View {
                             let date = cal.date(byAdding: .day, value: dayOffset, to: startDate) ?? startDate
                             let key = fmt.string(from: date)
                             let isDone = completionDates.contains(key)
+                            // Live now that the grid runs through the end of the current week:
+                            // the days after today in that final column are drawn empty.
                             let isFuture = date > Date()
 
                             RoundedRectangle(cornerRadius: 2)

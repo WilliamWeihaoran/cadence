@@ -82,6 +82,111 @@ import Foundation
         }
     }
 
+    /// The longest run this habit has ever sustained, measured in the same unit `currentStreak`
+    /// reports: due days for day-based habits, satisfied weeks for `.timesPerWeek`.
+    ///
+    /// The old implementation lived in `HabitInsights` and scanned 366 consecutive *calendar*
+    /// days, treating any completion row as satisfying the day. That made it incomparable with
+    /// `currentStreak` — which skips non-due days, honors `targetCount`, and counts weeks for
+    /// `.timesPerWeek` — while iOS rendered the two side by side as "Current" and "Best". A
+    /// Mon/Wed/Fri habit kept perfectly for eight weeks read **Current 24d · Best 1d**, because
+    /// no two of its completions ever fall on consecutive calendar days. The 366-day cap also
+    /// meant a 500-day daily streak reported a "best" of 366, below its own current.
+    ///
+    /// `Best` is now always >= `Current` by construction, which is the property that makes the
+    /// pair meaningful at all.
+    func bestStreak(asOf referenceDate: Date = Date(), calendar: Calendar = .current) -> Int {
+        let today = calendar.startOfDay(for: referenceDate)
+        switch frequencyType {
+        case .timesPerWeek:
+            return bestWeeklyStreak(referenceToday: today, calendar: calendar)
+        case .daily, .daysOfWeek, .monthly:
+            return bestDailyBasedStreak(referenceToday: today, calendar: calendar)
+        }
+    }
+
+    /// The earliest completion on record, which bounds every historical walk. Without it the
+    /// walks would have to guess a window — the exact mistake the 366-day cap encoded.
+    private func earliestCompletionDate(calendar: Calendar) -> Date? {
+        (completions ?? [])
+            .compactMap { DateFormatters.date(from: $0.date, in: calendar) }
+            .min()
+            .map { calendar.startOfDay(for: $0) }
+    }
+
+    private func bestDailyBasedStreak(referenceToday today: Date, calendar: Calendar) -> Int {
+        guard let earliest = earliestCompletionDate(calendar: calendar) else { return 0 }
+        let counts = completionCountsByDate()
+        let requiredPerDay = frequencyType == .daysOfWeek ? 1 : max(1, targetCount)
+        let days = frequencyDays
+
+        var best = 0
+        var run = 0
+        var cursor = earliest
+        var iterations = 0
+        let maxIterations = 3800 // same ~10y bound the current-streak walk uses
+
+        while cursor <= today, iterations < maxIterations {
+            iterations += 1
+            if isDue(on: cursor, frequencyDays: days, calendar: calendar) {
+                let satisfied = (counts[DateFormatters.dateKey(from: cursor, calendar: calendar)] ?? 0) >= requiredPerDay
+                // Today is forgiven rather than counted as a break, matching `currentStreak` —
+                // otherwise "Best" would drop below "Current" for the whole of the day until the
+                // user checks in.
+                if satisfied {
+                    run += 1
+                    best = max(best, run)
+                } else if !calendar.isDate(cursor, inSameDayAs: today) {
+                    run = 0
+                }
+            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+        return best
+    }
+
+    private func bestWeeklyStreak(referenceToday today: Date, calendar: Calendar) -> Int {
+        guard let earliest = earliestCompletionDate(calendar: calendar) else { return 0 }
+        let isoCalendar = Self.isoWeekCalendar(inheritingTimeZoneFrom: calendar)
+        let counts = completionCountsByDate()
+        let target = max(1, targetCount)
+
+        func weekTotal(startingAt start: Date) -> Int {
+            var total = 0
+            var cursor = start
+            for _ in 0..<7 {
+                total += counts[DateFormatters.dateKey(from: cursor, calendar: isoCalendar)] ?? 0
+                guard let next = isoCalendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+                cursor = next
+            }
+            return total
+        }
+
+        guard var cursor = isoCalendar.dateInterval(of: .weekOfYear, for: earliest)?.start,
+              let currentWeekStart = isoCalendar.dateInterval(of: .weekOfYear, for: today)?.start
+        else { return 0 }
+
+        var best = 0
+        var run = 0
+        var iterations = 0
+        let maxIterations = 600 // ~11.5y of weeks, matching `weeklyStreak`
+
+        while cursor <= currentWeekStart, iterations < maxIterations {
+            iterations += 1
+            if weekTotal(startingAt: cursor) >= target {
+                run += 1
+                best = max(best, run)
+            } else if cursor != currentWeekStart {
+                // The still-in-progress week is forgiven, exactly as `weeklyStreak` forgives it.
+                run = 0
+            }
+            guard let next = isoCalendar.date(byAdding: .day, value: 7, to: cursor) else { break }
+            cursor = next
+        }
+        return best
+    }
+
     private func completionCountsByDate() -> [String: Int] {
         var result: [String: Int] = [:]
         for completion in completions ?? [] {
@@ -147,11 +252,7 @@ import Foundation
     }
 
     private func weeklyStreak(referenceToday today: Date, calendar: Calendar) -> Int {
-        // Weeks are fixed Monday-start (ISO 8601) regardless of locale/system first-weekday,
-        // matching the Monday=1...Sunday=7 convention used by `weekdayIndex`. The timezone is
-        // still inherited from the caller's calendar so DST-boundary math stays correct.
-        var isoCalendar = Calendar(identifier: .iso8601)
-        isoCalendar.timeZone = calendar.timeZone
+        let isoCalendar = Self.isoWeekCalendar(inheritingTimeZoneFrom: calendar)
 
         let counts = completionCountsByDate()
         let target = max(1, targetCount)
@@ -203,6 +304,19 @@ import Foundation
     static func weekdayIndex(for date: Date, calendar: Calendar = .current) -> Int {
         let weekday = calendar.component(.weekday, from: date)
         return weekday == 1 ? 7 : weekday - 1
+    }
+
+    /// The habit week: fixed Monday-start (ISO 8601) regardless of locale or system first-weekday,
+    /// matching the Monday=1…Sunday=7 convention `weekdayIndex` uses. The time zone is inherited
+    /// from `calendar` so DST-boundary math stays correct.
+    ///
+    /// Anything asking "which week is this completion in" must go through here. `weeklyStreak`
+    /// built this inline and `GoalHabitMomentumResolver` read `Calendar.current`'s week instead,
+    /// so on a Sunday the two disagreed about whether the current week had been satisfied.
+    static func isoWeekCalendar(inheritingTimeZoneFrom calendar: Calendar = .current) -> Calendar {
+        var iso = Calendar(identifier: .iso8601)
+        iso.timeZone = calendar.timeZone
+        return iso
     }
 
     /// Lives here (not in `HabitInsights.swift`) so this file has no cross-file dependency:

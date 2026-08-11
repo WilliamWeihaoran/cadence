@@ -9,6 +9,28 @@ enum NotificationKind: String, Codable {
     case taskStart
     case taskDue
     case habitReminder
+
+    /// Whether this reminder recurs at the same time every day, or fires once at one instant.
+    ///
+    /// A task's start and due reminders are about a specific dated task, so they are one-shot.
+    /// A habit reminder is a standing "every day at 09:00" — it has no meaningful single date,
+    /// and the planner only ever names the *next* occurrence. Building both as one-shot triggers
+    /// meant a habit reminder fired once and then never again: the pending request was consumed,
+    /// and only a reconcile could re-add it. Reconcile runs on `scenePhase` changes, so leaving
+    /// the app open on a Mac (or simply not reopening it on iPhone) silently ended the reminder.
+    var repeatsDaily: Bool {
+        switch self {
+        case .taskStart, .taskDue: return false
+        case .habitReminder: return true
+        }
+    }
+
+    /// The date components a trigger for this kind should match. A repeating daily reminder must
+    /// match on time-of-day *only* — including `.year`/`.month`/`.day` pins it to one calendar
+    /// date, which is what made `repeats` meaningless.
+    var triggerComponents: Set<Calendar.Component> {
+        repeatsDaily ? [.hour, .minute] : [.year, .month, .day, .hour, .minute, .second]
+    }
 }
 
 struct CadenceNotificationRequest: Equatable {
@@ -137,6 +159,11 @@ enum TaskNotificationPlanner {
 enum HabitNotificationPlanner {
     /// Returns the next daily reminder occurrence for a habit, or nil if no reminder time is set.
     ///
+    /// The returned `fireDate` names the next occurrence, but the reminder is a *standing* daily
+    /// one: `NotificationKind.habitReminder.repeatsDaily` makes the trigger match time-of-day and
+    /// repeat, so only the hour and minute of this date reach the OS. The full date still matters
+    /// for ordering against the pending-request limit.
+    ///
     /// MVP simplification: this fires every day the reminder is enabled, regardless of the
     /// habit's `frequencyType`/`frequencyDays` (e.g. a "3x/week" habit still gets a daily nudge
     /// on days it isn't due). That's a deliberate scope decision for a general daily reminder,
@@ -162,7 +189,10 @@ enum HabitNotificationPlanner {
             identifier: NotificationIdentifiers.habitReminder(habitID: habit.id),
             kind: .habitReminder,
             title: habit.title,
-            body: "Time for your daily check-in",
+            // Frequency-neutral: the reminder itself is daily, but the habit may not be. A
+            // monthly "Pay rent" whose own summary reads "Day 1 each month" should not be told
+            // it has a daily check-in.
+            body: "Time to check in",
             fireDate: fireDate
         )
     }

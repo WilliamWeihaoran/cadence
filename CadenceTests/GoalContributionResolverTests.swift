@@ -5,7 +5,7 @@ import Testing
 
 @MainActor
 struct GoalContributionResolverTests {
-    @Test func contributionSummaryUsesLinkedListsAndIgnoresDirectTaskLinks() throws {
+    @Test func contributionSummaryCountsBothLinkedListsAndDirectTaskLinks() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
 
@@ -27,7 +27,7 @@ struct GoalContributionResolverTests {
         cancelledDirect.goal = goal
         cancelledDirect.status = .cancelled
 
-        let directOnly = AppTask(title: "Direct only ignored")
+        let directOnly = AppTask(title: "Direct only")
         directOnly.goal = goal
         directOnly.status = .done
         directOnly.actualMinutes = 999
@@ -64,14 +64,158 @@ struct GoalContributionResolverTests {
 
         let summary = GoalContributionResolver.summary(for: goal, now: DateFormatters.date(from: "2026-04-30") ?? Date())
 
-        #expect(summary.totalTasks == 3)
-        #expect(summary.completedTasks == 2)
-        #expect(summary.directTaskCount == 0)
+        // `directDone` is reachable both ways (area link *and* `task.goal`) and must be counted
+        // once; `cancelledDirect` is excluded like any cancelled task; `directOnly` is the case
+        // that used to vanish entirely.
+        #expect(summary.totalTasks == 4)
+        #expect(summary.completedTasks == 3)
+        #expect(summary.directTaskCount == 2)
         #expect(summary.linkedListCount == 1)
-        #expect(summary.focusMinutes == 120)
+        // 90m logged on the goal + 30m on `directDone` + 999m on `directOnly`.
+        #expect(summary.focusMinutes == 1119)
         #expect(summary.overdueTaskCount == 1)
         #expect(summary.nextActionTitle == "Area open")
-        #expect(goal.progress == 2.0 / 3.0)
+        #expect(goal.progress == 3.0 / 4.0)
+    }
+
+    /// `directTaskCount` is a subset of `totalTasks`, never an addition to it. A task that is both
+    /// directly assigned and inside a linked list is one contribution, not two.
+    @Test func directTaskCountNeverDoubleCountsATaskReachableBothWays() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let context = Context(name: "Work")
+        let area = Area(name: "Overlap", context: context)
+        let goal = Goal(title: "Ship", context: context)
+
+        let both = AppTask(title: "In the area and on the goal")
+        both.area = area
+        both.context = context
+        both.goal = goal
+
+        let link = GoalListLink(goal: goal, area: area)
+
+        modelContext.insert(context)
+        modelContext.insert(area)
+        modelContext.insert(goal)
+        modelContext.insert(both)
+        modelContext.insert(link)
+        try modelContext.save()
+
+        let summary = GoalContributionResolver.summary(for: goal)
+
+        #expect(summary.totalTasks == 1)
+        #expect(summary.directTaskCount == 1)
+    }
+
+    /// The `!task.isDone` guard in `overdueTasks` had no test that could fail without it: every
+    /// existing done task in the suite carried an empty `dueDate`, so the *second* guard caught
+    /// them regardless. A finished task with a past due date is the only shape that distinguishes
+    /// the two, and it is the shape a goal linked to a wrapped-up project is full of.
+    @Test func completedTasksWithPastDueDatesAreNotOverdue() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let context = Context(name: "Work")
+        let area = Area(name: "Wrapped up", context: context)
+        let goal = Goal(title: "Last quarter", context: context)
+
+        let doneButPastDue = AppTask(title: "Shipped late but shipped")
+        doneButPastDue.area = area
+        doneButPastDue.context = context
+        doneButPastDue.dueDate = "2026-04-01"
+        doneButPastDue.status = .done
+
+        let stillOpen = AppTask(title: "Never finished")
+        stillOpen.area = area
+        stillOpen.context = context
+        stillOpen.dueDate = "2026-04-02"
+
+        let link = GoalListLink(goal: goal, area: area)
+
+        modelContext.insert(context)
+        modelContext.insert(area)
+        modelContext.insert(goal)
+        modelContext.insert(doneButPastDue)
+        modelContext.insert(stillOpen)
+        modelContext.insert(link)
+        try modelContext.save()
+
+        let now = DateFormatters.date(from: "2026-04-30") ?? Date()
+        #expect(GoalContributionResolver.summary(for: goal, now: now).overdueTaskCount == 1)
+        #expect(
+            GoalContributionResolver.overdueTasks(for: goal, now: now).map(\.title) == ["Never finished"]
+        )
+    }
+
+    /// Next Action has to name something the user can actually open. Archived and completed lists
+    /// are hidden from the sidebar, All Tasks, and every picker — but their tasks still count
+    /// toward progress, so archiving a finished project cannot walk a goal's percentage backwards.
+    @Test func nextActionSkipsArchivedListsWhileProgressStillCountsThem() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let context = Context(name: "Work")
+        let archived = Project(name: "Legacy Migration", context: context)
+        archived.status = .archived
+        let live = Area(name: "Current Work", context: context)
+        let goal = Goal(title: "Ship v1", context: context)
+
+        // Higher priority and an earlier due date, so it would win the sort if it were eligible.
+        let buriedTask = AppTask(title: "Task in an archived project")
+        buriedTask.project = archived
+        buriedTask.context = context
+        buriedTask.priority = .high
+        buriedTask.dueDate = "2026-01-01"
+
+        let reachableTask = AppTask(title: "Task you can open")
+        reachableTask.area = live
+        reachableTask.context = context
+
+        modelContext.insert(context)
+        modelContext.insert(archived)
+        modelContext.insert(live)
+        modelContext.insert(goal)
+        modelContext.insert(buriedTask)
+        modelContext.insert(reachableTask)
+        modelContext.insert(GoalListLink(goal: goal, project: archived))
+        modelContext.insert(GoalListLink(goal: goal, area: live))
+        try modelContext.save()
+
+        let summary = GoalContributionResolver.summary(for: goal, now: DateFormatters.date(from: "2026-04-30") ?? Date())
+
+        #expect(summary.nextActionTitle == "Task you can open")
+        #expect(summary.totalTasks == 2)
+        #expect(summary.overdueTaskCount == 1)
+    }
+
+    /// Habits attach to milestones as readily as to directions — both editors offer them — so a
+    /// direction that reported "0 habits" was hiding work its own percentage was already counting.
+    @Test func habitMomentumRollsUpHabitsAttachedToMilestones() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let direction = Goal(title: "Get healthy")
+        let milestone = Goal(title: "Run a 10k")
+        milestone.parentGoal = direction
+
+        let habit = Habit(title: "Run", goal: milestone)
+        habit.frequencyType = .daily
+
+        modelContext.insert(direction)
+        modelContext.insert(milestone)
+        modelContext.insert(habit)
+        modelContext.insert(HabitCompletion(date: "2026-04-30", habit: habit))
+        try modelContext.save()
+
+        let summary = GoalHabitMomentumResolver.summary(
+            for: direction,
+            now: DateFormatters.date(from: "2026-04-30") ?? Date()
+        )
+
+        #expect(summary.linkedHabitCount == 1)
+        #expect(summary.dueTodayCount == 1)
+        #expect(summary.doneTodayCount == 1)
     }
 
     @Test func taskContainerNamePrefersListOverGoal() {
