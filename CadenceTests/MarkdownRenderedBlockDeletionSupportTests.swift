@@ -185,6 +185,34 @@ struct MarkdownRenderedBlockDeletionSupportTests {
         #expect((markdown as NSString).substring(with: block.storageRange) == "[[task:\(taskID)|Ship iOS notes]]")
     }
 
+    /// The macOS editor finds its blocks from `NSTextStorage` attributes rather than from the
+    /// markdown source, so it cannot use `expandedDeletionRange(in:selection:)` — but it shares
+    /// this expansion rule instead of carrying a second copy of it.
+    @Test func expandsAKnownBlockRangeOverExactlyOneAdjacentNewline() {
+        let markdown = "Before\nblock\nAfter"
+        let blockRange = NSRange(location: 7, length: 5)
+
+        #expect(
+            MarkdownRenderedBlockDeletionSupport.expandedDeletionRange(for: blockRange, in: markdown)
+                == NSRange(location: 7, length: 6)
+        )
+
+        // No newline after the last line, so the one in front of it is taken instead.
+        let trailing = "Before\nblock"
+        #expect(
+            MarkdownRenderedBlockDeletionSupport.expandedDeletionRange(for: blockRange, in: trailing)
+                == NSRange(location: 6, length: 6)
+        )
+
+        // An empty range describes no block, so there is nothing to swallow a newline for.
+        #expect(
+            MarkdownRenderedBlockDeletionSupport.expandedDeletionRange(
+                for: NSRange(location: 7, length: 0),
+                in: markdown
+            ) == NSRange(location: 7, length: 0)
+        )
+    }
+
     @Test func renderedBlockLookupIgnoresInlineImages() {
         let imageID = "11111111-1111-1111-1111-111111111111"
         let markdown = "Before ![Sketch](cadence-image://\(imageID)) after"

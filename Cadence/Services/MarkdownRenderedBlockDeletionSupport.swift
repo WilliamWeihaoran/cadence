@@ -53,7 +53,7 @@ enum MarkdownRenderedBlockDeletionSupport {
             MarkdownRenderedBlock(
                 kind: .image,
                 storageRange: reference.range,
-                deletionRange: expandedRange(reference.range, in: markdown)
+                deletionRange: expandedDeletionRange(for: reference.range, in: markdown)
             )
         }
 
@@ -66,7 +66,7 @@ enum MarkdownRenderedBlockDeletionSupport {
                 ranges.append(MarkdownRenderedBlock(
                     kind: .task,
                     storageRange: reference.range,
-                    deletionRange: expandedRange(reference.range, in: markdown)
+                    deletionRange: expandedDeletionRange(for: reference.range, in: markdown)
                 ))
             }
         }
@@ -80,7 +80,7 @@ enum MarkdownRenderedBlockDeletionSupport {
             ranges.append(MarkdownRenderedBlock(
                 kind: .code,
                 storageRange: range,
-                deletionRange: expandedRange(range, in: markdown)
+                deletionRange: expandedDeletionRange(for: range, in: markdown)
             ))
         }
 
@@ -92,7 +92,7 @@ enum MarkdownRenderedBlockDeletionSupport {
             ranges.append(MarkdownRenderedBlock(
                 kind: .divider,
                 storageRange: lineRecord.contentRange,
-                deletionRange: expandedRange(lineRecord.contentRange, in: markdown)
+                deletionRange: expandedDeletionRange(for: lineRecord.contentRange, in: markdown)
             ))
         }
 
@@ -125,7 +125,7 @@ enum MarkdownRenderedBlockDeletionSupport {
                 output.append(MarkdownRenderedBlock(
                     kind: .table,
                     storageRange: range,
-                    deletionRange: expandedRange(range, in: markdown)
+                    deletionRange: expandedDeletionRange(for: range, in: markdown)
                 ))
             }
 
@@ -174,7 +174,13 @@ enum MarkdownRenderedBlockDeletionSupport {
         return NSRange(location: startLocation, length: endLocation - startLocation)
     }
 
-    private static func expandedRange(_ range: NSRange, in markdown: String) -> NSRange {
+    /// Grows a rendered block's range to swallow one adjacent newline, so deleting the block does
+    /// not leave the blank line it occupied behind.
+    ///
+    /// Internal because the macOS editor finds its blocks from `NSTextStorage` attributes rather
+    /// than from the markdown source, so it cannot use `expandedDeletionRange(in:selection:)` —
+    /// but the expansion rule itself must be the same one, not a second copy of it.
+    static func expandedDeletionRange(for range: NSRange, in markdown: String) -> NSRange {
         let nsMarkdown = markdown as NSString
         var deletionRange = NSIntersectionRange(range, NSRange(location: 0, length: nsMarkdown.length))
         guard deletionRange.length > 0 else { return deletionRange }

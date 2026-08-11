@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import SwiftUI
 #if os(macOS)
 import AppKit
 #endif
@@ -214,7 +215,101 @@ struct MarkdownListSupportTests {
         #expect(MarkdownListSupport.continuation(after: "        c. hundredth", precededBy: "        xcix.") == "        ci. ")
     }
 
+    // MARK: - Ordered marker renumbering
+
+    @Test func renumbersOrderedMarkersWithinOneRun() {
+        let result = MarkdownListSupport.normalizedOrderedListMarkers(
+            in: "3. one\n9. two\n1. three",
+            selection: NSRange(location: 0, length: 0)
+        )
+
+        #expect(result.text == "1. one\n2. two\n3. three")
+    }
+
+    @Test func restartsOrderedNumberingAfterANonListLine() {
+        let result = MarkdownListSupport.normalizedOrderedListMarkers(
+            in: "1. one\n2. two\n\n7. fresh start",
+            selection: NSRange(location: 0, length: 0)
+        )
+
+        #expect(result.text == "1. one\n2. two\n\n1. fresh start")
+    }
+
+    @Test func nestedOrderedLevelsRestartAndTheOuterLevelResumes() {
+        let result = MarkdownListSupport.normalizedOrderedListMarkers(
+            in: "1. one\n    9. sub\n5. two\n    7. sub again",
+            selection: NSRange(location: 0, length: 0)
+        )
+
+        #expect(result.text == "1. one\n    a. sub\n2. two\n    a. sub again")
+    }
+
+    @Test func aLevelCountIsDroppedOnceTheListSteppedOutPastIt() {
+        // Stepping out to level 0 has to discard level 1's count, or the last line resumes it as
+        // "b." — a second item of a sublist the level-2 block already ended.
+        let result = MarkdownListSupport.normalizedOrderedListMarkers(
+            in: "    5. deep\n9. top\n        3. deeper\n    7. back",
+            selection: NSRange(location: 0, length: 0)
+        )
+
+        #expect(result.text == "    a. deep\n1. top\n        i. deeper\n    a. back")
+    }
+
+    @Test func keepsTheCaretWhereItSitsWhenAnEarlierMarkerShrinks() {
+        let text = "10. one\ntail"
+        let caret = ("10. one\nta" as NSString).length
+
+        let result = MarkdownListSupport.normalizedOrderedListMarkers(
+            in: text,
+            selection: NSRange(location: caret, length: 0)
+        )
+
+        #expect(result.text == "1. one\ntail")
+        #expect(result.selection == NSRange(location: ("1. one\nta" as NSString).length, length: 0))
+    }
+
+    @Test func clampsTheSelectionWhenNoOrderedMarkerChanges() {
+        let text = "1. one\n2. two"
+
+        let result = MarkdownListSupport.normalizedOrderedListMarkers(
+            in: text,
+            selection: NSRange(location: 999, length: 4)
+        )
+
+        #expect(result.text == text)
+        #expect(result.selection == NSRange(location: (text as NSString).length, length: 0))
+    }
+
 #if os(macOS)
+    /// The renumberer runs from `textDidChange`, after NSTextView has already closed the undo
+    /// group for the keystroke. Rewriting the document outside the mutation contract left that
+    /// record describing text that had moved, so the rewrite has to register its own undo step.
+    @MainActor @Test func renumberingRegistersItsOwnUndoStep() throws {
+        let textView = CadenceTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 240))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 240),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: true
+        )
+        window.contentView = textView
+        textView.allowsUndo = true
+        // Deliberately not installed as the text view's delegate: undoing the renumber would
+        // otherwise post another change notification and the renumberer would immediately redo it.
+        let coordinator = MarkdownEditorCoordinator(parent: MarkdownEditorView(text: .constant("")))
+
+        textView.string = "1. one\n3. two"
+        textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+        coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+
+        #expect(textView.string == "1. one\n2. two")
+        let undoManager = try #require(textView.undoManager)
+        #expect(undoManager.canUndo)
+
+        undoManager.undo()
+        #expect(textView.string == "1. one\n3. two")
+    }
+
     @MainActor @Test func toolbarTodoListUsesCanonicalTodoMarker() {
         let textView = NSTextView()
         textView.string = "write this"

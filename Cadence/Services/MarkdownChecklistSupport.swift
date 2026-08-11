@@ -8,6 +8,13 @@ struct MarkdownChecklistLine: Equatable {
     let content: String
 }
 
+/// The single-character edit that flips a checklist line: where its state marker is, and what it
+/// becomes.
+struct MarkdownChecklistToggle: Equatable {
+    let stateRange: NSRange
+    let replacement: String
+}
+
 enum MarkdownChecklistSupport {
     private static let githubChecklistRegex = try! NSRegularExpression(pattern: #"^([ \t]*[-*+]\s+\[)([ xX])(\]\s+)"#)
     private static let legacyChecklistRegex = try! NSRegularExpression(pattern: #"^([ \t]*)([○●✓])\s+"#)
@@ -16,10 +23,21 @@ enum MarkdownChecklistSupport {
         githubLineInfo(in: line) ?? legacyLineInfo(in: line)
     }
 
-    static func toggledLine(_ line: String) -> String? {
+    /// The one-character edit that flips a checklist line, as a range into `line` plus its
+    /// replacement.
+    ///
+    /// Exposed separately from `toggledLine` because the macOS editor toggles by splicing a
+    /// single character into an `NSTextStorage` — it needs the range, not a rebuilt line, and
+    /// used to derive the replacement itself by comparing a raw UTF-16 code point.
+    static func toggledState(in line: String) -> MarkdownChecklistToggle? {
         guard let info = lineInfo(in: line) else { return nil }
         let replacement = info.isDone ? uncheckedMarker(for: line, info: info) : checkedMarker(for: line, info: info)
-        return (line as NSString).replacingCharacters(in: info.stateRange, with: replacement)
+        return MarkdownChecklistToggle(stateRange: info.stateRange, replacement: replacement)
+    }
+
+    static func toggledLine(_ line: String) -> String? {
+        guard let toggle = toggledState(in: line) else { return nil }
+        return (line as NSString).replacingCharacters(in: toggle.stateRange, with: toggle.replacement)
     }
 
     static func toggledText(_ text: String, lineIndex: Int) -> String? {

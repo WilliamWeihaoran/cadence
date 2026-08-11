@@ -32,4 +32,16 @@ struct MarkdownInsertionSupportTests {
 
         #expect(insertion == "![Sketch](cadence-image://11111111-1111-1111-1111-111111111111)\n")
     }
+
+    /// The macOS editor used to compute this padding itself, reading one character either side of
+    /// the selection without clamping it first. This is the clamping that copy lacked.
+    @Test func blockInsertionClampsASelectionPastTheEndOfTheText() {
+        let insertion = MarkdownInsertionSupport.paddedBlockInsertion(
+            "---",
+            in: "Before",
+            selection: NSRange(location: 999, length: 12)
+        )
+
+        #expect(insertion == "\n\n---\n")
+    }
 }

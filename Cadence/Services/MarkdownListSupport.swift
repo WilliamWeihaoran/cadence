@@ -52,6 +52,79 @@ enum MarkdownListSupport {
     private static let orderedMarkerRegex = try! NSRegularExpression(pattern: #"^("# + orderedMarkerPattern + #")\s"#)
     private static let bulletCheckboxRegex = try! NSRegularExpression(pattern: #"^([*+-])\s+(?:\[([ xX])\]\s+)?"#)
 
+    /// Renumbers ordered-list markers so each run reads 1, 2, 3… at every nesting level.
+    ///
+    /// This lived in `macOS/Editor/MarkdownEditorInteractionSupport` as a complete renumbering
+    /// algorithm — level counters, level-transition resets, counter pruning, marker substitution —
+    /// running on every keystroke with no tests and no iOS equivalent, which is why ordered lists
+    /// renumber on macOS and not on iOS. `macOS/Editor/AGENTS.md` says markdown logic belongs
+    /// here, so here it is, shaped exactly like `normalizedMarkdownListPrefixes` above and sharing
+    /// its caret adjustment rather than the near-clone with different clamping it used to carry.
+    static func normalizedOrderedListMarkers(in text: String, selection: NSRange) -> MarkdownListNormalizationResult {
+        let originalLines = text.components(separatedBy: "\n")
+        var rebuiltLines: [String] = []
+        var counters: [Int: Int] = [:]
+        var previousOrderedLevel: Int?
+        var changed = false
+
+        for line in originalLines {
+            guard let match = listPrefixMatch(in: line), match.kind == .ordered else {
+                rebuiltLines.append(line)
+                // Any non-ordered line ends the run, so the next one starts at 1 again.
+                counters.removeAll()
+                previousOrderedLevel = nil
+                continue
+            }
+
+            let level = orderedLevel(forIndentation: match.indentation)
+            let nextIndex: Int
+            if let previousOrderedLevel {
+                nextIndex = level > previousOrderedLevel ? 1 : (counters[level] ?? 0) + 1
+            } else {
+                nextIndex = 1
+            }
+
+            // Drop the deeper levels: a sublist that has been left restarts if it comes back.
+            counters = counters.filter { $0.key <= level }
+            counters[level] = nextIndex
+            previousOrderedLevel = level
+
+            let expectedMarker = orderedMarker(for: level, index: nextIndex)
+            guard match.marker != expectedMarker else {
+                rebuiltLines.append(line)
+                continue
+            }
+
+            let markerStart = line.index(line.startIndex, offsetBy: match.indentation.count)
+            let markerEnd = line.index(markerStart, offsetBy: match.marker.count)
+            rebuiltLines.append(String(line[..<markerStart]) + expectedMarker + String(line[markerEnd...]))
+            changed = true
+        }
+
+        guard changed else {
+            return MarkdownListNormalizationResult(text: text, selection: clampedSelection(selection, in: text))
+        }
+
+        let rebuiltText = rebuiltLines.joined(separator: "\n")
+        let rebuiltLength = (rebuiltText as NSString).length
+        let adjustedStart = adjustedOffset(
+            selection.location,
+            originalLines: originalLines,
+            normalizedLines: rebuiltLines,
+            normalizedTextLength: rebuiltLength
+        )
+        let adjustedEnd = adjustedOffset(
+            NSMaxRange(selection),
+            originalLines: originalLines,
+            normalizedLines: rebuiltLines,
+            normalizedTextLength: rebuiltLength
+        )
+        return MarkdownListNormalizationResult(
+            text: rebuiltText,
+            selection: NSRange(location: adjustedStart, length: max(0, adjustedEnd - adjustedStart))
+        )
+    }
+
     static func normalizedMarkdownListPrefixes(in text: String) -> String {
         normalizedMarkdownListPrefixes(in: text, selection: NSRange(location: 0, length: 0)).text
     }

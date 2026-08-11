@@ -31,6 +31,25 @@ struct MarkdownChecklistSupportTests {
         #expect(MarkdownChecklistSupport.toggledLine("✓ Draft") == "○ Draft")
     }
 
+    /// The macOS editor toggles by splicing one character into an `NSTextStorage`, so it needs the
+    /// range and the replacement rather than a rebuilt line. It used to derive the replacement
+    /// itself by comparing a raw UTF-16 code point.
+    @Test func reportsTheOneCharacterEditThatTogglesALine() throws {
+        let legacy = try #require(MarkdownChecklistSupport.toggledState(in: "  ○ Draft"))
+        #expect(legacy.stateRange == NSRange(location: 2, length: 1))
+        #expect(legacy.replacement == "●")
+
+        let done = try #require(MarkdownChecklistSupport.toggledState(in: "✓ Draft"))
+        #expect(done.stateRange == NSRange(location: 0, length: 1))
+        #expect(done.replacement == "○")
+
+        let github = try #require(MarkdownChecklistSupport.toggledState(in: "- [ ] Draft"))
+        #expect(github.stateRange == NSRange(location: 3, length: 1))
+        #expect(github.replacement == "x")
+
+        #expect(MarkdownChecklistSupport.toggledState(in: "Plain line") == nil)
+    }
+
     @Test func togglesLineInsideMarkdownText() {
         let text = "Intro\n- [ ] First\n○ Second"
 
