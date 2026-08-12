@@ -57,8 +57,10 @@ enum CadenceTodayPresentationSupport {
         switch groupKind {
         case .overdue:
             return Theme.red
-        case .dueToday:
+        case .pastDo:
             return Theme.amber
+        case .dueToday:
+            return Theme.red.opacity(0.85)
         case .plannedToday:
             return Theme.blue
         }
@@ -68,6 +70,8 @@ enum CadenceTodayPresentationSupport {
         switch groupKind {
         case .overdue:
             return "exclamationmark.triangle.fill"
+        case .pastDo:
+            return "calendar.badge.exclamationmark"
         case .dueToday:
             return "flag.fill"
         case .plannedToday:

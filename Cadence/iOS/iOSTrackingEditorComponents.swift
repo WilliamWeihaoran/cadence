@@ -195,7 +195,7 @@ struct iOSHabitFrequencyEditor: View {
                 }
                 .popover(isPresented: $showTimesPerWeekPicker) {
                     iOSChoicePopoverList(
-                        rows: (1...14).map { count in
+                        rows: HabitFrequency.weeklyTargetRange.map { count in
                             iOSChoiceRow(value: count, title: "\(count)", color: Theme.blue)
                         },
                         selection: $timesPerWeek,

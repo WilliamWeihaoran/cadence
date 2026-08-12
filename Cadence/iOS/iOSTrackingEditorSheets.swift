@@ -298,7 +298,13 @@ struct iOSHabitEditorSheet: View {
             _colorHex = State(initialValue: habit.colorHex)
             _frequencyType = State(initialValue: habit.frequencyType)
             _selectedDays = State(initialValue: habit.frequencyType == .daysOfWeek ? Set(storedDays) : [])
-            _timesPerWeek = State(initialValue: habit.frequencyType == .timesPerWeek ? max(1, habit.targetCount) : 3)
+            // Clamped, not just floored: a habit written by the old `1...14` picker would other-
+            // wise open on a value the picker no longer lists, and save it straight back.
+            _timesPerWeek = State(
+                initialValue: habit.frequencyType == .timesPerWeek
+                    ? HabitFrequency.clampedWeeklyTarget(habit.targetCount)
+                    : 3
+            )
             _monthlyDay = State(initialValue: habit.frequencyType == .monthly ? min(max(storedDays.first ?? 1, 1), 31) : 1)
             _contextID = State(initialValue: habit.context?.id)
             _goalID = State(initialValue: habit.goal?.id)

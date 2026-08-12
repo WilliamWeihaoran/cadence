@@ -14,6 +14,12 @@ struct iOSCalendarTimelineGrid: View {
     let onCreateAt: (String, Int) -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    // The same two `calendar.workHours.*.v1` keys macOS's `TimelineDayCanvas` reads. Read once
+    // here rather than per day column, so a fourteen-day span installs one observer, not fourteen.
+    @AppStorage(CalendarWorkHoursPreferences.startMinuteKey)
+    private var workHoursStartMinute = CalendarWorkHoursPreferences.defaultStartMinute
+    @AppStorage(CalendarWorkHoursPreferences.endMinuteKey)
+    private var workHoursEndMinute = CalendarWorkHoursPreferences.defaultEndMinute
 
     private let calendar = Calendar.current
     private var baseHourHeight: CGFloat { horizontalSizeClass == .regular ? 64 : 58 }
@@ -67,6 +73,8 @@ struct iOSCalendarTimelineGrid: View {
                                         events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
                                         colWidth: colWidth,
                                         hourHeight: hourHeight,
+                                        workHoursStartMinute: workHoursStartMinute,
+                                        workHoursEndMinute: workHoursEndMinute,
                                         onCreateAt: onCreateAt
                                     )
                                     .offset(x: CGFloat(index) * colWidth)
@@ -241,6 +249,8 @@ private struct iOSCalendarTimelineDayBlocks: View {
     let events: [EKEvent]
     let colWidth: CGFloat
     let hourHeight: CGFloat
+    let workHoursStartMinute: Int
+    let workHoursEndMinute: Int
     let onCreateAt: (String, Int) -> Void
 
     var body: some View {
@@ -254,6 +264,8 @@ private struct iOSCalendarTimelineDayBlocks: View {
                             onCreateAt(DateFormatters.dateKey(from: date), minute(for: value.location.y))
                         }
                 )
+
+            workHoursBand
 
             if Calendar.current.isDateInToday(date) {
                 Rectangle()
@@ -291,6 +303,35 @@ private struct iOSCalendarTimelineDayBlocks: View {
         .frame(width: colWidth, height: timelineHeight, alignment: .topLeading)
     }
 
+    /// The work-hours emphasis macOS's `TimelineWorkHoursHighlightLayer` draws, on the same shared
+    /// preference and the same weekend rule. The band's extent comes from
+    /// `CalendarWorkHoursPreferences`; only the minute → Y conversion is local, and it is this
+    /// view's own `yOffset` — the one every block on this column already uses — so the band cannot
+    /// drift away from the blocks it sits behind.
+    @ViewBuilder
+    private var workHoursBand: some View {
+        if CalendarWorkHoursPreferences.shouldShowHighlight(on: date),
+           let frame = CalendarWorkHoursPreferences.highlightFrame(
+               startMinute: workHoursStartMinute,
+               endMinute: workHoursEndMinute,
+               timelineStartHour: CadenceScheduleSupport.calendarStartHour,
+               timelineEndHour: CadenceScheduleSupport.calendarEndHour,
+               yOffset: { yOffset(for: $0) }
+           ) {
+            Rectangle()
+                .fill(Theme.amber.opacity(0.026))
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Theme.amber.opacity(0.055)).frame(height: 1)
+                }
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(Theme.amber.opacity(0.045)).frame(height: 1)
+                }
+                .frame(width: colWidth, height: frame.height)
+                .offset(y: frame.y)
+                .allowsHitTesting(false)
+        }
+    }
+
     private var timelineHeight: CGFloat {
         CGFloat(CadenceScheduleSupport.calendarEndHour - CadenceScheduleSupport.calendarStartHour) * hourHeight
     }
@@ -300,7 +341,11 @@ private struct iOSCalendarTimelineDayBlocks: View {
     }
 
     private func yOffset(for minute: Int) -> CGFloat {
-        CGFloat(minute - CadenceScheduleSupport.calendarStartHour * 60) / 60.0 * hourHeight
+        yOffset(for: CGFloat(minute))
+    }
+
+    private func yOffset(for minute: CGFloat) -> CGFloat {
+        (minute - CGFloat(CadenceScheduleSupport.calendarStartHour * 60)) / 60.0 * hourHeight
     }
 
     private func blockHeight(start: Int, end: Int) -> CGFloat {

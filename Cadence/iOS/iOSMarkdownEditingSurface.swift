@@ -338,8 +338,8 @@ struct iOSMarkdownEditingSurface: View {
                 }
                 .sorted { lhs, rhs in
                     if lhs.isDone != rhs.isDone { return !lhs.isDone && rhs.isDone }
-                    if priorityRank(lhs.priority) != priorityRank(rhs.priority) {
-                        return priorityRank(lhs.priority) > priorityRank(rhs.priority)
+                    if lhs.priority.rank != rhs.priority.rank {
+                        return lhs.priority.rank > rhs.priority.rank
                     }
                     if lhs.order != rhs.order { return lhs.order < rhs.order }
                     return lhs.createdAt > rhs.createdAt
@@ -432,15 +432,6 @@ struct iOSMarkdownEditingSurface: View {
             try? modelContext.save()
         }
         return assets
-    }
-
-    private func priorityRank(_ priority: TaskPriority) -> Int {
-        switch priority {
-        case .high: return 3
-        case .medium: return 2
-        case .low: return 1
-        case .none: return 0
-        }
     }
 
     private func toggleChecklistItem(at lineIndex: Int) {

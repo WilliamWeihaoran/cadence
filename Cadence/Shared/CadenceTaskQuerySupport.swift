@@ -15,9 +15,15 @@ enum CadenceTaskQuerySupport {
         tasks
             .filter { task in
                 guard !task.isDone && !task.isCancelled else { return false }
-                return task.scheduledDate == todayKey ||
-                    task.dueDate == todayKey ||
-                    (!task.dueDate.isEmpty && task.dueDate < todayKey)
+                // The four buckets macOS's `TasksPanelDerivedState` shows on Today, in the same
+                // order: due today, past due, do today, and — the one this used to omit — *past
+                // do*. A task planned for yesterday and never finished is still today's work; it
+                // was appearing nowhere on iPad while macOS listed it under "Past Do" and offered
+                // the rollover banner for it.
+                return task.dueDate == todayKey ||
+                    !task.dueDate.isEmpty && task.dueDate < todayKey ||
+                    task.scheduledDate == todayKey ||
+                    !task.scheduledDate.isEmpty && task.scheduledDate < todayKey
             }
             .sorted { sortTodayTasks($0, $1, todayKey: todayKey, sortMode: sortMode) }
     }
@@ -35,19 +41,25 @@ enum CadenceTaskQuerySupport {
             .sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
     }
 
+    /// The same four sections macOS's `todayDateSections` draws, in the same order. A due date
+    /// outranks a do date, so a task is only ever considered for `pastDo` once both due buckets
+    /// have passed on it.
     static func todayGroups(from tasks: [AppTask], todayKey: String) -> [CadenceTodayTaskGroup] {
-        [
+        let overdue = tasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey }
+        let dueToday = tasks.filter { $0.dueDate == todayKey }
+        let claimedIDs = Set(overdue.map(\.id)).union(dueToday.map(\.id))
+        let remaining = tasks.filter { !claimedIDs.contains($0.id) }
+
+        return [
+            CadenceTodayTaskGroup(kind: .overdue, tasks: overdue),
             CadenceTodayTaskGroup(
-                kind: .overdue,
-                tasks: tasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey }
+                kind: .pastDo,
+                tasks: remaining.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate < todayKey }
             ),
-            CadenceTodayTaskGroup(
-                kind: .dueToday,
-                tasks: tasks.filter { $0.dueDate == todayKey }
-            ),
+            CadenceTodayTaskGroup(kind: .dueToday, tasks: dueToday),
             CadenceTodayTaskGroup(
                 kind: .plannedToday,
-                tasks: tasks.filter { $0.dueDate != todayKey && !(!$0.dueDate.isEmpty && $0.dueDate < todayKey) }
+                tasks: remaining.filter { $0.scheduledDate.isEmpty || $0.scheduledDate >= todayKey }
             )
         ]
         .filter { !$0.tasks.isEmpty }
@@ -203,11 +215,14 @@ enum CadenceTaskQuerySupport {
     /// read better with it. The definition lives on the enum.
     static func priorityRank(_ priority: TaskPriority) -> Int { priority.rank }
 
+    /// Mirrors the section order in `todayGroups` so a flat, un-grouped Today list still reads
+    /// past due → past do → due today → do today.
     private static func todayRank(_ task: AppTask, todayKey: String) -> Int {
         if !task.dueDate.isEmpty && task.dueDate < todayKey { return 0 }
-        if task.dueDate == todayKey { return 1 }
-        if task.scheduledDate == todayKey { return 2 }
-        return 3
+        if task.dueDate == todayKey { return 2 }
+        if !task.scheduledDate.isEmpty && task.scheduledDate < todayKey { return 1 }
+        if task.scheduledDate == todayKey { return 3 }
+        return 4
     }
 
     private static func sortTodayTasks(

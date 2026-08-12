@@ -348,7 +348,11 @@ TimeFormatters.durationLabel(actual: Int, estimated: Int)  // "45/60m"
 - Non-kanban page scroll views can use `CadenceScrollElasticity` to soften vertical rubber-banding.
 
 ## Task lists: sort, group, and row UI
-**Enums** (`TasksPanel.swift`, shared by list-style surfaces): `TaskSortField` (date, priority, **custom**), `TaskSortDirection`, `TaskGroupingMode` (by date, by list, by priority, **none**). **Custom** sort uses `task.order` (manual drag reorder). **None** grouping shows a single flat section.
+**Enums**: `TaskSortField` (date, priority, **custom**) and `TaskSortDirection` live in `Models/TaskOrdering.swift`, next to the comparator, because `CadenceWidgets` and `CadenceMCPServer` compile `Models/` but not `Shared/` or `macOS/`. `TaskGroupingMode` (by date, by list, by priority, **none**) stays in `macOS/Views/TasksPanelSupport.swift` — grouping is a macOS list concern with no comparator behind it. **Custom** sort uses the shared tie-break (`task.order`, then `createdAt`, `title`, `id`). **None** grouping shows a single flat section.
+
+**One comparator: `TaskOrdering` (`Cadence/Models/TaskOrdering.swift`).** `nonisolated` throughout, because widget timeline providers run off the main actor. It owns `precedes(_:_:field:direction:)`, `completionPrecedes` (the completed/logbook ordering), `fallbackPrecedes` (the **total** tie-break: `order` → `createdAt` → `title` → `id`), and `noDateSortKey` — the one "sorts after every real date" sentinel. The tie-break must stay total: `order` is assigned per container, so cross-list surfaces routinely compare tasks with equal `order`, and a partial order there is an unstable sort that reshuffles rows between renders. `macOS/Views/TaskSortHelpers.swift` is now only the free-function spelling (`taskSortPrecedes`, `taskPriorityRank`) macOS call sites read better with.
+
+iOS still has its own vocabulary — `CadenceTaskSortMode` + `CadenceTaskQuerySupport.sortTasks` in `Shared/` — which has no direction (priority is always high-first) and tie-breaks on `order` alone. That is the remaining half of the consolidation, not a deliberate difference.
 
 **Where controls appear:** Today’s task column (`TasksPanel`), Inbox, All Tasks **list** mode, Area/Project **Tasks** tab, and All Tasks / list-detail **Kanban** (sort only — Kanban **does not** offer grouping; columns stay section-based). UI uses custom “picker badge” controls (not `Menu`), consistent with All Tasks. There is **no** global task **filter** UI (do date / list / priority filters were removed).
 

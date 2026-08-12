@@ -133,7 +133,11 @@ struct EditHabitSheet: View {
         _selectedColor = State(initialValue: habit.colorHex)
         _frequencyType = State(initialValue: frequency)
         _selectedDays = State(initialValue: frequency == .daysOfWeek ? Set(storedDays) : [])
-        _timesPerWeek = State(initialValue: frequency == .timesPerWeek ? max(1, habit.targetCount) : 3)
+        // Clamped, not just floored: an unreachable target above 7 used to render with `+`
+        // disabled and then save itself straight back unchanged.
+        _timesPerWeek = State(
+            initialValue: frequency == .timesPerWeek ? HabitFrequency.clampedWeeklyTarget(habit.targetCount) : 3
+        )
         _monthlyDay = State(initialValue: frequency == .monthly ? min(max(storedDays.first ?? 1, 1), 31) : 1)
         _selectedContextID = State(initialValue: habit.context?.id)
         _selectedGoalID = State(initialValue: habit.goal?.id)

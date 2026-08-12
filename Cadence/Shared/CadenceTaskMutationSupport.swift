@@ -233,23 +233,144 @@ enum CadenceTaskMutationSupport {
         }
     }
 
-    static func delete(_ task: AppTask, modelContext: ModelContext) {
-        let subtasks = task.subtasks ?? []
-        task.subtasks = []
-        task.bundle?.tasks = (task.bundle?.tasks ?? []).filter { $0.id != task.id }
+    @discardableResult
+    static func delete(_ task: AppTask, modelContext: ModelContext) -> Bool {
+        deleteTasks(withIDs: [task.id], modelContext: modelContext)
+    }
 
-        // Otherwise, if `task` is a mid-series recurring occurrence, whichever task recorded it as
-        // its `recurrenceSpawnedTaskID` would keep believing the series has a live next occurrence
-        // forever, silently stalling it — see CadenceTaskRecurrenceWorkflowSupport for the full story.
-        let allTasks = (try? modelContext.fetch(FetchDescriptor<AppTask>())) ?? []
-        CadenceTaskRecurrenceWorkflowSupport.repairDanglingRecurrenceLinks(forDeleted: [task], allTasks: allTasks)
+    /// The one task-deletion core. Every surface on both platforms funnels through here — macOS's
+    /// `ModelContext.deleteTasks(withIDs:)` is a thin wrapper that supplies its AppKit-only
+    /// hooks — because the two used to be independent implementations and the iOS one quietly
+    /// lacked bundle disposal, notification cancellation, and relationship detachment.
+    ///
+    /// Returns `false` — having changed nothing — when the store could not be read.
+    ///
+    /// Both fetches below are `guard let try? …` rather than `(try? fetch(…)) ?? []`, which would
+    /// make a failed read indistinguishable from an empty store, and every consequence of that
+    /// confusion is destructive rather than merely inert:
+    ///
+    /// - An empty `allTasks` matches no IDs, so the `tasks.isEmpty` guard aborts the delete — but
+    ///   `willDelete` has already torn down focus/hover/subtask-entry state, and the cascade
+    ///   callers go on to delete the list regardless. `Area.tasks` and `Project.tasks` nullify
+    ///   rather than cascade, so the list's tasks do not die with it: they reappear in Inbox with
+    ///   no container.
+    /// - An empty `Subtask` fetch skips the unlink-and-delete loop while the parent tasks are
+    ///   deleted anyway, leaving `Subtask` rows with `parentTask == nil` — invisible, unreachable,
+    ///   and syncing to CloudKit forever.
+    /// - An empty `allTasks` also gives `repairDanglingRecurrenceLinks` nothing to re-point, so the
+    ///   predecessor keeps believing its successor is alive and the series silently stalls.
+    ///
+    /// Returning a failure and touching nothing is the only safe reading of "I could not read the
+    /// store"; the cascade callers abort on it.
+    @discardableResult
+    static func deleteTasks(
+        withIDs taskIDs: Set<UUID>,
+        modelContext: ModelContext,
+        willDelete: (Set<UUID>) -> Void = { _ in },
+        didDeleteBundles: (Set<UUID>) -> Void = { _ in }
+    ) -> Bool {
+        guard !taskIDs.isEmpty else { return true }
 
+        guard let allTasks = try? modelContext.fetch(FetchDescriptor<AppTask>()),
+              let allSubtasks = try? modelContext.fetch(FetchDescriptor<Subtask>())
+        else { return false }
+
+        let tasks = allTasks.filter { taskIDs.contains($0.id) }
+        guard !tasks.isEmpty else { return true }
+
+        // Only now that the reads have succeeded and there is real work to do.
+        willDelete(taskIDs)
+
+        let subtasks = allSubtasks.filter { subtask in
+            guard let parentTask = subtask.parentTask else { return false }
+            return taskIDs.contains(parentTask.id)
+        }
         for subtask in subtasks {
+            subtask.parentTask = nil
             modelContext.delete(subtask)
         }
 
-        modelContext.delete(task)
+        let touchedBundles = uniqueBundles(from: tasks.compactMap(\.bundle))
+
+        // Otherwise, if a deleted task is a mid-series recurring occurrence, whichever task
+        // recorded it as its `recurrenceSpawnedTaskID` would keep believing the series has a live
+        // next occurrence forever, silently stalling it — see
+        // CadenceTaskRecurrenceWorkflowSupport for the full story.
+        CadenceTaskRecurrenceWorkflowSupport.repairDanglingRecurrenceLinks(forDeleted: tasks, allTasks: allTasks)
+
+        for task in tasks {
+            detachRelationships(for: task)
+            modelContext.delete(task)
+        }
+
+        let deletedBundleIDs = deleteEmptyBundles(touchedBundles, modelContext: modelContext)
+        didDeleteBundles(deletedBundleIDs)
+
+        modelContext.processPendingChanges()
         try? modelContext.save()
+
+        // Cheaper than a full reconcile since we already know exactly which tasks were removed.
+        // Without it a scheduled-start reminder fires for a task that no longer exists, because
+        // reconciliation only converges at the next `scenePhase` transition.
+        Task { await NotificationManager.shared.cancel(taskIDs: Array(taskIDs)) }
+        return true
+    }
+
+    static func detachRelationships(for task: AppTask) {
+        let taskID = task.id
+
+        // Legacy rows written by an earlier build can still carry a calendar event identifier.
+        // Clearing it is what `SchedulingActions.removeFromCalendar` does; it is spelled out here
+        // because that helper is macOS-only and this path is shared.
+        if !task.calendarEventID.isEmpty {
+            task.calendarEventID = ""
+        }
+
+        if let area = task.area {
+            area.tasks = (area.tasks ?? []).filter { $0.id != taskID }
+        }
+        if let project = task.project {
+            project.tasks = (project.tasks ?? []).filter { $0.id != taskID }
+        }
+        if let context = task.context {
+            context.tasks = (context.tasks ?? []).filter { $0.id != taskID }
+        }
+        if let goal = task.goal {
+            goal.tasks = (goal.tasks ?? []).filter { $0.id != taskID }
+        }
+        if let bundle = task.bundle {
+            bundle.tasks = (bundle.tasks ?? []).filter { $0.id != taskID }
+        }
+        for tag in task.tags ?? [] {
+            tag.tasks = (tag.tasks ?? []).filter { $0.id != taskID }
+        }
+
+        task.area = nil
+        task.project = nil
+        task.context = nil
+        task.goal = nil
+        task.bundle = nil
+        task.bundleOrder = 0
+        task.tags = []
+        task.subtasks = []
+    }
+
+    /// Disposes of any bundle the delete just emptied. Without this an empty `TaskBundle` survives
+    /// and `CadenceCalendarPlanningSupport.bundlesByDate` — which does not filter empty bundles —
+    /// keeps rendering a block for it on the timeline indefinitely.
+    @discardableResult
+    static func deleteEmptyBundles(_ bundles: [TaskBundle], modelContext: ModelContext) -> Set<UUID> {
+        var deletedIDs = Set<UUID>()
+        for bundle in bundles where (bundle.tasks ?? []).isEmpty {
+            deletedIDs.insert(bundle.id)
+            modelContext.delete(bundle)
+        }
+        return deletedIDs
+    }
+
+    private static func uniqueBundles(from bundles: [TaskBundle]) -> [TaskBundle] {
+        var seen = Set<UUID>()
+        return bundles.filter { seen.insert($0.id).inserted }
     }
 
     static func insertTask(

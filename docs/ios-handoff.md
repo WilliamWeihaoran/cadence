@@ -1,123 +1,111 @@
 # iOS handoff — issues found during a macOS/shared audit
 
 These were found while auditing `Cadence/Shared/` and the macOS surface. They are all in
-`Cadence/iOS/` (or are iOS-only consequences of shared code) and were deliberately **not** fixed,
-so nothing here has been touched. Each has a concrete reproduction.
+`Cadence/iOS/` (or are iOS-only consequences of shared code). **Every item below has now been
+fixed** — the sections are kept so the reasoning and the reproductions stay on record, each with a
+note on what landed and where the coverage is.
 
 Repo conventions that apply: no hardcoded colours (use `Theme.*`); test runs **must** be scoped
 with `-only-testing:CadenceTests`, since an unscoped run pulls in `CadenceUITests`, which cannot
 launch headless and aborts the whole run; warning baseline is 3. There is **no
 `SchemaMigrationPlan`**, so removing a SwiftData stored property drops user data rather than
-cleaning anything up — none of the fixes below require that.
+cleaning anything up — none of the fixes below required that.
 
 ---
 
-## 1 — Deleting a task on iOS leaves an empty timeline block and fires a notification for a task that no longer exists
+## 1 — Deleting a task on iOS leaves an empty timeline block and fires a notification for a task that no longer exists — **fixed**
 
-`Cadence/Shared/CadenceTaskMutationSupport.swift` `delete(_:modelContext:)` (~:236-253) is iOS's
-only delete path. Compared with macOS's `TaskDeleteHelpers.deleteTasks(withIDs:)` it is missing
-three things:
+`Cadence/Shared/CadenceTaskMutationSupport.swift` `delete(_:modelContext:)` was iOS's only delete
+path. Compared with macOS's `TaskDeleteHelpers.deleteTasks(withIDs:)` it was missing three things:
 
 - **`deleteEmptyBundles`.** Delete the last task in a `TaskBundle` on iPhone and the empty bundle
-  survives. `CadenceCalendarPlanningSupport.bundlesByDate` does not filter empty bundles, so an
-  empty block keeps rendering on the Mac timeline indefinitely. Deleting the same task on macOS
-  disposes of the bundle.
-- **`NotificationManager.cancel(taskIDs:)`.** Delete a task whose `scheduledStartMin` is two
-  minutes away and stay in the app: the pending local notification is never cancelled and fires,
-  naming a task that is gone. Reconciliation only converges at the next `scenePhase` transition.
-  This matters more since habit reminders became repeating.
+  survived. `CadenceCalendarPlanningSupport.bundlesByDate` does not filter empty bundles, so an
+  empty block kept rendering on the Mac timeline indefinitely.
+- **`NotificationManager.cancel(taskIDs:)`.** Delete a task whose `scheduledStartMin` was two
+  minutes away and stay in the app: the pending local notification was never cancelled and fired,
+  naming a task that was gone. Reconciliation only converges at the next `scenePhase` transition.
 - **`SchedulingActions.removeFromCalendar`** for legacy non-empty `calendarEventID` values.
-  `CLAUDE.md` documents that field as read-only-by-design for rows written by an earlier build;
-  the reader should be added on this path, not the field removed.
 
-It also uses `(try? modelContext.fetch(...)) ?? []` to feed
-`repairDanglingRecurrenceLinks(forDeleted:allTasks:)`. macOS now treats that exact shape as
-unsafe and returns `false` without touching anything — see the 17-line comment at the top of
-`TaskDeleteHelpers.deleteTasks(withIDs:)`. With `?? []` a failed read gives the repair nothing to
-re-point, so the predecessor keeps believing its successor is alive and **the recurring series
-silently stalls**.
+It also used `(try? modelContext.fetch(...)) ?? []` to feed
+`repairDanglingRecurrenceLinks(forDeleted:allTasks:)` — the shape macOS treats as unsafe, because
+with `?? []` a failed read gives the repair nothing to re-point, so the predecessor keeps believing
+its successor is alive and the recurring series silently stalls.
 
-**Suggested fix:** bring the shared delete up to parity with `TaskDeleteHelpers`, or have it call
-into a shared core that both platforms use. Test: `TaskDeleteParityTests` — delete a bundled,
-recurring, scheduled task through each path and assert bundle disposal, subtask disposal, and
-predecessor `recurrenceSpawnedTaskID` repair are identical.
+**Fixed as one shared core.** `CadenceTaskMutationSupport.deleteTasks(withIDs:modelContext:
+willDelete:didDeleteBundles:)` is now the single implementation — bundle disposal, subtask
+unlink-and-delete, relationship detachment (including clearing a legacy `calendarEventID`),
+recurrence repair, `processPendingChanges`, and the notification cancel. It returns `false` and
+touches nothing when either fetch fails. macOS's `ModelContext.deleteTasks(withIDs:)` is now a
+thin wrapper supplying its two AppKit-shaped hooks: singleton state teardown
+(`cancelTaskState`) and the focus session a disposed bundle invalidates. Add behaviour to the
+shared core, not the wrapper.
+
+Coverage: `CadenceTests/TaskDeleteParityTests.swift` (bundle disposal both ways, recurrence
+repair, subtask cascade, legacy `calendarEventID`, the `willDelete` hook firing only when there is
+real work, the `didDeleteBundles` report, and a macOS-only assertion that both entry points leave
+an identical store). `TaskDeleteHelpersScenarioTests` still passes unchanged and now exercises the
+shared core.
 
 ---
 
-## 2 — iPad Today silently drops over-do tasks that macOS Today shows
+## 2 — iPad Today silently drops over-do tasks that macOS Today shows — **fixed**
 
-`Cadence/Shared/CadenceTaskQuerySupport.swift` (~:10-16), the helper only `iPadTodayView.swift:33`
-calls:
-
-```swift
-return task.scheduledDate == todayKey ||
-    task.dueDate == todayKey ||
-    (!task.dueDate.isEmpty && task.dueDate < todayKey)
-```
-
-There is no `scheduledDate < todayKey` clause. macOS's `TasksPanelDerivedState` has an explicit
-`overdoTasks` bucket for exactly that case.
+`Cadence/Shared/CadenceTaskQuerySupport.activeTodayTasks`, the helper `iPadTodayView` calls, had no
+`scheduledDate < todayKey` clause, while macOS's `TasksPanelDerivedState` has an explicit
+`overdoTasks` bucket.
 
 **Reproduction:** task "Draft Q3 report", do date 2026-08-10, **no due date**, not done. Open
-Today on 2026-08-11. macOS shows it in the over-do group and offers the rollover banner. iPad
-Today shows it nowhere — every clause above is false. Same account, same moment.
+Today on 2026-08-11. macOS showed it in the over-do group; iPad Today showed it nowhere.
 
-`CLAUDE.md`'s "Today view task scope" section documents past-do as in scope; the shared helper
-does not implement it.
+**Fixed.** `activeTodayTasks` now covers all four buckets macOS shows. `todayGroups` gained a
+matching `.pastDo` group (`CadenceTodayTaskGroupKind`), so an over-do task gets its own "Past Do"
+section rather than being filed under "Planned Today" — the group order and the flat `todayRank`
+sort order both now read past due → past do → due today → do today, matching
+`TasksPanel.todayDateSections`.
 
-**Test:** `TodayScopeParityTests` — seed one task per bucket (do-today, due-today, over-do,
-past-due) and assert the shared helper and `TasksPanelDerivedState` return the same id set.
-
----
-
-## 3 — Completed overdue tasks still render red on iOS
-
-`Cadence/iOS/iOSTaskViews.swift:~292`:
-
-```swift
-private var isOverdue: Bool {
-    !task.dueDate.isEmpty && task.dueDate < DateFormatters.todayKey()
-}
-```
-
-No `isDone` guard, and the badge renders whenever `!task.dueDate.isEmpty` (~:228). Both macOS
-equivalents guard: `MacTaskRow.isOverdue` has `!task.isDone`, and the shared
-`CadenceDueUrgency.evaluate` collapses a done task to `.later`.
-
-**Reproduction:** task due 2026-08-05, completed today. The iOS list shows a red flag badge
-reading "6 days ago"; macOS shows it dim grey. The user is told a settled deadline is still urgent.
-
-Worth noting more broadly: `CadenceDueUrgency` has **seven callers, all macOS**. iOS re-derives
-urgency inline everywhere, which is why this drifted. Routing iOS through it would fix this case
-and prevent the next one.
+Coverage: `CadenceTests/TodayScopeParityTests.swift` — one task per bucket, asserting the shared
+helper and `TasksPanelDerivedState.todayEligibleTasks` return the same id set, plus the grouping
+and flat-sort order.
 
 ---
 
-## 4 — iOS list editor loses a kanban column's colour and due date when the column is renamed
+## 3 — Completed overdue tasks still render red on iOS — **fixed**
 
-The data-loss half of this is **already fixed** on the model side: `Area.sectionNames` /
-`Project.sectionNames` used to rebuild the whole config array from the assigned value, so every
-write destroyed archived columns — and `iOSListEditorViews.swift` (~:243, 251, 261, 270) edits a
-list purely through that property, meaning opening a list on iPhone and tapping Save with no
-changes deleted every archived column. The setter now preserves archived configs, and
-`CrossPlatformParityTests` covers it.
+`iOSTaskViews.swift` re-derived overdue inline with no `isDone` guard, so a task due 2026-08-05 and
+completed today showed a red flag badge reading "6 days ago" while macOS showed it dim grey.
 
-What remains is iOS-side:
+**Fixed.** `iOSTaskRow` now reads `CadenceDueUrgency.evaluate(dueDateKey:isDone:)`, which collapses
+a finished task to `.later`. Two more inline re-derivations went the same way:
+`iOSTaskDetailComponents` (which also lacked the guard) and `iOSCalendarBoardCards` now call
+`AppTask.isOverdue(todayKey:)`.
 
-- **Renaming still loses metadata.** The setter matches existing configs by name, so a renamed
-  column mints a fresh `TaskSectionConfig` and drops its `colorHex`, `dueDate` and `isCompleted`.
-  Fixing this needs column *identity* in the editor (carry `TaskSectionConfig.uuid` through the
-  edit) rather than a smarter guess in the model.
-- **iOS never reassigns `task.sectionName` on rename.** macOS's
-  `KanbanSectionColumnView` calls `moveTasks`; iOS does not, so tasks are stranded on the old
-  section name. Those then surface on macOS as a phantom column via `CadenceReadService`'s
-  `extraSections`.
-- **iOS reads `sectionConfigs` in zero production files** (only `iOSSampleDataSupport.swift`, for
-  debug seeding). There is no per-column colour, due-date, completion or archive UI on iOS at all.
+Coverage: the predicates themselves are pinned by `TaskOverdueSupportTests`; the iOS call sites are
+view code and are not separately unit-testable. **Do not re-derive overdue inline on iOS** — that
+inline spelling is what drifted.
 
-**Suggested fix:** have the iOS editor read and write `sectionConfigs` directly. Test:
-`SectionConfigRoundTripTests` — three configs, one archived, one renamed; assert all three survive
-with uuid, colour and due date intact.
+---
+
+## 4 — iOS list editor loses a kanban column's colour and due date when the column is renamed — **fixed**
+
+The model-side half was already fixed (`Area.sectionNames` / `Project.sectionNames` preserve
+archived configs). What remained was iOS-side: the editor edited columns as a newline-separated
+list of *names*, so a rename minted a fresh `TaskSectionConfig` and dropped its `colorHex`,
+`dueDate` and `isCompleted`; nothing reassigned `task.sectionName`, stranding tasks on a name no
+column had any more (which surfaced on macOS as a phantom column via `CadenceReadService`'s
+`extraSections`); and iOS read `sectionConfigs` in zero production files, so there was no
+per-column colour, due-date, completion or archive UI at all.
+
+**Fixed.** New shared `Cadence/Shared/CadenceSectionEditingSupport.swift` carries a
+`CadenceSectionDraft` — the config's `uuid` plus its `originalName` — through the edit, so a rename
+is a rename. `iOSListEditorSheet` now reads and writes `sectionConfigs` directly, with a row per
+column exposing name, colour swatches, due date, completed and archived, plus add / delete /
+reorder. On save it re-points every task whose column was renamed, and hands tasks from a deleted
+column to Default — the same promise macOS's "Delete Column?" confirmation makes.
+
+Coverage: `CadenceTests/SectionConfigRoundTripTests.swift` — three configs, one archived, one
+renamed; all three survive with uuid, colour and due date intact; a no-op save changes nothing;
+renames that are only capitalization are not moves; and no task is left naming a column the list no
+longer has.
 
 ---
 
@@ -134,41 +122,52 @@ for all seven `firstWeekday` values. **Do not go back to `shortWeekdaySymbols` d
 
 ---
 
-## 6 — Work-hours preferences are macOS-only despite platform-neutral keys
+## 6 — Work-hours preferences are macOS-only despite platform-neutral keys — **fixed**
 
-`CalendarWorkHoursPreferences` is `#if os(macOS)`. Its keys are
-`calendar.workHours.startMinute.v1` / `.endMinute.v1` — a `calendar.*` namespace, not `macos.*`,
-which reads like an oversight rather than a decision. Only `TimelineDayCanvas` reads them and only
-`SettingsCalendarWorkHoursSection` writes them.
+`CalendarWorkHoursPreferences` was `#if os(macOS)` in `macOS/Services/`, despite keys in a
+`calendar.*` namespace, not `macos.*`. Set work hours 07:00–15:00 on the Mac and the iPad day view
+showed a flat 6–23 timeline with no emphasis, with no iOS control to discover or change it.
 
-**Reproduction:** set work hours 07:00–15:00 on the Mac. The iPad day view shows a flat 6–23
-timeline with no emphasis, and iOS Settings exposes no control to discover or change it.
+**Fixed.** The type now lives unfenced in `Cadence/Shared/CalendarWorkHoursPreferences.swift`.
+`iOSCalendarTimelineGrid` reads the same two keys once (not per day column) and each day column
+draws the band; `iOSCalendarSettingsSection` gained a Work Hours card with the same start/end
+pickers and the same `normalizedRange` repair-on-appear macOS has.
 
-**Suggested fix:** draw the work-hours band on the iOS/iPad timeline and add the control to iOS
-Settings → Calendar, reading the same shared keys. The preference object needs to lose its
-`#if os(macOS)` fence and move to `Shared/`.
+`highlightFrame` gained a second spelling that takes the caller's own minute → Y closure, because
+macOS has `TimelineMetrics` and the iOS day column has its own linear `yOffset`. The existing
+`metrics:` overload is now a one-line forward to it, so there is still exactly one extent
+calculation — **do not** reintroduce an `(startHour, endHour, hourHeight)` parameter list here.
+`TimelineMetrics` itself was deliberately left in `macOS/Views/` and untouched.
+
+Coverage: `CadenceTests/WorkHoursParityTests.swift` — the two overloads cannot disagree, the band
+is clipped to visible hours, an out-of-range window draws nothing, weekends are suppressed.
 
 ---
 
 ## 7 — Smaller iOS-side divergences
 
-- **`iOSHabitFrequencyEditor` offers an unreachable weekly target.** It allows `1...14` times per
-  week (`iOSTrackingEditorComponents.swift:~198`) while macOS's stepper is `1...7`. Since toggling
-  is one row per day with no counter UI, a week can contribute at most 7, so a habit created on
-  iPhone with a target of 10 has `currentStreak == 0` permanently and reads "10x/week · no streak"
-  on both platforms. macOS's edit sheet shows `10` with `+` disabled but never clamps it down, so
-  saving writes `10` straight back. Clamp to `1...7`, or make the target reachable.
-- **Two more copies of `priorityRank`** live at `iOSMarkdownAccessoryViews.swift:~145` and
-  `iOSMarkdownEditingSurface.swift:~437`. The other five were consolidated onto
-  `TaskPriority.rank` (in `Models/ModelEnums.swift`, `nonisolated` so widget timeline providers can
-  reach it). These two should call it.
+- **`iOSHabitFrequencyEditor` offered an unreachable weekly target** (`1...14` versus macOS's
+  `1...7`), so a habit created on iPhone with a target of 10 had `currentStreak == 0` permanently.
+  **Fixed:** the bound is now `HabitFrequency.weeklyTargetRange` (`1...7`), used by both platforms'
+  editors, and both edit sheets clamp a stored value through
+  `HabitFrequency.clampedWeeklyTarget(_:)` on open — macOS previously showed `10` with `+` disabled
+  and saved it straight back. Coverage: `CadenceTests/HabitWeeklyTargetTests.swift`, including the
+  behavioural reason for the cap (a perfect week cannot satisfy a target above seven).
+- **Two more copies of `priorityRank`** at `iOSMarkdownAccessoryViews.swift` and
+  `iOSMarkdownEditingSurface.swift`. **Fixed:** both now use `TaskPriority.rank`.
 - **`TaskDragPayload` is declared twice** — `Shared/iOSTaskDragPayload.swift` (`#if os(iOS)`) and
   `macOS/Services/TaskDragPayload.swift` (`#if os(macOS)`) — same type name, byte-identical bodies,
-  no compiler relationship between them. One shared declaration would remove a whole class of
-  silent drift.
-- **iOS renders raw YAML frontmatter** in the note editor where macOS hides it.
-- **iOS has no delete for goals or habits.** macOS now has both, with confirmation. A habit created
-  with no context and no goal cannot be removed on iOS by any means short of a full data reset.
+  no compiler relationship between them. **Still open.** One shared declaration would remove a
+  whole class of silent drift.
+- **iOS renders raw YAML frontmatter** in the note editor where macOS hides it. **Still open.**
+- **iOS had no delete for goals or habits.** A habit created with no context and no goal could not
+  be removed on iOS by any means short of a full data reset. **Fixed:** `TrackingDeleteHelpers`
+  moved to `Cadence/Shared/` and lost its `#if os(macOS)` fence — nothing in it is AppKit-shaped —
+  and `iOSGoalsView` / `iOSHabitsView` grew a long-press delete on the list rows with a
+  confirmation naming what actually goes. The affordance is on the *row* rather than the detail
+  view on purpose: in the compact layout the detail is a pushed view, so deleting from inside it
+  would leave a screen bound to a row that no longer exists. Coverage:
+  `TrackingDeleteHelpersTests` (already existed; now runs unfenced).
 
 ---
 
@@ -180,3 +179,8 @@ using. `Cadence/Shared/` is not really a shared layer: most of its symbols have 
 one platform, and the other platform has a near-copy. When adding anything to `Shared/`, check
 whether the other platform already has its own version, and if so delete that one rather than
 adding a third.
+
+Three of the fixes above took the same shape and it is worth naming: the fix was not to write an
+iOS version of a macOS thing, but to move the macOS thing into `Shared/` and leave the platform a
+thin wrapper for the parts that are genuinely AppKit-shaped (`TaskDeleteHelpers` → two hooks,
+`CalendarWorkHoursPreferences` → one geometry closure, `TrackingDeleteHelpers` → nothing at all).

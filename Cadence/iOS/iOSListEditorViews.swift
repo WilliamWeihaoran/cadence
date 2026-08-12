@@ -31,7 +31,8 @@ struct iOSListEditorSheet: View {
     @State private var colorHex = ""
     @State private var selectedContextID = "none"
     @State private var selectedAreaID = "none"
-    @State private var sectionText = TaskSectionDefaults.defaultName
+    @State private var sectionDrafts: [CadenceSectionDraft] = [CadenceSectionDraft(name: TaskSectionDefaults.defaultName)]
+    @State private var originalSectionConfigs: [TaskSectionConfig] = []
     @State private var hideEmptyDueDates = true
     @State private var hasProjectDueDate = false
     @State private var projectDueDate = Date()
@@ -85,12 +86,8 @@ struct iOSListEditorSheet: View {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var normalizedSections: [String] {
-        let values = sectionText
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return values.isEmpty ? [TaskSectionDefaults.defaultName] : values
+    private var normalizedSectionConfigs: [TaskSectionConfig] {
+        CadenceSectionEditingSupport.configs(from: sectionDrafts)
     }
 
     var body: some View {
@@ -161,8 +158,23 @@ struct iOSListEditorSheet: View {
                 }
 
                 Section("Sections") {
-                    TextEditor(text: $sectionText)
-                        .frame(minHeight: 120)
+                    ForEach($sectionDrafts) { $draft in
+                        iOSSectionDraftRow(draft: $draft)
+                    }
+                    .onDelete { offsets in
+                        sectionDrafts.remove(atOffsets: offsets)
+                    }
+                    .onMove { source, destination in
+                        sectionDrafts.move(fromOffsets: source, toOffset: destination)
+                    }
+
+                    Button {
+                        sectionDrafts.append(CadenceSectionDraft(name: ""))
+                    } label: {
+                        Label("Add Section", systemImage: "plus")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+
                     Toggle("Hide empty due dates", isOn: $hideEmptyDueDates)
                 }
             }
@@ -213,7 +225,8 @@ struct iOSListEditorSheet: View {
             icon = area.icon
             colorHex = area.colorHex
             selectedContextID = area.context?.id.uuidString ?? "none"
-            sectionText = area.sectionNames.joined(separator: "\n")
+            originalSectionConfigs = area.sectionConfigs
+            sectionDrafts = CadenceSectionEditingSupport.drafts(from: originalSectionConfigs)
             hideEmptyDueDates = area.hideDueDateIfEmpty
         case .editProject(let project):
             name = project.name
@@ -222,7 +235,8 @@ struct iOSListEditorSheet: View {
             colorHex = project.colorHex
             selectedContextID = project.context?.id.uuidString ?? "none"
             selectedAreaID = project.area?.id.uuidString ?? "none"
-            sectionText = project.sectionNames.joined(separator: "\n")
+            originalSectionConfigs = project.sectionConfigs
+            sectionDrafts = CadenceSectionEditingSupport.drafts(from: originalSectionConfigs)
             hideEmptyDueDates = project.hideDueDateIfEmpty
             if let date = DateFormatters.date(from: project.dueDate) {
                 projectDueDate = date
@@ -240,7 +254,7 @@ struct iOSListEditorSheet: View {
             let area = Area(name: trimmedName, context: selectedContext, colorHex: normalizedColor, icon: normalizedIcon)
             area.desc = details
             area.order = nextAreaOrder()
-            area.sectionNames = normalizedSections
+            area.sectionConfigs = normalizedSectionConfigs
             area.hideDueDateIfEmpty = hideEmptyDueDates
             modelContext.insert(area)
         case .newProject:
@@ -248,7 +262,7 @@ struct iOSListEditorSheet: View {
             project.desc = details
             project.icon = normalizedIcon
             project.order = nextProjectOrder()
-            project.sectionNames = normalizedSections
+            project.sectionConfigs = normalizedSectionConfigs
             project.hideDueDateIfEmpty = hideEmptyDueDates
             project.dueDate = hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : ""
             modelContext.insert(project)
@@ -258,7 +272,8 @@ struct iOSListEditorSheet: View {
             area.icon = normalizedIcon
             area.colorHex = normalizedColor
             area.context = selectedContext
-            area.sectionNames = normalizedSections
+            reassignTasks(in: area.tasks ?? [])
+            area.sectionConfigs = normalizedSectionConfigs
             area.hideDueDateIfEmpty = hideEmptyDueDates
         case .editProject(let project):
             project.name = trimmedName
@@ -267,13 +282,28 @@ struct iOSListEditorSheet: View {
             project.colorHex = normalizedColor
             project.context = selectedContext
             project.area = selectedArea
-            project.sectionNames = normalizedSections
+            reassignTasks(in: project.tasks ?? [])
+            project.sectionConfigs = normalizedSectionConfigs
             project.hideDueDateIfEmpty = hideEmptyDueDates
             project.dueDate = hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : ""
         }
 
         try? modelContext.save()
         dismiss()
+    }
+
+    /// A renamed or removed column leaves `AppTask.sectionName` pointing at a name no column has
+    /// any more — nothing in SwiftData re-points a plain string. macOS's kanban column calls
+    /// `moveTasks`; this is the same rule, applied to every column the editor changed at once.
+    private func reassignTasks(in tasks: [AppTask]) {
+        CadenceSectionEditingSupport.applySectionNameChanges(
+            renames: CadenceSectionEditingSupport.renames(in: sectionDrafts),
+            removedNames: CadenceSectionEditingSupport.removedNames(
+                original: originalSectionConfigs,
+                drafts: sectionDrafts
+            ),
+            to: tasks
+        )
     }
 
     private var selectedContext: Context? {
@@ -306,6 +336,101 @@ struct iOSListEditorSheet: View {
 
     private func nextProjectOrder() -> Int {
         (projects.map(\.order).max() ?? -1) + 1
+    }
+}
+
+/// One kanban column in the list editor.
+///
+/// iOS read `sectionConfigs` in no production file at all — the editor was a newline-separated
+/// list of names, so a column's colour, due date, completion and archived flag were invisible
+/// here and a rename silently discarded all four. These are the same four properties macOS's
+/// column editor exposes.
+private struct iOSSectionDraftRow: View {
+    @Binding var draft: CadenceSectionDraft
+    @State private var hasDueDate = false
+    @State private var dueDate = Date()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(Color(hex: draft.colorHex))
+                    .frame(width: 12, height: 12)
+
+                TextField("Section name", text: $draft.name)
+                    .font(.system(size: 15, weight: .medium))
+            }
+
+            iOSSectionColorPicker(selectedHex: $draft.colorHex)
+
+            Toggle("Due date", isOn: $hasDueDate)
+                .font(.system(size: 13))
+
+            if hasDueDate {
+                HStack {
+                    Text("Due")
+                        .font(.system(size: 13))
+                    Spacer()
+                    CadenceDatePicker(selection: $dueDate)
+                }
+            }
+
+            HStack(spacing: 16) {
+                Toggle("Completed", isOn: $draft.isCompleted)
+                    .font(.system(size: 13))
+                Toggle("Archived", isOn: $draft.isArchived)
+                    .font(.system(size: 13))
+            }
+        }
+        .padding(.vertical, 6)
+        .onAppear {
+            hasDueDate = !draft.dueDate.isEmpty
+            dueDate = DateFormatters.date(from: draft.dueDate) ?? Date()
+        }
+        .onChange(of: hasDueDate) { _, isOn in
+            draft.dueDate = isOn ? DateFormatters.dateKey(from: dueDate) : ""
+        }
+        .onChange(of: dueDate) { _, newValue in
+            guard hasDueDate else { return }
+            draft.dueDate = DateFormatters.dateKey(from: newValue)
+        }
+    }
+}
+
+/// The section palette is `TagSupport.colorOptions` plus the section default, so the swatch row
+/// can always show the colour a column already has rather than silently offering to change it.
+private struct iOSSectionColorPicker: View {
+    @Binding var selectedHex: String
+
+    private var options: [String] {
+        var options = [TaskSectionDefaults.defaultColorHex] + TagSupport.colorOptions
+        if !options.contains(where: { $0.caseInsensitiveCompare(selectedHex) == .orderedSame }) {
+            options.append(selectedHex)
+        }
+        return options
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 9) {
+                ForEach(options, id: \.self) { option in
+                    Button {
+                        selectedHex = option
+                    } label: {
+                        Circle()
+                            .fill(Color(hex: option))
+                            .frame(width: 22, height: 22)
+                            .overlay {
+                                if selectedHex.caseInsensitiveCompare(option) == .orderedSame {
+                                    Circle().strokeBorder(Theme.text.opacity(0.78), lineWidth: 2)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 2)
+        }
     }
 }
 #endif

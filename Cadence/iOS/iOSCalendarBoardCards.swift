@@ -234,7 +234,7 @@ struct iOSCalendarBoardTaskCard: View {
                     id: "due",
                     icon: "flag.fill",
                     title: CadenceTaskPresentationSupport.dueDateLabel(for: task),
-                    color: task.dueDate < DateFormatters.todayKey() && !task.isDone ? Theme.red : Theme.dim
+                    color: task.isOverdue(todayKey: DateFormatters.todayKey()) ? Theme.red : Theme.dim
                 )
             )
         }

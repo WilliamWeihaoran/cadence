@@ -38,6 +38,8 @@ struct iOSCalendarSettingsSection: View {
             } else {
                 accessCard
             }
+
+            iOSCalendarWorkHoursSection()
         }
         .onAppear {
             calendarManager.refreshAuthorizationState()
@@ -146,6 +148,120 @@ struct iOSCalendarSettingsSection: View {
 
     private func saveCalendarLinks() {
         try? modelContext.save()
+    }
+}
+
+/// iOS's half of the work-hours preference. Reads and writes the same
+/// `calendar.workHours.*.v1` keys as macOS's `SettingsCalendarWorkHoursSection` — the preference
+/// was `#if os(macOS)` despite its `calendar.*` (not `macos.*`) key namespace, so a window set on
+/// the Mac was invisible and unchangeable here while the iPad timeline drew no band at all.
+private struct iOSCalendarWorkHoursSection: View {
+    @AppStorage(CalendarWorkHoursPreferences.startMinuteKey)
+    private var startMinute = CalendarWorkHoursPreferences.defaultStartMinute
+    @AppStorage(CalendarWorkHoursPreferences.endMinuteKey)
+    private var endMinute = CalendarWorkHoursPreferences.defaultEndMinute
+
+    @State private var showStartPicker = false
+    @State private var showEndPicker = false
+
+    private var workHoursLabel: String {
+        CalendarWorkHoursPreferences.displayLabel(startMinute: startMinute, endMinute: endMinute)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CadenceSettingsSectionLabel(text: "Work Hours")
+
+            CadenceSettingsCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "sun.max.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.amber)
+                            .frame(width: 34, height: 34)
+                            .background(Theme.amber.opacity(0.13))
+                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Workday boundary")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Theme.text)
+                            Text("Calendar day columns gently highlight \(workHoursLabel).")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+
+                    HStack(spacing: 10) {
+                        picker(
+                            title: startMinute,
+                            options: CalendarWorkHoursPreferences.selectableStartMinutes,
+                            isPresented: $showStartPicker,
+                            set: setStartMinute
+                        )
+
+                        Text("to")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.dim)
+
+                        picker(
+                            title: endMinute,
+                            options: CalendarWorkHoursPreferences.selectableEndMinutes,
+                            isPresented: $showEndPicker,
+                            set: setEndMinute
+                        )
+
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+        .onAppear(perform: repairStoredRangeIfNeeded)
+    }
+
+    private func picker(
+        title minute: Int,
+        options: [Int],
+        isPresented: Binding<Bool>,
+        set: @escaping (Int) -> Void
+    ) -> some View {
+        iOSChoiceValueButton(title: TimeFormatters.timeString(from: minute), color: Theme.text) {
+            isPresented.wrappedValue = true
+        }
+        .popover(isPresented: isPresented) {
+            iOSChoicePopoverList(
+                rows: options.map { option in
+                    iOSChoiceRow(value: option, title: TimeFormatters.timeString(from: option), color: Theme.amber)
+                },
+                selection: Binding(get: { minute }, set: { set($0) }),
+                isPresented: isPresented
+            )
+        }
+    }
+
+    private func setStartMinute(_ minute: Int) {
+        let range = CalendarWorkHoursPreferences.rangeByUpdatingStart(minute, currentEndMinute: endMinute)
+        startMinute = range.startMinute
+        endMinute = range.endMinute
+    }
+
+    private func setEndMinute(_ minute: Int) {
+        let range = CalendarWorkHoursPreferences.rangeByUpdatingEnd(minute, currentStartMinute: startMinute)
+        startMinute = range.startMinute
+        endMinute = range.endMinute
+    }
+
+    private func repairStoredRangeIfNeeded() {
+        let range = CalendarWorkHoursPreferences.normalizedRange(startMinute: startMinute, endMinute: endMinute)
+        if startMinute != range.startMinute {
+            startMinute = range.startMinute
+        }
+        if endMinute != range.endMinute {
+            endMinute = range.endMinute
+        }
     }
 }
 

@@ -23,12 +23,14 @@ enum CadenceTaskSortMode: String, CaseIterable, Hashable, Identifiable {
 
 enum CadenceTodayTaskGroupKind: String, CaseIterable, Hashable {
     case overdue
+    case pastDo
     case dueToday
     case plannedToday
 
     var title: String {
         switch self {
         case .overdue: return "Overdue"
+        case .pastDo: return "Past Do"
         case .dueToday: return "Due Today"
         case .plannedToday: return "Planned Today"
         }

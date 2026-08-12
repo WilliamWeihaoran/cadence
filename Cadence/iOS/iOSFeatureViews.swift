@@ -5,11 +5,18 @@ import SwiftUI
 /// Goals screen. Top-level goals are the long-running directions that used to live in their
 /// own model; each is listed with its milestones (`subGoals`) nested directly underneath it.
 struct iOSGoalsView: View {
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Goal.order) private var goals: [Goal]
     @State private var selectedID: UUID?
     @State private var editorMode: iOSGoalEditorMode?
     @State private var habitEditorMode: iOSHabitEditorMode?
+    @State private var pendingDeleteID: UUID?
+
+    private var pendingDelete: Goal? {
+        guard let pendingDeleteID else { return nil }
+        return goals.first { $0.id == pendingDeleteID }
+    }
 
     private var activeGoals: [Goal] {
         goals.filter { $0.status != .done }
@@ -56,6 +63,35 @@ struct iOSGoalsView: View {
         .sheet(item: $habitEditorMode) { mode in
             iOSHabitEditorSheet(mode: mode)
         }
+        .alert(
+            "Delete \(pendingDelete?.isTopLevel == true ? "Goal" : "Milestone")?",
+            isPresented: Binding(get: { pendingDeleteID != nil }, set: { if !$0 { pendingDeleteID = nil } })
+        ) {
+            Button("Delete", role: .destructive, action: deletePendingGoal)
+            Button("Cancel", role: .cancel) { pendingDeleteID = nil }
+        } message: {
+            Text(deleteMessage)
+        }
+    }
+
+    /// Names what actually goes, because the cascade is asymmetric: milestones die with their
+    /// parent, but the tasks, habits and lists the goal organised are the user's real work and
+    /// survive with their link severed.
+    private var deleteMessage: String {
+        guard let goal = pendingDelete else { return "" }
+        let milestoneCount = GoalAssignmentRules.milestones(of: goal).count
+        let nested = milestoneCount == 1 ? "its 1 milestone" : "its \(milestoneCount) milestones"
+        let scope = milestoneCount == 0 ? "This deletes the goal." : "This deletes the goal and \(nested)."
+        return "\(scope) Linked tasks, habits and lists are kept."
+    }
+
+    private func deletePendingGoal() {
+        guard let goal = pendingDelete else { return }
+        if selectedID == goal.id || goal.subGoals?.contains(where: { $0.id == selectedID }) == true {
+            selectedID = nil
+        }
+        pendingDeleteID = nil
+        modelContext.deleteGoal(goal)
     }
 
     private var horizontalLayout: some View {
@@ -91,6 +127,7 @@ struct iOSGoalsView: View {
                     goalRow(goal, isSelected: selected?.id == goal.id)
                 }
                 .buttonStyle(.plain)
+                .contextMenu { deleteMenuItem(for: goal) }
 
                 ForEach(milestones(of: goal)) { milestone in
                     Button {
@@ -99,6 +136,7 @@ struct iOSGoalsView: View {
                         goalRow(milestone, isSelected: selected?.id == milestone.id)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu { deleteMenuItem(for: milestone) }
                     .padding(.leading, 16)
                 }
             }
@@ -124,6 +162,7 @@ struct iOSGoalsView: View {
                     goalRow(goal, isSelected: false)
                 }
                 .buttonStyle(.plain)
+                .contextMenu { deleteMenuItem(for: goal) }
 
                 ForEach(milestones(of: goal)) { milestone in
                     NavigationLink {
@@ -132,9 +171,21 @@ struct iOSGoalsView: View {
                         goalRow(milestone, isSelected: false)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu { deleteMenuItem(for: milestone) }
                     .padding(.leading, 16)
                 }
             }
+        }
+    }
+
+    /// Long-press on the row rather than a button on the detail: in the compact push stack the
+    /// detail is the pushed view, so deleting from inside it would leave a screen bound to a row
+    /// that no longer exists.
+    private func deleteMenuItem(for goal: Goal) -> some View {
+        Button(role: .destructive) {
+            pendingDeleteID = goal.id
+        } label: {
+            Label(goal.isTopLevel ? "Delete Goal" : "Delete Milestone", systemImage: "trash")
         }
     }
 
@@ -190,6 +241,12 @@ struct iOSHabitsView: View {
     @Query(sort: \Habit.order) private var habits: [Habit]
     @State private var selectedID: UUID?
     @State private var editorMode: iOSHabitEditorMode?
+    @State private var pendingDeleteID: UUID?
+
+    private var pendingDelete: Habit? {
+        guard let pendingDeleteID else { return nil }
+        return habits.first { $0.id == pendingDeleteID }
+    }
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -221,6 +278,35 @@ struct iOSHabitsView: View {
                 selectedID = habit.id
             }
         }
+        .alert(
+            "Delete Habit?",
+            isPresented: Binding(get: { pendingDeleteID != nil }, set: { if !$0 { pendingDeleteID = nil } })
+        ) {
+            Button("Delete", role: .destructive, action: deletePendingHabit)
+            Button("Cancel", role: .cancel) { pendingDeleteID = nil }
+        } message: {
+            Text(deleteMessage)
+        }
+    }
+
+    /// A habit's completion history has nowhere else to live, so it goes with the habit — unlike a
+    /// goal's tasks and lists, which survive. The reminder is cancelled by `deleteHabit`; habit
+    /// reminders repeat on time-of-day, so a surviving request would fire the deleted habit's
+    /// title every day until the next `scenePhase` reconcile.
+    private var deleteMessage: String {
+        guard let habit = pendingDelete else { return "" }
+        let count = (habit.completions ?? []).count
+        let history = count == 1 ? "1 recorded completion" : "\(count) recorded completions"
+        return "This deletes the habit and \(history)."
+    }
+
+    private func deletePendingHabit() {
+        guard let habit = pendingDelete else { return }
+        if selectedID == habit.id {
+            selectedID = nil
+        }
+        pendingDeleteID = nil
+        modelContext.deleteHabit(habit)
     }
 
     private var horizontalLayout: some View {
@@ -261,6 +347,7 @@ struct iOSHabitsView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .contextMenu { deleteMenuItem(for: habit) }
             }
         }
     }
@@ -289,6 +376,7 @@ struct iOSHabitsView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .contextMenu { deleteMenuItem(for: habit) }
             }
         }
     }
@@ -308,6 +396,16 @@ struct iOSHabitsView: View {
             detailView(for: habit)
         } else {
             iOSFeatureEmptyDetail(systemImage: "flame.fill", title: "No habit selected")
+        }
+    }
+
+    /// Long-press on the row, for the same reason goals use one: in the compact push stack the
+    /// detail *is* the pushed view.
+    private func deleteMenuItem(for habit: Habit) -> some View {
+        Button(role: .destructive) {
+            pendingDeleteID = habit.id
+        } label: {
+            Label("Delete Habit", systemImage: "trash")
         }
     }
 

@@ -238,4 +238,18 @@ enum HabitFrequency: String, Codable, CaseIterable, Hashable {
         case .monthly:      return "Monthly"
         }
     }
+
+    /// Selectable weekly targets for `.timesPerWeek`.
+    ///
+    /// Capped at seven because a week only has seven days and completion is a per-day toggle with
+    /// no counter UI on either platform — so a target above 7 can never be met, and
+    /// `Habit.currentStreak` reports a permanent zero for it. The iOS editor offered `1...14`,
+    /// which made that state reachable in two taps.
+    static let weeklyTargetRange: ClosedRange<Int> = 1...7
+
+    /// Pulls a stored `targetCount` back into a reachable weekly target, for editors opening a
+    /// habit written before the cap existed.
+    static func clampedWeeklyTarget(_ target: Int) -> Int {
+        min(max(weeklyTargetRange.lowerBound, target), weeklyTargetRange.upperBound)
+    }
 }

@@ -1,8 +1,10 @@
-#if os(macOS)
 import Foundation
 import SwiftData
 
 /// Deletion for `Goal` and `Habit`, matching the cascade rules `ListDeleteHelpers` uses.
+///
+/// Cross-platform, and deliberately so: it was `#if os(macOS)` in `macOS/Services/`, which left
+/// iOS with no way to remove a goal or a habit at all. Nothing in here is AppKit-shaped.
 ///
 /// Neither model had a delete path at all. The only code that removed either was
 /// `ModelContext.deleteContext(_:)` and `PrivacyDataResetService`, so a goal or habit created by
@@ -84,4 +86,3 @@ extension ModelContext {
         Task { await NotificationManager.shared.cancel(habitIDs: [habitID]) }
     }
 }
-#endif

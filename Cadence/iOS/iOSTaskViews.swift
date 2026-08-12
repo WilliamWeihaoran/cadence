@@ -225,11 +225,11 @@ struct iOSTaskRow: View {
             )
         }
 
-        if !task.dueDate.isEmpty {
+        if let dueUrgency {
             taskBadge(
                 systemImage: "flag.fill",
                 text: CadenceTaskPresentationSupport.dueDateLabel(for: task),
-                color: isOverdue ? Theme.red : Theme.dim
+                color: dueUrgency == .overdue ? dueUrgency.tint : Theme.dim
             )
         }
 
@@ -289,8 +289,11 @@ struct iOSTaskRow: View {
         }
     }
 
-    private var isOverdue: Bool {
-        !task.dueDate.isEmpty && task.dueDate < DateFormatters.todayKey()
+    /// `CadenceDueUrgency` rather than an inline `dueDate < todayKey`: the inline spelling had no
+    /// `isDone` guard, so a task completed after its deadline kept rendering a red flag badge
+    /// telling the user a settled deadline was still urgent. macOS reads the same classifier.
+    private var dueUrgency: CadenceDueUrgency? {
+        CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)
     }
 
     private var estimateLabel: String {

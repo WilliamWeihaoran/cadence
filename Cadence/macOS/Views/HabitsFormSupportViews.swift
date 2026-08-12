@@ -83,7 +83,7 @@ struct HabitFormFields: View {
                 title: "Weekly target",
                 detail: "check-ins per week",
                 value: $timesPerWeek,
-                range: 1...7,
+                range: HabitFrequency.weeklyTargetRange,
                 tintHex: selectedColor
             )
         case .monthly:

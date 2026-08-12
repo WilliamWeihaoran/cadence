@@ -60,7 +60,7 @@ struct iOSTaskEditorTitleCard: View {
                         iOSTaskEditorContextChip(
                             title: "Due \(CadenceTaskPresentationSupport.dueDateLabel(for: task))",
                             systemImage: "flag.fill",
-                            color: task.dueDate < DateFormatters.todayKey() ? Theme.red : Theme.blue
+                            color: task.isOverdue(todayKey: DateFormatters.todayKey()) ? Theme.red : Theme.blue
                         )
                     }
 
