@@ -78,6 +78,11 @@ struct TagChip: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
                         .foregroundStyle(Theme.dim.opacity(0.8))
+                        // The glyph alone is about 8x9pt, which `.cadencePlain`'s content shape
+                        // then clamps to a capsule inside that. Fiddly with a mouse and the
+                        // smallest hit target in the app.
+                        .frame(width: 14, height: 14)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
             }
@@ -115,7 +120,18 @@ private struct AdaptiveSelectedTagStrip: View {
                 }
             }
             if tags.count > limit {
-                TagOverflowBadge(count: tags.count - limit, hiddenTags: tags.dropFirst(limit))
+                // The remover has to reach the collapsed tags too. `ViewThatFits` falls all the
+                // way through to `limit: 0` when the row is tight — measured to happen in the
+                // create-task sheet once a list, a section and both dates are set, since its
+                // toolbar shares a fixed 600pt with the container badge, the date chips and the
+                // close button. While this badge was a bare `Text`, every selected tag was then
+                // unreachable. The task inspector never collapses because it gives the same
+                // control its own full-width row, which is why the bug looked sheet-specific.
+                TagOverflowBadge(
+                    count: tags.count - limit,
+                    hiddenTags: tags.dropFirst(limit),
+                    onRemove: onRemove
+                )
             }
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -214,8 +230,36 @@ private struct TagOverflowBadge: View {
     let count: Int
     let hiddenTags: ArraySlice<Tag>
     var size: Size = .regular
+    /// Supplied by editable strips only. Read-only strips pass nothing and keep the plain
+    /// tooltip, because there is nothing there to remove a tag from.
+    var onRemove: ((Tag) -> Void)? = nil
+
+    @State private var isPresented = false
 
     var body: some View {
+        if let onRemove {
+            Button { isPresented.toggle() } label: { badge }
+                .buttonStyle(.cadencePlain)
+                .help("Show the tags that do not fit")
+                .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(Array(hiddenTags)) { tag in
+                            TagChip(tag: tag) {
+                                onRemove(tag)
+                                // Close on the last one rather than leave an empty popover
+                                // anchored to a badge that is no longer being drawn.
+                                if hiddenTags.count <= 1 { isPresented = false }
+                            }
+                        }
+                    }
+                    .padding(8)
+                }
+        } else {
+            badge.help(hiddenTags.map(\.name).joined(separator: ", "))
+        }
+    }
+
+    private var badge: some View {
         Text("+\(count)")
             .font(.system(size: size.fontSize, weight: .semibold))
             .foregroundStyle(Theme.dim)
@@ -223,7 +267,6 @@ private struct TagOverflowBadge: View {
             .padding(.vertical, size.verticalPadding)
             .background(Theme.surfaceElevated.opacity(0.75))
             .clipShape(RoundedRectangle(cornerRadius: size.cornerRadius))
-            .help(hiddenTags.map(\.name).joined(separator: ", "))
     }
 }
 

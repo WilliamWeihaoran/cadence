@@ -519,10 +519,20 @@ struct TaskTitleEntryField: View {
         selectInlineTagItem(onCreateTag(tagSearchQuery))
     }
 
+    /// Toggles, rather than only adding.
+    ///
+    /// `TaskTitleInlineTagPicker` draws a blue checkmark on the already-selected rows — the same
+    /// affordance `TagPickerPopover.tagRow` uses, and that one removes on tap. Here the `else`
+    /// branch simply did not exist, so tapping a checkmarked row closed the panel and did nothing.
+    /// `#` is the documented way to add a tag to a task, which makes it the first thing a user
+    /// reaches for to take one off again.
     private func selectInlineTagItem(_ tag: Tag) {
         guard let selectedTags else { return }
         var tags = selectedTags.wrappedValue
-        if !tags.contains(where: { $0.id == tag.id }) {
+        if let existing = tags.firstIndex(where: { $0.id == tag.id }) {
+            tags.remove(at: existing)
+            selectedTags.wrappedValue = TagSupport.sorted(tags)
+        } else {
             tags.append(tag)
             selectedTags.wrappedValue = TagSupport.sorted(tags)
         }
