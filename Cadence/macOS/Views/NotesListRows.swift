@@ -320,16 +320,11 @@ struct WeeklyNoteListRow: View {
 
 extension NotesListGrouping {
     /// `2026-W33` -> the `yyyy-MM-dd` key of that ISO week's Monday.
+    ///
+    /// Forwards to `DateFormatters.weekStartDate(forWeekKey:calendar:)`, which owns the ISO
+    /// Monday-week construction this used to spell out for itself.
     static func weekStartDateKey(forWeekKey weekKey: String) -> String {
-        let parts = weekKey.components(separatedBy: "-W")
-        guard parts.count == 2, let year = Int(parts[0]), let week = Int(parts[1]) else { return weekKey }
-        var calendar = Calendar(identifier: .iso8601)
-        calendar.locale = Locale(identifier: "en_US_POSIX")
-        var components = DateComponents()
-        components.yearForWeekOfYear = year
-        components.weekOfYear = week
-        components.weekday = 2 // Monday
-        guard let monday = calendar.date(from: components) else { return weekKey }
+        guard let monday = DateFormatters.weekStartDate(forWeekKey: weekKey) else { return weekKey }
         return DateFormatters.dateKey(from: monday)
     }
 }

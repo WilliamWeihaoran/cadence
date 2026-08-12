@@ -179,18 +179,31 @@ enum DateFormatters {
         return String(format: "%d-W%02d", year, week)
     }
 
-    /// Converts an ISO week key to a human-readable label: "Week of Mar 23"
-    static func weekLabel(from weekKey: String) -> String {
+    /// The Monday that opens the ISO week named by `weekKey` ("2026-W33"), or `nil` if the key is
+    /// malformed.
+    ///
+    /// This construction — `Calendar(identifier: .iso8601)` + `en_US_POSIX` + `weekday = 2` — was
+    /// written out twice, here and in `NotesListGrouping.weekStartDateKey`, and neither copy
+    /// inherited a time zone the way `storageCalendar(inheritingTimeZoneFrom:)` requires. One
+    /// definition, and the time zone is the caller's, so the resulting date is measured in the
+    /// same zone the key was written in.
+    static func weekStartDate(forWeekKey weekKey: String, calendar: Calendar = .current) -> Date? {
         let parts = weekKey.components(separatedBy: "-W")
         guard parts.count == 2,
-              let year = Int(parts[0]), let week = Int(parts[1]) else { return weekKey }
-        var cal = Calendar(identifier: .iso8601)
-        cal.locale = Locale(identifier: "en_US_POSIX")
-        var comps = DateComponents()
-        comps.yearForWeekOfYear = year
-        comps.weekOfYear = week
-        comps.weekday = 2 // Monday
-        guard let monday = cal.date(from: comps) else { return weekKey }
+              let year = Int(parts[0]), let week = Int(parts[1]) else { return nil }
+        var iso = Calendar(identifier: .iso8601)
+        iso.locale = Locale(identifier: "en_US_POSIX")
+        iso.timeZone = calendar.timeZone
+        var components = DateComponents()
+        components.yearForWeekOfYear = year
+        components.weekOfYear = week
+        components.weekday = 2 // Monday
+        return iso.date(from: components)
+    }
+
+    /// Converts an ISO week key to a human-readable label: "Week of Mar 23"
+    static func weekLabel(from weekKey: String) -> String {
+        guard let monday = weekStartDate(forWeekKey: weekKey) else { return weekKey }
         return "Week of \(shortDate.string(from: monday))"
     }
 }
