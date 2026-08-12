@@ -26,7 +26,23 @@ struct MarkdownLineBreakSupportTests {
         ))
 
         #expect(ordered.replacement == "\n10. ")
-        #expect(checklist.replacement == "\n○ ")
+        // Opens an empty box in the spelling the line above is written in. It used to open `○ `,
+        // which left one list written two ways.
+        #expect(checklist.replacement == "\n- [ ] ")
+    }
+
+    @Test func continuesEachChecklistLineInItsOwnSpelling() throws {
+        let legacy = try #require(MarkdownLineBreakSupport.mutation(
+            in: "  ✓ shipped",
+            selection: NSRange(location: ("  ✓ shipped" as NSString).length, length: 0)
+        ))
+        let starred = try #require(MarkdownLineBreakSupport.mutation(
+            in: "    * [X] done",
+            selection: NSRange(location: ("    * [X] done" as NSString).length, length: 0)
+        ))
+
+        #expect(legacy.replacement == "\n  ○ ")
+        #expect(starred.replacement == "\n    * [ ] ")
     }
 
     @Test func exitsEmptyListLineInsteadOfContinuingForever() throws {
@@ -55,6 +71,40 @@ struct MarkdownLineBreakSupportTests {
 
         #expect(quote.replacement == "\n> ")
         #expect(quotedList.replacement == "\n> - ")
+    }
+
+    /// Quoted ordered lists advance their marker and quoted checklists open a fresh unchecked box,
+    /// exactly as their unquoted forms do. These cases used to live only on a dead
+    /// `MarkdownQuoteSupport.continuation`, so the editor was free to disagree — and did.
+    @Test func continuesQuotedOrderedListsAndChecklists() throws {
+        let nested = try #require(MarkdownLineBreakSupport.mutation(
+            in: "  >> Nested",
+            selection: NSRange(location: ("  >> Nested" as NSString).length, length: 0)
+        ))
+        #expect(nested.replacement == "\n  >> ")
+
+        let quotedOrdered = try #require(MarkdownLineBreakSupport.mutation(
+            in: "> 1. first",
+            selection: NSRange(location: ("> 1. first" as NSString).length, length: 0)
+        ))
+        #expect(quotedOrdered.replacement == "\n> 2. ")
+
+        let quotedTodo = try #require(MarkdownLineBreakSupport.mutation(
+            in: "> - [ ] task",
+            selection: NSRange(location: ("> - [ ] task" as NSString).length, length: 0)
+        ))
+        #expect(quotedTodo.replacement == "\n> - [ ] ")
+    }
+
+    @Test func doesNotContinueEmptyQuoteMarkersOrPlainText() {
+        #expect(MarkdownLineBreakSupport.mutation(
+            in: "> ",
+            selection: NSRange(location: ("> " as NSString).length, length: 0)
+        ) == nil)
+        #expect(MarkdownLineBreakSupport.mutation(
+            in: "Plain text",
+            selection: NSRange(location: ("Plain text" as NSString).length, length: 0)
+        ) == nil)
     }
 
     @Test func continuesRunsOfMarkersThatAreBothLettersAndRomanNumerals() throws {

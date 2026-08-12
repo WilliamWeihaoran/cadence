@@ -23,19 +23,7 @@ struct MarkdownQuoteSupportTests {
         #expect(quote.content.isEmpty)
     }
 
-    @Test func continuesNonEmptyQuoteLines() {
-        #expect(MarkdownQuoteSupport.continuation(after: "> Keep going") == "> ")
-        #expect(MarkdownQuoteSupport.continuation(after: "  >> Nested") == "  >> ")
-    }
-
-    @Test func continuesListsInsideQuoteLines() {
-        #expect(MarkdownQuoteSupport.continuation(after: "> - item") == "> • ")
-        #expect(MarkdownQuoteSupport.continuation(after: "> 1. first") == "> 2. ")
-        #expect(MarkdownQuoteSupport.continuation(after: "> - [ ] task") == "> ○ ")
-    }
-
-    @Test func doesNotContinueEmptyQuoteMarkers() {
-        #expect(MarkdownQuoteSupport.continuation(after: "> ") == nil)
-        #expect(MarkdownQuoteSupport.continuation(after: "Plain text") == nil)
-    }
+    // Continuation-on-Return is asserted in `MarkdownLineBreakSupportTests`, against the path the
+    // editor runs. It used to be asserted here too, against a `MarkdownQuoteSupport.continuation`
+    // nothing called — which is how that copy came to disagree with the editor unnoticed.
 }

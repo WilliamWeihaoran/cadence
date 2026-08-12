@@ -25,6 +25,13 @@ struct MarkdownListLineInfo: Equatable {
     let prefixRange: NSRange
     let visualLevel: Int
     let markerWidth: Int
+    /// Which checklist spelling the line uses, or nil when it is not a checklist at all.
+    ///
+    /// A `.todo`/`.done` kind alone does not say: `- [x] ` and `✓ ` are the same kind of item
+    /// written two ways, and they render differently — the GitHub form hides a six-character
+    /// prefix and draws a box, the legacy form styles one visible glyph. Callers used to tell them
+    /// apart by testing `marker` against a `["○", "●", "✓"]` literal at each site.
+    let checklistSyntax: MarkdownChecklistSyntax?
 
     var contentStart: Int {
         contentRange.location
@@ -159,21 +166,6 @@ enum MarkdownListSupport {
             text: normalizedText,
             selection: NSRange(location: adjustedStart, length: max(0, adjustedEnd - adjustedStart))
         )
-    }
-
-    static func continuation(after line: String, precededBy previousMarker: String? = nil) -> String? {
-        guard let match = listPrefixMatch(in: line) else { return nil }
-        switch match.kind {
-        case .todo, .done:
-            return match.indentation + "○ "
-        case .bullet, .dash, .plus:
-            let level = visualLevel(forIndentation: match.indentation)
-            return match.indentation + unorderedMarker(forLevel: level) + " "
-        case .ordered:
-            let level = orderedLevel(forIndentation: match.indentation)
-            let marker = nextOrderedMarker(after: match.marker, atLevel: level, precededBy: previousMarker)
-            return match.indentation + marker + " "
-        }
     }
 
     static func adjustedListIndentation(
@@ -445,8 +437,7 @@ enum MarkdownListSupport {
 
         if let checklist = MarkdownChecklistSupport.lineInfo(in: line) {
             let marker = nsLine.substring(with: checklist.stateRange)
-            let usesLegacyMarker = ["○", "●", "✓"].contains(marker)
-            let markerRange = usesLegacyMarker
+            let markerRange = checklist.syntax == .legacy
                 ? checklist.stateRange
                 : NSRange(
                     location: indentationLength,
@@ -461,7 +452,8 @@ enum MarkdownListSupport {
                 contentRange: checklist.contentRange,
                 prefixRange: checklist.markerRange,
                 visualLevel: visualLevel(forIndentation: indentation),
-                markerWidth: 2
+                markerWidth: 2,
+                checklistSyntax: checklist.syntax
             )
         }
 
@@ -486,7 +478,8 @@ enum MarkdownListSupport {
                 contentRange: NSRange(location: indentationLength + prefixLength, length: max(0, nsLine.length - indentationLength - prefixLength)),
                 prefixRange: NSRange(location: 0, length: indentationLength + prefixLength),
                 visualLevel: visualLevel(forIndentation: indentation),
-                markerWidth: markerWidth
+                markerWidth: markerWidth,
+                checklistSyntax: nil
             )
         }
 
@@ -506,7 +499,8 @@ enum MarkdownListSupport {
             contentRange: NSRange(location: indentationLength + prefixLength, length: max(0, nsLine.length - indentationLength - prefixLength)),
             prefixRange: NSRange(location: 0, length: indentationLength + prefixLength),
             visualLevel: visualLevel(forIndentation: indentation),
-            markerWidth: marker.count + 1
+            markerWidth: marker.count + 1,
+            checklistSyntax: nil
         )
     }
 
@@ -677,14 +671,15 @@ enum MarkdownListSupport {
             return nil
         }
 
+        // A GitHub checkbox (`- [x] `) is left exactly as written. It used to be rewritten into
+        // Cadence's own `✓ ` glyph on the keystroke after it appeared, which meant markdown pasted
+        // in from anywhere else lost its checkboxes on arrival and markdown exported out could
+        // never carry them — the whole point of the syntax is that it round-trips. Both platforms
+        // now render it as a checkbox in place, so there is nothing left for the rewrite to buy.
+        guard match.range(at: 2).location == NSNotFound else { return nil }
+
         let prefix = (trimmed as NSString).substring(with: match.range)
         let rest = String(trimmed.dropFirst(prefix.count))
-        let checkboxRange = match.range(at: 2)
-        if checkboxRange.location != NSNotFound {
-            let state = (trimmed as NSString).substring(with: checkboxRange)
-            return indentation + (state.lowercased() == "x" ? "✓ " : "○ ") + rest
-        }
-
         let level = visualLevel(forIndentation: indentation)
         return indentation + unorderedMarker(forLevel: level) + " " + rest
     }

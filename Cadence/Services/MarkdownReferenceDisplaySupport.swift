@@ -146,9 +146,9 @@ enum MarkdownReferenceDisplaySupport {
         return segments.filter { !$0.text.isEmpty }
     }
 
-    nonisolated static func replacingWikiLinksWithDisplayText(in markdown: String) -> String {
-        inlineSegments(in: markdown).map(\.text).joined()
-    }
+    // There is no `replacingWikiLinksWithDisplayText(in:)`. It was
+    // `inlineSegments(...).map(\.text).joined()` with no production caller: every renderer needs
+    // the per-segment targets, so it reads `inlineSegments` and joins for itself.
 
     nonisolated static func target(forWikiLabel label: String) -> MarkdownReferenceDisplayTarget {
         let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -122,6 +122,53 @@ enum MarkdownTaskEmbedSubtaskHitTesting {
     }
 }
 
+// MARK: - Checklist Box
+
+/// Geometry and drawing for the box that stands in for a hidden `- [x] ` prefix.
+///
+/// Kept out of `CadenceLayoutManager` so the draw pass and the click hit test measure the box the
+/// same way — the box is not a glyph, so nothing else can keep them agreeing. Shaped to match the
+/// circle the iOS styler renders and the `○` / `✓` glyph the legacy syntax still draws as text.
+enum MarkdownChecklistBoxDrawing {
+    static let boxSize: CGFloat = 14
+    /// Gap between the box and the text that follows it.
+    static let contentGap: CGFloat = 5
+
+    /// `prefixRect` is the bounding rect of the hidden prefix, which sits at the content indent with
+    /// almost no width — so the box is measured backwards from its leading edge into the gutter.
+    static func boxRect(prefixRect: NSRect) -> NSRect {
+        NSRect(
+            x: prefixRect.minX - boxSize - contentGap,
+            y: prefixRect.midY - (boxSize / 2),
+            width: boxSize,
+            height: boxSize
+        )
+    }
+
+    /// Drawn in the text view's flipped coordinate space, so the check descends before it rises.
+    static func draw(in rect: NSRect, isDone: Bool) {
+        let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 0.9, dy: 0.9))
+        if isDone {
+            MarkdownStylist.greenColor.withAlphaComponent(0.22).setFill()
+            circle.fill()
+        }
+        (isDone ? MarkdownStylist.greenColor : MarkdownStylist.dimColor).setStroke()
+        circle.lineWidth = 1.8
+        circle.stroke()
+
+        guard isDone else { return }
+        let check = NSBezierPath()
+        check.move(to: NSPoint(x: rect.minX + 3.4, y: rect.midY - 0.1))
+        check.line(to: NSPoint(x: rect.minX + 5.6, y: rect.midY + 2.3))
+        check.line(to: NSPoint(x: rect.minX + 10.4, y: rect.midY - 2.8))
+        MarkdownStylist.greenColor.setStroke()
+        check.lineWidth = 2
+        check.lineCapStyle = .round
+        check.lineJoinStyle = .round
+        check.stroke()
+    }
+}
+
 // MARK: - MarkdownStylist
 
 enum MarkdownStylist {
@@ -365,10 +412,8 @@ enum MarkdownStylist {
                 let italic = NSFontManager.shared.convert(existing, toHaveTrait: .italicFontMask)
                 storage.addAttribute(.font, value: italic, range: rest)
             }
-        } else if let ordered = orderedListMatch(in: line) {
-            applyOrderedListLine(storage: storage, lineRange: lineRange, lineStart: lineStart, ordered: ordered)
-        } else if let bullet = unorderedListMatch(in: line) {
-            applyUnorderedListLine(storage: storage, lineRange: lineRange, lineStart: lineStart, bullet: bullet)
+        } else if let list = MarkdownListSupport.lineInfo(in: line) {
+            applyListLine(storage: storage, lineRange: lineRange, lineStart: lineStart, list: list)
         } else if isDividerLine(line) {
             let ps = NSMutableParagraphStyle()
             ps.alignment = .center
@@ -381,56 +426,127 @@ enum MarkdownStylist {
         }
     }
 
+    /// Every list line goes through `MarkdownListSupport.lineInfo`, which is the same matcher the
+    /// iOS styler reads and the one with test coverage. This file used to carry a private marker
+    /// table (`["• ", "◦ ", … "✓ ", "● "]`) that matched `- ` before it ever consulted
+    /// `MarkdownChecklistSupport`, so `- [x] done` styled as a dash bullet with a literal `[x]`
+    /// sitting after it.
+    private static func applyListLine(
+        storage: NSTextStorage,
+        lineRange: NSRange,
+        lineStart: Int,
+        list: MarkdownListLineInfo
+    ) {
+        switch list.kind {
+        case .ordered:
+            applyOrderedListLine(storage: storage, lineRange: lineRange, lineStart: lineStart, list: list)
+        case .todo, .done:
+            if list.checklistSyntax == .github {
+                applyCheckboxListLine(storage: storage, lineRange: lineRange, lineStart: lineStart, list: list)
+            } else {
+                applyLegacyChecklistLine(storage: storage, lineRange: lineRange, lineStart: lineStart, list: list)
+            }
+        case .bullet, .dash, .plus:
+            applyBulletListLine(storage: storage, lineRange: lineRange, lineStart: lineStart, list: list)
+        }
+    }
+
     private static func applyOrderedListLine(
         storage: NSTextStorage,
         lineRange: NSRange,
         lineStart: Int,
-        ordered: (indentation: String, marker: String)
+        list: MarkdownListLineInfo
     ) {
-        let level = MarkdownListSupport.visualLevel(forIndentation: ordered.indentation)
-        let ps = listStyle(for: level, markerWidth: ordered.marker.count + 1)
+        let ps = listStyle(for: list.visualLevel, markerWidth: list.markerWidth)
         storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
-        let markerRange = NSRange(location: lineStart + ordered.indentation.count, length: min(ordered.marker.count, lineRange.length))
+        let markerRange = absoluteRange(list.markerRange, lineStart: lineStart, lineRange: lineRange)
+        guard markerRange.length > 0 else { return }
         storage.addAttribute(.foregroundColor, value: textColor, range: markerRange)
         storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .semibold), range: markerRange)
         addListMarkerSpacing(storage, markerRange: markerRange)
     }
 
-    private static func applyUnorderedListLine(
+    private static func applyBulletListLine(
         storage: NSTextStorage,
         lineRange: NSRange,
         lineStart: Int,
-        bullet: (indentation: String, marker: String)
+        list: MarkdownListLineInfo
     ) {
-        let level = MarkdownListSupport.visualLevel(forIndentation: bullet.indentation)
-        let ps = listStyle(for: level, markerWidth: 2)
+        let ps = listStyle(for: list.visualLevel, markerWidth: list.markerWidth)
         storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
-        let markerLocation = lineStart + bullet.indentation.count
-        switch bullet.marker {
-        case "•", "*", "◦", "▪":
-            let bulletRange = NSRange(location: markerLocation, length: min(1, lineRange.length))
-            storage.addAttribute(.foregroundColor, value: textColor, range: bulletRange)
-            let fontSize: CGFloat = bullet.marker == "▪" ? 14 : 20
-            storage.addAttribute(.font, value: NSFont.systemFont(ofSize: fontSize), range: bulletRange)
-            addListMarkerSpacing(storage, markerRange: bulletRange)
-        case "–", "-", "+":
-            let markerRange = NSRange(location: markerLocation, length: min(1, max(0, lineRange.length - bullet.indentation.count)))
-            storage.addAttribute(.foregroundColor, value: textColor, range: markerRange)
-            addListMarkerSpacing(storage, markerRange: markerRange)
-        case "○", "●", "✓":
-            let checked = bullet.marker == "●" || bullet.marker == "✓"
-            let markerRange = NSRange(location: markerLocation, length: min(1, lineRange.length))
-            storage.addAttribute(.foregroundColor, value: checked ? greenColor : dimColor, range: markerRange)
-            storage.addAttribute(.font, value: NSFont.systemFont(ofSize: checked ? 16 : 18, weight: checked ? .bold : .regular), range: markerRange)
-            addListMarkerSpacing(storage, markerRange: markerRange)
-            if checked && lineRange.length > bullet.indentation.count + 2 {
-                let textRange = NSRange(location: markerLocation + 2, length: lineRange.length - bullet.indentation.count - 2)
-                storage.addAttribute(.foregroundColor, value: dimColor, range: textRange)
-                storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: textRange)
-            }
-        default:
-            break
+        let markerRange = absoluteRange(list.markerRange, lineStart: lineStart, lineRange: lineRange)
+        guard markerRange.length > 0 else { return }
+        storage.addAttribute(.foregroundColor, value: textColor, range: markerRange)
+        if ["•", "*", "◦", "▪"].contains(list.marker) {
+            storage.addAttribute(.font, value: NSFont.systemFont(ofSize: list.marker == "▪" ? 14 : 20), range: markerRange)
         }
+        addListMarkerSpacing(storage, markerRange: markerRange)
+    }
+
+    /// Cadence's own `○` / `●` / `✓` glyph: one visible character, styled in place. Existing notes
+    /// are full of these, so they keep rendering exactly as they did.
+    private static func applyLegacyChecklistLine(
+        storage: NSTextStorage,
+        lineRange: NSRange,
+        lineStart: Int,
+        list: MarkdownListLineInfo
+    ) {
+        let ps = listStyle(for: list.visualLevel, markerWidth: list.markerWidth)
+        storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
+        let markerRange = absoluteRange(list.markerRange, lineStart: lineStart, lineRange: lineRange)
+        guard markerRange.length > 0 else { return }
+
+        let checked = list.kind == .done
+        storage.addAttribute(.foregroundColor, value: checked ? greenColor : dimColor, range: markerRange)
+        storage.addAttribute(
+            .font,
+            value: NSFont.systemFont(ofSize: checked ? 16 : 18, weight: checked ? .bold : .regular),
+            range: markerRange
+        )
+        addListMarkerSpacing(storage, markerRange: markerRange)
+        guard checked else { return }
+        strikeThroughCompletedContent(storage: storage, lineRange: lineRange, lineStart: lineStart, list: list)
+    }
+
+    /// GitHub syntax (`- [x] `): the whole six-character prefix is hidden and a box is drawn in the
+    /// gutter the paragraph style reserves, the same way the quote bar and divider rule are drawn.
+    /// The text is left exactly as written so it survives a round trip out to any other tool.
+    private static func applyCheckboxListLine(
+        storage: NSTextStorage,
+        lineRange: NSRange,
+        lineStart: Int,
+        list: MarkdownListLineInfo
+    ) {
+        storage.addAttribute(.paragraphStyle, value: checkboxListStyle(for: list.visualLevel), range: lineRange)
+
+        // The indentation goes with it: the prefix lays out at the content indent with next to no
+        // width, so leaving the leading spaces visible would push the first line's text right of
+        // where its own wrapped lines land.
+        let prefixRange = absoluteRange(list.prefixRange, lineStart: lineStart, lineRange: lineRange)
+        guard prefixRange.length > 0 else { return }
+        hide(storage, prefixRange)
+        storage.addAttribute(.cadenceMarkdownChecklistBox, value: list.kind == .done, range: prefixRange)
+
+        guard list.kind == .done else { return }
+        strikeThroughCompletedContent(storage: storage, lineRange: lineRange, lineStart: lineStart, list: list)
+    }
+
+    private static func strikeThroughCompletedContent(
+        storage: NSTextStorage,
+        lineRange: NSRange,
+        lineStart: Int,
+        list: MarkdownListLineInfo
+    ) {
+        let contentRange = absoluteRange(list.contentRange, lineStart: lineStart, lineRange: lineRange)
+        guard contentRange.length > 0 else { return }
+        storage.addAttribute(.foregroundColor, value: dimColor, range: contentRange)
+        storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: contentRange)
+    }
+
+    /// A line-relative range from `MarkdownListSupport`, moved into document coordinates and
+    /// clipped to the line it came from.
+    private static func absoluteRange(_ range: NSRange, lineStart: Int, lineRange: NSRange) -> NSRange {
+        NSIntersectionRange(NSRange(location: lineStart + range.location, length: range.length), lineRange)
     }
 
     private static func applyTableRow(
@@ -530,14 +646,6 @@ enum MarkdownStylist {
         storage.addAttribute(.cadenceMarkdownImage, value: image, range: lineRange)
     }
 
-    private static func unorderedListMatch(in line: String) -> (indentation: String, marker: String)? {
-        let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
-        let trimmed = String(line.dropFirst(indentation.count))
-        let markers = ["• ", "◦ ", "▪ ", "* ", "- ", "– ", "+ ", "○ ", "✓ ", "● "]
-        guard let prefix = markers.first(where: { trimmed.hasPrefix($0) }) else { return nil }
-        return (indentation, String(prefix.prefix(1)))
-    }
-
     private static func blockquoteMatch(in line: String) -> (indentation: String, prefix: String, depth: Int)? {
         let nsLine = line as NSString
         guard let quote = MarkdownQuoteSupport.lineInfo(in: line) else { return nil }
@@ -548,12 +656,6 @@ enum MarkdownStylist {
 
     private static func isDividerLine(_ line: String) -> Bool {
         MarkdownBlockSupport.isDividerLine(line)
-    }
-
-    private static func orderedListMatch(in line: String) -> (indentation: String, marker: String)? {
-        guard let match = MarkdownListSupport.listPrefixMatch(in: line),
-              match.kind == .ordered else { return nil }
-        return (match.indentation, match.marker)
     }
 
     private static func heading(_ storage: NSTextStorage, _ lineRange: NSRange, _ lineStart: Int, prefixLen: Int, size: CGFloat) {
@@ -774,15 +876,31 @@ enum MarkdownStylist {
     }()
 
     private static func listStyle(for level: Int, markerWidth: Int) -> NSParagraphStyle {
-        let unit: CGFloat = 12
-        let markerInset: CGFloat = 8
-        let contentGap: CGFloat = 8
-        let base = CGFloat(level) * unit
         let ps = NSMutableParagraphStyle()
-        ps.firstLineHeadIndent = base + markerInset
-        ps.headIndent = base + markerInset + CGFloat(Double(markerWidth) * 5.5) + contentGap
+        ps.firstLineHeadIndent = listMarkerIndent(for: level)
+        ps.headIndent = listContentIndent(for: level, markerWidth: markerWidth)
         ps.lineSpacing = 4
         return ps
+    }
+
+    /// A GitHub-syntax checklist line hides its whole prefix, so — unlike a marker that is a real
+    /// visible glyph — the first line has nothing to push its text across and must start at the
+    /// same indent its wrapped lines do. The box is drawn back into the gutter that leaves.
+    private static func checkboxListStyle(for level: Int) -> NSParagraphStyle {
+        let indent = listContentIndent(for: level, markerWidth: 2)
+        let ps = NSMutableParagraphStyle()
+        ps.firstLineHeadIndent = indent
+        ps.headIndent = indent
+        ps.lineSpacing = 4
+        return ps
+    }
+
+    private static func listMarkerIndent(for level: Int) -> CGFloat {
+        CGFloat(level) * 12 + 8
+    }
+
+    private static func listContentIndent(for level: Int, markerWidth: Int) -> CGFloat {
+        listMarkerIndent(for: level) + CGFloat(Double(markerWidth) * 5.5) + 8
     }
 
     private static func addListMarkerSpacing(_ storage: NSTextStorage, markerRange: NSRange) {

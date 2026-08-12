@@ -41,17 +41,10 @@ enum MarkdownQuoteSupport {
         )
     }
 
-    static func continuation(after line: String) -> String? {
-        guard let quote = lineInfo(in: line), !quote.content.isEmpty else { return nil }
-
-        let nsLine = line as NSString
-        let prefix = nsLine.substring(with: quote.prefixRange)
-        if let listContinuation = MarkdownListSupport.continuation(after: quote.content) {
-            return prefix + listContinuation
-        }
-
-        return prefix
-    }
+    // Quote continuation on Return is **not** here. It lives on the live editor path,
+    // `MarkdownLineBreakSupport.quoteContinuationPrefix`. A second `continuation(after:)` used to
+    // sit beside `lineInfo` with no production caller, and the two had already drifted: this one
+    // normalised `> - item` to `> • `, while the editor keeps `> - `.
 
     private static func trimmedRange(_ range: NSRange, in text: NSString) -> NSRange {
         var location = range.location

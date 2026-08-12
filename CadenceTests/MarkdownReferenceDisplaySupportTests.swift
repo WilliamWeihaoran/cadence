@@ -38,9 +38,10 @@ struct MarkdownReferenceDisplaySupportTests {
     @Test func renderedMarkdownUsesDisplayLabelsForCadenceReferences() {
         let markdown = "Review [[task:22222222-2222-2222-2222-222222222222|Ship iOS notes]] and [[note:11111111-1111-1111-1111-111111111111|Project Notes]]."
 
-        let display = MarkdownReferenceDisplaySupport.replacingWikiLinksWithDisplayText(in: markdown)
+        let segments = MarkdownReferenceDisplaySupport.inlineSegments(in: markdown)
 
-        #expect(display == "Review Ship iOS notes and Project Notes.")
+        #expect(segments.map(\.text).joined() == "Review Ship iOS notes and Project Notes.")
+        #expect(segments.compactMap { $0.target?.kind } == [.task, .note])
     }
 
     @Test func inlineSegmentsPreserveReferenceTargets() {

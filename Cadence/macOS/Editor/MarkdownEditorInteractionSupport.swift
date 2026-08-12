@@ -19,8 +19,54 @@ final class CadenceLayoutManager: NSLayoutManager {
             super.drawBackground(forGlyphRange: visibleRange, at: origin)
         }
         drawQuoteBlocks(forGlyphRange: glyphsToShow, at: origin)
+        drawChecklistBoxes(forGlyphRange: glyphsToShow, at: origin)
         drawDividerRules(forGlyphRange: glyphsToShow, at: origin)
         drawMarkdownImages(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    /// Draws the box that stands in for a hidden `- [x] ` prefix.
+    ///
+    /// Same shape as the quote bar above: the prefix is styled hidden, so `drawGlyphs` skips it and
+    /// this fills the gutter the paragraph style left. It cannot be an `.attachment` the way the iOS
+    /// styler does it — AppKit only turns that attribute into a glyph on `NSAttachmentCharacter`.
+    private func drawChecklistBoxes(forGlyphRange glyphRange: NSRange, at origin: NSPoint) {
+        guard let textStorage, let textContainer = textContainers.first else { return }
+        let characterRange = self.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        guard characterRange.length > 0 else { return }
+
+        textStorage.enumerateAttribute(.cadenceMarkdownChecklistBox, in: characterRange) { value, range, _ in
+            guard let isDone = value as? Bool,
+                  let prefixRange = self.checklistPrefixRange(containing: range.location),
+                  let boxRect = self.checklistBoxRect(forPrefixCharacterRange: prefixRange, in: textContainer) else {
+                return
+            }
+            MarkdownChecklistBoxDrawing.draw(in: boxRect.offsetBy(dx: origin.x, dy: origin.y), isDone: isDone)
+        }
+    }
+
+    /// The whole prefix run at `location`, not the slice clipped to the range being drawn: the box is
+    /// positioned from the prefix's leading edge, so measuring a partial run would move it.
+    func checklistPrefixRange(containing location: Int) -> NSRange? {
+        guard let textStorage, location >= 0, location < textStorage.length else { return nil }
+        var effectiveRange = NSRange(location: NSNotFound, length: 0)
+        let isBox = textStorage.attribute(
+            .cadenceMarkdownChecklistBox,
+            at: location,
+            longestEffectiveRange: &effectiveRange,
+            in: NSRange(location: 0, length: textStorage.length)
+        ) is Bool
+        guard isBox, effectiveRange.location != NSNotFound, effectiveRange.length > 0 else { return nil }
+        return effectiveRange
+    }
+
+    /// Container-space box rect for a hidden checklist prefix. Shared by the draw pass and the click
+    /// hit test, because the box is not a glyph and nothing else would keep the two agreeing.
+    func checklistBoxRect(forPrefixCharacterRange range: NSRange, in textContainer: NSTextContainer) -> NSRect? {
+        let prefixGlyphRange = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        guard prefixGlyphRange.length > 0 else { return nil }
+        return MarkdownChecklistBoxDrawing.boxRect(
+            prefixRect: boundingRect(forGlyphRange: prefixGlyphRange, in: textContainer)
+        )
     }
 
     private func drawHighlightBackgrounds(forGlyphRange glyphRange: NSRange, at origin: NSPoint) {
@@ -507,10 +553,9 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
             return
         }
 
-        if let hit = legacyChecklistMarkerHit(at: viewPoint) {
-            let range = NSRange(location: hit.markerLocation, length: 1)
-            if shouldChangeText(in: range, replacementString: hit.replacement) {
-                textStorage?.replaceCharacters(in: range, with: hit.replacement)
+        if let hit = checklistMarkerHit(at: viewPoint) {
+            if shouldChangeText(in: hit.stateRange, replacementString: hit.replacement) {
+                textStorage?.replaceCharacters(in: hit.stateRange, with: hit.replacement)
                 didChangeText()
                 return
             }
@@ -990,11 +1035,14 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         return result
     }
 
-    /// The legacy checklist marker under `point`, if any, together with the character that toggles
-    /// it. The toggle itself is `MarkdownChecklistSupport`'s answer, not a code-point comparison
-    /// spelled out here.
-    private func legacyChecklistMarkerHit(at point: NSPoint) -> (markerLocation: Int, replacement: String)? {
-        guard let layoutManager, let textContainer else { return nil }
+    /// The checklist box under `point`, if any, together with the one-character edit that flips it.
+    ///
+    /// Both spellings toggle through `MarkdownChecklistSupport`, which already answers for each; only
+    /// *where the box is* differs. A legacy `○` / `✓` is a real glyph, so its own bounding rect is the
+    /// target. A GitHub `- [x] ` prefix is hidden and drawn, so the target is the rect the layout
+    /// manager drew — asking the hidden run for its bounds would give a sliver at the wrong place.
+    private func checklistMarkerHit(at point: NSPoint) -> (stateRange: NSRange, replacement: String)? {
+        guard let layoutManager = layoutManager as? CadenceLayoutManager, let textContainer else { return nil }
         let containerPoint = NSPoint(
             x: point.x - textContainerOrigin.x,
             y: point.y - textContainerOrigin.y
@@ -1008,19 +1056,33 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         let lineRange = nsString.lineRange(for: NSRange(location: characterIndex, length: 0))
         let line = nsString.substring(with: NSRange(location: lineRange.location, length: min(lineRange.length, nsString.length - lineRange.location)))
             .trimmingCharacters(in: .newlines)
-        guard let markerRange = MarkdownTaskEmbedParser.legacyChecklistMarkerRange(in: line, lineStart: lineRange.location),
-              NSMaxRange(markerRange) <= nsString.length,
+        guard let checklist = MarkdownChecklistSupport.lineInfo(in: line),
               let toggle = MarkdownChecklistSupport.toggledState(in: line) else {
             return nil
         }
 
-        let markerGlyphRange = layoutManager.glyphRange(forCharacterRange: markerRange, actualCharacterRange: nil)
-        guard markerGlyphRange.length > 0 else { return nil }
-        let markerRect = layoutManager.boundingRect(forGlyphRange: markerGlyphRange, in: textContainer)
+        let stateRange = NSRange(location: lineRange.location + toggle.stateRange.location, length: toggle.stateRange.length)
+        guard NSMaxRange(stateRange) <= nsString.length else { return nil }
+
+        let boxRect: NSRect?
+        switch checklist.syntax {
+        case .legacy:
+            let markerRange = NSRange(location: lineRange.location + checklist.stateRange.location, length: checklist.stateRange.length)
+            let markerGlyphRange = layoutManager.glyphRange(forCharacterRange: markerRange, actualCharacterRange: nil)
+            boxRect = markerGlyphRange.length > 0
+                ? layoutManager.boundingRect(forGlyphRange: markerGlyphRange, in: textContainer)
+                : nil
+        case .github:
+            let prefixRange = NSRange(location: lineRange.location + checklist.markerRange.location, length: checklist.markerRange.length)
+            boxRect = layoutManager.checklistBoxRect(forPrefixCharacterRange: prefixRange, in: textContainer)
+        }
+
+        guard let boxRect else { return nil }
+        let target = boxRect
             .offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y)
             .insetBy(dx: -6, dy: -5)
-        guard markerRect.contains(point) else { return nil }
-        return (markerRange.location, toggle.replacement)
+        guard target.contains(point) else { return nil }
+        return (stateRange, toggle.replacement)
     }
 
     private func markdownImageRange(for id: UUID) -> NSRange? {

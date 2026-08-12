@@ -25,9 +25,10 @@ struct NoteTaskReference: Hashable {
 }
 
 enum NoteReferenceParser {
-    nonisolated static func noteLinks(in content: String) -> [String] {
-        noteReferences(in: content).map(\.fallbackTitle)
-    }
+    // There is no `noteLinks(in:)`. It was `noteReferences(...).map(\.fallbackTitle)` with no
+    // production caller: linked notes and backlinks need the parsed `NoteLinkReference` — the
+    // stable `noteID` above all — not a bare title, which is what made the title-only form the
+    // wrong thing to hand anyone in the first place.
 
     nonisolated static func noteReferences(in content: String) -> [NoteLinkReference] {
         matches(in: content, pattern: #"\[\[([^\[\]]+?)\]\]"#)

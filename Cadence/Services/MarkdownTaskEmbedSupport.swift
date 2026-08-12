@@ -199,24 +199,9 @@ enum MarkdownTaskEmbedParser {
         return NSRange(location: lineStart + match.range(at: 1).location, length: match.range(at: 1).length)
     }
 
-    nonisolated static func legacyChecklistMarkerRange(in line: String, lineStart: Int = 0) -> NSRange? {
-        let nsLine = line as NSString
-        guard nsLine.length > 0,
-              let regex = try? NSRegularExpression(pattern: #"^[ \t]*[○●✓]\s+"#),
-              let match = regex.firstMatch(in: line, range: NSRange(location: 0, length: nsLine.length)) else {
-            return nil
-        }
-
-        let prefix = nsLine.substring(with: match.range)
-        guard let markerOffset = prefix.firstIndex(where: { $0 == "○" || $0 == "●" || $0 == "✓" }) else {
-            return nil
-        }
-        let distance = prefix.distance(from: prefix.startIndex, to: markerOffset)
-        return NSRange(location: lineStart + distance, length: 1)
-    }
-
-    nonisolated static func isLegacyChecklistMarkerCharacter(_ characterIndex: Int, in line: String, lineStart: Int = 0) -> Bool {
-        guard let markerRange = legacyChecklistMarkerRange(in: line, lineStart: lineStart) else { return false }
-        return NSLocationInRange(characterIndex, markerRange)
-    }
+    // There is no legacy-checklist marker helper here any more. `legacyChecklistMarkerRange` and
+    // its sibling `isLegacyChecklistMarkerCharacter` both lost their last production caller when
+    // `CadenceTextView.legacyChecklistMarkerHit` became `checklistMarkerHit`, which asks
+    // `MarkdownChecklistSupport.lineInfo(in:)` for the range *and* the spelling — so legacy
+    // glyphs and GitHub `- [x] ` syntax are hit-tested through one path instead of two.
 }

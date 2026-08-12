@@ -84,6 +84,21 @@ enum MarkdownLineBreakSupport {
         return quotePrefix
     }
 
+    /// The prefix that continues `line`, or `nil` when it is not a list line.
+    ///
+    /// This is the **only** definition of that question. `MarkdownListSupport.continuation`
+    /// was a second one, and the two disagreed about plain bullets: it normalised a dash
+    /// item to continue with the canonical bullet glyph, while this — the path the editor
+    /// actually runs — returns the author's own marker verbatim, so `- item` continues as
+    /// `- `. Verbatim is right: preserving the marker someone typed is what other markdown
+    /// editors do, and glyph policy belongs to `normalizedMarkdownListPrefixes`, which runs
+    /// separately. The disagreement was invisible because nothing covered a bullet — the
+    /// dead copy's assertions were all ordered, todo, or non-list lines.
+    static func continuedListPrefix(after line: String, precededBy previousMarker: String? = nil) -> String? {
+        guard let match = MarkdownListSupport.listPrefixMatch(in: line) else { return nil }
+        return continuedListPrefix(for: match, precededBy: previousMarker)
+    }
+
     private static func continuedListPrefix(
         for prefixMatch: MarkdownListPrefixMatch,
         precededBy previousMarker: String? = nil
@@ -99,7 +114,12 @@ enum MarkdownLineBreakSupport {
                 )
                 + " "
         case .todo, .done:
-            return prefixMatch.indentation + "○ "
+            // Keep the spelling the line is already written in, box emptied. Continuing
+            // `- [x] shipped` with `○ ` left one list written two ways and put GitHub syntax back
+            // out of the document a line at a time — which is exactly what the normalizer stopped
+            // doing.
+            return MarkdownChecklistSupport.emptiedPrefix(in: prefixMatch.prefix)
+                ?? prefixMatch.indentation + "○ "
         case .bullet, .dash, .plus:
             return prefixMatch.prefix
         }

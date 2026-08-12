@@ -57,9 +57,9 @@ enum MarkdownInlinePreviewSupport {
         }
     }
 
-    static func plainText(in markdown: String) -> String {
-        segments(in: markdown).map(\.text).joined()
-    }
+    // There is no `plainText(in:)`. It was `segments(...).map(\.text).joined()` with no production
+    // caller; every renderer goes through `runs`, and anything that wants the flattened string
+    // should join the runs (or the segments) it is already reading.
 
     private static func styledRuns(in markdown: String) -> [MarkdownInlinePreviewRun] {
         let matches = inlineMatches(in: markdown)

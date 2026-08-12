@@ -19,13 +19,22 @@ struct MarkdownInlinePreviewSupportTests {
         #expect(segments[2] == MarkdownInlinePreviewSegment(text: " today.", target: nil))
     }
 
-    @Test func plainTextRemovesCadenceReferenceStorageSyntax() throws {
+    @Test func renderedRunsRemoveCadenceReferenceStorageSyntax() throws {
         let noteID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
         let markdown = "Open [[note:\(noteID.uuidString)|Project Notes]] after `standup`."
 
-        let text = MarkdownInlinePreviewSupport.plainText(in: markdown)
+        // `runs` is what both preview renderers consume, so assert the reader-visible string there.
+        let runs = MarkdownInlinePreviewSupport.runs(in: markdown)
+        #expect(runs.map(\.text).joined() == "Open Project Notes after standup.")
+        #expect(runs.first { $0.target != nil }?.text == "Project Notes")
+        #expect(runs.first { $0.target != nil }?.target?.referenceID == noteID)
 
-        #expect(text == "Open Project Notes after `standup`.")
+        // Segments keep the surrounding markdown for the styler to parse; only the reference
+        // storage syntax is resolved away.
+        #expect(
+            MarkdownInlinePreviewSupport.segments(in: markdown).map(\.text).joined()
+                == "Open Project Notes after `standup`."
+        )
     }
 
     @Test func runsExposeCadenceInlineTraitsAndLinks() {

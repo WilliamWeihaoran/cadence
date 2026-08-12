@@ -50,6 +50,30 @@ struct MarkdownChecklistSupportTests {
         #expect(MarkdownChecklistSupport.toggledState(in: "Plain line") == nil)
     }
 
+    /// Which spelling a line uses is a property of the line, not something each renderer should be
+    /// re-deriving by testing a marker string against a `["○", "●", "✓"]` literal. The two render
+    /// differently: GitHub syntax hides a six-character prefix and draws a box, the legacy glyph is
+    /// one visible character styled in place.
+    @Test func reportsWhichSpellingALineIsWrittenIn() throws {
+        #expect(try #require(MarkdownChecklistSupport.lineInfo(in: "- [x] ship")).syntax == .github)
+        #expect(try #require(MarkdownChecklistSupport.lineInfo(in: "  * [ ] ship")).syntax == .github)
+        #expect(try #require(MarkdownChecklistSupport.lineInfo(in: "\t+ [X] ship")).syntax == .github)
+        #expect(try #require(MarkdownChecklistSupport.lineInfo(in: "○ ship")).syntax == .legacy)
+        #expect(try #require(MarkdownChecklistSupport.lineInfo(in: "  ✓ ship")).syntax == .legacy)
+        #expect(try #require(MarkdownChecklistSupport.lineInfo(in: "● ship")).syntax == .legacy)
+    }
+
+    /// What pressing return inherits: the same spelling, box emptied. Answering a GitHub line with
+    /// `○ ` used to put Cadence's glyph back into a document written in portable syntax one line
+    /// at a time.
+    @Test func emptiesAPrefixWithoutChangingItsSpelling() {
+        #expect(MarkdownChecklistSupport.emptiedPrefix(in: "- [x] ") == "- [ ] ")
+        #expect(MarkdownChecklistSupport.emptiedPrefix(in: "    * [X] ") == "    * [ ] ")
+        #expect(MarkdownChecklistSupport.emptiedPrefix(in: "✓ ") == "○ ")
+        #expect(MarkdownChecklistSupport.emptiedPrefix(in: "  ● ") == "  ○ ")
+        #expect(MarkdownChecklistSupport.emptiedPrefix(in: "• ") == nil)
+    }
+
     @Test func togglesLineInsideMarkdownText() {
         let text = "Intro\n- [ ] First\n○ Second"
 

@@ -11,6 +11,14 @@ extension NSAttributedString.Key {
     static let cadenceMarkdownTableRow = NSAttributedString.Key("CadenceMarkdownTableRow")
     static let cadenceMarkdownHighlight = NSAttributedString.Key("CadenceMarkdownHighlight")
     static let cadenceMarkdownTaskEmbed = NSAttributedString.Key("CadenceMarkdownTaskEmbed")
+    /// Marks the hidden `- [x] ` prefix of a GitHub-syntax checklist line, carrying its done state.
+    ///
+    /// AppKit only turns an `.attachment` attribute into a glyph on `NSAttachmentCharacter`, so the
+    /// macOS editor cannot swap the prefix for a checkbox image the way the iOS styler does. The
+    /// prefix is hidden instead and the box is drawn over the gutter the paragraph style reserves,
+    /// which is the same shape as the quote bar and divider rule. This attribute is how the layout
+    /// manager finds those prefixes, and how a click finds the box it drew.
+    static let cadenceMarkdownChecklistBox = NSAttributedString.Key("CadenceMarkdownChecklistBox")
     /// Marks the YAML frontmatter block at the head of a note.
     ///
     /// Distinct from `cadenceMarkdownHidden` because the two need opposite caret rules. A hidden

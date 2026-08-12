@@ -21,26 +21,31 @@ struct MarkdownListSupportTests {
         #expect(result.selection == NSRange(location: caret, length: 0))
     }
 
-    @Test func adjustsCaretForChecklistPrefixShrinkBeforeSelection() {
-        let text = "- [ ] first\nstill selected"
+    /// GitHub checkbox syntax survives the normalizer untouched, in every spelling of it.
+    ///
+    /// It used to be rewritten into Cadence's own `✓ ` / `○ ` glyph on the keystroke after it
+    /// appeared, so a pasted document lost its checkboxes on arrival and an exported one could
+    /// never carry them out. Both platforms render it as a checkbox in place now.
+    @Test func leavesGithubCheckboxSyntaxExactlyAsWritten() {
+        let text = "- [x] done\n- [ ] todo\n  * [X] starred\n\t+ [ ] plussed\nplain"
         let selection = NSRange(location: (text as NSString).length, length: 0)
 
         let result = MarkdownListSupport.normalizedMarkdownListPrefixes(in: text, selection: selection)
 
-        #expect(result.text == "○ first\nstill selected")
-        #expect(result.selection == NSRange(location: (result.text as NSString).length, length: 0))
+        #expect(result.text == text)
+        #expect(result.selection == selection)
     }
 
-    @Test func preservesSelectionAcrossMultipleNormalizedLines() {
-        let text = "- [x] done\n- [ ] todo\nplain"
-        let start = ("- [x] done\n- [ ] " as NSString).length
-        let selection = NSRange(location: start, length: ("todo" as NSString).length)
+    /// The legacy glyphs still normalize among themselves — `●` is folded to `✓` — and a plain
+    /// dash is still promoted to the level's bullet. Only the checkbox rule went away.
+    @Test func stillNormalizesLegacyGlyphsAndPlainBullets() {
+        let text = "● done\n- plain\n    * nested"
+        let result = MarkdownListSupport.normalizedMarkdownListPrefixes(
+            in: text,
+            selection: NSRange(location: 0, length: 0)
+        )
 
-        let result = MarkdownListSupport.normalizedMarkdownListPrefixes(in: text, selection: selection)
-        let expectedStart = ("✓ done\n○ " as NSString).length
-
-        #expect(result.text == "✓ done\n○ todo\nplain")
-        #expect(result.selection == NSRange(location: expectedStart, length: ("todo" as NSString).length))
+        #expect(result.text == "✓ done\n• plain\n    ◦ nested")
     }
 
     @Test func leavesMarkdownDividersAlone() {
@@ -53,16 +58,42 @@ struct MarkdownListSupportTests {
         #expect(result.text == "---\n***\n___\n• real bullet")
     }
 
-    @Test func continuesChecklistLinesWithSharedCanonicalMarker() {
-        #expect(MarkdownListSupport.continuation(after: "- [ ] write tests") == "○ ")
-        #expect(MarkdownListSupport.continuation(after: "    - [x] done") == "    ○ ")
-        #expect(MarkdownListSupport.continuation(after: "✓ shipped") == "○ ")
+    /// Each spelling continues as itself with the box emptied. GitHub syntax used to be answered
+    /// with `○ `, which was the continuation half of the rewrite `normalizedMarkdownListPrefixes`
+    /// no longer performs.
+    @Test func continuesChecklistLinesInTheirOwnSpelling() {
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "- [ ] write tests") == "- [ ] ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "    - [x] done") == "    - [ ] ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "✓ shipped") == "○ ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "● shipped") == "○ ")
+    }
+
+    /// The bullet case is where the two rival implementations disagreed, and neither had a test
+    /// for it: the deleted `MarkdownListSupport.continuation` normalised `- item` to continue as
+    /// `• `, while the editor's own path — this one — keeps the author's marker. Pinned so the
+    /// normalising behaviour cannot quietly come back.
+    @Test func continuesBulletLinesWithTheAuthorsOwnMarker() {
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "- dash item") == "- ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "+ plus item") == "+ ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "• bullet item") == "• ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "    - nested dash") == "    - ")
+    }
+
+    /// And the same answer through the entry point the editor actually calls, so the helper above
+    /// cannot drift away from what pressing Return does.
+    @Test func pressingReturnOnABulletLineInsertsThatSameMarker() throws {
+        let text = "- dash item"
+        let mutation = try #require(
+            MarkdownLineBreakSupport.mutation(in: text, selection: NSRange(location: (text as NSString).length, length: 0))
+        )
+
+        #expect(mutation.replacement == "\n- ")
     }
 
     @Test func continuesOrderedLinesWithDelimiterAndCaseAwareness() {
-        #expect(MarkdownListSupport.continuation(after: "1. first") == "2. ")
-        #expect(MarkdownListSupport.continuation(after: "a) alpha") == "b) ")
-        #expect(MarkdownListSupport.continuation(after: "IV. roman") == "V. ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "1. first") == "2. ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "a) alpha") == "b) ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "IV. roman") == "V. ")
     }
 
     @Test func lineInfoDescribesGithubChecklistRangesForLiveRendering() throws {
@@ -186,33 +217,33 @@ struct MarkdownListSupportTests {
     @Test func proseThatOpensWithAnAbbreviationIsNotAList() {
         #expect(MarkdownListSupport.listPrefixMatch(in: "Mr. Smith called") == nil)
         #expect(MarkdownListSupport.listPrefixMatch(in: "Fig. 3 shows the split") == nil)
-        #expect(MarkdownListSupport.continuation(after: "Note. see below") == nil)
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "Note. see below") == nil)
         #expect(MarkdownListSupport.listPrefixMatch(in: "a. alpha")?.kind == .ordered)
         #expect(MarkdownListSupport.listPrefixMatch(in: "iv. roman")?.kind == .ordered)
     }
 
     @Test func letteredListsContinuePastTheLettersThatAreAlsoRomanNumerals() {
         // Level 1 markers are letters, so "c." is the third item; level 2 markers are roman.
-        #expect(MarkdownListSupport.continuation(after: "    c. gamma") == "    d. ")
-        #expect(MarkdownListSupport.continuation(after: "    x. twentyfourth") == "    y. ")
-        #expect(MarkdownListSupport.continuation(after: "        iii. third") == "        iv. ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "    c. gamma") == "    d. ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "    x. twentyfourth") == "    y. ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "        iii. third") == "        iv. ")
     }
 
     @Test func topLevelSingleLetterMarkersReadAsTheListTheyOpen() {
         // Level 0's own markers are numbers, so neither alphabet is native and the lone letter
         // has to speak for itself: "i." is how a hand-written roman outline starts, every other
         // lone letter is a lettered list.
-        #expect(MarkdownListSupport.continuation(after: "i. first") == "ii. ")
-        #expect(MarkdownListSupport.continuation(after: "c. gamma") == "d. ")
-        #expect(MarkdownListSupport.continuation(after: "I. FIRST") == "II. ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "i. first") == "ii. ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "c. gamma") == "d. ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "I. FIRST") == "II. ")
     }
 
     @Test func theRunAboveAMarkerSettlesWhichAlphabetItBelongsTo() {
         // "v." is both the 22nd letter and roman 5; only one reading continues the marker above it.
-        #expect(MarkdownListSupport.continuation(after: "v. five", precededBy: "iv.") == "vi. ")
-        #expect(MarkdownListSupport.continuation(after: "x. ten", precededBy: "ix.") == "xi. ")
-        #expect(MarkdownListSupport.continuation(after: "i. ninth", precededBy: "h.") == "j. ")
-        #expect(MarkdownListSupport.continuation(after: "        c. hundredth", precededBy: "        xcix.") == "        ci. ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "v. five", precededBy: "iv.") == "vi. ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "x. ten", precededBy: "ix.") == "xi. ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "i. ninth", precededBy: "h.") == "j. ")
+        #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "        c. hundredth", precededBy: "        xcix.") == "        ci. ")
     }
 
     // MARK: - Ordered marker renumbering
@@ -281,6 +312,77 @@ struct MarkdownListSupportTests {
     }
 
 #if os(macOS)
+    /// The macOS styler used to match list markers against a private table that tried `- ` before
+    /// it ever asked `MarkdownChecklistSupport`, so a GitHub checkbox styled as a dash bullet with
+    /// a literal `[x]` sitting after it. It now routes through the same `lineInfo` the iOS styler
+    /// reads: the prefix is hidden and tagged for the layout manager to draw a box over.
+    @MainActor @Test func githubCheckboxLinesHideTheirPrefixAndCarryABoxAttribute() throws {
+        let textView = CadenceTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 240))
+        textView.string = "- [x] shipped\n  - [ ] todo"
+        MarkdownStylist.apply(to: textView)
+        let storage = try #require(textView.textStorage)
+
+        var doneRange = NSRange(location: NSNotFound, length: 0)
+        #expect(storage.attribute(.cadenceMarkdownChecklistBox, at: 0, effectiveRange: &doneRange) as? Bool == true)
+        #expect(doneRange == NSRange(location: 0, length: ("- [x] " as NSString).length))
+        #expect(storage.attribute(.cadenceMarkdownHidden, at: 0, effectiveRange: nil) as? Bool == true)
+
+        // Content is untouched apart from the completed-item treatment.
+        let doneContent = ("- [x] " as NSString).length
+        #expect(storage.attribute(.cadenceMarkdownHidden, at: doneContent, effectiveRange: nil) == nil)
+        #expect(storage.attribute(.strikethroughStyle, at: doneContent, effectiveRange: nil) != nil)
+
+        // The indentation is hidden with the prefix, or the first line would start right of its
+        // own wrapped lines.
+        let todoStart = ("- [x] shipped\n" as NSString).length
+        var todoRange = NSRange(location: NSNotFound, length: 0)
+        #expect(storage.attribute(.cadenceMarkdownChecklistBox, at: todoStart, effectiveRange: &todoRange) as? Bool == false)
+        #expect(todoRange == NSRange(location: todoStart, length: ("  - [ ] " as NSString).length))
+        #expect(storage.attribute(.strikethroughStyle, at: todoStart + todoRange.length, effectiveRange: nil) == nil)
+    }
+
+    /// Existing notes are full of `○` / `✓`, so the legacy spelling keeps rendering as one visible
+    /// styled glyph — no hidden prefix, no drawn box.
+    @MainActor @Test func legacyChecklistGlyphsStillRenderAsVisibleMarkers() throws {
+        let textView = CadenceTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 240))
+        textView.string = "✓ shipped\n○ todo"
+        MarkdownStylist.apply(to: textView)
+        let storage = try #require(textView.textStorage)
+
+        #expect(storage.attribute(.cadenceMarkdownChecklistBox, at: 0, effectiveRange: nil) == nil)
+        #expect(storage.attribute(.cadenceMarkdownHidden, at: 0, effectiveRange: nil) == nil)
+        #expect(storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == MarkdownStylist.greenColor)
+        #expect(storage.attribute(.strikethroughStyle, at: ("✓ " as NSString).length, effectiveRange: nil) != nil)
+    }
+
+    /// The whole hidden prefix is one run, so arrowing across it lands on the content rather than
+    /// stepping through five invisible characters.
+    @MainActor @Test func caretTraversalSkipsAHiddenCheckboxPrefix() throws {
+        let textView = CadenceTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 240))
+        textView.string = "- [ ] todo"
+        MarkdownStylist.apply(to: textView)
+        let storage = try #require(textView.textStorage)
+        let contentStart = ("- [ ] " as NSString).length
+
+        #expect(MarkdownHiddenRangeSupport.nextVisibleCaretLocation(from: 0, movingForward: true, in: storage) == contentStart)
+        #expect(MarkdownHiddenRangeSupport.nextVisibleCaretLocation(from: contentStart, movingForward: false, in: storage) == 0)
+        // The line's leading edge is still a resting place, the way a heading's hidden `## ` is.
+        #expect(MarkdownHiddenRangeSupport.snappedCaretLocation(0, in: storage) == 0)
+        #expect(MarkdownHiddenRangeSupport.snappedCaretLocation(3, in: storage) == contentStart)
+    }
+
+    /// The box is not a glyph, so the draw pass and the click hit test have to measure it the same
+    /// way. It sits in the gutter the paragraph style reserves, clear of the text.
+    @Test func theCheckboxIsDrawnInTheGutterLeftOfTheContent() {
+        let prefixRect = NSRect(x: 36, y: 10, width: 0.3, height: 18)
+        let box = MarkdownChecklistBoxDrawing.boxRect(prefixRect: prefixRect)
+
+        #expect(box.maxX < prefixRect.minX)
+        #expect(box.width == MarkdownChecklistBoxDrawing.boxSize)
+        #expect(box.height == MarkdownChecklistBoxDrawing.boxSize)
+        #expect(box.midY == prefixRect.midY)
+    }
+
     /// The renumberer runs from `textDidChange`, after NSTextView has already closed the undo
     /// group for the keystroke. Rewriting the document outside the mutation contract left that
     /// record describing text that had moved, so the rewrite has to register its own undo step.

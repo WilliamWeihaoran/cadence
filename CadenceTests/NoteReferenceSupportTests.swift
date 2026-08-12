@@ -7,15 +7,16 @@ import AppKit
 
 @MainActor
 struct NoteReferenceSupportTests {
-    @Test func noteLinksIgnoreTaskReferences() {
+    @Test func noteReferencesIgnoreTaskReferences() {
         let noteID = UUID()
         let content = """
         Link to [[Project Brief]] and [[ task:Write summary ]] plus [[note:\(noteID.uuidString)|Weekly Review]].
         """
 
-        let links = NoteReferenceParser.noteLinks(in: content)
+        let references = NoteReferenceParser.noteReferences(in: content)
 
-        #expect(links == ["Project Brief", "Weekly Review"])
+        #expect(references.map(\.fallbackTitle) == ["Project Brief", "Weekly Review"])
+        #expect(references.map(\.noteID) == [nil, noteID])
     }
 
     @Test func noteReferencesParseLegacyTitleAndStableIDForms() throws {
@@ -59,7 +60,7 @@ struct NoteReferenceSupportTests {
         let references = NoteReferenceParser.taskReferences(in: content)
 
         #expect(references.map(\.fallbackTitle) == ["Draft changelog", "Ship it"])
-        #expect(NoteReferenceParser.noteLinks(in: content).isEmpty)
+        #expect(NoteReferenceParser.noteReferences(in: content).isEmpty)
     }
 
     @Test func embeddedTaskDraftTitlesParseChecklistInputs() {
@@ -148,19 +149,6 @@ struct NoteReferenceSupportTests {
         #expect(MarkdownTaskEmbedSubtaskHitTesting.hit(at: NSPoint(x: 112, y: 12), in: [rect]) == nil)
     }
     #endif
-
-    @Test func checklistMarkerHelperAcceptsOnlyMarkerCharacter() {
-        let line = "    ○ Draft task"
-        let markerRange = MarkdownTaskEmbedParser.legacyChecklistMarkerRange(in: line, lineStart: 20)
-
-        #expect(markerRange == NSRange(location: 24, length: 1))
-        #expect(MarkdownTaskEmbedParser.isLegacyChecklistMarkerCharacter(24, in: line, lineStart: 20))
-        #expect(!MarkdownTaskEmbedParser.isLegacyChecklistMarkerCharacter(25, in: line, lineStart: 20))
-        #expect(!MarkdownTaskEmbedParser.isLegacyChecklistMarkerCharacter(31, in: line, lineStart: 20))
-
-        let checkedLine = "    ✓ Draft task"
-        #expect(MarkdownTaskEmbedParser.legacyChecklistMarkerRange(in: checkedLine, lineStart: 20) == NSRange(location: 24, length: 1))
-    }
 
     @Test func linkedTasksPreferStableIDOverTitleFallback() throws {
         let taskID = try #require(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))

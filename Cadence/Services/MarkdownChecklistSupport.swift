@@ -1,6 +1,19 @@
 import Foundation
 
+/// Which of the two checklist spellings a line is written in.
+///
+/// `github` is the portable `- [ ] ` / `- [x] ` form every other markdown tool reads and writes.
+/// `legacy` is Cadence's own `○` / `●` / `✓` glyph, which pre-dates it, still fills existing
+/// notes, and is still what the editor's own to-do affordances produce. Both render as a
+/// checkbox; only the GitHub form survives a round trip through another tool, which is why the
+/// editor no longer rewrites it into the glyph.
+enum MarkdownChecklistSyntax: Equatable {
+    case github
+    case legacy
+}
+
 struct MarkdownChecklistLine: Equatable {
+    let syntax: MarkdownChecklistSyntax
     let markerRange: NSRange
     let stateRange: NSRange
     let contentRange: NSRange
@@ -50,6 +63,18 @@ enum MarkdownChecklistSupport {
         return lines.joined(separator: "\n")
     }
 
+    /// The same line with its box emptied, keeping whichever spelling it already uses.
+    ///
+    /// Pressing return on `- [x] shipped` used to open the next item as `○ `, which left one list
+    /// written in two spellings and put GitHub syntax back out of the document a line at a time.
+    static func emptiedPrefix(in prefix: String) -> String? {
+        guard let info = lineInfo(in: prefix) else { return nil }
+        return (prefix as NSString).replacingCharacters(
+            in: info.stateRange,
+            with: info.syntax == .github ? " " : "○"
+        )
+    }
+
     private static func githubLineInfo(in line: String) -> MarkdownChecklistLine? {
         let regex = githubChecklistRegex
         let nsLine = line as NSString
@@ -66,6 +91,7 @@ enum MarkdownChecklistSupport {
         }
         return lineInfo(
             line: line,
+            syntax: .github,
             markerRange: markerRange,
             stateRange: stateRange,
             isDone: nsLine.substring(with: stateRange).lowercased() == "x"
@@ -89,6 +115,7 @@ enum MarkdownChecklistSupport {
         let state = nsLine.substring(with: stateRange)
         return lineInfo(
             line: line,
+            syntax: .legacy,
             markerRange: markerRange,
             stateRange: stateRange,
             isDone: state == "●" || state == "✓"
@@ -97,6 +124,7 @@ enum MarkdownChecklistSupport {
 
     private static func lineInfo(
         line: String,
+        syntax: MarkdownChecklistSyntax,
         markerRange: NSRange,
         stateRange: NSRange,
         isDone: Bool
@@ -105,6 +133,7 @@ enum MarkdownChecklistSupport {
         let contentStart = min(nsLine.length, NSMaxRange(markerRange))
         let contentRange = NSRange(location: contentStart, length: max(0, nsLine.length - contentStart))
         return MarkdownChecklistLine(
+            syntax: syntax,
             markerRange: markerRange,
             stateRange: stateRange,
             contentRange: contentRange,
