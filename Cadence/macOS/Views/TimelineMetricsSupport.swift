@@ -40,10 +40,13 @@ enum TimelineMetricsSupport {
         style: TimelineBlockStyle
     ) -> TimelineBlockFrame {
         let y = metrics.yOffset(for: startMinute)
-        let height = metrics.height(
-            for: durationMinutes > 0 ? durationMinutes : 60,
-            minHeight: style.minHeight
-        )
+        // No zero-duration fallback here. This is geometry: it draws the length it is handed, and
+        // "how long is a task with no estimate" is `AppTask.timelineDurationMinutes`' question, not
+        // this function's. The `> 0 ? : 60` that used to sit here was reachable only from tasks —
+        // bundle and event durations are clamped to at least 5 at construction — and it was the
+        // reason a zero-estimate task was *drawn* an hour tall while being *columned* as 30 minutes,
+        // so it could overlap the very neighbour it had been laid out beside.
+        let height = metrics.height(for: durationMinutes, minHeight: style.minHeight)
         let availableWidth = max(0, totalWidth - style.leadingInset - style.trailingInset) * style.blockWidthFraction
         let innerAvailableWidth = availableWidth * max(0, 1 - (style.sideMarginFraction * 2))
         let leftMargin = style.leadingInset + availableWidth * style.sideMarginFraction
@@ -140,7 +143,7 @@ enum TimelineMetricsSupport {
         // this layer said they had to.
         for task in tasks where task.scheduledStartMin >= 0 {
             let start = task.scheduledStartMin
-            let end = start + max(task.estimatedMinutes > 0 ? task.estimatedMinutes : 30, 5)
+            let end = start + task.timelineDurationMinutes
             slots.append(RawSlot(kind: .task(task), startMin: start, endMin: end))
         }
         for bundle in bundles {

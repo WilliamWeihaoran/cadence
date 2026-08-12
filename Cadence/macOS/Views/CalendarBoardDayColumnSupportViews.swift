@@ -21,12 +21,14 @@ struct CalendarBoardDayColumn: View {
     let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
 
     @State private var isDropTargeted = false
-    @State private var targetedBundleID: UUID?
-    @State private var recentlyBundledTaskID: UUID?
-    @State private var recentlyBundledTaskDropExpiresAt = Date.distantPast
+    /// Where each bundle card sits, in this column's own coordinate space — the space
+    /// `dropDestination` reports its release point in. See `bundleOwningBoardDrop`.
+    @State private var bundleFrames: [UUID: CGRect] = [:]
     @State private var isCompletedCollapsed = true
     @State private var isHovered = false
     @State private var isComposing = false
+
+    private var coordinateSpaceName: String { "calendarBoardDayColumn-\(dayIndex)" }
 
     private var isToday: Bool {
         dateKey == DateFormatters.todayKey()
@@ -81,8 +83,11 @@ struct CalendarBoardDayColumn: View {
             }
         }
         .contentShape(Rectangle())
-        .dropDestination(for: String.self) { items, _ in
-            handleDrop(items)
+        // Named at exactly the layer `dropDestination` decorates, so a release point and a measured
+        // card frame are in the same space by construction rather than by coincidence.
+        .coordinateSpace(.named(coordinateSpaceName))
+        .dropDestination(for: String.self) { items, location in
+            handleDrop(items, at: location)
         } isTargeted: { targeted in
             isDropTargeted = targeted
         }
@@ -146,13 +151,14 @@ struct CalendarBoardDayColumn: View {
                 areas: areas,
                 projects: projects,
                 onDropTask: { task in
-                    rememberBundleTaskDrop(task)
                     onDropTaskOnBundle(task, bundle)
-                },
-                onDropTargetedChanged: { targeted in
-                    updateTargetedBundle(bundle, targeted: targeted)
                 }
             )
+            .onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .named(coordinateSpaceName))
+            } action: { rect in
+                bundleFrames[bundle.id] = rect
+            }
         case .task(let task):
             KanbanCard(task: task, showsContainerChip: true)
                 .draggable(TaskDragPayload.string(for: task.id))
@@ -175,7 +181,7 @@ struct CalendarBoardDayColumn: View {
         }
     }
 
-    private func handleDrop(_ items: [String]) -> Bool {
+    private func handleDrop(_ items: [String], at location: CGPoint) -> Bool {
         guard let payload = items.first else { return false }
         if let bundleID = TaskDragPayload.bundleID(from: payload),
            let bundle = allBundlesLookup(bundleID) {
@@ -184,33 +190,15 @@ struct CalendarBoardDayColumn: View {
         }
         if let taskID = TaskDragPayload.taskID(from: payload),
            let task = allTasks.first(where: { $0.id == taskID }) {
-            if shouldSuppressDayDrop(for: taskID) {
-                return true
-            }
+            // Released on top of one of this column's bundle cards: that card's own drop handler
+            // owns the gesture. Answering the day drop as well would re-file the task onto the day
+            // and, through `removeTaskFromBundle`, undo the bundling that just happened.
+            guard CalendarBoardPlannerSupport.bundleOwningBoardDrop(
+                at: location,
+                bundleIDs: bundles.map(\.id),
+                bundleFrames: bundleFrames
+            ) == nil else { return true }
             onDropTaskOnDay(task)
-            return true
-        }
-        return false
-    }
-
-    private func updateTargetedBundle(_ bundle: TaskBundle, targeted: Bool) {
-        if targeted {
-            targetedBundleID = bundle.id
-        } else if targetedBundleID == bundle.id {
-            targetedBundleID = nil
-        }
-    }
-
-    private func rememberBundleTaskDrop(_ task: AppTask) {
-        recentlyBundledTaskID = task.id
-        recentlyBundledTaskDropExpiresAt = Date().addingTimeInterval(0.75)
-    }
-
-    private func shouldSuppressDayDrop(for taskID: UUID) -> Bool {
-        if targetedBundleID != nil {
-            return true
-        }
-        if recentlyBundledTaskID == taskID, Date() < recentlyBundledTaskDropExpiresAt {
             return true
         }
         return false

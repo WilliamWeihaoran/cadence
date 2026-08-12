@@ -198,10 +198,42 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
             && recurrenceAllowsNextOccurrence(on: nextDateKey)
     }
 
-    /// End time in minutes from midnight (start + duration, default 30min if no estimate)
+    /// A task with no estimate is treated as this long wherever it occupies time. Same value the
+    /// stored `estimatedMinutes` defaults to, so "no estimate" and "the default estimate" draw and
+    /// read identically.
+    nonisolated static let defaultTimelineDurationMinutes = 30
+
+    /// The shortest block a task can occupy. Every write path already clamps to this
+    /// (`SchedulingActions`, `TaskCreationService`, `CadenceTaskMutationSupport`); the read path
+    /// has to agree, because the card editors let an estimate be typed down to 0.
+    nonisolated static let minimumTimelineDurationMinutes = 5
+
+    /// How long this task's time block is, in minutes. The one answer, for every renderer, layout
+    /// pass, label and exporter.
+    ///
+    /// There were six of these and they disagreed, so a zero-estimate task was drawn 60 minutes
+    /// tall, columned against its neighbours as 30 minutes (and could therefore visually overlap a
+    /// block it had been laid out beside), labelled itself "9:00 – 9:05", previewed at 30 while
+    /// being dragged, and exported as 30.
+    ///
+    /// The rule is *not* `max(estimatedMinutes, 30)` — the spelling `scheduledEndMin` used to
+    /// carry. That floor cannot tell "no estimate" from "a deliberate short estimate", so it also
+    /// rounded a real 10-minute task up to half an hour, contradicting the block drawn for it, the
+    /// label inside that block, and the overlap solver. Zero is the only value that means "unset";
+    /// anything positive is the user's answer and is kept, down to the 5-minute floor every write
+    /// path already enforces.
+    ///
+    /// `nonisolated` for the same reason as `TaskPriority.rank` — `Models/` compiles into the
+    /// widget extension, whose timeline providers run off the main actor.
+    nonisolated var timelineDurationMinutes: Int {
+        guard estimatedMinutes > 0 else { return AppTask.defaultTimelineDurationMinutes }
+        return max(estimatedMinutes, AppTask.minimumTimelineDurationMinutes)
+    }
+
+    /// End time in minutes from midnight, or `-1` for an unscheduled task.
     var scheduledEndMin: Int {
         guard scheduledStartMin >= 0 else { return -1 }
-        return scheduledStartMin + max(estimatedMinutes, 30)
+        return scheduledStartMin + timelineDurationMinutes
     }
 
     var containerName: String {

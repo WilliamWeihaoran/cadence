@@ -288,7 +288,7 @@ struct CalendarPageBoardView: View {
         }
         CalendarBoardPlannerSupport.apply(action, to: task)
         if task.estimatedMinutes <= 0 {
-            task.estimatedMinutes = 30
+            task.estimatedMinutes = AppTask.defaultTimelineDurationMinutes
         }
         try? modelContext.save()
     }

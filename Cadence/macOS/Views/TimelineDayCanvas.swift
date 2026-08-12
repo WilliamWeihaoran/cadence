@@ -279,7 +279,7 @@ struct TimelineDayCanvas: View {
             return TimelineMetricsSupport.bundleDropShelfFrame(
                 blockFrame: timelineFrame(
                     startMinute: layout.task.scheduledStartMin,
-                    durationMinutes: layout.task.estimatedMinutes,
+                    durationMinutes: layout.task.timelineDurationMinutes,
                     column: layout.column,
                     totalColumns: layout.totalColumns
                 )
@@ -295,7 +295,7 @@ struct TimelineDayCanvas: View {
         layouts.map { layout in
             timelineFrame(
                 startMinute: layout.task.scheduledStartMin,
-                durationMinutes: layout.task.estimatedMinutes,
+                durationMinutes: layout.task.timelineDurationMinutes,
                 column: layout.column,
                 totalColumns: layout.totalColumns
             )

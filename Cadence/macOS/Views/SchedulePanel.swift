@@ -201,7 +201,7 @@ struct SchedulePanel: View {
         let taskLines = scheduledTasks
             .sorted { $0.scheduledStartMin < $1.scheduledStartMin }
             .map { task in
-                "- \(TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledStartMin + max(task.estimatedMinutes, 30))) • \(task.title.isEmpty ? "Untitled Task" : task.title)"
+                "- \(TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledEndMin)) • \(task.title.isEmpty ? "Untitled Task" : task.title)"
             }
 
         let eventLines = externalEventItems

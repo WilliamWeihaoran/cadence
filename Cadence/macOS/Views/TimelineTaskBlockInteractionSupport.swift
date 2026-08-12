@@ -4,10 +4,9 @@ import SwiftData
 
 enum TimelineTaskBlockInteractionSupport {
     static func timeRangeLabel(for task: AppTask) -> String {
-        let duration = max(task.estimatedMinutes, 5)
-        return TimeFormatters.timeRange(
+        TimeFormatters.timeRange(
             startMin: task.scheduledStartMin,
-            endMin: task.scheduledStartMin + duration
+            endMin: task.scheduledStartMin + task.timelineDurationMinutes
         )
     }
 
@@ -21,7 +20,7 @@ enum TimelineTaskBlockInteractionSupport {
     ) -> TimelineBlockFrame {
         computeTimelineBlockFrame(
             startMinute: task.scheduledStartMin,
-            durationMinutes: task.estimatedMinutes,
+            durationMinutes: task.timelineDurationMinutes,
             column: column,
             totalColumns: totalColumns,
             totalWidth: totalWidth,
@@ -91,7 +90,7 @@ enum TimelineTaskBlockInteractionSupport {
             blockTopY: frame.y,
             blockDrawnHeight: frame.height,
             originStartMin: task.scheduledStartMin,
-            originEndMin: task.scheduledStartMin + max(task.estimatedMinutes, 5),
+            originEndMin: task.scheduledEndMin,
             metrics: metrics
         )
     }

@@ -71,12 +71,13 @@ enum SchedulingActions {
         }
     }
 
-    /// Move an existing task to a new date/time. Assigns a 30-min default if the task has no estimate.
+    /// Move an existing task to a new date/time. Materialises the default estimate if the task has
+    /// none, so the block it lands in is the length `AppTask.timelineDurationMinutes` already draws.
     static func dropTask(_ task: AppTask, to dateKey: String, startMin: Int) {
         removeTaskFromBundle(task, keepOnBundleDate: false)
         task.scheduledDate = dateKey
         task.scheduledStartMin = clampedStartMin(startMin)
-        if task.estimatedMinutes <= 0 { task.estimatedMinutes = 30 }
+        if task.estimatedMinutes <= 0 { task.estimatedMinutes = AppTask.defaultTimelineDurationMinutes }
     }
 
     static func dropBundle(_ bundle: TaskBundle, to dateKey: String, startMin: Int) {

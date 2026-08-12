@@ -30,7 +30,7 @@ struct TimelineDropPreviewOverlay: View {
             TimelineDraggedTaskPreview(
                 task: previewTask,
                 startMinute: previewStartMin,
-                durationMinutes: previewTask.estimatedMinutes > 0 ? previewTask.estimatedMinutes : 30,
+                durationMinutes: previewTask.timelineDurationMinutes,
                 column: previewLayout?.column ?? 0,
                 totalColumns: previewLayout?.totalColumns ?? 1,
                 totalWidth: width,

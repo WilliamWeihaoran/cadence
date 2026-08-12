@@ -214,8 +214,12 @@ struct TimelineMetricsTests {
             style: .schedule
         )
         #expect(frame.y == -1)
-        // A non-positive duration becomes the 60-minute default *before* the minHeight floor.
-        #expect(frame.height == 60)
+        // A non-positive duration is only floored at minHeight. This used to become a 60-minute
+        // default here, which was the reason a zero-estimate task was drawn an hour tall while the
+        // overlap solver had reserved half an hour for it. "How long is a task with no estimate" is
+        // `AppTask.timelineDurationMinutes`' question now; this function draws what it is handed.
+        #expect(frame.height == TimelineBlockStyle.schedule.minHeight)
+        #expect(frame.height == 24)
         #expect(frame.x == TimelineBlockStyle.schedule.leadingInset)
         // (300 - leadingInset) * blockWidthFraction - columnSpacing, in binary floating point.
         let expectedWidth = (300 - TimelineBlockStyle.schedule.leadingInset)

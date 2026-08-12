@@ -130,6 +130,11 @@ struct CalendarPageView: View {
             }
         }
         .background(Theme.bg)
+        // The other surface that writes EventKit. Drag-to-create in the week/2W timeline, the
+        // month grid's quick-create, the all-day → timed conversion, and the event popover's
+        // save/delete all failed in silence here while `SchedulePanel` reported the same failures.
+        // Applied at the page root so it covers all three presentations, not just the timeline.
+        .calendarWriteFailureAlert()
         .onAppear {
             if let request = calendarNavigationManager.request {
                 applyExternalCalendarJump(request)

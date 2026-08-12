@@ -58,7 +58,7 @@ struct TimelineTaskBlock: View {
     private func blockContent(now: Date?) -> some View {
         timelineBlockBody(
             task: task,
-            durationMinutes: task.estimatedMinutes,
+            durationMinutes: task.timelineDurationMinutes,
             timeRangeLabel: timeRangeLabel,
             frame: frame,
             style: style,

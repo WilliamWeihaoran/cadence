@@ -313,6 +313,29 @@ enum CalendarBoardPlannerSupport {
         }
     }
 
+    /// Which bundle card, if any, owns a drop landing at `location` in a board day column.
+    ///
+    /// A day column and the bundle cards inside it are both drop destinations, and one release can
+    /// fire both — the column's `schedule` then calls `removeTaskFromBundle` and silently undoes the
+    /// bundling the card just did. Which one won used to be decided by a 0.75-second wall-clock
+    /// window armed by the card's drop handler and read by the column's, so the outcome depended on
+    /// the order SwiftUI happened to deliver two closures in.
+    ///
+    /// It is a hit test, so it is decided before either handler runs and cannot race: the column
+    /// defers exactly when the release point is inside a card the column is drawing. `bundleIDs` is
+    /// the column's *current* bundles, so a frame left behind by a card that has since moved to
+    /// another day cannot claim a drop.
+    ///
+    /// Geometry, unlike the timeline's shelf, has to be measured rather than computed: a board
+    /// column is a stack of variable-height cards, not a minute axis.
+    static func bundleOwningBoardDrop(
+        at location: CGPoint,
+        bundleIDs: [UUID],
+        bundleFrames: [UUID: CGRect]
+    ) -> UUID? {
+        bundleIDs.first { bundleFrames[$0]?.contains(location) == true }
+    }
+
     /// Clearing the do date also drops the timeline slot: a task with no day cannot own a start
     /// minute on one, and leaving `scheduledStartMin` behind would strand it on the timeline.
     static func apply(_ action: CalendarBoardDropAction, to task: AppTask) {

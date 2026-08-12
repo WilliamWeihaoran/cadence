@@ -8,7 +8,6 @@ struct CalendarBoardBundleCard: View {
     let areas: [Area]
     let projects: [Project]
     let onDropTask: (AppTask) -> Void
-    var onDropTargetedChanged: (Bool) -> Void = { _ in }
 
     @Environment(\.modelContext) private var modelContext
     @Environment(FocusManager.self) private var focusManager
@@ -34,7 +33,6 @@ struct CalendarBoardBundleCard: View {
             return true
         } isTargeted: { targeted in
             isTargeted = targeted
-            onDropTargetedChanged(targeted)
         }
         .popover(isPresented: $showPopover, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             bundleDetailPopover
