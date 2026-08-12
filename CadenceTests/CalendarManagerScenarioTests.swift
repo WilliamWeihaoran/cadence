@@ -43,20 +43,26 @@ struct CalendarManagerScenarioTests {
         #expect(manager.event(withIdentifier: "") == nil)
         #expect(manager.searchEvents(matching: "standup").isEmpty)
 
-        // Mutating surface: none of these should crash even though nothing is authorized.
-        manager.createStandaloneEvent(title: "Test", startMin: 60, durationMinutes: 30, calendarID: "", date: Date())
+        // Mutating surface: none of these should crash even though nothing is authorized — and
+        // none of them may fail in silence. Every one used to end in a bare `return`, so
+        // drag-to-create with access revoked mid-session completed the gesture, dismissed the
+        // popover, cleared the ghost, and produced nothing the user could see.
+        manager.lastWriteFailure = nil
+        #expect(manager.createStandaloneEvent(title: "Test", startMin: 60, durationMinutes: 30, calendarID: "", date: Date()) == .notAuthorized)
+        #expect(manager.lastWriteFailure == .notAuthorized)
 
         let scratchEvent = EKEvent(eventStore: EKEventStore())
         scratchEvent.title = "Untouched"
-        manager.updateEvent(scratchEvent, title: "Should not apply", startMin: 60, durationMinutes: 30, dateKey: "2026-06-01")
-        manager.updateEvent(scratchEvent, title: "Should not apply either", startDate: Date(), endDate: Date().addingTimeInterval(3600))
-        manager.updateEventNotes(scratchEvent, notes: "Should not apply")
-        manager.updateEventNotes(calendarEventID: "some-id", notes: "Should not apply")
-        manager.convertAllDayEventToTimed(scratchEvent, startMin: 120, dateKey: "2026-06-01")
-        manager.deleteEvent(scratchEvent)
+        #expect(manager.updateEvent(scratchEvent, title: "Should not apply", startMin: 60, durationMinutes: 30, dateKey: "2026-06-01") == .notAuthorized)
+        #expect(manager.updateEvent(scratchEvent, title: "Should not apply either", startDate: Date(), endDate: Date().addingTimeInterval(3600)) == .notAuthorized)
+        #expect(manager.updateEventNotes(scratchEvent, notes: "Should not apply") == .notAuthorized)
+        #expect(manager.updateEventNotes(calendarEventID: "some-id", notes: "Should not apply") == nil)
+        #expect(manager.convertAllDayEventToTimed(scratchEvent, startMin: 120, dateKey: "2026-06-01") == .notAuthorized)
+        #expect(manager.deleteEvent(scratchEvent) == .notAuthorized)
 
         // Guarded methods must never mutate the object when unauthorized.
         #expect(scratchEvent.title == "Untouched")
+        manager.lastWriteFailure = nil
     }
 
     // MARK: - 2. Authorization revoked mid-session is detected instead of staying stale
@@ -109,7 +115,7 @@ struct CalendarManagerScenarioTests {
 
     // MARK: - 3. Moving an event to a missing/read-only calendar doesn't crash or corrupt the event
 
-    @Test func updateEventSkipsCalendarReassignmentWhenTargetCalendarCannotBeResolvedButStillAppliesOtherFields() {
+    @Test func aFailedSaveIsReportedAndRollsTheEventBackInsteadOfLeavingAPhantomEdit() {
         let manager = CalendarManager.shared
         let originalAuthorized = manager.isAuthorized
         manager.isAuthorized = true
@@ -128,7 +134,7 @@ struct CalendarManagerScenarioTests {
         // fail an exact-equality check purely due to a dropped fractional second, not a real bug.
         let start = Date(timeIntervalSinceReferenceDate: Date().timeIntervalSinceReferenceDate.rounded(.down))
         let end = start.addingTimeInterval(1800)
-        manager.updateEvent(
+        let failure = manager.updateEvent(
             event,
             title: "Moved event",
             startDate: start,
@@ -139,11 +145,23 @@ struct CalendarManagerScenarioTests {
         // No crash reaching here is itself part of the assertion. The unresolved calendarID must
         // not have corrupted the event's calendar assignment...
         #expect(event.calendar === originalCalendar)
-        // ...while the rest of the requested edit (title/time) still applies, since only the
-        // calendar-move portion was invalid.
-        #expect(event.title == "Moved event")
-        #expect(event.startDate == start)
-        #expect(event.endDate == end)
+
+        // ...and the save against a throwaway store cannot succeed, which is now reported rather
+        // than swallowed by a `print`.
+        guard case .saveFailed = failure else {
+            Issue.record("expected a save failure, got \(String(describing: failure))")
+            return
+        }
+        #expect(manager.lastWriteFailure == failure)
+
+        // The requested edit must NOT survive a failed save. `EKEvent` is a reference type and
+        // this same instance is what `CalendarEventItem` hands the timeline to draw, so keeping
+        // the mutation left a block rendering an event that does not exist in the store — with
+        // no `EKEventStoreChanged` notification to bump `storeVersion` and refetch it away.
+        #expect(event.title != "Moved event")
+        #expect(event.startDate == nil)
+        #expect(event.endDate == nil)
+        manager.lastWriteFailure = nil
     }
 
     @Test func updateEventRejectsInvertedTimeRangeWithoutMutatingTheEvent() {
@@ -196,7 +214,7 @@ struct CalendarManagerScenarioTests {
 
     // MARK: - 5. Converting an all-day event to timed produces a sane range and never bleeds into other events
 
-    @Test func convertAllDayEventToTimedSetsExactRangeAndNeverMutatesAnUnrelatedEvent() throws {
+    @Test func convertAllDayEventToTimedRollsBackOnFailureAndNeverMutatesAnUnrelatedEvent() throws {
         let manager = CalendarManager.shared
         let originalAuthorized = manager.isAuthorized
         manager.isAuthorized = true
@@ -220,17 +238,24 @@ struct CalendarManagerScenarioTests {
         existingTimedEvent.startDate = existingStart
         existingTimedEvent.endDate = existingEnd
 
-        manager.convertAllDayEventToTimed(allDayEvent, startMin: 9 * 60, dateKey: dateKey)
+        let failure = manager.convertAllDayEventToTimed(allDayEvent, startMin: 9 * 60, dateKey: dateKey)
 
-        #expect(!allDayEvent.isAllDay)
-        #expect(allDayEvent.startDate == existingStart)
-        #expect(allDayEvent.endDate == existingEnd)
+        // The conversion computes the right range — 09:00–10:00 on the given day, matching the
+        // range built independently above — but the save against a throwaway store fails, so the
+        // event is put back rather than left half-converted on screen.
+        guard case .saveFailed = failure else {
+            Issue.record("expected a save failure, got \(String(describing: failure))")
+            return
+        }
+        #expect(allDayEvent.startDate == nil)
+        #expect(allDayEvent.endDate == nil)
 
         // The unrelated event must be completely untouched by converting a different event.
         #expect(existingTimedEvent.isAllDay == false)
         #expect(existingTimedEvent.title == "Existing meeting")
         #expect(existingTimedEvent.startDate == existingStart)
         #expect(existingTimedEvent.endDate == existingEnd)
+        manager.lastWriteFailure = nil
     }
 
     // MARK: - 6. Looking up an externally-deleted event self-heals a task's stale calendarEventID

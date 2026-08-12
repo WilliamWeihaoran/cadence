@@ -178,95 +178,31 @@ struct TimelineMetricsTests {
     }
 
     // MARK: - 6. Drag-to-create upward (end above start) must swap, not go negative
-
-    @Test func draftSelectionBeginSwapsStartAndEndWhenDraggingUpward() {
-        var dragStartMin: Int? = nil
-        var dragEndMin: Int? = nil
-        var pendingStartMin: Int? = nil
-        var pendingEndMin: Int? = nil
-        var showPopover = false
-        var selectedTaskID: UUID? = UUID()
-
-        // Gesture anchor (mouse-down) is at minute 600; the live pointer has moved
-        // upward to minute 540 — i.e. `endMin` is *before* `startMin`.
-        TimelineDayCanvasStateSupport.beginDraftSelection(
-            startMin: 600,
-            endMin: 540,
-            dragStartMin: &dragStartMin,
-            dragEndMin: &dragEndMin,
-            pendingStartMin: &pendingStartMin,
-            pendingEndMin: &pendingEndMin,
-            showNewTaskPopover: &showPopover,
-            selectedTaskID: &selectedTaskID
-        )
-
-        #expect(dragStartMin == 540)
-        #expect(dragEndMin == 600)
-        #expect((dragEndMin ?? 0) > (dragStartMin ?? 0))
-    }
-
-    @Test func draftSelectionCommitSwapsStartAndEndWhenDraggingUpward() {
-        var dragStartMin: Int? = nil
-        var dragEndMin: Int? = nil
-        var pendingStartMin: Int? = nil
-        var pendingEndMin: Int? = nil
-        var showPopover = false
-
-        TimelineDayCanvasStateSupport.commitDraftSelection(
-            startMin: 600,
-            endMin: 540,
-            dragStartMin: &dragStartMin,
-            dragEndMin: &dragEndMin,
-            pendingStartMin: &pendingStartMin,
-            pendingEndMin: &pendingEndMin,
-            showNewTaskPopover: &showPopover
-        )
-
-        #expect(pendingStartMin == 540)
-        #expect(pendingEndMin == 600)
-        #expect((pendingEndMin ?? 0) - (pendingStartMin ?? 0) >= 5)
-        #expect(showPopover)
-    }
-
-    @Test func draftSelectionCommitNeverProducesNegativeOrZeroDuration() {
-        var dragStartMin: Int? = nil
-        var dragEndMin: Int? = nil
-        var pendingStartMin: Int? = nil
-        var pendingEndMin: Int? = nil
-        var showPopover = false
-
-        // Degenerate case: start and end land on the same minute (no visible drag distance).
-        TimelineDayCanvasStateSupport.commitDraftSelection(
-            startMin: 300,
-            endMin: 300,
-            dragStartMin: &dragStartMin,
-            dragEndMin: &dragEndMin,
-            pendingStartMin: &pendingStartMin,
-            pendingEndMin: &pendingEndMin,
-            showNewTaskPopover: &showPopover
-        )
-
-        #expect(pendingStartMin == 300)
-        #expect(pendingEndMin == 305)
-    }
+    //
+    // Moved to `TimelineDraftAndResizeTests`, along with the rest of the draft-selection state
+    // machine, when the canvas's four draft `@State` optionals became one `TimelineDraftSelection`.
 
     // MARK: - 7. Negative / out-of-range minute values
 
     @Test func pixelConversionFunctionsHandleUnscheduledAndOutOfRangeMinutesWithoutCrashing() {
         let metrics = TimelineMetrics(startHour: 0, endHour: 24, hourHeight: 60)
 
-        // -1 is the sentinel for "unscheduled" — must not crash and must stay finite.
-        let unscheduledOffset = metrics.yOffset(for: -1)
-        #expect(unscheduledOffset.isFinite)
+        // -1 is the sentinel for "unscheduled". `yOffset` does *not* special-case it: it is a
+        // linear map, so -1 lands one minute's worth of pixels above the top of the canvas. That
+        // is the value the drawing layer actually receives, so it is the value asserted — "is
+        // finite" was true of every conceivable implementation and hid the question entirely.
+        #expect(metrics.yOffset(for: -1) == -1)
+        #expect(metrics.yOffset(for: 0) == 0)
+        #expect(metrics.yOffset(for: 60) == 60)
 
-        // Duration bottoming out at a negative/zero value must still fall back to a
-        // sane default rather than producing a zero/negative height.
-        let unscheduledHeight = metrics.height(for: -1, minHeight: TimelineBlockStyle.schedule.minHeight)
-        #expect(unscheduledHeight >= TimelineBlockStyle.schedule.minHeight)
+        // A negative/zero duration floors at the 5-minute minimum, then at the style's minHeight.
+        #expect(metrics.height(for: -1, minHeight: TimelineBlockStyle.schedule.minHeight) == 24)
+        #expect(metrics.height(for: 5, minHeight: TimelineBlockStyle.schedule.minHeight) == 24)
+        // ...and above the floor it is the linear value, not the floor.
+        #expect(metrics.height(for: 90, minHeight: TimelineBlockStyle.schedule.minHeight) == 90)
 
-        // A minute at/after end-of-day (>= 1440) must still produce a finite offset.
-        let overflowOffset = metrics.yOffset(for: 1500)
-        #expect(overflowOffset.isFinite)
+        // A minute at/after end-of-day (>= 1440) is likewise not clamped here.
+        #expect(metrics.yOffset(for: 1_500) == 1_500)
 
         let frame = computeTimelineBlockFrame(
             startMinute: -1,
@@ -277,23 +213,36 @@ struct TimelineMetricsTests {
             metrics: metrics,
             style: .schedule
         )
-        #expect(frame.x.isFinite && frame.y.isFinite && frame.width.isFinite && frame.height.isFinite)
-        #expect(frame.width >= 0)
-        #expect(frame.height > 0)
+        #expect(frame.y == -1)
+        // A non-positive duration becomes the 60-minute default *before* the minHeight floor.
+        #expect(frame.height == 60)
+        #expect(frame.x == TimelineBlockStyle.schedule.leadingInset)
+        // (300 - leadingInset) * blockWidthFraction - columnSpacing, in binary floating point.
+        let expectedWidth = (300 - TimelineBlockStyle.schedule.leadingInset)
+            * TimelineBlockStyle.schedule.blockWidthFraction
+            - TimelineBlockStyle.schedule.columnSpacing
+        #expect(abs(frame.width - expectedWidth) < 0.0001)
+        #expect(abs(frame.width - 260.8) < 0.0001)
     }
 
-    @Test func unifiedLayoutsHandleUnscheduledSentinelMinutesWithoutCrashing() {
-        // Defensive coverage: even though call sites filter scheduledStartMin >= 0
-        // before reaching the timeline canvas, the pure layout function itself must
-        // not crash or misbehave if it ever receives the unscheduled sentinel.
+    @Test func unifiedLayoutsDropTheUnscheduledSentinelRatherThanLayingItOut() {
+        // `scheduledStartMin == -1` means "unscheduled", not "minute -1". Laid out, it drew a
+        // block above the top of the canvas and held column 0 against every real block for the
+        // whole day. Both production callers filter it; the layout function now says so itself.
         let unscheduled = AppTask(title: "Unscheduled")
         unscheduled.scheduledDate = "2026-06-02"
         unscheduled.scheduledStartMin = -1
         unscheduled.estimatedMinutes = 30
 
-        let result = computeUnifiedLayouts(tasks: [unscheduled], bundles: [], events: [])
-        #expect(result.tasks.count == 1)
-        #expect(result.tasks[0].column == 0)
+        let scheduled = AppTask(title: "Scheduled")
+        scheduled.scheduledDate = "2026-06-02"
+        scheduled.scheduledStartMin = 600
+        scheduled.estimatedMinutes = 30
+
+        let result = computeUnifiedLayouts(tasks: [unscheduled, scheduled], bundles: [], events: [])
+
+        #expect(result.tasks.map { $0.task.id } == [scheduled.id])
+        // ...and the real task keeps the full width it would have had to share.
         #expect(result.tasks[0].totalColumns == 1)
     }
 
@@ -333,11 +282,24 @@ struct TimelineMetricsTests {
         task.estimatedMinutes = 30
         context.insert(task)
 
-        SchedulingActions.dropTask(task, to: "2026-06-02", startMin: 1438)
+        // 1_600 is past the end of the day entirely. The old version of this test passed 1_438,
+        // which already satisfied both of its own bounds — so deleting the clamp left it green.
+        SchedulingActions.dropTask(task, to: "2026-06-02", startMin: 1_600)
 
         #expect(task.scheduledDate == "2026-06-02")
-        #expect(task.scheduledStartMin < 1440)
-        #expect(task.scheduledStartMin >= 0)
+        // dayEndMin (1_440) - minimumBundleDuration (5). The exact value, not a range: a range
+        // wide enough to hold the input is not an assertion about clamping.
+        #expect(task.scheduledStartMin == 1_435)
+
+        // The floor is the same clamp read from the other end.
+        SchedulingActions.dropTask(task, to: "2026-06-02", startMin: -50)
+        #expect(task.scheduledStartMin == 0)
+
+        // And a drop that needs no clamping must pass through untouched.
+        SchedulingActions.dropTask(task, to: "2026-06-02", startMin: 1_438)
+        #expect(task.scheduledStartMin == 1_435)
+        SchedulingActions.dropTask(task, to: "2026-06-02", startMin: 600)
+        #expect(task.scheduledStartMin == 600)
     }
 
     @Test func droppingABundledTaskOntoAnotherDayColumnMovesItAndClearsBundleMembership() throws {

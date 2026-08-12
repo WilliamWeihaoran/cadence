@@ -4,11 +4,6 @@ import SwiftData
 import UniformTypeIdentifiers
 
 struct TimelineTaskBlock: View {
-    enum ResizeEdge {
-        case start
-        case end
-    }
-
     let task: AppTask
     let allTasks: [AppTask]
     let column: Int
@@ -23,13 +18,10 @@ struct TimelineTaskBlock: View {
     @Environment(TaskCompletionAnimationManager.self) private var taskCompletionAnimationManager
     @Binding var selectedTaskID: UUID?
     @Binding var activeDragTaskID: UUID?
-    let onBundleDropAccepted: (UUID) -> Void
     let onCreateBundleWithTask: (AppTask, AppTask) -> Void
     let onSelect: () -> Void
 
-    @State private var activeResizeEdge: ResizeEdge? = nil
-    @State private var resizeOriginStartMin: Int? = nil
-    @State private var resizeOriginEndMin: Int? = nil
+    @State private var resizeSession: TimelineResizeSession? = nil
     @State private var isHovered = false
     @State private var isBundleDropTargeted = false
 
@@ -119,7 +111,7 @@ struct TimelineTaskBlock: View {
             }
         }
         .onDrag {
-            guard activeResizeEdge == nil else {
+            guard resizeSession == nil else {
                 return NSItemProvider()
             }
             selectedTaskID = nil
@@ -155,72 +147,65 @@ struct TimelineTaskBlock: View {
             TimelineTaskBundleDropShelf(
                 targetTask: task,
                 allTasks: allTasks,
-                height: max(12, min(max(30, frame.height * 0.38), 46, frame.height - 10)),
+                height: TimelineMetricsSupport.bundleDropShelfHeight(blockHeight: frame.height),
                 activeDragTaskID: $activeDragTaskID,
                 isTargeted: $isBundleDropTargeted,
-                onDropAccepted: onBundleDropAccepted,
                 onCreateBundle: onCreateBundleWithTask
             )
         }
     }
 
     @ViewBuilder
-    private func resizeHandle(edge: ResizeEdge) -> some View {
+    private func resizeHandle(edge: TimelineResizeEdge) -> some View {
         Rectangle()
             .fill(Color.clear)
-            .frame(height: TimelineTaskBlockInteractionSupport.resizeHandleHeight)
+            .frame(height: TimelineBlockGeometry.resizeHandleHeight)
             .contentShape(Rectangle())
             .overlay {
-                let isEmphasized = activeResizeEdge == edge || isHovered || selectedTaskID == task.id
+                let isEmphasized = resizeSession?.edge == edge || isHovered || selectedTaskID == task.id
                 Capsule()
                     .fill(isEmphasized ? Theme.onColorHandleActive : Theme.onColorHandle)
-                    .frame(width: min(18, max(10, frame.width - 18)), height: 2)
+                    .frame(width: TimelineBlockGeometry.handleCapsuleWidth(blockWidth: frame.width), height: 2)
             }
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onChanged { value in
-                        beginResizeIfNeeded(edge: edge)
-                        updateResize(edge: edge, localY: value.location.y)
+                        beginResizeIfNeeded(edge: edge, localY: value.location.y)
+                        updateResize(localY: value.location.y)
                     }
                     .onEnded { value in
-                        updateResize(edge: edge, localY: value.location.y)
+                        updateResize(localY: value.location.y)
                         endResize()
                     }
             )
     }
 
-    private func beginResizeIfNeeded(edge: ResizeEdge) {
+    private func beginResizeIfNeeded(edge: TimelineResizeEdge, localY: CGFloat) {
         TimelineTaskBlockInteractionSupport.beginResize(
             task: task,
             selectedTaskID: $selectedTaskID,
             activeDragTaskID: $activeDragTaskID,
-            activeResizeEdge: &activeResizeEdge,
-            resizeOriginStartMin: &resizeOriginStartMin,
-            resizeOriginEndMin: &resizeOriginEndMin,
-            edge: edge,
-            onSelect: onSelect
-        )
-    }
-
-    private func updateResize(edge: ResizeEdge, localY: CGFloat) {
-        TimelineTaskBlockInteractionSupport.updateResize(
-            task: task,
+            resizeSession: &resizeSession,
             edge: edge,
             localY: localY,
             frame: frame,
             metrics: metrics,
-            resizeHandleHeight: TimelineTaskBlockInteractionSupport.resizeHandleHeight,
-            resizeOriginStartMin: resizeOriginStartMin,
-            resizeOriginEndMin: resizeOriginEndMin
+            onSelect: onSelect
+        )
+    }
+
+    private func updateResize(localY: CGFloat) {
+        TimelineTaskBlockInteractionSupport.updateResize(
+            task: task,
+            session: resizeSession,
+            localY: localY,
+            frame: frame,
+            metrics: metrics
         )
     }
 
     private func endResize() {
-        TimelineTaskBlockStateSupport.endResize(
-            activeResizeEdge: &activeResizeEdge,
-            resizeOriginStartMin: &resizeOriginStartMin,
-            resizeOriginEndMin: &resizeOriginEndMin
-        )
+        TimelineTaskBlockStateSupport.endResize(resizeSession: &resizeSession)
     }
 }
 
@@ -230,7 +215,6 @@ private struct TimelineTaskBundleDropShelf: View {
     let height: CGFloat
     @Binding var activeDragTaskID: UUID?
     @Binding var isTargeted: Bool
-    let onDropAccepted: (UUID) -> Void
     let onCreateBundle: (AppTask, AppTask) -> Void
 
     var body: some View {
@@ -253,14 +237,13 @@ private struct TimelineTaskBundleDropShelf: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Theme.amber.opacity(isTargeted ? 0.72 : 0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
         }
-        .padding(5)
+        .padding(TimelineMetricsSupport.bundleDropShelfPadding)
         .contentShape(Rectangle())
         .onDrop(
             of: [UTType.text.identifier],
             delegate: TimelineTaskBundleDropDelegate(
                 targetTask: targetTask,
                 allTasks: allTasks,
-                onDropAccepted: onDropAccepted,
                 onCreateBundle: onCreateBundle,
                 activeDragTaskID: $activeDragTaskID,
                 isTargeted: $isTargeted
@@ -272,7 +255,6 @@ private struct TimelineTaskBundleDropShelf: View {
 private struct TimelineTaskBundleDropDelegate: DropDelegate {
     let targetTask: AppTask
     let allTasks: [AppTask]
-    let onDropAccepted: (UUID) -> Void
     let onCreateBundle: (AppTask, AppTask) -> Void
     @Binding var activeDragTaskID: UUID?
     @Binding var isTargeted: Bool
@@ -295,9 +277,6 @@ private struct TimelineTaskBundleDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         isTargeted = false
-        if let draggedTaskID = activeDragTaskID {
-            onDropAccepted(draggedTaskID)
-        }
         activeDragTaskID = nil
         guard let provider = info.itemProviders(for: [UTType.text]).first else { return false }
         _ = provider.loadObject(ofClass: NSString.self) { object, _ in
@@ -306,7 +285,6 @@ private struct TimelineTaskBundleDropDelegate: DropDelegate {
             Task { @MainActor in
                 guard targetTask.id != taskID,
                       let draggedTask = allTasks.first(where: { $0.id == taskID }) else { return }
-                onDropAccepted(taskID)
                 onCreateBundle(targetTask, draggedTask)
             }
         }

@@ -26,14 +26,8 @@ enum TimelineTaskBlockStateSupport {
         )
     }
 
-    static func endResize(
-        activeResizeEdge: inout TimelineTaskBlock.ResizeEdge?,
-        resizeOriginStartMin: inout Int?,
-        resizeOriginEndMin: inout Int?
-    ) {
-        activeResizeEdge = nil
-        resizeOriginStartMin = nil
-        resizeOriginEndMin = nil
+    static func endResize(resizeSession: inout TimelineResizeSession?) {
+        resizeSession = nil
     }
 }
 #endif

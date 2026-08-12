@@ -11,20 +11,40 @@ struct TimelineCreateGridLayer: View {
     let onDragEnded: (Int, Int) -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            ForEach(metrics.startHour..<metrics.endHour, id: \.self) { hour in
-                TimelineCreateRow(
-                    hour: hour,
-                    metrics: metrics,
-                    blockedFrames: blockedFrames,
-                    showHalfHourMark: showHalfHourMarks,
-                    activeDragTaskID: $activeDragTaskID,
-                    onTapBackground: onTapBackground,
-                    onDragChanged: onDragChanged,
-                    onDragEnded: onDragEnded
-                )
-            }
-        }
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: metrics.totalHeight)
+            .overlay { TimelineHourGridLines(metrics: metrics, showHalfHourMarks: showHalfHourMarks) }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onTapBackground)
+            // One gesture over the whole canvas, reading the canvas's own coordinate space. It
+            // used to be one gesture per hour row, with the canvas Y rebuilt from the row's index
+            // — the only interactive layer here not placed from a `TimelineBlockFrame`, and the
+            // only one whose accuracy depended on the *layout* of a `VStack` staying exactly zero-
+            // spaced, zero-padded and flush with canvas Y = 0.
+            .gesture(
+                DragGesture(minimumDistance: 8, coordinateSpace: .named(TimelineDayCanvas.coordinateSpaceName))
+                    .onChanged { value in
+                        guard shouldHandle(startLocation: value.startLocation) else { return }
+                        onDragChanged(
+                            metrics.snappedMinute(fromY: value.startLocation.y),
+                            metrics.snappedMinute(fromY: value.location.y)
+                        )
+                    }
+                    .onEnded { value in
+                        guard shouldHandle(startLocation: value.startLocation) else { return }
+                        onDragEnded(
+                            metrics.snappedMinute(fromY: value.startLocation.y),
+                            metrics.snappedMinute(fromY: value.location.y)
+                        )
+                    }
+            )
+            .suppressWindowBackgroundDrag()
+    }
+
+    private func shouldHandle(startLocation: CGPoint) -> Bool {
+        guard activeDragTaskID == nil else { return false }
+        return !TimelineMetricsSupport.isInsideBlockedBlock(point: startLocation, blockedFrames: blockedFrames)
     }
 }
 
@@ -38,9 +58,7 @@ struct TimelineWorkHoursHighlightLayer: View {
         CalendarWorkHoursPreferences.highlightFrame(
             startMinute: startMinute,
             endMinute: endMinute,
-            timelineStartHour: metrics.startHour,
-            timelineEndHour: metrics.endHour,
-            hourHeight: metrics.hourHeight
+            metrics: metrics
         )
     }
 
@@ -81,7 +99,6 @@ struct TimelineScheduledBlocksLayer: View {
     @Binding var activeDragTaskID: UUID?
     @Binding var activeDragBundleID: UUID?
     let onTaskDroppedOnBundle: (AppTask, TaskBundle) -> Void
-    let onTaskBundleDropAccepted: (UUID) -> Void
     let onCreateBundleFromTasks: (AppTask, AppTask) -> Void
     let onTaskSelected: () -> Void
     let onBundleSelected: () -> Void
@@ -130,7 +147,6 @@ struct TimelineScheduledBlocksLayer: View {
                 style: style,
                 selectedTaskID: $selectedTaskID,
                 activeDragTaskID: $activeDragTaskID,
-                onBundleDropAccepted: onTaskBundleDropAccepted,
                 onCreateBundleWithTask: onCreateBundleFromTasks,
                 onSelect: onTaskSelected
             )

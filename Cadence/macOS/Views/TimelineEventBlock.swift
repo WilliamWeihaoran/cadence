@@ -7,7 +7,6 @@ import SwiftData
 // MARK: - Timeline Event Block
 
 struct TimelineEventBlock: View {
-    private enum ResizeEdge { case start, end }
     private enum PendingEventMutation {
         case move(startMin: Int)
         case resize(startMin: Int, durationMinutes: Int)
@@ -29,14 +28,11 @@ struct TimelineEventBlock: View {
     // Live drag/resize state — cleared when the item refreshes from iCal
     @State private var liveStartMin: Int? = nil
     @State private var liveDurationMinutes: Int? = nil
+    @State private var isMoveDragActive = false
     @State private var dragGrabOffset: CGFloat = 0
-    @State private var activeResizeEdge: ResizeEdge? = nil
-    @State private var resizeOriginStartMin: Int? = nil
-    @State private var resizeOriginEndMin: Int? = nil
+    @State private var resizeSession: TimelineResizeSession? = nil
     @State private var isHovered = false
     @State private var pendingMutation: PendingEventMutation?
-
-    private let resizeHandleHeight: CGFloat = 8
 
     private var effectiveStartMin: Int  { liveStartMin      ?? item.startMin       }
     private var effectiveDuration: Int  { liveDurationMinutes ?? item.durationMinutes }
@@ -66,12 +62,12 @@ struct TimelineEventBlock: View {
                         selectedTaskID = nil
                         selectedEventID = item.id
                     } onDelete: {
-                        deleteConfirmationManager.present(
-                            title: "Delete Calendar Event?",
-                            message: "This will permanently delete \"\(item.title)\" from your calendar."
-                        ) {
-                            requestEventMutation(.delete)
-                        }
+                        // No confirmation here. `requestEventMutation(.delete)` is the single
+                        // delete path and it confirms — with a message that knows whether the
+                        // recurrence scope makes this one event or all future ones. Confirming
+                        // first meant a non-recurring event asked "Delete Calendar Event?" twice
+                        // in a row.
+                        requestEventMutation(.delete)
                     }
                 } else {
                     hoveredEditableManager.endHovering(id: "timeline-event-\(item.id)")
@@ -85,23 +81,30 @@ struct TimelineEventBlock: View {
             // MARK: Move gesture — uses named canvas coordinate space so drag speed
             // is 1:1 with cursor even as the block repositions during the gesture.
             .gesture(
-                DragGesture(minimumDistance: 4, coordinateSpace: .named("timelineCanvas"))
+                DragGesture(minimumDistance: 4, coordinateSpace: .named(TimelineDayCanvas.coordinateSpaceName))
                     .onChanged { value in
-                        guard activeResizeEdge == nil else { return }
+                        guard resizeSession == nil else { return }
                         selectedEventID = nil
-                        if liveStartMin == nil {
-                            // Record where in the block the user grabbed it
-                            dragGrabOffset = value.startLocation.y - metrics.yOffset(for: item.startMin)
+                        // The grab offset belongs to *this* gesture, so it is recorded when the
+                        // gesture starts. It used to be recorded when `liveStartMin == nil`, which
+                        // is a different question: live state is deliberately held until EventKit
+                        // round-trips, so grabbing the block again before the store notification
+                        // arrived (or after a save that failed) reused the previous gesture's
+                        // offset and teleported the block on the first pointer move.
+                        if !isMoveDragActive {
+                            isMoveDragActive = true
+                            dragGrabOffset = value.startLocation.y - metrics.yOffset(for: effectiveStartMin)
                         }
                         let eventTopY = value.location.y - dragGrabOffset
                         liveStartMin = metrics.snappedMinute(fromY: max(0, eventTopY))
                     }
                     .onEnded { _ in
-                        guard activeResizeEdge == nil else { return }
+                        guard resizeSession == nil else { return }
                         if let newStart = liveStartMin {
                             requestEventMutation(.move(startMin: newStart))
                             // Keep liveStartMin set until item refreshes from iCal (onChange clears it)
                         }
+                        isMoveDragActive = false
                         dragGrabOffset = 0
                     }
             )
@@ -131,21 +134,29 @@ struct TimelineEventBlock: View {
                         selectedEventID = nil
                     },
                     onDelete: { scope in
-                        deleteConfirmationManager.present(
-                            title: "Delete Calendar Event?",
-                            message: "This will permanently delete \"\(item.title)\" from your calendar."
-                        ) {
-                            calendarManager.deleteEvent(item.ekEvent, scope: scope)
-                            selectedEventID = nil
-                        }
+                        // The popover already asked for a scope, so the scope dialog is skipped —
+                        // but the delete itself goes through the one confirm-then-delete path
+                        // rather than a third copy of it. This copy had already drifted: it
+                        // bypassed `requestEventMutation`, so its message never mentioned future
+                        // occurrences even when the user had chosen them.
+                        selectedEventID = nil
+                        applyEventMutation(.delete, scope: scope)
                     }
                 )
             }
             .position(x: frame.centerX, y: frame.centerY)
-            // Clear live state once the item refreshes from iCal
-            .onChange(of: item.startMin) {
+            // Clear live state once the item refreshes from iCal.
+            //
+            // This watched `item.startMin` alone, but a pure end-edge resize leaves the start
+            // where it was — so the round-trip fired no change and `liveDurationMinutes` stayed
+            // set for the life of the view, pinning the block to its stale local length and
+            // ignoring every later edit to the event from Calendar.app, the popover, or a
+            // recurrence-scope change. Live state has to be cleared by an observation that fires
+            // for every mutation that state could have made.
+            .onChange(of: [item.startMin, item.durationMinutes]) {
                 liveStartMin = nil
                 liveDurationMinutes = nil
+                isMoveDragActive = false
                 dragGrabOffset = 0
             }
             .confirmationDialog(
@@ -173,57 +184,54 @@ struct TimelineEventBlock: View {
     // MARK: - Resize Handle
 
     @ViewBuilder
-    private func resizeHandle(edge: ResizeEdge) -> some View {
+    private func resizeHandle(edge: TimelineResizeEdge) -> some View {
         Rectangle()
             .fill(Color.clear)
-            .frame(height: resizeHandleHeight)
+            .frame(height: TimelineBlockGeometry.resizeHandleHeight)
             .contentShape(Rectangle())
             .overlay {
-                let isEmphasized = activeResizeEdge == edge || isHovered || isSelected
+                let isEmphasized = resizeSession?.edge == edge || isHovered || isSelected
                 Capsule()
                     .fill(isEmphasized ? Theme.onColorHandleActive : Theme.onColorHandle)
-                    .frame(width: min(18, max(10, frame.width - 18)), height: 2)
+                    .frame(width: TimelineBlockGeometry.handleCapsuleWidth(blockWidth: frame.width), height: 2)
             }
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onChanged { value in
-                        beginResizeIfNeeded(edge: edge)
-                        updateResize(edge: edge, localY: value.location.y)
+                        beginResizeIfNeeded(edge: edge, localY: value.location.y)
+                        updateResize(localY: value.location.y)
                     }
                     .onEnded { value in
-                        updateResize(edge: edge, localY: value.location.y)
+                        updateResize(localY: value.location.y)
                         endResize()
                     }
             )
     }
 
-    private func beginResizeIfNeeded(edge: ResizeEdge) {
-        guard activeResizeEdge == nil else { return }
+    private func beginResizeIfNeeded(edge: TimelineResizeEdge, localY: CGFloat) {
+        guard resizeSession == nil else { return }
         selectedEventID = nil
-        activeResizeEdge = edge
-        resizeOriginStartMin = effectiveStartMin
-        resizeOriginEndMin   = effectiveStartMin + max(effectiveDuration, 5)
+        resizeSession = TimelineResizeSession.begin(
+            edge: edge,
+            localY: localY,
+            blockTopY: frame.y,
+            blockDrawnHeight: frame.height,
+            originStartMin: effectiveStartMin,
+            originEndMin: effectiveStartMin + max(effectiveDuration, 5),
+            metrics: metrics
+        )
     }
 
-    private func updateResize(edge: ResizeEdge, localY: CGFloat) {
-        guard let originStart = resizeOriginStartMin,
-              let originEnd   = resizeOriginEndMin else { return }
-        let localYOffset: CGFloat
-        switch edge {
-        case .start: localYOffset = localY
-        case .end:   localYOffset = max(0, frame.height - resizeHandleHeight) + localY
-        }
-        let snapped = metrics.snappedMinute(fromY: frame.y + localYOffset)
-        switch edge {
-        case .start:
-            let nextStart = min(snapped, originEnd - 5)
-            liveStartMin        = nextStart
-            liveDurationMinutes = max(5, originEnd - nextStart)
-        case .end:
-            let nextEnd = max(snapped, originStart + 5)
-            liveStartMin        = originStart
-            liveDurationMinutes = max(5, nextEnd - originStart)
-        }
+    private func updateResize(localY: CGFloat) {
+        guard let resizeSession else { return }
+        let range = metrics.resizedRange(
+            session: resizeSession,
+            localY: localY,
+            blockTopY: frame.y,
+            blockDrawnHeight: frame.height
+        )
+        liveStartMin        = range.start
+        liveDurationMinutes = max(5, range.end - range.start)
     }
 
     private func endResize() {
@@ -231,9 +239,7 @@ struct TimelineEventBlock: View {
         let finalDuration = liveDurationMinutes ?? effectiveDuration
         requestEventMutation(.resize(startMin: finalStart, durationMinutes: finalDuration))
         // Keep live state until item refreshes (onChange clears it)
-        activeResizeEdge    = nil
-        resizeOriginStartMin = nil
-        resizeOriginEndMin   = nil
+        resizeSession = nil
     }
 
     private func requestEventMutation(_ mutation: PendingEventMutation) {
@@ -254,10 +260,9 @@ struct TimelineEventBlock: View {
         pendingMutation = nil
         liveStartMin = nil
         liveDurationMinutes = nil
+        isMoveDragActive = false
         dragGrabOffset = 0
-        activeResizeEdge = nil
-        resizeOriginStartMin = nil
-        resizeOriginEndMin = nil
+        resizeSession = nil
     }
 
     private func applyEventMutation(_ mutation: PendingEventMutation, scope: CalendarRecurrenceEditScope) {

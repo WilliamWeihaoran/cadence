@@ -5,9 +5,9 @@ import SwiftData
 // MARK: - Shared scheduling mutations
 
 enum SchedulingActions {
-    private static let dayStartMin = 0
-    private static let dayEndMin = 24 * 60
-    private static let minimumBundleDuration = 5
+    private static let dayStartMin = TimelineDayRange.startMin
+    private static let dayEndMin = TimelineDayRange.endMin
+    private static let minimumBundleDuration = TimelineDayRange.minimumDuration
 
     /// Create and insert a new task scheduled to a specific date/time slot.
     static func createTask(title: String, dateKey: String, startMin: Int, endMin: Int, in context: ModelContext) {
@@ -81,7 +81,7 @@ enum SchedulingActions {
 
     static func dropBundle(_ bundle: TaskBundle, to dateKey: String, startMin: Int) {
         let duration = max(bundle.durationMinutes, minimumBundleDuration)
-        let clampedStart = min(max(dayStartMin, startMin), max(dayStartMin, dayEndMin - duration))
+        let clampedStart = TimelineDayRange.clampStart(startMin, duration: duration)
         bundle.dateKey = dateKey
         bundle.startMin = clampedStart
         bundle.durationMinutes = min(duration, dayEndMin - clampedStart)
@@ -252,7 +252,7 @@ enum SchedulingActions {
     }
 
     private static func clampedStartMin(_ startMin: Int) -> Int {
-        min(max(dayStartMin, startMin), dayEndMin - minimumBundleDuration)
+        TimelineDayRange.clampStart(startMin)
     }
 
     private static func memberTasks(in bundle: TaskBundle) -> [AppTask] {

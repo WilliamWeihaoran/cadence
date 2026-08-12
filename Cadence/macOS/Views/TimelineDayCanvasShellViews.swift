@@ -37,9 +37,13 @@ struct TimelineDraftGhostLayer: View {
     }
 
     var body: some View {
-        let y = metrics.yOffset(for: startMinute)
-        let height = metrics.height(for: durationMinutes, minHeight: style.minHeight)
-        let ghostWidth = max(0, width - style.leadingInset - style.trailingInset)
+        let frame = TimelineMetricsSupport.computeDraftFrame(
+            startMinute: startMinute,
+            endMinute: endMinute,
+            totalWidth: width,
+            metrics: metrics,
+            style: style
+        )
 
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: style.cornerRadius)
@@ -68,8 +72,8 @@ struct TimelineDraftGhostLayer: View {
             .padding(.top, 6)
             .padding(.leading, 6)
         }
-        .frame(width: ghostWidth, height: height, alignment: .topLeading)
-        .offset(x: style.leadingInset, y: y)
+        .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+        .position(x: frame.centerX, y: frame.centerY)
         .allowsHitTesting(false)
     }
 }
@@ -85,12 +89,21 @@ struct TimelineDraftPopoverAnchor<PopoverContent: View>: View {
     @ViewBuilder let content: () -> PopoverContent
 
     var body: some View {
-        let y = metrics.yOffset(for: startMinute)
-        let height = metrics.height(for: endMinute - startMinute, minHeight: style.minHeight)
-        let ghostWidth = max(0, width - style.leadingInset - style.trailingInset)
+        // Same rect as `TimelineDraftGhostLayer`, from the same function and placed by the same
+        // mechanism. These two used to be positioned differently — `.offset` for the ghost,
+        // `.padding` for the anchor — and coincided only because `.padding` on a `Color.clear`
+        // inside a `.topLeading` ZStack happened to land where `.offset` did. Any alignment or
+        // container change would have pointed the popover arrow at empty canvas.
+        let frame = TimelineMetricsSupport.computeDraftFrame(
+            startMinute: startMinute,
+            endMinute: endMinute,
+            totalWidth: width,
+            metrics: metrics,
+            style: style
+        )
 
         Color.clear
-            .frame(width: ghostWidth, height: height)
+            .frame(width: frame.width, height: frame.height)
             .popover(
                 isPresented: $isPresented,
                 attachmentAnchor: .rect(.bounds),
@@ -101,8 +114,7 @@ struct TimelineDraftPopoverAnchor<PopoverContent: View>: View {
             .onChange(of: isPresented) { _, value in
                 if !value { onDismissed() }
             }
-            .padding(.top, y)
-            .padding(.leading, style.leadingInset)
+            .position(x: frame.centerX, y: frame.centerY)
     }
 }
 #endif

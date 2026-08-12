@@ -1,90 +1,39 @@
 #if os(macOS)
 import SwiftUI
 
-struct TimelineCreateRow: View {
-    let hour: Int
+/// The hour rules and half-hour ticks behind the canvas.
+///
+/// Purely decorative: this used to be the same `VStack` of hour rows that *also* carried the
+/// drag-to-create gesture, which meant the gesture's canvas Y was reconstructed from a row index
+/// (`(hour - startHour) * hourHeight + localY`). Adding a divider or any spacing here would have
+/// silently pushed every drag-to-create a little further off the further down the day you went.
+/// Now the rows draw and nothing else, and the gesture reads the canvas coordinate space directly.
+struct TimelineHourGridLines: View {
     let metrics: TimelineMetrics
-    let blockedFrames: [TimelineBlockFrame]
-    let showHalfHourMark: Bool
-    @Binding var activeDragTaskID: UUID?
-    let onTapBackground: () -> Void
-    let onDragChanged: (Int, Int) -> Void
-    let onDragEnded: (Int, Int) -> Void
+    let showHalfHourMarks: Bool
 
     var body: some View {
-        Rectangle()
-            .fill(Color.clear)
-            .frame(maxWidth: .infinity)
-            .frame(height: metrics.hourHeight)
-            .overlay(alignment: .top) {
-                Rectangle()
-                    .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.majorGridOpacity))
-                    .frame(height: CalendarVisualStyle.majorGridLineWidth)
-            }
-            .overlay(alignment: .top) {
-                if showHalfHourMark {
-                    Rectangle()
-                        .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.minorGridOpacity))
-                        .frame(height: CalendarVisualStyle.minorGridLineWidth)
-                        .offset(y: metrics.hourHeight / 2)
-                        .allowsHitTesting(false)
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onTapBackground)
-            .gesture(
-                DragGesture(minimumDistance: 8, coordinateSpace: .local)
-                    .onChanged { value in
-                        guard activeDragTaskID == nil else { return }
-                        let startPoint = absolutePoint(for: value.startLocation)
-                        guard !isInsideBlockedBlock(point: startPoint) else { return }
-                        onDragChanged(
-                            absoluteMinute(forLocalY: value.startLocation.y),
-                            absoluteMinute(forLocalY: value.location.y)
-                        )
+        VStack(spacing: 0) {
+            ForEach(metrics.startHour..<metrics.endHour, id: \.self) { _ in
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: metrics.hourHeight)
+                    .overlay(alignment: .top) {
+                        Rectangle()
+                            .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.majorGridOpacity))
+                            .frame(height: CalendarVisualStyle.majorGridLineWidth)
                     }
-                    .onEnded { value in
-                        guard activeDragTaskID == nil else { return }
-                        let startPoint = absolutePoint(for: value.startLocation)
-                        guard !isInsideBlockedBlock(point: startPoint) else { return }
-                        onDragEnded(
-                            absoluteMinute(forLocalY: value.startLocation.y),
-                            absoluteMinute(forLocalY: value.location.y)
-                        )
+                    .overlay(alignment: .top) {
+                        if showHalfHourMarks {
+                            Rectangle()
+                                .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.minorGridOpacity))
+                                .frame(height: CalendarVisualStyle.minorGridLineWidth)
+                                .offset(y: metrics.hourHeight / 2)
+                        }
                     }
-            )
-            .suppressWindowBackgroundDrag()
-    }
-
-    private func absoluteY(forLocalY y: CGFloat) -> CGFloat {
-        TimelineCreateRowGeometrySupport.absoluteY(
-            hour: hour,
-            metrics: metrics,
-            localY: y
-        )
-    }
-
-    private func absolutePoint(for localPoint: CGPoint) -> CGPoint {
-        TimelineCreateRowGeometrySupport.absolutePoint(
-            hour: hour,
-            metrics: metrics,
-            localPoint: localPoint
-        )
-    }
-
-    private func absoluteMinute(forLocalY y: CGFloat) -> Int {
-        TimelineCreateRowGeometrySupport.absoluteMinute(
-            hour: hour,
-            metrics: metrics,
-            localY: y
-        )
-    }
-
-    private func isInsideBlockedBlock(point: CGPoint) -> Bool {
-        TimelineCreateRowGeometrySupport.isInsideBlockedBlock(
-            point: point,
-            blockedFrames: blockedFrames
-        )
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 

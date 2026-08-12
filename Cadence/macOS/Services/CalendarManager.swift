@@ -27,12 +27,51 @@ enum CalendarRecurrenceEditScope: String, CaseIterable, Hashable {
     }
 }
 
+/// Why an EventKit write did not happen.
+///
+/// Every write used to end in a bare `return` or a swallowed `print`, so a drag-to-create against
+/// a read-only calendar, a hidden-away last writable calendar, or access revoked mid-session all
+/// looked identical to success: the gesture completed, the popover dismissed, the ghost cleared,
+/// and nothing appeared.
+enum CalendarWriteFailure: Equatable {
+    case notAuthorized
+    case noWritableCalendar
+    case invalidRange
+    case saveFailed(String)
+
+    var title: String {
+        switch self {
+        case .notAuthorized:      return "No Calendar Access"
+        case .noWritableCalendar: return "No Writable Calendar"
+        case .invalidRange:       return "Invalid Event Time"
+        case .saveFailed:         return "Calendar Change Not Saved"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .notAuthorized:
+            return "Cadence can't reach your calendars. Grant Calendar access in Settings → Calendar to create and edit events."
+        case .noWritableCalendar:
+            return "No calendar is available to write to. The calendar may be read-only, or hidden in Settings → Calendar."
+        case .invalidRange:
+            return "The event needs to end after it starts."
+        case .saveFailed(let reason):
+            return "Your calendar rejected the change, so it was undone.\n\n\(reason)"
+        }
+    }
+}
+
 @Observable
 final class CalendarManager {
 
     static let shared = CalendarManager()
 
     var isAuthorized: Bool = false
+
+    /// The most recent write failure, for a surface to present and clear. Views bind an alert to
+    /// this rather than each inventing their own error path.
+    var lastWriteFailure: CalendarWriteFailure?
 
     /// Increments whenever the EKEventStore changes — read this in views to subscribe to refreshes.
     var storeVersion: Int = 0
@@ -167,13 +206,14 @@ final class CalendarManager {
 
     // MARK: - Create Standalone Event (direct iCal event, not linked to a task)
 
-    func createStandaloneEvent(title: String, startMin: Int, durationMinutes: Int, calendarID: String, date: Date, notes: String = "") {
-        guard isAuthorized else { return }
+    @discardableResult
+    func createStandaloneEvent(title: String, startMin: Int, durationMinutes: Int, calendarID: String, date: Date, notes: String = "") -> CalendarWriteFailure? {
+        guard isAuthorized else { return record(.notAuthorized) }
         let selectedCalendar = calendarID.isEmpty ? defaultWritableCalendar : store.calendar(withIdentifier: calendarID)
         guard let calendar = selectedCalendar,
               calendar.allowsContentModifications,
               isActiveCalendar(calendar)
-        else { return }
+        else { return record(.noWritableCalendar) }
         let event = EKEvent(eventStore: store)
         event.title = title.isEmpty ? "New Event" : title
         let startOfDay = Calendar.current.startOfDay(for: date)
@@ -182,11 +222,7 @@ final class CalendarManager {
         event.isAllDay = false
         event.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes
         event.calendar = calendar
-        do {
-            try store.save(event, span: .thisEvent)
-        } catch {
-            print("CalendarManager: failed to create standalone event: \(error)")
-        }
+        return save(event, span: .thisEvent, describing: "create standalone event")
     }
 
     // MARK: - Fetching Events
@@ -218,17 +254,15 @@ final class CalendarManager {
     }
 
     /// Convert an all-day event to a timed event at the specified minute offset on the given date.
-    func convertAllDayEventToTimed(_ event: EKEvent, startMin: Int, dateKey: String) {
-        guard isAuthorized, let baseDate = DateFormatters.date(from: dateKey) else { return }
+    @discardableResult
+    func convertAllDayEventToTimed(_ event: EKEvent, startMin: Int, dateKey: String) -> CalendarWriteFailure? {
+        guard isAuthorized else { return record(.notAuthorized) }
+        guard let baseDate = DateFormatters.date(from: dateKey) else { return record(.invalidRange) }
         let cal = Calendar.current
         event.isAllDay = false
         event.startDate = cal.date(byAdding: .minute, value: startMin, to: baseDate) ?? baseDate
         event.endDate = cal.date(byAdding: .minute, value: startMin + 60, to: baseDate) ?? baseDate
-        do {
-            try store.save(event, span: .thisEvent)
-        } catch {
-            print("CalendarManager: failed to convert all-day event: \(error)")
-        }
+        return save(event, span: .thisEvent, describing: "convert all-day event")
     }
 
     func searchEvents(matching query: String, pastDays: Int = 60, futureDays: Int = 365) -> [EKEvent] {
@@ -265,6 +299,7 @@ final class CalendarManager {
     // MARK: - Update External Event (iCal event edited in Cadence)
 
     /// Update an EKEvent's title and time, then save back to iCal.
+    @discardableResult
     func updateEvent(
         _ event: EKEvent,
         title: String,
@@ -274,12 +309,13 @@ final class CalendarManager {
         calendarID: String? = nil,
         notes: String? = nil,
         scope: CalendarRecurrenceEditScope = .thisOccurrence
-    ) {
-        guard isAuthorized, let baseDate = DateFormatters.date(from: dateKey) else { return }
+    ) -> CalendarWriteFailure? {
+        guard isAuthorized else { return record(.notAuthorized) }
+        guard let baseDate = DateFormatters.date(from: dateKey) else { return record(.invalidRange) }
         let cal = Calendar.current
         let startDate = cal.date(byAdding: .minute, value: startMin, to: baseDate) ?? baseDate
         let endDate = cal.date(byAdding: .minute, value: max(5, durationMinutes), to: startDate) ?? startDate
-        updateEvent(
+        return updateEvent(
             event,
             title: title,
             startDate: startDate,
@@ -290,6 +326,7 @@ final class CalendarManager {
         )
     }
 
+    @discardableResult
     func updateEvent(
         _ event: EKEvent,
         title: String,
@@ -298,8 +335,9 @@ final class CalendarManager {
         calendarID: String? = nil,
         notes: String? = nil,
         scope: CalendarRecurrenceEditScope = .thisOccurrence
-    ) {
-        guard isAuthorized, endDate > startDate else { return }
+    ) -> CalendarWriteFailure? {
+        guard isAuthorized else { return record(.notAuthorized) }
+        guard endDate > startDate else { return record(.invalidRange) }
         event.title = title.isEmpty ? "Untitled" : title
         event.startDate = startDate
         event.endDate = endDate
@@ -311,42 +349,66 @@ final class CalendarManager {
            targetCalendar.allowsContentModifications {
             event.calendar = targetCalendar
         }
-        do {
-            try store.save(event, span: scope.eventSpan)
-        } catch {
-            print("CalendarManager: failed to update event: \(error)")
-        }
+        return save(event, span: scope.eventSpan, describing: "update event")
     }
 
-    func updateEventNotes(_ event: EKEvent, notes: String) {
-        guard isAuthorized else { return }
+    @discardableResult
+    func updateEventNotes(_ event: EKEvent, notes: String) -> CalendarWriteFailure? {
+        guard isAuthorized else { return record(.notAuthorized) }
         let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let nextNotes = trimmed.isEmpty ? nil : notes
-        guard event.notes != nextNotes else { return }
+        guard event.notes != nextNotes else { return nil }
         event.notes = nextNotes
-        do {
-            try store.save(event, span: .thisEvent)
-        } catch {
-            print("CalendarManager: failed to update event notes: \(error)")
-        }
+        return save(event, span: .thisEvent, describing: "update event notes")
     }
 
-    func updateEventNotes(calendarEventID: String, notes: String) {
+    @discardableResult
+    func updateEventNotes(calendarEventID: String, notes: String) -> CalendarWriteFailure? {
         let lookupID = CalendarEventIdentity.lookupIdentifier(from: calendarEventID)
-        guard let event = event(withIdentifier: lookupID) else { return }
-        updateEventNotes(event, notes: notes)
+        guard let event = event(withIdentifier: lookupID) else { return nil }
+        return updateEventNotes(event, notes: notes)
     }
 
     // MARK: - Delete Event
 
     /// Delete an EKEvent directly (used from the event edit popover).
-    func deleteEvent(_ event: EKEvent, scope: CalendarRecurrenceEditScope = .thisOccurrence) {
-        guard isAuthorized else { return }
+    @discardableResult
+    func deleteEvent(_ event: EKEvent, scope: CalendarRecurrenceEditScope = .thisOccurrence) -> CalendarWriteFailure? {
+        guard isAuthorized else { return record(.notAuthorized) }
         do {
             try store.remove(event, span: scope.eventSpan)
+            return nil
         } catch {
-            print("CalendarManager: failed to delete event: \(error)")
+            return record(.saveFailed(error.localizedDescription))
         }
+    }
+
+    // MARK: - Write plumbing
+
+    /// Saves an `EKEvent` that has already been mutated in memory, and puts it back if the save
+    /// fails.
+    ///
+    /// `EKEvent` is a reference type and the very same instance is held by `CalendarEventItem`
+    /// and rendered by the timeline. Mutating it and then swallowing a `save` error — a read-only
+    /// calendar, access revoked mid-session, an iCloud conflict — left the UI showing an event
+    /// that does not exist in the store, with nothing to clear it: no `EKEventStoreChanged`
+    /// notification means no `storeVersion` bump and no refetch. `reset()` returns the object to
+    /// its last saved state so the next render shows what is really there.
+    private func save(_ event: EKEvent, span: EKSpan, describing operation: String) -> CalendarWriteFailure? {
+        do {
+            try store.save(event, span: span)
+            return nil
+        } catch {
+            event.reset()
+            print("CalendarManager: failed to \(operation): \(error)")
+            return record(.saveFailed(error.localizedDescription))
+        }
+    }
+
+    @discardableResult
+    private func record(_ failure: CalendarWriteFailure) -> CalendarWriteFailure {
+        lastWriteFailure = failure
+        return failure
     }
 
     /// Internal (not private) and calendar-injectable so day-boundary correctness — including

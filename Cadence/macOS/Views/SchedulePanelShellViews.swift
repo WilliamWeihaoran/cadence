@@ -21,7 +21,7 @@ struct SchedulePanelHeader: View {
             Spacer()
             exportButton
                 .padding(.trailing, 8)
-            TimelineZoomControl(zoomLevel: $zoomLevel, range: 1...3)
+            TimelineZoomControl(zoomLevel: $zoomLevel, range: TimelineZoom.levels)
                 .padding(.trailing, 12)
         }
     }
@@ -39,7 +39,7 @@ struct SchedulePanelHeader: View {
             }
             Spacer(minLength: 8)
             exportButton
-            TimelineZoomControl(zoomLevel: $zoomLevel, range: 1...3)
+            TimelineZoomControl(zoomLevel: $zoomLevel, range: TimelineZoom.levels)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -80,8 +80,7 @@ struct SchedulePanelTimelineViewport: View {
     let onCreateEvent: (String, Int, Int, String, String) -> Void
 
     var body: some View {
-        let targetHours: CGFloat = zoomLevel == 1 ? 12 : zoomLevel == 2 ? 8 : 4
-        let hourHeight = geoSize.height / targetHours
+        let hourHeight = TimelineZoom.hourHeight(viewportHeight: geoSize.height, level: zoomLevel)
         let metrics = TimelineMetrics(
             startHour: schedStartHour,
             endHour: schedEndHour,

@@ -68,24 +68,28 @@ enum CalendarWorkHoursPreferences {
         return visibleStart...visibleEnd
     }
 
+    /// The band's rect on a timeline canvas.
+    ///
+    /// Takes the canvas's own `TimelineMetrics` rather than `(startHour, endHour, hourHeight)`:
+    /// the minute → Y conversion is `metrics.yOffset(forFractionalMinute:)`, and this used to
+    /// carry its own copy of that expression. A top inset or a non-linear zoom added to
+    /// `yOffset` would have moved every block while leaving the amber band where it was.
     static func highlightFrame(
         startMinute: Int,
         endMinute: Int,
-        timelineStartHour: Int,
-        timelineEndHour: Int,
-        hourHeight: CGFloat
+        metrics: TimelineMetrics
     ) -> HighlightFrame? {
         guard let visibleRange = visibleMinuteRange(
             startMinute: startMinute,
             endMinute: endMinute,
-            timelineStartHour: timelineStartHour,
-            timelineEndHour: timelineEndHour
+            timelineStartHour: metrics.startHour,
+            timelineEndHour: metrics.endHour
         ) else {
             return nil
         }
 
-        let y = CGFloat(visibleRange.lowerBound - timelineStartHour * 60) * hourHeight / 60
-        let height = CGFloat(visibleRange.upperBound - visibleRange.lowerBound) * hourHeight / 60
+        let y = metrics.yOffset(forFractionalMinute: CGFloat(visibleRange.lowerBound))
+        let height = metrics.yOffset(forFractionalMinute: CGFloat(visibleRange.upperBound)) - y
         guard height > 0 else { return nil }
         return HighlightFrame(y: y, height: height)
     }

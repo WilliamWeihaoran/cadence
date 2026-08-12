@@ -4,6 +4,10 @@ import SwiftData
 import UniformTypeIdentifiers
 
 struct TimelineDayCanvas: View {
+    /// The canvas's own coordinate space. Every gesture that needs a canvas Y reads this rather
+    /// than reconstructing one from a subview's local space.
+    static let coordinateSpaceName = "timelineCanvas"
+
     let date: Date
     let dateKey: String
     let tasks: [AppTask]
@@ -32,10 +36,7 @@ struct TimelineDayCanvas: View {
     /// Optional: called when an all-day event chip is dropped onto the timeline, with the event identifier and target minute.
     var onDropAllDayEventAtMinute: ((CalendarAllDayEventDropPayload, Int) -> Void)? = nil
 
-    @State private var dragStartMin: Int? = nil
-    @State private var dragEndMin: Int? = nil
-    @State private var pendingStartMin: Int? = nil
-    @State private var pendingEndMin: Int? = nil
+    @State private var draftSelection: TimelineDraftSelection? = nil
     @State private var showNewTaskPopover = false
     @State private var isDropTargeted = false
     @State private var dropPreviewTaskID: UUID? = nil
@@ -46,18 +47,13 @@ struct TimelineDayCanvas: View {
     @State private var activeDragTaskID: UUID? = nil
     @State private var activeDragBundleID: UUID? = nil
     @State private var dragYOffset: CGFloat = 0
-    @State private var recentlyBundledTaskDropID: UUID? = nil
-    @State private var recentlyBundledTaskDropExpiresAt: Date = .distantPast
     @AppStorage(CalendarWorkHoursPreferences.startMinuteKey) private var workHoursStartMinute = CalendarWorkHoursPreferences.defaultStartMinute
     @AppStorage(CalendarWorkHoursPreferences.endMinuteKey) private var workHoursEndMinute = CalendarWorkHoursPreferences.defaultEndMinute
     @Environment(\.modelContext) private var modelContext
 
     private func clearDraftCreation() {
         TimelineDayCanvasStateSupport.clearDraftCreation(
-            dragStartMin: &dragStartMin,
-            dragEndMin: &dragEndMin,
-            pendingStartMin: &pendingStartMin,
-            pendingEndMin: &pendingEndMin,
+            draft: &draftSelection,
             showNewTaskPopover: &showNewTaskPopover,
             selectedEventID: &selectedEventID
         )
@@ -73,13 +69,6 @@ struct TimelineDayCanvas: View {
             dropPreviewTaskID: dropPreviewTaskID,
             allTasks: allTasks
         )
-        let ghostRange = TimelineDayCanvasOverlaySupport.ghostRange(
-            dragStartMin: dragStartMin,
-            dragEndMin: dragEndMin,
-            pendingStartMin: pendingStartMin,
-            pendingEndMin: pendingEndMin
-        )
-
         ZStack(alignment: .topLeading) {
             TimelineCanvasDropSurface(
                 width: width,
@@ -93,6 +82,7 @@ struct TimelineDayCanvas: View {
                     onDropTaskAtMinute: onDropTaskAtMinute,
                     onDropBundleAtMinute: onDropBundleAtMinute,
                     onDropAllDayEventAtMinute: onDropAllDayEventAtMinute,
+                    bundleShelfFrames: bundleShelfFrames(layouts: layouts),
                     isTargeted: $isDropTargeted,
                     previewTaskID: $dropPreviewTaskID,
                     previewStartMin: $dropPreviewStartMin,
@@ -100,9 +90,7 @@ struct TimelineDayCanvas: View {
                     activeDragBundleID: $activeDragBundleID,
                     selectedTaskID: $selectedTaskID,
                     selectedBundleID: $selectedBundleID,
-                    dragYOffset: $dragYOffset,
-                    recentlyBundledTaskDropID: $recentlyBundledTaskDropID,
-                    recentlyBundledTaskDropExpiresAt: $recentlyBundledTaskDropExpiresAt
+                    dragYOffset: $dragYOffset
                 ),
                 onTap: resetCanvasSelection
             )
@@ -127,13 +115,13 @@ struct TimelineDayCanvas: View {
             )
 
             TimelineDraftCreationOverlay(
-                ghostRange: ghostRange,
+                draft: draftSelection,
                 width: width,
                 metrics: metrics,
                 style: style,
                 showNewTaskPopover: $showNewTaskPopover,
                 onDismissed: {
-                    if pendingStartMin != nil {
+                    if draftSelection?.isPending == true {
                         clearDraftCreation()
                     }
                 }
@@ -167,7 +155,6 @@ struct TimelineDayCanvas: View {
                 activeDragTaskID: $activeDragTaskID,
                 activeDragBundleID: $activeDragBundleID,
                 onTaskDroppedOnBundle: onDropTaskOnBundle,
-                onTaskBundleDropAccepted: rememberTaskBundleDrop,
                 onCreateBundleFromTasks: { targetTask, draggedTask in
                     _ = SchedulingActions.createBundle(from: targetTask, adding: draggedTask, in: modelContext)
                 },
@@ -185,7 +172,7 @@ struct TimelineDayCanvas: View {
             .zIndex(10)
         }
         .frame(width: width, height: metrics.totalHeight)
-        .coordinateSpace(name: "timelineCanvas")
+        .coordinateSpace(name: Self.coordinateSpaceName)
     }
 
     private func resetCanvasSelection() {
@@ -195,17 +182,9 @@ struct TimelineDayCanvas: View {
             activeDragTaskID: &activeDragTaskID,
             selectedBundleID: &selectedBundleID,
             activeDragBundleID: &activeDragBundleID,
-            dragStartMin: &dragStartMin,
-            dragEndMin: &dragEndMin,
-            pendingStartMin: &pendingStartMin,
-            pendingEndMin: &pendingEndMin,
+            draft: &draftSelection,
             showNewTaskPopover: &showNewTaskPopover
         )
-    }
-
-    private func rememberTaskBundleDrop(_ taskID: UUID) {
-        recentlyBundledTaskDropID = taskID
-        recentlyBundledTaskDropExpiresAt = Date().addingTimeInterval(0.75)
     }
 
     private func clearCreateGridSelection() {
@@ -222,10 +201,7 @@ struct TimelineDayCanvas: View {
         TimelineDayCanvasStateSupport.beginDraftSelection(
             startMin: startMin,
             endMin: endMin,
-            dragStartMin: &dragStartMin,
-            dragEndMin: &dragEndMin,
-            pendingStartMin: &pendingStartMin,
-            pendingEndMin: &pendingEndMin,
+            draft: &draftSelection,
             showNewTaskPopover: &showNewTaskPopover,
             selectedTaskID: &selectedTaskID
         )
@@ -235,10 +211,7 @@ struct TimelineDayCanvas: View {
         TimelineDayCanvasStateSupport.commitDraftSelection(
             startMin: startMin,
             endMin: endMin,
-            dragStartMin: &dragStartMin,
-            dragEndMin: &dragEndMin,
-            pendingStartMin: &pendingStartMin,
-            pendingEndMin: &pendingEndMin,
+            draft: &draftSelection,
             showNewTaskPopover: &showNewTaskPopover
         )
     }
@@ -257,10 +230,12 @@ struct TimelineDayCanvas: View {
 
     private func finishDraftCreation() {
         showNewTaskPopover = false
-        pendingStartMin = nil
-        pendingEndMin = nil
+        draftSelection = nil
     }
 
+    /// `start`/`end` are the range the ghost is drawing and the popover is anchored to. Every
+    /// closure below creates *that* range: they used to shadow these parameters and re-read
+    /// `pendingStartMin`/`pendingEndMin`, so the popover displayed one range and made another.
     private func quickCreatePopover(start: Int, end: Int) -> AnyView {
         AnyView(
             QuickCreateChoicePopover(
@@ -268,29 +243,23 @@ struct TimelineDayCanvas: View {
                 endMin: end,
                 dateKey: dateKey,
                 onCreateTask: { title, containerSelection, sectionName, notes, subtaskTitles in
-                    if let start = pendingStartMin, let end = pendingEndMin {
-                        onCreateTask(
-                            title.isEmpty ? "New Task" : title,
-                            start,
-                            end,
-                            containerSelection,
-                            sectionName,
-                            notes,
-                            subtaskTitles
-                        )
-                    }
+                    onCreateTask(
+                        title.isEmpty ? "New Task" : title,
+                        start,
+                        end,
+                        containerSelection,
+                        sectionName,
+                        notes,
+                        subtaskTitles
+                    )
                     finishDraftCreation()
                 },
                 onCreateBundle: { title, selectedTasks in
-                    if let start = pendingStartMin, let end = pendingEndMin {
-                        onCreateBundle(title.isEmpty ? "Task Bundle" : title, start, end, selectedTasks)
-                    }
+                    onCreateBundle(title.isEmpty ? "Task Bundle" : title, start, end, selectedTasks)
                     finishDraftCreation()
                 },
                 onCreateEvent: onCreateEvent == nil ? nil : { title, calendarID, notes in
-                    if let start = pendingStartMin, let end = pendingEndMin {
-                        onCreateEvent?(title.isEmpty ? "New Event" : title, start, end, calendarID, notes)
-                    }
+                    onCreateEvent?(title.isEmpty ? "New Event" : title, start, end, calendarID, notes)
                     finishDraftCreation()
                 },
                 onCancel: finishDraftCreation,
@@ -298,6 +267,24 @@ struct TimelineDayCanvas: View {
                 defaultsToCalendarEvent: prefersCalendarEventCreation
             )
         )
+    }
+
+    /// Shelf rects for the task blocks currently offering to bundle the dragged task. Derived
+    /// from the same `TimelineBlockFrame`s the blocks are drawn from, so the region the canvas
+    /// defers on is exactly the region the shelf draws.
+    private func bundleShelfFrames(layouts: [TimelineBlockLayout]) -> [TimelineBlockFrame] {
+        guard let draggedTaskID = activeDragTaskID else { return [] }
+        return layouts.compactMap { layout in
+            guard layout.task.id != draggedTaskID else { return nil }
+            return TimelineMetricsSupport.bundleDropShelfFrame(
+                blockFrame: timelineFrame(
+                    startMinute: layout.task.scheduledStartMin,
+                    durationMinutes: layout.task.estimatedMinutes,
+                    column: layout.column,
+                    totalColumns: layout.totalColumns
+                )
+            )
+        }
     }
 
     private func blockedFrames(

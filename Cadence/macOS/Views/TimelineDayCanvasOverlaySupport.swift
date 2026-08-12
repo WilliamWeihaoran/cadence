@@ -11,17 +11,6 @@ struct TimelineDayCanvasOverlaySupport {
         return allTasks.first(where: { $0.id == previewTaskID })
     }
 
-    static func ghostRange(
-        dragStartMin: Int?,
-        dragEndMin: Int?,
-        pendingStartMin: Int?,
-        pendingEndMin: Int?
-    ) -> (start: Int, end: Int)? {
-        guard let start = dragStartMin ?? pendingStartMin,
-              let end = dragEndMin ?? pendingEndMin,
-              end > start else { return nil }
-        return (start, end)
-    }
 }
 
 struct TimelineDropPreviewOverlay: View {
@@ -54,7 +43,7 @@ struct TimelineDropPreviewOverlay: View {
 }
 
 struct TimelineDraftCreationOverlay: View {
-    let ghostRange: (start: Int, end: Int)?
+    let draft: TimelineDraftSelection?
     let width: CGFloat
     let metrics: TimelineMetrics
     let style: TimelineBlockStyle
@@ -63,25 +52,29 @@ struct TimelineDraftCreationOverlay: View {
     @ViewBuilder let popoverContent: (Int, Int) -> AnyView
 
     var body: some View {
-        if let ghostRange {
+        if let draft {
             TimelineDraftGhostLayer(
-                startMinute: ghostRange.start,
-                endMinute: ghostRange.end,
+                startMinute: draft.start,
+                endMinute: draft.end,
                 width: width,
                 metrics: metrics,
                 style: style
             )
 
             TimelineDraftPopoverAnchor(
-                startMinute: ghostRange.start,
-                endMinute: ghostRange.end,
+                startMinute: draft.start,
+                endMinute: draft.end,
                 width: width,
                 metrics: metrics,
                 style: style,
                 isPresented: $showNewTaskPopover,
                 onDismissed: onDismissed
             ) {
-                popoverContent(ghostRange.start, ghostRange.end)
+                // One range: the ghost above, the popover's own header, and everything the
+                // popover creates all read `draft`. The creation closures used to shadow these
+                // parameters and re-read the canvas's `pendingStartMin`/`pendingEndMin` instead,
+                // so what the popover showed and what it made were two separate lookups.
+                popoverContent(draft.start, draft.end)
             }
         }
     }

@@ -4,11 +4,6 @@ import SwiftData
 import UniformTypeIdentifiers
 
 struct TimelineBundleBlock: View {
-    enum ResizeEdge {
-        case start
-        case end
-    }
-
     let bundle: TaskBundle
     let allTasks: [AppTask]
     let areas: [Area]
@@ -27,9 +22,7 @@ struct TimelineBundleBlock: View {
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(FocusManager.self) private var focusManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
-    @State private var activeResizeEdge: ResizeEdge? = nil
-    @State private var resizeOriginStartMin: Int? = nil
-    @State private var resizeOriginEndMin: Int? = nil
+    @State private var resizeSession: TimelineResizeSession? = nil
     @State private var isHovered = false
     @State private var isDropTargeted = false
 
@@ -308,61 +301,55 @@ struct TimelineBundleBlock: View {
         .opacity(isBundleComplete ? 0.7 : 1.0)
     }
 
-    private func resizeHandle(edge: ResizeEdge) -> some View {
+    private func resizeHandle(edge: TimelineResizeEdge) -> some View {
         Rectangle()
             .fill(Color.clear)
-            .frame(height: TimelineTaskBlockInteractionSupport.resizeHandleHeight)
+            .frame(height: TimelineBlockGeometry.resizeHandleHeight)
             .contentShape(Rectangle())
             .overlay {
-                let emphasized = activeResizeEdge == edge || isHovered || selectedBundleID == bundle.id
+                let emphasized = resizeSession?.edge == edge || isHovered || selectedBundleID == bundle.id
                 Capsule()
                     .fill(emphasized ? Theme.onColorHandleActive : Theme.onColorHandle)
-                    .frame(width: min(18, max(10, frame.width - 18)), height: 2)
+                    .frame(width: TimelineBlockGeometry.handleCapsuleWidth(blockWidth: frame.width), height: 2)
             }
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onChanged { value in
-                        beginResizeIfNeeded(edge: edge)
-                        updateResize(edge: edge, localY: value.location.y)
+                        beginResizeIfNeeded(edge: edge, localY: value.location.y)
+                        updateResize(localY: value.location.y)
                     }
                     .onEnded { value in
-                        updateResize(edge: edge, localY: value.location.y)
-                        activeResizeEdge = nil
-                        resizeOriginStartMin = nil
-                        resizeOriginEndMin = nil
+                        updateResize(localY: value.location.y)
+                        resizeSession = nil
                     }
             )
     }
 
-    private func beginResizeIfNeeded(edge: ResizeEdge) {
-        guard activeResizeEdge == nil else { return }
+    private func beginResizeIfNeeded(edge: TimelineResizeEdge, localY: CGFloat) {
+        guard resizeSession == nil else { return }
         onSelect()
         selectedBundleID = nil
         activeDragBundleID = nil
-        activeResizeEdge = edge
-        resizeOriginStartMin = bundle.startMin
-        resizeOriginEndMin = bundle.endMin
+        resizeSession = TimelineResizeSession.begin(
+            edge: edge,
+            localY: localY,
+            blockTopY: frame.y,
+            blockDrawnHeight: frame.height,
+            originStartMin: bundle.startMin,
+            originEndMin: bundle.endMin,
+            metrics: metrics
+        )
     }
 
-    private func updateResize(edge: ResizeEdge, localY: CGFloat) {
-        guard let originStart = resizeOriginStartMin,
-              let originEnd = resizeOriginEndMin else { return }
-        let localYOffset: CGFloat
-        switch edge {
-        case .start:
-            localYOffset = localY
-        case .end:
-            localYOffset = max(0, frame.height - TimelineTaskBlockInteractionSupport.resizeHandleHeight) + localY
-        }
-        let snappedMinute = metrics.snappedMinute(fromY: frame.y + localYOffset)
-        switch edge {
-        case .start:
-            let nextStart = min(snappedMinute, originEnd - 5)
-            SchedulingActions.updateBundleTime(bundle, startMin: nextStart, endMin: originEnd)
-        case .end:
-            let nextEnd = max(snappedMinute, originStart + 5)
-            SchedulingActions.updateBundleTime(bundle, startMin: originStart, endMin: nextEnd)
-        }
+    private func updateResize(localY: CGFloat) {
+        guard let resizeSession else { return }
+        let range = metrics.resizedRange(
+            session: resizeSession,
+            localY: localY,
+            blockTopY: frame.y,
+            blockDrawnHeight: frame.height
+        )
+        SchedulingActions.updateBundleTime(bundle, startMin: range.start, endMin: range.end)
     }
 }
 

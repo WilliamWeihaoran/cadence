@@ -8,7 +8,7 @@ let calStartHour = 0
 let calEndHour = 24
 let calTimeWidth: CGFloat = 44
 let calTimeInset: CGFloat = 10
-let calTimeTotalWidth: CGFloat = 54
+let calTimeTotalWidth: CGFloat = calTimeWidth + calTimeInset
 let calDayHeaderHeight: CGFloat = 52
 let calAllDayBannerHeight: CGFloat = 90
 let calRenderDays = 3650
@@ -35,13 +35,11 @@ struct CalendarTimelineViewportMetrics {
             computedViewportWidth = computedColWidth * visibleWholeDays
         }
         let computedScrollViewportHeight = max(0, geoSize.height - calDayHeaderHeight - calAllDayBannerHeight - 1)
-        let targetHours: CGFloat = zoomLevel == 1 ? 12 : zoomLevel == 2 ? 8 : 4
-
         colWidth = computedColWidth
         timelineViewportWidth = computedViewportWidth
         totalDaysWidth = computedColWidth * CGFloat(calRenderDays)
         scrollViewportHeight = computedScrollViewportHeight
-        hourHeight = computedScrollViewportHeight / targetHours
+        hourHeight = TimelineZoom.hourHeight(viewportHeight: computedScrollViewportHeight, level: zoomLevel)
     }
 }
 

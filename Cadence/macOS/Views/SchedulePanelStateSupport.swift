@@ -3,8 +3,7 @@ import SwiftUI
 
 enum SchedulePanelStateSupport {
     static func clampedRememberedHour(offsetY: CGFloat, geoHeight: CGFloat, zoomLevel: Int) -> Int {
-        let targetHours: CGFloat = zoomLevel == 1 ? 12 : zoomLevel == 2 ? 8 : 4
-        let hourHeight = geoHeight / targetHours
+        let hourHeight = TimelineZoom.hourHeight(viewportHeight: geoHeight, level: zoomLevel)
         let rawHour = schedStartHour + Int(offsetY / max(hourHeight, 1))
         return min(max(rawHour, schedStartHour), schedEndHour - 1)
     }

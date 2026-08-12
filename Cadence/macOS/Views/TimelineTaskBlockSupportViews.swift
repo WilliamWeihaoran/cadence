@@ -93,10 +93,6 @@ struct TimelineCurrentTimeOverlay: View {
         return CGFloat(hour * 60 + minute) + CGFloat(second) / 60
     }
 
-    private func yOffset(for minute: CGFloat) -> CGFloat {
-        (minute - CGFloat(metrics.startHour * 60)) * metrics.hourHeight / 60
-    }
-
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 15)) { context in
             let calendar = Calendar.current
@@ -105,7 +101,7 @@ struct TimelineCurrentTimeOverlay: View {
             if calendar.isDate(date, inSameDayAs: context.date),
                mins >= CGFloat(metrics.startHour * 60),
                mins <= CGFloat(metrics.endHour * 60) {
-                let y = yOffset(for: mins)
+                let y = metrics.yOffset(forFractionalMinute: mins)
 
                 ZStack(alignment: .topLeading) {
                     if showDot {

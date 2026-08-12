@@ -401,7 +401,12 @@ enum CalendarBoardPlannerSupport {
         )
     }
 
-    private static func priorityRank(_ priority: TaskPriority) -> Int { priority.rank }
+    /// Free-function spelling of `TaskPriority.rank`. Deliberately *not* `private`: this was one
+    /// of eight hand-written copies of the same switch, and the only thing keeping the survivors
+    /// honest is a test that can name each one
+    /// (`TrackingDeleteHelpersTests.priorityRankIsOneOrderingSharedByEveryCaller`). A spelling the
+    /// test cannot reach is a spelling free to drift.
+    static func priorityRank(_ priority: TaskPriority) -> Int { priority.rank }
 }
 
 struct CalendarBoardSortKey: Equatable, Comparable {

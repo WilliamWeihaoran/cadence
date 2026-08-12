@@ -3,8 +3,6 @@ import SwiftUI
 import SwiftData
 
 enum TimelineTaskBlockInteractionSupport {
-    static let resizeHandleHeight: CGFloat = 8
-
     static func timeRangeLabel(for task: AppTask) -> String {
         let duration = max(task.estimatedMinutes, 5)
         return TimeFormatters.timeRange(
@@ -76,54 +74,44 @@ enum TimelineTaskBlockInteractionSupport {
         task: AppTask,
         selectedTaskID: Binding<UUID?>,
         activeDragTaskID: Binding<UUID?>,
-        activeResizeEdge: inout TimelineTaskBlock.ResizeEdge?,
-        resizeOriginStartMin: inout Int?,
-        resizeOriginEndMin: inout Int?,
-        edge: TimelineTaskBlock.ResizeEdge,
+        resizeSession: inout TimelineResizeSession?,
+        edge: TimelineResizeEdge,
+        localY: CGFloat,
+        frame: TimelineBlockFrame,
+        metrics: TimelineMetrics,
         onSelect: () -> Void
     ) {
-        guard activeResizeEdge == nil else { return }
+        guard resizeSession == nil else { return }
         onSelect()
         selectedTaskID.wrappedValue = nil
         activeDragTaskID.wrappedValue = nil
-        activeResizeEdge = edge
-        resizeOriginStartMin = task.scheduledStartMin
-        resizeOriginEndMin = task.scheduledStartMin + max(task.estimatedMinutes, 5)
+        resizeSession = TimelineResizeSession.begin(
+            edge: edge,
+            localY: localY,
+            blockTopY: frame.y,
+            blockDrawnHeight: frame.height,
+            originStartMin: task.scheduledStartMin,
+            originEndMin: task.scheduledStartMin + max(task.estimatedMinutes, 5),
+            metrics: metrics
+        )
     }
 
     static func updateResize(
         task: AppTask,
-        edge: TimelineTaskBlock.ResizeEdge,
+        session: TimelineResizeSession?,
         localY: CGFloat,
         frame: TimelineBlockFrame,
-        metrics: TimelineMetrics,
-        resizeHandleHeight: CGFloat,
-        resizeOriginStartMin: Int?,
-        resizeOriginEndMin: Int?
+        metrics: TimelineMetrics
     ) {
-        guard let originStart = resizeOriginStartMin,
-              let originEnd = resizeOriginEndMin else { return }
-
-        let localYOffset: CGFloat
-        switch edge {
-        case .start:
-            localYOffset = localY
-        case .end:
-            localYOffset = max(0, frame.height - resizeHandleHeight) + localY
-        }
-
-        let snappedMinute = metrics.snappedMinute(fromY: frame.y + localYOffset)
-
-        switch edge {
-        case .start:
-            let nextStart = min(snappedMinute, originEnd - 5)
-            task.scheduledStartMin = nextStart
-            task.estimatedMinutes = max(5, originEnd - nextStart)
-        case .end:
-            let nextEnd = max(snappedMinute, originStart + 5)
-            task.scheduledStartMin = originStart
-            task.estimatedMinutes = max(5, nextEnd - originStart)
-        }
+        guard let session else { return }
+        let range = metrics.resizedRange(
+            session: session,
+            localY: localY,
+            blockTopY: frame.y,
+            blockDrawnHeight: frame.height
+        )
+        task.scheduledStartMin = range.start
+        task.estimatedMinutes = max(5, range.end - range.start)
     }
 }
 #endif

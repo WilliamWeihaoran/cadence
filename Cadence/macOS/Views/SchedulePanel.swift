@@ -173,6 +173,7 @@ struct SchedulePanel: View {
                 .padding(.horizontal, 6)
                 .padding(.vertical, 6)
         }
+        .calendarWriteFailureAlert()
         .onChange(of: calendarManager.storeVersion) {
             SchedulePanelDataSupport.syncLinkedTasks(
                 allTasks: allTasks,

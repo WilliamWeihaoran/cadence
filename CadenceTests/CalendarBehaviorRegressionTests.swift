@@ -261,43 +261,35 @@ struct CalendarBehaviorRegressionTests {
         #expect(target.hour == expected.hour)
     }
 
-    @Test func timelineCreateRowGeometryConvertsLocalDragPointsToTimelineMinutes() {
+    @Test func dragToCreateReadsCanvasCoordinatesDirectlyRatherThanARowIndex() {
+        // The drag-to-create gesture used to live on one `TimelineCreateRow` per hour and rebuild
+        // its canvas Y as `(hour - startHour) * hourHeight + localY`, which silently assumed the
+        // enclosing VStack had exactly zero spacing, no padding, and started at canvas Y = 0. It
+        // now reads the canvas's named coordinate space, so the conversion is just the metrics'.
         let metrics = TimelineMetrics(startHour: 8, endHour: 18, hourHeight: 120)
 
-        #expect(TimelineCreateRowGeometrySupport.absoluteY(
-            hour: 10,
-            metrics: metrics,
-            localY: 60
-        ) == CGFloat(300))
-        #expect(TimelineCreateRowGeometrySupport.absoluteMinute(
-            hour: 10,
-            metrics: metrics,
-            localY: 60
-        ) == 10 * 60 + 30)
+        // Canvas Y 300 on a 120 pt hour starting at 08:00 is 10:30.
+        #expect(metrics.snappedMinute(fromY: 300) == 10 * 60 + 30)
+        // The bottom of the canvas maps to the last drawable minute, not past it.
+        #expect(metrics.snappedMinute(fromY: metrics.totalHeight) == 18 * 60 - 5)
+        #expect(metrics.snappedMinute(fromY: 0) == 8 * 60)
     }
 
-    @Test func timelineCreateRowGeometryDetectsBlockedTimelineFrames() {
-        let metrics = TimelineMetrics(startHour: 8, endHour: 18, hourHeight: 60)
+    @Test func dragToCreateIsBlockedWhereABlockAlreadySits() {
         let blockedFrames = [
             TimelineBlockFrame(x: 20, y: 120, width: 180, height: 60)
         ]
-        let pointInside = TimelineCreateRowGeometrySupport.absolutePoint(
-            hour: 10,
-            metrics: metrics,
-            localPoint: CGPoint(x: 60, y: 15)
-        )
-        let pointOutside = TimelineCreateRowGeometrySupport.absolutePoint(
-            hour: 11,
-            metrics: metrics,
-            localPoint: CGPoint(x: 60, y: 15)
-        )
 
-        #expect(TimelineCreateRowGeometrySupport.isInsideBlockedBlock(
-            point: pointInside,
+        #expect(TimelineMetricsSupport.isInsideBlockedBlock(
+            point: CGPoint(x: 60, y: 135),
             blockedFrames: blockedFrames
         ))
-        #expect(!TimelineCreateRowGeometrySupport.isInsideBlockedBlock(
-            point: pointOutside,
+        #expect(!TimelineMetricsSupport.isInsideBlockedBlock(
+            point: CGPoint(x: 60, y: 195),
+            blockedFrames: blockedFrames
+        ))
+        #expect(!TimelineMetricsSupport.isInsideBlockedBlock(
+            point: CGPoint(x: 260, y: 135),
             blockedFrames: blockedFrames
         ))
     }
@@ -358,16 +350,12 @@ struct CalendarBehaviorRegressionTests {
         let clippedFrame = CalendarWorkHoursPreferences.highlightFrame(
             startMinute: 9 * 60,
             endMinute: 17 * 60,
-            timelineStartHour: 8,
-            timelineEndHour: 12,
-            hourHeight: 60
+            metrics: TimelineMetrics(startHour: 8, endHour: 12, hourHeight: 60)
         )
         let fullFrame = CalendarWorkHoursPreferences.highlightFrame(
             startMinute: 9 * 60,
             endMinute: 17 * 60,
-            timelineStartHour: 0,
-            timelineEndHour: 24,
-            hourHeight: 48
+            metrics: TimelineMetrics(startHour: 0, endHour: 24, hourHeight: 48)
         )
 
         #expect(clippedFrame != nil)

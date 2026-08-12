@@ -9,6 +9,14 @@ struct TimelineDropDelegate: DropDelegate {
     let onDropTaskAtMinute: (AppTask, Int) -> Void
     let onDropBundleAtMinute: (TaskBundle, Int) -> Void
     let onDropAllDayEventAtMinute: ((CalendarAllDayEventDropPayload, Int) -> Void)?
+    /// Rects owned by the "drop here to bundle" shelves currently on screen.
+    ///
+    /// A single user drop used to reach both this delegate and a shelf's, and which one took
+    /// effect was decided by a 750 ms wall-clock window armed by whichever async `loadObject`
+    /// callback returned first — so the same gesture bundled the task or moved it to a minute
+    /// depending on timing. The shelf sits above the canvas and owns its own rect; that is a
+    /// question about geometry, and it is answered synchronously, before any payload is loaded.
+    let bundleShelfFrames: [TimelineBlockFrame]
 
     @Binding var isTargeted: Bool
     @Binding var previewTaskID: UUID?
@@ -18,8 +26,6 @@ struct TimelineDropDelegate: DropDelegate {
     @Binding var selectedTaskID: UUID?
     @Binding var selectedBundleID: UUID?
     @Binding var dragYOffset: CGFloat
-    @Binding var recentlyBundledTaskDropID: UUID?
-    @Binding var recentlyBundledTaskDropExpiresAt: Date
 
     func validateDrop(info: DropInfo) -> Bool {
         !info.itemProviders(for: [UTType.text]).isEmpty
@@ -59,6 +65,10 @@ struct TimelineDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         isTargeted = false
         let startMin = previewStartMin ?? metrics.snappedMinute(fromY: info.location.y - dragYOffset)
+        let landedOnBundleShelf = TimelineMetricsSupport.isInsideBlockedBlock(
+            point: info.location,
+            blockedFrames: bundleShelfFrames
+        )
 
         previewTaskID = nil
         previewStartMin = nil
@@ -84,9 +94,8 @@ struct TimelineDropDelegate: DropDelegate {
                     guard let bundle = allBundles.first(where: { $0.id == bundleID }) else { return }
                     onDropBundleAtMinute(bundle, startMin)
                 }
-            } else if let uuid = taskID(from: payloadString) {
+            } else if !landedOnBundleShelf, let uuid = taskID(from: payloadString) {
                 Task { @MainActor in
-                    guard !shouldSuppressTaskMoveDrop(for: uuid) else { return }
                     guard let task = allTasks.first(where: { $0.id == uuid }) else { return }
                     onDropTaskAtMinute(task, startMin)
                 }
@@ -117,19 +126,6 @@ struct TimelineDropDelegate: DropDelegate {
 
     private func taskID(from payload: String) -> UUID? {
         TaskDragPayload.taskID(from: payload)
-    }
-
-    @MainActor
-    private func shouldSuppressTaskMoveDrop(for taskID: UUID) -> Bool {
-        guard recentlyBundledTaskDropID == taskID else { return false }
-        if Date() < recentlyBundledTaskDropExpiresAt {
-            recentlyBundledTaskDropID = nil
-            recentlyBundledTaskDropExpiresAt = .distantPast
-            return true
-        }
-        recentlyBundledTaskDropID = nil
-        recentlyBundledTaskDropExpiresAt = .distantPast
-        return false
     }
 }
 #endif
