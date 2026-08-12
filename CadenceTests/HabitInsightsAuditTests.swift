@@ -328,7 +328,7 @@ struct HabitInsightsAuditTests {
                 to: DateFormatters.date(from: "2026-04-27") ?? Date()
             ) else { continue }
 
-            let keys = HabitHeatmap.HabitHeatmapGrid.dateKeys(weeks: 52, today: today, calendar: calendar)
+            let keys = HabitHeatmap.HabitHeatmapGrid.cells(weeks: 52, today: today, calendar: calendar).map(\.key)
             let todayKey = DateFormatters.dateKey(from: today, calendar: calendar)
 
             #expect(keys.contains(todayKey), "heatmap omitted today for weekday offset \(offset)")
@@ -340,7 +340,7 @@ struct HabitInsightsAuditTests {
     @Test func heatmapGridStopsAtTheEndOfTheCurrentWeek() {
         let calendar = Calendar.current
         let today = DateFormatters.date(from: "2026-04-29") ?? Date()
-        let keys = HabitHeatmap.HabitHeatmapGrid.dateKeys(weeks: 52, today: today, calendar: calendar)
+        let keys = HabitHeatmap.HabitHeatmapGrid.cells(weeks: 52, today: today, calendar: calendar).map(\.key)
 
         guard let last = keys.last, let lastDate = DateFormatters.date(from: last, in: calendar) else {
             Issue.record("heatmap produced no cells")

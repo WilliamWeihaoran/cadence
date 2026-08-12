@@ -234,6 +234,35 @@ struct TaskSectionConfig: Codable, Hashable, Identifiable {
         return true
     }
 
+    /// Whether a `yyyy-MM-dd` deadline has already passed, measured against `todayKey`. Date keys
+    /// are fixed-width, so a lexicographic compare is a chronological one. An empty key is never
+    /// overdue: no deadline cannot be a missed one.
+    ///
+    /// Deliberately *not* the whole answer for a task — see `isOverdue(todayKey:)`. This spelling
+    /// exists for the surfaces that only hold a due-date string (`CadenceDueUrgency`, which takes
+    /// `isDone` as its own parameter, and the focus rows, which filter finished tasks out first).
+    nonisolated static func isDueDateOverdue(_ dueDateKey: String, todayKey: String) -> Bool {
+        !dueDateKey.isEmpty && dueDateKey < todayKey
+    }
+
+    /// The one "is this task overdue" predicate.
+    ///
+    /// This existed six times, and three of the copies left out the `isDone` half, so whether a
+    /// finished task with a past due date rendered red depended on which view you were looking at.
+    /// A completed task is not overdue — you did it — so the guard belongs *inside* the predicate
+    /// rather than in a `&& !task.isDone` every call site has to remember.
+    ///
+    /// Cancelled tasks are deliberately still eligible: `isCancelled` is a separate status from
+    /// `isDone`, and no copy of this predicate has ever excluded it.
+    ///
+    /// `nonisolated` for the same reason as `TaskPriority.rank` — widget timeline providers run
+    /// off the main actor and this module defaults to `MainActor` isolation. `todayKey` is passed
+    /// in rather than defaulted for the same reason: `DateFormatters.todayKey()` is main-actor
+    /// isolated, and a caller that already knows "today" should not recompute it per row.
+    nonisolated func isOverdue(todayKey: String) -> Bool {
+        statusRaw != TaskStatus.done.rawValue && AppTask.isDueDateOverdue(dueDate, todayKey: todayKey)
+    }
+
     var hidesEmptyDueDateInList: Bool {
         if let project {
             return project.hideDueDateIfEmpty

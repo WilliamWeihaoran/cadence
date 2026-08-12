@@ -294,4 +294,78 @@ struct NoteMigrationServiceTests {
         let verifyContext = ModelContext(container)
         #expect(try verifyContext.fetch(FetchDescriptor<Note>()).count == 2)
     }
+
+    // MARK: - Canonical key agreement
+    //
+    // The migration and the repair pass both ask "are these the same note", and they used to ask
+    // two different functions. `NoteMigrationService` keyed every dateless daily note as `"daily:"`
+    // and never trimmed; `DataIntegrityRepairService` gave each one a per-UUID key and trimmed
+    // both sides. Nothing tested them together, so the store could be walked twice and reach
+    // opposite conclusions: health check calls the notes duplicates, repair refuses to merge them.
+
+    /// Notes with no date key have no shared identity to collide on. Two dateless daily notes are
+    /// two notes — the health check must not call them duplicates, and the repair pass must not
+    /// merge them. Before consolidation the first half of this failed.
+    @Test func datelessNotesAreDistinctToBothTheHealthCheckAndTheRepairPass() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let first = Note(kind: .daily, title: "Scratch A", content: "One")
+        let second = Note(kind: .daily, title: "Scratch B", content: "Two")
+        let firstWeekly = Note(kind: .weekly, title: "Week A", content: "Three")
+        let secondWeekly = Note(kind: .weekly, title: "Week B", content: "Four")
+
+        context.insert(first)
+        context.insert(second)
+        context.insert(firstWeekly)
+        context.insert(secondWeekly)
+        try context.save()
+
+        #expect(try NoteMigrationService.healthCheck(in: context).canonicalDuplicateCount == 0)
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test")
+        #expect(report.duplicateNotesMerged == 0)
+        #expect(try context.fetch(FetchDescriptor<Note>()).count == 4)
+    }
+
+    /// A key that differs only by surrounding whitespace is the same key. The migration copy did
+    /// not trim, so `"daily: 2026-04-29"` and `"daily:2026-04-29"` were different notes to it and
+    /// the same note to the repair pass.
+    @Test func whitespacePaddedKeysAreTheSameKeyToEveryPass() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let clean = Note(kind: .daily, title: "Clean", content: "One", dateKey: "2026-04-29")
+        let padded = Note(kind: .daily, title: "Padded", content: "Two", dateKey: " 2026-04-29 ")
+
+        context.insert(clean)
+        context.insert(padded)
+        try context.save()
+
+        #expect(clean.canonicalKey == padded.canonicalKey)
+        #expect(try NoteMigrationService.healthCheck(in: context).canonicalDuplicateCount == 1)
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test")
+        #expect(report.duplicateNotesMerged == 1)
+        #expect(try context.fetch(FetchDescriptor<Note>()).count == 1)
+    }
+
+    /// A legacy event note with no calendar event ID was keyed `"event_note:<uuid>"` by the
+    /// migration but reported `"meeting-note:<uuid>"` by the note it produced, so the health check
+    /// went on reporting it as unmigrated forever after it had in fact been migrated.
+    @Test func migratedEventNotesWithoutACalendarIDStopReadingAsUnmigrated() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let legacy = EventNote(calendarEventID: "", eventTitle: "Standup", calendarID: "calendar-1")
+        legacy.content = "Notes"
+        context.insert(legacy)
+        try context.save()
+
+        _ = try NoteMigrationService.migrateIfNeeded(in: context, source: "test")
+
+        let notes = try context.fetch(FetchDescriptor<Note>())
+        #expect(notes.count == 1)
+        #expect(try NoteMigrationService.healthCheck(in: context).legacyWithoutCanonicalCount == 0)
+    }
 }

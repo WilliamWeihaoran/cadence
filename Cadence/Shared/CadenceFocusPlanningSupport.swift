@@ -55,8 +55,11 @@ enum CadenceFocusSupport {
             }
     }
 
+    /// Deadline-only overdue test, for callers holding a date key rather than a task. Forwards to
+    /// `AppTask.isDueDateOverdue`, which owns the comparison; use `task.isOverdue(todayKey:)`
+    /// whenever a task is in hand, because that one also answers the `isDone` half.
     static func isOverdue(dueDateKey: String, todayKey: String) -> Bool {
-        !dueDateKey.isEmpty && dueDateKey < todayKey
+        AppTask.isDueDateOverdue(dueDateKey, todayKey: todayKey)
     }
 
     /// Compact due-date label for focus and bundle rows. `nil` only when there is no due date at

@@ -97,7 +97,7 @@ struct WidgetSupportTests {
         let habitID = UUID()
         let now = Date(timeIntervalSince1970: 1_000)
 
-        CadenceWidgetRefreshCenter.reloadTodayWidgets(force: true, now: now, userDefaults: defaults)
+        CadenceWidgetRefreshCenter.reloadAllWidgets(force: true, now: now, userDefaults: defaults)
         CadenceWidgetRefreshCenter.markTaskCompleted(taskID, now: now, userDefaults: defaults)
         CadenceWidgetRefreshCenter.markHabitCompletion(
             habitID,
@@ -295,29 +295,64 @@ struct WidgetSupportTests {
         #expect(today?.order == 6)
     }
 
+    /// Drives the same call `perform()` makes, and then the override write `perform()` makes with
+    /// its result — the two halves have to agree or a widget tap shows the old state until the
+    /// next full timeline reload.
     @Test func toggleHabitCompletionIntentLogsAndRemovesTodayCheckIn() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
+
+        let suiteName = "cadence.widget.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        let now = Date(timeIntervalSince1970: 1_000)
 
         let habit = Habit(title: "Read")
         modelContext.insert(habit)
         try modelContext.save()
 
-        let firstToggle = try ToggleHabitCompletionIntent.toggleHabitCompletion(
-            habitID: habit.id.uuidString,
-            on: "2026-05-11",
-            in: modelContext
-        )
-        #expect(firstToggle)
-        #expect(habit.isDone(on: "2026-05-11"))
+        func toggle() throws -> ToggleHabitCompletionIntent.HabitToggleResult {
+            let result = try ToggleHabitCompletionIntent.toggleHabitCompletionResult(
+                habitID: habit.id.uuidString,
+                on: "2026-05-11",
+                in: modelContext
+            )
+            if result.changed, let habitID = result.habitID {
+                CadenceWidgetRefreshCenter.markHabitCompletion(
+                    habitID,
+                    isDoneToday: result.isDoneToday,
+                    now: now,
+                    userDefaults: defaults
+                )
+            }
+            return result
+        }
 
-        let secondToggle = try ToggleHabitCompletionIntent.toggleHabitCompletion(
-            habitID: habit.id.uuidString,
+        let firstToggle = try toggle()
+        #expect(firstToggle.changed)
+        #expect(firstToggle.habitID == habit.id)
+        #expect(firstToggle.isDoneToday)
+        #expect(habit.isDone(on: "2026-05-11"))
+        #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults)[habit.id] == true)
+
+        let secondToggle = try toggle()
+        #expect(secondToggle.changed)
+        #expect(secondToggle.habitID == habit.id)
+        #expect(secondToggle.isDoneToday == false)
+        #expect(habit.isDone(on: "2026-05-11") == false)
+        #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults)[habit.id] == false)
+
+        // An unknown habit id must report "nothing changed" so `perform()` writes no override.
+        let missing = try ToggleHabitCompletionIntent.toggleHabitCompletionResult(
+            habitID: UUID().uuidString,
             on: "2026-05-11",
             in: modelContext
         )
-        #expect(secondToggle)
-        #expect(habit.isDone(on: "2026-05-11") == false)
+        #expect(missing.changed == false)
+        #expect(missing.habitID == nil)
     }
 
     @Test func habitWidgetSnapshotPrefersOpenHabitsAndComputesCounts() {

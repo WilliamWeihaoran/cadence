@@ -57,9 +57,48 @@ struct DateFormatterSupportTests {
     /// narrow as ~50pt when tasks overlap). A plain space is a line-break opportunity, so a
     /// wrapped "1h 30m" would lose its clipped second line and report "1h" for a 90-minute
     /// task — wrong information, not truncation. The separator must stay non-breaking.
+    ///
+    /// The assertion has to name every surface that renders a duration, not just the canonical
+    /// helper: this test passed for months while `TimelineEventBlockSupportViews` and
+    /// `GoalContributionSummary.focusLabel` shipped their own copies with a breakable space in
+    /// them. The subject of a test has to be the code that can break.
     @Test func durationLabelsUseANonBreakingSpaceBetweenHoursAndMinutes() {
         #expect(!CadenceTaskPresentationSupport.estimateLabel(minutes: 90).contains(" "))
         #expect(!TimeFormatters.durationLabel(actual: 90, estimated: 90).contains(" "))
+        #expect(!TimeFormatters.durationLabel(minutes: 90, emptyPlaceholder: "–").contains(" "))
+
+        let summary = GoalContributionSummary(
+            progressType: .hours,
+            targetHours: 4,
+            totalTasks: 0,
+            completedTasks: 0,
+            directTaskCount: 0,
+            linkedListCount: 0,
+            focusMinutes: 165,
+            overdueTaskCount: 0,
+            recentCompletedCount: 0,
+            nextActionTitle: nil,
+            nextActionDueDate: nil
+        )
+        #expect(summary.focusLabel == "2h\u{00A0}45m")
+        #expect(!summary.focusLabel.contains(" "))
+    }
+
+    /// The empty sentinel is the only thing the duration surfaces ever disagreed about, so it is
+    /// the only thing that is a parameter. Everything else must come out identical.
+    @Test func durationLabelKeepsOneShapeAcrossItsThreeEmptySentinels() {
+        #expect(TimeFormatters.durationLabel(minutes: 0, emptyPlaceholder: "0m") == "0m")
+        #expect(TimeFormatters.durationLabel(minutes: 0, emptyPlaceholder: "-") == "-")
+        #expect(TimeFormatters.durationLabel(minutes: -5, emptyPlaceholder: "–") == "–")
+        #expect(TimeFormatters.durationLabel(minutes: 90, emptyPlaceholder: "–") == "1h\u{00A0}30m")
+        #expect(CadenceTaskPresentationSupport.estimateLabel(minutes: 0, emptyPlaceholder: "–") == "–")
+
+        for minutes in [1, 30, 59, 60, 61, 90, 120, 1_439] {
+            #expect(
+                CadenceTaskPresentationSupport.estimateLabel(minutes: minutes)
+                    == TimeFormatters.durationLabel(minutes: minutes, emptyPlaceholder: "–")
+            )
+        }
     }
 
     @Test func durationLabelPairsActualWithEstimatedAndDashesMissingValues() {

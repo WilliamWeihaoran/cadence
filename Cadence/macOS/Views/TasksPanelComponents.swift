@@ -395,19 +395,18 @@ struct MacTaskRow: View {
         Rectangle().fill(Theme.borderSubtle).frame(width: 0.5, height: 12)
     }
 
+    // These three were byte-identical re-implementations of the kanban card's copies, which is how
+    // the row and the card were free to answer "is this overdue" differently. One definition each.
     private var isOverdue: Bool {
-        guard !task.dueDate.isEmpty, !task.isDone else { return false }
-        return task.dueDate < DateFormatters.todayKey()
+        KanbanCardComputedSupport.isOverdue(task: task)
     }
 
     private var isOverdo: Bool {
-        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
-        return (DateFormatters.dayOffset(from: task.scheduledDate) ?? 0) < 0
+        KanbanCardComputedSupport.isOverdo(task: task)
     }
 
     private var isDoToday: Bool {
-        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
-        return task.scheduledDate == DateFormatters.todayKey()
+        KanbanCardComputedSupport.isDoToday(task: task)
     }
 
     private var showsDoDateOnFirstRow: Bool {

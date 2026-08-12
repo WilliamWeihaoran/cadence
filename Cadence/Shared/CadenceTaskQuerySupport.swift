@@ -266,7 +266,11 @@ enum CadenceTaskQuerySupport {
         }
     }
 
-    private static func dateBuckets(for tasks: [AppTask], todayKey: String) -> CadenceTaskDateBuckets {
+    /// The one date-bucketing rule: due-before-today wins, then due-today, and only tasks in
+    /// neither due bucket can be "do today". Internal rather than `private` so tests reach the
+    /// copy production runs — a `private` spelling here is what kept a dead twin alive in
+    /// `TaskSortHelpers`.
+    static func dateBuckets(for tasks: [AppTask], todayKey: String) -> CadenceTaskDateBuckets {
         var overdueIDs = Set<UUID>()
         var dueTodayIDs = Set<UUID>()
         var doTodayIDs = Set<UUID>()

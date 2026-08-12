@@ -172,13 +172,18 @@ struct ListTasksView: View {
         }
     }
 
+    // Forwards to `TasksPanelSupport`, the same counts Today and All Tasks show. This file used to
+    // carry its own bodies, and they had drifted: neither excluded completed tasks, so a finished
+    // task with a past due date was counted as overdue here and not on the other two screens — the
+    // same list reporting two different numbers depending on which screen you were on. It is
+    // reachable in normal use because the hover-freeze snapshot keeps a just-completed task in its
+    // group for a moment after you tick it.
     private func overdueCount(in tasks: [AppTask]) -> Int? {
-        let count = tasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey }.count
-        return count > 0 ? count : nil
+        TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey)
     }
 
     private func regularCount(in tasks: [AppTask]) -> Int {
-        tasks.count - (overdueCount(in: tasks) ?? 0)
+        TasksPanelSupport.regularCount(in: tasks, todayKey: todayKey)
     }
 }
 #endif

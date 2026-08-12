@@ -35,7 +35,7 @@ struct NoteReferenceStrip: View {
                                 title: task.title.isEmpty ? "Untitled Task" : task.title,
                                 tint: Theme.green,
                                 dueLabel: CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey),
-                                isOverdue: !task.isDone && CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: todayKey)
+                                isOverdue: task.isOverdue(todayKey: todayKey)
                             )
                         }
                     }

@@ -3,11 +3,6 @@ import SwiftUI
 import SwiftData
 
 enum KanbanCardStateSupport {
-    static func compactDurationLabel(_ minutes: Int) -> String {
-        let clamped = max(minutes, 0)
-        return "\(clamped / 60):\(String(format: "%02d", clamped % 60))"
-    }
-
     static func openDatePicker(
         dateKey: String,
         setSelection: (Date) -> Void,

@@ -63,7 +63,7 @@ struct TaskEmbedFieldEditorPopover: View {
                     optionButton(
                         status.label,
                         isSelected: task.status == status,
-                        color: statusColor(status)
+                        color: Theme.statusColor(status)
                     ) {
                         setStatus(status)
                         dismiss()
@@ -404,18 +404,6 @@ struct TaskEmbedFieldEditorPopover: View {
         .modifier(TaskPickerRowHover())
     }
 
-    private func statusColor(_ status: TaskStatus) -> Color {
-        switch status {
-        case .todo:
-            return Theme.dim
-        case .inProgress:
-            return Theme.blue
-        case .done:
-            return Theme.green
-        case .cancelled:
-            return Theme.dim.opacity(0.7)
-        }
-    }
 }
 
 #endif

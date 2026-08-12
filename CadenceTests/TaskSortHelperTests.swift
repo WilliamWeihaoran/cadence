@@ -56,7 +56,7 @@ struct TaskSortHelperTests {
         ])
     }
 
-    @Test func classifyTasksByDatePrioritizesDueBucketsOverScheduledToday() {
+    @Test func dateBucketsPrioritizeDueBucketsOverScheduledToday() {
         let todayKey = "2026-05-11"
 
         let overdueAndScheduled = task(
@@ -84,10 +84,8 @@ struct TaskSortHelperTests {
             order: 3
         )
 
-        let buckets = classifyTasksByDate(
-            [overdueAndScheduled, dueTodayAndScheduled, scheduledOnly, future],
-            todayKey: todayKey
-        )
+        let tasks = [overdueAndScheduled, dueTodayAndScheduled, scheduledOnly, future]
+        let buckets = CadenceTaskQuerySupport.dateBuckets(for: tasks, todayKey: todayKey)
 
         #expect(buckets.overdueIDs == Set([overdueAndScheduled.id]))
         #expect(buckets.dueTodayIDs == Set([dueTodayAndScheduled.id]))
@@ -96,6 +94,14 @@ struct TaskSortHelperTests {
         #expect(buckets.contains(dueTodayAndScheduled))
         #expect(buckets.contains(scheduledOnly))
         #expect(!buckets.contains(future))
+
+        // Assert through the surface the app actually renders, so a change to the bucketing rule
+        // shows up as a wrong group rather than only as a wrong intermediate value.
+        let groups = CadenceTaskQuerySupport.dateDisplayGroups(from: tasks, todayKey: todayKey)
+        #expect(groups.first { $0.id == "overdue" }?.tasks.map(\.id) == [overdueAndScheduled.id])
+        #expect(groups.first { $0.id == "due-today" }?.tasks.map(\.id) == [dueTodayAndScheduled.id])
+        #expect(groups.first { $0.id == "do-today" }?.tasks.map(\.id) == [scheduledOnly.id])
+        #expect(groups.first { $0.id == "unscheduled" }?.tasks.map(\.id) == [future.id])
     }
 
     private func task(

@@ -411,7 +411,7 @@ private struct BundleTaskPopoverRow: View {
     }
 
     private var isOverdue: Bool {
-        !task.isDone && CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: DateFormatters.todayKey())
+        task.isOverdue(todayKey: DateFormatters.todayKey())
     }
 
     private func rowIconButton(

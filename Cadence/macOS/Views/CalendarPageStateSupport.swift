@@ -150,46 +150,12 @@ struct CalendarPageStateSupport {
         return anchorDateKey
     }
 
-    static func boardDateByMovingMonth(_ date: Date, by delta: Int, calendar: Calendar) -> Date {
-        let startOfDay = calendar.startOfDay(for: date)
-        guard let shiftedMonth = calendar.date(byAdding: .month, value: delta, to: startOfDay) else {
-            return startOfDay
-        }
-
-        var targetComponents = calendar.dateComponents([.year, .month], from: shiftedMonth)
-        let currentDay = calendar.component(.day, from: startOfDay)
-        let monthStart = calendar.date(from: targetComponents) ?? shiftedMonth
-        let dayRange = calendar.range(of: .day, in: .month, for: monthStart)
-        targetComponents.day = min(currentDay, dayRange?.count ?? currentDay)
-
-        return calendar.startOfDay(for: calendar.date(from: targetComponents) ?? shiftedMonth)
-    }
-
-    /// Day-index form of `dateKeyForVisibleMonth`, expressed through it rather than beside it —
-    /// a second copy of "which day does this block stand for" is a second chance to disagree
-    /// with the grid.
-    static func timelineDayIndexForMonthViewReturn(
-        visibleMonthIdx: Int,
-        todayMonthIdx: Int = todayMonthIndex,
-        bufferStart: Date,
-        todayDayIdx: Int,
-        calendar: Calendar,
-        today: Date = Date()
-    ) -> Int {
-        let targetKey = dateKeyForVisibleMonth(
-            visibleMonthIdx: visibleMonthIdx,
-            todayMonthIdx: todayMonthIdx,
-            currentMonthStart: monthStart(for: today, calendar: calendar),
-            calendar: calendar,
-            today: today
-        )
-        return timelineDayIndex(
-            anchorDateKey: targetKey,
-            bufferStart: bufferStart,
-            todayDayIdx: todayDayIdx,
-            calendar: calendar
-        )
-    }
+    // The Board's back/forward controls shift a *day* window, not a month: see
+    // `CalendarBoardPlannerSupport.dateByMovingWindow` / `canMoveWindow`. A month-stepping
+    // `boardDateByMovingMonth` used to live here with zero callers, and the "month → timeline
+    // return" day index likewise had a second, live copy inlined in
+    // `CalendarPageDataSupport.handleViewModeChange`. Both are gone; that inline pair is the
+    // only return path, and it is what the tests now drive.
 
     static func restoreTimelineScrollIfNeeded(
         didRestoreTimelineScroll: inout Bool,

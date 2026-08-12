@@ -16,10 +16,6 @@ import EventKit
 
 struct CadenceTests {
 
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
-    }
-
 #if os(macOS)
     @Test func appleAccountDefaultsStorageRoundTripsProfile() throws {
         let suiteName = "CadenceTests.appleAccount.\(UUID().uuidString)"
@@ -264,26 +260,42 @@ struct CadenceTests {
 
         let today = try #require(calendar.date(from: DateComponents(year: 2026, month: 5, day: 1)))
         let bufferStart = try #require(calendar.date(from: DateComponents(year: 2026, month: 1, day: 1)))
+        let currentMonthStart = monthStart(for: today, calendar: calendar)
 
-        let mayBlockDay = CalendarPageStateSupport.timelineDayIndexForMonthViewReturn(
-            visibleMonthIdx: 60,
-            bufferStart: bufferStart,
-            todayDayIdx: 120,
-            calendar: calendar,
-            today: today
-        )
-        let blockHoldingTodayDay = CalendarPageStateSupport.timelineDayIndexForMonthViewReturn(
-            visibleMonthIdx: 59,
-            bufferStart: bufferStart,
-            todayDayIdx: 120,
-            calendar: calendar,
-            today: today
-        )
+        func returnFromMonth(visibleMonthIdx: Int) -> (day: Int?, anchor: String) {
+            var visibleMonth = visibleMonthIdx
+            var monthGridResetNonce = 0
+            var didRestoreTimelineScroll = true
+            var visibleTimelineDayIndex: Int? = nil
+            var anchorDateKey = ""
+
+            CalendarPageDataSupport.handleViewModeChange(
+                oldMode: .month,
+                newMode: .week,
+                visibleMonthIdx: &visibleMonth,
+                monthGridResetNonce: &monthGridResetNonce,
+                didRestoreTimelineScroll: &didRestoreTimelineScroll,
+                visibleTimelineDayIndex: &visibleTimelineDayIndex,
+                anchorDateKey: &anchorDateKey,
+                bufferStart: bufferStart,
+                todayDayIdx: 120,
+                calendar: calendar,
+                currentMonthStart: currentMonthStart,
+                today: today
+            )
+
+            return (visibleTimelineDayIndex, anchorDateKey)
+        }
+
+        let mayBlock = returnFromMonth(visibleMonthIdx: 60)
+        let blockHoldingToday = returnFromMonth(visibleMonthIdx: 59)
 
         // Jan 1 + 122 days = May 3, May's first Sunday and the first cell of its block.
-        #expect(mayBlockDay == 122)
+        #expect(mayBlock.anchor == "2026-05-03")
+        #expect(mayBlock.day == 122)
         // Jan 1 + 120 days = May 1, i.e. today, because today is drawn on block 59.
-        #expect(blockHoldingTodayDay == 120)
+        #expect(blockHoldingToday.anchor == "2026-05-01")
+        #expect(blockHoldingToday.day == 120)
     }
 
     @Test func calendarTitleUsesVisibleTimelineMonthAcrossBoundaries() throws {
@@ -385,28 +397,6 @@ struct CadenceTests {
     }
 
 #if os(macOS)
-    @Test func calendarBoardMonthNavigationClampsToValidDay() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? calendar.timeZone
-
-        let january31 = try #require(calendar.date(from: DateComponents(year: 2026, month: 1, day: 31, hour: 12)))
-        let february = CalendarPageStateSupport.boardDateByMovingMonth(january31, by: 1, calendar: calendar)
-        let februaryComponents = calendar.dateComponents([.year, .month, .day, .hour], from: february)
-
-        #expect(februaryComponents.year == 2026)
-        #expect(februaryComponents.month == 2)
-        #expect(februaryComponents.day == 28)
-        #expect(februaryComponents.hour == 0)
-
-        let leapJanuary31 = try #require(calendar.date(from: DateComponents(year: 2028, month: 1, day: 31, hour: 12)))
-        let leapFebruary = CalendarPageStateSupport.boardDateByMovingMonth(leapJanuary31, by: 1, calendar: calendar)
-        let leapFebruaryComponents = calendar.dateComponents([.year, .month, .day], from: leapFebruary)
-
-        #expect(leapFebruaryComponents.year == 2028)
-        #expect(leapFebruaryComponents.month == 2)
-        #expect(leapFebruaryComponents.day == 29)
-    }
-
     @Test func calendarBoardAnchorRoundTripsBackToTimelineDay() throws {
         let calendar = Calendar.current
         let bufferStart = try #require(calendar.date(from: DateComponents(year: 2026, month: 5, day: 1)))

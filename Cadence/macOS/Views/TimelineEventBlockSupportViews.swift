@@ -63,12 +63,11 @@ struct CalendarEventEditPopover: View {
         )
     }
 
+    /// Was its own copy of the hours-and-minutes format, and it used an ordinary space — inside a
+    /// timeline event block, which is exactly the hard-clipped narrow container the non-breaking
+    /// space exists for. Only the en-dash empty sentinel was ever this surface's own.
     private var durationLabel: String {
-        let mins = durationMinutes
-        if mins <= 0 { return "–" }
-        if mins < 60 { return "\(mins)m" }
-        let h = mins / 60; let m = mins % 60
-        return m == 0 ? "\(h)h" : "\(h)h \(m)m"
+        CadenceTaskPresentationSupport.estimateLabel(minutes: durationMinutes, emptyPlaceholder: "–")
     }
 
     var body: some View {

@@ -102,4 +102,63 @@ enum NoteKind: String, CaseIterable {
     var sortedTags: [Tag] {
         TagSupport.sorted(tags ?? [])
     }
+
+    /// The identity two notes have to share before anything is allowed to treat them as the same
+    /// note — one daily note per day, one weekly note per ISO week, one notepad, one note per
+    /// calendar event. List notes are identified only by themselves: two list notes on the same
+    /// project are two different documents.
+    ///
+    /// This existed twice, and the two copies **disagreed**: `NoteMigrationService.canonicalKey`
+    /// keyed every dateless daily note as `"daily:"` while `DataIntegrityRepairService`
+    /// `canonicalNoteKey` gave each one a per-UUID key, and only the repair copy trimmed
+    /// whitespace. So the migration collapsed all dateless daily notes into one key — skipping
+    /// real legacy rows as "already migrated" and reporting phantom duplicates — while the repair
+    /// pass looked at the same rows and refused to merge them. Two passes over the same store
+    /// reached opposite conclusions.
+    ///
+    /// The trimming, per-UUID-fallback behaviour is the one kept: a note with no date key has no
+    /// shared identity to collide on, and a key that only differs by whitespace is the same key.
+    ///
+    /// `nonisolated` because the migration and repair services reach it from nonisolated contexts,
+    /// and this module defaults to `MainActor` isolation.
+    nonisolated var canonicalKey: String {
+        Note.canonicalKey(
+            kind: kind,
+            dateKey: dateKey,
+            weekKey: weekKey,
+            calendarEventID: calendarEventID,
+            id: id
+        )
+    }
+
+    /// Field-wise form of `canonicalKey`, so the migration can ask what key a *legacy* row would
+    /// produce before the `Note` that replaces it exists. Migration inserts each note with
+    /// `id: legacy.id`, so the per-UUID fallbacks line up.
+    nonisolated static func canonicalKey(
+        kind: NoteKind,
+        dateKey: String = "",
+        weekKey: String = "",
+        calendarEventID: String = "",
+        id: UUID
+    ) -> String {
+        func trimmed(_ value: String) -> String {
+            value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        switch kind {
+        case .daily:
+            let key = trimmed(dateKey)
+            return key.isEmpty ? "daily-note:\(id.uuidString)" : "daily:\(key)"
+        case .weekly:
+            let key = trimmed(weekKey)
+            return key.isEmpty ? "weekly-note:\(id.uuidString)" : "weekly:\(key)"
+        case .permanent:
+            return "permanent"
+        case .list:
+            return "list:\(id.uuidString)"
+        case .meeting:
+            let key = trimmed(calendarEventID)
+            return key.isEmpty ? "meeting-note:\(id.uuidString)" : "meeting:\(key)"
+        }
+    }
 }

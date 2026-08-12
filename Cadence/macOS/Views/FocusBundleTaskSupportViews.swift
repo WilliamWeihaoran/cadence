@@ -133,7 +133,7 @@ struct FocusBundleTaskRow: View {
         return CadenceTaskDetailLine(
             lead: TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes),
             due: CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey),
-            isOverdue: !task.isDone && CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: todayKey)
+            isOverdue: task.isOverdue(todayKey: todayKey)
         )
     }
 

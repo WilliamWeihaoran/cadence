@@ -34,19 +34,9 @@ enum CadenceWidgetRefreshCenter {
         #endif
     }
 
-    nonisolated static func reloadTodayWidgets(
-        minimumInterval: TimeInterval = defaultReloadInterval,
-        force: Bool = false,
-        now: Date = Date(),
-        userDefaults: UserDefaults? = nil
-    ) {
-        reloadAllWidgets(
-            minimumInterval: minimumInterval,
-            force: force,
-            now: now,
-            userDefaults: userDefaults
-        )
-    }
+    // There is no `reloadTodayWidgets`. It existed as a pure forwarder to `reloadAllWidgets` with
+    // no production caller, which advertised a per-widget-kind reload this type does not have:
+    // every reload path goes through `reloadAllWidgets`.
 
     nonisolated static func markTaskCompleted(
         _ taskID: UUID,

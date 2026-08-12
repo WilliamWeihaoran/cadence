@@ -227,8 +227,14 @@ struct KanbanCard: View {
 
     /// Always rendered, even with no estimate set — the badge *is* the estimate picker, so
     /// hiding it when the value is empty would leave the field unreachable from the card.
+    /// Uses the app-wide duration vocabulary. This used to format `"H:MM"` — 90 minutes as
+    /// `"1:30"` — which is a sixth format for a field every other surface renders as `1h 30m`,
+    /// and worse, `KanbanCardScheduleTopRow` draws this badge immediately beside a real clock
+    /// time like `9am`. A duration written `1:30` next to `9am` reads as a time of day. The badge
+    /// has no width constraint (a `Spacer(minLength: 8)` pushes it to the trailing edge), so the
+    /// longer string fits.
     private var estimateLabel: String {
-        task.estimatedMinutes > 0 ? KanbanCardStateSupport.compactDurationLabel(task.estimatedMinutes) : "—"
+        CadenceTaskPresentationSupport.estimateLabel(minutes: task.estimatedMinutes, emptyPlaceholder: "—")
     }
 
     @ViewBuilder

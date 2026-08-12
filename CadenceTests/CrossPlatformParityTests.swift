@@ -32,6 +32,31 @@ struct CrossPlatformParityTests {
         }
     }
 
+    /// Every fixed-format `DateFormatter` in the app has to pin its locale, or the string it
+    /// produces follows the host's `Language & Region` instead of the format string.
+    ///
+    /// `monthYear` did not, and it renders the notes list's month headers and the calendar page's
+    /// month title. On a French Mac those read "AOÛT 2026" while every other string in the app —
+    /// which ships no localizations at all — stayed English. It also made
+    /// `NotesListVisibilityTests.monthGroupingFormsRunsOverTheFilteredList` fail against a
+    /// perfectly correct implementation, purely because of who ran it.
+    @Test func displayFormattersPinTheirLocaleSoOutputDoesNotFollowTheHostRegion() throws {
+        let formatters: [(String, DateFormatter)] = [
+            ("ymd", DateFormatters.ymd),
+            ("monthYear", DateFormatters.monthYear)
+        ]
+
+        for (name, formatter) in formatters {
+            #expect(
+                formatter.locale?.identifier == "en_US_POSIX",
+                "\(name) does not pin its locale, so its output follows the host region"
+            )
+        }
+
+        let august = try #require(DateFormatters.date(from: "2026-08-01"))
+        #expect(DateFormatters.monthYear.string(from: august) == "August 2026")
+    }
+
     /// The key must round-trip: the parse side is what resolves a stored key back to a day, and it
     /// had the same `Calendar.current` dependency.
     @Test func storageKeysRoundTripUnderNonGregorianCalendars() throws {

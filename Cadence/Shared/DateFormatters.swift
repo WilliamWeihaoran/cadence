@@ -20,8 +20,16 @@ enum DateFormatters {
     }()
 
     /// `MMMM yyyy` — "March 2026"
+    ///
+    /// Locale-pinned like `ymd`, and for the same reason this repo pins every fixed-format
+    /// formatter: without it the month name follows the host's locale, so the notes list's month
+    /// headers and the calendar's month title read "AOÛT 2026" on a French Mac while every other
+    /// string in the app — which is English-only, with no localizations — stays English. Pinning
+    /// also makes `NotesListVisibilityTests.monthGroupingFormsRunsOverTheFilteredList` test the
+    /// implementation rather than the tester's `Language & Region` setting.
     static let monthYear: DateFormatter = {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "MMMM yyyy"
         return f
     }()
@@ -205,25 +213,39 @@ enum TimeFormatters {
         "\(timeString(from: startMin)) – \(timeString(from: endMin))"
     }
 
+    /// Canonical minutes → duration label for the whole app: "45m", "2h", "1h 24m". Never renders
+    /// a decimal hour — the hour and minute components are shown separately, and a zero component
+    /// is omitted.
+    ///
+    /// The gap between the hour and the minute component is a NON-BREAKING SPACE (U+00A0) on
+    /// purpose. These labels are drawn inside hard-clipped fixed-size chrome (timeline blocks can
+    /// be ~50pt wide when three tasks overlap); an ordinary space is a line-break opportunity, so
+    /// "1h 30m" would wrap and the clipped second line would leave the badge reading "1h" for a
+    /// 90-minute task — wrong information, not just truncation.
+    ///
+    /// `emptyPlaceholder` is what a zero/negative duration renders as, because the surfaces do not
+    /// agree on that and should not have to fork the formatter to disagree: the estimate chips say
+    /// `"0m"`, the actual/estimated pair says `"-"`, and the timeline event editor says an en dash.
+    /// That difference is the *only* thing those call sites ever needed of their own — this was
+    /// written out six times in three spellings, and two of the copies used a breakable space.
+    ///
+    /// It lives here rather than beside `CadenceTaskPresentationSupport.estimateLabel` (which now
+    /// forwards to it) because `Shared/` is not compiled into the widget or MCP targets and
+    /// `Models/GoalContributionSummary` needs it. `DateFormatters.swift` is in all three.
+    static func durationLabel(minutes: Int, emptyPlaceholder: String) -> String {
+        guard minutes > 0 else { return emptyPlaceholder }
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if hours == 0 { return "\(remainder)m" }
+        if remainder == 0 { return "\(hours)h" }
+        return "\(hours)h\u{00A0}\(remainder)m"
+    }
+
     /// Compact actual/estimated label: "3m/15m", "1h/2h", "-/30m", "45m/-", etc.
-    /// Uses the same hours-and-minutes shape as `CadenceTaskPresentationSupport.estimateLabel`
-    /// ("1h 30m", never "1.5h"); the logic is duplicated rather than called so this file stays
-    /// dependency-free for the widget target.
-    ///
-    /// The hour/minute gap is a NON-BREAKING SPACE (U+00A0), matching `estimateLabel` — these
-    /// labels are drawn inside hard-clipped fixed-size chrome, where a wrap would hide the
-    /// minute component and make the badge report a shorter duration than the real one.
-    ///
-    /// Returns "-" for any zero/negative value.
+    /// Returns "-" for either side when it is zero or negative.
     static func durationLabel(actual: Int, estimated: Int) -> String {
-        func fmt(_ m: Int) -> String {
-            guard m > 0 else { return "-" }
-            let hours = m / 60
-            let remainder = m % 60
-            if hours == 0 { return "\(remainder)m" }
-            if remainder == 0 { return "\(hours)h" }
-            return "\(hours)h\u{00A0}\(remainder)m"
-        }
-        return "\(fmt(actual))/\(fmt(estimated))"
+        let actualLabel = durationLabel(minutes: actual, emptyPlaceholder: "-")
+        let estimatedLabel = durationLabel(minutes: estimated, emptyPlaceholder: "-")
+        return "\(actualLabel)/\(estimatedLabel)"
     }
 }

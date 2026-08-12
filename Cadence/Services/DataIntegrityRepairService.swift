@@ -338,7 +338,7 @@ enum DataIntegrityRepairService {
         state: inout RepairState,
         report: inout DataIntegrityRepairReport
     ) {
-        let grouped = Dictionary(grouping: store.notes) { canonicalNoteKey(for: $0) }
+        let grouped = Dictionary(grouping: store.notes) { $0.canonicalKey }
 
         for group in grouped.values where group.count > 1 {
             let liveNotes = group.filter { !state.deletedNotes.contains(ObjectIdentifier($0)) }
@@ -447,24 +447,6 @@ enum DataIntegrityRepairService {
         if note.eventStartMin >= 0 { score += 5 }
         if note.eventEndMin >= 0 { score += 5 }
         return score
-    }
-
-    private static func canonicalNoteKey(for note: Note) -> String {
-        switch note.kind {
-        case .daily:
-            let dateKey = note.dateKey.trimmingCharacters(in: .whitespacesAndNewlines)
-            return dateKey.isEmpty ? "daily-note:\(note.id.uuidString)" : "daily:\(dateKey)"
-        case .weekly:
-            let weekKey = note.weekKey.trimmingCharacters(in: .whitespacesAndNewlines)
-            return weekKey.isEmpty ? "weekly-note:\(note.id.uuidString)" : "weekly:\(weekKey)"
-        case .permanent:
-            return "permanent"
-        case .list:
-            return "list:\(note.id.uuidString)"
-        case .meeting:
-            let eventID = note.calendarEventID.trimmingCharacters(in: .whitespacesAndNewlines)
-            return eventID.isEmpty ? "meeting-note:\(note.id.uuidString)" : "meeting:\(eventID)"
-        }
     }
 
     private static func normalizedName(_ context: Context) -> String {

@@ -40,13 +40,11 @@ struct GoalContributionSummary {
         "\(completedTasks)/\(totalTasks)"
     }
 
+    /// Was a fourth hand-written copy of the hours-and-minutes format, with an ordinary space
+    /// where every other duration label in the app uses a non-breaking one — and this label is
+    /// drawn in a fixed-width signal tile, so a wrap would report "2h" for 2h 45m of focus time.
     var focusLabel: String {
-        guard focusMinutes > 0 else { return "0m" }
-        let hours = focusMinutes / 60
-        let minutes = focusMinutes % 60
-        if hours > 0, minutes > 0 { return "\(hours)h \(minutes)m" }
-        if hours > 0 { return "\(hours)h" }
-        return "\(minutes)m"
+        TimeFormatters.durationLabel(minutes: focusMinutes, emptyPlaceholder: "0m")
     }
 }
 
@@ -126,13 +124,13 @@ enum GoalContributionResolver {
         overdueTasks(among: contributingTasks(for: goal), now: now)
     }
 
+    /// Uses `AppTask.isOverdue(todayKey:)` — the same predicate the task rows, kanban cards and
+    /// timeline blocks use. This used to parse both sides to `Date` and compare `Date`s, which
+    /// made it the one overdue test in the app that could disagree with the others about a given
+    /// task; the deadline fields are `yyyy-MM-dd` strings and compare chronologically as they are.
     private static func overdueTasks(among tasks: [AppTask], now: Date) -> [AppTask] {
-        let today = Calendar.current.startOfDay(for: now)
-        return tasks.filter { task in
-            guard !task.isDone else { return false }
-            guard !task.dueDate.isEmpty, let due = DateFormatters.date(from: task.dueDate) else { return false }
-            return due < today
-        }
+        let todayKey = DateFormatters.dateKey(from: now)
+        return tasks.filter { $0.isOverdue(todayKey: todayKey) }
     }
 
     static func summary(for goal: Goal, now: Date = Date()) -> GoalContributionSummary {

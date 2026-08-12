@@ -32,22 +32,14 @@ enum CadenceTaskPresentationSupport {
         )
     }
 
-    /// Canonical minutes → duration label for the whole app: "45m", "2h", "1h 24m".
-    /// Never renders a decimal hour — the hour and minute components are shown separately,
-    /// and a zero component is omitted.
+    /// Minutes → duration label for task chrome — "45m", "2h", "1h 24m", `"0m"` for nothing.
     ///
-    /// The gap between the hour and minute components is a NON-BREAKING SPACE (U+00A0) on
-    /// purpose. These labels are drawn inside hard-clipped fixed-size chrome (timeline blocks
-    /// can be ~50pt wide when three tasks overlap); an ordinary space is a line-break
-    /// opportunity, so "1h 30m" would wrap and the clipped second line would leave the badge
-    /// reading "1h" for a 90-minute task — wrong information, not just truncation.
-    static func estimateLabel(minutes: Int) -> String {
-        guard minutes > 0 else { return "0m" }
-        let hours = minutes / 60
-        let remainder = minutes % 60
-        if hours == 0 { return "\(remainder)m" }
-        if remainder == 0 { return "\(hours)h" }
-        return "\(hours)h\u{00A0}\(remainder)m"
+    /// The shape (and the non-breaking space that keeps it from wrapping into a wrong number) is
+    /// `TimeFormatters.durationLabel(minutes:emptyPlaceholder:)`; only the empty sentinel is this
+    /// surface's own. `emptyPlaceholder` lets the callers that want a dash instead of `"0m"` reach
+    /// the same formatter rather than writing a fifth copy of it.
+    static func estimateLabel(minutes: Int, emptyPlaceholder: String = "0m") -> String {
+        TimeFormatters.durationLabel(minutes: minutes, emptyPlaceholder: emptyPlaceholder)
     }
 
     static func estimateLabel(for task: AppTask) -> String {

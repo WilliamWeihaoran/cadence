@@ -369,11 +369,6 @@ struct HabitHeatmap: View {
                 return Cell(date: day, key: DateFormatters.dateKey(from: day, calendar: calendar))
             }
         }
-
-        /// Every `yyyy-MM-dd` key the grid draws, in render order.
-        static func dateKeys(weeks: Int, today: Date, calendar: Calendar) -> [String] {
-            cells(weeks: weeks, today: today, calendar: calendar).map(\.key)
-        }
     }
 
     private var cal: Calendar { Calendar.current }

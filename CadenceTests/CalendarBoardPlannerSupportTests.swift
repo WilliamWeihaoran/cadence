@@ -99,6 +99,28 @@ struct CalendarBoardPlannerSupportTests {
         )
     }
 
+    /// The Board's back/forward arrows step a whole *day* window, not a month. A month-stepping
+    /// helper with no callers used to be what "board navigation" was tested through; this drives
+    /// the pair `CalendarPageView.moveBoardWindow(by:)` and its disabled-arrow check actually use.
+    @Test func boardWindowNavigationStepsAWholeWindowAndStopsAtToday() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        let dayCount = CalendarBoardPlannerSupport.visibleDayCount
+
+        let today = try #require(calendar.date(from: DateComponents(year: 2026, month: 1, day: 31, hour: 12)))
+        let forward = CalendarBoardPlannerSupport.dateByMovingWindow(today, by: 1, calendar: calendar)
+        #expect(forward == calendar.date(byAdding: .day, value: dayCount, to: calendar.startOfDay(for: today)))
+
+        let back = CalendarBoardPlannerSupport.dateByMovingWindow(forward, by: -1, calendar: calendar)
+        #expect(back == calendar.startOfDay(for: today))
+
+        // Day columns are floored at today, so stepping back from the first window is a no-op and
+        // the arrow that would do it is disabled rather than left dead.
+        #expect(!CalendarBoardPlannerSupport.canMoveWindow(from: today, by: -1, notBefore: today, calendar: calendar))
+        #expect(CalendarBoardPlannerSupport.canMoveWindow(from: today, by: 1, notBefore: today, calendar: calendar))
+        #expect(CalendarBoardPlannerSupport.canMoveWindow(from: forward, by: -1, notBefore: today, calendar: calendar))
+    }
+
     @Test func plannerRecenterTriggersNearEitherWindowEdge() {
         let renderDays = CalendarBoardPlannerSupport.plannerRenderDayCount
         let threshold = CalendarBoardPlannerSupport.plannerRecenterThreshold

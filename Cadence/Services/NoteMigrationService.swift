@@ -120,27 +120,28 @@ enum NoteMigrationService {
         report.noteCount = notes.count
         report.canonicalDuplicateCount = canonicalDuplicateCount(in: notes)
 
-        let canonicalKeys = Set(notes.map(canonicalKey(for:)))
+        let canonicalKeys = Set(notes.map(\.canonicalKey))
         for legacy in try context.fetch(FetchDescriptor<DailyNote>()) {
-            if !canonicalKeys.contains("daily:\(legacy.date)") {
+            if !canonicalKeys.contains(canonicalKey(kind: .daily, dateKey: legacy.date, id: legacy.id)) {
                 report.legacyWithoutCanonicalCount += 1
             }
         }
         for legacy in try context.fetch(FetchDescriptor<WeeklyNote>()) {
-            if !canonicalKeys.contains("weekly:\(legacy.weekKey)") {
+            if !canonicalKeys.contains(canonicalKey(kind: .weekly, weekKey: legacy.weekKey, id: legacy.id)) {
                 report.legacyWithoutCanonicalCount += 1
             }
         }
-        for _ in try context.fetch(FetchDescriptor<PermNote>()) where !canonicalKeys.contains("permanent") {
+        for legacy in try context.fetch(FetchDescriptor<PermNote>())
+        where !canonicalKeys.contains(canonicalKey(kind: .permanent, id: legacy.id)) {
             report.legacyWithoutCanonicalCount += 1
         }
         for legacy in try context.fetch(FetchDescriptor<Document>()) {
-            if !canonicalKeys.contains("list:\(legacy.id.uuidString)") {
+            if !canonicalKeys.contains(canonicalKey(kind: .list, id: legacy.id)) {
                 report.legacyWithoutCanonicalCount += 1
             }
         }
         for legacy in try context.fetch(FetchDescriptor<EventNote>()) {
-            let key = legacy.calendarEventID.isEmpty ? sourceKey(kind: .eventNote, id: legacy.id) : "meeting:\(legacy.calendarEventID)"
+            let key = canonicalKey(kind: .meeting, calendarEventID: legacy.calendarEventID, id: legacy.id)
             if !canonicalKeys.contains(key) {
                 report.legacyWithoutCanonicalCount += 1
             }
@@ -179,7 +180,7 @@ enum NoteMigrationService {
         report.canonicalDuplicateCount = canonicalDuplicateCount(in: notes)
         var tracking = MigrationTracking(
             migratedSources: Set(notes.compactMap(sourceKey(for:))),
-            canonicalKeys: Set(notes.map(canonicalKey(for:)))
+            canonicalKeys: Set(notes.map(\.canonicalKey))
         )
 
         try migrateDailyNotes(in: context, report: &report, tracking: &tracking)
@@ -205,7 +206,7 @@ enum NoteMigrationService {
         for legacy in try context.fetch(FetchDescriptor<DailyNote>()) {
             report.legacyDailyScanned += 1
             let source = sourceKey(kind: .daily, id: legacy.id)
-            let canonical = "daily:\(legacy.date)"
+            let canonical = canonicalKey(kind: .daily, dateKey: legacy.date, id: legacy.id)
             guard shouldMigrate(source: source, canonical: canonical, migratedSources: tracking.migratedSources, canonicalKeys: tracking.canonicalKeys, report: &report) else {
                 continue
             }
@@ -235,7 +236,7 @@ enum NoteMigrationService {
         for legacy in try context.fetch(FetchDescriptor<WeeklyNote>()) {
             report.legacyWeeklyScanned += 1
             let source = sourceKey(kind: .weekly, id: legacy.id)
-            let canonical = "weekly:\(legacy.weekKey)"
+            let canonical = canonicalKey(kind: .weekly, weekKey: legacy.weekKey, id: legacy.id)
             guard shouldMigrate(source: source, canonical: canonical, migratedSources: tracking.migratedSources, canonicalKeys: tracking.canonicalKeys, report: &report) else {
                 continue
             }
@@ -265,7 +266,7 @@ enum NoteMigrationService {
         for legacy in try context.fetch(FetchDescriptor<PermNote>()) {
             report.legacyPermanentScanned += 1
             let source = sourceKey(kind: .permanent, id: legacy.id)
-            let canonical = "permanent"
+            let canonical = canonicalKey(kind: .permanent, id: legacy.id)
             guard shouldMigrate(source: source, canonical: canonical, migratedSources: tracking.migratedSources, canonicalKeys: tracking.canonicalKeys, report: &report) else {
                 continue
             }
@@ -310,7 +311,7 @@ enum NoteMigrationService {
                 project: legacy.project
             ))
             tracking.migratedSources.insert(source)
-            tracking.canonicalKeys.insert("list:\(legacy.id.uuidString)")
+            tracking.canonicalKeys.insert(canonicalKey(kind: .list, id: legacy.id))
             report.insertedList += 1
             tracking.inserted = true
         }
@@ -324,7 +325,7 @@ enum NoteMigrationService {
         for legacy in try context.fetch(FetchDescriptor<EventNote>()) {
             report.legacyEventNoteScanned += 1
             let source = sourceKey(kind: .eventNote, id: legacy.id)
-            let canonical = legacy.calendarEventID.isEmpty ? source : "meeting:\(legacy.calendarEventID)"
+            let canonical = canonicalKey(kind: .meeting, calendarEventID: legacy.calendarEventID, id: legacy.id)
             guard shouldMigrate(source: source, canonical: canonical, migratedSources: tracking.migratedSources, canonicalKeys: tracking.canonicalKeys, report: &report) else {
                 continue
             }
@@ -427,19 +428,22 @@ enum NoteMigrationService {
         "\(kind.rawValue):\(id.uuidString)"
     }
 
-    private nonisolated static func canonicalKey(for note: Note) -> String {
-        switch note.kind {
-        case .daily:
-            return "daily:\(note.dateKey)"
-        case .weekly:
-            return "weekly:\(note.weekKey)"
-        case .permanent:
-            return "permanent"
-        case .list:
-            return "list:\(note.id.uuidString)"
-        case .meeting:
-            return note.calendarEventID.isEmpty ? "meeting-note:\(note.id.uuidString)" : "meeting:\(note.calendarEventID)"
-        }
+    /// Canonical key of a note this migration is *about to insert*, computed from the legacy row's
+    /// fields. Uses `Note.canonicalKey`, the one definition of note identity — this file used to
+    /// carry a second, subtly different copy that keyed every dateless daily note as `"daily:"`
+    /// and never trimmed, which made it disagree with `DataIntegrityRepairService` about which
+    /// notes are the same note.
+    ///
+    /// Each legacy row is migrated with `id: legacy.id`, so passing the legacy id here yields
+    /// exactly the key the inserted note will report.
+    private nonisolated static func canonicalKey(
+        kind: NoteKind,
+        dateKey: String = "",
+        weekKey: String = "",
+        calendarEventID: String = "",
+        id: UUID
+    ) -> String {
+        Note.canonicalKey(kind: kind, dateKey: dateKey, weekKey: weekKey, calendarEventID: calendarEventID, id: id)
     }
 
     private static func shouldMigrate(
@@ -469,7 +473,7 @@ enum NoteMigrationService {
     /// makes, so counting them as duplicates would report a healthy store as broken and grow the
     /// count every time they wrote something down.
     private static func canonicalDuplicateCount(in notes: [Note]) -> Int {
-        let counts = Dictionary(grouping: notes.filter { $0.kind != .permanent }, by: canonicalKey(for:))
+        let counts = Dictionary(grouping: notes.filter { $0.kind != .permanent }, by: \.canonicalKey)
             .mapValues(\.count)
         return counts.values.reduce(0) { total, count in
             count > 1 ? total + count - 1 : total

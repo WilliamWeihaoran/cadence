@@ -322,7 +322,7 @@ struct TaskBundleTaskPickerPanel: View {
         return CadenceTaskDetailLine(
             lead: lead,
             due: due,
-            isOverdue: !task.isDone && CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: todayKey)
+            isOverdue: task.isOverdue(todayKey: todayKey)
         )
     }
 }

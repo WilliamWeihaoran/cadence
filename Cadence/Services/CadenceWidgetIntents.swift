@@ -153,20 +153,11 @@ struct ToggleHabitCompletionIntent: AppIntent {
         return .result()
     }
 
-    @discardableResult
-    static func toggleHabitCompletion(
-        habitID: String,
-        on dateKey: String = CadenceWidgetDateSupport.dateKey(from: Date()),
-        in modelContext: ModelContext
-    ) throws -> Bool {
-        try toggleHabitCompletionResult(
-            habitID: habitID,
-            on: dateKey,
-            in: modelContext
-        ).changed
-    }
-
-    private static func toggleHabitCompletionResult(
+    /// The toggle `perform()` runs. It returns the habit and its resulting state as well as
+    /// whether anything changed, because `perform()` needs both to write the optimistic widget
+    /// override — a `-> Bool` shim over this used to exist for the tests alone, which meant the
+    /// two things `perform()` does with the result were never asserted together.
+    static func toggleHabitCompletionResult(
         habitID: String,
         on dateKey: String = CadenceWidgetDateSupport.dateKey(from: Date()),
         in modelContext: ModelContext
@@ -205,7 +196,7 @@ struct ToggleHabitCompletionIntent: AppIntent {
         )
     }
 
-    private struct HabitToggleResult {
+    struct HabitToggleResult {
         let changed: Bool
         let habitID: UUID?
         let isDoneToday: Bool

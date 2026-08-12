@@ -37,7 +37,8 @@ enum CalendarPageDataSupport {
         bufferStart: Date,
         todayDayIdx: Int,
         calendar: Calendar,
-        currentMonthStart: Date? = nil
+        currentMonthStart: Date? = nil,
+        today: Date = Date()
     ) {
         let resolvedCurrentMonthStart = currentMonthStart ?? CalendarMonthGridSupport.currentMonthStart(calendar: calendar)
 
@@ -61,7 +62,8 @@ enum CalendarPageDataSupport {
             anchorDateKey = CalendarPageStateSupport.dateKeyForVisibleMonth(
                 visibleMonthIdx: visibleMonthIdx,
                 currentMonthStart: resolvedCurrentMonthStart,
-                calendar: calendar
+                calendar: calendar,
+                today: today
             )
             let targetDay = CalendarPageStateSupport.timelineDayIndex(
                 anchorDateKey: anchorDateKey,

@@ -3,8 +3,7 @@ import SwiftUI
 
 enum KanbanCardComputedSupport {
     static func isOverdue(task: AppTask) -> Bool {
-        guard !task.dueDate.isEmpty, !task.isDone else { return false }
-        return task.dueDate < DateFormatters.todayKey()
+        task.isOverdue(todayKey: DateFormatters.todayKey())
     }
 
     static func isOverdo(task: AppTask) -> Bool {

@@ -190,8 +190,11 @@ enum TasksPanelSupport {
         )
     }
 
+    /// Counts through `AppTask.isOverdue(todayKey:)` rather than re-deriving the comparison, so a
+    /// finished task with a past due date stops inflating a group header. `regularCount` subtracts
+    /// this from the not-done total, so the two only add up when both exclude completed tasks.
     static func overdueCount(in tasks: [AppTask], todayKey: String) -> Int? {
-        let count = tasks.filter { !$0.isDone && !$0.dueDate.isEmpty && $0.dueDate < todayKey }.count
+        let count = tasks.filter { $0.isOverdue(todayKey: todayKey) }.count
         return count > 0 ? count : nil
     }
 
