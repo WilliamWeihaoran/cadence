@@ -189,7 +189,9 @@ struct AllTasksListView: View {
                 if visibleTasks.isEmpty && completedCount == 0 {
                     EmptyStateView(
                         message: "No tasks yet",
-                        subtitle: "Add a task above to get started",
+                        // Not "above": the header pill this pointed at is gone, and the page's
+                        // create control is the floating "+" below.
+                        subtitle: "Create a task to get started",
                         icon: "checkmark.circle"
                     )
                     .padding(.top, 40)

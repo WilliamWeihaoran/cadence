@@ -12,7 +12,10 @@ struct CalendarBoardDayColumn: View {
     let allBundles: [TaskBundle]
     let areas: [Area]
     let projects: [Project]
-    let onAddTask: () -> Void
+    /// What the column's ghost row does. A day column always composes in place — it supplies the
+    /// day — but the decision still comes from `CalendarBoardPlannerSupport.addAction(for:)` so the
+    /// board's columns and rails answer it in one place.
+    let add: KanbanColumnAddBehavior?
     let onDropTaskOnDay: (AppTask) -> Void
     let onDropBundleOnDay: (TaskBundle) -> Void
     let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
@@ -23,6 +26,7 @@ struct CalendarBoardDayColumn: View {
     @State private var recentlyBundledTaskDropExpiresAt = Date.distantPast
     @State private var isCompletedCollapsed = true
     @State private var isHovered = false
+    @State private var isComposing = false
 
     private var isToday: Bool {
         dateKey == DateFormatters.todayKey()
@@ -51,9 +55,9 @@ struct CalendarBoardDayColumn: View {
         VStack(alignment: .leading, spacing: 0) {
             header
 
-            // Same scroll container the kanban columns use, so "Add task" sits last in the
-            // column here exactly as it does there.
-            KanbanColumnScroll(isColumnHovered: isHovered, onAddTask: onAddTask) {
+            // Same scroll container the kanban columns use, so "Add task" — and the composer that
+            // replaces it — sits last in the column here exactly as it does there.
+            KanbanColumnScroll(isColumnHovered: isHovered, add: add, isComposing: $isComposing) {
                 content
                 completedFooter
             }

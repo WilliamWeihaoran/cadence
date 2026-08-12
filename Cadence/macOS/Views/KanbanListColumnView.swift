@@ -17,10 +17,10 @@ struct TaskListKanbanColumn: View {
     let onAssignTask: (AppTask) -> Void
 
     @Environment(HoveredKanbanColumnManager.self) private var hoveredKanbanColumnManager
-    @Environment(TaskCreationManager.self) private var taskCreationManager
     @State private var isTargeted = false
     @State private var dragOverTaskID: UUID?
     @State private var isHovered = false
+    @State private var isComposing = false
     @State private var frozenTasks: [AppTask]? = nil
 
     private var unfrozenSortedTasks: [AppTask] {
@@ -74,7 +74,7 @@ struct TaskListKanbanColumn: View {
             isHovered = hovering
             if hovering {
                 hoveredKanbanColumnManager.beginHovering(id: columnHoverID) {
-                    presentNewTaskPanel()
+                    isComposing = true
                 }
             } else {
                 hoveredKanbanColumnManager.endHovering(id: columnHoverID)
@@ -86,8 +86,15 @@ struct TaskListKanbanColumn: View {
         BoardColumnHeader(dotColor: color, title: title, count: sortedTasks.count)
     }
 
+    /// List columns intentionally do *not* name a section — only section columns do — so the
+    /// composer opens on the column's list with the default section, which is what this column's
+    /// old create-sheet call did by omission.
     private var columnTaskScroll: some View {
-        KanbanColumnScroll(isColumnHovered: isHovered, onAddTask: presentNewTaskPanel) {
+        KanbanColumnScroll(
+            isColumnHovered: isHovered,
+            add: .compose(.column(container: container, sectionName: TaskSectionDefaults.defaultName)),
+            isComposing: $isComposing
+        ) {
             taskCards
         }
     }
@@ -116,11 +123,6 @@ struct TaskListKanbanColumn: View {
               let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
         moveTask(droppedTask, before: target)
         return true
-    }
-
-    /// List columns intentionally do *not* seed a section name — only section columns do.
-    private func presentNewTaskPanel() {
-        taskCreationManager.present(container: container)
     }
 
     private func moveTask(_ task: AppTask, before target: AppTask?) {

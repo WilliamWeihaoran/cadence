@@ -26,8 +26,8 @@ struct ListSectionKanbanColumn: View {
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @Environment(HoveredSectionManager.self) private var hoveredSectionManager
     @Environment(SectionCompletionAnimationManager.self) private var sectionCompletionAnimationManager
-    @Environment(TaskCreationManager.self) private var taskCreationManager
     @State private var isTargeted = false
+    @State private var isComposing = false
     @State private var dragOverTaskID: UUID? = nil
     @State private var frozenTasks: [AppTask]? = nil
     @State private var showDoneTasks = false
@@ -144,7 +144,7 @@ struct ListSectionKanbanColumn: View {
             isHovered = hovering
             if hovering {
                 hoveredKanbanColumnManager.beginHovering(id: sectionHoverID) {
-                    presentNewTaskPanel()
+                    isComposing = true
                 }
                 hoveredSectionManager.beginHovering(id: section.id) {
                     toggleSectionCompletion()
@@ -202,7 +202,11 @@ struct ListSectionKanbanColumn: View {
     }
 
     private var columnTaskScroll: some View {
-        KanbanColumnScroll(isColumnHovered: isHovered, onAddTask: presentNewTaskPanel) {
+        KanbanColumnScroll(
+            isColumnHovered: isHovered,
+            add: .compose(.column(container: taskContainerSelection, sectionName: section.name)),
+            isComposing: $isComposing
+        ) {
             activeTaskCards
             completedTaskSection
         }
@@ -272,20 +276,16 @@ struct ListSectionKanbanColumn: View {
         return true
     }
 
-    private func presentNewTaskPanel() {
-        let container: TaskContainerSelection
+    /// The list this board belongs to — the "where does this go" half that the column's composer
+    /// seeds, alongside `section.name`.
+    private var taskContainerSelection: TaskContainerSelection {
         if let area {
-            container = .area(area.id)
-        } else if let project {
-            container = .project(project.id)
-        } else {
-            container = .inbox
+            return .area(area.id)
         }
-
-        taskCreationManager.present(
-            container: container,
-            sectionName: section.name
-        )
+        if let project {
+            return .project(project.id)
+        }
+        return .inbox
     }
 
     private func moveTask(_ task: AppTask, before target: AppTask?) {

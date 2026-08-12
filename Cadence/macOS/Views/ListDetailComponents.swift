@@ -51,63 +51,48 @@ struct ListTasksView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            VStack(spacing: 0) {
-                List {
-                    if activeTasks.isEmpty && doneTasks.isEmpty {
-                        EmptyStateView(message: "No tasks", subtitle: "Create a task to get started", icon: "checkmark.circle")
-                            .padding(.top, 40)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                    }
-                    ForEach(groupedActiveTasks) { group in
-                        ListTasksGroupSectionView(
-                            group: group,
-                            isCollapsed: collapsedGroupIDs.contains(group.id),
-                            overdueCount: overdueCount(in: group.tasks),
-                            regularCount: regularCount(in: group.tasks),
-                            allTasks: allTasks,
-                            dragOverTaskID: $dragOverTaskID,
-                            onToggle: { toggleGroup(group.id) },
-                            onReorderTask: reorderTask
-                        )
-                    }
-
-                    if !doneTasks.isEmpty {
-                        ListTasksCompletedSectionView(
-                            tasks: doneTasks,
-                            allTasks: allTasks,
-                            isCollapsed: isCompletedCollapsed,
-                            onToggle: { isCompletedCollapsed.toggle() }
-                        )
-                    }
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .safeAreaInset(edge: .bottom) {
-                    Color.clear.frame(height: 72)
-                }
-                .cadenceSoftPageBounce()
-                .animation(.easeOut(duration: 0.26), value: activeTasks.map(\.id))
+        List {
+            if activeTasks.isEmpty && doneTasks.isEmpty {
+                EmptyStateView(message: "No tasks", subtitle: "Create a task to get started", icon: "checkmark.circle")
+                    .padding(.top, 40)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
-
-            Button {
-                taskCreationManager.present(
-                    container: taskContainerSelection,
-                    sectionName: sectionNames.first ?? TaskSectionDefaults.defaultName
+            ForEach(groupedActiveTasks) { group in
+                ListTasksGroupSectionView(
+                    group: group,
+                    isCollapsed: collapsedGroupIDs.contains(group.id),
+                    overdueCount: overdueCount(in: group.tasks),
+                    regularCount: regularCount(in: group.tasks),
+                    allTasks: allTasks,
+                    dragOverTaskID: $dragOverTaskID,
+                    onToggle: { toggleGroup(group.id) },
+                    onReorderTask: reorderTask
                 )
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 21, weight: .semibold))
-                    .foregroundStyle(Theme.onColor)
-                    .frame(width: 54, height: 54)
-                    .background(Theme.blue)
-                    .clipShape(Circle())
-                    .shadow(color: Theme.blue.opacity(0.32), radius: 18, x: 0, y: 8)
             }
-            .buttonStyle(.cadencePlain)
-            .padding(.trailing, 24)
-            .padding(.bottom, 24)
+
+            if !doneTasks.isEmpty {
+                ListTasksCompletedSectionView(
+                    tasks: doneTasks,
+                    allTasks: allTasks,
+                    isCollapsed: isCompletedCollapsed,
+                    onToggle: { isCompletedCollapsed.toggle() }
+                )
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        // Keeps the last row reachable from under the floating "+".
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 72)
+        }
+        .cadenceSoftPageBounce()
+        .animation(.easeOut(duration: 0.26), value: activeTasks.map(\.id))
+        .floatingNewTaskButton {
+            taskCreationManager.present(
+                container: taskContainerSelection,
+                sectionName: sectionNames.first ?? TaskSectionDefaults.defaultName
+            )
         }
         .background(
             Color.clear

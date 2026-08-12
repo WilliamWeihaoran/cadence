@@ -225,25 +225,55 @@ extension View {
     }
 }
 
+/// What a board column's bottom-of-column add row does when it is pressed.
+///
+/// The split is the whole task-creation rule in one type: a column that already answers "where does
+/// this go" composes the card in place, and one that cannot falls back to the full create sheet.
+enum KanbanColumnAddBehavior {
+    /// Open the inline composer, seeded from this surface. Section and list columns, and board day
+    /// columns, all take this path.
+    case compose(InlineTaskComposerSurface)
+    /// Open the full create sheet. The Calendar Board's Unscheduled rail is the one caller: a
+    /// backlog has no date and no list to seed, so there is nothing for a composer to pre-fill.
+    case presentSheet(() -> Void)
+}
+
 /// The scrolling card stack for a column. The `minHeight` and the inner/outer `contentShape`s
 /// are what keep the empty space under the last card — and an entirely empty column — a live
-/// drop target now that the column paints nothing. Bundling the add-task row in here makes that
-/// structural instead of something each board has to remember.
+/// drop target now that the column paints nothing. Bundling the add-task row — and the composer
+/// that replaces it — in here makes their placement structural instead of something each board has
+/// to remember.
 struct KanbanColumnScroll<Content: View>: View {
     let isColumnHovered: Bool
-    /// `nil` drops the add-task row. The Calendar Board's Overdue rail is the only caller that
-    /// passes it: overdue is a derived state, so "add a task here" has no meaning — the same
+    /// `nil` drops the add-task row entirely. The Calendar Board's Overdue rail is the only caller
+    /// that passes it: overdue is a derived state, so "add a task here" has no meaning — the same
     /// reason the rail refuses drops.
-    let onAddTask: (() -> Void)?
+    let add: KanbanColumnAddBehavior?
+    /// Owned by the column rather than by this view so a column can open its composer from
+    /// somewhere other than the add row — Cmd+N on the hovered kanban column does exactly that.
+    /// Columns whose `add` is not `.compose` never read it.
+    var isComposing: Binding<Bool> = .constant(false)
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 content()
-                // Replaces the old header "+" chip; always genuinely last in the column.
-                if let onAddTask {
-                    KanbanColumnAddTaskRow(isColumnHovered: isColumnHovered, action: onAddTask)
+                // Replaces the old header "+" chip; always genuinely last in the column. The
+                // composer takes the same slot, so the row it grew out of does not shift.
+                if case .compose(let surface) = add, isComposing.wrappedValue {
+                    InlineTaskComposer(surface: surface) {
+                        isComposing.wrappedValue = false
+                    }
+                } else if let add {
+                    KanbanColumnAddTaskRow(isColumnHovered: isColumnHovered) {
+                        switch add {
+                        case .compose:
+                            isComposing.wrappedValue = true
+                        case .presentSheet(let present):
+                            present()
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 4)
@@ -460,7 +490,9 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
 
 /// Bottom-of-column affordance that replaces the old header "+" button. It is always
 /// present — including for empty columns, which otherwise render as nothing now that the
-/// column has no container — and routes to the exact same task-creation call.
+/// column has no container. Pressing it opens whatever `KanbanColumnAddBehavior` the column
+/// declared: the inline composer for columns that know where the card goes, the create sheet
+/// otherwise.
 struct KanbanColumnAddTaskRow: View {
     let isColumnHovered: Bool
     let action: () -> Void

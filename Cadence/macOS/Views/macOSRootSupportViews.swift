@@ -185,19 +185,43 @@ struct CadenceQuietTabButton: View {
     }
 }
 
-struct DesktopPrimaryActionButton: View {
-    let title: String
-    let systemImage: String
+/// The page-level "new task" affordance, on every task page that has one: All Tasks, Inbox, and
+/// an area/project's Tasks tab. It opens the full `CreateTaskSheet`, because a page — unlike a
+/// board column — does not answer "where does this go" on the user's behalf.
+///
+/// It is one view rather than three copies, and it replaced the "New Task" header pill that All
+/// Tasks and Inbox used to carry: two shapes for one action, differing only by which screen you
+/// happened to be on.
+///
+/// Callers place it themselves with `.floatingNewTaskButton()`, which pins it to the page's
+/// bottom-trailing corner. Pages that use it should leave a bottom safe-area inset so the last
+/// row can still be reached under it.
+struct FloatingNewTaskButton: View {
     let action: () -> Void
 
     var body: some View {
-        CadenceActionButton(
-            title: title,
-            systemImage: systemImage,
-            role: .primary,
-            size: .regular,
-            action: action
-        )
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 21, weight: .semibold))
+                .foregroundStyle(Theme.onColor)
+                .frame(width: 54, height: 54)
+                .background(Theme.blue)
+                .clipShape(Circle())
+                .shadow(color: Theme.blue.opacity(0.32), radius: 18, x: 0, y: 8)
+        }
+        .buttonStyle(.cadencePlain)
+        .padding(.trailing, 24)
+        .padding(.bottom, 24)
+        .accessibilityLabel("New Task")
+    }
+}
+
+extension View {
+    /// Overlays `FloatingNewTaskButton` in the page's bottom-trailing corner.
+    func floatingNewTaskButton(action: @escaping () -> Void) -> some View {
+        overlay(alignment: .bottomTrailing) {
+            FloatingNewTaskButton(action: action)
+        }
     }
 }
 
@@ -592,14 +616,12 @@ struct AllTasksPageView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // No trailing action: the page's "new task" affordance is the floating circle over the
+            // list below, the same one an area/project's Tasks tab has always had.
             DesktopPageHeader(
                 eyebrow: "Tasks",
                 title: "All Tasks"
-            ) {
-                DesktopPrimaryActionButton(title: "New Task", systemImage: "plus") {
-                    taskCreationManager.present()
-                }
-            }
+            )
 
             Divider().background(Theme.borderSubtle)
 
@@ -631,7 +653,16 @@ struct AllTasksPageView: View {
                         sortDirection: sortDirection,
                         groupingMode: groupingMode
                     )
+                    // The inset keeps the last row reachable from under the floating button.
+                    .safeAreaInset(edge: .bottom) {
+                        Color.clear.frame(height: 72)
+                    }
+                    .floatingNewTaskButton {
+                        taskCreationManager.present()
+                    }
                 case .kanban:
+                    // No page-level button here, exactly as on a list's Kanban tab: every column
+                    // has its own ghost row, and each of those knows which list the card lands in.
                     TaskListsKanbanView(
                         sortField: sortField,
                         sortDirection: sortDirection

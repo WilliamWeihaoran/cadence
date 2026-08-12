@@ -86,11 +86,10 @@ struct CalendarPageBoardView: View {
     private func rail(_ rail: CalendarBoardRail, tasks: [AppTask]) -> some View {
         // Only the Unscheduled rail takes drops or offers an add row; the Overdue rail gets `nil`
         // for both because a card cannot be dragged — or created — *into* being late.
-        let add = CalendarBoardPlannerSupport.addAction(for: .rail(rail))
-        return CalendarBoardRailColumn(
+        CalendarBoardRailColumn(
             rail: rail,
             tasks: tasks,
-            onAddTask: add.map { action in { addTask(action) } },
+            add: addBehavior(for: .rail(rail)),
             onDrop: { items in rail == .unscheduled ? unschedule(items) : false }
         )
     }
@@ -114,11 +113,7 @@ struct CalendarPageBoardView: View {
                             allBundles: allBundles,
                             areas: areas,
                             projects: projects,
-                            onAddTask: {
-                                if let action = CalendarBoardPlannerSupport.addAction(for: .day(dateKey)) {
-                                    addTask(action)
-                                }
-                            },
+                            add: addBehavior(for: .day(dateKey)),
                             onDropTaskOnDay: { task in schedule(task, on: dateKey) },
                             onDropBundleOnDay: { bundle in move(bundle, on: dateKey) },
                             onDropTaskOnBundle: { task, bundle in
@@ -243,19 +238,25 @@ struct CalendarPageBoardView: View {
         recenterWindowIfNeeded(proxy, visibleDayIndex: dayIndex, visibleDate: date)
     }
 
-    /// A day column's "+" inserts inline — the column supplies the do date. The Unscheduled rail
-    /// has no date to supply, so it opens the create sheet instead of dropping an untitled card
-    /// into the backlog; that is what the Planning page's add row did before this board absorbed it.
-    private func addTask(_ action: CalendarBoardAddAction) {
-        switch action {
+    /// A day column's "+" composes inline — the column supplies the do date, so the inline composer
+    /// only has to ask for a name. The Unscheduled rail has no date to supply, so it opens the
+    /// create sheet instead; that is what the Planning page's add row did before this board
+    /// absorbed it.
+    ///
+    /// `insertInline` used to mean *insert*: it built an `AppTask` titled "New Task" and saved it,
+    /// with no prompt at all, so a mis-click left an untitled card in the column. It now opens the
+    /// composer over the same date, and creation runs through `TaskCreationService` like every
+    /// other create path in the app.
+    private func addBehavior(for target: CalendarBoardDropTarget) -> KanbanColumnAddBehavior? {
+        switch CalendarBoardPlannerSupport.addAction(for: target) {
+        case .none:
+            return nil
         case .presentCreateSheet:
-            taskCreationManager.present()
+            return .presentSheet { taskCreationManager.present() }
         case .insertInline(let dateKey):
-            let task = AppTask(title: "New Task")
-            task.scheduledDate = dateKey
-            task.scheduledStartMin = -1
-            modelContext.insert(task)
-            try? modelContext.save()
+            // Whole-day columns: this board has no per-column time range, so the composer seeds no
+            // timeline slot. `InlineTaskComposerSurface.day` carries one for a board that does.
+            return .compose(.day(dateKey: dateKey, startMin: -1))
         }
     }
 

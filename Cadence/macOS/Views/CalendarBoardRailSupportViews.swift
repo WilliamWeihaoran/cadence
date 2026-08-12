@@ -11,8 +11,10 @@ import SwiftUI
 struct CalendarBoardRailColumn: View {
     let rail: CalendarBoardRail
     let tasks: [AppTask]
-    /// `nil` on the Overdue rail — see `KanbanColumnScroll.onAddTask`.
-    let onAddTask: (() -> Void)?
+    /// `nil` on the Overdue rail — see `KanbanColumnScroll.add`. The Unscheduled rail passes
+    /// `.presentSheet`: a backlog has neither a day nor a list, so there is nothing for the inline
+    /// composer the day columns use to pre-fill.
+    let add: KanbanColumnAddBehavior?
     let onDrop: ([String]) -> Bool
 
     @State private var isDropTargeted = false
@@ -22,7 +24,7 @@ struct CalendarBoardRailColumn: View {
         VStack(alignment: .leading, spacing: 0) {
             BoardColumnHeader(dotColor: rail.dotColor, title: rail.label, count: tasks.count)
 
-            KanbanColumnScroll(isColumnHovered: isHovered, onAddTask: onAddTask) {
+            KanbanColumnScroll(isColumnHovered: isHovered, add: add) {
                 ForEach(tasks) { task in
                     KanbanCard(task: task, showsContainerChip: true)
                         .draggable(TaskDragPayload.string(for: task.id))

@@ -390,11 +390,33 @@ Each drag context uses a unique prefix to prevent cross-context drops:
 - `"allDayEvent:\(eventIdentifier)"` — all-day event chips dragged from the calendar header onto a day column timeline
 
 ## Task Creation
+There are exactly **three** creation affordances on macOS, and which one a surface gets is decided
+by whether the surface already answers "where does this go":
+1. **A floating circular `+`** on every task *page* — All Tasks (list mode), Inbox, and an
+   area/project's Tasks tab (`FloatingNewTaskButton`, `.floatingNewTaskButton()`). It opens the full
+   `CreateTaskSheet`. There is no "New task" header pill any more; `DesktopPrimaryActionButton` was
+   deleted with it.
+2. **A column ghost row** on every board column — kanban section columns, the All Tasks board's list
+   columns, and the Calendar Board's day columns. It opens the **inline composer**
+   (`InlineTaskComposer`), not the sheet. The Calendar Board's day column used to insert an
+   untitled "New Task" card with no prompt; it does not any more.
+3. **The calendar week tab's** drag-to-create task/event popover, unchanged.
+
+The inline composer is **one** view for all those columns, parameterised by
+`InlineTaskComposerSurface` (`.column(container:sectionName:)` / `.day(dateKey:startMin:)`).
+`InlineTaskComposerSupport` owns the testable half — what a surface seeds, which chips it shows,
+and how the draft resolves — and creation goes through `TaskCreationService` like every other path.
+Chips reuse the existing pickers (`TaskTitleEntryField` with `~`/`#`/`!`, `ContainerPickerBadge`,
+`TaskSectionPickerBadge`, `TaskDateChip`, `TagPickerControl`). Enter creates and leaves the composer
+open for the next card; Escape closes it. `KanbanColumnAddBehavior` is what each column declares:
+`.compose(surface)` or `.presentSheet` — the Calendar Board's Unscheduled rail is the only
+`.presentSheet` caller, because a backlog has neither a day nor a list to seed.
+
 `TaskCreationManager` is an `@Observable` singleton (`TaskCreationManager.shared`) injected via `.environment`. Call `taskCreationManager.present(...)` with optional seed values (title, notes, dueDateKey, doDateKey, priority, container, sectionName) to show `CreateTaskSheet`.
 
 The same shared sheet is used for:
-- in-app creation
-- kanban column creation
+- page-level creation (the floating `+`)
+- the Calendar Board's Unscheduled rail
 - the system-wide quick task panel (`QuickTaskPanelController`)
 
 `CreateTaskSheet` behavior:
@@ -554,7 +576,7 @@ Global local monitor unless noted. **Hovered task date nudge** requires the poin
 - **Cmd+P** — cycle hovered task priority (`none → low → medium → high → none`)
 - **Cmd+Return** — toggle completion for hovered task; also creates a task in `CreateTaskSheet`
 - **Cmd+/** — toggle cancellation for hovered task (same cancel/undo-cancel behavior and animations)
-- **Cmd+N** — create a task in the hovered kanban column
+- **Cmd+N** — open the inline composer in the hovered kanban column (same composer its ghost row opens, not the sheet)
 - **Cmd+K** — open the global command palette / search overlay
 - **Cmd+O** — toggle **main** sidebar visibility (also a floating control; works in Focus mode)
 - **Cmd+S** — for a hovered task, open a focused **subtasks-only** popover with the subtask field ready for typing

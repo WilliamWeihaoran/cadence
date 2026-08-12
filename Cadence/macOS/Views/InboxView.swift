@@ -62,9 +62,7 @@ struct InboxView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            InboxHeaderView(activeTaskCount: inboxItemCount) {
-                taskCreationManager.present()
-            }
+            InboxHeaderView(activeTaskCount: inboxItemCount)
             Divider().background(Theme.borderSubtle)
             InboxControlsBarView(sortField: $sortField, sortDirection: $sortDirection, groupingMode: $groupingMode)
             Divider().background(Theme.borderSubtle)
@@ -111,6 +109,10 @@ struct InboxView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
+                // Keeps the last row reachable from under the floating "+".
+                .safeAreaInset(edge: .bottom) {
+                    Color.clear.frame(height: 72)
+                }
                 .cadenceSoftPageBounce()
                 .background(Theme.bg)
                 .animation(.easeOut(duration: 0.26), value: activeTasks.map(\.id))
@@ -121,6 +123,9 @@ struct InboxView: View {
             Color.clear.contentShape(Rectangle()).onTapGesture { clearAppEditingFocus() }
         )
         .background(Theme.bg)
+        .floatingNewTaskButton {
+            taskCreationManager.present()
+        }
         .onAppear {
             isCompletedCollapsed = true
             remindersManager.refreshAuthorizationState()
@@ -144,9 +149,7 @@ struct InboxView: View {
     }
 
     private var emptyState: some View {
-        InboxEmptyStateView {
-            taskCreationManager.present()
-        }
+        InboxEmptyStateView()
     }
 
     // MARK: - Actions

@@ -10,16 +10,16 @@ struct InboxTaskGroup: Identifiable {
 
 struct InboxHeaderView: View {
     let activeTaskCount: Int
-    let onNewTask: () -> Void
 
+    /// No trailing action: Inbox's "new task" affordance is the floating circle over the list,
+    /// the same one every other task page uses. The header pill that used to live here was the
+    /// second shape for one action.
     var body: some View {
         DesktopPageHeader(
             eyebrow: "Tasks",
             title: "Inbox",
             count: activeTaskCount
-        ) {
-            DesktopPrimaryActionButton(title: "New Task", systemImage: "plus", action: onNewTask)
-        }
+        )
     }
 }
 
@@ -344,9 +344,10 @@ struct InboxCompletedSectionView: View {
     }
 }
 
+/// The empty state carries no button of its own: the floating "+" is on screen behind it, so a
+/// second create control here would be a third shape for the same action. The copy still says
+/// what the screen is for, which the page header deliberately does not.
 struct InboxEmptyStateView: View {
-    let onNewTask: () -> Void
-
     var body: some View {
         ZStack {
             Theme.bg
@@ -368,20 +369,6 @@ struct InboxEmptyStateView: View {
                         .foregroundStyle(Theme.dim)
                         .multilineTextAlignment(.center)
                 }
-                Button(action: onNewTask) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text("New Task")
-                            .font(.system(size: 13, weight: .semibold))
-                    }
-                    .foregroundStyle(Theme.blue)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 9)
-                    .background(Theme.blue.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.cadencePlain)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
