@@ -15,9 +15,9 @@ struct SidebarView: View {
     @Query private var allTasks: [AppTask]
     @Query private var habits: [Habit]
     @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
-    @AppStorage("sidebarHiddenTabs") private var sidebarHiddenTabsRaw = ""
-    @AppStorage("sidebarTabOrder") private var sidebarTabOrderRaw = ""
-    @AppStorage("sidebarTabColors") private var sidebarTabColorsRaw = ""
+    @AppStorage(CadencePreferenceKeys.sidebarHiddenTabs) private var sidebarHiddenTabsRaw = ""
+    @AppStorage(CadencePreferenceKeys.sidebarTabOrder) private var sidebarTabOrderRaw = ""
+    @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = ""
 
     @Environment(GlobalSearchManager.self) private var globalSearchManager
 

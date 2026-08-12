@@ -602,31 +602,4 @@ struct GoalsEmptyDetail: View {
     }
 }
 
-extension Goal {
-    var startDateDate: Date? { DateFormatters.ymd.date(from: startDate) }
-    var endDateDate: Date? { DateFormatters.ymd.date(from: endDate) }
-
-    var rangeLabel: String {
-        guard let s = startDateDate, let e = endDateDate else { return "No date range" }
-        return "\(DateFormatters.shortDate.string(from: s)) - \(DateFormatters.shortDate.string(from: e))"
-    }
-
-    var progressSummary: String {
-        GoalContributionResolver.summary(for: self).taskCountLabel
-    }
-
-    var daysSummary: String {
-        guard let end = endDateDate else { return "No end date" }
-        let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: Date()), to: end).day ?? 0
-        if status == .done { return "Completed" }
-        if days < 0 { return "\(-days)d late" }
-        if days == 0 { return "Due today" }
-        return "\(days)d left"
-    }
-
-    var isOverdue: Bool {
-        guard status != .done, let end = endDateDate else { return false }
-        return end < Calendar.current.startOfDay(for: Date())
-    }
-}
 #endif

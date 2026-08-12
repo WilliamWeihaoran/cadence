@@ -9,7 +9,7 @@ struct GlobalSearchOverlay: View {
 
     @Environment(GlobalSearchManager.self) private var searchManager
     @Environment(CalendarManager.self) private var calendarManager
-    @AppStorage("sidebarHiddenTabs") private var sidebarHiddenTabsRaw = ""
+    @AppStorage(CadencePreferenceKeys.sidebarHiddenTabs) private var sidebarHiddenTabsRaw = ""
 
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]

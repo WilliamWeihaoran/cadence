@@ -10,10 +10,10 @@ struct SettingsView: View {
     @Environment(RemindersManager.self) private var remindersManager
     @Environment(\.modelContext) private var modelContext
     @AppStorage(NotificationManager.notificationsEnabledDefaultsKey) private var notificationsEnabled = false
-    @AppStorage("listDetailDefaultPage") private var listDetailDefaultPage = ListDetailPage.tasks.rawValue
-    @AppStorage("sidebarHiddenTabs") private var sidebarHiddenTabsRaw = ""
-    @AppStorage("sidebarTabOrder") private var sidebarTabOrderRaw = ""
-    @AppStorage("sidebarTabColors") private var sidebarTabColorsRaw = ""
+    @AppStorage(CadencePreferenceKeys.listDetailDefaultPage) private var listDetailDefaultPage = ListDetailPage.tasks.rawValue
+    @AppStorage(CadencePreferenceKeys.sidebarHiddenTabs) private var sidebarHiddenTabsRaw = ""
+    @AppStorage(CadencePreferenceKeys.sidebarTabOrder) private var sidebarTabOrderRaw = ""
+    @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = ""
     @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]

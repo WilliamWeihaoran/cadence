@@ -64,7 +64,7 @@ private struct ListDetailView: View {
     var project: Project?
 
     @Environment(ListNavigationManager.self) private var listNavigationManager
-    @AppStorage("listDetailDefaultPage") private var defaultPageRawValue = ListDetailPage.tasks.rawValue
+    @AppStorage(CadencePreferenceKeys.listDetailDefaultPage) private var defaultPageRawValue = ListDetailPage.tasks.rawValue
     @State private var tab: ListDetailPage = .tasks
     @State private var showEdit = false
     @State private var keyMonitor: Any? = nil
