@@ -158,8 +158,8 @@ struct ListEditorColorStrip: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(ColorGrid.offeredColors(for: selected), id: \.self) { hex in
-                let isSelected = ColorGrid.matches(hex, selected)
+            ForEach(CadenceColorPalette.offeredColors(for: selected), id: \.self) { hex in
+                let isSelected = CadenceColorPalette.matches(hex, selected)
                 Button {
                     selected = hex
                 } label: {

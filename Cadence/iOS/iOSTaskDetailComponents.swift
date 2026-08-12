@@ -20,9 +20,9 @@ struct iOSTaskEditorTitleCard: View {
                         .foregroundStyle(task.isDone ? Theme.onColor : CadenceTaskPresentationSupport.statusColor(task.status))
                         .frame(width: isRegularWidth ? 38 : 34, height: isRegularWidth ? 38 : 34)
                         .background(task.isDone ? Theme.doneFill : CadenceTaskPresentationSupport.statusColor(task.status).opacity(0.13))
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.iosPressable)
                 .accessibilityLabel(task.isDone ? "Mark task todo" : "Complete task")
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -137,25 +137,32 @@ struct iOSTaskEditorRow<Content: View>: View {
 
             content()
         }
-        .frame(minHeight: 34)
+        .frame(minHeight: 44)
     }
 }
 
+/// Read-only summary chip at the head of the task sheet. Neutral surface, tinted icon: the strip
+/// sits directly above the editable rows that own these same five fields, so it must read as a
+/// summary rather than five competing alerts. Same icon-carries-identity rule as `KanbanMetaChip`.
 private struct iOSTaskEditorContextChip: View {
     let title: String
     let systemImage: String
     let color: Color
 
     var body: some View {
-        Label(title, systemImage: systemImage)
-            .labelStyle(.titleAndIcon)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(color)
-            .lineLimit(1)
-            .padding(.horizontal, 9)
-            .frame(height: 28)
-            .background(color.opacity(0.12))
-            .clipShape(Capsule())
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(color)
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.muted)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 28)
+        .background(Theme.surfaceElevated.opacity(0.75))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 }
 
@@ -193,11 +200,11 @@ struct iOSSubtaskRow: View {
                 subtask.isDone.toggle()
                 save()
             } label: {
-                iOSTaskCompletionCircle(isDone: subtask.isDone, tint: Theme.dim)
+                iOSTaskCompletionCircle(isDone: subtask.isDone, tint: Theme.dim, diameter: 15)
                     .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
+                    .iOSExpandedHitArea(12)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.iosPressable)
             .accessibilityLabel(subtask.isDone ? "Mark subtask todo" : "Complete subtask")
 
             TextField("Subtask", text: $subtask.title, axis: .vertical)
@@ -219,9 +226,9 @@ struct iOSSubtaskRow: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
+                    .iOSExpandedHitArea(8)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.iosPressable)
             .accessibilityLabel("Delete subtask")
         }
         .padding(.horizontal, 2)
@@ -323,11 +330,11 @@ struct iOSTaskTagEditorSection: View {
                     Image(systemName: "plus")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Theme.onColor)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                         .background(trimmedNewTagName.isEmpty ? Theme.surfaceElevated : Theme.blue)
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.iosPressable)
                 .disabled(trimmedNewTagName.isEmpty)
             }
         }

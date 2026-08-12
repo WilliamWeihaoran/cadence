@@ -95,25 +95,31 @@ struct iOSTrackingTextField: View {
     }
 }
 
+/// The tracking editors' name for `iOSEditorSection`. The calendar sheets each carried their own
+/// byte-identical copy of this; there is one now.
 struct iOSTrackingPickerSection<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(title)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Theme.dim)
-                .textCase(.uppercase)
-                .kerning(0.8)
+        iOSEditorSection(title: title) { content }
+    }
+}
 
-            VStack(alignment: .leading, spacing: 0) {
-                content
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
-        }
+/// The label half of a label/value row inside an editor card. Previously these were bare `Text`,
+/// which resolves to the system's own primary colour rather than anything in `Theme` — and read at
+/// the same weight as the value beside it, so neither looked like the answer.
+struct iOSTrackingFieldLabel: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(Theme.subdued)
     }
 }
 
@@ -124,13 +130,13 @@ struct iOSTrackingDateRangeSection: View {
     var body: some View {
         iOSTrackingPickerSection(title: "Dates") {
             HStack {
-                Text("Start")
+                iOSTrackingFieldLabel("Start")
                 Spacer()
                 CadenceDatePicker(selection: $startDate)
             }
-            Divider().background(Theme.borderSubtle.opacity(0.55)).padding(.vertical, 8)
+            iOSEditorDivider()
             HStack {
-                Text("End")
+                iOSTrackingFieldLabel("End")
                 Spacer()
                 CadenceDatePicker(selection: $endDate)
             }
@@ -165,30 +171,37 @@ struct iOSHabitFrequencyEditor: View {
         case .daily:
             Text("Every day")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.dim)
+                .foregroundStyle(Theme.subdued)
         case .daysOfWeek:
-            HStack(spacing: 7) {
+            // 44pt circles, not 34: these are the smallest controls in the editor and the
+            // easiest to mis-tap, and selected/unselected now read as tint-wash vs. plain the
+            // same way every other toggle in the app does.
+            HStack(spacing: 6) {
                 ForEach(weekdays, id: \.0) { day, label in
+                    let isOn = selectedDays.contains(day)
                     Button {
-                        if selectedDays.contains(day) {
+                        if isOn {
                             selectedDays.remove(day)
                         } else {
                             selectedDays.insert(day)
                         }
                     } label: {
                         Text(label)
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(selectedDays.contains(day) ? Theme.text : Theme.dim)
-                            .frame(width: 34, height: 34)
-                            .background(selectedDays.contains(day) ? Theme.blue.opacity(0.22) : Theme.surfaceElevated)
-                            .clipShape(Circle())
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(isOn ? Theme.blue : Theme.dim)
+                            .frame(width: 44, height: 44)
+                            .background(Circle().fill(isOn ? Theme.blue.opacity(0.14) : Theme.surfaceElevated.opacity(0.55)))
+                            .overlay(Circle().strokeBorder(isOn ? Theme.blue.opacity(0.28) : Theme.borderSubtle.opacity(0.45), lineWidth: 1))
+                            .contentShape(Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.iosPressable)
+                    .accessibilityLabel(label)
+                    .accessibilityAddTraits(isOn ? .isSelected : [])
                 }
             }
         case .timesPerWeek:
             HStack {
-                Text("Times per week")
+                iOSTrackingFieldLabel("Times per week")
                 Spacer()
                 iOSChoiceValueButton(title: "\(timesPerWeek)", color: Theme.text) {
                     showTimesPerWeekPicker = true
@@ -205,7 +218,7 @@ struct iOSHabitFrequencyEditor: View {
             }
         case .monthly:
             HStack {
-                Text("Day of month")
+                iOSTrackingFieldLabel("Day of month")
                 Spacer()
                 iOSChoiceValueButton(title: "\(monthlyDay)", color: Theme.text) {
                     showMonthlyDayPicker = true
@@ -231,18 +244,28 @@ struct iOSTrackingIconGrid: View {
     var body: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
             ForEach(icons, id: \.self) { icon in
+                let isOn = selection == icon
                 Button {
                     selection = icon
                 } label: {
                     Image(systemName: icon)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(selection == icon ? Theme.text : Theme.dim)
-                        .frame(height: 36)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(isOn ? Theme.blue : Theme.dim)
+                        .frame(height: 44)
                         .frame(maxWidth: .infinity)
-                        .background(selection == icon ? Theme.blue.opacity(0.22) : Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .background(
+                            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                                .fill(isOn ? Theme.blue.opacity(0.14) : Theme.surfaceElevated.opacity(0.55))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                                .strokeBorder(isOn ? Theme.blue.opacity(0.28) : Theme.borderSubtle.opacity(0.45), lineWidth: 1)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.iosPressable)
+                .accessibilityLabel(icon)
+                .accessibilityAddTraits(isOn ? .isSelected : [])
             }
         }
     }
@@ -250,11 +273,19 @@ struct iOSTrackingIconGrid: View {
 
 struct iOSTrackingColorGrid: View {
     @Binding var selection: String
-    private let colors = ["#4a9eff", "#a78bfa", "#4ecb71", "#ffb84d", "#ff6b6b", "#38d5c7", "#f472b6", "#94a3b8"]
+    private var colors: [String] { CadenceColorPalette.offeredColors(for: selection) }
 
+    /// Horizontally scrollable, because the palette is wider than an iPhone.
+    ///
+    /// Twelve 36pt swatches plus their gaps need ~531pt; the enclosing `iOSEditorSection` card
+    /// leaves about 329pt on an iPhone and less on iPad, where the editor is a two-column grid —
+    /// and `cadenceCard` ends in a `clipShape`, so the overflow was not merely off-screen, it was
+    /// untappable. The sibling `iOSSettingsColorSwatchRow` already scrolls for the same reason.
     var body: some View {
-        HStack(spacing: 9) {
-            ForEach(colors, id: \.self) { color in
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 9) {
+                ForEach(colors, id: \.self) { color in
+                let isOn = CadenceColorPalette.matches(color, selection)
                 Button {
                     selection = color
                 } label: {
@@ -263,11 +294,23 @@ struct iOSTrackingColorGrid: View {
                         .frame(width: 30, height: 30)
                         .overlay {
                             Circle()
-                                .strokeBorder(selection == color ? Theme.text : Color.clear, lineWidth: 2)
+                                .strokeBorder(isOn ? Theme.text : Color.clear, lineWidth: 2)
                         }
+                        .padding(3)
+                        .overlay {
+                            Circle()
+                                .strokeBorder(isOn ? Color(hex: color).opacity(0.45) : Color.clear, lineWidth: 1)
+                        }
+                        .iOSExpandedHitArea(4)
                 }
-                .buttonStyle(.plain)
+                    .buttonStyle(.iosPressable)
+                    .accessibilityLabel("Color \(color)")
+                    .accessibilityAddTraits(isOn ? .isSelected : [])
+                }
             }
+            // The swatch ring is drawn outside the circle's own bounds; without this the
+            // leading and trailing selection rings clip against the scroll view.
+            .padding(.horizontal, 2)
         }
     }
 }

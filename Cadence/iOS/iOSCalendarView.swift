@@ -110,13 +110,6 @@ struct iOSCalendarView: View {
         selectedUniqueTaskCount + selectedBundles.count + selectedEvents.count
     }
 
-    private var activePresentationLabel: String {
-        if presentation == .board {
-            return "Board"
-        }
-        return viewMode.rawValue
-    }
-
     private var selectedLeadItem: iOSCalendarLeadItem? {
         if let bundle = selectedBundles.first {
             return iOSCalendarLeadItem(
@@ -179,7 +172,6 @@ struct iOSCalendarView: View {
 
             iOSCalendarContextStrip(
                 selectedDate: selectedDate,
-                presentationLabel: activePresentationLabel,
                 totalCount: selectedTotalCount,
                 timedCount: selectedTimedTaskCount,
                 taskCount: selectedUniqueTaskCount,

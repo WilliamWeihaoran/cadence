@@ -46,48 +46,64 @@ struct iOSMarkdownModePicker: View {
     }
 
     var body: some View {
-        // Same grouped-capsule control at every width — showsLabels only adds text next to the
-        // icon when there's room. Previously the regular-width case used a native
-        // `.pickerStyle(.segmented)`, which looked like a different, disconnected control (a
-        // plain system tab bar) from the custom capsule used everywhere else in the app.
-        HStack(spacing: 2) {
+        // The shared segmented control from `iOSDesignSystem.swift` — the same one the calendar's
+        // view-mode switch wears. This used to be a private capsule with its own trough fill, its
+        // own hairline alpha and its own 6/7pt inner radius: a separate idiom for "one of these is
+        // selected", sitting a few points away from the format toolbar's.
+        iOSSegmentedPillGroup {
             ForEach(iOSMarkdownEditorMode.allCases) { candidate in
-                Button {
+                iOSMarkdownModeSegment(
+                    title: showsLabels ? candidate.rawValue : nil,
+                    systemImage: candidate.systemImage,
+                    accessibilityTitle: candidate.rawValue,
+                    isSelected: mode == candidate
+                ) {
                     mode = candidate
-                } label: {
-                    modeLabel(for: candidate)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(candidate.rawValue)
             }
-        }
-        .padding(2)
-        .background(Theme.surfaceElevated.opacity(0.56))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.46), lineWidth: 1)
         }
     }
+}
 
-    @ViewBuilder
-    private func modeLabel(for candidate: iOSMarkdownEditorMode) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: candidate.systemImage)
-                .font(.system(size: compact ? 11 : 12, weight: .semibold))
-            if showsLabels {
-                Text(candidate.rawValue)
-                    .font(.system(size: 12, weight: .semibold))
+/// One segment of the editor's mode picker.
+///
+/// This is `iOSSegmentedPill` with the label made optional, and it exists only for that: the
+/// picker has to fit inside a navigation-bar toolbar item and inside dense section-header rows,
+/// where three labelled segments do not fit, and `iOSSegmentedPill` cannot express icon-only
+/// today. Every other value here — the trough, the inner radius, the tint wash and hairline, the
+/// 38pt height, the press feedback — is the design system's, so the two read as one control. Fold
+/// this back into `iOSSegmentedPill` as soon as that grows an icon-only affordance.
+private struct iOSMarkdownModeSegment: View {
+    let title: String?
+    let systemImage: String
+    let accessibilityTitle: String
+    let isSelected: Bool
+    var tint: Color = Theme.blue
+    let action: () -> Void
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.radiusControl - 3, style: .continuous)
+
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 11, weight: .semibold))
+                if let title {
+                    Text(title)
+                        .font(.system(size: 12, weight: isSelected ? .bold : .semibold))
+                        .lineLimit(1)
+                }
             }
+            .foregroundStyle(isSelected ? tint : Theme.dim)
+            .padding(.horizontal, 10)
+            .frame(minWidth: title == nil ? 38 : 58, minHeight: 38)
+            .background(shape.fill(isSelected ? tint.opacity(0.14) : Color.clear))
+            .overlay(shape.strokeBorder(isSelected ? tint.opacity(0.26) : Color.clear, lineWidth: 1))
+            .contentShape(shape)
         }
-        .foregroundStyle(mode == candidate ? Theme.text : Theme.dim)
-        .frame(height: compact ? 30 : 32)
-        .frame(minWidth: showsLabels ? nil : (compact ? 32 : 34))
-        .padding(.horizontal, showsLabels ? 12 : 0)
-        .background(
-            RoundedRectangle(cornerRadius: compact ? 6 : 7, style: .continuous)
-                .fill(mode == candidate ? Theme.blue.opacity(0.18) : Color.clear)
-        )
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel(accessibilityTitle)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -126,12 +142,11 @@ struct iOSMarkdownEditingSurface: View {
                 renderedPreview
             }
 
-            Divider().background(Theme.borderSubtle.opacity(0.65))
+            Divider().background(Theme.borderSubtle)
 
             iOSMarkdownStatusBar(
                 wordCount: wordCount,
                 lineCount: lineCount,
-                mode: mode,
                 isRegularWidth: horizontalSizeClass == .regular
             )
         }
@@ -219,7 +234,7 @@ struct iOSMarkdownEditingSurface: View {
                     applyReferenceCompletion(markdown, context: context)
                 }
 
-                Divider().background(Theme.borderSubtle.opacity(0.52))
+                Divider().background(Theme.borderSubtle)
             } else if let context = slashCommandContext {
                 iOSMarkdownSlashCommandStrip(
                     context: context,
@@ -228,10 +243,13 @@ struct iOSMarkdownEditingSurface: View {
                     applySlashCommand(command, context: context)
                 }
 
-                Divider().background(Theme.borderSubtle.opacity(0.52))
+                Divider().background(Theme.borderSubtle)
             }
 
-            Divider().background(Theme.borderSubtle.opacity(0.62))
+            // One hairline colour for every rule in the editor. These three were 0.52, 0.62 and
+            // 0.65 of `borderSubtle`: three different hairlines stacked within 60pt of each other,
+            // each hand-tuned in isolation.
+            Divider().background(Theme.borderSubtle)
 
             ZStack(alignment: .topLeading) {
                 if draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isFocused {

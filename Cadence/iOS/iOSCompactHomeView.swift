@@ -24,7 +24,6 @@ struct iOSCompactHomeView: View {
                 iOSCompactPageHeader(
                     eyebrow: "Cadence",
                     title: "Home",
-                    subtitle: "Today's plan, notes, and everything else.",
                     systemImage: "sun.max.fill",
                     color: Theme.blue
                 )

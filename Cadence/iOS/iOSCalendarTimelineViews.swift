@@ -161,7 +161,7 @@ private struct iOSCalendarTimelineDayHeader: View {
                     if unscheduledTasks.count > 2 {
                         Text("+ \(unscheduledTasks.count - 2) more")
                             .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(Theme.dim)
+                            .foregroundStyle(Theme.subdued)
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: 42, alignment: .topLeading)
@@ -181,7 +181,8 @@ private struct iOSCalendarTimelineDayHeader: View {
                     .frame(height: 0.5)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel(DateFormatters.longDate.string(from: date))
     }
 }
 
@@ -361,6 +362,12 @@ private struct iOSCalendarTimelineDayBlocks: View {
     }
 }
 
+/// A timeline event block: a solid plate of the calendar's own colour, exactly as on macOS.
+///
+/// The label colours are `CadenceCalendarEventStyle`'s tiers rather than `Theme.text` at hand-picked
+/// alphas. That matters here more than anywhere else on the surface: the plate is solved to a fixed
+/// luminance *so that* `Theme.onColor` and `onColorSecondary` clear AA on top of it, and
+/// `Theme.text.opacity(0.7)` was quietly opting out of that guarantee.
 private struct iOSCalendarEventBlock: View {
     let event: EKEvent
     let startMin: Int
@@ -374,18 +381,18 @@ private struct iOSCalendarEventBlock: View {
         HStack(alignment: .top, spacing: 6) {
             Image(systemName: "calendar")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.text.opacity(0.82))
+                .foregroundStyle(CadenceCalendarEventStyle.tertiaryLabelColor())
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(iOSCalendarEventSupport.title(for: event))
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.text)
+                    .foregroundStyle(CadenceCalendarEventStyle.primaryLabelColor)
                     .lineLimit(2)
 
                 Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
                     .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(Theme.text.opacity(0.7))
+                    .foregroundStyle(CadenceCalendarEventStyle.secondaryLabelColor())
                     .lineLimit(1)
             }
         }
@@ -394,6 +401,15 @@ private struct iOSCalendarEventBlock: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(fill)
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                .strokeBorder(
+                    iOSCalendarEventSupport.color(for: event.calendar)
+                        .opacity(CadenceCalendarEventStyle.chipBorderOpacity()),
+                    lineWidth: 1
+                )
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -409,6 +425,17 @@ private struct iOSCalendarTaskBlock: View {
 
     private var priorityColor: Color {
         Theme.priorityColor(task.priority)
+    }
+
+    /// Square on the leading edge so the list colour strip reads as a strip, rounded elsewhere.
+    private var blockShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: Theme.radiusControl,
+            topTrailingRadius: Theme.radiusControl,
+            style: .continuous
+        )
     }
 
     var body: some View {
@@ -435,22 +462,23 @@ private struct iOSCalendarTaskBlock: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(listColor.opacity(task.isDone ? 0.05 : 0.10))
-            .clipShape(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 0,
-                    bottomLeadingRadius: 0,
-                    bottomTrailingRadius: Theme.radiusControl,
-                    topTrailingRadius: Theme.radiusControl
-                )
-            )
+            .background {
+                ZStack {
+                    blockShape.fill(Theme.surfaceElevated.opacity(0.82))
+                    blockShape.fill(listColor.opacity(task.isDone ? 0.05 : 0.12))
+                }
+            }
+            .clipShape(blockShape)
+            .overlay {
+                blockShape.strokeBorder(Theme.borderSubtle, lineWidth: 1)
+            }
             .overlay(alignment: .leading) {
                 Rectangle()
                     .fill(listColor)
-                    .frame(width: 2)
+                    .frame(width: 3)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
         .sheet(isPresented: $showDetail) {
             iOSTaskDetailSheet(task: task)
         }
@@ -520,7 +548,7 @@ private struct iOSCalendarBundleBlock: View {
                     .stroke(allDone ? Theme.doneFill.opacity(0.4) : Theme.amber.opacity(0.2), lineWidth: 1)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
         .contextMenu {
             Button {
                 showDetail = true

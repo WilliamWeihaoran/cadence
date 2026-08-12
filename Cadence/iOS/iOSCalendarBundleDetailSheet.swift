@@ -85,7 +85,7 @@ struct iOSCalendarBundleDetailSheet: View {
     }
 
     private var titleSection: some View {
-        iOSCalendarBundleEditorSection(title: "Block") {
+        iOSEditorSection(title: "Block") {
             TextField("Block title", text: $title)
                 .textInputAutocapitalization(.words)
                 .font(.system(size: 22, weight: .bold))
@@ -105,30 +105,24 @@ struct iOSCalendarBundleDetailSheet: View {
 
                 Spacer(minLength: 0)
 
-                Text("\(bundle.sortedTasks.count) task\(bundle.sortedTasks.count == 1 ? "" : "s")")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Theme.surfaceElevated.opacity(0.68))
-                    .clipShape(Capsule())
+                iOSMetaChip(
+                    label: "\(bundle.sortedTasks.count) task\(bundle.sortedTasks.count == 1 ? "" : "s")",
+                    color: Theme.dim,
+                    systemImage: "checklist"
+                )
             }
         }
     }
 
     private var scheduleSection: some View {
-        iOSCalendarBundleEditorSection(title: "Schedule") {
-            HStack {
-                Text("Date")
-                Spacer()
+        iOSEditorSection(title: "Schedule") {
+            iOSEditorFieldRow(label: "Date", systemImage: "calendar", color: Theme.blue) {
                 CadenceDatePicker(selection: dateBinding)
             }
 
-            iOSCalendarBundleDivider()
+            iOSEditorDivider()
 
-            HStack {
-                Text("Start")
-                Spacer()
+            iOSEditorFieldRow(label: "Start", systemImage: "clock.fill", color: Theme.blue) {
                 iOSChoiceValueButton(title: TimeFormatters.timeString(from: startMinuteBinding.wrappedValue), color: Theme.text) {
                     showStartTimePicker = true
                 }
@@ -143,11 +137,9 @@ struct iOSCalendarBundleDetailSheet: View {
                 }
             }
 
-            iOSCalendarBundleDivider()
+            iOSEditorDivider()
 
-            HStack {
-                Text("Duration")
-                Spacer()
+            iOSEditorFieldRow(label: "Duration", systemImage: "timer", color: Theme.green) {
                 EstimatePickerControl(value: $durationMinutes)
             }
         }
@@ -171,7 +163,7 @@ struct iOSCalendarBundleDetailSheet: View {
     }
 
     private var taskSection: some View {
-        iOSCalendarBundleEditorSection(title: "Tasks") {
+        iOSEditorSection(title: "Tasks") {
             if bundle.sortedTasks.isEmpty {
                 VStack(spacing: 9) {
                     Image(systemName: "tray.full")
@@ -182,7 +174,7 @@ struct iOSCalendarBundleDetailSheet: View {
                         .foregroundStyle(Theme.text)
                     Text("Drop tasks onto the block from Calendar Board to group them here.")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(Theme.subdued)
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
@@ -202,16 +194,14 @@ struct iOSCalendarBundleDetailSheet: View {
     }
 
     private var deleteSection: some View {
-        Button(role: .destructive) {
+        iOSActionButton(
+            title: "Delete Block",
+            systemImage: "trash",
+            role: .destructive,
+            fullWidth: true
+        ) {
             showDeleteConfirmation = true
-        } label: {
-            Label("Delete Block", systemImage: "trash")
-                .font(.system(size: 14, weight: .semibold))
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
         }
-        .buttonStyle(.bordered)
-        .tint(Theme.red)
     }
 
     private func save() {
@@ -231,37 +221,6 @@ struct iOSCalendarBundleDetailSheet: View {
     }
 }
 
-private struct iOSCalendarBundleEditorSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Theme.dim)
-                .textCase(.uppercase)
-                .kerning(0.8)
-
-            VStack(alignment: .leading, spacing: 0) {
-                content
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
-        }
-    }
-}
-
-private struct iOSCalendarBundleDivider: View {
-    var body: some View {
-        Rectangle()
-            .fill(Theme.borderSubtle.opacity(0.55))
-            .frame(height: 1)
-            .padding(.vertical, 9)
-    }
-}
-
 private struct iOSCalendarBundleTaskRow: View {
     @Environment(\.modelContext) private var modelContext
     @Bindable var task: AppTask
@@ -274,9 +233,12 @@ private struct iOSCalendarBundleTaskRow: View {
                 CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
             } label: {
                 iOSTaskCompletionCircle(isDone: task.isDone, tint: Theme.priorityColor(task.priority))
-                    .frame(width: 24, height: 24)
+                    .frame(width: 18, height: 18)
+                    .frame(width: 30, height: 30)
+                    .iOSExpandedHitArea()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.iosPressable)
+            .accessibilityLabel(task.isDone ? "Mark not done" : "Mark done")
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(task.title.isEmpty ? "Untitled Task" : task.title)
@@ -312,9 +274,10 @@ private struct iOSCalendarBundleTaskRow: View {
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(Theme.dim)
-                    .frame(width: 30, height: 30)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
         }
         .padding(.horizontal, 2)

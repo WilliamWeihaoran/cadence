@@ -95,8 +95,9 @@ struct iOSSettingsView: View {
         HStack(spacing: 0) {
             iOSSettingsRail(selectedCategory: $selectedCategory)
 
-            Divider()
-                .background(Theme.borderSubtle)
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(width: 1)
 
             settingsDetailScroll
         }
@@ -263,17 +264,17 @@ struct iOSSettingsView: View {
 
     private var organizationSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                CadenceSettingsSectionLabel(text: "Contexts")
+            HStack(alignment: .center) {
+                CadenceSettingsSectionLabel(text: "Active Contexts")
                 Spacer()
-                Button {
+                iOSActionButton(
+                    title: "New Context",
+                    systemImage: "plus",
+                    role: .primary,
+                    size: .compact
+                ) {
                     contextEditorMode = .new
-                } label: {
-                    Label("New Context", systemImage: "plus")
-                        .font(.system(size: 12, weight: .semibold))
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.blue)
             }
 
             iOSSettingsCard {
@@ -290,7 +291,7 @@ struct iOSSettingsView: View {
                             } label: {
                                 iOSSettingsContextRow(context: context)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.iosPressable)
                             .contextMenu {
                                 Button {
                                     contextEditorMode = .edit(context)
@@ -306,7 +307,7 @@ struct iOSSettingsView: View {
                             }
 
                             if context.id != activeContexts.last?.id {
-                                Divider().background(Theme.borderSubtle)
+                                iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
                             }
                         }
                     }
@@ -323,7 +324,7 @@ struct iOSSettingsView: View {
                             }
 
                             if context.id != archivedContexts.last?.id {
-                                Divider().background(Theme.borderSubtle)
+                                iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
                             }
                         }
                     }

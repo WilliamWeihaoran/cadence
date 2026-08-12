@@ -261,7 +261,7 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var titleCard: some View {
-        iOSCalendarEventEditorSection(title: "Event") {
+        iOSEditorSection(title: "Event", contentSpacing: 10) {
             TextField("Event title", text: $title, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .bold))
@@ -271,22 +271,22 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var scheduleCard: some View {
-        iOSCalendarEventEditorSection(title: "Schedule") {
+        iOSEditorSection(title: "Schedule", contentSpacing: 10) {
             Toggle(isOn: $isAllDay) {
-                iOSCalendarEventEditorInlineLabel(label: "All day", systemImage: "sun.max", color: Theme.amber)
+                iOSEditorInlineLabel(label: "All day", systemImage: "sun.max", color: Theme.amber)
             }
             .toggleStyle(.switch)
             .tint(Theme.blue)
 
-            iOSCalendarEventEditorDivider()
+            iOSEditorDivider()
 
-            iOSCalendarEventEditorRow(label: "Date", systemImage: "calendar", color: Theme.blue) {
+            iOSEditorFieldRow(label: "Date", systemImage: "calendar", color: Theme.blue) {
                 CadenceDatePicker(selection: startDateOnlyBinding)
             }
 
             if !isAllDay {
-                iOSCalendarEventEditorDivider()
-                iOSCalendarEventEditorRow(label: "Time", systemImage: "clock.fill", color: Theme.blue) {
+                iOSEditorDivider()
+                iOSEditorFieldRow(label: "Time", systemImage: "clock.fill", color: Theme.blue) {
                     iOSChoiceValueButton(title: TimeFormatters.timeString(from: startTimeMinutesBinding.wrappedValue), color: Theme.text) {
                         showStartTimePicker = true
                     }
@@ -302,10 +302,10 @@ struct iOSCalendarEventEditSheet: View {
                 }
             }
 
-            iOSCalendarEventEditorDivider()
+            iOSEditorDivider()
 
             if isAllDay {
-                iOSCalendarEventEditorRow(label: "Days", systemImage: "calendar", color: Theme.green) {
+                iOSEditorFieldRow(label: "Days", systemImage: "calendar", color: Theme.green) {
                     iOSChoiceValueButton(title: allDayDurationDays == 1 ? "1 day" : "\(allDayDurationDays) days", color: Theme.text) {
                         showDaysPicker = true
                     }
@@ -320,7 +320,7 @@ struct iOSCalendarEventEditSheet: View {
                     }
                 }
             } else {
-                iOSCalendarEventEditorRow(label: "Duration", systemImage: "timer", color: Theme.green) {
+                iOSEditorFieldRow(label: "Duration", systemImage: "timer", color: Theme.green) {
                     EstimatePickerControl(value: $durationMinutes)
                 }
             }
@@ -328,13 +328,13 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var calendarCard: some View {
-        iOSCalendarEventEditorSection(title: "Apple Calendar") {
+        iOSEditorSection(title: "Apple Calendar", contentSpacing: 10) {
             if calendarManager.writableCalendars.isEmpty {
                 Text("No writable calendars are available.")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.dim)
             } else {
-                iOSCalendarEventEditorRow(label: "Calendar", systemImage: "calendar", color: Theme.blue) {
+                iOSEditorFieldRow(label: "Calendar", systemImage: "calendar", color: Theme.blue) {
                     iOSChoiceValueButton(
                         title: calendarManager.writableCalendars.first { $0.calendarIdentifier == selectedCalendarID }?.title ?? "Choose Calendar",
                         color: Theme.text
@@ -356,14 +356,9 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var eventNoteCard: some View {
-        iOSCalendarEventEditorSection(title: "Event Note") {
+        iOSEditorSection(title: "Event Note", contentSpacing: 10) {
             HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.purple)
-                    .frame(width: 34, height: 34)
-                    .background(Theme.purple.opacity(0.13))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                iOSIconTile(systemImage: "doc.text", color: Theme.purple, size: 34, iconSize: 16)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(linkedEventNote?.displayTitle ?? "No linked note yet")
@@ -372,29 +367,29 @@ struct iOSCalendarEventEditSheet: View {
                         .lineLimit(1)
                     Text(linkedEventNote == nil ? "Create a markdown note for this event." : "Open the note linked to this event.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(Theme.subdued)
                         .lineLimit(2)
                 }
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 8)
 
-                Button(linkedEventNote == nil ? "Create" : "Open") {
-                    openEventNote()
-                }
-                .font(.system(size: 13, weight: .semibold))
-                .buttonStyle(.bordered)
-                .tint(Theme.blue)
+                iOSActionButton(
+                    title: linkedEventNote == nil ? "Create" : "Open",
+                    role: .secondary,
+                    size: .compact,
+                    action: openEventNote
+                )
             }
         }
     }
 
     private var notesCard: some View {
-        iOSCalendarEventEditorSection(title: "Notes") {
+        iOSEditorSection(title: "Notes", contentSpacing: 10) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Apple Calendar note")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(Theme.subdued)
 
                     Spacer(minLength: 0)
 
@@ -412,9 +407,9 @@ struct iOSCalendarEventEditSheet: View {
                     allowsEmbeddedTaskCreation: false
                 )
                 .frame(minHeight: isRegularWidth ? 300 : 240)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                         .stroke(Theme.borderSubtle.opacity(0.68), lineWidth: 1)
                 }
             }
@@ -448,15 +443,14 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var deleteCard: some View {
-        Button(role: .destructive) {
+        iOSActionButton(
+            title: "Delete Event",
+            systemImage: "trash",
+            role: .destructive,
+            fullWidth: true
+        ) {
             confirmDelete = true
-        } label: {
-            Label("Delete Event", systemImage: "trash")
-                .font(.system(size: 14, weight: .semibold))
-                .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.bordered)
-        .tint(Theme.red)
     }
 
     private func save() {
@@ -513,71 +507,6 @@ struct iOSCalendarEventEditSheet: View {
         }
     }
 
-}
-
-private struct iOSCalendarEventEditorSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .textCase(.uppercase)
-                .kerning(0.8)
-
-            VStack(alignment: .leading, spacing: 10) {
-                content()
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
-        }
-    }
-}
-
-private struct iOSCalendarEventEditorRow<Content: View>: View {
-    let label: String
-    let systemImage: String
-    let color: Color
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        HStack(spacing: 10) {
-            iOSCalendarEventEditorInlineLabel(label: label, systemImage: systemImage, color: color)
-            Spacer(minLength: 12)
-            content()
-        }
-        .frame(minHeight: 34)
-    }
-}
-
-private struct iOSCalendarEventEditorInlineLabel: View {
-    let label: String
-    let systemImage: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(color)
-                .frame(width: 26, height: 26)
-                .background(color.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-
-            Text(label)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.text)
-        }
-    }
-}
-
-private struct iOSCalendarEventEditorDivider: View {
-    var body: some View {
-        Divider().background(Theme.borderSubtle.opacity(0.6))
-    }
 }
 
 #endif

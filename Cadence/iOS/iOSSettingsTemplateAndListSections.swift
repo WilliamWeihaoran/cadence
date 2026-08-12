@@ -30,7 +30,9 @@ struct iOSTemplatesSettingsSection: View {
                         templateList
                             .frame(width: 260)
 
-                        Divider().background(Theme.borderSubtle)
+                        Rectangle()
+                            .fill(Theme.borderSubtle)
+                            .frame(width: 1)
 
                         templateEditor
                             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -111,39 +113,23 @@ struct iOSTemplatesSettingsSection: View {
                     Spacer(minLength: 0)
 
                     if NoteTemplateLibrary.isCustomized(selectedTemplate, overridesRaw: templateOverridesRaw) {
-                        Text("Customized")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Theme.blue)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Theme.blue.opacity(0.12))
-                            .clipShape(Capsule())
+                        iOSMetaChip(label: "Customized", color: Theme.blue)
                     }
                 }
 
                 HStack(spacing: 6) {
                     ForEach(NoteTemplateLibrary.noteKinds(containing: selectedTemplate), id: \.rawValue) { kind in
-                        Text(kind.templateDisplayName)
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Theme.dim)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(Theme.surfaceElevated.opacity(0.76))
-                            .clipShape(Capsule())
+                        iOSMetaChip(label: kind.templateDisplayName, color: Theme.muted)
                     }
                 }
 
-                iOSTemplateEditorField(title: "Title") {
+                iOSSettingsField(title: "Title") {
                     TextField("Template title", text: titleBinding(for: selectedTemplate))
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.text)
                         .textInputAutocapitalization(.words)
                 }
 
-                iOSTemplateEditorField(title: "Description") {
+                iOSSettingsField(title: "Description") {
                     TextField("Short sidebar description", text: subtitleBinding(for: selectedTemplate))
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.text)
                 }
 
                 iOSTemplateBodyEditor(
@@ -155,15 +141,14 @@ struct iOSTemplatesSettingsSection: View {
                 HStack {
                     Spacer()
 
-                    Button {
-                        resetSelectedTemplate()
-                    } label: {
-                        Label("Reset Template", systemImage: "arrow.counterclockwise")
-                            .font(.system(size: 13, weight: .semibold))
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(Theme.dim)
-                    .disabled(!NoteTemplateLibrary.isCustomized(selectedTemplate, overridesRaw: templateOverridesRaw))
+                    iOSActionButton(
+                        title: "Reset Template",
+                        systemImage: "arrow.counterclockwise",
+                        role: .ghost,
+                        size: .compact,
+                        isDisabled: !NoteTemplateLibrary.isCustomized(selectedTemplate, overridesRaw: templateOverridesRaw),
+                        action: resetSelectedTemplate
+                    )
                 }
             }
         } else {
@@ -268,7 +253,7 @@ struct iOSListsLifecycleSettingsSection: View {
                     )
 
                     if index < areas.count - 1 || !projects.isEmpty {
-                        Divider().background(Theme.borderSubtle).padding(.leading, 42)
+                        iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
                     }
                 }
 
@@ -284,7 +269,7 @@ struct iOSListsLifecycleSettingsSection: View {
                     )
 
                     if index < projects.count - 1 {
-                        Divider().background(Theme.borderSubtle).padding(.leading, 42)
+                        iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
                     }
                 }
             }
@@ -308,7 +293,7 @@ struct iOSAISettingsSection: View {
             iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 15) {
                     HStack(alignment: .top, spacing: 13) {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                             .fill((aiSettingsManager.hasAPIKey ? Theme.green : Theme.dim).opacity(0.16))
                             .frame(width: 42, height: 42)
                             .overlay {
@@ -338,7 +323,7 @@ struct iOSAISettingsSection: View {
                         Spacer(minLength: 0)
                     }
 
-                    Divider().background(Theme.borderSubtle)
+                    iOSRowDivider()
 
                     VStack(alignment: .leading, spacing: 9) {
                         iOSAISettingsDisclosureRow(
@@ -358,62 +343,59 @@ struct iOSAISettingsSection: View {
                         )
                     }
 
-                    Divider().background(Theme.borderSubtle)
+                    iOSRowDivider()
 
-                    iOSTemplateEditorField(title: "API Key") {
+                    iOSSettingsField(title: "API Key") {
                         SecureField(aiSettingsManager.hasAPIKey ? "Saved in Keychain" : "sk-...", text: $aiAPIKeyDraft)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Theme.text)
                     }
 
-                    iOSTemplateEditorField(title: "Model ID") {
+                    iOSSettingsField(title: "Model ID") {
                         TextField("gpt-5.4-mini", text: Binding(
                             get: { aiSettingsManager.model },
                             set: { aiSettingsManager.model = $0 }
                         ))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Theme.text)
                     }
 
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 10) {
-                            Button {
-                                saveAPIKey()
-                            } label: {
-                                Label("Save Key", systemImage: "key.fill")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Theme.blue)
-                            .disabled(aiAPIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            iOSActionButton(
+                                title: "Save Key",
+                                systemImage: "key.fill",
+                                role: .primary,
+                                size: .compact,
+                                fullWidth: true,
+                                isDisabled: aiAPIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                                action: saveAPIKey
+                            )
 
-                            Button {
+                            iOSActionButton(
+                                title: aiSettingsManager.isTestingConnection ? "Testing" : "Test",
+                                systemImage: "network",
+                                role: .secondary,
+                                size: .compact,
+                                tint: aiSettingsManager.hasAPIKey ? Theme.blue : Theme.dim,
+                                fullWidth: true,
+                                isDisabled: !aiSettingsManager.hasAPIKey || aiSettingsManager.isTestingConnection
+                            ) {
                                 Task { await aiSettingsManager.testConnection() }
-                            } label: {
-                                Label(aiSettingsManager.isTestingConnection ? "Testing" : "Test", systemImage: "network")
-                                    .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.bordered)
-                            .tint(aiSettingsManager.hasAPIKey ? Theme.blue : Theme.dim)
-                            .disabled(!aiSettingsManager.hasAPIKey || aiSettingsManager.isTestingConnection)
                         }
 
                         if aiSettingsManager.hasAPIKey {
-                            Button(role: .destructive) {
-                                removeAPIKey()
-                            } label: {
-                                Label("Delete API Key", systemImage: "trash")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(Theme.red)
+                            iOSActionButton(
+                                title: "Delete API Key",
+                                systemImage: "trash",
+                                role: .destructive,
+                                size: .compact,
+                                fullWidth: true,
+                                action: removeAPIKey
+                            )
                         }
                     }
-                    .font(.system(size: 13, weight: .semibold))
                 }
             }
         }
@@ -478,26 +460,19 @@ private struct iOSTemplateSettingsRow: View {
 
                 HStack(spacing: 5) {
                     ForEach(noteKinds, id: \.rawValue) { kind in
-                        Text(kind.templateDisplayName)
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Theme.dim)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Theme.surfaceElevated.opacity(0.72))
-                            .clipShape(Capsule())
+                        iOSMetaChip(label: kind.templateDisplayName, color: Theme.muted)
                     }
                 }
             }
             .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isSelected ? Theme.blue.opacity(0.1) : Theme.surfaceElevated.opacity(0.36))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(isSelected ? Theme.blue.opacity(0.42) : Theme.borderSubtle.opacity(0.65), lineWidth: 1)
-            }
+            .frame(maxWidth: .infinity, minHeight: iOSSettingsMetrics.minimumTapTarget, alignment: .leading)
+            // One selection layer, one radius. It used to be a tinted fill *and* a tinted
+            // stroke, which read as two different selected states stacked on each other.
+            .background(isSelected ? Theme.surfaceHighlight : Theme.surfaceElevated.opacity(0.36))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
     }
 }
 
@@ -523,17 +498,15 @@ private struct iOSTemplateSettingsChip: View {
                         .frame(width: 5, height: 5)
                 }
             }
-            .foregroundStyle(isSelected ? Theme.text : Theme.dim)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 8)
-            .background(isSelected ? Theme.blue.opacity(0.18) : Theme.surfaceElevated.opacity(0.72))
+            .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 36)
+            .background(isSelected ? Theme.surfaceHighlight : Theme.surfaceElevated.opacity(0.72))
             .clipShape(Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(isSelected ? Theme.blue.opacity(0.46) : Theme.borderSubtle.opacity(0.58), lineWidth: 1)
-            }
+            .frame(minHeight: iOSSettingsMetrics.minimumTapTarget)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
     }
 }
 
@@ -541,9 +514,9 @@ private struct iOSTemplateIcon: View {
     let isSelected: Bool
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
+        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
             .fill((isSelected ? Theme.blue : Theme.dim).opacity(isSelected ? 0.18 : 0.12))
-            .frame(width: 30, height: 30)
+            .frame(width: iOSSettingsMetrics.glyphSlot, height: iOSSettingsMetrics.glyphSlot)
             .overlay {
                 Image(systemName: "doc.text")
                     .font(.system(size: 12, weight: .semibold))
@@ -578,39 +551,11 @@ private struct iOSTemplateBodyEditor: View {
                 allowsEmbeddedTaskCreation: false
             )
             .frame(minHeight: 340)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Theme.borderSubtle.opacity(0.74), lineWidth: 1)
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                    .strokeBorder(Theme.borderSubtle, lineWidth: 1)
             }
-        }
-    }
-}
-
-private struct iOSTemplateEditorField<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    init(title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Theme.dim)
-                .kerning(0.8)
-
-            content
-                .padding(10)
-                .background(Theme.bg.opacity(0.55))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Theme.borderSubtle.opacity(0.75), lineWidth: 1)
-                }
         }
     }
 }
@@ -624,45 +569,45 @@ private struct iOSListLifecycleSettingsRow: View {
     let primaryLabel: String
     let primaryAction: () -> Void
 
+    private var statusTint: Color {
+        statusLabel == "Completed" ? Theme.green : Theme.amber
+    }
+
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(color)
-                .frame(width: 32, height: 32)
-                .background(color.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        HStack(alignment: .center, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+            iOSIconTile(
+                systemImage: icon,
+                color: color,
+                size: iOSSettingsMetrics.glyphSlot,
+                iconSize: 15
+            )
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
                     Text(title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
 
-                    Text(statusLabel)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(statusLabel == "Completed" ? Theme.green : Theme.amber)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background((statusLabel == "Completed" ? Theme.green : Theme.amber).opacity(0.12))
-                        .clipShape(Capsule())
+                    iOSMetaChip(label: statusLabel, color: statusTint)
                 }
 
                 Text(subtitle)
                     .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
+                    .foregroundStyle(Theme.subdued)
                     .lineLimit(1)
             }
 
             Spacer(minLength: 10)
 
-            Button(primaryLabel, action: primaryAction)
-                .font(.system(size: 12, weight: .semibold))
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.blue)
+            iOSActionButton(
+                title: primaryLabel,
+                role: .secondary,
+                size: .compact,
+                action: primaryAction
+            )
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 6)
     }
 }
 
@@ -702,18 +647,18 @@ struct iOSSettingsEmptyInlineRow: View {
             Image(systemName: systemImage)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.dim)
-                .frame(width: 32, height: 32)
+                .frame(width: iOSSettingsMetrics.glyphSlot, height: iOSSettingsMetrics.glyphSlot)
                 .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.text)
 
                 Text(subtitle)
                     .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
+                    .foregroundStyle(Theme.subdued)
                     .fixedSize(horizontal: false, vertical: true)
             }
 

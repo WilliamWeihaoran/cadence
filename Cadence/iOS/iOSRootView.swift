@@ -123,12 +123,14 @@ private struct iOSCompactRootShell: View {
         }
         .tint(Theme.blue)
         .overlay(alignment: .bottomTrailing) {
-            iOSQuickAddButton {
-                quickCaptureTitle = ""
-                showQuickCapture = true
+            if showsQuickAdd {
+                iOSQuickAddButton {
+                    quickCaptureTitle = ""
+                    showQuickCapture = true
+                }
+                .padding(.trailing, 20)
+                .padding(.bottom, 24)
             }
-            .padding(.trailing, 20)
-            .padding(.bottom, 24)
         }
         .sheet(isPresented: $showQuickCapture) {
             iOSQuickCaptureSheet(title: $quickCaptureTitle, onAdd: captureQuickTask)
@@ -163,6 +165,23 @@ private struct iOSCompactRootShell: View {
         }
     }
 
+    /// Quick capture belongs on the surfaces where a loose task is the thing you would be making.
+    ///
+    /// The button used to be overlaid on the whole `NavigationStack`, so it floated over every
+    /// pushed screen — most visibly the note editor, where it sat on top of the word count and
+    /// offered to create a task while you were writing prose. macOS shows its floating `+` only on
+    /// task pages, for the same reason.
+    private var showsQuickAdd: Bool {
+        switch path.last {
+        case .none:
+            return true // Home
+        case .today, .allTasks, .inbox:
+            return true
+        default:
+            return false
+        }
+    }
+
     private func captureQuickTask() {
         let trimmed = quickCaptureTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -172,19 +191,22 @@ private struct iOSCompactRootShell: View {
     }
 }
 
+/// The iPhone shell's capture affordance, in `FloatingNewTaskButton`'s vocabulary — including its
+/// accent glow, rather than the generic modal-card shadow it was borrowing.
 private struct iOSQuickAddButton: View {
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "plus")
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: 21, weight: .semibold))
                 .foregroundStyle(Theme.onColor)
                 .frame(width: 56, height: 56)
                 .background(Theme.blue)
                 .clipShape(Circle())
-                .shadow(color: Theme.overlayCardShadow, radius: 12, x: 0, y: 6)
+                .shadow(color: Theme.blue.opacity(0.32), radius: 18, x: 0, y: 8)
         }
+        .buttonStyle(.iosPressable)
         .accessibilityLabel("New Task")
     }
 }
@@ -211,21 +233,28 @@ private struct iOSQuickCaptureSheet: View {
                 .padding(.horizontal, 13)
                 .frame(height: 44)
                 .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
-            HStack(spacing: 16) {
+            HStack(spacing: 10) {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                    .foregroundStyle(Theme.dim)
-                Button("Add", action: onAdd)
-                    .foregroundStyle(Theme.blue)
-                    .fontWeight(.semibold)
-                    .disabled(TaskTitleSupport.isEmpty(title))
+
+                iOSActionButton(title: "Cancel", role: .ghost, size: .compact) {
+                    dismiss()
+                }
+
+                iOSActionButton(
+                    title: "Add",
+                    role: .primary,
+                    size: .compact,
+                    isDisabled: TaskTitleSupport.isEmpty(title),
+                    action: onAdd
+                )
             }
         }
         .padding(18)
-        .presentationDetents([.height(150)])
+        .presentationDetents([.height(172)])
         .presentationBackground(Theme.surface)
+        .presentationCornerRadius(Theme.radiusPanel)
         .onAppear { isFocused = true }
     }
 }

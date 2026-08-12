@@ -3,6 +3,16 @@ import EventKit
 import SwiftData
 import SwiftUI
 
+/// Fixed height for the notes pane's header when it has to line up with the panes beside it on
+/// iPad — the panel title block plus the tab row under it. Replaces a bare `124` that was sized
+/// around a subtitle line the header no longer carries.
+/// Tall enough for the header block plus a 44pt tab row.
+///
+/// This was 112, which is under the content's own minimum (~120: a 66pt `iOSPanelHeader` at
+/// regular width, a `minHeight: 44` tab row, and 10pt of bottom padding). `.frame(height:)` does
+/// not clip, so the tab row was drawn across the divider below it.
+let iOSNotesPanelHeaderHeight: CGFloat = 124
+
 struct iOSNotesPanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -93,54 +103,35 @@ struct iOSNotesPanel: View {
         }
     }
 
-    @ViewBuilder
+    /// One header, both hosts.
+    ///
+    /// It used to be two near-copies: a bespoke three-line block behind a `GeometryReader` for the
+    /// iPad pane — eyebrow, tab name, and a subtitle spelling out the tab you had just tapped —
+    /// and `iOSPanelHeader` plus a differently-styled tab row for the compact one. They are the
+    /// same header: a panel title with the tab bar under it, exactly like macOS's `NotePanel`.
+    /// `useStandardHeaderHeight` now only decides whether it is pinned to a fixed height so it
+    /// lines up with the panes beside it on iPad.
+    ///
+    /// The subtitle is gone under the standing rule: a header does not describe the page you are
+    /// already looking at, and "Everything you wrote today" under a tab labelled *Today* is a
+    /// label for nobody.
     private var notesHeader: some View {
-        if useStandardHeaderHeight {
-            regularNotesHeader
-        } else {
-            compactNotesHeader
-        }
-    }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 8) {
+                iOSPanelHeader(eyebrow: "Notes", title: activeTab.rawValue)
 
-    private var regularNotesHeader: some View {
-        GeometryReader { proxy in
-            regularNotesHeaderContent(isNarrow: proxy.size.width < 320)
-        }
-        .frame(height: 124, alignment: .top)
-        .background(Theme.surface)
-    }
-
-    private func regularNotesHeaderContent(isNarrow: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Notes")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .textCase(.uppercase)
-                        .kerning(0.8)
-
-                    Text(activeTab.rawValue)
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-
-                    if !isNarrow {
-                        Text(activeTab.subtitle)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Theme.dim)
-                            .lineLimit(1)
+                if let note = selectedNote {
+                    iOSNoteTemplateMenu(kind: activeTab.noteKind, compact: true) { template in
+                        apply(template, to: note)
                     }
+                    .padding(.top, 10)
+                    .padding(.trailing, 16)
                 }
-
-                Spacer(minLength: 8)
-
-                iOSMarkdownModePicker(mode: editorModeBinding, compact: isNarrow)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: iOSNotesTabMetrics.spacing) {
                 ForEach(CadenceCoreNoteTab.allCases) { tab in
-                    iOSNotePanelTabButton(
+                    iOSQuietTabButton(
                         title: tab.compactTitle,
                         isSelected: activeTab == tab
                     ) { activeTabRaw = tab.rawValue }
@@ -148,47 +139,13 @@ struct iOSNotesPanel: View {
 
                 Spacer(minLength: 8)
 
-                if let note = selectedNote {
-                    iOSNoteTemplateMenu(kind: activeTab.noteKind, compact: true) { template in
-                        apply(template, to: note)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private var compactNotesHeader: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(
-                eyebrow: "Notes",
-                title: activeTab.rawValue
-            )
-
-            HStack(spacing: 0) {
-                ForEach(CadenceCoreNoteTab.allCases) { tab in
-                    iOSNotePanelTabButton(
-                        title: tab.rawValue,
-                        isSelected: activeTab == tab
-                    ) { activeTabRaw = tab.rawValue }
-                }
-                Spacer()
-
                 iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
-                    .padding(.trailing, 8)
-
-                if let note = selectedNote {
-                    iOSNoteTemplateMenu(kind: activeTab.noteKind) { template in
-                        apply(template, to: note)
-                    }
-                    .padding(.trailing, 12)
-                }
             }
             .padding(.horizontal, 12)
+            .padding(.bottom, 10)
         }
+        .frame(height: useStandardHeaderHeight ? iOSNotesPanelHeaderHeight : nil, alignment: .top)
+        .background(Theme.surface)
     }
 
     private var selectedNote: Note? {
@@ -263,22 +220,23 @@ struct iOSCompactNotesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            compactHeader
+            iOSPanelHeader(eyebrow: "Notes", title: activePage.compactTitle)
+
             pageTabRow
 
             if let coreTab = activePage.coreTab {
-                HStack {
-                    iOSMarkdownModePicker(mode: editorModeBinding)
+                HStack(spacing: 8) {
+                    iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
 
-                    Spacer()
+                    Spacer(minLength: 8)
 
                     if let note = selectedCoreNote {
-                        iOSNoteTemplateMenu(kind: coreTab.noteKind) { template in
+                        iOSNoteTemplateMenu(kind: coreTab.noteKind, compact: true) { template in
                             apply(template, to: note)
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.bottom, 10)
             }
 
@@ -354,65 +312,24 @@ struct iOSCompactNotesView: View {
         }
     }
 
-    private var compactHeader: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "note.text")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.blue)
-                .frame(width: 42, height: 42)
-                .background(Theme.blue.opacity(0.14))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Notes")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-
-                Text(activePage.subtitle)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 18)
-        .padding(.bottom, 14)
-    }
-
-    // Matches macOS NotesView's tab treatment: left-aligned text tabs with a blue underline on
-    // the selected tab, instead of a native `.pickerStyle(.segmented)` control stretched into
-    // four equal-width boxes (which looked like generic system chrome, not part of the app).
+    /// The same tab bar the iPad pane uses. It was a bespoke blue-underline bar — the exact idiom
+    /// macOS's `NotesView` deleted, on the grounds that blue is reserved for things that are
+    /// actually selected or actionable and a tab bar is neither special nor worth a second idiom.
+    /// Four tabs do not fit across a phone, so the row scrolls rather than truncating its labels.
     private var pageTabRow: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 4) {
+        ScrollView(.horizontal) {
+            HStack(spacing: iOSNotesTabMetrics.spacing) {
                 ForEach(iOSCompactNotesPage.allCases) { page in
-                    Button {
-                        activePage = page
-                    } label: {
-                        Text(page.compactTitle)
-                            .font(.system(size: 15, weight: activePage == page ? .semibold : .medium))
-                            .foregroundStyle(activePage == page ? Theme.text : Theme.dim)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .overlay(alignment: .bottom) {
-                                if activePage == page {
-                                    RoundedRectangle(cornerRadius: 1)
-                                        .fill(Theme.blue)
-                                        .frame(height: 2)
-                                }
-                            }
-                    }
-                    .buttonStyle(.plain)
+                    iOSQuietTabButton(
+                        title: page.compactTitle,
+                        isSelected: activePage == page
+                    ) { activePage = page }
                 }
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8)
-
-            Divider().background(Theme.borderSubtle)
+            .padding(.horizontal, 12)
         }
+        .scrollIndicators(.hidden)
+        .padding(.bottom, 8)
     }
 
     private var selectedCoreNote: Note? {
@@ -490,19 +407,6 @@ private enum iOSCompactNotesPage: String, CaseIterable, Identifiable {
         }
     }
 
-    var subtitle: String {
-        switch self {
-        case .today:
-            return CadenceCoreNoteTab.today.subtitle
-        case .week:
-            return CadenceCoreNoteTab.week.subtitle
-        case .meetings:
-            return "Notes linked to calendar events"
-        case .notepad:
-            return CadenceCoreNoteTab.notepad.subtitle
-        }
-    }
-
     var coreTab: CadenceCoreNoteTab? {
         switch self {
         case .today:
@@ -517,39 +421,56 @@ private enum iOSCompactNotesPage: String, CaseIterable, Identifiable {
     }
 }
 
+/// The Event Notes list.
+///
+/// It was a column of shadowed elevated cards; the note list is an *index*, and macOS rewrote its
+/// equivalent (`NoteListDayRow`) into flat rows for exactly that reason — a dozen cards fill the
+/// screen where a dozen index entries do not. These are the same rows: a day-number column on the
+/// left so the numbers line up, whatever the note says beside it, and one press fill at one
+/// radius.
 private struct iOSMeetingNotesList: View {
     let notes: [Note]
     let open: (Note) -> Void
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 10) {
-                if notes.isEmpty {
-                    iOSEmptyPanel(
-                        systemImage: "doc.text",
-                        title: "No meeting notes yet",
-                        subtitle: "Create one from a calendar event."
-                    )
-                    .padding(.top, 56)
-                } else {
-                    ForEach(notes) { note in
-                        Button {
-                            open(note)
-                        } label: {
-                            iOSMeetingNoteRow(note: note)
+        Group {
+            if notes.isEmpty {
+                iOSEmptyPanel(
+                    systemImage: "doc.text",
+                    title: "No meeting notes yet",
+                    subtitle: "Create one from a calendar event."
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(notes) { note in
+                            Button {
+                                open(note)
+                            } label: {
+                                iOSMeetingNoteRow(note: note)
+                            }
+                            .buttonStyle(.iosPressable)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 10)
                 }
             }
-            .padding(16)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.surface)
     }
 }
 
 private struct iOSMeetingNoteRow: View {
     let note: Note
+
+    /// The event's own day, falling back to the last edit so a note with no metadata still files
+    /// under a number rather than dropping out of the column.
+    private var dayLabel: String {
+        let date = DateFormatters.date(from: note.eventDateKey) ?? note.updatedAt
+        return DateFormatters.dayNumber.string(from: date)
+    }
 
     private var detail: String {
         if let date = DateFormatters.date(from: note.eventDateKey) {
@@ -567,22 +488,20 @@ private struct iOSMeetingNoteRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Theme.purple)
-                .frame(width: 34, height: 34)
-                .background(Theme.purple.opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+        HStack(alignment: .firstTextBaseline, spacing: iOSNoteListRowMetrics.dayNumberSpacing) {
+            Text(dayLabel)
+                .font(.system(size: 13, weight: .medium).monospacedDigit())
+                .foregroundStyle(Theme.muted)
+                .frame(width: iOSNoteListRowMetrics.dayNumberWidth, alignment: .trailing)
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(note.displayTitle)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
                 Text(detail)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(Theme.subdued)
                     .lineLimit(1)
                 Text(preview)
                     .font(.system(size: 12))
@@ -591,15 +510,19 @@ private struct iOSMeetingNoteRow: View {
             }
 
             Spacer(minLength: 0)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.dim.opacity(0.7))
-                .padding(.top, 9)
         }
-        .padding(13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cadenceCard(background: Theme.surfaceElevated, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
     }
+}
+
+enum iOSNoteListRowMetrics {
+    /// Fixed leading slot for the day number, so one- and two-digit days line up as a column
+    /// instead of ragging against the title beside them.
+    static let dayNumberWidth: CGFloat = 22
+    static let dayNumberSpacing: CGFloat = 14
 }
 
 struct iOSNoteTemplateMenu: View {
@@ -628,48 +551,65 @@ struct iOSNoteTemplateMenu: View {
         .opacity(templates.isEmpty ? 0.5 : 1)
     }
 
-    @ViewBuilder
+    /// One label at both sizes. It was a blue capsule (or a blue tile at radius 9) for an action
+    /// that is not the note's primary one — macOS's equivalent header control is a quiet neutral
+    /// glyph, and blue there is reserved for the thing you actually came to do. `compact` now only
+    /// changes the tile's size, not its idiom.
     private var templateLabel: some View {
-        if compact {
-            Image(systemName: "doc.badge.plus")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.blue)
-                .frame(width: 34, height: 34)
-                .background(Theme.blue.opacity(0.11))
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        } else {
-            Label("Template", systemImage: "doc.badge.plus")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.blue)
-                .padding(.horizontal, 10)
-                .frame(height: 30)
-                .background(Theme.blue.opacity(0.11))
-                .clipShape(Capsule())
-        }
+        iOSIconTile(
+            systemImage: "doc.badge.plus",
+            color: Theme.muted,
+            size: compact ? 34 : 38,
+            iconSize: 13
+        )
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
+        .accessibilityLabel("Apply template")
     }
 }
 
-private struct iOSNotePanelTabButton: View {
+enum iOSNotesTabMetrics {
+    /// Cluster spacing for a row of tabs. Deliberately tight, like macOS's
+    /// `CadenceQuietPillMetrics.clusterSpacing`: the selected tab's fill is what separates them,
+    /// so a wide gap would read as unrelated buttons rather than one control.
+    static let spacing: CGFloat = 2
+    /// Touch floor.
+    static let height: CGFloat = 44
+}
+
+/// The iOS translation of macOS's `CadenceQuietTabButton`.
+///
+/// Text only — no icon, no accent underline, no segmented trough. The selected tab is carried by a
+/// neutral `Theme.surfaceHighlight` fill plus a brighter label, and there is exactly one fill
+/// layer at one radius. It is deliberately *not* `iOSSegmentedPill`: the mode picker sitting in
+/// the same header is a segmented control, and a tab bar that looked identical to it would say the
+/// two do the same kind of job.
+///
+/// Lives here because Notes is the surface that needed it; it belongs in `iOSDesignSystem.swift`
+/// alongside `iOSSegmentedPill` once the other iOS tab bars adopt it.
+struct iOSQuietTabButton: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
                 .foregroundStyle(isSelected ? Theme.text : Theme.dim)
-                .frame(minWidth: 62, minHeight: 32)
-                .padding(.horizontal, 8)
-                .background(isSelected ? Theme.blue.opacity(0.16) : Theme.surfaceElevated.opacity(0.24))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(isSelected ? Theme.blue.opacity(0.28) : Theme.borderSubtle.opacity(0.28), lineWidth: 1)
-                }
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                // The label sits in a fixed-height frame, so a wrap would overflow the pill rather
+                // than grow it. Under compression this must truncate, never wrap.
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .frame(minWidth: iOSNotesTabMetrics.height, minHeight: iOSNotesTabMetrics.height)
+                .background(shape.fill(isSelected ? Theme.surfaceHighlight : Color.clear))
+                .contentShape(shape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 #endif

@@ -14,16 +14,12 @@ struct iPadTodayTaskHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            Image(systemName: "sun.max.fill")
-                .font(.system(size: isRegularWidth ? 15 : 13, weight: .semibold))
-                .foregroundStyle(Theme.amber)
-                .frame(width: isRegularWidth ? 34 : 30, height: isRegularWidth ? 34 : 30)
-                .background(Theme.amber.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 9, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 9, style: .continuous)
-                        .strokeBorder(Theme.amber.opacity(0.20), lineWidth: 1)
-                }
+            iOSIconTile(
+                systemImage: "sun.max.fill",
+                color: Theme.amber,
+                size: isRegularWidth ? 34 : 30,
+                iconSize: isRegularWidth ? 15 : 13
+            )
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(eyebrow)
@@ -164,17 +160,13 @@ struct iPadTodayInspectorSwitcher: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(selection.title)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-
-                Text(selection.subtitle)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
+            // Title only. The subtitle here read "Today, week, and notepad" under a pane headed
+            // "Notes" — a header describing the pane you are already looking at, with the picker
+            // that switches it sitting on the same line.
+            Text(selection.title)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
 
             Spacer(minLength: 0)
 
@@ -204,13 +196,6 @@ enum iPadTodaySidePanel: String, CaseIterable, Identifiable {
         switch self {
         case .notes: return "note.text"
         case .timeline: return "clock"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .notes: return "Today, week, and notepad"
-        case .timeline: return "Timed tasks and schedule"
         }
     }
 
@@ -300,12 +285,7 @@ private struct iPadTodayReviewTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 26, height: 26)
-                    .background(tint.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                iOSIconTile(systemImage: systemImage, color: tint, size: 26, iconSize: 12, bordered: false)
 
                 Spacer(minLength: 6)
 
@@ -360,6 +340,11 @@ private struct iPadTodayHeaderMiniSummary: View {
     }
 }
 
+/// Segment radius for the two Today segmented pickers. Their containers sit at
+/// `Theme.radiusControl` with 3pt of inset padding, so the inner pill is that radius minus the
+/// inset — a derived value rather than a fourth hand-picked corner radius.
+private let segmentCornerRadius = Theme.radiusControl - 3
+
 private struct iPadTodayLayoutPicker: View {
     @Binding var selection: iPadTodayLayoutMode
     var showsLabels = true
@@ -384,7 +369,7 @@ private struct iPadTodayLayoutPicker: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 28)
                     .background(selection == mode ? Theme.blue.opacity(0.22) : Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: segmentCornerRadius, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(mode.title) layout")
@@ -419,7 +404,7 @@ private struct iPadTodaySidePanelPicker: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 30)
                         .background(selection == panel ? Theme.selectionWash : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: segmentCornerRadius, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(panel.title)
@@ -478,12 +463,7 @@ private struct iPadTodayEmptyStateCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "checkmark.circle")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(Theme.blue.opacity(0.86))
-                    .frame(width: 38, height: 38)
-                    .background(Theme.blue.opacity(0.11))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                iOSIconTile(systemImage: "checkmark.circle", color: Theme.blue, size: 38, iconSize: 22, bordered: false)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(CadenceTodayPresentationSupport.emptyTitle)
@@ -507,9 +487,9 @@ private struct iPadTodayEmptyStateCard: View {
                         .padding(.horizontal, 10)
                         .frame(height: 30)
                         .background(Theme.blue.opacity(0.16))
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                                 .strokeBorder(Theme.blue.opacity(0.24), lineWidth: 1)
                         }
                 }
@@ -544,7 +524,7 @@ private struct iPadTodayHint: View {
                 .foregroundStyle(Theme.dim)
                 .frame(width: 24, height: 24)
                 .background(Theme.surfaceElevated.opacity(0.36))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)

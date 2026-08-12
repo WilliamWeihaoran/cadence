@@ -39,40 +39,6 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
         }
     }
 
-    var subtitle: String {
-        switch self {
-        case .navigation:
-            return "Layouts and defaults."
-        case .sidebar:
-            return "Tabs, order, and visibility."
-        case .sync:
-            return "iCloud and account."
-        case .dataSafety:
-            return "Backups, counts, and storage."
-        case .calendar:
-            return "Access and linked calendars."
-        case .reminders:
-            return "Apple Reminders access."
-        case .notifications:
-            return "Task and habit reminders."
-        case .contexts:
-            return "Active and archived contexts."
-        case .lists:
-            return "Areas and projects."
-        case .tags:
-            return "Task and note labels."
-        case .templates:
-            return "Reusable note scaffolds."
-        case .ai:
-            return "OpenAI key and model."
-        case .coverage:
-            return "Mobile feature surface."
-        case .account:
-            return "Apple identity status."
-        case .about:
-            return "Version and bundle."
-        }
-    }
 
     var icon: String {
         switch self {

@@ -51,35 +51,13 @@ struct ColorGrid: View {
     /// can tell it apart from its neighbours in the sidebar, so the palette holds no second blue,
     /// no second green, and no second grey — the old 23 offered three near-identical greys and two
     /// near-whites, which is five swatches for one decision.
-    static let colors = [
-        "#4a9eff", "#6366f1", "#a78bfa", "#e879f9", "#f472b6", "#ff6b6b",
-        "#ffa94d", "#fbbf24", "#4ecb71", "#14b8a6", "#06b6d4", "#6b7a99",
-    ]
-
-    /// Trimming the palette must not silently re-colour anything already saved: a stored hex that
-    /// is no longer offered is appended so its owner still shows a selected swatch. It disappears
-    /// from the grid as soon as the user picks something else.
-    ///
-    /// Static so the sheets' one-line colour strip obeys the same rule from the same source.
-    static func offeredColors(for selected: String) -> [String] {
-        let stored = selected.trimmingCharacters(in: .whitespaces)
-        guard !stored.isEmpty, !colors.contains(where: { matches($0, stored) }) else {
-            return colors
-        }
-        return colors + [stored]
-    }
-
-    static func matches(_ lhs: String, _ rhs: String) -> Bool {
-        lhs.caseInsensitiveCompare(rhs) == .orderedSame
-    }
-
     var body: some View {
         LazyVGrid(
             columns: Array(repeating: .init(.fixed(swatchSize + 4), spacing: spacing), count: columns),
             spacing: spacing
         ) {
-            ForEach(Self.offeredColors(for: selected), id: \.self) { hex in
-                let isSelected = Self.matches(hex, selected)
+            ForEach(CadenceColorPalette.offeredColors(for: selected), id: \.self) { hex in
+                let isSelected = CadenceColorPalette.matches(hex, selected)
                 Circle()
                     .fill(Color(hex: hex))
                     .frame(width: swatchSize, height: swatchSize)

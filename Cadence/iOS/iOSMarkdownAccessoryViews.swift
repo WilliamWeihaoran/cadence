@@ -1,6 +1,53 @@
 #if os(iOS)
 import SwiftUI
 
+// The chrome around the iOS markdown editor: the reference picker sheet, the `[[reference]]` and
+// `/command` suggestion strips, the format toolbar, the empty-body placeholder and the status bar.
+//
+// Everything here is built out of `iOSDesignSystem.swift` (`iOSIconTile`, `iOSInlineEmpty`,
+// `.iosPressable`) and the shared tokens (`Theme`, `SectionEyebrowLabel`) rather than assembling
+// another plate inline — these surfaces had each grown their own radius, their own border alpha
+// and their own accent for the same job.
+
+// MARK: - Shared plate
+//
+// The one resting plate an editor-chrome control wears. Deliberately the same fill, hairline and
+// radius as `iOSIconButton`'s in `iOSDesignSystem.swift`, so the format toolbar, the suggestion
+// pills and the design system's own icon buttons read as one family of controls rather than three.
+
+private enum iOSMarkdownChromeMetrics {
+    static let plateFill = Theme.surfaceElevated.opacity(0.55)
+    static let plateBorder = Theme.borderSubtle.opacity(0.45)
+    static let cornerRadius = Theme.radiusControl
+    /// Visual plate size for a single-glyph control.
+    static let buttonPlate: CGFloat = 38
+    /// Touch floor. Every control here clears it whatever its plate measures.
+    static let touchTarget: CGFloat = 44
+    /// Suggestion pills are one touch target tall, so a strip appearing over the keyboard does not
+    /// change height between "matches" and "no matches".
+    static let pillHeight: CGFloat = 44
+}
+
+private struct iOSMarkdownChromePlate: ViewModifier {
+    var width: CGFloat? = nil
+    var height: CGFloat = iOSMarkdownChromeMetrics.buttonPlate
+    var horizontalPadding: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: iOSMarkdownChromeMetrics.cornerRadius, style: .continuous)
+
+        return content
+            .padding(.horizontal, horizontalPadding)
+            .frame(width: width, height: height)
+            .background(shape.fill(iOSMarkdownChromeMetrics.plateFill))
+            .overlay(shape.strokeBorder(iOSMarkdownChromeMetrics.plateBorder, lineWidth: 1))
+            .frame(minWidth: iOSMarkdownChromeMetrics.touchTarget, minHeight: iOSMarkdownChromeMetrics.touchTarget)
+            .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Reference picker sheet
+
 enum iOSMarkdownReferencePickerKind: String, Identifiable {
     case note
     case task
@@ -25,6 +72,13 @@ enum iOSMarkdownReferencePickerKind: String, Identifiable {
         switch self {
         case .note: return "Create or open a note first, then link it here."
         case .task: return "Create a task first, then reference it here."
+        }
+    }
+
+    var emptyIcon: String {
+        switch self {
+        case .note: return "doc.text.magnifyingglass"
+        case .task: return "checklist"
         }
     }
 }
@@ -72,35 +126,16 @@ struct iOSMarkdownReferencePickerSheet: View {
         NavigationStack {
             Group {
                 if isEmpty {
-                    emptyState
+                    // The shared pane-level empty state rather than a fourth hand-rolled
+                    // icon/title/subtitle stack. Picker empty states keep their subtitle — it
+                    // says something the screen does not.
+                    iOSEmptyPanel(
+                        systemImage: kind.emptyIcon,
+                        title: kind.emptyTitle,
+                        subtitle: kind.emptySubtitle
+                    )
                 } else {
-                    List {
-                        switch kind {
-                        case .note:
-                            ForEach(filteredNotes) { note in
-                                Button {
-                                    insert(NoteReferenceParser.noteReferenceMarkdown(for: note))
-                                    dismiss()
-                                } label: {
-                                    iOSMarkdownNoteReferenceRow(note: note)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        case .task:
-                            ForEach(filteredTasks) { task in
-                                Button {
-                                    insert(NoteReferenceParser.taskReferenceMarkdown(for: task))
-                                    dismiss()
-                                } label: {
-                                    iOSMarkdownTaskReferenceRow(task: task)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                    .background(Theme.surface)
+                    referenceList
                 }
             }
             .background(Theme.surface.ignoresSafeArea())
@@ -118,22 +153,38 @@ struct iOSMarkdownReferencePickerSheet: View {
         .preferredColorScheme(.dark)
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: kind == .note ? "doc.text.magnifyingglass" : "checklist")
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-            Text(kind.emptyTitle)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Theme.text)
-            Text(kind.emptySubtitle)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.dim)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 260)
+    /// A plain scrolling column rather than a `List`. `List` brought its own inset, separator and
+    /// selection plate, so every row carried system chrome at a system radius underneath the app's
+    /// own row treatment — two layers at two radii for one row.
+    private var referenceList: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2) {
+                switch kind {
+                case .note:
+                    ForEach(filteredNotes) { note in
+                        Button {
+                            insert(NoteReferenceParser.noteReferenceMarkdown(for: note))
+                            dismiss()
+                        } label: {
+                            iOSMarkdownNoteReferenceRow(note: note)
+                        }
+                        .buttonStyle(.iosPressable)
+                    }
+                case .task:
+                    ForEach(filteredTasks) { task in
+                        Button {
+                            insert(NoteReferenceParser.taskReferenceMarkdown(for: task))
+                            dismiss()
+                        } label: {
+                            iOSMarkdownTaskReferenceRow(task: task)
+                        }
+                        .buttonStyle(.iosPressable)
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(24)
     }
 
     private func matches(_ value: String) -> Bool {
@@ -168,12 +219,7 @@ private struct iOSMarkdownNoteReferenceRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.blue)
-                .frame(width: 34, height: 34)
-                .background(Theme.blue.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            iOSIconTile(systemImage: "doc.text", color: Theme.blue)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(note.displayTitle)
@@ -182,17 +228,19 @@ private struct iOSMarkdownNoteReferenceRow: View {
                     .lineLimit(1)
                 Text(subtitle)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(Theme.subdued)
                     .lineLimit(1)
                 Text(preview)
-                    .font(.system(size: 12, weight: .regular))
+                    .font(.system(size: 12))
                     .foregroundStyle(Theme.dim)
                     .lineLimit(2)
             }
 
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }
 }
@@ -223,12 +271,11 @@ private struct iOSMarkdownTaskReferenceRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(task.isDone ? Theme.green : Theme.blue)
-                .frame(width: 34, height: 34)
-                .background((task.isDone ? Theme.green : Theme.blue).opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            iOSIconTile(
+                systemImage: task.isDone ? "checkmark.circle.fill" : "circle",
+                color: task.isDone ? Theme.green : Theme.blue,
+                iconSize: 16
+            )
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
@@ -237,14 +284,99 @@ private struct iOSMarkdownTaskReferenceRow: View {
                     .lineLimit(2)
                 Text(subtitle)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(Theme.subdued)
                     .lineLimit(1)
             }
 
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Suggestion strips
+
+/// The strip above the editor that offers `[[reference]]` completions or `/command`s.
+///
+/// One view for both. They were two structs differing only in their label, their empty sentence
+/// and which accent their leading glyph took — which is how one ended up purple and the other blue
+/// for the same job. The eyebrow is the shared `SectionEyebrowLabel`, so it matches every other
+/// small-caps section label in the app, and the strip sits in a `Theme.surfaceRecessed` well: a
+/// real stop on the neutral ramp instead of the app background at a hand-picked alpha.
+struct iOSMarkdownSuggestionStrip<Content: View>: View {
+    let label: String
+    let query: String
+    let emptyText: String
+    let isEmpty: Bool
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                SectionEyebrowLabel(text: label)
+
+                if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(query)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            if isEmpty {
+                iOSInlineEmpty(text: emptyText)
+                    .frame(height: iOSMarkdownChromeMetrics.pillHeight)
+            } else {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) { content }
+                        .padding(.trailing, 12)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Theme.surfaceRecessed)
+    }
+}
+
+/// One card in a suggestion strip, wearing the shared editor-chrome plate so a suggestion and a
+/// format button are visibly the same kind of control.
+private struct iOSMarkdownSuggestionPill<Leading: View>: View {
+    let title: String
+    let subtitle: String
+    let action: () -> Void
+    @ViewBuilder let leading: Leading
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                leading
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+
+                    Text(subtitle)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: 220, alignment: .leading)
+            .modifier(iOSMarkdownChromePlate(
+                height: iOSMarkdownChromeMetrics.pillHeight,
+                horizontalPadding: 10
+            ))
+        }
+        .buttonStyle(.iosPressable)
     }
 }
 
@@ -262,7 +394,7 @@ struct iOSMarkdownReferenceCompletionStrip: View {
     let choices: [iOSMarkdownReferenceCompletionChoice]
     let insert: (String) -> Void
 
-    private var title: String {
+    private var label: String {
         switch context.kind {
         case .note: return "Notes"
         case .task: return "Tasks"
@@ -277,91 +409,27 @@ struct iOSMarkdownReferenceCompletionStrip: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: context.kind == .task ? "checkmark.circle" : "doc.text")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(context.kind == .task ? Theme.green : Theme.blue)
-
-                Text(title)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Theme.muted)
-                    .textCase(.uppercase)
-
-                if !context.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(context.query)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
+        iOSMarkdownSuggestionStrip(
+            label: label,
+            query: context.query,
+            emptyText: emptyText,
+            isEmpty: choices.isEmpty
+        ) {
+            ForEach(choices) { choice in
+                iOSMarkdownSuggestionPill(
+                    title: choice.title,
+                    subtitle: choice.subtitle,
+                    action: { insert(choice.markdown) }
+                ) {
+                    iOSIconTile(
+                        systemImage: choice.systemImage,
+                        color: choice.tint,
+                        size: 26,
+                        iconSize: 12,
+                        bordered: false
+                    )
                 }
-
-                Spacer(minLength: 0)
             }
-
-            if choices.isEmpty {
-                Text(emptyText)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 10)
-                    .frame(height: 34)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.surfaceElevated.opacity(0.38))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            } else {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(choices) { choice in
-                            Button {
-                                insert(choice.markdown)
-                            } label: {
-                                iOSMarkdownReferenceCompletionPill(choice: choice)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.trailing, 10)
-                }
-                .scrollIndicators(.hidden)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(Theme.bg.opacity(0.28))
-    }
-}
-
-private struct iOSMarkdownReferenceCompletionPill: View {
-    let choice: iOSMarkdownReferenceCompletionChoice
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: choice.systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(choice.tint)
-                .frame(width: 24, height: 24)
-                .background(choice.tint.opacity(0.14))
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(choice.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-
-                Text(choice.subtitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: 220, alignment: .leading)
-        .padding(.horizontal, 10)
-        .frame(height: 44)
-        .background(Theme.surfaceElevated.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.54), lineWidth: 1)
         }
     }
 }
@@ -372,96 +440,44 @@ struct iOSMarkdownSlashCommandStrip: View {
     let apply: (MarkdownSlashCommand) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "slash.circle")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.purple)
-
-                Text("Commands")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Theme.muted)
-                    .textCase(.uppercase)
-
-                if !context.query.isEmpty {
-                    Text("/\(context.query)")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
+        iOSMarkdownSuggestionStrip(
+            label: "Commands",
+            query: context.query.isEmpty ? "" : "/\(context.query)",
+            emptyText: "No matching commands",
+            isEmpty: commands.isEmpty
+        ) {
+            ForEach(commands) { command in
+                iOSMarkdownSuggestionPill(
+                    title: command.title,
+                    subtitle: command.subtitle,
+                    action: { apply(command) }
+                ) {
+                    // The command's own token, in the mono face the editor uses for markdown
+                    // syntax. It reads as syntax rather than as a link, so the accent is not
+                    // spent once per row on a list where every row is equally actionable.
+                    Text("/\(command.id)")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.muted)
+                        .frame(minWidth: 38, alignment: .leading)
                 }
-
-                Spacer(minLength: 0)
-            }
-
-            if commands.isEmpty {
-                Text("No matching commands")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 10)
-                    .frame(height: 34)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.surfaceElevated.opacity(0.38))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            } else {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(commands) { command in
-                            Button {
-                                apply(command)
-                            } label: {
-                                iOSMarkdownSlashCommandPill(command: command)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.trailing, 10)
-                }
-                .scrollIndicators(.hidden)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(Theme.bg.opacity(0.28))
     }
 }
 
-private struct iOSMarkdownSlashCommandPill: View {
-    let command: MarkdownSlashCommand
-
-    var body: some View {
-        HStack(spacing: 9) {
-            Text("/\(command.id)")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(Theme.blue)
-                .frame(minWidth: 38, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(command.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-
-                Text(command.subtitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: 230, alignment: .leading)
-        .padding(.horizontal, 10)
-        .frame(height: 44)
-        .background(Theme.surfaceElevated.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.54), lineWidth: 1)
-        }
-    }
-}
+// MARK: - Format toolbar
 
 struct iOSMarkdownFormatToolbar: View {
     let apply: (MarkdownFormatCommand) -> Void
     let chooseImages: () -> Void
+
+    /// One touch target plus the row's own padding.
+    static let height: CGFloat = iOSMarkdownChromeMetrics.touchTarget + 12
+
+    /// Indices the full toolbar draws a separator *before*, grouping block style / inline style /
+    /// lists / blocks / references.
+    private static let fullSeparatorIndices: Set<Int> = [3, 8, 11, 14]
+    private static let compactWidthThreshold: CGFloat = 620
 
     private let primaryItems: [iOSMarkdownFormatToolbarItem] = [
         .text("P", "Paragraph", .paragraph),
@@ -501,27 +517,27 @@ struct iOSMarkdownFormatToolbar: View {
 
     var body: some View {
         GeometryReader { proxy in
-            if proxy.size.width < 620 {
-                compactToolbar
-                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
-            } else {
-                fullToolbar
-                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
-            }
+            toolbarRow(isCompact: proxy.size.width < Self.compactWidthThreshold)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
         }
-        .frame(height: 48)
-        .background(Theme.bg.opacity(0.2))
+        .frame(height: Self.height)
+        .background(Theme.surface)
     }
 
-    private var fullToolbar: some View {
+    /// One row for both widths. The full and compact toolbars were two near-copies that each
+    /// repeated the image button and the container chrome; they now differ only in which items
+    /// they carry and whether the rest go into an overflow menu.
+    ///
+    /// The row used to sit on a `cadenceCard` — a shadowed, elevated plate holding buttons that
+    /// were themselves plated, so every button read as two elevations above the note it formats.
+    /// The card is gone; this is a row of controls on the editor's own surface, closed by the
+    /// hairline the editing surface already draws under it.
+    private func toolbarRow(isCompact: Bool) -> some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 6) {
-                ForEach(Array(primaryItems.enumerated()), id: \.element.id) { index, item in
-                    if [3, 8, 11, 14].contains(index) {
-                        Capsule()
-                            .fill(Theme.borderSubtle.opacity(0.62))
-                            .frame(width: 1, height: 18)
-                            .padding(.horizontal, 2)
+            HStack(spacing: 4) {
+                ForEach(Array((isCompact ? compactItems : primaryItems).enumerated()), id: \.element.id) { index, item in
+                    if !isCompact, Self.fullSeparatorIndices.contains(index) {
+                        separator
                     }
 
                     iOSMarkdownFormatButton(item: item) {
@@ -529,94 +545,50 @@ struct iOSMarkdownFormatToolbar: View {
                     }
                 }
 
-                Capsule()
-                    .fill(Theme.borderSubtle.opacity(0.62))
-                    .frame(width: 1, height: 18)
-                    .padding(.horizontal, 2)
+                separator
 
                 Button(action: chooseImages) {
                     Image(systemName: "photo")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                        .frame(width: 38, height: 36)
-                        .background(Theme.surface.opacity(0.78))
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                                .strokeBorder(Theme.borderSubtle.opacity(0.44), lineWidth: 1)
-                        }
+                        .modifier(iOSMarkdownChromePlate(width: iOSMarkdownChromeMetrics.buttonPlate))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Image")
-            }
-            .padding(6)
-            .cadenceCard(background: Theme.surfaceElevated.opacity(0.46), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-        }
-        .scrollIndicators(.hidden)
-    }
-
-    private var compactToolbar: some View {
-        // Wrapped in a horizontal ScrollView (matching fullToolbar) so the
-        // row can never clip on smaller phones or larger Dynamic Type sizes
-        // instead of silently hiding trailing buttons.
-        ScrollView(.horizontal) {
-            HStack(spacing: 6) {
-                ForEach(compactItems) { item in
-                    iOSMarkdownFormatButton(item: item) {
-                        apply(item.command)
-                    }
-                }
-
-                Button(action: chooseImages) {
-                    Image(systemName: "photo")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .frame(width: 38, height: 36)
-                        .background(Theme.surface.opacity(0.78))
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                                .strokeBorder(Theme.borderSubtle.opacity(0.44), lineWidth: 1)
-                        }
-                }
-                .buttonStyle(.plain)
+                .buttonStyle(.iosPressable)
                 .accessibilityLabel("Image")
 
-                Menu {
-                    ForEach(compactMoreItems) { item in
-                        Button {
-                            apply(item.command)
-                        } label: {
-                            if let systemImage = item.systemImage {
-                                Label(item.title, systemImage: systemImage)
-                            } else {
-                                Label(item.id, systemImage: item.menuSystemImage)
+                if isCompact {
+                    Menu {
+                        ForEach(compactMoreItems) { item in
+                            Button {
+                                apply(item.command)
+                            } label: {
+                                if let systemImage = item.systemImage {
+                                    Label(item.title, systemImage: systemImage)
+                                } else {
+                                    Label(item.id, systemImage: item.menuSystemImage)
+                                }
                             }
                         }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                            .modifier(iOSMarkdownChromePlate(width: iOSMarkdownChromeMetrics.buttonPlate))
                     }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                        .frame(width: 38, height: 36)
-                        .background(Theme.surface.opacity(0.78))
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                                .strokeBorder(Theme.borderSubtle.opacity(0.44), lineWidth: 1)
-                        }
+                    .accessibilityLabel("More formatting")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("More formatting")
             }
-            .padding(6)
-            .cadenceCard(background: Theme.surfaceElevated.opacity(0.46), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
         }
         .scrollIndicators(.hidden)
+    }
+
+    private var separator: some View {
+        Capsule()
+            .fill(Theme.border)
+            .frame(width: 1, height: 20)
+            .padding(.horizontal, 4)
     }
 }
 
@@ -646,6 +618,9 @@ private struct iOSMarkdownFormatToolbarItem: Identifiable {
     }
 }
 
+/// Not `iOSIconButton`: three of the toolbar's items ("P", "H1", "H2") are text glyphs rather than
+/// SF Symbols, and a row where half the buttons wore the design system's plate and half wore a
+/// hand-made one is exactly the drift this pass exists to remove. It wears the same plate instead.
 private struct iOSMarkdownFormatButton: View {
     let item: iOSMarkdownFormatToolbarItem
     let action: () -> Void
@@ -655,104 +630,78 @@ private struct iOSMarkdownFormatButton: View {
             Group {
                 if let systemImage = item.systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                 } else {
                     Text(item.title)
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 12, weight: .bold))
                 }
             }
             .foregroundStyle(Theme.text)
-            .frame(width: 38, height: 36)
-            .background(Theme.surface.opacity(0.78))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.44), lineWidth: 1)
-            }
+            .modifier(iOSMarkdownChromePlate(width: iOSMarkdownChromeMetrics.buttonPlate))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
         .accessibilityLabel(item.id)
     }
 }
 
+// MARK: - Empty body placeholder
+
+/// Ghost text on the first line of an empty note, matching macOS's `NoteEmptyBodyPlaceholder`.
+///
+/// It used to be a bold near-white line plus three monospace "cheat sheet" chips (`# Heading`,
+/// `- [ ] Task`, `**Bold** · [[Link]] · #tag`). The chips restated what the format toolbar and the
+/// `/` strip immediately above them already offer, in a third visual idiom, and they were the
+/// brightest thing on an otherwise empty screen. What is left is one quiet line saying where the
+/// caret is and how to reach the commands.
 struct iOSMarkdownEmptyPrompt: View {
     let placeholder: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(placeholder)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.text.opacity(0.74))
+                .font(.system(size: 15))
+                .foregroundStyle(Theme.dim)
 
-            VStack(alignment: .leading, spacing: 5) {
-                iOSMarkdownHintRow(text: "# Heading")
-                iOSMarkdownHintRow(text: "- [ ] Task")
-                iOSMarkdownHintRow(text: "**Bold** · [[Link]] · #tag")
-            }
-            .padding(.top, 2)
+            Text("Type / for commands.")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.dim)
         }
         .padding(.horizontal, 18)
-        .padding(.vertical, 18)
+        .padding(.vertical, 16)
+        // Non-interactive, so a tap anywhere in the empty body still places the caret — which is
+        // the thing you came here to do.
+        .allowsHitTesting(false)
     }
 }
 
-private struct iOSMarkdownHintRow: View {
-    let text: String
+// MARK: - Status bar
 
-    var body: some View {
-        Text(text)
-            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-            .foregroundStyle(Theme.dim.opacity(0.76))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(Theme.surfaceElevated.opacity(0.38))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-    }
-}
-
+/// The one line under the editor: how much you have written.
+///
+/// It used to lead with the editor mode ("Live Markdown" / "Markdown" / "Rendered"), each in its
+/// own accent — purple, blue, green — for a value the mode picker a few points above already shows
+/// as a selected segment. Two affordances for one field, and three accents spent on static chrome.
+/// The counts are the part of this line that nothing else on screen says.
 struct iOSMarkdownStatusBar: View {
     let wordCount: Int
     let lineCount: Int
-    let mode: iOSMarkdownEditorMode
     let isRegularWidth: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
-            Label(statusTitle, systemImage: mode.systemImage)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(statusTint)
-
-            Spacer(minLength: 8)
+        HStack(spacing: 10) {
+            Spacer(minLength: 0)
 
             if isRegularWidth {
                 Text("\(lineCount) \(lineCount == 1 ? "line" : "lines")")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.dim)
             }
 
             Text("\(wordCount) \(wordCount == 1 ? "word" : "words")")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Theme.dim)
         }
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(Theme.dim)
         .padding(.horizontal, isRegularWidth ? 14 : 12)
         .frame(height: isRegularWidth ? 34 : 32)
-        .background(Theme.bg.opacity(0.34))
-    }
-
-    private var statusTitle: String {
-        switch mode {
-        case .live: return "Live Markdown"
-        case .edit: return "Markdown"
-        case .preview: return "Rendered"
-        }
-    }
-
-    private var statusTint: Color {
-        switch mode {
-        case .live: return Theme.purple
-        case .edit: return Theme.blue
-        case .preview: return Theme.green
-        }
+        .background(Theme.surface)
     }
 }
 #endif

@@ -218,7 +218,6 @@ private struct iOSCalendarBoardDayColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            todayAccent
             addTaskButton
             content
             completedFooter
@@ -235,7 +234,7 @@ private struct iOSCalendarBoardDayColumn: View {
         }
         .overlay {
             if isDropTargeted {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                     .strokeBorder(Theme.blue.opacity(0.72), style: StrokeStyle(lineWidth: 1.25, dash: [5, 4]))
                     .padding(2)
             }
@@ -246,75 +245,39 @@ private struct iOSCalendarBoardDayColumn: View {
         } isTargeted: { isDropTargeted = $0 }
     }
 
+    /// The same header treatment every board column gets, day columns included: dot, uppercased
+    /// label, count, closing hairline — amber for today, which is the one sanctioned exception, the
+    /// same one macOS's `BoardColumnHeader` makes.
+    ///
+    /// This replaced three overlapping affordances that all said "today": a "Today" pill, an
+    /// amber-tinted count badge, and a separate glowing gradient capsule under the header.
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(DateFormatters.dayOfWeek.string(from: date))
-                    .font(.system(size: horizontalSizeClass == .regular ? 21 : 19, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                Text(DateFormatters.shortDate.string(from: date))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            if isToday {
-                Text("Today")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.amber)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(Theme.amber.opacity(0.13))
-                    .clipShape(Capsule())
-            }
-
-            Text("\(totalCount)")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(isToday ? Theme.amber : Theme.dim)
-                .frame(minWidth: 26, minHeight: 24)
-                .background((isToday ? Theme.amber : Theme.surfaceElevated).opacity(isToday ? 0.14 : 0.82))
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
-        .padding(.horizontal, 2)
-    }
-
-    @ViewBuilder
-    private var todayAccent: some View {
-        if isToday {
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: [Theme.amber.opacity(0.82), Theme.amber.opacity(0.48), Theme.amber.opacity(0.16)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(height: 2)
-                .padding(.horizontal, 2)
-                .shadow(color: Theme.amber.opacity(0.22), radius: 8, y: 2)
-                .accessibilityHidden(true)
-        }
+        iOSBoardColumnHeader(
+            dotColor: isToday ? Theme.amber : Theme.dim,
+            title: "\(DateFormatters.dayOfWeek.string(from: date)) · \(DateFormatters.shortDate.string(from: date))",
+            count: totalCount,
+            accentRule: isToday ? Theme.amber : nil
+        )
     }
 
     private var addTaskButton: some View {
         Button(action: onAddTask) {
             HStack(spacing: 8) {
                 Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .semibold))
-                Text("Add task")
                     .font(.system(size: 13, weight: .semibold))
+                Text("Add task")
+                    .font(.system(size: 14, weight: .semibold))
                 Spacer(minLength: 0)
             }
             .foregroundStyle(Theme.dim)
             .padding(.horizontal, 12)
-            .frame(height: 36)
+            .frame(height: 44)
             .background(Theme.surfaceElevated.opacity(0.70))
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel("Add task on \(DateFormatters.longDate.string(from: date))")
     }
 
     @ViewBuilder
@@ -358,11 +321,12 @@ private struct iOSCalendarBoardDayColumn: View {
                     }
                     .foregroundStyle(Theme.dim)
                     .padding(.horizontal, 10)
-                    .frame(height: 34)
+                    .frame(height: 44)
                     .background(Theme.surfaceElevated.opacity(0.42))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.iosPressable)
 
                 if !isCompletedCollapsed {
                     VStack(alignment: .leading, spacing: 10) {

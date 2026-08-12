@@ -89,6 +89,14 @@ struct iOSCalendarBoardEventItem: Identifiable {
     }
 }
 
+/// An event as it appears in a **board column**, next to task and bundle cards.
+///
+/// It used to be a solid plate of the calendar's colour — the treatment that belongs to a
+/// *timeline* block, where the plate is the whole affordance. In a column of neutral washed cards
+/// it read as a slab dropped in from another screen, and its metadata chips had to fight it. This
+/// is now the same neutral-card-plus-tint-wash macOS's `CalendarBoardEventCard` uses, on the shared
+/// `CadenceCalendarEventStyle` opacity ladder, so an event, a bundle and a task in one column read
+/// as three cards rather than three designs.
 struct iOSCalendarBoardEventCard: View {
     let item: iOSCalendarBoardEventItem
 
@@ -99,20 +107,16 @@ struct iOSCalendarBoardEventCard: View {
         return TimeFormatters.timeRange(startMin: item.startMin, endMin: item.endMin)
     }
 
-    private var fill: Color {
-        iOSCalendarEventSupport.fillColor(from: item.color)
-    }
-
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: item.isAllDay ? "calendar" : "clock")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.text.opacity(0.85))
+                .foregroundStyle(item.color)
                 .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(item.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(2)
 
@@ -134,16 +138,28 @@ struct iOSCalendarBoardEventCard: View {
 
                 if !item.calendarTitle.isEmpty {
                     Text(item.calendarTitle)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.text.opacity(0.68))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.subdued)
                         .lineLimit(1)
                 }
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(fill)
+        .background {
+            ZStack {
+                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                    .fill(Theme.surfaceElevated.opacity(CadenceCalendarEventStyle.surfaceOpacity(isActive: false)))
+                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                    .fill(item.color.opacity(CadenceCalendarEventStyle.tintOpacity()))
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                .strokeBorder(item.color.opacity(CadenceCalendarEventStyle.borderOpacity()), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -163,19 +179,31 @@ struct iOSCalendarBoardTaskCard: View {
         Color(hex: task.containerColor)
     }
 
+    /// Square on the leading edge so the list colour strip reads as a strip, rounded elsewhere.
+    private var cardShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: Theme.radiusCard,
+            topTrailingRadius: Theme.radiusCard,
+            style: .continuous
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
                 Button(action: toggleCompletion) {
                     iOSTaskCompletionCircle(isDone: task.isDone, tint: Theme.priorityColor(task.priority))
-                        .frame(width: 15, height: 15)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
+                        .frame(width: 16, height: 16)
+                        .frame(width: 30, height: 30)
+                        .iOSExpandedHitArea()
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.iosPressable)
+                .accessibilityLabel(task.isDone ? "Mark not done" : "Mark done")
 
                 Text(task.title.isEmpty ? "Untitled" : task.title)
-                    .font(.system(size: isRegularWidth ? 14 : 13, weight: .medium))
+                    .font(.system(size: isRegularWidth ? 15 : 14, weight: .medium))
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                     .strikethrough(task.isDone, color: Theme.dim)
                     .lineLimit(2)
@@ -191,19 +219,20 @@ struct iOSCalendarBoardTaskCard: View {
         .padding(.leading, 12)
         .padding(.trailing, 12)
         .padding(.vertical, 12)
-        .background(listColor.opacity(task.isDone ? 0.05 : 0.10))
-        .clipShape(
-            UnevenRoundedRectangle(
-                topLeadingRadius: 0,
-                bottomLeadingRadius: 0,
-                bottomTrailingRadius: Theme.radiusCard,
-                topTrailingRadius: Theme.radiusCard
-            )
-        )
+        .background {
+            ZStack {
+                cardShape.fill(Theme.surfaceElevated.opacity(0.82))
+                cardShape.fill(listColor.opacity(task.isDone ? 0.05 : 0.12))
+            }
+        }
+        .clipShape(cardShape)
+        .overlay {
+            cardShape.strokeBorder(Theme.borderSubtle, lineWidth: 1)
+        }
         .overlay(alignment: .leading) {
             Rectangle()
                 .fill(listColor)
-                .frame(width: 2)
+                .frame(width: 3)
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -291,7 +320,7 @@ struct iOSCalendarBoardBundleCard: View {
                         Spacer(minLength: 4)
                         Text("×\(tasks.count)")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Theme.dim)
+                            .foregroundStyle(Theme.subdued)
                     }
 
                     iOSCalendarBoardMetadataChip(
@@ -367,25 +396,28 @@ private struct iOSCalendarBoardMetadataItem: Identifiable {
     let color: Color
 }
 
+/// Board-card metadata chip. Matches macOS's `CalendarBoardMetadataChip`: the glyph *and* the label
+/// carry the chip's own tint over a wash of the same colour, instead of a tinted glyph sitting next
+/// to grey text on a grey pill, which made every chip read as disabled.
 private struct iOSCalendarBoardMetadataChip: View {
     let item: iOSCalendarBoardMetadataItem
 
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: item.icon)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(item.color)
-                .frame(width: 10)
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 11)
             Text(item.title)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Theme.dim)
+                .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
+                .minimumScaleFactor(0.78)
             Spacer(minLength: 0)
         }
+        .foregroundStyle(item.color)
         .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface.opacity(0.66))
+        .background(item.color.opacity(CadenceCalendarEventStyle.chipTintOpacity()))
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 }

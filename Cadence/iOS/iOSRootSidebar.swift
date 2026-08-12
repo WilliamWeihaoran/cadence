@@ -13,11 +13,17 @@ struct iPadMacStyleRootShell<Content: View>: View {
             HStack(spacing: 0) {
                 iOSSidebar(selection: $selection, style: sidebarStyle)
                     .frame(width: sidebarStyle.width)
+                    // `Theme.surface` against the detail pane's `Theme.bg`, closed by a full-weight
+                    // hairline — the same construction and the same reasoning as macOS's
+                    // `SidebarView`: on a near-black palette the tonal step alone does not separate
+                    // the column from the page, so the edge has to carry it. This used to paint
+                    // `surface` here and `bg` inside the sidebar, so the step never existed and the
+                    // edge was a half-point line at 58% of a subtle border.
                     .background(Theme.surface)
                     .overlay(alignment: .trailing) {
                         Rectangle()
-                            .fill(Theme.borderSubtle.opacity(0.58))
-                            .frame(width: 0.5)
+                            .fill(Theme.borderSubtle)
+                            .frame(width: 1)
                     }
                     .zIndex(1)
 
@@ -72,7 +78,6 @@ struct iOSSidebar: View {
                 railNavigation
             }
         }
-        .background(Theme.bg)
         .popover(isPresented: $isWorkspaceDrawerPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .leading) {
             iOSWorkspaceDrawer(selection: $selection)
                 .frame(width: 342, height: 640)
@@ -233,7 +238,9 @@ enum iOSSidebarStyle: Equatable {
 enum iOSSidebarMetrics {
     static let railWidth: CGFloat = 58
     static let expandedWidth: CGFloat = 188
-    static let buttonHeight: CGFloat = 40
+    /// Also the touch floor: a nav row is the most-tapped control on the iPad shell, so it does
+    /// not get to be 40pt.
+    static let buttonHeight: CGFloat = 44
     static let iconSize: CGFloat = 14
     static let iconBoxSize: CGFloat = 30
     static let selectedCornerRadius: CGFloat = Theme.radiusControl
@@ -242,9 +249,9 @@ enum iOSSidebarMetrics {
 struct iOSSidebarRailDivider: View {
     var body: some View {
         Rectangle()
-            .fill(Theme.borderSubtle.opacity(0.54))
+            .fill(Theme.borderSubtle)
             .frame(maxWidth: .infinity)
-            .frame(height: 0.5)
+            .frame(height: 1)
     }
 }
 
@@ -255,14 +262,7 @@ struct iOSSidebarBrand: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 9) {
-                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                    .fill(Theme.blue.opacity(0.13))
-                    .frame(width: 32, height: 32)
-                    .overlay {
-                        Image(systemName: "sidebar.leading")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.blue)
-                    }
+                iOSIconTile(systemImage: "sidebar.leading", color: Theme.blue, size: 32)
 
                 if style == .expanded {
                     VStack(alignment: .leading, spacing: 2) {
@@ -279,9 +279,11 @@ struct iOSSidebarBrand: View {
                     Spacer(minLength: 0)
                 }
             }
+            .frame(minHeight: 44)
             .frame(maxWidth: .infinity, alignment: style == .expanded ? .leading : .center)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
         .accessibilityLabel("Cadence")
     }
 }
@@ -292,14 +294,10 @@ struct iOSSidebarSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Theme.dim.opacity(0.78))
-                .textCase(.uppercase)
-                .kerning(0.8)
+            SectionEyebrowLabel(text: title)
                 .padding(.horizontal, 4)
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 2) {
                 content()
             }
         }
@@ -323,8 +321,9 @@ struct iOSSidebarButton: View {
                 railLabel
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
         .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var expandedLabel: some View {
@@ -335,7 +334,7 @@ struct iOSSidebarButton: View {
                 .frame(width: 20)
 
             Text(title)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
                 .foregroundStyle(isSelected ? Theme.text : Theme.muted)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
@@ -343,26 +342,15 @@ struct iOSSidebarButton: View {
             Spacer(minLength: 4)
 
             if let count, count > 0 {
-                Text("\(count)")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(isSelected ? tint : Theme.dim)
-                    .monospacedDigit()
-                    .padding(.horizontal, 6)
-                    .frame(height: 19)
-                    .background(isSelected ? tint.opacity(0.14) : Theme.surfaceElevated.opacity(0.55))
-                    .clipShape(Capsule())
+                countBadge
             }
         }
-        .padding(.vertical, 6)
         .padding(.leading, 10)
         .padding(.trailing, 8)
+        .frame(height: iOSSidebarMetrics.buttonHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(isSelected ? tint : Color.clear)
-                .frame(width: 2)
-        }
-        .contentShape(Rectangle())
+        .background(selectionLayer)
+        .contentShape(selectionShape)
     }
 
     private var railLabel: some View {
@@ -376,24 +364,49 @@ struct iOSSidebarButton: View {
             if let count, count > 0 {
                 Text("\(count)")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(Theme.text)
+                    // On a saturated fill the foreground is `onColor`, not `text` — `text` is
+                    // tuned against `bg` and greys out over an arbitrary destination hue.
+                    .foregroundStyle(Theme.onColor)
                     .monospacedDigit()
                     .padding(.horizontal, 5)
                     .frame(minWidth: 18)
                     .frame(height: 17)
-                    .background(tint.opacity(0.95))
+                    .background(tint)
                     .clipShape(Capsule())
                     .offset(x: -1, y: 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .frame(height: iOSSidebarMetrics.buttonHeight)
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(isSelected ? tint : Color.clear)
-                .frame(width: 2)
-        }
-        .contentShape(Rectangle())
+        .background(selectionLayer)
+        .contentShape(selectionShape)
+    }
+
+    private var selectionShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous)
+    }
+
+    /// One selection layer at one radius, the rule `SidebarNavRow` follows: selection is a step up
+    /// the neutral ramp, not a coloured 2pt rail bolted to the leading edge of an otherwise
+    /// unchanged row. The glyph keeps its destination tint either way — those colours are what
+    /// make eleven destinations scannable in one column.
+    private var selectionLayer: some View {
+        selectionShape.fill(isSelected ? Theme.surfaceHighlight : Color.clear)
+    }
+
+    /// Neutral capsule, neutral digits, tint only when this row is the current one — the same
+    /// badge `SidebarNavCountBadge` draws.
+    private var countBadge: some View {
+        Text("\(count ?? 0)")
+            .font(.system(size: 10, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(isSelected ? Theme.bg : Theme.muted)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 6)
+            .frame(minWidth: 20, minHeight: 19)
+            .background(Capsule(style: .continuous).fill(isSelected ? tint : Theme.borderSubtle))
+            .accessibilityHidden(true)
     }
 }
 

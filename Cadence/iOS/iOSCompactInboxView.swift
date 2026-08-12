@@ -20,10 +20,10 @@ struct iOSCompactInboxView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 11) {
+                // No subtitle — see the note on the All Tasks header.
                 iOSCompactPageHeader(
                     eyebrow: "Capture",
                     title: "Inbox",
-                    subtitle: "Fast capture before you decide where things belong.",
                     systemImage: "tray.fill",
                     color: Theme.blue
                 )

@@ -10,6 +10,9 @@ enum iOSTaskRowDensity {
 struct iOSTaskRow: View {
     @Bindable var task: AppTask
     var density: iOSTaskRowDensity = .regular
+    /// Off for surfaces that are already scoped to one list, where naming it on every row is
+    /// noise — the same knob, and the same reason, as `KanbanCard.showsContainerChip` on macOS.
+    var showsContainer: Bool = true
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
@@ -34,9 +37,12 @@ struct iOSTaskRow: View {
         rowContent
             .padding(.horizontal, rowHorizontalPadding)
             .padding(.vertical, rowVerticalPadding)
+            .frame(minHeight: 44)
+            // One layer, one radius: the divider is the row's only chrome, at the same weight
+            // `MacTaskRow` draws its bottom hairline.
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.35))
+                    .fill(Theme.borderSubtle.opacity(0.22))
                     .frame(height: 1)
             }
             .contentShape(Rectangle())
@@ -86,9 +92,13 @@ struct iOSTaskRow: View {
             completionButton
             taskSummary
 
+            // Neutral, like every other piece of row chrome. It used to be tinted by priority —
+            // or, for an unprioritised task, by the container colour — which made a plain
+            // disclosure arrow the loudest colour in the row and duplicated what the completion
+            // circle already says. macOS removed the same container-colour bleed from its row.
             Image(systemName: "chevron.right")
                 .font(.system(size: isCompact ? 10 : (isRegularWidth ? 12 : 10), weight: .semibold))
-                .foregroundStyle(rowTint.opacity(0.62))
+                .foregroundStyle(Theme.dim)
                 .padding(.top, 4)
         }
     }
@@ -103,16 +113,31 @@ struct iOSTaskRow: View {
         return isRegularWidth ? 12 : 9
     }
 
+    /// The circle carries priority and nothing else, exactly as `MacTaskRow`'s does — and once a
+    /// task is done every priority converges on `Theme.doneFill`. It used to fall back to the
+    /// *container* colour for an unprioritised task, so one glyph meant two different things.
+    ///
+    /// `iOSExpandedHitArea` gives the glyph a 44pt touch target without letting it take 44pt of
+    /// layout, which would shove the title across the row.
     private var completionButton: some View {
         Button {
             toggleCompletion()
         } label: {
-            iOSTaskCompletionCircle(isDone: task.isDone, tint: rowTint)
-                .frame(width: isCompact ? 20 : (isRegularWidth ? 24 : 20), height: isCompact ? 20 : (isRegularWidth ? 24 : 20))
-                .contentShape(Rectangle())
+            iOSTaskCompletionCircle(
+                isDone: task.isDone,
+                tint: Theme.priorityColor(task.priority),
+                diameter: isCompact ? 14 : 16
+            )
+            .frame(width: completionGlyphSize, height: completionGlyphSize)
+            .iOSExpandedHitArea((44 - completionGlyphSize) / 2)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
         .accessibilityLabel(task.isDone ? "Mark task todo" : "Complete task")
+    }
+
+    private var completionGlyphSize: CGFloat {
+        if isCompact { return 20 }
+        return isRegularWidth ? 24 : 20
     }
 
     private var taskSummary: some View {
@@ -154,92 +179,101 @@ struct iOSTaskRow: View {
         }
     }
 
+    /// Notes preview only. The container used to be glued onto the front of this string
+    /// (`"Errands - buy milk"`), which read as prose and left the list a task belongs to
+    /// unclickable and indistinguishable from its notes. It is a chip now, like macOS's.
     private var secondaryLine: String? {
-        let container = task.containerName.trimmingCharacters(in: .whitespacesAndNewlines)
         let previewLimit = isCompact ? 80 : (isRegularWidth ? 120 : 64)
         let preview = CadenceTaskPresentationSupport.plainPreviewText(from: task.notes, limit: previewLimit)
-
-        if !container.isEmpty && !preview.isEmpty {
-            return "\(container) - \(preview)"
-        }
-        if !container.isEmpty {
-            return container
-        }
-        if !preview.isEmpty {
-            return preview
-        }
-        return nil
+        return preview.isEmpty ? nil : preview
     }
 
+    /// Row metadata, in `MacTaskRow`'s vocabulary: a tinted icon carries the *identity* of the
+    /// field (amber sun = do date, red flag = due date, the goal's own colour = goal) while the
+    /// text stays neutral, going red only when a date is genuinely late. Every one of these used
+    /// to be a filled capsule in its own hue, so a task with four attributes rendered as four
+    /// competing colours and urgency stopped standing out.
+    ///
+    /// Priority is deliberately absent: it is the completion circle's job here exactly as it is on
+    /// macOS, and a chip repeating it was a second affordance for one field.
     @ViewBuilder
     private var taskBadgeContent: some View {
+        if showsListContextChip {
+            iOSTaskContainerChip(
+                icon: task.project?.icon ?? task.area?.icon ?? "tray.fill",
+                name: task.containerName,
+                tint: Color(hex: task.containerColor),
+                compact: isCompact
+            )
+        }
+
         if task.status == .inProgress {
-            taskBadge(
-                systemImage: "play.fill",
-                text: "In Progress",
-                color: Theme.blue
-            )
-        }
-
-        if task.priority != .none || !isCompact {
-            priorityBadge
-        }
-
-        if task.recurrenceRule != .none {
-            taskBadge(
-                systemImage: task.recurrenceRule.systemImage,
-                text: task.recurrenceRule.shortLabel,
-                color: Theme.purple
-            )
-        }
-
-        if CadenceTaskPresentationSupport.hasNotes(task) {
-            taskBadge(
-                systemImage: "doc.text",
-                text: "Notes",
-                color: Theme.dim
-            )
-        }
-
-        if let subtaskProgress = CadenceTaskPresentationSupport.subtaskProgress(for: task) {
-            taskBadge(
-                systemImage: "checklist",
-                text: isCompact ? subtaskProgress.compactLabel : subtaskProgress.label,
-                color: subtaskProgress.completed == subtaskProgress.total ? Theme.green : Theme.dim
-            )
-        }
-
-        if let goal = task.goal {
-            taskBadge(
-                systemImage: goal.icon,
-                text: goal.title.isEmpty ? "Goal" : goal.title,
-                color: Color(hex: goal.colorHex)
-            )
+            taskMeta(systemImage: "play.fill", text: "In Progress", tint: Theme.blue)
         }
 
         if !task.scheduledDate.isEmpty {
-            taskBadge(
+            taskMeta(
                 systemImage: task.scheduledStartMin >= 0 ? "clock.fill" : "sun.max.fill",
                 text: scheduledDateLabel,
-                color: task.scheduledDate == DateFormatters.todayKey() ? Theme.amber : Theme.dim
+                tint: Theme.amber,
+                textColor: isOverdo ? Theme.red : (isDoToday ? Theme.amber : Theme.dim)
             )
         }
 
         if let dueUrgency {
-            taskBadge(
+            taskMeta(
                 systemImage: "flag.fill",
                 text: CadenceTaskPresentationSupport.dueDateLabel(for: task),
-                color: dueUrgency == .overdue ? dueUrgency.tint : Theme.dim
+                tint: dueUrgency == .overdue ? Theme.red : Theme.dim,
+                textColor: dueUrgency == .overdue ? Theme.red : Theme.dim
+            )
+        }
+
+        if task.recurrenceRule != .none {
+            taskMeta(systemImage: task.recurrenceRule.systemImage, text: task.recurrenceRule.shortLabel, tint: Theme.purple)
+        }
+
+        if let subtaskProgress = CadenceTaskPresentationSupport.subtaskProgress(for: task) {
+            taskMeta(
+                systemImage: "checklist",
+                text: isCompact ? subtaskProgress.compactLabel : subtaskProgress.label,
+                tint: subtaskProgress.completed == subtaskProgress.total ? Theme.green : Theme.dim
             )
         }
 
         if task.estimatedMinutes > 0 {
-            taskBadge(
-                systemImage: "clock",
-                text: estimateLabel,
-                color: Theme.dim
+            taskMeta(systemImage: "clock", text: estimateLabel, tint: Theme.dim)
+        }
+
+        if CadenceTaskPresentationSupport.hasNotes(task) {
+            taskMeta(systemImage: "doc.text", text: "Notes", tint: Theme.dim)
+        }
+
+        if let goal = task.goal {
+            taskMeta(
+                systemImage: goal.icon,
+                text: goal.title.isEmpty ? "Goal" : goal.title,
+                tint: Color(hex: goal.colorHex)
             )
         }
+    }
+
+    private var showsListContextChip: Bool {
+        showsContainer && !task.containerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Same semantics as `KanbanCardComputedSupport.isOverdo` / `.isDoToday`, which macOS's row and
+    /// card both read: a finished task is never late, and the comparison goes through
+    /// `DateFormatters.dayOffset` rather than a string compare so both platforms answer alike.
+    /// That helper is behind `#if os(macOS)`; the two should be folded into one shared classifier.
+    private var isOverdo: Bool {
+        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
+        return (DateFormatters.dayOffset(from: task.scheduledDate) ?? 0) < 0
+    }
+
+    private var isDoToday: Bool {
+        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
+        return task.scheduledDate == DateFormatters.todayKey()
     }
 
     @ViewBuilder
@@ -265,30 +299,6 @@ struct iOSTaskRow: View {
         }
     }
 
-    private var priorityBadge: some View {
-        taskBadge(
-            systemImage: "circle.fill",
-            text: task.priority.label,
-            color: Theme.priorityColor(task.priority)
-        )
-    }
-
-    private var rowTint: Color {
-        switch task.priority {
-        case .high:
-            return Theme.red
-        case .medium:
-            return Theme.amber
-        case .low:
-            return Theme.blue
-        case .none:
-            if !task.containerName.isEmpty {
-                return Color(hex: task.containerColor)
-            }
-            return Theme.blue
-        }
-    }
-
     /// `CadenceDueUrgency` rather than an inline `dueDate < todayKey`: the inline spelling had no
     /// `isDone` guard, so a task completed after its deadline kept rendering a red flag badge
     /// telling the user a settled deadline was still urgent. macOS reads the same classifier.
@@ -304,19 +314,19 @@ struct iOSTaskRow: View {
         CadenceTaskPresentationSupport.scheduledDateLabel(for: task)
     }
 
-    private func taskBadge(systemImage: String, text: String, color: Color) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: systemImage)
-                .font(.system(size: isCompact ? 8 : 9, weight: .semibold))
-            Text(text)
-                .font(.system(size: isCompact ? 9 : 10, weight: .medium))
-                .lineLimit(1)
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, isCompact ? 5 : 6)
-        .padding(.vertical, isCompact ? 2 : 3)
-        .background(color.opacity(0.11))
-        .clipShape(Capsule())
+    private func taskMeta(
+        systemImage: String,
+        text: String,
+        tint: Color,
+        textColor: Color = Theme.dim
+    ) -> some View {
+        iOSTaskMetaLabel(
+            systemImage: systemImage,
+            text: text,
+            tint: tint,
+            textColor: textColor,
+            compact: isCompact
+        )
     }
 
     private func toggleCompletion() {
@@ -334,12 +344,65 @@ struct iOSTaskRow: View {
     }
 }
 
+/// One piece of row metadata, in the vocabulary `KanbanMetaChip` established on macOS: the icon
+/// carries identity (which field this is, whose colour it belongs to) and the text carries state.
+/// No fill, because a strip of filled capsules turns every attribute into an alert.
+struct iOSTaskMetaLabel: View {
+    let systemImage: String
+    let text: String
+    /// Icon colour. Identity, not state — see the note on `KanbanMetaHoverStyle`.
+    let tint: Color
+    var textColor: Color = Theme.dim
+    var compact = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+                .font(.system(size: compact ? 8.5 : 9.5, weight: .semibold))
+                .foregroundStyle(tint)
+            Text(text)
+                .font(.system(size: compact ? 10 : 11, weight: .medium))
+                .foregroundStyle(textColor)
+                .lineLimit(1)
+        }
+    }
+}
+
+/// The list chip. The container colour stays on the **icon** — that is the list's identity — while
+/// the chip itself is the same neutral raised surface on every row, so a wall of tasks does not
+/// become a wall of whatever hues the user happened to pick for their lists. Same rule
+/// `KanbanCard.contextMetaItem` documents on macOS.
+struct iOSTaskContainerChip: View {
+    let icon: String
+    let name: String
+    let tint: Color
+    var compact = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: compact ? 8.5 : 9.5, weight: .semibold))
+                .foregroundStyle(tint)
+            Text(name.isEmpty ? "Inbox" : name)
+                .font(.system(size: compact ? 10 : 11, weight: .medium))
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .padding(.horizontal, compact ? 6 : 7)
+        .padding(.vertical, compact ? 3 : 4)
+        .background(Theme.surfaceElevated.opacity(0.75))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+    }
+}
+
 struct iOSTaskListRow: View {
     @Bindable var task: AppTask
     var opacity: Double = 1
+    var showsContainer: Bool = true
 
     var body: some View {
-        iOSTaskRow(task: task)
+        iOSTaskRow(task: task, showsContainer: showsContainer)
             .opacity(opacity)
             .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
             .listRowSeparator(.hidden)
@@ -347,16 +410,15 @@ struct iOSTaskListRow: View {
     }
 }
 
+/// Delegates to the shared `SectionEyebrowLabel` rather than re-spelling its size/weight/kerning —
+/// this was a byte-for-byte copy of it with a tint, which is what the shared component's `tint`
+/// parameter is for.
 struct iOSTaskSectionHeader: View {
     let title: String
     let color: Color
 
     var body: some View {
-        Text(title)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(color)
-            .kerning(0.8)
-            .textCase(.uppercase)
+        SectionEyebrowLabel(text: title, tint: color)
             .padding(.top, 6)
     }
 }
@@ -372,6 +434,9 @@ struct iOSTaskViewOptionsBar: View {
         horizontalSizeClass == .regular
     }
 
+    /// Both controls are the same neutral chip on the same radius, sized to a 44pt touch target.
+    /// They used to be two different treatments for two peer controls — a blue-washed capsule
+    /// beside a grey one — which read as one being an action and the other a state.
     var body: some View {
         HStack(spacing: 10) {
             Button {
@@ -379,13 +444,13 @@ struct iOSTaskViewOptionsBar: View {
             } label: {
                 Label(sortMode.title, systemImage: "arrow.up.arrow.down")
                     .font(.system(size: isRegularWidth ? 13 : 12, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
+                    .foregroundStyle(Theme.text)
                     .padding(.horizontal, isRegularWidth ? 12 : 10)
-                    .padding(.vertical, isRegularWidth ? 7 : 5)
-                    .background(Theme.blue.opacity(0.10))
-                    .clipShape(Capsule())
+                    .frame(minHeight: 44)
+                    .background(Theme.surfaceElevated.opacity(0.72))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.iosPressable)
             .popover(isPresented: $showSortPicker) {
                 iOSChoicePopoverList(
                     rows: CadenceTaskSortMode.allCases.map { mode in
@@ -405,11 +470,11 @@ struct iOSTaskViewOptionsBar: View {
                     .font(.system(size: isRegularWidth ? 13 : 12, weight: .semibold))
                     .foregroundStyle(showCompleted ? Theme.text : Theme.dim)
                     .padding(.horizontal, isRegularWidth ? 12 : 10)
-                    .padding(.vertical, isRegularWidth ? 7 : 5)
+                    .frame(minHeight: 44)
                     .background(showCompleted ? Theme.surfaceElevated.opacity(0.72) : Theme.surfaceElevated.opacity(0.36))
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.iosPressable)
             .disabled(completedCount == 0)
             .opacity(completedCount == 0 ? 0.45 : 1)
         }
@@ -436,11 +501,11 @@ struct iOSTaskCaptureBar: View {
                 .submitLabel(.done)
                 .onSubmit(action)
                 .padding(.horizontal, isRegularWidth ? 13 : 12)
-                .frame(minHeight: isRegularWidth ? 44 : 42)
+                .frame(minHeight: 44)
                 .background(Theme.surfaceElevated.opacity(0.72))
-                .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 11, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 11, style: .continuous)
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                         .stroke(Theme.borderSubtle.opacity(0.7), lineWidth: 1)
                 }
 
@@ -448,10 +513,11 @@ struct iOSTaskCaptureBar: View {
                 Image(systemName: "plus")
                     .font(.system(size: isRegularWidth ? 16 : 15, weight: .bold))
                     .foregroundStyle(Theme.onColor)
-                    .frame(width: isRegularWidth ? 44 : 42, height: isRegularWidth ? 44 : 42)
+                    .frame(width: 44, height: 44)
                     .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 11, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             }
+            .buttonStyle(.iosPressable)
             .disabled(TaskTitleSupport.isEmpty(title))
             .opacity(TaskTitleSupport.isEmpty(title) ? 0.45 : 1)
         }
@@ -502,27 +568,22 @@ struct iOSPanelHeader: View {
     }
 }
 
+/// Thin wrapper over the shared `EmptyStateView`, which is what macOS's empty states render.
+/// This used to be a second, slightly-different empty state (flat glyph, no medallion, its own
+/// type ramp) sitting beside the shared one in the same app. The signature is kept so the two
+/// dozen call sites across the iOS surface do not have to change.
+///
+/// Empty states are one of the three places that deliberately *keep* a subtitle — it says
+/// something the screen does not.
 struct iOSEmptyPanel: View {
     let systemImage: String
     let title: String
     let subtitle: String
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: systemImage)
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-            Text(title)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.text)
-            Text(subtitle)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.dim)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 240)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(24)
+        EmptyStateView(message: title, subtitle: subtitle, icon: systemImage)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.vertical, 24)
     }
 }
 #endif

@@ -93,20 +93,30 @@ struct iOSListEditorSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(isProjectMode ? "Project" : "Area") {
-                    TextField(isProjectMode ? "Project name" : "Area name", text: $name)
+                Section {
+                    // Tile + name on one line, then the two strips that drive the tile — the same
+                    // shape `ListEditorIdentityHeader` gives the macOS list editors.
+                    HStack(spacing: 12) {
+                        iOSListIconBadge(icon: normalizedIcon, colorHex: normalizedColor, size: 38)
+
+                        TextField(isProjectMode ? "Project name" : "Area name", text: $name)
+                            .font(.system(size: 17, weight: .semibold))
+                    }
+
                     TextField("Description", text: $details, axis: .vertical)
                         .lineLimit(2...5)
                 }
+                .iOSListEditorSectionChrome()
 
-                Section("Appearance") {
-                    TextField("SF Symbol", text: $icon)
-                        .textInputAutocapitalization(.never)
-                    TextField("Color hex", text: $colorHex)
-                        .textInputAutocapitalization(.never)
+                Section {
+                    iOSListColorStrip(selected: $colorHex)
+                    iOSListIconStrip(selected: $icon, colorHex: normalizedColor)
+                } header: {
+                    iOSListEditorSectionHeader(title: "Appearance")
                 }
+                .iOSListEditorSectionChrome()
 
-                Section("Organize") {
+                Section {
                     HStack {
                         Text("Context")
                         Spacer()
@@ -150,14 +160,23 @@ struct iOSListEditorSheet: View {
                         if hasProjectDueDate {
                             HStack {
                                 Text("Due")
+                                    .foregroundStyle(Theme.subdued)
                                 Spacer()
                                 CadenceDatePicker(selection: $projectDueDate)
                             }
                         }
                     }
-                }
 
-                Section("Sections") {
+                    // Lives here rather than under "Columns", where it read as a column setting:
+                    // `hideDueDateIfEmpty` is about the *task* rows in this list. macOS spells the
+                    // two apart as "Hide empty task due date" / "Hide empty column due date".
+                    Toggle("Hide empty task due dates", isOn: $hideEmptyDueDates)
+                } header: {
+                    iOSListEditorSectionHeader(title: "Organize")
+                }
+                .iOSListEditorSectionChrome()
+
+                Section {
                     ForEach($sectionDrafts) { $draft in
                         iOSSectionDraftRow(draft: $draft)
                     }
@@ -171,15 +190,25 @@ struct iOSListEditorSheet: View {
                     Button {
                         sectionDrafts.append(CadenceSectionDraft(name: ""))
                     } label: {
-                        Label("Add Section", systemImage: "plus")
-                            .font(.system(size: 14, weight: .semibold))
+                        HStack(spacing: 7) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Theme.blue)
+                            Text("Add Column")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Theme.text)
+                        }
+                        .frame(minHeight: 44)
                     }
-
-                    Toggle("Hide empty due dates", isOn: $hideEmptyDueDates)
+                    .buttonStyle(.plain)
+                } header: {
+                    iOSListEditorSectionHeader(title: "Columns")
                 }
+                .iOSListEditorSectionChrome()
             }
             .scrollContentBackground(.hidden)
             .background(Theme.bg)
+            .tint(Theme.blue)
             .navigationTitle(isEditing ? "Edit List" : "New List")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -209,14 +238,14 @@ struct iOSListEditorSheet: View {
             name = ""
             details = ""
             icon = "folder.fill"
-            colorHex = "#4a9eff"
+            colorHex = CadenceColorPalette.areaDefault
             hasProjectDueDate = false
             projectDueDate = Date()
         case .newProject:
             name = ""
             details = ""
             icon = "checklist"
-            colorHex = "#4ecb71"
+            colorHex = CadenceColorPalette.projectDefault
             hasProjectDueDate = false
             projectDueDate = Date()
         case .editArea(let area):
@@ -325,7 +354,7 @@ struct iOSListEditorSheet: View {
     private var normalizedColor: String {
         let trimmed = colorHex.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("#"), trimmed.count == 7 else {
-            return isProjectMode ? "#4ecb71" : "#4a9eff"
+            return isProjectMode ? CadenceColorPalette.projectDefault : CadenceColorPalette.areaDefault
         }
         return trimmed
     }
@@ -345,44 +374,52 @@ struct iOSListEditorSheet: View {
 /// list of names, so a column's colour, due date, completion and archived flag were invisible
 /// here and a rename silently discarded all four. These are the same four properties macOS's
 /// column editor exposes.
+///
+/// The 7pt dot + name is the board's own column header in miniature, so a column is recognisable
+/// between the editor and the board.
 private struct iOSSectionDraftRow: View {
     @Binding var draft: CadenceSectionDraft
     @State private var hasDueDate = false
     @State private var dueDate = Date()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Circle()
                     .fill(Color(hex: draft.colorHex))
-                    .frame(width: 12, height: 12)
+                    .frame(width: 8, height: 8)
 
-                TextField("Section name", text: $draft.name)
-                    .font(.system(size: 15, weight: .medium))
+                TextField("Column name", text: $draft.name)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.text)
             }
+            .frame(minHeight: 32)
 
             iOSSectionColorPicker(selectedHex: $draft.colorHex)
 
             Toggle("Due date", isOn: $hasDueDate)
-                .font(.system(size: 13))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.subdued)
 
             if hasDueDate {
                 HStack {
                     Text("Due")
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.subdued)
                     Spacer()
                     CadenceDatePicker(selection: $dueDate)
                 }
             }
 
-            HStack(spacing: 16) {
-                Toggle("Completed", isOn: $draft.isCompleted)
-                    .font(.system(size: 13))
-                Toggle("Archived", isOn: $draft.isArchived)
-                    .font(.system(size: 13))
-            }
+            Toggle("Completed", isOn: $draft.isCompleted)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.subdued)
+
+            Toggle("Archived", isOn: $draft.isArchived)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.subdued)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .onAppear {
             hasDueDate = !draft.dueDate.isEmpty
             dueDate = DateFormatters.date(from: draft.dueDate) ?? Date()
@@ -412,25 +449,141 @@ private struct iOSSectionColorPicker: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 9) {
+            HStack(spacing: 4) {
                 ForEach(options, id: \.self) { option in
-                    Button {
+                    iOSListColorSwatch(
+                        hex: option,
+                        isSelected: selectedHex.caseInsensitiveCompare(option) == .orderedSame
+                    ) {
                         selectedHex = option
-                    } label: {
-                        Circle()
-                            .fill(Color(hex: option))
-                            .frame(width: 22, height: 22)
-                            .overlay {
-                                if selectedHex.caseInsensitiveCompare(option) == .orderedSame {
-                                    Circle().strokeBorder(Theme.text.opacity(0.78), lineWidth: 2)
-                                }
-                            }
                     }
-                    .buttonStyle(.plain)
                 }
             }
-            .padding(.vertical, 2)
         }
+    }
+}
+
+// MARK: - Identity strips
+
+/// The **icon** half of the list identity picker. Colours come from `CadenceColorPalette`.
+///
+/// The icon set is still iOS-local because macOS's `IconGrid` is `#if os(macOS)` in
+/// `macOS/Sheets/` — the same shape the colour palettes were in before they were consolidated,
+/// and the same fix applies whenever someone needs a third icon grid.
+enum iOSListPalette {
+
+    /// The icons lists actually get given, in the order macOS's `IconGrid` opens with.
+    static let icons = [
+        "folder.fill", "checklist", "tray.fill", "briefcase.fill",
+        "house.fill", "book.fill", "graduationcap.fill", "heart.fill",
+        "dumbbell.fill", "leaf.fill", "airplane", "dollarsign.circle.fill",
+    ]
+
+    static func offeredIcons(for selected: String) -> [String] {
+        let stored = selected.trimmingCharacters(in: .whitespaces)
+        guard !stored.isEmpty, !icons.contains(stored) else { return icons }
+        return icons + [stored]
+    }
+}
+
+/// A hex text field is not a colour picker. This is the same swatch strip `ListEditorColorStrip`
+/// gives the macOS list editors, at touch size.
+private struct iOSListColorStrip: View {
+    @Binding var selected: String
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                ForEach(CadenceColorPalette.offeredColors(for: selected), id: \.self) { hex in
+                    iOSListColorSwatch(hex: hex, isSelected: CadenceColorPalette.matches(hex, selected)) {
+                        selected = hex
+                    }
+                }
+            }
+        }
+        .frame(minHeight: 44)
+    }
+}
+
+private struct iOSListColorSwatch: View {
+    let hex: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Circle()
+                .fill(Color(hex: hex))
+                .frame(width: 24, height: 24)
+                .overlay {
+                    Circle()
+                        .strokeBorder(Theme.text, lineWidth: 1.5)
+                        .padding(-4)
+                        .opacity(isSelected ? 1 : 0)
+                }
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isSelected ? "Selected colour" : "Use this colour")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// Same idea for the glyph: the field used to want a raw SF Symbol name typed in, which is a
+/// developer's input, and a typo silently fell back to the default icon on save.
+private struct iOSListIconStrip: View {
+    @Binding var selected: String
+    let colorHex: String
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(iOSListPalette.offeredIcons(for: selected), id: \.self) { icon in
+                    let isSelected = icon == selected
+                    Button {
+                        selected = icon
+                    } label: {
+                        Image(systemName: icon)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(isSelected ? Color(hex: colorHex) : Theme.dim)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                                    .fill(isSelected ? Theme.surfaceHighlight : Color.clear)
+                            )
+                            .contentShape(
+                                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(icon)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Form chrome
+
+/// A `Form` section header is UIKit's own: system grey small-caps. This is the shared eyebrow.
+private struct iOSListEditorSectionHeader: View {
+    let title: String
+
+    var body: some View {
+        SectionEyebrowLabel(text: title)
+            .textCase(nil)
+            .padding(.bottom, 2)
+    }
+}
+
+private extension View {
+    /// `Form` rows sit on `secondarySystemGroupedBackground` — a UIKit grey that ignores the
+    /// palette entirely and reads a full step lighter than every other surface in the app.
+    func iOSListEditorSectionChrome() -> some View {
+        listRowBackground(Theme.surface)
+            .listRowSeparatorTint(Theme.borderSubtle)
     }
 }
 #endif

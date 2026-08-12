@@ -108,9 +108,19 @@ struct iOSGoalsView: View {
         compactListPane
     }
 
+    /// The eyebrow says what the title cannot. "PROGRESS / Goals" was a label over a label; this
+    /// is the shape of the tree underneath it.
+    private var shapeEyebrow: String {
+        let milestoneCount = topLevelGoals.reduce(0) { $0 + milestones(of: $1).count }
+        guard !topLevelGoals.isEmpty else { return "Nothing in flight" }
+        let directions = topLevelGoals.count == 1 ? "1 direction" : "\(topLevelGoals.count) directions"
+        let nested = milestoneCount == 1 ? "1 milestone" : "\(milestoneCount) milestones"
+        return "\(directions) · \(nested)"
+    }
+
     private var listPane: some View {
         iOSFeatureListPane(
-            eyebrow: "Progress",
+            eyebrow: shapeEyebrow,
             title: "Goals",
             count: activeGoals.count,
             emptyTitle: "No goals yet",
@@ -126,7 +136,7 @@ struct iOSGoalsView: View {
                 } label: {
                     goalRow(goal, isSelected: selected?.id == goal.id)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.iosPressable)
                 .contextMenu { deleteMenuItem(for: goal) }
 
                 ForEach(milestones(of: goal)) { milestone in
@@ -135,7 +145,7 @@ struct iOSGoalsView: View {
                     } label: {
                         goalRow(milestone, isSelected: selected?.id == milestone.id)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.iosPressable)
                     .contextMenu { deleteMenuItem(for: milestone) }
                     .padding(.leading, 16)
                 }
@@ -145,7 +155,7 @@ struct iOSGoalsView: View {
 
     private var compactListPane: some View {
         iOSFeatureListPane(
-            eyebrow: "Progress",
+            eyebrow: shapeEyebrow,
             title: "Goals",
             count: activeGoals.count,
             emptyTitle: "No goals yet",
@@ -161,7 +171,7 @@ struct iOSGoalsView: View {
                 } label: {
                     goalRow(goal, isSelected: false)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.iosPressable)
                 .contextMenu { deleteMenuItem(for: goal) }
 
                 ForEach(milestones(of: goal)) { milestone in
@@ -170,7 +180,7 @@ struct iOSGoalsView: View {
                     } label: {
                         goalRow(milestone, isSelected: false)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.iosPressable)
                     .contextMenu { deleteMenuItem(for: milestone) }
                     .padding(.leading, 16)
                 }
@@ -323,9 +333,17 @@ struct iOSHabitsView: View {
         compactListPane
     }
 
+    /// The header eyebrow says what the title cannot — how today is actually going. "HABITS /
+    /// Habits" told the reader the name of the screen they were already looking at, twice.
+    private var todayEyebrow: String {
+        guard !dueToday.isEmpty else { return "Nothing due today" }
+        let done = dueToday.filter { $0.isDone(on: todayKey) }.count
+        return "\(done) of \(dueToday.count) done today"
+    }
+
     private var listPane: some View {
         iOSFeatureListPane(
-            eyebrow: "Habits",
+            eyebrow: todayEyebrow,
             title: "Habits",
             count: habits.count,
             emptyTitle: "No habits yet",
@@ -336,25 +354,21 @@ struct iOSHabitsView: View {
             action: { editorMode = .new(nil) }
         ) {
             ForEach(habits) { habit in
-                Button {
-                    selectedID = habit.id
-                } label: {
-                    iOSHabitSummaryRow(
-                        habit: habit,
-                        todayKey: todayKey,
-                        isSelected: selected?.id == habit.id,
-                        toggle: { toggle(habit) }
-                    )
+                habitRow(habit, isSelected: selected?.id == habit.id) {
+                    Button {
+                        selectedID = habit.id
+                    } label: {
+                        iOSHabitSummaryRow(habit: habit, todayKey: todayKey, isSelected: selected?.id == habit.id)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-                .contextMenu { deleteMenuItem(for: habit) }
             }
         }
     }
 
     private var compactListPane: some View {
         iOSFeatureListPane(
-            eyebrow: "Habits",
+            eyebrow: todayEyebrow,
             title: "Habits",
             count: habits.count,
             emptyTitle: "No habits yet",
@@ -365,20 +379,36 @@ struct iOSHabitsView: View {
             action: { editorMode = .new(nil) }
         ) {
             ForEach(habits) { habit in
-                NavigationLink {
-                    detailView(for: habit)
-                } label: {
-                    iOSHabitSummaryRow(
-                        habit: habit,
-                        todayKey: todayKey,
-                        isSelected: false,
-                        toggle: { toggle(habit) }
-                    )
+                habitRow(habit, isSelected: false) {
+                    NavigationLink {
+                        detailView(for: habit)
+                    } label: {
+                        iOSHabitSummaryRow(habit: habit, todayKey: todayKey, isSelected: false)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-                .contextMenu { deleteMenuItem(for: habit) }
             }
         }
+    }
+
+    /// The check-in control is layered *over* the row's select/navigate control rather than
+    /// nested inside its label — a nested button never sees the tap on iOS, so checking a habit
+    /// off from the list used to do nothing but open the detail. The row reserves exactly
+    /// `iOSHabitCheckInSize` at its trailing edge for it.
+    private func habitRow<Row: View>(
+        _ habit: Habit,
+        isSelected: Bool,
+        @ViewBuilder row: () -> Row
+    ) -> some View {
+        ZStack(alignment: .trailing) {
+            row()
+
+            iOSHabitCheckInButton(habit: habit, todayKey: todayKey) {
+                toggle(habit)
+            }
+            .padding(.trailing, 4)
+        }
+        .contextMenu { deleteMenuItem(for: habit) }
     }
 
     private func detailView(for habit: Habit) -> some View {

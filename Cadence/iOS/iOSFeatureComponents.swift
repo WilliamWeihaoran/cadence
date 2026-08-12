@@ -46,13 +46,15 @@ struct iOSFeatureListPane<Content: View>: View {
             Divider().background(Theme.borderSubtle)
 
             if let actionTitle, let action {
-                Button(action: action) {
-                    Label(actionTitle, systemImage: actionSystemImage)
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.blue)
+                // `.borderedProminent` renders the OS's own capsule at the OS's own height; this is
+                // the same primary treatment every other Cadence button uses, at 48pt.
+                iOSActionButton(
+                    title: actionTitle,
+                    systemImage: actionSystemImage,
+                    role: .primary,
+                    fullWidth: true,
+                    action: action
+                )
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
 
@@ -151,22 +153,17 @@ struct iOSFeatureSummaryRow: View {
     var isSelected = false
 
     var body: some View {
-        HStack(spacing: 9) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(color)
-                .frame(width: 26, height: 26)
-                .background(color.opacity(0.11))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        HStack(spacing: 10) {
+            iOSIconTile(systemImage: icon, color: color, size: 30, iconSize: 14, fillOpacity: 0.11, bordered: false)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
                 Text(subtitle.isEmpty ? "No context" : subtitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.dim)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.subdued)
                     .lineLimit(2)
             }
 
@@ -174,11 +171,12 @@ struct iOSFeatureSummaryRow: View {
 
             if let detail, !detail.isEmpty {
                 Text(detail)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(color)
                     .lineLimit(1)
             }
         }
+        .frame(minHeight: 44)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(isSelected ? color.opacity(0.14) : Theme.surfaceElevated.opacity(0.36))
@@ -195,123 +193,6 @@ struct iOSFeatureSummaryRow: View {
     }
 }
 
-struct iOSFeatureTaskSummaryRow: View {
-    let title: String
-    let subtitle: String
-    let detail: String
-    let icon: String
-    let color: Color
-    let isSelected: Bool
-
-    var body: some View {
-        iOSFeatureSummaryRow(
-            title: title,
-            subtitle: subtitle,
-            detail: detail,
-            icon: icon,
-            color: color,
-            isSelected: isSelected
-        )
-    }
-}
-
-struct iOSFeatureIconButton: View {
-    let systemImage: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .frame(width: 30, height: 30)
-                .background(Theme.surfaceElevated.opacity(0.65))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Theme.borderSubtle.opacity(0.6), lineWidth: 1)
-                }
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-struct iOSCalendarDayCell: View {
-    let date: Date
-    let isCurrentMonth: Bool
-    let isSelected: Bool
-    let taskCount: Int
-    var minHeight: CGFloat = 58
-    let action: () -> Void
-
-    private var isToday: Bool {
-        Calendar.current.isDateInToday(date)
-    }
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 7) {
-                Text("\(Calendar.current.component(.day, from: date))")
-                    .font(.system(size: 15, weight: isSelected || isToday ? .bold : .semibold))
-                    .foregroundStyle(isCurrentMonth ? Theme.text : Theme.dim.opacity(0.42))
-
-                HStack(spacing: 3) {
-                    ForEach(0..<min(taskCount, 3), id: \.self) { _ in
-                        Circle()
-                            .fill(isSelected ? Theme.onColor : Theme.blue)
-                            .frame(width: 4, height: 4)
-                    }
-                }
-                .frame(height: 5)
-            }
-            .frame(maxWidth: .infinity, minHeight: minHeight)
-            .background(isSelected ? Theme.blue : isToday ? Theme.blue.opacity(0.12) : Theme.surfaceElevated.opacity(0.35))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(isToday || isSelected ? Theme.blue.opacity(0.5) : Theme.borderSubtle.opacity(0.28), lineWidth: 1)
-            }
-            .opacity(isCurrentMonth ? 1 : 0.58)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-struct iOSFeatureHero: View {
-    let eyebrow: String
-    let title: String
-    let subtitle: String
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(color)
-                .frame(width: 48, height: 48)
-                .background(color.opacity(0.14))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(eyebrow)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .textCase(.uppercase)
-                    .kerning(0.8)
-                Text(title)
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(2)
-                Text(subtitle)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(3)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
 
 struct iOSMetricTile: View {
     let title: String
@@ -330,7 +211,7 @@ struct iOSMetricTile: View {
                 .lineLimit(1)
             Text(title)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
+                .foregroundStyle(Theme.subdued)
                 .textCase(.uppercase)
                 .kerning(0.6)
         }
@@ -346,11 +227,7 @@ struct iOSFeatureSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .textCase(.uppercase)
-                .kerning(0.8)
+            SectionEyebrowLabel(text: title)
             VStack(spacing: 8) {
                 content()
             }
@@ -393,46 +270,23 @@ struct iOSInlineErrorBanner: View {
 
             Button(action: dismiss) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Theme.dim)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
+                    .frame(width: 24, height: 24)
+                    .iOSExpandedHitArea(10)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.iosPressable)
+            .accessibilityLabel("Dismiss")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .background(Theme.amber.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                 .strokeBorder(Theme.amber.opacity(0.24), lineWidth: 1)
         }
     }
 }
 
-private struct iOSMacPlaceholderPanel: View {
-    let eyebrow: String
-    let title: String
-    let systemImage: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: eyebrow, title: title)
-
-            Divider().background(Theme.borderSubtle)
-
-            VStack(spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 30, weight: .semibold))
-                    .foregroundStyle(Theme.dim.opacity(0.72))
-                Text(title)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .background(Theme.bg.ignoresSafeArea())
-    }
-}
 #endif

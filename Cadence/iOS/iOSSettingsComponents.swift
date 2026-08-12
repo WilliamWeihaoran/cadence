@@ -38,9 +38,6 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
         sharedKind.title
     }
 
-    var subtitle: String {
-        sharedKind.subtitle
-    }
 
     var icon: String {
         sharedKind.icon
@@ -143,23 +140,143 @@ struct iOSMobileCapability: Identifiable, Hashable {
     }
 }
 
+/// Sizing for the settings category rail and the rows inside settings cards.
+///
+/// Mirrors macOS's `SettingsRailMetrics`, which derives its row geometry from
+/// `SidebarMetrics` so the two narrow columns of destinations cannot drift apart. iOS has
+/// no sidebar metrics to borrow, so the values are restated here — but the *decisions* are
+/// the same ones: rows on the shared radius scale, one glyph slot, one label x.
+enum iOSSettingsMetrics {
+    /// Every control in settings is finger-sized even when its painted chrome is smaller;
+    /// the extra height goes into the hit area, not the pill.
+    static let minimumTapTarget: CGFloat = 44
+    static let rowHorizontalPadding: CGFloat = 10
+    static let rowVerticalPadding: CGFloat = 9
+    static let glyphSlot: CGFloat = 32
+    static let glyphLabelSpacing: CGFloat = 12
+    /// Left edge of a card row's text column, so a divider drawn under it starts at the
+    /// text rather than cutting across the glyph.
+    static let rowTextInset: CGFloat = glyphSlot + glyphLabelSpacing
+}
+
+/// Hairline between rows inside a settings card.
+///
+/// `Divider().background(Theme.borderSubtle)` — the pattern this replaces — leaves the
+/// system separator colour painted on top of the palette colour, so the line is neither
+/// `borderSubtle` nor predictable across sections. This draws the palette colour and
+/// nothing else.
+struct iOSRowDivider: View {
+    var leadingInset: CGFloat = 0
+
+    var body: some View {
+        Rectangle()
+            .fill(Theme.borderSubtle)
+            .frame(height: 1)
+            .padding(.leading, leadingInset)
+    }
+}
+
+/// Eyebrow label above an inset well — the one field treatment for every settings input.
+/// Replaces three near-copies: `.textFieldStyle(.roundedBorder)` in Tags (UIKit chrome,
+/// no palette colour at all), the private `iOSTemplateEditorField`, and the bare `Form`
+/// rows in the context editor.
+struct iOSSettingsField<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            SectionEyebrowLabel(text: title)
+
+            content
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Theme.text)
+                .tint(Theme.blue)
+                .padding(.horizontal, 12)
+                .frame(minHeight: iOSSettingsMetrics.minimumTapTarget)
+                .background(Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                        .strokeBorder(Theme.borderSubtle, lineWidth: 1)
+                }
+        }
+    }
+}
+
+/// One swatch strip for every user-owned `colorHex` picked in settings (tags, contexts).
+/// The swatch itself is a user colour; everything around it comes from `Theme`.
+struct iOSSettingsColorSwatchRow: View {
+    @Binding var selectedHex: String
+    var options: [String] = TagSupport.colorOptions
+
+    /// A stored colour that is no longer offered still shows as selected rather than
+    /// silently reading as "none of these".
+    private var offered: [String] {
+        let stored = selectedHex.trimmingCharacters(in: .whitespaces)
+        guard !stored.isEmpty,
+              !options.contains(where: { $0.caseInsensitiveCompare(stored) == .orderedSame }) else {
+            return options
+        }
+        return options + [stored]
+    }
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 2) {
+                ForEach(offered, id: \.self) { option in
+                    Button {
+                        selectedHex = option
+                    } label: {
+                        Circle()
+                            .fill(Color(hex: option))
+                            .frame(width: 26, height: 26)
+                            .overlay {
+                                Circle()
+                                    .strokeBorder(
+                                        Theme.text,
+                                        lineWidth: isSelected(option) ? 2 : 0
+                                    )
+                            }
+                            .frame(
+                                width: iOSSettingsMetrics.minimumTapTarget,
+                                height: iOSSettingsMetrics.minimumTapTarget
+                            )
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.iosPressable)
+                    .accessibilityLabel(option)
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+        .scrollClipDisabled()
+    }
+
+    private func isSelected(_ option: String) -> Bool {
+        TagSupport.normalizedColorHex(selectedHex).caseInsensitiveCompare(option) == .orderedSame
+    }
+}
+
 struct iOSSettingsRail: View {
     @Binding var selectedCategory: iOSSettingsCategory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Settings")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                Text("Preferences and workspace controls.")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        VStack(alignment: .leading, spacing: 18) {
+            // No standfirst under the title: a line reading "Preferences and workspace
+            // controls" only restates the word above it.
+            Text("Settings")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, iOSSettingsMetrics.rowHorizontalPadding)
 
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 14) {
                     ForEach(iOSSettingsCategoryGroup.all) { group in
                         iOSSettingsRailGroup(
                             group: group,
@@ -171,13 +288,13 @@ struct iOSSettingsRail: View {
             }
             .scrollIndicators(.hidden)
 
-            Spacer()
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 18)
-        .frame(width: 232)
+        .padding(.vertical, 20)
+        .frame(width: 248)
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(Theme.surface.opacity(0.72))
+        .background(Theme.surface.opacity(0.58))
     }
 }
 
@@ -186,14 +303,11 @@ private struct iOSSettingsRailGroup: View {
     @Binding var selectedCategory: iOSSettingsCategory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(group.title.uppercased())
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(Theme.dim.opacity(0.78))
-                .tracking(1.1)
-                .padding(.horizontal, 10)
+        VStack(alignment: .leading, spacing: 6) {
+            SectionEyebrowLabel(text: group.title)
+                .padding(.horizontal, iOSSettingsMetrics.rowHorizontalPadding)
 
-            VStack(spacing: 6) {
+            VStack(spacing: 2) {
                 ForEach(group.categories) { category in
                     iOSSettingsRailButton(
                         category: category,
@@ -214,42 +328,37 @@ private struct iOSSettingsRailButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(category.tint.opacity(isSelected ? 0.22 : 0.14))
-                    .frame(width: 30, height: 30)
-                    .overlay {
-                        Image(systemName: category.icon)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(category.tint)
-                    }
+            HStack(spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+                // Neutral until this is the row you are on. Tinting all twelve at once
+                // spends the accent on the list instead of on the selection — the same
+                // call macOS's rail makes.
+                Image(systemName: category.icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(isSelected ? category.tint : Theme.dim)
+                    .frame(width: 22)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(category.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(isSelected ? Theme.text : Theme.text.opacity(0.92))
-                        .lineLimit(1)
-                    Text(category.subtitle)
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
-                }
+                Text(category.title)
+                    .font(.system(size: 15, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 8)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, iOSSettingsMetrics.rowHorizontalPadding)
+            .padding(.vertical, iOSSettingsMetrics.rowVerticalPadding)
+            .frame(maxWidth: .infinity, minHeight: iOSSettingsMetrics.minimumTapTarget, alignment: .leading)
+            // One selection layer, one radius: the fill was previously doubled with a
+            // tinted stroke drawn at an all-but-invisible 0.001 opacity when unselected.
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                     .fill(isSelected ? Theme.surfaceElevated : Color.clear)
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(isSelected ? category.tint.opacity(0.36) : Theme.borderSubtle.opacity(0.001), lineWidth: 1)
-            }
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
         .accessibilityIdentifier("settings.category.\(category.rawValue)")
+        .animation(.easeOut(duration: 0.12), value: isSelected)
     }
 }
 
@@ -260,33 +369,47 @@ struct iOSSettingsCompactCategoryPicker: View {
         ScrollView(.horizontal) {
             HStack(spacing: 8) {
                 ForEach(iOSSettingsCategory.allCases) { category in
-                    Button {
+                    iOSSettingsCategoryChip(
+                        category: category,
+                        isSelected: selectedCategory == category
+                    ) {
                         selectedCategory = category
-                    } label: {
-                        HStack(spacing: 7) {
-                            Image(systemName: category.icon)
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(category.title)
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                        .foregroundStyle(selectedCategory == category ? Theme.text : Theme.dim)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(selectedCategory == category ? category.tint.opacity(0.22) : Theme.surface)
-                        )
-                        .overlay {
-                            Capsule()
-                                .stroke(selectedCategory == category ? category.tint.opacity(0.36) : Theme.borderSubtle, lineWidth: 1)
-                        }
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 1)
         }
         .scrollIndicators(.hidden)
+        .scrollClipDisabled()
+    }
+}
+
+private struct iOSSettingsCategoryChip: View {
+    let category: iOSSettingsCategory
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Image(systemName: category.icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isSelected ? category.tint : Theme.dim)
+                Text(category.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 36)
+            // Selected state is carried by the fill alone — the unselected chip used to
+            // add a border the selected one dropped, so the two changed shape as well as
+            // colour.
+            .background(isSelected ? Theme.surfaceElevated : Theme.surface)
+            .clipShape(Capsule())
+            .frame(minHeight: iOSSettingsMetrics.minimumTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.iosPressable)
     }
 }
 
@@ -364,9 +487,11 @@ struct iOSSettingsInfoRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 16) {
+            // Label half of a label/value pair: `subdued`, not `dim` — `dim` is for
+            // genuinely de-emphasized content, and these labels are ordinary reading text.
             Text(title)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.dim)
+                .foregroundStyle(Theme.subdued)
 
             Spacer(minLength: 0)
 
@@ -424,10 +549,11 @@ struct iOSSettingsCapabilityRow: View {
 // MARK: - Soft-elevation card shell
 
 /// Local stand-in for the shared `CadenceSettingsCard` (`Shared/CadenceSettingsSharedViews.swift`).
-/// The shared component keeps its original hard-border treatment because other surfaces
-/// (macOS settings, `iOSCalendarSettingsSection`, `iPadInboxView`) still rely on it as-is.
-/// Settings surfaces in this file's scope use this instead so they can pick up the shared
-/// `.cadenceCard` soft-elevation styling (bigger radius, shadow instead of a hairline border).
+/// The shared component keeps its original hard-border, radius-12 treatment because macOS
+/// settings and `iPadInboxView` still rely on it as-is. **Every** iOS settings section now
+/// uses this instead — `iOSCalendarSettingsSection` and `iOSNotificationsSettingsSection`
+/// were the last two holdouts — so the surface reads as one card family on the shared
+/// radius scale with soft elevation rather than a hairline border.
 struct iOSSettingsCard<Content: View>: View {
     @ViewBuilder let content: Content
 

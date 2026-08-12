@@ -11,17 +11,6 @@ enum iOSListDetailPage: String, CaseIterable, Identifiable {
     case completed = "Completed"
 
     var id: String { rawValue }
-
-    var systemImage: String {
-        switch self {
-        case .tasks: return "checkmark.square"
-        case .kanban: return "square.grid.3x2"
-        case .planning: return "calendar"
-        case .notes: return "note.text"
-        case .links: return "link"
-        case .completed: return "checkmark.circle.fill"
-        }
-    }
 }
 
 struct iOSListDetailView: View {
@@ -58,8 +47,20 @@ struct iOSListDetailView: View {
         return ""
     }
 
+    private var colorHex: String {
+        area?.colorHex ?? project?.colorHex ?? Theme.blueHex
+    }
+
+    private var icon: String {
+        area?.icon ?? project?.icon ?? "folder.fill"
+    }
+
     private var accent: Color {
-        Color(hex: area?.colorHex ?? project?.colorHex ?? "#4a9eff")
+        Color(hex: colorHex)
+    }
+
+    private var sectionConfigs: [TaskSectionConfig] {
+        area?.sectionConfigs ?? project?.sectionConfigs ?? []
     }
 
     @AppStorage("ios.listDetail.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
@@ -103,33 +104,40 @@ struct iOSListDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            iOSListDetailHeader(
+                eyebrow: subtitle.isEmpty ? (area == nil ? "Project" : "Area") : subtitle,
+                title: title,
+                icon: icon,
+                colorHex: colorHex,
+                onEdit: presentEditor
+            )
+
             iOSListDetailPagePicker(page: $page)
                 .padding(.horizontal, horizontalSizeClass == .regular ? 18 : 12)
-                .padding(.top, horizontalSizeClass == .regular ? 12 : 8)
-                .padding(.bottom, 10)
+                .padding(.bottom, 8)
 
-            Divider().background(Theme.borderSubtle)
+            iOSListHairline()
 
             pageBody
         }
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    if let area {
-                        editorMode = .editArea(area)
-                    } else if let project {
-                        editorMode = .editProject(project)
-                    }
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                }
-            }
-        }
+        // The page carries its own header, so the nav bar is only here for the back button on
+        // compact. Titling it as well would name the list twice on iPhone — and on iPad this view
+        // is hosted with no navigation stack at all, which is why the edit control had to move out
+        // of the toolbar: as a `ToolbarItem` it had nowhere to render and the list editor was
+        // unreachable from the detail pane.
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editorMode) { mode in
             iOSListEditorSheet(mode: mode)
+        }
+    }
+
+    private func presentEditor() {
+        if let area {
+            editorMode = .editArea(area)
+        } else if let project {
+            editorMode = .editProject(project)
         }
     }
 
@@ -140,9 +148,9 @@ struct iOSListDetailView: View {
             taskColumn
         case .kanban:
             iOSListKanbanPanel(
-                title: title,
                 tasks: activeTasks,
                 sectionNames: sectionNames,
+                sectionConfigs: sectionConfigs,
                 accent: accent
             )
         case .planning:
@@ -158,14 +166,6 @@ struct iOSListDetailView: View {
 
     private var taskColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(
-                eyebrow: subtitle.isEmpty ? (area == nil ? "Project" : "Area") : subtitle,
-                title: title,
-                count: activeTasks.count
-            )
-
-            Divider().background(Theme.borderSubtle)
-
             iOSTaskCaptureBar(
                 placeholder: "Add a task to \(title)...",
                 title: $newTitle,
@@ -200,7 +200,9 @@ struct iOSListDetailView: View {
                                 iOSTaskListRow(task: task)
                             }
                         } header: {
-                            iOSTaskSectionHeader(title: group.name, color: Theme.dim)
+                            // Same colour the board's column dot takes, so a column is the same
+                            // column whichever tab you are looking at it from.
+                            iOSTaskSectionHeader(title: group.name, color: sectionColor(for: group.name))
                         }
                     }
 
@@ -216,16 +218,19 @@ struct iOSListDetailView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .background(Theme.surface)
             }
         }
-        .background(Theme.surface)
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(accent)
-                .frame(width: 3)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Theme.bg)
+    }
+
+    private func sectionColor(for name: String) -> Color {
+        guard let config = sectionConfigs.first(where: {
+            $0.name.caseInsensitiveCompare(name) == .orderedSame
+        }) else {
+            return Theme.dim
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        return config.isCompleted ? Theme.green : Color(hex: config.colorHex)
     }
 
     private var sectionGroups: [(name: String, tasks: [AppTask])] {
@@ -252,5 +257,50 @@ struct iOSListDetailView: View {
         newTitle = ""
     }
 
+}
+
+/// The one place this page names itself: identity tile in the list's own colour, the context path
+/// it lives under, its name, and the control that opens the list editor.
+///
+/// It replaces a `.navigationBarTitleDisplayMode(.large)` title *plus* a second `iOSPanelHeader`
+/// inside the Tasks tab that repeated the same name and context one row lower, and it carries the
+/// edit control that a `ToolbarItem` could not render on iPad.
+private struct iOSListDetailHeader: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    let eyebrow: String
+    let title: String
+    let icon: String
+    let colorHex: String
+    let onEdit: () -> Void
+
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
+
+    var body: some View {
+        HStack(spacing: isRegularWidth ? 12 : 10) {
+            iOSListIconBadge(icon: icon, colorHex: colorHex, size: isRegularWidth ? 36 : 32)
+
+            VStack(alignment: .leading, spacing: 2) {
+                SectionEyebrowLabel(text: eyebrow)
+                    .lineLimit(1)
+                Text(title.isEmpty ? "Untitled" : title)
+                    .font(.system(size: isRegularWidth ? 21 : 18, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            iOSIconButton(
+                systemImage: "slider.horizontal.3",
+                accessibilityLabel: "Edit list",
+                action: onEdit
+            )
+        }
+        .padding(.horizontal, isRegularWidth ? 20 : 16)
+        .padding(.top, isRegularWidth ? 14 : 10)
+        .padding(.bottom, 12)
+    }
 }
 #endif

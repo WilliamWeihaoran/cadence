@@ -361,16 +361,6 @@ struct GoalKindSection: View {
     }
 }
 
-enum GoalKindPalette {
-    static func color(for kind: GoalKind) -> Color {
-        switch kind {
-        case .ongoing: return Theme.purple
-        case .completable: return Theme.green
-        case .maintenance: return Theme.blue
-        }
-    }
-}
-
 struct GoalKindBadge: View {
     let kind: GoalKind
 

@@ -80,15 +80,18 @@ struct iOSListsView: View {
 
             iOSListCreateButtonsRow(editorMode: $editorMode)
                 .padding(.horizontal, 16)
-                .padding(.bottom, 10)
+                .padding(.bottom, 12)
 
-            Divider().background(Theme.borderSubtle)
+            iOSListHairline()
 
             compactList
         }
         .background(Theme.bg)
     }
 
+    /// `.plain` with the palette showing through, not the default inset-grouped `List`: grouped
+    /// style paints its own `secondarySystemGroupedBackground` plates and its own grey headers,
+    /// which is a second, non-palette surface stacked on the page background.
     private var compactList: some View {
         List {
             activeAreaSection
@@ -96,6 +99,7 @@ struct iOSListsView: View {
             archivedSection
             emptyStateSection
         }
+        .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Theme.bg)
     }
@@ -117,7 +121,9 @@ struct iOSListsView: View {
             )
                 .frame(minWidth: 300, idealWidth: 340, maxWidth: 380)
 
-            Divider().background(Theme.borderSubtle)
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(width: 1)
 
             if let route = effectiveSelectedRoute {
                 listDetail(for: route)
@@ -139,10 +145,12 @@ struct iOSListsView: View {
     @ViewBuilder
     private var activeAreaSection: some View {
         if !activeAreas.isEmpty {
-            Section("Areas") {
+            Section {
                 ForEach(activeAreas) { area in
                     areaRow(area)
                 }
+            } header: {
+                iOSListSectionHeader(title: "Areas")
             }
         }
     }
@@ -157,6 +165,7 @@ struct iOSListsView: View {
                 count: CadenceTaskQuerySupport.openTaskCount(for: area)
             )
         }
+        .iOSListRowChrome()
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             archiveAreaButton(area)
         }
@@ -174,10 +183,12 @@ struct iOSListsView: View {
     @ViewBuilder
     private var activeProjectSection: some View {
         if !activeProjects.isEmpty {
-            Section("Projects") {
+            Section {
                 ForEach(activeProjects) { project in
                     projectRow(project)
                 }
+            } header: {
+                iOSListSectionHeader(title: "Projects")
             }
         }
     }
@@ -192,6 +203,7 @@ struct iOSListsView: View {
                 count: CadenceTaskQuerySupport.openTaskCount(for: project)
             )
         }
+        .iOSListRowChrome()
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             archiveProjectButton(project)
         }
@@ -209,7 +221,7 @@ struct iOSListsView: View {
     @ViewBuilder
     private var archivedSection: some View {
         if !archivedAreas.isEmpty || !archivedProjects.isEmpty {
-            Section("Archived") {
+            Section {
                 ForEach(archivedAreas) { area in
                     archivedAreaRow(area)
                 }
@@ -217,6 +229,8 @@ struct iOSListsView: View {
                 ForEach(archivedProjects) { project in
                     archivedProjectRow(project)
                 }
+            } header: {
+                iOSListSectionHeader(title: "Archived")
             }
         }
     }
@@ -230,6 +244,7 @@ struct iOSListsView: View {
         ) {
             restore(area)
         }
+        .iOSListRowChrome()
     }
 
     private func archivedProjectRow(_ project: Project) -> some View {
@@ -241,6 +256,7 @@ struct iOSListsView: View {
         ) {
             restore(project)
         }
+        .iOSListRowChrome()
     }
 
     @ViewBuilder
@@ -252,6 +268,7 @@ struct iOSListsView: View {
                 subtitle: "Create an area or project here, or restore one from Archived."
             )
             .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
     }
 

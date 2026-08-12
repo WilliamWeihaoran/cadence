@@ -17,10 +17,12 @@ struct iOSCompactAllTasksView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
+                // No subtitle: a line under "All Tasks" saying it is where you review active work
+                // describes the page you are already looking at. Same rule that deleted
+                // `subtitle` from `DesktopPageHeader` on macOS.
                 iOSCompactPageHeader(
                     eyebrow: "Tasks",
                     title: "All Tasks",
-                    subtitle: "Review active work, completed items, and anything captured from mobile.",
                     systemImage: "checklist",
                     color: Theme.blue
                 )

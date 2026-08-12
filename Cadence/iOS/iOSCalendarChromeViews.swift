@@ -14,9 +14,17 @@ struct iOSCalendarLeadItem: Equatable {
     }
 }
 
+/// The line under the toolbar that says what the selected day holds.
+///
+/// It used to be five shadowed cards in a row — a day card, four metric cards and a lead-item card,
+/// each with its own fill, radius and elevation — occupying a full band above the calendar. Every
+/// number in it is still here; they are chips on one row now, which is the treatment macOS uses for
+/// exactly this kind of small tinted fact. The two things that went are the presentation label
+/// ("Week" / "Board"), which only repeated the toolbar pill already lit up beside it, and the
+/// "No lead item / Add work from the inspector" placeholder card, which took a card's worth of
+/// space to say nothing.
 struct iOSCalendarContextStrip: View {
     let selectedDate: Date
-    let presentationLabel: String
     let totalCount: Int
     let timedCount: Int
     let taskCount: Int
@@ -30,71 +38,28 @@ struct iOSCalendarContextStrip: View {
     }
 
     var body: some View {
-        Group {
-            if isCompact {
-                compactStrip
-            } else {
-                regularStrip
+        ScrollView(.horizontal) {
+            HStack(spacing: 10) {
+                selectedDayLabel
+
+                metricChips
+
+                if let leadItem {
+                    leadItemLabel(leadItem)
+                }
+
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, isCompact ? 16 : 18)
+            .padding(.vertical, 9)
+            .frame(minWidth: horizontalSizeClass == .regular ? nil : 0)
         }
+        .scrollIndicators(.hidden)
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .background(Theme.bg.opacity(0.84))
     }
 
-    private var regularStrip: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
-                selectedDayCard
-                    .frame(width: 198)
-
-                metricsRow
-
-                leadItemCard
-                    .frame(width: 232)
-            }
-
-            HStack(spacing: 10) {
-                selectedDayCard
-                    .frame(width: 190)
-
-                metricsRow
-            }
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 8)
-    }
-
-    private var metricsRow: some View {
-        HStack(spacing: 8) {
-            metric(value: totalCount, label: "Total", systemImage: "calendar", tint: Theme.blue)
-            metric(value: timedCount, label: "Timed", systemImage: "clock.fill", tint: Theme.purple)
-            metric(value: taskCount, label: "Tasks", systemImage: "checklist", tint: Theme.green)
-            metric(value: eventCount + bundleCount, label: "Events", systemImage: "tray.full.fill", tint: Theme.amber)
-        }
-    }
-
-    private var compactStrip: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 8) {
-                selectedDayCard
-                    .frame(width: 190)
-                metric(value: totalCount, label: "Total", systemImage: "calendar", tint: Theme.blue)
-                    .frame(width: 108)
-                metric(value: timedCount, label: "Timed", systemImage: "clock.fill", tint: Theme.purple)
-                    .frame(width: 108)
-                metric(value: taskCount, label: "Tasks", systemImage: "checklist", tint: Theme.green)
-                    .frame(width: 108)
-                metric(value: eventCount + bundleCount, label: "Events", systemImage: "tray.full.fill", tint: Theme.amber)
-                    .frame(width: 108)
-                leadItemCard
-                    .frame(width: 228)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 9)
-        }
-        .scrollIndicators(.hidden)
-    }
-
-    private var selectedDayCard: some View {
+    private var selectedDayLabel: some View {
         HStack(spacing: 9) {
             VStack(spacing: 1) {
                 Text(DateFormatters.dayOfWeek.string(from: selectedDate).prefix(3).uppercased())
@@ -102,114 +67,57 @@ struct iOSCalendarContextStrip: View {
                     .foregroundStyle(Theme.blue)
                     .lineLimit(1)
                 Text(DateFormatters.dayNumber.string(from: selectedDate))
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Theme.text)
                     .monospacedDigit()
             }
-            .frame(width: 38, height: 38)
+            .frame(width: 36, height: 36)
             .background(Theme.blue.opacity(0.13))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                     .strokeBorder(Theme.blue.opacity(0.22), lineWidth: 1)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(presentationLabel)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                Text(DateFormatters.longDate.string(from: selectedDate))
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
+            Text(DateFormatters.longDate.string(from: selectedDate))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .fixedSize()
         }
-        .padding(.horizontal, 10)
-        .frame(height: isCompact ? 54 : 48)
-        .cadenceCard(background: Theme.surfaceElevated.opacity(0.42), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
+        .accessibilityElement(children: .combine)
     }
 
-    private func metric(value: Int, label: String, systemImage: String, tint: Color) -> some View {
+    private var metricChips: some View {
+        HStack(spacing: 6) {
+            iOSMetaChip(label: "\(totalCount) total", color: Theme.blue, systemImage: "calendar")
+            iOSMetaChip(label: "\(timedCount) timed", color: Theme.purple, systemImage: "clock.fill")
+            iOSMetaChip(label: "\(taskCount) tasks", color: Theme.green, systemImage: "checklist")
+            iOSMetaChip(label: "\(eventCount + bundleCount) events", color: Theme.amber, systemImage: "tray.full.fill")
+        }
+        .fixedSize()
+    }
+
+    private func leadItemLabel(_ leadItem: iOSCalendarLeadItem) -> some View {
         HStack(spacing: 7) {
-            Image(systemName: systemImage)
+            Image(systemName: leadItem.systemImage)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(tint)
+                .foregroundStyle(leadItem.tint)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text("\(value)")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .monospacedDigit()
-                    .fixedSize(horizontal: true, vertical: false)
-                Text(label)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
+            Text(leadItem.title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
 
-            Spacer(minLength: 0)
+            Text(leadItem.detail)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.subdued)
+                .lineLimit(1)
         }
-        .padding(.horizontal, 10)
-        .frame(maxWidth: .infinity)
-        .frame(height: isCompact ? 54 : 48)
-        .cadenceCard(background: tint.opacity(0.10), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
-    }
-
-    @ViewBuilder
-    private var leadItemCard: some View {
-        if let leadItem {
-            HStack(spacing: 9) {
-                Image(systemName: leadItem.systemImage)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(leadItem.tint)
-                    .frame(width: 30, height: 30)
-                    .background(leadItem.tint.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(leadItem.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                    Text(leadItem.detail)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: isCompact ? 54 : 48)
-            .cadenceCard(background: Theme.surfaceElevated.opacity(0.36), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
-        } else {
-            HStack(spacing: 9) {
-                Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 30, height: 30)
-                    .background(Theme.surfaceElevated.opacity(0.42))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("No lead item")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text("Add work from the inspector")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: isCompact ? 54 : 48)
-            .cadenceCard(background: Theme.surfaceElevated.opacity(0.24), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
-        }
+        .fixedSize()
+        .padding(.leading, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Next up: \(leadItem.title), \(leadItem.detail)")
     }
 }
 
@@ -274,45 +182,36 @@ struct iOSCalendarToolbar: View {
                 }
             }
         }
-        .frame(minHeight: 42)
+        .frame(minHeight: 48)
     }
 
+    /// Title only. This used to carry a "CALENDAR" eyebrow above the date — a page header naming
+    /// the page you are already looking at, which the tab bar and sidebar both already say.
     private var titleBlock: some View {
         HStack(spacing: horizontalSizeClass == .regular ? 11 : 0) {
             if horizontalSizeClass == .regular {
-                Image(systemName: CadenceFeatureDestination.calendar.systemImage)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(CadenceFeatureDestination.calendar.tint)
-                    .frame(width: 32, height: 32)
-                    .background(CadenceFeatureDestination.calendar.tint.opacity(0.13))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .strokeBorder(CadenceFeatureDestination.calendar.tint.opacity(0.20), lineWidth: 1)
-                    }
+                iOSIconTile(
+                    systemImage: CadenceFeatureDestination.calendar.systemImage,
+                    color: CadenceFeatureDestination.calendar.tint,
+                    size: 34,
+                    iconSize: 15
+                )
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Calendar")
-                    .font(.system(size: horizontalSizeClass == .regular ? 10 : 9, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .textCase(.uppercase)
-                    .kerning(0.8)
-                Text(title)
-                    .font(.system(size: horizontalSizeClass == .regular ? 21 : 17, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-            }
+            Text(title)
+                .font(.system(size: horizontalSizeClass == .regular ? 21 : 18, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
         }
         .frame(minWidth: horizontalSizeClass == .regular ? 208 : 116, idealWidth: 246, maxWidth: 312, alignment: .leading)
         .layoutPriority(1)
     }
 
     private var modeControl: some View {
-        iOSCalendarControlGroup {
+        iOSSegmentedPillGroup {
             ForEach(CadenceCalendarViewMode.pickerCases, id: \.self) { mode in
-                iOSCalendarToolbarPill(
+                iOSSegmentedPill(
                     title: mode.rawValue,
                     systemImage: mode == .month ? "calendar" : "rectangle.split.3x1",
                     isSelected: presentation == .timeline && viewMode == mode
@@ -322,7 +221,7 @@ struct iOSCalendarToolbar: View {
                 }
             }
 
-            iOSCalendarToolbarPill(
+            iOSSegmentedPill(
                 title: "Board",
                 systemImage: "rectangle.grid.2x2",
                 isSelected: presentation == .board
@@ -335,18 +234,32 @@ struct iOSCalendarToolbar: View {
     @ViewBuilder
     private var zoomControls: some View {
         if presentation == .timeline && viewMode != .month {
-            iOSCalendarControlGroup {
-                iOSCalendarToolbarIconButton(systemImage: "minus", isEnabled: zoomLevel > 1) {
+            iOSSegmentedPillGroup {
+                iOSIconButton(
+                    systemImage: "minus",
+                    accessibilityLabel: "Zoom out",
+                    isEnabled: zoomLevel > 1,
+                    plateSize: 38,
+                    iconSize: 13,
+                    showsPlate: false
+                ) {
                     zoomLevel = max(1, zoomLevel - 1)
                 }
 
                 Text("\(zoomLevel)x")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .monospacedDigit()
-                    .frame(minWidth: 26, minHeight: 34)
+                    .frame(minWidth: 26, minHeight: 38)
 
-                iOSCalendarToolbarIconButton(systemImage: "plus", isEnabled: zoomLevel < 3) {
+                iOSIconButton(
+                    systemImage: "plus",
+                    accessibilityLabel: "Zoom in",
+                    isEnabled: zoomLevel < 3,
+                    plateSize: 38,
+                    iconSize: 13,
+                    showsPlate: false
+                ) {
                     zoomLevel = min(3, zoomLevel + 1)
                 }
             }
@@ -354,80 +267,33 @@ struct iOSCalendarToolbar: View {
     }
 
     private var navigationControls: some View {
-        iOSCalendarControlGroup {
-            iOSCalendarToolbarIconButton(systemImage: "chevron.left", action: previous)
-            iOSCalendarToolbarIconButton(systemImage: "location.fill", action: today)
-            iOSCalendarToolbarIconButton(systemImage: "chevron.right", action: next)
+        iOSSegmentedPillGroup {
+            iOSIconButton(
+                systemImage: "chevron.left",
+                accessibilityLabel: "Previous",
+                plateSize: 38,
+                iconSize: 13,
+                showsPlate: false,
+                action: previous
+            )
+            iOSIconButton(
+                systemImage: "location.fill",
+                accessibilityLabel: "Today",
+                foreground: Theme.blue,
+                plateSize: 38,
+                iconSize: 13,
+                showsPlate: false,
+                action: today
+            )
+            iOSIconButton(
+                systemImage: "chevron.right",
+                accessibilityLabel: "Next",
+                plateSize: 38,
+                iconSize: 13,
+                showsPlate: false,
+                action: next
+            )
         }
-    }
-}
-
-private struct iOSCalendarControlGroup<Content: View>: View {
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        HStack(spacing: 3) {
-            content()
-        }
-        .padding(3)
-        .background(Theme.bg.opacity(0.55))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.34), lineWidth: 1)
-        }
-    }
-}
-
-private struct iOSCalendarToolbarPill: View {
-    let title: String
-    let systemImage: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 10, weight: .semibold))
-                Text(title)
-                    .font(.system(size: 11, weight: isSelected ? .bold : .semibold))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(isSelected ? Theme.text : Theme.dim)
-            .frame(minWidth: 60)
-            .frame(height: 34)
-            .padding(.horizontal, 6)
-            .background(isSelected ? Theme.blue.opacity(0.16) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(isSelected ? Theme.blue.opacity(0.28) : Color.clear, lineWidth: 1)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-    }
-}
-
-private struct iOSCalendarToolbarIconButton: View {
-    let systemImage: String
-    var isEnabled = true
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isEnabled ? Theme.text : Theme.dim.opacity(0.38))
-                .frame(width: 34, height: 34)
-                .background(isEnabled ? Theme.surfaceElevated.opacity(0.36) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .accessibilityLabel(systemImage)
     }
 }
 #endif

@@ -47,7 +47,7 @@ struct iOSCalendarSettingsSection: View {
     }
 
     private var calendarsCard: some View {
-        CadenceSettingsCard {
+        iOSSettingsCard {
             VStack(spacing: 0) {
                 if calendars.isEmpty {
                     iOSSettingsEmptyInlineRow(
@@ -68,7 +68,7 @@ struct iOSCalendarSettingsSection: View {
                         )
 
                         if index < calendars.count - 1 {
-                            Divider().background(Theme.borderSubtle).padding(.leading, 42)
+                            iOSRowDivider(leadingInset: 24)
                         }
                     }
                 }
@@ -77,36 +77,37 @@ struct iOSCalendarSettingsSection: View {
     }
 
     private var accessCard: some View {
-        CadenceSettingsCard {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: calendarManager.isDenied ? "exclamationmark.triangle.fill" : "calendar.badge.plus")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(calendarManager.isDenied ? Theme.amber : Theme.blue)
-                    .frame(width: 34, height: 34)
-                    .background((calendarManager.isDenied ? Theme.amber : Theme.blue).opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        iOSSettingsCard {
+            HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+                iOSIconTile(
+                    systemImage: calendarManager.isDenied ? "exclamationmark.triangle.fill" : "calendar.badge.plus",
+                    color: calendarManager.isDenied ? Theme.amber : Theme.blue,
+                    size: 34,
+                    iconSize: 16
+                )
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(calendarManager.isDenied ? "Calendar access denied" : "Calendar access required")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
 
                     Text(calendarManager.isDenied
                          ? "Allow Cadence from the iOS Settings app to show Apple Calendar events."
                          : "Allow Cadence to show events and connect Apple calendars to areas or projects.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(Theme.subdued)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Button {
+                    iOSActionButton(
+                        title: calendarManager.isDenied ? "Open Settings" : "Allow Access",
+                        systemImage: calendarManager.isDenied ? "gearshape.fill" : "checkmark.circle.fill",
+                        role: .primary,
+                        size: .compact,
+                        tint: calendarManager.isDenied ? Theme.amber : Theme.blue
+                    ) {
                         calendarManager.isDenied ? openSystemSettings() : requestAccess()
-                    } label: {
-                        Label(calendarManager.isDenied ? "Open Settings" : "Allow Access", systemImage: calendarManager.isDenied ? "gearshape.fill" : "checkmark.circle.fill")
-                            .font(.system(size: 13, weight: .semibold))
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(calendarManager.isDenied ? Theme.amber : Theme.blue)
-                    .padding(.top, 6)
+                    .padding(.top, 2)
                 }
 
                 Spacer(minLength: 0)
@@ -172,23 +173,23 @@ private struct iOSCalendarWorkHoursSection: View {
         VStack(alignment: .leading, spacing: 12) {
             CadenceSettingsSectionLabel(text: "Work Hours")
 
-            CadenceSettingsCard {
+            iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "sun.max.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Theme.amber)
-                            .frame(width: 34, height: 34)
-                            .background(Theme.amber.opacity(0.13))
-                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+                        iOSIconTile(
+                            systemImage: "sun.max.fill",
+                            color: Theme.amber,
+                            size: 34,
+                            iconSize: 16
+                        )
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Workday boundary")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
                             Text("Calendar day columns gently highlight \(workHoursLabel).")
                                 .font(.system(size: 12))
-                                .foregroundStyle(Theme.dim)
+                                .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
@@ -284,15 +285,15 @@ private struct iOSCalendarSettingsRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 7) {
                     Text(calendar.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(isActive ? Theme.text : Theme.muted)
                         .lineLimit(1)
 
                     if !calendar.allowsContentModifications {
                         Text("Read Only")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Theme.dim)
-                            .padding(.horizontal, 6)
+                            .padding(.horizontal, 7)
                             .padding(.vertical, 3)
                             .background(Theme.surfaceElevated)
                             .clipShape(Capsule())
@@ -306,7 +307,7 @@ private struct iOSCalendarSettingsRow: View {
 
                 Text(connectionSummary)
                     .font(.system(size: 11))
-                    .foregroundStyle(connectedNames.isEmpty ? Theme.dim : Theme.muted)
+                    .foregroundStyle(connectedNames.isEmpty ? Theme.dim : Theme.subdued)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -316,11 +317,14 @@ private struct iOSCalendarSettingsRow: View {
             VStack(alignment: .trailing, spacing: 8) {
                 connectionMenu
 
+                // Without a tint this is UIKit's system green — the one switch in
+                // settings whose colour came from outside the palette.
                 Toggle("Active", isOn: Binding(
                     get: { isActive },
                     set: { onActiveChanged($0) }
                 ))
                 .labelsHidden()
+                .tint(Theme.blue)
             }
             .padding(.top, 5)
         }
@@ -361,10 +365,16 @@ private struct iOSCalendarSettingsRow: View {
             Image(systemName: "link")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.text)
-                .frame(width: 32, height: 32)
+                .frame(width: 36, height: 36)
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                .frame(
+                    width: iOSSettingsMetrics.minimumTapTarget,
+                    height: iOSSettingsMetrics.minimumTapTarget
+                )
+                .contentShape(Rectangle())
         }
+        .accessibilityLabel("Connect to areas and projects")
     }
 
     private var calendarColor: Color {

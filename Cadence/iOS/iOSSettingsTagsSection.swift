@@ -44,16 +44,23 @@ struct iOSTagsSettingsSection: View {
         VStack(alignment: .leading, spacing: 12) {
             CadenceSettingsSectionLabel(text: "Create Tag")
             iOSSettingsCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    TextField("Name", text: $newName)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .textFieldStyle(.roundedBorder)
+                VStack(alignment: .leading, spacing: 14) {
+                    // `.roundedBorder` drew UIKit's own light field chrome into a dark
+                    // card — the one place in settings with no palette colour at all.
+                    iOSSettingsField(title: "Name") {
+                        TextField("Tag name", text: $newName)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
 
-                    TextField("Optional description", text: $newDescription)
-                        .textFieldStyle(.roundedBorder)
+                    iOSSettingsField(title: "Description") {
+                        TextField("Optional description", text: $newDescription)
+                    }
 
-                    iOSTagColorPicker(selectedHex: $newColorHex)
+                    VStack(alignment: .leading, spacing: 7) {
+                        SectionEyebrowLabel(text: "Color")
+                        iOSSettingsColorSwatchRow(selectedHex: $newColorHex)
+                    }
 
                     if let matchingArchived {
                         iOSTagNoticeRow(
@@ -74,25 +81,26 @@ struct iOSTagsSettingsSection: View {
                         )
                     }
 
-                    HStack {
-                        Button {
+                    HStack(spacing: 10) {
+                        Spacer(minLength: 0)
+
+                        iOSActionButton(
+                            title: "Add Defaults",
+                            systemImage: "arrow.clockwise",
+                            role: .secondary,
+                            size: .compact
+                        ) {
                             TagSupport.seedDefaultTags(in: modelContext)
-                        } label: {
-                            Label("Add Defaults", systemImage: "arrow.clockwise")
                         }
-                        .font(.system(size: 12, weight: .semibold))
 
-                        Spacer()
-
-                        Button {
-                            createTag()
-                        } label: {
-                            Label("Create", systemImage: "plus")
-                        }
-                        .font(.system(size: 12, weight: .semibold))
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.blue)
-                        .disabled(!canCreate)
+                        iOSActionButton(
+                            title: "Create Tag",
+                            systemImage: "plus",
+                            role: .primary,
+                            size: .compact,
+                            isDisabled: !canCreate,
+                            action: createTag
+                        )
                     }
                 }
             }
@@ -169,7 +177,7 @@ private struct iOSTagList: View {
                 )
 
                 if index < tags.count - 1 {
-                    Divider().background(Theme.borderSubtle)
+                    iOSRowDivider(leadingInset: 22)
                 }
             }
         }
@@ -182,77 +190,51 @@ private struct iOSTagSettingsRow: View {
     let archive: () -> Void
     let restore: () -> Void
 
-    private var usageText: String {
-        let taskCount = tag.tasks?.count ?? 0
-        let noteCount = tag.notes?.count ?? 0
-        return "\(taskCount) task\(taskCount == 1 ? "" : "s"), \(noteCount) note\(noteCount == 1 ? "" : "s")"
-    }
+    private var taskCount: Int { tag.tasks?.count ?? 0 }
+    private var noteCount: Int { tag.notes?.count ?? 0 }
 
     var body: some View {
-        HStack(alignment: tag.desc.isEmpty ? .center : .top, spacing: 11) {
+        HStack(alignment: .top, spacing: 11) {
             Circle()
                 .fill(Color(hex: tag.colorHex))
-                .frame(width: 12, height: 12)
-                .padding(.top, tag.desc.isEmpty ? 0 : 4)
+                .frame(width: 11, height: 11)
+                .padding(.top, 5)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text("#\(tag.name)")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(tag.isArchived ? Theme.muted : Theme.text)
                     .lineLimit(1)
 
-                Text(usageText)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-
                 if !tag.desc.isEmpty {
                     Text(tag.desc)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.subdued)
                         .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // Two counts, two chips — the same shape macOS's tag row uses, instead of
+                // one comma-joined sentence.
+                HStack(spacing: 6) {
+                    iOSMetaChip(label: taskCount == 1 ? "1 task" : "\(taskCount) tasks", color: Theme.muted)
+                    iOSMetaChip(label: noteCount == 1 ? "1 note" : "\(noteCount) notes", color: Theme.muted)
                 }
             }
 
             Spacer(minLength: 8)
 
-            Button {
+            iOSIconButton(
+                systemImage: isArchivedList ? "arrow.uturn.backward" : "archivebox",
+                accessibilityLabel: isArchivedList ? "Restore tag" : "Archive tag",
+                tint: isArchivedList ? Theme.blue : Theme.amber,
+                isSelected: true
+            ) {
                 isArchivedList ? restore() : archive()
-            } label: {
-                Image(systemName: isArchivedList ? "arrow.uturn.backward" : "archivebox")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isArchivedList ? Theme.blue : Theme.amber)
-                    .frame(width: 36, height: 36)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             }
-            .buttonStyle(.plain)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .opacity(tag.isArchived ? 0.72 : 1)
-    }
-}
-
-private struct iOSTagColorPicker: View {
-    @Binding var selectedHex: String
-
-    var body: some View {
-        HStack(spacing: 9) {
-            ForEach(TagSupport.colorOptions, id: \.self) { option in
-                Button {
-                    selectedHex = option
-                } label: {
-                    Circle()
-                        .fill(Color(hex: option))
-                        .frame(width: 24, height: 24)
-                        .overlay {
-                            if TagSupport.normalizedColorHex(selectedHex).caseInsensitiveCompare(option) == .orderedSame {
-                                Circle().strokeBorder(Theme.text.opacity(0.78), lineWidth: 2)
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
-            }
-        }
     }
 }
 
@@ -265,23 +247,29 @@ private struct iOSTagNoticeRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.amber)
 
             Text(text)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.dim)
+                .foregroundStyle(Theme.subdued)
+                .fixedSize(horizontal: false, vertical: true)
 
             Spacer(minLength: 8)
 
             if let actionTitle {
-                Button(actionTitle, action: action)
-                    .font(.system(size: 12, weight: .semibold))
+                iOSActionButton(
+                    title: actionTitle,
+                    role: .secondary,
+                    size: .compact,
+                    action: action
+                )
             }
         }
-        .padding(10)
-        .background(Theme.surfaceElevated.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Theme.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 }
 #endif

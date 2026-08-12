@@ -322,11 +322,11 @@ struct iOSTaskSubtasksSection: View {
                 Image(systemName: "plus")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Theme.onColor)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
                     .background(canAddSubtask ? Theme.blue : Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.iosPressable)
             .disabled(!canAddSubtask)
         }
     }

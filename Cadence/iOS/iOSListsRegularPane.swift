@@ -22,10 +22,10 @@ struct iOSListsRegularPane: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
 
-            Divider().background(Theme.borderSubtle)
+            iOSListHairline()
 
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: 16) {
                     if activeAreas.isEmpty && activeProjects.isEmpty {
                         iOSEmptyPanel(
                             systemImage: "folder",
@@ -149,19 +149,21 @@ private struct iOSListSelectionSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .textCase(.uppercase)
-                .kerning(0.8)
+            SectionEyebrowLabel(text: title)
+                .padding(.horizontal, 4)
 
-            VStack(spacing: 8) {
+            VStack(spacing: 2) {
                 content()
             }
         }
     }
 }
 
+/// Flat and neutral, like `SidebarListRow`: **one** selection layer at **one** radius and nothing
+/// else. Each row used to be an elevated `cadenceCard` in a wash of the list's own colour *plus* a
+/// separate 3pt accent bar at a second radius — three layers saying "selected", on a pane where
+/// every row was already a plate. `Theme.cardElevationShadow`'s own note records the same move on
+/// macOS: rows are flat now, and elevation is for things that are genuinely card-shaped.
 private struct iOSListSelectionRow: View {
     let title: String
     let subtitle: String?
@@ -170,10 +172,6 @@ private struct iOSListSelectionRow: View {
     let count: Int
     let isSelected: Bool
     let action: () -> Void
-
-    private var accent: Color {
-        Color(hex: colorHex)
-    }
 
     var body: some View {
         Button(action: action) {
@@ -184,24 +182,16 @@ private struct iOSListSelectionRow: View {
                 colorHex: colorHex,
                 count: count
             )
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .cadenceCard(
-                background: isSelected ? accent.opacity(0.15) : Theme.surfaceElevated.opacity(0.32),
-                cornerRadius: Theme.radiusCard,
-                shadowRadius: 10,
-                shadowY: 4
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                    .fill(isSelected ? Theme.surfaceHighlight : Color.clear)
             )
-            .overlay(alignment: .leading) {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(accent)
-                        .frame(width: 3)
-                        .padding(.vertical, 8)
-                }
-            }
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -220,14 +210,8 @@ private struct iOSArchivedListSelectionRow: View {
             colorHex: colorHex,
             restore: restore
         )
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .cadenceCard(
-            background: Theme.surfaceElevated.opacity(0.22),
-            cornerRadius: Theme.radiusCard,
-            shadowRadius: 8,
-            shadowY: 3
-        )
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
     }
 }
 #endif

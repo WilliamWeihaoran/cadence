@@ -126,7 +126,7 @@ struct iOSCalendarQuickCreateSheet: View {
                 formLayout
                     .padding(16)
                     .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
                     .padding(isRegularWidth ? 20 : 18)
             }
             .background(Theme.bg)
@@ -205,12 +205,7 @@ struct iOSCalendarQuickCreateSheet: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Image(systemName: "calendar.badge.plus")
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(Theme.blue)
-                .frame(width: 42, height: 42)
-                .background(Theme.blue.opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            iOSIconTile(systemImage: "calendar.badge.plus", color: Theme.blue, size: 42, iconSize: 19)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(DateFormatters.relativeDate(from: dateKey))
@@ -218,7 +213,7 @@ struct iOSCalendarQuickCreateSheet: View {
                     .foregroundStyle(Theme.text)
                 Text(headerSubtitle)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.dim)
+                    .foregroundStyle(Theme.subdued)
             }
 
             Spacer(minLength: 8)
@@ -235,13 +230,14 @@ struct iOSCalendarQuickCreateSheet: View {
     private var priorityFlagButton: some View {
         Button(action: cyclePriority) {
             Image(systemName: "flag.fill")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.priorityColor(priority))
-                .frame(width: 34, height: 34)
+                .frame(width: 40, height: 40)
                 .background(Theme.priorityColor(priority).opacity(0.13))
                 .clipShape(Circle())
+                .iOSExpandedHitArea(2)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
         .accessibilityLabel("Priority: \(priority.label)")
         .accessibilityHint("Tap to cycle priority")
     }
@@ -251,26 +247,28 @@ struct iOSCalendarQuickCreateSheet: View {
             dismiss()
         } label: {
             Image(systemName: "xmark")
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(Theme.dim)
-                .frame(width: 34, height: 34)
+                .frame(width: 40, height: 40)
                 .background(Theme.surface)
                 .clipShape(Circle())
+                .iOSExpandedHitArea(2)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
         .accessibilityLabel("Cancel")
     }
 
     private var createButton: some View {
         Button(action: create) {
             Image(systemName: "arrow.up")
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(Theme.onColor)
-                .frame(width: 34, height: 34)
+                .frame(width: 40, height: 40)
                 .background(canCreate ? Theme.blue : Theme.blue.opacity(0.4))
                 .clipShape(Circle())
+                .iOSExpandedHitArea(2)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
         .disabled(!canCreate)
         .accessibilityLabel("Create")
     }
@@ -292,7 +290,7 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private var titleSection: some View {
-        iOSCalendarQuickCreateSection(title: kind.title) {
+        iOSEditorSection(title: kind.title, style: .ruled, contentSpacing: 10) {
             TextField(kind.placeholder, text: $title, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .bold))
@@ -306,29 +304,30 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private var calendarSection: some View {
-        iOSCalendarQuickCreateSection(title: "Apple Calendar") {
+        iOSEditorSection(title: "Apple Calendar", style: .ruled, contentSpacing: 10) {
             if !calendarManager.isAuthorized {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Calendar access is needed to create events.")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Theme.dim)
-                    Button {
+                    iOSActionButton(
+                        title: "Allow Calendar Access",
+                        systemImage: "calendar.badge.plus",
+                        role: .primary,
+                        size: .compact
+                    ) {
                         Task {
                             _ = await calendarManager.requestAccess()
                             normalizeCalendarSelection()
                         }
-                    } label: {
-                        Label("Allow Calendar Access", systemImage: "calendar.badge.plus")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.blue)
                 }
             } else if calendarManager.writableCalendars.isEmpty {
                 Text("No writable calendars are available.")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.dim)
             } else {
-                iOSCalendarQuickCreateRow(label: "Calendar", systemImage: "calendar", color: Theme.green) {
+                iOSEditorFieldRow(label: "Calendar", systemImage: "calendar", color: Theme.green) {
                     iOSChoiceValueButton(title: selectedCalendarTitle, color: Theme.text) {
                         showCalendarPicker = true
                     }
@@ -347,14 +346,14 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private var taskOptions: some View {
-        iOSCalendarQuickCreateSection(title: "Details") {
-            iOSCalendarQuickCreateRow(label: "Estimate", systemImage: "clock.fill", color: Theme.blue) {
+        iOSEditorSection(title: "Details", style: .ruled, contentSpacing: 10) {
+            iOSEditorFieldRow(label: "Estimate", systemImage: "clock.fill", color: Theme.blue) {
                 EstimatePickerControl(value: $estimatedMinutes)
             }
 
-            iOSCalendarQuickCreateDivider()
+            iOSEditorDivider()
 
-            iOSCalendarQuickCreateRow(label: "List", systemImage: "tray.full.fill", color: Theme.blue) {
+            iOSEditorFieldRow(label: "List", systemImage: "tray.full.fill", color: Theme.blue) {
                 iOSChoiceValueButton(title: containerTitle, color: Theme.text) {
                     showContainerPicker = true
                 }
@@ -368,9 +367,9 @@ struct iOSCalendarQuickCreateSheet: View {
                 }
             }
 
-            iOSCalendarQuickCreateDivider()
+            iOSEditorDivider()
 
-            iOSCalendarQuickCreateRow(label: "Section", systemImage: "rectangle.split.3x1.fill", color: Theme.purple) {
+            iOSEditorFieldRow(label: "Section", systemImage: "rectangle.split.3x1.fill", color: Theme.purple) {
                 iOSChoiceValueButton(title: sectionName, color: Theme.text) {
                     showSectionPicker = true
                 }
@@ -397,10 +396,10 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private var timeSection: some View {
-        iOSCalendarQuickCreateSection(title: "Schedule") {
+        iOSEditorSection(title: "Schedule", style: .ruled, contentSpacing: 10) {
             if kind == .task {
                 Toggle(isOn: $hasTime) {
-                    iOSCalendarQuickCreateInlineLabel(
+                    iOSEditorInlineLabel(
                         label: "Set time",
                         systemImage: "clock",
                         color: Theme.amber
@@ -412,7 +411,7 @@ struct iOSCalendarQuickCreateSheet: View {
 
             if kind == .event {
                 Toggle(isOn: $eventIsAllDay) {
-                    iOSCalendarQuickCreateInlineLabel(
+                    iOSEditorInlineLabel(
                         label: "All day",
                         systemImage: "sun.max",
                         color: Theme.amber
@@ -424,10 +423,10 @@ struct iOSCalendarQuickCreateSheet: View {
 
             if showsTimedControls {
                 if kind == .task || kind == .event {
-                    iOSCalendarQuickCreateDivider()
+                    iOSEditorDivider()
                 }
 
-                iOSCalendarQuickCreateRow(label: "Starts", systemImage: "clock.fill", color: Theme.blue) {
+                iOSEditorFieldRow(label: "Starts", systemImage: "clock.fill", color: Theme.blue) {
                     iOSChoiceValueButton(title: TimeFormatters.timeString(from: startTimeMinutesBinding.wrappedValue), color: Theme.text) {
                         showStartTimePicker = true
                     }
@@ -442,9 +441,9 @@ struct iOSCalendarQuickCreateSheet: View {
                     }
                 }
 
-                iOSCalendarQuickCreateDivider()
+                iOSEditorDivider()
 
-                iOSCalendarQuickCreateRow(label: "Duration", systemImage: "timer", color: Theme.green) {
+                iOSEditorFieldRow(label: "Duration", systemImage: "timer", color: Theme.green) {
                     EstimatePickerControl(value: $estimatedMinutes)
                 }
             }
@@ -452,12 +451,12 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private var notesSection: some View {
-        iOSCalendarQuickCreateSection(title: "Notes") {
+        iOSEditorSection(title: "Notes", style: .ruled, contentSpacing: 10) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(kind == .event ? "Apple Calendar note" : "Task note")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(Theme.subdued)
 
                     Spacer(minLength: 0)
 
@@ -475,9 +474,9 @@ struct iOSCalendarQuickCreateSheet: View {
                     allowsEmbeddedTaskCreation: false
                 )
                 .frame(minHeight: isRegularWidth ? 280 : 230)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                         .stroke(Theme.borderSubtle.opacity(0.68), lineWidth: 1)
                 }
             }
@@ -643,72 +642,4 @@ private enum iOSCalendarQuickCreateKind: String, CaseIterable, Identifiable {
     }
 }
 
-private struct iOSCalendarQuickCreateSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .textCase(.uppercase)
-                .kerning(0.8)
-
-            VStack(alignment: .leading, spacing: 10) {
-                content()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.top, 12)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.35))
-                .frame(height: 1)
-        }
-    }
-}
-
-private struct iOSCalendarQuickCreateRow<Content: View>: View {
-    let label: String
-    let systemImage: String
-    let color: Color
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        HStack(spacing: 10) {
-            iOSCalendarQuickCreateInlineLabel(label: label, systemImage: systemImage, color: color)
-            Spacer(minLength: 12)
-            content()
-        }
-        .frame(minHeight: 34)
-    }
-}
-
-private struct iOSCalendarQuickCreateInlineLabel: View {
-    let label: String
-    let systemImage: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(color)
-                .frame(width: 26, height: 26)
-                .background(color.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-
-            Text(label)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.text)
-        }
-    }
-}
-
-private struct iOSCalendarQuickCreateDivider: View {
-    var body: some View {
-        Divider().background(Theme.borderSubtle.opacity(0.6))
-    }
-}
 #endif

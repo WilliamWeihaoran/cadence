@@ -159,7 +159,7 @@ struct iOSTaskDetailSheet: View {
             taskForm
                 .padding(14)
                 .background(Theme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
                 .frame(maxWidth: 640)
                 .frame(maxWidth: .infinity)
                 .padding(isRegularWidth ? 20 : 18)

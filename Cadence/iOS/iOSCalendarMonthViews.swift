@@ -131,7 +131,8 @@ private struct iOSCalendarMonthDayCell: View {
                         iOSCalendarMiniChip(
                             title: iOSCalendarEventSupport.title(for: event),
                             icon: event.isAllDay ? "calendar" : "calendar.badge.clock",
-                            color: iOSCalendarEventSupport.color(for: event.calendar)
+                            color: iOSCalendarEventSupport.color(for: event.calendar),
+                            isEventPlate: true
                         )
                     }
                     ForEach(visibleTasks) { task in
@@ -144,7 +145,7 @@ private struct iOSCalendarMonthDayCell: View {
                     if overflow > 0 {
                         Text("+ \(overflow) more")
                             .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
+                            .foregroundStyle(Theme.subdued)
                             .padding(.horizontal, 5)
                     }
                 }
@@ -157,7 +158,7 @@ private struct iOSCalendarMonthDayCell: View {
             .opacity(isCurrentMonth ? 1 : 0.52)
             .overlay {
                 if isSelected {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                         .strokeBorder(Theme.blue.opacity(0.65), lineWidth: 1.5)
                         .padding(4)
                 }
@@ -173,7 +174,8 @@ private struct iOSCalendarMonthDayCell: View {
                     .frame(height: 0.5)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel(DateFormatters.longDate.string(from: date))
     }
 
     private var cellBackground: Color {
@@ -189,33 +191,51 @@ private struct iOSCalendarMonthDayCell: View {
     }
 }
 
+/// The one-line chip a month cell or a timeline day header draws per item.
+///
+/// `isEventPlate` gives a calendar event the solved plate of its own calendar colour — the same
+/// treatment macOS's month grid gives an event chip — while tasks and bundles keep a wash of their
+/// list colour over the neutral surface. Before, an event chip was washed like a task, so a day
+/// full of events and a day full of tasks looked the same at a glance.
 struct iOSCalendarMiniChip: View {
     let title: String
     let icon: String
     let color: Color
+    var isEventPlate = false
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+    }
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(color)
+                .foregroundStyle(isEventPlate ? CadenceCalendarEventStyle.tertiaryLabelColor() : color)
             Text(title)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Theme.text)
+                .foregroundStyle(isEventPlate ? CadenceCalendarEventStyle.primaryLabelColor : Theme.text)
                 .lineLimit(1)
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 2.5)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                    .fill(Theme.surfaceElevated.opacity(0.82))
-                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                    .fill(color.opacity(0.16))
+        .background {
+            if isEventPlate {
+                shape.fill(CadenceCalendarEventStyle.chipFill(for: color))
+            } else {
+                ZStack {
+                    shape.fill(Theme.surfaceElevated.opacity(0.82))
+                    shape.fill(color.opacity(0.16))
+                }
             }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+        }
+        .clipShape(shape)
+        .overlay {
+            if isEventPlate {
+                shape.strokeBorder(color.opacity(CadenceCalendarEventStyle.chipBorderOpacity()), lineWidth: 1)
+            }
+        }
     }
 }
 #endif

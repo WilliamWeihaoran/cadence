@@ -1,7 +1,6 @@
 #if os(iOS)
 import EventKit
 import SwiftUI
-import UIKit
 
 enum iOSCalendarEventSupport {
     static func title(for event: EKEvent) -> String {
@@ -18,25 +17,15 @@ enum iOSCalendarEventSupport {
         return Color(cgColor: cgColor)
     }
 
-    /// Desaturated, darkened variant of the calendar's own bright color, used as a solid
-    /// event-block fill so vivid EventKit calendar colors stay legible against the dark theme.
+    /// Solid fill for an event block, so vivid EventKit calendar colors stay legible against the
+    /// dark theme.
+    ///
+    /// This used to be a local `saturation * 0.55, brightness * 0.6` rule — the same double-hit
+    /// rule macOS abandoned because it rendered an orange calendar brown and a green one olive.
+    /// It now goes through the shared luminance solve, so an event is the same colour on both
+    /// platforms and `Theme.onColor` / `onColorSecondary` are guaranteed to clear AA on top of it.
     static func fillColor(for calendar: EKCalendar?) -> Color {
-        fillColor(from: color(for: calendar))
-    }
-
-    static func fillColor(from base: Color) -> Color {
-        let uiColor = UIColor(base)
-        var hue: CGFloat = 0
-        var saturation: CGFloat = 0
-        var brightness: CGFloat = 0
-        var alpha: CGFloat = 0
-        uiColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        return Color(UIColor(
-            hue: hue,
-            saturation: min(saturation * 0.55, 1),
-            brightness: max(brightness * 0.6, 0.22),
-            alpha: alpha
-        ))
+        CadenceCalendarEventStyle.fill(for: color(for: calendar))
     }
 
     static func timeRangeLabel(for event: EKEvent) -> String {

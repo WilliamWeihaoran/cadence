@@ -50,16 +50,7 @@ struct iOSCompactTodayView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "sun.max.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.amber)
-                .frame(width: 36, height: 36)
-                .background(Theme.amber.opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(Theme.amber.opacity(0.22), lineWidth: 1)
-                }
+            iOSIconTile(systemImage: "sun.max.fill", color: Theme.amber, size: 36)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(DateFormatters.longDate.string(from: Date()))
@@ -215,28 +206,13 @@ private struct iOSCompactTodayNotesCard: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 11) {
-            Image(systemName: "note.text")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.purple)
-                .frame(width: 34, height: 34)
-                .background(Theme.purple.opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Theme.purple.opacity(0.20), lineWidth: 1)
-                }
+            iOSIconTile(systemImage: "note.text", color: Theme.purple)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Today Note")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-
-                Text("Quick daily context")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
+            // "Quick daily context" under a card headed "Today Note" restates the card.
+            Text("Today Note")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
 
             Spacer(minLength: 8)
 
@@ -273,9 +249,9 @@ private struct iOSCompactTodayEmptyState: View {
                 .foregroundStyle(Theme.dim)
                 .frame(width: 42, height: 42)
                 .background(Theme.surfaceElevated.opacity(0.54))
-                .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                         .strokeBorder(Theme.borderSubtle.opacity(0.42), lineWidth: 1)
                 }
 
@@ -304,12 +280,7 @@ private struct iOSCompactSampleDataCard: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 11) {
-            Image(systemName: "wand.and.stars")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.amber)
-                .frame(width: 34, height: 34)
-                .background(Theme.amber.opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            iOSIconTile(systemImage: "wand.and.stars", color: Theme.amber, bordered: false)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(status ?? "Need realistic rows?")
@@ -331,7 +302,7 @@ private struct iOSCompactSampleDataCard: View {
                     .foregroundStyle(Theme.onColor)
                     .frame(width: 34, height: 34)
                     .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             }
             .accessibilityLabel("Seed sample tasks")
         }
@@ -350,8 +321,6 @@ private struct iOSCompactTodayMetric: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(metric.tint)
                 .frame(width: 20, height: 20)
-                .background(metric.tint.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
             VStack(alignment: .leading, spacing: 0) {
                 Text("\(metric.value)")

@@ -131,10 +131,10 @@ struct iOSLinkedNoteEditorSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(subtitle)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .textCase(.uppercase)
+            // The note's kind, in the shared eyebrow style rather than a fourth hand-rolled
+            // uppercase caption. It stays because this sheet is reached from a `[[link]]` in some
+            // other note — the kind is something the screen does not otherwise say.
+            SectionEyebrowLabel(text: subtitle)
 
             Text(note.displayTitle)
                 .font(.system(size: isRegularWidth ? 24 : 22, weight: .bold))

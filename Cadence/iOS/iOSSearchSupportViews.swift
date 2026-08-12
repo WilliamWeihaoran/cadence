@@ -100,6 +100,11 @@ struct iOSSearchResult: Identifiable {
     let icon: String
     let color: Color
     let score: Int
+    /// Split out of `detail` rather than joined into it, for the same reason macOS's
+    /// `GlobalSearchSubtitleParts` splits it out of the subtitle: the due date sits near the
+    /// end of a bullet-joined metadata string, so a long list name plus tags truncated it
+    /// away entirely. Carried separately, the row can lay it out with priority.
+    var dueLabel: String?
     var task: AppTask?
     var note: Note?
     var event: EKEvent?
@@ -107,60 +112,85 @@ struct iOSSearchResult: Identifiable {
     var featureDestination: CadenceFeatureDestination?
 }
 
+/// The filter row above the results. macOS's palette has no scope filter — it is a
+/// keyboard surface where you type to narrow — so this has no counterpart to copy;
+/// it borrows the shared `iOSSegmentedPill` so it reads as the same control family as the
+/// calendar's mode switch instead of inventing a fourth chip.
 struct iOSSearchScopePicker: View {
     @Binding var selection: iOSSearchScope
+    @Binding var includeCompletedTasks: Bool
+    let showsCompletedToggle: Bool
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
                 ForEach(iOSSearchScope.allCases) { scope in
-                    iOSSearchScopeChip(
-                        scope: scope,
-                        isSelected: selection == scope
+                    iOSSegmentedPill(
+                        title: scope.title,
+                        systemImage: scope.icon,
+                        isSelected: selection == scope,
+                        minWidth: 0
                     ) {
                         withAnimation(.snappy(duration: 0.16)) {
                             selection = scope
                         }
                     }
                 }
+
+                if showsCompletedToggle {
+                    // A filter, not a scope — separated by a rule so the single-select
+                    // pills and this toggle do not read as one seven-way choice.
+                    Rectangle()
+                        .fill(Theme.borderSubtle)
+                        .frame(width: 1, height: 22)
+                        .padding(.horizontal, 4)
+
+                    iOSSegmentedPill(
+                        title: "Completed",
+                        systemImage: "checkmark.circle",
+                        isSelected: includeCompletedTasks,
+                        tint: Theme.green,
+                        minWidth: 0
+                    ) {
+                        withAnimation(.snappy(duration: 0.16)) {
+                            includeCompletedTasks.toggle()
+                        }
+                    }
+                }
             }
             .padding(.vertical, 2)
         }
+        .scrollIndicators(.hidden)
         .scrollClipDisabled()
     }
 }
 
-private struct iOSSearchScopeChip: View {
-    let scope: iOSSearchScope
-    let isSelected: Bool
-    let action: () -> Void
-
-    private var foreground: Color {
-        isSelected ? Theme.onColor : Theme.text
-    }
-
-    private var background: Color {
-        isSelected ? Theme.blue : Theme.surfaceElevated
-    }
-
-    private var border: Color {
-        Theme.borderSubtle.opacity(isSelected ? 0 : 0.9)
-    }
+/// One search section: an uppercased eyebrow over a single card of rows, matching macOS's
+/// grouped palette sections and iOS settings' grouped cards. Each result used to be its own
+/// shadowed card, so a ten-result section read as ten unrelated objects rather than one list.
+struct iOSSearchResultGroup<Row: View>: View {
+    let title: String
+    let count: Int
+    @ViewBuilder let row: (Int) -> Row
 
     var body: some View {
-        Button(action: action) {
-            Label(scope.title, systemImage: scope.icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(foreground)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 8)
-                .background(background)
-                .clipShape(Capsule())
-                .overlay {
-                    Capsule().stroke(border, lineWidth: 1)
+        VStack(alignment: .leading, spacing: 8) {
+            SectionEyebrowLabel(text: title)
+                .padding(.horizontal, 4)
+
+            VStack(spacing: 0) {
+                ForEach(0..<count, id: \.self) { index in
+                    row(index)
+
+                    if index < count - 1 {
+                        iOSRowDivider(leadingInset: 46)
+                    }
                 }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -169,38 +199,48 @@ struct iOSSearchResultRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: result.icon)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(result.color)
-                .frame(width: 30, height: 30)
-                .background(result.color.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+            iOSIconTile(systemImage: result.icon, color: result.color)
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(result.title)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(2)
+                    .multilineTextAlignment(.leading)
 
                 if !result.subtitle.isEmpty {
+                    // `subdued`, not `dim`: this is the destination the row leads to, which
+                    // is ordinary reading text, not de-emphasized chrome.
                     Text(result.subtitle)
                         .font(.system(size: 13))
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(Theme.subdued)
                         .lineLimit(1)
                 }
 
-                if !result.detail.isEmpty {
-                    Text(result.detail)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim.opacity(0.78))
-                        .lineLimit(2)
+                if !result.detail.isEmpty || result.dueLabel != nil {
+                    HStack(spacing: 6) {
+                        if !result.detail.isEmpty {
+                            Text(result.detail)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+
+                        if let dueLabel = result.dueLabel {
+                            iOSMetaChip(label: dueLabel, color: Theme.amber)
+                                .fixedSize()
+                                .layoutPriority(1)
+                        }
+                    }
                 }
             }
 
             Spacer(minLength: 0)
         }
-        .padding(12)
-        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
+        .padding(.vertical, 10)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
     }
 }
 

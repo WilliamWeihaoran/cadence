@@ -124,6 +124,7 @@ struct iOSSearchView: View {
                 icon: $0.isDone ? "checkmark.circle.fill" : "circle",
                 color: Theme.priorityColor($0.priority),
                 score: 0,
+                dueLabel: taskDueLabel($0),
                 task: $0
             )
         }
@@ -262,6 +263,7 @@ struct iOSSearchView: View {
                 icon: task.isDone ? "checkmark.circle.fill" : "circle",
                 color: Theme.priorityColor(task.priority),
                 score: score,
+                dueLabel: taskDueLabel(task),
                 task: task
             )
         }
@@ -270,37 +272,19 @@ struct iOSSearchView: View {
 
     var body: some View {
         List {
+            // No page header. The navigation title and the search field already say
+            // "Search", and the standfirst under it ("Find tasks, lists, notes, calendar
+            // events, and progress") described the screen you were already looking at.
             Section {
-                iOSCompactPageHeader(
-                    eyebrow: "Workspace",
-                    title: "Search",
-                    subtitle: isSearching ? "Showing matches across Cadence." : "Find tasks, lists, notes, calendar events, and progress.",
-                    systemImage: "magnifyingglass",
-                    color: Theme.blue
+                iOSSearchScopePicker(
+                    selection: $scope,
+                    includeCompletedTasks: $includeCompletedTasks,
+                    showsCompletedToggle: showsTasks
                 )
-                .padding(.vertical, 4)
-                .listRowInsets(EdgeInsets(top: 8, leading: 4, bottom: 4, trailing: 4))
-                .listRowBackground(Color.clear)
             }
-
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    iOSSearchScopePicker(selection: $scope)
-
-                    if showsTasks {
-                        Toggle(isOn: $includeCompletedTasks) {
-                            Label("Include completed tasks", systemImage: "checkmark.circle")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Theme.text)
-                        }
-                        .tint(Theme.blue)
-                    }
-                }
-                .padding(14)
-                .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
-            }
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
 
             if showsProgress {
                 resultSection("Pages", results: pageResults)
@@ -330,6 +314,7 @@ struct iOSSearchView: View {
                 )
                 .frame(minHeight: 220)
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
         }
         .navigationTitle("Search")
@@ -413,37 +398,52 @@ struct iOSSearchView: View {
     @ViewBuilder
     private var calendarAccessSection: some View {
         if !calendarManager.isAuthorized {
-            Section("Calendar Events") {
-                VStack(alignment: .leading, spacing: 12) {
-                    Label(
-                        calendarManager.isDenied ? "Calendar access is disabled" : "Calendar access is off",
-                        systemImage: calendarManager.isDenied ? "calendar.badge.exclamationmark" : "calendar"
-                    )
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.text)
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionEyebrowLabel(text: "Calendar Events")
+                        .padding(.horizontal, 4)
 
-                    Text(calendarManager.isDenied ? "Enable Calendar access in Settings to include Apple Calendar events in search." : "Allow Calendar access to search and edit Apple Calendar events from Cadence.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.dim)
+                    HStack(alignment: .top, spacing: 12) {
+                        iOSIconTile(
+                            systemImage: calendarManager.isDenied ? "calendar.badge.exclamationmark" : "calendar",
+                            color: calendarManager.isDenied ? Theme.amber : Theme.blue
+                        )
 
-                    Button {
-                        if calendarManager.isDenied {
-                            openAppSettings()
-                        } else {
-                            Task { await calendarManager.requestAccess() }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(calendarManager.isDenied ? "Calendar access is disabled" : "Calendar access is off")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Theme.text)
+
+                            Text(calendarManager.isDenied ? "Enable Calendar access in Settings to include Apple Calendar events in search." : "Allow Calendar access to search and edit Apple Calendar events from Cadence.")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.subdued)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            iOSActionButton(
+                                title: calendarManager.isDenied ? "Open Settings" : "Allow Calendar Access",
+                                systemImage: calendarManager.isDenied ? "gearshape.fill" : "checkmark.shield.fill",
+                                role: .primary,
+                                size: .compact,
+                                tint: calendarManager.isDenied ? Theme.amber : Theme.blue
+                            ) {
+                                if calendarManager.isDenied {
+                                    openAppSettings()
+                                } else {
+                                    Task { await calendarManager.requestAccess() }
+                                }
+                            }
+                            .padding(.top, 2)
                         }
-                    } label: {
-                        Label(calendarManager.isDenied ? "Open Settings" : "Allow Calendar Access", systemImage: calendarManager.isDenied ? "gearshape.fill" : "checkmark.shield.fill")
-                            .font(.system(size: 13, weight: .semibold))
+
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.blue)
+                    .padding(14)
+                    .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
                 }
-                .padding(14)
-                .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
             }
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
     }
 
@@ -462,14 +462,15 @@ struct iOSSearchView: View {
     @ViewBuilder
     private func resultSection(_ title: String, results: [iOSSearchResult]) -> some View {
         if !results.isEmpty {
-            Section(title) {
-                ForEach(results.prefix(isSearching ? 24 : 8)) { result in
-                    searchResultRow(result)
-                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
+            let visible = Array(results.prefix(isSearching ? 24 : 8))
+            Section {
+                iOSSearchResultGroup(title: title, count: visible.count) { index in
+                    searchResultRow(visible[index])
                 }
             }
+            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
         }
     }
 
@@ -479,10 +480,12 @@ struct iOSSearchView: View {
             NavigationLink(value: route) {
                 iOSSearchResultRow(result: result)
             }
+            .buttonStyle(.iosPressable)
         } else if let destination = result.featureDestination {
             NavigationLink(value: destination) {
                 iOSSearchResultRow(result: result)
             }
+            .buttonStyle(.iosPressable)
         } else {
             Button {
                 if let task = result.task {
@@ -495,7 +498,7 @@ struct iOSSearchView: View {
             } label: {
                 iOSSearchResultRow(result: result)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.iosPressable)
         }
     }
 
@@ -529,13 +532,16 @@ struct iOSSearchView: View {
         if !task.scheduledDate.isEmpty {
             parts.append("Do \(DateFormatters.relativeDate(from: task.scheduledDate))")
         }
-        if !task.dueDate.isEmpty {
-            parts.append("Due \(CadenceTaskPresentationSupport.dueDateLabel(for: task))")
-        }
         if task.estimatedMinutes > 0 {
             parts.append(CadenceTaskPresentationSupport.estimateLabel(for: task))
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// Carried beside `detail` rather than inside it — see `iOSSearchResult.dueLabel`.
+    private func taskDueLabel(_ task: AppTask) -> String? {
+        guard !task.dueDate.isEmpty else { return nil }
+        return "Due \(CadenceTaskPresentationSupport.dueDateLabel(for: task))"
     }
 
     private func eventSearchFields(for event: EKEvent) -> [String] {

@@ -83,7 +83,7 @@ struct iOSGoalEditorSheet: View {
             // A goal created underneath another one reads as a milestone with a finish line;
             // a fresh top-level goal reads as a long-running direction.
             _icon = State(initialValue: parent == nil ? "sparkles" : "flag.fill")
-            _colorHex = State(initialValue: parent?.colorHex ?? "#4a9eff")
+            _colorHex = State(initialValue: parent?.colorHex ?? Theme.blueHex)
             _kind = State(initialValue: parent == nil ? .ongoing : .completable)
             _status = State(initialValue: .active)
             _contextID = State(initialValue: parent?.context?.id)
@@ -181,16 +181,14 @@ struct iOSGoalEditorSheet: View {
             }
 
             iOSTrackingPickerSection(title: "Kind") {
-                Picker("Kind", selection: $kind) {
-                    ForEach(GoalKind.allCases, id: \.self) { kind in
-                        Label(kind.label, systemImage: kind.systemImage).tag(kind)
-                    }
-                }
-                .pickerStyle(.segmented)
+                iOSSegmentedChoice(
+                    options: GoalKind.allCases.map { ($0, $0.label) },
+                    selection: $kind
+                )
 
                 Text(kind.detail)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.dim)
+                    .foregroundStyle(Theme.subdued)
                     .padding(.top, 8)
             }
 
@@ -204,18 +202,17 @@ struct iOSGoalEditorSheet: View {
 
                 if progressType == .hours {
                     HStack {
-                        Text("Target Hours")
+                        iOSTrackingFieldLabel("Target Hours")
                         Spacer()
                         TextField("Hours", value: $targetHours, format: .number)
                             .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(Theme.text)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .frame(width: 80)
+                            .padding(.horizontal, 12)
+                            .frame(width: 90, height: 44)
                             .background(Theme.surface.opacity(0.55))
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                     }
                     .padding(.top, 8)
                 }
@@ -313,7 +310,7 @@ struct iOSHabitEditorSheet: View {
         case .new(let goal):
             _title = State(initialValue: "")
             _icon = State(initialValue: "star.fill")
-            _colorHex = State(initialValue: goal?.colorHex ?? "#4a9eff")
+            _colorHex = State(initialValue: goal?.colorHex ?? Theme.blueHex)
             _frequencyType = State(initialValue: .daily)
             _selectedDays = State(initialValue: [])
             _timesPerWeek = State(initialValue: 3)
@@ -417,10 +414,13 @@ struct iOSHabitEditorSheet: View {
             }
 
             iOSTrackingPickerSection(title: "Reminder") {
-                Toggle("Remind me daily", isOn: $hasReminder)
+                Toggle(isOn: $hasReminder) {
+                    iOSTrackingFieldLabel("Remind me daily")
+                }
+                .tint(Theme.blue)
                 if hasReminder {
                     HStack {
-                        Text("Reminder time")
+                        iOSTrackingFieldLabel("Reminder time")
                         Spacer()
                         iOSChoiceValueButton(title: TimeFormatters.timeString(from: reminderMinuteOfDay), color: Theme.text) {
                             showReminderTimePicker = true

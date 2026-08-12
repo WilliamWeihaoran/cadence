@@ -16,19 +16,6 @@ enum CadenceCoreNoteTab: String, CaseIterable, Identifiable {
         }
     }
 
-    var subtitle: String {
-        switch self {
-        case .today:
-            guard let today = DateFormatters.date(from: DateFormatters.todayKey()) else {
-                return "Today"
-            }
-            return DateFormatters.longDate.string(from: today)
-        case .week:
-            return DateFormatters.weekLabel(from: DateFormatters.currentWeekKey())
-        case .notepad:
-            return "Permanent notes"
-        }
-    }
 
     var noteKind: NoteKind {
         switch self {

@@ -22,9 +22,11 @@ struct iOSContextEditorSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Context.order) private var contexts: [Context]
     @State private var name = ""
-    @State private var icon = "square.stack.fill"
-    @State private var colorHex = "#4a9eff"
+    @State private var icon = Self.defaultIcon
+    @State private var colorHex = Theme.blueHex
     @State private var hasLoaded = false
+
+    private static let defaultIcon = "square.stack.fill"
 
     private var isEditing: Bool {
         if case .edit = mode { return true }
@@ -37,25 +39,48 @@ struct iOSContextEditorSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Context") {
-                    TextField("Name", text: $name)
-                    TextField("SF Symbol", text: $icon)
-                        .textInputAutocapitalization(.never)
-                    TextField("Color hex", text: $colorHex)
-                        .textInputAutocapitalization(.never)
-                }
+            // The grouped `Form` this replaced brought UIKit's own row chrome, insets, and
+            // separator colours into a surface that sits inside Cadence's settings; the
+            // card + field vocabulary is the same one every other settings section uses.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    iOSSettingsCard {
+                        VStack(alignment: .leading, spacing: 16) {
+                            iOSSettingsField(title: "Name") {
+                                TextField("Context name", text: $name)
+                            }
 
-                Section {
-                    iOSSettingsContextPreview(
-                        name: trimmedName.isEmpty ? "Context" : trimmedName,
-                        icon: normalizedIcon,
-                        colorHex: normalizedColor
-                    )
+                            VStack(alignment: .leading, spacing: 7) {
+                                SectionEyebrowLabel(text: "Color")
+                                iOSSettingsColorSwatchRow(
+                                    selectedHex: $colorHex,
+                                    options: Self.colorOptions
+                                )
+                            }
+
+                            iOSSettingsField(title: "Icon") {
+                                TextField("SF Symbol name", text: $icon)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                            }
+                        }
+                    }
+
+                    CadenceSettingsSectionLabel(text: "Preview")
+                    iOSSettingsCard {
+                        iOSSettingsContextPreview(
+                            name: trimmedName.isEmpty ? "Context" : trimmedName,
+                            icon: normalizedIcon,
+                            colorHex: normalizedColor
+                        )
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
             }
-            .scrollContentBackground(.hidden)
-            .background(Theme.bg)
+            .scrollIndicators(.hidden)
+            .background(Theme.bg.ignoresSafeArea())
             .navigationTitle(isEditing ? "Edit Context" : "New Context")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -63,18 +88,27 @@ struct iOSContextEditorSheet: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .tint(Theme.muted)
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         save()
                     }
+                    .tint(Theme.blue)
                     .disabled(trimmedName.isEmpty)
                 }
             }
             .onAppear(perform: load)
         }
         .preferredColorScheme(.dark)
+    }
+
+    /// The accent leads, then one lap of the tag palette. Contexts and tags are both
+    /// user-coloured labels, so they draw from the same strip rather than from a second
+    /// list that would drift away from it.
+    private static var colorOptions: [String] {
+        [Theme.blueHex] + TagSupport.colorOptions
     }
 
     private func load() {
@@ -84,8 +118,8 @@ struct iOSContextEditorSheet: View {
         switch mode {
         case .new:
             name = ""
-            icon = "square.stack.fill"
-            colorHex = "#4a9eff"
+            icon = Self.defaultIcon
+            colorHex = Theme.blueHex
         case .edit(let context):
             name = context.name
             icon = context.icon
@@ -111,13 +145,13 @@ struct iOSContextEditorSheet: View {
 
     private var normalizedIcon: String {
         let trimmed = icon.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "square.stack.fill" : trimmed
+        return trimmed.isEmpty ? Self.defaultIcon : trimmed
     }
 
     private var normalizedColor: String {
         let trimmed = colorHex.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("#"), trimmed.count == 7 else {
-            return "#4a9eff"
+            return Theme.blueHex
         }
         return trimmed
     }
@@ -131,11 +165,23 @@ struct iOSSettingsContextRow: View {
     let context: Context
 
     var body: some View {
-        iOSSettingsContextPreview(
-            name: context.name.isEmpty ? "Untitled Context" : context.name,
-            icon: context.icon,
-            colorHex: context.colorHex
-        )
+        HStack(spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+            iOSSettingsContextIcon(icon: context.icon, colorHex: context.colorHex)
+
+            Text(context.name.isEmpty ? "Untitled Context" : context.name)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+        }
+        .padding(.vertical, 10)
+        .frame(minHeight: iOSSettingsMetrics.minimumTapTarget)
+        .contentShape(Rectangle())
     }
 }
 
@@ -144,41 +190,49 @@ struct iOSSettingsArchivedContextRow: View {
     let restore: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: iOSSettingsMetrics.glyphLabelSpacing) {
             iOSSettingsContextIcon(icon: context.icon, colorHex: context.colorHex, opacity: 0.42)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(context.name.isEmpty ? "Untitled Context" : context.name)
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
                 Text("Archived")
-                    .font(.caption)
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.amber)
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            Button("Restore", action: restore)
-                .font(.caption.weight(.semibold))
+            iOSActionButton(
+                title: "Restore",
+                role: .secondary,
+                size: .compact,
+                action: restore
+            )
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 6)
     }
 }
 
-private struct iOSSettingsContextPreview: View {
+struct iOSSettingsContextPreview: View {
     let name: String
     let icon: String
     let colorHex: String
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: iOSSettingsMetrics.glyphLabelSpacing) {
             iOSSettingsContextIcon(icon: icon, colorHex: colorHex)
 
             Text(name)
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Theme.text)
+                .lineLimit(1)
 
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 4)
     }
 }
 
@@ -191,11 +245,11 @@ private struct iOSSettingsContextIcon: View {
         let tint = Color(hex: colorHex)
 
         Image(systemName: icon)
-            .font(.system(size: 16, weight: .semibold))
+            .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(tint.opacity(opacity))
-            .frame(width: 32, height: 32)
-            .background(tint.opacity(0.12 * opacity))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .frame(width: iOSSettingsMetrics.glyphSlot, height: iOSSettingsMetrics.glyphSlot)
+            .background(tint.opacity(0.14 * opacity))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 }
 #endif

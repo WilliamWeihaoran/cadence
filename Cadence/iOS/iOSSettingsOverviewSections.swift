@@ -86,20 +86,20 @@ struct iOSSyncSettingsSection: View {
             iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 12) {
-                        Image(systemName: presentation.icon)
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(presentation.color)
-                            .frame(width: 34, height: 34)
-                            .background(presentation.color.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        iOSIconTile(
+                            systemImage: presentation.icon,
+                            color: presentation.color,
+                            size: 34,
+                            iconSize: 17
+                        )
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(presentation.title)
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
                             Text(presentation.subtitle)
                                 .font(.system(size: 12))
-                                .foregroundStyle(Theme.dim)
+                                .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
@@ -112,13 +112,14 @@ struct iOSSyncSettingsSection: View {
                     }
 
                     HStack {
-                        Button(action: refreshAccountStatus) {
-                            Label("Check iCloud Status", systemImage: "arrow.clockwise")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.blue)
-                        .disabled(isCheckingAccount)
+                        iOSActionButton(
+                            title: "Check iCloud Status",
+                            systemImage: "arrow.clockwise",
+                            role: .primary,
+                            size: .compact,
+                            isDisabled: isCheckingAccount,
+                            action: refreshAccountStatus
+                        )
 
                         Spacer()
 
@@ -163,34 +164,35 @@ struct iOSLocalDataSettingsSection: View {
                     }
 
                     #if DEBUG
-                    Divider().background(Theme.borderSubtle)
+                    iOSRowDivider()
 
                     VStack(alignment: .leading, spacing: 9) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "wand.and.stars")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Theme.amber)
-                                .frame(width: 30, height: 30)
-                                .background(Theme.amber.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        HStack(spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+                            iOSIconTile(
+                                systemImage: "wand.and.stars",
+                                color: Theme.amber,
+                                size: iOSSettingsMetrics.glyphSlot,
+                                iconSize: 14
+                            )
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Simulator Samples")
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.system(size: 14, weight: .semibold))
                                     .foregroundStyle(Theme.text)
                                 Text("Adds Today, Inbox, and timed tasks for UI review.")
                                     .font(.system(size: 12))
-                                    .foregroundStyle(Theme.dim)
+                                    .foregroundStyle(Theme.subdued)
                             }
 
                             Spacer(minLength: 0)
 
-                            Button(action: seedSampleData) {
-                                Label("Seed Tasks", systemImage: "plus")
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Theme.blue)
+                            iOSActionButton(
+                                title: "Seed Tasks",
+                                systemImage: "plus",
+                                role: .primary,
+                                size: .compact,
+                                action: seedSampleData
+                            )
                         }
 
                         if let sampleDataStatus {
@@ -230,7 +232,7 @@ struct iOSNavigationSettingsSection: View {
                         )
                     }
 
-                    Divider().background(Theme.borderSubtle)
+                    iOSRowDivider()
 
                     iOSSettingsControlRow(
                         title: "Calendar View",
@@ -244,7 +246,7 @@ struct iOSNavigationSettingsSection: View {
                         )
                     }
 
-                    Divider().background(Theme.borderSubtle)
+                    iOSRowDivider()
 
                     iOSSettingsControlRow(
                         title: "Calendar Style",
@@ -258,7 +260,7 @@ struct iOSNavigationSettingsSection: View {
                         )
                     }
 
-                    Divider().background(Theme.borderSubtle)
+                    iOSRowDivider()
 
                     iOSSettingsControlRow(
                         title: "Timeline Density",
@@ -272,7 +274,7 @@ struct iOSNavigationSettingsSection: View {
                         )
                     }
 
-                    Divider().background(Theme.borderSubtle)
+                    iOSRowDivider()
 
                     iOSSettingsControlRow(
                         title: "Notes Editor",
@@ -301,21 +303,21 @@ private struct iOSSettingsControlRow<Control: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 11) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(color)
-                    .frame(width: 30, height: 30)
-                    .background(color.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+                iOSIconTile(
+                    systemImage: icon,
+                    color: color,
+                    size: iOSSettingsMetrics.glyphSlot,
+                    iconSize: 14
+                )
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Theme.text)
                     Text(subtitle)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(Theme.subdued)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -363,11 +365,7 @@ struct iOSMobileCoverageSettingsSection: View {
                                     Image(systemName: status.systemImage)
                                         .font(.system(size: 11, weight: .semibold))
                                         .foregroundStyle(status.color)
-                                    Text(status.title)
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(Theme.dim)
-                                        .textCase(.uppercase)
-                                        .tracking(0.7)
+                                    SectionEyebrowLabel(text: status.title)
                                     Spacer(minLength: 0)
                                 }
                                 .padding(.bottom, 7)
@@ -376,16 +374,12 @@ struct iOSMobileCoverageSettingsSection: View {
                                     ForEach(items) { capability in
                                         iOSSettingsCapabilityRow(capability: capability)
                                         if capability.id != items.last?.id {
-                                            Divider().background(Theme.borderSubtle)
+                                            iOSRowDivider()
                                         }
                                     }
                                 }
                                 .background(Theme.surfaceElevated.opacity(0.34))
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .strokeBorder(Theme.borderSubtle.opacity(0.42), lineWidth: 1)
-                                }
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                             }
                         }
                     }
@@ -406,9 +400,9 @@ struct iOSAboutSettingsSection: View {
             iOSSettingsCard {
                 VStack(spacing: 0) {
                     iOSSettingsInfoRow(title: "Version", value: appVersion)
-                    Divider().background(Theme.borderSubtle)
+                    iOSRowDivider()
                     iOSSettingsInfoRow(title: "Build", value: buildNumber)
-                    Divider().background(Theme.borderSubtle)
+                    iOSRowDivider()
                     iOSSettingsInfoRow(title: "Bundle ID", value: bundleID)
                 }
             }
@@ -416,13 +410,13 @@ struct iOSAboutSettingsSection: View {
             CadenceSettingsSectionLabel(text: "Review Links")
             iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 13) {
-                    HStack(alignment: .top, spacing: 11) {
-                        Image(systemName: "hand.raised.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.blue)
-                            .frame(width: 32, height: 32)
-                            .background(Theme.blue.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+                        iOSIconTile(
+                            systemImage: "hand.raised.fill",
+                            color: Theme.blue,
+                            size: iOSSettingsMetrics.glyphSlot,
+                            iconSize: 15
+                        )
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Privacy and Support")
@@ -430,7 +424,7 @@ struct iOSAboutSettingsSection: View {
                                 .foregroundStyle(Theme.text)
                             Text("Use these during TestFlight and App Review checks.")
                                 .font(.system(size: 12))
-                                .foregroundStyle(Theme.dim)
+                                .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
@@ -477,33 +471,32 @@ private struct iOSReviewLinkButton: View {
         if let url {
             Link(destination: url) {
                 Label(title, systemImage: icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.text)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 34)
-                    .padding(.horizontal, 10)
-                    .background(Theme.blue.opacity(0.16))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .strokeBorder(Theme.blue.opacity(0.24), lineWidth: 1)
-                    }
+                    .frame(minHeight: 36)
+                    .padding(.horizontal, 12)
+                    // One layer: the tinted fill alone, same as `.tinted` action buttons.
+                    .background(Theme.blue.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                    .frame(minHeight: iOSSettingsMetrics.minimumTapTarget)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.iosPressable)
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 Label(title, systemImage: icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                 Text(missingMessage)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.amber)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.surfaceElevated.opacity(0.42))
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         }
     }
 }

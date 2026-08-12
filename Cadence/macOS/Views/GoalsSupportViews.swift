@@ -357,26 +357,6 @@ struct GoalProgressOrb: View {
     }
 }
 
-struct GoalProgressBar: View {
-    let progress: Double
-    let color: Color
-    var height: CGFloat = 6
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Theme.borderSubtle.opacity(0.75))
-                if progress > 0 {
-                    Capsule()
-                        .fill(color)
-                        .frame(width: max(height, geo.size.width * progress))
-                }
-            }
-        }
-        .frame(height: height)
-    }
-}
-
 struct GoalSignalTile: View {
     let title: String
     let value: String
@@ -564,23 +544,10 @@ struct GoalStatusBadge: View {
     let status: GoalStatus
 
     var body: some View {
-        CommitmentMetaChip(label: label, color: color)
-    }
-
-    private var label: String {
-        switch status {
-        case .active: return "ACTIVE"
-        case .paused: return "PAUSED"
-        case .done: return "DONE"
-        }
-    }
-
-    private var color: Color {
-        switch status {
-        case .active: return Theme.blue
-        case .paused: return Theme.amber
-        case .done: return Theme.green
-        }
+        CommitmentMetaChip(
+            label: GoalStatusPalette.badgeLabel(for: status),
+            color: GoalStatusPalette.color(for: status)
+        )
     }
 }
 

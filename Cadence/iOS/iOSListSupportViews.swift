@@ -2,12 +2,94 @@
 import SwiftData
 import SwiftUI
 
-/// Page-level header for the Lists page. Mirrors `iOSPanelHeader`'s sizing/spacing
-/// (so it fits comfortably in the iPad split pane) while adding the icon-square
-/// treatment used by other top-level pages (Today/Inbox/Focus), so the Lists page
-/// reads as a first-class page rather than a plain nav-bar title. Used identically
-/// by both the compact (iPhone) and regular (iPad) Lists layouts so the two look
-/// like the same page rather than a shrunk/expanded variant of each other.
+/// A 1pt palette hairline.
+///
+/// `Divider().background(Theme.borderSubtle)` — which every surface in this file used to draw —
+/// does **not** recolour the divider on iOS: it paints the palette colour *behind* a translucent
+/// UIKit separator, so what actually shipped was a system grey line with a Theme colour hidden
+/// underneath. This is the same `Rectangle().fill(Theme.borderSubtle).frame(height: 1)` macOS's
+/// `SidebarSectionDivider` draws.
+struct iOSListHairline: View {
+    var body: some View {
+        Rectangle()
+            .fill(Theme.borderSubtle)
+            .frame(maxWidth: .infinity)
+            .frame(height: 1)
+    }
+}
+
+/// Section eyebrow for the Lists page's `List`. `Section("Areas")` renders UIKit's own header —
+/// system grey small-caps sitting on a system plate — which is a second, non-palette surface on
+/// top of the page background. This is the shared `SectionEyebrowLabel` instead.
+struct iOSListSectionHeader: View {
+    let title: String
+
+    var body: some View {
+        SectionEyebrowLabel(text: title)
+            .padding(.top, 14)
+            .padding(.bottom, 6)
+            .textCase(nil)
+            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+}
+
+extension View {
+    /// One row treatment for the Lists page: no plate of its own so the page background shows
+    /// through, a palette separator instead of the UIKit one, and insets that line every row's
+    /// icon tile up with the page header's.
+    func iOSListRowChrome() -> some View {
+        listRowBackground(Color.clear)
+            .listRowSeparatorTint(Theme.borderSubtle)
+            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+    }
+}
+
+/// Trailing count on a list row, in `SidebarNavCountBadge`'s vocabulary: neutral capsule, neutral
+/// digits, fixed size so three digits are never squeezed by a long list name. It is deliberately
+/// *not* tinted — the row's identity colour is the icon badge, and a second coloured element per
+/// row turns a page of lists into a page of colours.
+struct iOSListCountBadge: View {
+    let count: Int
+
+    var body: some View {
+        Text(count > 999 ? "999+" : "\(count)")
+            .font(.system(size: 11, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(Theme.muted)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 7)
+            .frame(minWidth: 24, minHeight: 20)
+            .background(Capsule(style: .continuous).fill(Theme.borderSubtle))
+            .accessibilityHidden(true)
+    }
+}
+
+/// The identity tile a list row leads with: the list's own `colorHex` on the glyph over a wash of
+/// itself. Delegates to `iOSIconTile` — the shared iOS counterpart of `ListEditorIdentityTile` —
+/// rather than re-spelling a rounded square, so a list looks the same wherever it is listed.
+struct iOSListIconBadge: View {
+    let icon: String
+    let colorHex: String
+    var size: CGFloat = 34
+    var isMuted = false
+
+    var body: some View {
+        iOSIconTile(
+            systemImage: icon,
+            color: Color(hex: colorHex).opacity(isMuted ? 0.55 : 1),
+            size: size,
+            iconSize: size * 0.44,
+            fillOpacity: isMuted ? 0.09 : 0.14
+        )
+    }
+}
+
+/// Page-level header for the Lists page. Used identically by both the compact (iPhone) and
+/// regular (iPad) Lists layouts so the two look like the same page rather than a shrunk/expanded
+/// variant of each other.
 struct iOSListsPageHeader: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let count: Int
@@ -18,23 +100,10 @@ struct iOSListsPageHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: isRegularWidth ? 12 : 10) {
-            Image(systemName: "folder.fill")
-                .font(.system(size: isRegularWidth ? 16 : 15, weight: .semibold))
-                .foregroundStyle(Theme.blue)
-                .frame(width: isRegularWidth ? 36 : 32, height: isRegularWidth ? 36 : 32)
-                .background(Theme.blue.opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 9, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: isRegularWidth ? 10 : 9, style: .continuous)
-                        .strokeBorder(Theme.blue.opacity(0.20), lineWidth: 1)
-                }
+            iOSListIconBadge(icon: "folder.fill", colorHex: Theme.blueHex, size: isRegularWidth ? 36 : 32)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Workspace")
-                    .font(.system(size: isRegularWidth ? 10 : 9, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .textCase(.uppercase)
-                    .kerning(0.8)
+                SectionEyebrowLabel(text: "Workspace")
                 Text("Lists")
                     .font(.system(size: isRegularWidth ? 21 : 17, weight: .bold))
                     .foregroundStyle(Theme.text)
@@ -44,13 +113,7 @@ struct iOSListsPageHeader: View {
             Spacer(minLength: 4)
 
             if count > 0 {
-                Text("\(count)")
-                    .font(.system(size: isRegularWidth ? 13 : 12, weight: .bold))
-                    .foregroundStyle(Theme.blue)
-                    .padding(.horizontal, isRegularWidth ? 10 : 8)
-                    .padding(.vertical, isRegularWidth ? 6 : 4)
-                    .background(Theme.blue.opacity(0.11))
-                    .clipShape(Capsule())
+                iOSListCountBadge(count: count)
             }
         }
         .padding(.horizontal, isRegularWidth ? 20 : 16)
@@ -63,54 +126,74 @@ struct iOSListsPageHeader: View {
 /// compact and regular layouts so list creation doesn't rely on a native nav-bar
 /// toolbar menu (which disappears once the plain nav bar is hidden in favor of
 /// `iOSListsPageHeader`).
+///
+/// These were two full-width `.borderedProminent` slabs, one blue and one green — the loudest
+/// thing on a page whose subject is the user's own list colours. They are the same neutral chip
+/// the task view-options bar uses now; the type still carries its colour, on the glyph only.
 struct iOSListCreateButtonsRow: View {
     @Binding var editorMode: iOSListEditorMode?
 
     var body: some View {
         HStack(spacing: 8) {
-            Button {
+            iOSActionButton(
+                title: "New Area",
+                systemImage: "folder.badge.plus",
+                role: .secondary,
+                size: .compact,
+                tint: Theme.blue,
+                fullWidth: true
+            ) {
                 editorMode = .newArea
-            } label: {
-                Label("Area", systemImage: "folder.badge.plus")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Theme.blue)
 
-            Button {
+            iOSActionButton(
+                title: "New Project",
+                systemImage: "checklist",
+                role: .secondary,
+                size: .compact,
+                tint: Theme.green,
+                fullWidth: true
+            ) {
                 editorMode = .newProject
-            } label: {
-                Label("Project", systemImage: "checklist")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Theme.green)
         }
     }
 }
 
+/// The list-detail tab bar, in the vocabulary `CadenceQuietTabButton` established on macOS: text
+/// only, exactly one neutral fill layer at one radius, state carried by fill depth and label
+/// weight instead of an accent wash. Sized to a 44pt touch target.
+///
+/// `.plain` rather than `.cadencePlain` on purpose — that style paints its own fill and stroke,
+/// which would stack a second selection layer on top of this one.
 struct iOSListDetailPagePicker: View {
     @Binding var page: iOSListDetailPage
 
     var body: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 8) {
+            HStack(spacing: 2) {
                 ForEach(iOSListDetailPage.allCases) { item in
+                    let isSelected = page == item
                     Button {
                         page = item
                     } label: {
-                        Label(item.rawValue, systemImage: item.systemImage)
-                            .font(.system(size: 12, weight: .semibold))
+                        Text(item.rawValue)
+                            .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                            .foregroundStyle(isSelected ? Theme.text : Theme.dim)
                             .lineLimit(1)
-                            .foregroundStyle(page == item ? Theme.text : Theme.dim)
                             .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(page == item ? Theme.blue.opacity(0.18) : Theme.surface)
-                            .clipShape(Capsule())
+                            .frame(minHeight: 44)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                                    .fill(isSelected ? Theme.surfaceHighlight : Color.clear)
+                            )
+                            .contentShape(
+                                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                            )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(item.rawValue)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
             .padding(.horizontal, 1)
@@ -128,31 +211,26 @@ struct iOSListPickerRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Color(hex: colorHex))
-                .frame(width: 28)
+            iOSListIconBadge(icon: icon, colorHex: colorHex)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title.isEmpty ? "Untitled" : title)
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.text)
+                    .lineLimit(1)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(Theme.dim)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.subdued)
+                        .lineLimit(1)
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            Text("\(count)")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(Theme.dim)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Theme.surfaceElevated)
-                .clipShape(Capsule())
+            iOSListCountBadge(count: count)
         }
+        .frame(minHeight: 44)
     }
 }
 
@@ -165,27 +243,31 @@ struct iOSArchivedListRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color(hex: colorHex).opacity(0.58))
-                .frame(width: 28)
+            iOSListIconBadge(icon: icon, colorHex: colorHex, isMuted: true)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title.isEmpty ? "Untitled" : title)
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            Button("Restore", action: restore)
-                .font(.caption.weight(.semibold))
+            iOSActionButton(
+                title: "Restore",
+                role: .secondary,
+                size: .compact,
+                action: restore
+            )
         }
-        .padding(.vertical, 3)
+        .frame(minHeight: 44)
     }
 }
 
@@ -207,8 +289,6 @@ struct iOSListNotesPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: "List Notes", title: "Notes")
-
             if let note {
                 HStack {
                     iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
@@ -220,10 +300,10 @@ struct iOSListNotesPanel: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 12)
-            }
+                .padding(.vertical, 12)
 
-            Divider().background(Theme.borderSubtle)
+                iOSListHairline()
+            }
 
             if let note {
                 iOSMarkdownEditingSurface(
@@ -278,14 +358,14 @@ struct iOSListNotesPanel: View {
     }
 }
 
+/// No panel header on any of the list-detail tabs. The tab bar sits directly above them and
+/// already names the tab; a second "COMPLETED / Completed" block 40pt underneath it was the page
+/// describing the page you are already on.
 struct iOSListCompletedPanel: View {
     let tasks: [AppTask]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: "Archive", title: "Completed", count: tasks.count)
-            Divider().background(Theme.borderSubtle)
-
+        Group {
             if tasks.isEmpty {
                 iOSEmptyPanel(
                     systemImage: "checkmark.circle",
@@ -300,10 +380,10 @@ struct iOSListCompletedPanel: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .background(Theme.surface)
             }
         }
-        .background(Theme.surface)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.bg)
     }
 }
 
@@ -317,10 +397,7 @@ struct iOSListPlanningPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: "Dates", title: "Planning", count: tasks.count)
-            Divider().background(Theme.borderSubtle)
-
+        Group {
             if tasks.isEmpty {
                 iOSEmptyPanel(
                     systemImage: "calendar",
@@ -335,10 +412,10 @@ struct iOSListPlanningPanel: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .background(Theme.surface)
             }
         }
-        .background(Theme.surface)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.bg)
     }
 
     @ViewBuilder
@@ -353,22 +430,28 @@ struct iOSListPlanningPanel: View {
     }
 }
 
+/// The list's kanban board, in the vocabulary the three macOS boards share
+/// (`BoardColumnHeader` / `KanbanColumnScroll` / `KanbanCard`): a containerless column — no fill,
+/// no stroke — opened by a section-coloured dot, an uppercase name, a count and a closing
+/// hairline, with flat `Theme.surface` cards under it.
+///
+/// Each column used to be a plate tinted with the **list's** colour, so a six-column board was
+/// six identical washes and the per-column colour the list editor stores had nowhere to show. The
+/// dot is where that colour lives now, exactly as on macOS.
 struct iOSListKanbanPanel: View {
-    let title: String
     let tasks: [AppTask]
     let sectionNames: [String]
+    /// Colour/completion for the named columns. Names that only exist on a task (a section a list
+    /// no longer configures) have no config and fall back to the list's own colour.
+    let sectionConfigs: [TaskSectionConfig]
     let accent: Color
 
-    private var columns: [(name: String, tasks: [AppTask])] {
+    private var columns: [CadenceTaskDisplayGroup] {
         CadenceTaskQuerySupport.sectionGroups(from: tasks, sectionNames: sectionNames)
-            .map { ($0.title, $0.tasks) }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: title, title: "Kanban", count: tasks.count)
-            Divider().background(Theme.borderSubtle)
-
+        Group {
             if columns.isEmpty {
                 iOSEmptyPanel(
                     systemImage: "square.grid.3x2",
@@ -377,51 +460,64 @@ struct iOSListKanbanPanel: View {
                 )
             } else {
                 ScrollView(.horizontal) {
-                    HStack(alignment: .top, spacing: 12) {
-                        ForEach(columns, id: \.name) { column in
+                    HStack(alignment: .top, spacing: 14) {
+                        ForEach(columns) { column in
                             iOSListKanbanColumn(
-                                title: column.name,
-                                tasks: column.tasks,
-                                accent: accent
+                                title: column.title,
+                                dotColor: dotColor(for: column.title),
+                                tasks: column.tasks
                             )
                         }
                     }
-                    .padding(14)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 16)
+                    .frame(maxHeight: .infinity, alignment: .top)
                 }
-                .background(Theme.bg)
+                .scrollIndicators(.hidden)
             }
         }
-        .background(Theme.surface)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.bg)
+    }
+
+    private func dotColor(for name: String) -> Color {
+        guard let config = sectionConfigs.first(where: {
+            $0.name.caseInsensitiveCompare(name) == .orderedSame
+        }) else {
+            return accent
+        }
+        return config.isCompleted ? Theme.green : Color(hex: config.colorHex)
     }
 }
 
+private let iOSKanbanColumnWidth: CGFloat = 272
+
 private struct iOSListKanbanColumn: View {
     let title: String
+    let dotColor: Color
     let tasks: [AppTask]
-    let accent: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("\(title.uppercased()) · \(tasks.count)")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(accent.opacity(0.8))
-                .kerning(0.6)
-                .lineLimit(1)
+        VStack(alignment: .leading, spacing: 0) {
+            iOSBoardColumnHeader(dotColor: dotColor, title: title, count: tasks.count)
 
-            VStack(spacing: 6) {
-                ForEach(tasks) { task in
-                    iOSListKanbanCard(task: task)
+            // The card stack scrolls inside the column, as `KanbanColumnScroll` does on macOS. The
+            // board only scrolled horizontally before, so anything past the bottom of a tall column
+            // was unreachable.
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(tasks) { task in
+                        iOSListKanbanCard(task: task)
+                    }
                 }
+                .padding(.horizontal, 4)
+                .padding(.top, 10)
+                .padding(.bottom, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .scrollIndicators(.hidden)
         }
-        .padding(8)
-        .frame(width: 260, alignment: .topLeading)
-        .background(accent.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(accent.opacity(0.18), lineWidth: 1)
-        }
+        .frame(width: iOSKanbanColumnWidth, alignment: .topLeading)
     }
 }
 
@@ -430,46 +526,105 @@ private struct iOSListKanbanCard: View {
     @Environment(\.modelContext) private var modelContext
     @State private var showDetail = false
 
-    private var rowTint: Color {
-        switch task.priority {
-        case .high: return Theme.red
-        case .medium: return Theme.amber
-        case .low: return Theme.blue
-        case .none: return Theme.dim
-        }
+    private var cardShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
     }
 
     var body: some View {
-        Button {
-            showDetail = true
-        } label: {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
-                iOSTaskCompletionCircle(isDone: task.isDone, tint: rowTint)
-                    .frame(width: 13, height: 13)
-                    .padding(.top, 2)
-                    .onTapGesture {
-                        CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
-                    }
+                completionButton
 
                 Text(task.title.isEmpty ? "Untitled" : task.title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13.5, weight: .semibold))
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                     .strikethrough(task.isDone, color: Theme.dim)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(9)
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(Theme.borderSubtle, lineWidth: 1)
+
+            if hasMetadata {
+                HStack(spacing: 10) {
+                    metadata
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 28)
             }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(cardShape.fill(Theme.surface))
+        .overlay { cardShape.strokeBorder(Theme.borderSubtle, lineWidth: 1) }
+        .contentShape(cardShape)
+        .onTapGesture {
+            showDetail = true
+        }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Opens task details")
         .sheet(isPresented: $showDetail) {
             iOSTaskDetailSheet(task: task)
         }
+    }
+
+    /// Same construction `iOSTaskRow` documents: a 44pt touch target inside a glyph-sized layout
+    /// frame, so a compliant target does not push the title 20pt into the card.
+    private var completionButton: some View {
+        Button {
+            CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
+        } label: {
+            iOSTaskCompletionCircle(
+                isDone: task.isDone,
+                tint: Theme.priorityColor(task.priority),
+                diameter: 15
+            )
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        // `.cadencePlain` is macOS's hover wash: it paints a blue fill and stroke at radius 10
+        // around the 44pt label, which then overflows this 20pt layout slot and spills across the
+        // card's leading edge and title. `.iosPressable` is the touch equivalent, and is what the
+        // rest of the iOS surface uses.
+        .buttonStyle(.iosPressable)
+        .frame(width: 20, height: 20)
+        .padding(.top, 1)
+        .accessibilityLabel(task.isDone ? "Mark task todo" : "Complete task")
+    }
+
+    private var hasMetadata: Bool {
+        !task.scheduledDate.isEmpty || dueUrgency != nil
+    }
+
+    /// Tinted icon carries which field this is, neutral text carries its state, and the text only
+    /// goes red when the date is genuinely late — `KanbanCard`'s rule, shared with `iOSTaskRow`.
+    @ViewBuilder
+    private var metadata: some View {
+        if !task.scheduledDate.isEmpty {
+            iOSTaskMetaLabel(
+                systemImage: task.scheduledStartMin >= 0 ? "clock.fill" : "sun.max.fill",
+                text: CadenceTaskPresentationSupport.scheduledDateLabel(for: task),
+                tint: Theme.amber,
+                textColor: isOverdo ? Theme.red : Theme.dim
+            )
+        }
+
+        if let dueUrgency {
+            iOSTaskMetaLabel(
+                systemImage: "flag.fill",
+                text: CadenceTaskPresentationSupport.dueDateLabel(for: task),
+                tint: dueUrgency == .overdue ? Theme.red : Theme.dim,
+                textColor: dueUrgency == .overdue ? Theme.red : Theme.dim
+            )
+        }
+    }
+
+    private var dueUrgency: CadenceDueUrgency? {
+        CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)
+    }
+
+    private var isOverdo: Bool {
+        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
+        return (DateFormatters.dayOffset(from: task.scheduledDate) ?? 0) < 0
     }
 }
 
@@ -495,24 +650,22 @@ struct iOSListLinksPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: "Reference", title: "Links", count: links.count)
-
             HStack {
-                Button {
+                iOSActionButton(
+                    title: isAdding ? "Cancel" : "Add Link",
+                    systemImage: isAdding ? "xmark" : "plus",
+                    role: isAdding ? .ghost : .secondary,
+                    size: .compact
+                ) {
                     withAnimation(.easeInOut(duration: 0.18)) {
                         isAdding.toggle()
                     }
-                } label: {
-                    Label(isAdding ? "Cancel" : "Add Link", systemImage: isAdding ? "xmark" : "plus")
-                        .font(.system(size: 13, weight: .semibold))
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(isAdding ? Theme.dim : Theme.blue)
 
                 Spacer()
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 12)
+            .padding(.vertical, 12)
 
             if isAdding {
                 iOSAddLinkForm(
@@ -521,10 +674,10 @@ struct iOSListLinksPanel: View {
                     save: addLink
                 )
                 .padding(.horizontal, 16)
-                .padding(.bottom, 12)
+                .padding(.bottom, 14)
             }
 
-            Divider().background(Theme.borderSubtle)
+            iOSListHairline()
 
             if links.isEmpty {
                 iOSEmptyPanel(
@@ -541,6 +694,8 @@ struct iOSListLinksPanel: View {
                             iOSLinkRow(link: link)
                         }
                         .buttonStyle(.plain)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparatorTint(Theme.borderSubtle)
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
                                 delete(link)
@@ -552,10 +707,10 @@ struct iOSListLinksPanel: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .background(Theme.surface)
             }
         }
-        .background(Theme.surface)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Theme.bg)
     }
 
     private func addLink() {
@@ -589,33 +744,56 @@ struct iOSListLinksPanel: View {
     }
 }
 
+/// `.roundedBorder` and `.borderedProminent` are UIKit's own chrome: a grey system field and a
+/// filled tint capsule, neither of which reads from the palette. These are the same fields and
+/// the same primary action every other iOS surface draws.
 private struct iOSAddLinkForm: View {
     @Binding var title: String
     @Binding var url: String
     let save: () -> Void
 
+    private var isSaveDisabled: Bool {
+        url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
         VStack(spacing: 9) {
-            TextField("Title (optional)", text: $title)
+            iOSLinkField(placeholder: "Title (optional)", text: $title)
                 .textInputAutocapitalization(.words)
-                .textFieldStyle(.roundedBorder)
 
-            TextField("URL", text: $url)
+            iOSLinkField(placeholder: "URL", text: $url)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .textFieldStyle(.roundedBorder)
+                .submitLabel(.done)
                 .onSubmit(save)
 
-            Button(action: save) {
-                Label("Save Link", systemImage: "checkmark")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Theme.blue)
-            .disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            iOSActionButton(
+                title: "Save Link",
+                systemImage: "checkmark",
+                role: .primary,
+                size: .compact,
+                fullWidth: true,
+                isDisabled: isSaveDisabled,
+                action: save
+            )
         }
+    }
+}
+
+private struct iOSLinkField: View {
+    let placeholder: String
+    @Binding var text: String
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(Theme.text)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .background(Theme.surfaceElevated.opacity(0.72))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 }
 
@@ -623,23 +801,18 @@ private struct iOSLinkRow: View {
     let link: SavedLink
 
     var body: some View {
-        HStack(spacing: 11) {
-            Image(systemName: "link")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.blue)
-                .frame(width: 32, height: 32)
-                .background(Theme.blue.opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        HStack(spacing: 12) {
+            iOSListIconBadge(icon: "link", colorHex: Theme.blueHex)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(link.title.isEmpty ? link.url : link.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
 
                 Text(link.url)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.dim)
+                    .foregroundStyle(Theme.subdued)
                     .lineLimit(1)
             }
 
@@ -647,9 +820,10 @@ private struct iOSLinkRow: View {
 
             Image(systemName: "arrow.up.right")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Theme.dim.opacity(0.72))
+                .foregroundStyle(Theme.dim)
         }
-        .padding(.vertical, 5)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
     }
 }
 #endif
