@@ -69,9 +69,14 @@ struct HoveredTaskManagerTests {
         manager.clear()
     }
 
-    @Test func endHoveringIgnoresATaskThatIsNoLongerTheHoveredOne() {
+    @Test func endHoveringIgnoresATaskThatIsNoLongerTheHoveredOne() async {
         // Guards against a kanban card whose row was reused/moved calling endHovering
         // for a task that has since been superseded by a different hover.
+        //
+        // `endHovering` mutates nothing synchronously — it only schedules a work item 80ms out —
+        // so the assertion has to be made *past* the debounce window. Asserting immediately (the
+        // old shape) returned before the work item could have run either way, and deleting the
+        // guard under test left the suite green.
         let manager = HoveredTaskManager.shared
         manager.clear()
         let a = task(title: "a")
@@ -79,6 +84,8 @@ struct HoveredTaskManagerTests {
 
         manager.beginHovering(b, source: .kanban)
         manager.endHovering(a) // stale reference to a task that isn't hovered anymore
+
+        try? await Task.sleep(nanoseconds: 160_000_000) // > 0.08s debounce window
 
         #expect(manager.hoveredTask?.id == b.id)
         manager.clear()

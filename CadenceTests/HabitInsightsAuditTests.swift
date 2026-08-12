@@ -34,12 +34,12 @@ struct HabitInsightsAuditTests {
     /// The headline defect: a Mon/Wed/Fri habit kept perfectly reported Current 24d, Best 1d,
     /// because the old `bestStreak` counted consecutive *calendar* days and no two completions
     /// of a Mon/Wed/Fri habit are ever adjacent.
-    @Test func bestStreakUsesDueDaysNotCalendarDaysForScheduledHabits() {
+    @Test func bestStreakUsesDueDaysNotCalendarDaysForScheduledHabits() throws {
         // 2026-04-27 is a Monday. Eight weeks of Mon/Wed/Fri, ending Friday 2026-06-19.
         let habit = makeHabit(frequency: .daysOfWeek, days: [1, 3, 5])
         var keys: [String] = []
         let calendar = Calendar.current
-        var cursor = DateFormatters.date(from: "2026-04-27") ?? Date()
+        var cursor = try #require(DateFormatters.date(from: "2026-04-27"))
         for _ in 0..<8 {
             for offset in [0, 2, 4] {
                 if let day = calendar.date(byAdding: .day, value: offset, to: cursor) {
@@ -50,7 +50,7 @@ struct HabitInsightsAuditTests {
         }
         complete(habit, keys)
 
-        let asOf = DateFormatters.date(from: "2026-06-19") ?? Date()
+        let asOf = try #require(DateFormatters.date(from: "2026-06-19"))
         let current = habit.currentStreak(asOf: asOf)
         let best = habit.bestStreak(asOf: asOf)
 
@@ -61,10 +61,10 @@ struct HabitInsightsAuditTests {
 
     /// The other half of the old implementation's incoherence: a hard 366-day scan window meant
     /// a longer daily streak reported a "best" *below* its own "current".
-    @Test func bestStreakIsNeverLessThanCurrentStreakBeyondAYear() {
+    @Test func bestStreakIsNeverLessThanCurrentStreakBeyondAYear() throws {
         let habit = makeHabit(frequency: .daily)
         let calendar = Calendar.current
-        let end = DateFormatters.date(from: "2026-06-19") ?? Date()
+        let end = try #require(DateFormatters.date(from: "2026-06-19"))
         var keys: [String] = []
         for offset in 0..<500 {
             if let day = calendar.date(byAdding: .day, value: -offset, to: end) {
@@ -82,7 +82,7 @@ struct HabitInsightsAuditTests {
 
     /// A break in the middle must still be found, and the run before it must win when it is longer
     /// than the run since.
-    @Test func bestStreakReportsTheLongestHistoricalRunNotTheMostRecent() {
+    @Test func bestStreakReportsTheLongestHistoricalRunNotTheMostRecent() throws {
         let habit = makeHabit(frequency: .daily)
         complete(habit, [
             "2026-04-01", "2026-04-02", "2026-04-03", "2026-04-04", "2026-04-05",
@@ -90,14 +90,14 @@ struct HabitInsightsAuditTests {
             "2026-04-07", "2026-04-08",
         ])
 
-        let asOf = DateFormatters.date(from: "2026-04-08") ?? Date()
+        let asOf = try #require(DateFormatters.date(from: "2026-04-08"))
         #expect(habit.bestStreak(asOf: asOf) == 5)
         #expect(habit.currentStreak(asOf: asOf) == 2)
     }
 
     /// `.timesPerWeek` streaks are counted in weeks, so "best" has to be too — otherwise the two
     /// tiles report different units under the same pair of labels.
-    @Test func bestStreakCountsWeeksForTimesPerWeekHabits() {
+    @Test func bestStreakCountsWeeksForTimesPerWeekHabits() throws {
         let habit = makeHabit(frequency: .timesPerWeek, targetCount: 3)
         // ISO weeks starting Mon 2026-04-27, 2026-05-04, 2026-05-11 — three satisfied weeks.
         complete(habit, [
@@ -106,7 +106,7 @@ struct HabitInsightsAuditTests {
             "2026-05-11", "2026-05-13", "2026-05-15",
         ])
 
-        let asOf = DateFormatters.date(from: "2026-05-15") ?? Date()
+        let asOf = try #require(DateFormatters.date(from: "2026-05-15"))
         #expect(habit.bestStreak(asOf: asOf) == 3)
         #expect(habit.currentStreak(asOf: asOf) == 3)
     }
@@ -119,10 +119,10 @@ struct HabitInsightsAuditTests {
     /// check-in. Anchoring it at the earliest completion meant one stray backdated or imported row
     /// from years ago pushed all recent history outside the window — an unbroken 100-day streak
     /// reported a "best" of 1, which is worse than the 366-day cap this replaced.
-    @Test func aVeryOldStrayCompletionDoesNotPushRecentHistoryOutOfTheWindow() {
+    @Test func aVeryOldStrayCompletionDoesNotPushRecentHistoryOutOfTheWindow() throws {
         let habit = makeHabit(frequency: .daily)
         let calendar = Calendar.current
-        let today = DateFormatters.date(from: "2026-06-19") ?? Date()
+        let today = try #require(DateFormatters.date(from: "2026-06-19"))
 
         var keys: [String] = []
         for offset in 0..<100 {
@@ -200,6 +200,170 @@ struct HabitInsightsAuditTests {
 
         #expect(habit.bestStreak == 18)
         #expect(habit.bestStreak >= habit.currentStreak)
+    }
+
+    // MARK: - The three rendered habit metrics that had no tests at all
+
+    /// `last30DayCompletionRate` is the "30 days" tile on the macOS habit detail, the same tile on
+    /// iOS, and the number averaged across every habit on the habits page — and nothing asserted
+    /// it. The percentage is over *due* days, not calendar days, which is the whole reason a
+    /// Mon/Wed/Fri habit can read 100%.
+    @Test func thirtyDayRateIsOverDueDaysNotCalendarDays() throws {
+        let calendar = Calendar.current
+        let today = try #require(DateFormatters.date(from: "2026-06-19"))
+
+        // Every due day in the window, kept. A calendar-day denominator would read 43%.
+        let scheduled = makeHabit(frequency: .daysOfWeek, days: [1, 3, 5])
+        var keys: [String] = []
+        for offset in 0..<30 {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
+            if scheduled.isDue(on: day, calendar: calendar) {
+                keys.append(DateFormatters.dateKey(from: day, calendar: calendar))
+            }
+        }
+        complete(scheduled, keys)
+        #expect(keys.count == 13)
+        #expect(scheduled.last30DayCompletionRate(asOf: today, calendar: calendar) == 100)
+
+        // Half of a daily habit's window: 15 of 30.
+        let daily = makeHabit(frequency: .daily)
+        var dailyKeys: [String] = []
+        for offset in stride(from: 0, to: 30, by: 2) {
+            if let day = calendar.date(byAdding: .day, value: -offset, to: today) {
+                dailyKeys.append(DateFormatters.dateKey(from: day, calendar: calendar))
+            }
+        }
+        complete(daily, dailyKeys)
+        #expect(daily.last30DayCompletionRate(asOf: today, calendar: calendar) == 50)
+
+        // Completions outside the window must not count toward it.
+        let stale = makeHabit(frequency: .daily)
+        if let old = calendar.date(byAdding: .day, value: -45, to: today) {
+            complete(stale, [DateFormatters.dateKey(from: old, calendar: calendar)])
+        }
+        #expect(stale.last30DayCompletionRate(asOf: today, calendar: calendar) == 0)
+
+        // No due days in the window is 0, not a made-up 100 from an empty denominator.
+        let never = makeHabit(frequency: .daysOfWeek, days: [])
+        #expect(never.last30DayCompletionRate(asOf: today, calendar: calendar) == 0)
+    }
+
+    /// A single fixed instant, read in two time zones whose calendar days *differ* for it. Both
+    /// habits are kept perfectly in their own zone, so both must read 100%.
+    ///
+    /// Two zones, not one, is the point. Pinning one zone proves nothing on a host that happens
+    /// to agree with it — and every zone agrees with some host — so an implementation that
+    /// ignores the injected calendar and reads `Calendar.current` passes half the time depending
+    /// on who runs the suite. No host can agree with both of these at once. The Santiago window
+    /// additionally spans 2026-09-06, a *midnight* spring-forward, which is the wall-clock-
+    /// preserving drift `bestStreakSurvivesAMidnightDSTTransition` exists for.
+    @Test func thirtyDayRateReadsTheCalendarItIsGivenAndSurvivesAMidnightDSTTransition() throws {
+        // 2026-09-25T12:00Z: 09:00 on the 25th in Santiago (UTC-3), 02:00 on the *26th* in
+        // Kiritimati (UTC+14).
+        let instant = try #require(
+            Calendar(identifier: .gregorian).date(
+                from: DateComponents(
+                    timeZone: TimeZone(secondsFromGMT: 0),
+                    year: 2026, month: 9, day: 25, hour: 12
+                )
+            )
+        )
+
+        func perfectlyKeptRate(inTimeZone identifier: String) throws -> Int {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try #require(TimeZone(identifier: identifier))
+
+            let habit = makeHabit(frequency: .daily)
+            let today = calendar.startOfDay(for: instant)
+            var keys: [String] = []
+            for offset in 0..<30 {
+                if let day = calendar.date(byAdding: .day, value: -offset, to: today) {
+                    keys.append(DateFormatters.dateKey(from: day, calendar: calendar))
+                }
+            }
+            complete(habit, keys)
+            #expect(Set(keys).count == 30, "fixture for \(identifier) is not 30 distinct days")
+            return habit.last30DayCompletionRate(asOf: instant, calendar: calendar)
+        }
+
+        #expect(try perfectlyKeptRate(inTimeZone: "America/Santiago") == 100)
+        #expect(try perfectlyKeptRate(inTimeZone: "Pacific/Kiritimati") == 100)
+    }
+
+    /// `last7DayStates` drives the iOS seven-dot strip. It used to `compactMap` the day walk, so a
+    /// date that could not be formed silently *shortened* the array — six dots, and every dot
+    /// after the gap labelling the wrong day. Seven, always, oldest first with today last.
+    ///
+    /// Read in two zones for the same reason as the 30-day rate above: one zone cannot tell an
+    /// injected calendar apart from `Calendar.current`.
+    @Test func sevenDayStatesAreAlwaysSevenOldestFirstWithTodayLast() throws {
+        let instant = try #require(
+            Calendar(identifier: .gregorian).date(
+                from: DateComponents(
+                    timeZone: TimeZone(secondsFromGMT: 0),
+                    year: 2026, month: 9, day: 7, hour: 12
+                )
+            )
+        )
+
+        func states(inTimeZone identifier: String, doneOn keys: [String]) throws -> [Bool] {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try #require(TimeZone(identifier: identifier))
+            let habit = makeHabit(frequency: .daily)
+            complete(habit, keys)
+            return habit.last7DayStates(asOf: instant, calendar: calendar)
+        }
+
+        // Santiago reads the instant as 2026-09-07; today and today-3 are checked in. Its window
+        // also spans the 2026-09-06 midnight spring-forward.
+        let santiago = try states(inTimeZone: "America/Santiago", doneOn: ["2026-09-07", "2026-09-04"])
+        #expect(santiago.count == 7)
+        #expect(santiago == [false, false, false, true, false, false, true])
+
+        // Kiritimati reads the same instant as 2026-09-08, one day later, so the same two keys
+        // land one slot earlier and the strip's last dot is a day with no check-in.
+        let kiritimati = try states(inTimeZone: "Pacific/Kiritimati", doneOn: ["2026-09-07", "2026-09-04"])
+        #expect(kiritimati.count == 7)
+        #expect(kiritimati == [false, false, true, false, false, true, false])
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "America/Santiago"))
+        let empty = makeHabit(frequency: .daily)
+        #expect(empty.last7DayStates(asOf: instant, calendar: calendar) == Array(repeating: false, count: 7))
+    }
+
+    /// `frequencyShortLabel` is the eyebrow on the iOS habit detail and the label in the habit
+    /// widget, and it had no test. The invariant worth pinning is not the string but that the
+    /// number in it is the number of days the habit is actually due in a week — the label used to
+    /// be free to read `targetCount` (which means something else entirely for `.daysOfWeek`).
+    @Test func frequencyShortLabelCountsTheDaysTheHabitIsActuallyDue() throws {
+        let calendar = Calendar.current
+        let monday = try #require(DateFormatters.date(from: "2026-06-15"))
+
+        func dueDaysInAWeek(_ habit: Habit) -> Int {
+            (0..<7).reduce(0) { partial, offset in
+                guard let day = calendar.date(byAdding: .day, value: offset, to: monday) else { return partial }
+                return partial + (habit.isDue(on: day, calendar: calendar) ? 1 : 0)
+            }
+        }
+
+        let scheduled = makeHabit(frequency: .daysOfWeek, days: [1, 3, 5], targetCount: 9)
+        #expect(scheduled.frequencyShortLabel == "3x/week")
+        #expect(dueDaysInAWeek(scheduled) == 3)
+
+        let weekend = makeHabit(frequency: .daysOfWeek, days: [6, 7], targetCount: 9)
+        #expect(weekend.frequencyShortLabel == "2x/week")
+        #expect(dueDaysInAWeek(weekend) == 2)
+
+        // `.timesPerWeek` is the one where `targetCount` *is* the number in the label.
+        #expect(makeHabit(frequency: .timesPerWeek, targetCount: 4).frequencyShortLabel == "4x/week")
+        #expect(makeHabit(frequency: .daily, targetCount: 3).frequencyShortLabel == "Daily")
+        #expect(makeHabit(frequency: .monthly, days: [12]).frequencyShortLabel == "Monthly")
+
+        // No days selected: never due, and the label says so rather than borrowing `targetCount`.
+        let unscheduled = makeHabit(frequency: .daysOfWeek, days: [], targetCount: 5)
+        #expect(unscheduled.frequencyShortLabel == "0x/week")
+        #expect(dueDaysInAWeek(unscheduled) == 0)
     }
 
     /// A habit reminder is a standing "every day at this time". Building it as a one-shot trigger
@@ -318,14 +482,14 @@ struct HabitInsightsAuditTests {
     /// The 52-week heatmap anchored on `today - 52*7` and then rounded *backwards* to a week
     /// start, so its last cell landed one to seven days before today. Today's check-in was never
     /// drawn, on any day of the week.
-    @Test func heatmapGridRunsThroughTodayOnEveryWeekday() {
+    @Test func heatmapGridRunsThroughTodayOnEveryWeekday() throws {
         let calendar = Calendar.current
         // Walk a full week of "todays" so no single weekday can pass by luck.
         for offset in 0..<7 {
             guard let today = calendar.date(
                 byAdding: .day,
                 value: offset,
-                to: DateFormatters.date(from: "2026-04-27") ?? Date()
+                to: try #require(DateFormatters.date(from: "2026-04-27"))
             ) else { continue }
 
             let keys = HabitHeatmap.HabitHeatmapGrid.cells(weeks: 52, today: today, calendar: calendar).map(\.key)
@@ -337,9 +501,9 @@ struct HabitInsightsAuditTests {
     }
 
     /// The grid should end on the week containing today, not run arbitrarily far past it.
-    @Test func heatmapGridStopsAtTheEndOfTheCurrentWeek() {
+    @Test func heatmapGridStopsAtTheEndOfTheCurrentWeek() throws {
         let calendar = Calendar.current
-        let today = DateFormatters.date(from: "2026-04-29") ?? Date()
+        let today = try #require(DateFormatters.date(from: "2026-04-29"))
         let keys = HabitHeatmap.HabitHeatmapGrid.cells(weeks: 52, today: today, calendar: calendar).map(\.key)
 
         guard let last = keys.last, let lastDate = DateFormatters.date(from: last, in: calendar) else {

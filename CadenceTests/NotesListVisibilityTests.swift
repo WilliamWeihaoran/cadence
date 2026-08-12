@@ -167,6 +167,38 @@ struct NotesListVisibilityTests {
         #expect(NotesListVisibility.notepadNotes([older, newer]).map(\.id) == [newer.id, older.id])
     }
 
+    /// The tie-break exists for exactly one situation — two notepad notes created in the same
+    /// instant — and no test ever built that situation, so the whole point of the branch went
+    /// unexercised. Without it, `sorted` on equal keys is not guaranteed stable and the column
+    /// can reshuffle between renders.
+    ///
+    /// It also has to be the *mirror* of `NoteMigrationService.permanentNotes`, which is the same
+    /// list read oldest-first. Same primary key, opposite direction, so equal-`createdAt` notes
+    /// must come out in exactly reversed order. Two independently written tie-breaks in the same
+    /// direction would put the same two notes in the same relative order on two screens that
+    /// disagree about everything else — which is the bug shape, not the fix.
+    @Test func notepadNotesCreatedInTheSameInstantHaveAStableOrderThatMirrorsTheMigrationList() throws {
+        let context = try makeContext()
+        let instant = Date(timeIntervalSince1970: 5_000)
+        let a = notepad("A", content: "a", createdAt: instant, in: context)
+        let b = notepad("B", content: "b", createdAt: instant, in: context)
+        let c = notepad("C", content: "c", createdAt: instant, in: context)
+        try context.save()
+
+        let listed = NotesListVisibility.notepadNotes([a, b, c]).map(\.id)
+
+        // Deterministic, and specifically descending by uuid — the direction that matches
+        // "newest first".
+        #expect(listed == [a, b, c].map(\.id).sorted { $0.uuidString > $1.uuidString })
+        // Input order must not influence it.
+        #expect(NotesListVisibility.notepadNotes([c, a, b]).map(\.id) == listed)
+        #expect(NotesListVisibility.notepadNotes([b, c, a]).map(\.id) == listed)
+
+        // And it is the exact reverse of the oldest-first list the migration service exposes.
+        let oldestFirst = try NoteMigrationService.permanentNotes(in: context).map(\.id)
+        #expect(oldestFirst == listed.reversed())
+    }
+
     @Test func notepadListIgnoresOtherNoteKinds() throws {
         let context = try makeContext()
         let note = notepad("Kept", content: "x", createdAt: Date(), in: context)

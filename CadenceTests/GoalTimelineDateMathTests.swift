@@ -13,9 +13,9 @@ struct GoalTimelineDateMathTests {
         return calendar
     }()
 
-    @Test func convertsDatesToTimelineXPositions() {
-        let rangeStart = date("2026-03-01")
-        let target = date("2026-03-06")
+    @Test func convertsDatesToTimelineXPositions() throws {
+        let rangeStart = try date("2026-03-01")
+        let target = try date("2026-03-06")
 
         let x = GoalTimelineDateMath.xPosition(
             for: target,
@@ -27,12 +27,12 @@ struct GoalTimelineDateMathTests {
         #expect(x == 60)
     }
 
-    @Test func createsInclusiveBarFrames() {
-        let rangeStart = date("2026-03-01")
+    @Test func createsInclusiveBarFrames() throws {
+        let rangeStart = try date("2026-03-01")
 
         let frame = GoalTimelineDateMath.barFrame(
-            start: date("2026-03-03"),
-            end: date("2026-03-05"),
+            start: try date("2026-03-03"),
+            end: try date("2026-03-05"),
             rangeStart: rangeStart,
             dayWidth: 10,
             calendar: calendar
@@ -42,10 +42,10 @@ struct GoalTimelineDateMathTests {
         #expect(frame.width == 30)
     }
 
-    @Test func generatesMonthMarkersInsideVisibleRange() {
+    @Test func generatesMonthMarkersInsideVisibleRange() throws {
         let markers = GoalTimelineDateMath.monthMarkers(
-            rangeStart: date("2026-02-15"),
-            rangeEnd: date("2026-05-05"),
+            rangeStart: try date("2026-02-15"),
+            rangeEnd: try date("2026-05-05"),
             dayWidth: 10,
             calendar: calendar
         )
@@ -57,8 +57,8 @@ struct GoalTimelineDateMathTests {
     @Test func movingRangeShiftsStartAndEndTogether() throws {
         let moved = try #require(
             GoalTimelineDateMath.movedRange(
-                start: date("2026-03-03"),
-                end: date("2026-03-05"),
+                start: try date("2026-03-03"),
+                end: try date("2026-03-05"),
                 dayDelta: 4,
                 calendar: calendar
             )
@@ -71,8 +71,8 @@ struct GoalTimelineDateMathTests {
     @Test func resizingRangeClampsToValidDates() throws {
         let leading = try #require(
             GoalTimelineDateMath.resizedRange(
-                start: date("2026-03-10"),
-                end: date("2026-03-15"),
+                start: try date("2026-03-10"),
+                end: try date("2026-03-15"),
                 edge: .leading,
                 dayDelta: 10,
                 calendar: calendar
@@ -80,8 +80,8 @@ struct GoalTimelineDateMathTests {
         )
         let trailing = try #require(
             GoalTimelineDateMath.resizedRange(
-                start: date("2026-03-10"),
-                end: date("2026-03-15"),
+                start: try date("2026-03-10"),
+                end: try date("2026-03-15"),
                 edge: .trailing,
                 dayDelta: -10,
                 calendar: calendar
@@ -94,11 +94,11 @@ struct GoalTimelineDateMathTests {
         #expect(DateFormatters.dateKey(from: trailing.end) == "2026-03-10")
     }
 
-    @Test func missingDateKeysDoNotProduceBarFrames() {
+    @Test func missingDateKeysDoNotProduceBarFrames() throws {
         let frame = GoalTimelineDateMath.barFrame(
             startKey: "",
             endKey: "2026-03-05",
-            rangeStart: date("2026-03-01"),
+            rangeStart: try date("2026-03-01"),
             dayWidth: 10,
             calendar: calendar
         )
@@ -106,8 +106,11 @@ struct GoalTimelineDateMathTests {
         #expect(frame == nil)
     }
 
-    private func date(_ key: String) -> Date {
-        DateFormatters.date(from: key) ?? Date()
+    /// `?? Date()` here silently substituted *now* for an unparsable key, so a broken parser —
+    /// or a typo in a fixture key — read back as a passing test over nonsense inputs. The fixture
+    /// has to fail loudly at the point the fixture is wrong.
+    private func date(_ key: String) throws -> Date {
+        try #require(DateFormatters.date(from: key), "unparsable fixture date key: \(key)")
     }
 }
 

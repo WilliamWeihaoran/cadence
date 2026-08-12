@@ -260,6 +260,110 @@ struct TaskBundleTests {
         #expect(bundle.endMin == 1440)
     }
 
+    /// `AppTask.calendarEventID` is documented as write-only-empty: attaching a task to a calendar
+    /// event is not a feature that exists, the readers that remain are there to *clear* values an
+    /// earlier build left on disk, and the field survives only because removing a stored SwiftData
+    /// property with no migration plan would drop data. That invariant was held purely by
+    /// convention — nothing asserted it, so the first entry point to start writing an identifier
+    /// would have reintroduced half a feature silently.
+    @Test func noSchedulingEntryPointEverGivesATaskACalendarEventID() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let area = Area(name: "Ops")
+        context.insert(area)
+
+        // 1. Drag-to-create on the timeline, with no container.
+        SchedulingActions.createTask(title: "Dragged out", dateKey: "2026-05-01", startMin: 600, endMin: 660, in: context)
+        // 2. Drag-to-create routed into a list/section through the quick popover.
+        SchedulingActions.createTask(
+            title: "Dragged into a list",
+            dateKey: "2026-05-01",
+            startMin: 700,
+            endMin: 760,
+            containerSelection: .area(area.id),
+            sectionName: TaskSectionDefaults.defaultName,
+            areas: [area],
+            projects: [],
+            in: context
+        )
+        // 3. The shared creation sheet / quick capture path.
+        TaskCreationService(areas: [area], projects: []).insertTask(
+            from: TaskCreationDraft(
+                title: "From the sheet",
+                notes: "",
+                priority: .none,
+                container: .area(area.id),
+                sectionName: TaskSectionDefaults.defaultName,
+                dueDateKey: "",
+                scheduledDateKey: "2026-05-01",
+                subtaskTitles: [],
+                tags: [],
+                scheduledStartMin: 800
+            ),
+            into: context
+        )
+        // 4. The generic scheduled-insert helper the shared surfaces use.
+        _ = try CadenceTaskMutationSupport.insertScheduledTask(
+            title: "Inserted",
+            allTasks: try context.fetch(FetchDescriptor<AppTask>()),
+            modelContext: context,
+            scheduledDate: "2026-05-01",
+            scheduledStartMin: 900,
+            estimatedMinutes: 30
+        )
+
+        let created = try context.fetch(FetchDescriptor<AppTask>())
+        #expect(created.count == 4)
+        #expect(created.allSatisfy { $0.calendarEventID.isEmpty })
+
+        // And every path that *moves* a task must clear an identifier an older build left behind,
+        // rather than carrying it onto the new slot.
+        func stale(_ title: String) -> AppTask {
+            let task = AppTask(title: title)
+            task.scheduledDate = "2026-05-01"
+            task.scheduledStartMin = 540
+            task.estimatedMinutes = 30
+            task.calendarEventID = "legacy-event-id"
+            context.insert(task)
+            return task
+        }
+
+        let rolled = stale("Rolled over")
+        SchedulingActions.rollOverTaskToToday(rolled, todayKey: "2026-05-02", in: context)
+        #expect(rolled.calendarEventID.isEmpty)
+
+        let detached = stale("Detached")
+        SchedulingActions.removeFromCalendar(detached)
+        #expect(detached.calendarEventID.isEmpty)
+
+        let bundled = stale("Bundled")
+        let bundle = SchedulingActions.createBundle(title: "Sweep", dateKey: "2026-05-01", startMin: 600, endMin: 660, in: context)
+        SchedulingActions.addTask(bundled, to: bundle)
+        #expect(bundled.calendarEventID.isEmpty)
+
+        let moved = stale("Moved with its bundle")
+        moved.calendarEventID = "legacy-event-id"
+        SchedulingActions.addTask(moved, to: bundle)
+        moved.calendarEventID = "legacy-event-id" // re-arm: the move below is the site under test
+        SchedulingActions.dropBundle(bundle, to: "2026-05-03", startMin: 660)
+        #expect(moved.calendarEventID.isEmpty)
+
+        let unbundled = stale("Unbundled")
+        SchedulingActions.addTask(unbundled, to: bundle)
+        unbundled.calendarEventID = "legacy-event-id"
+        SchedulingActions.unbundle(bundle, in: context)
+        #expect(unbundled.calendarEventID.isEmpty)
+
+        // Duplicating must not hand a second task the same event identifier.
+        let source = stale("Original")
+        let copy = try CadenceTaskMutationSupport.duplicate(
+            source,
+            allTasks: try context.fetch(FetchDescriptor<AppTask>()),
+            modelContext: context
+        )
+        #expect(copy.calendarEventID.isEmpty)
+    }
+
     @Test func bundleFocusLoggingDistributesByEstimate() throws {
         let short = AppTask(title: "Short")
         short.estimatedMinutes = 10

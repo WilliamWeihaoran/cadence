@@ -149,15 +149,48 @@ struct TrackingDeleteHelpersTests {
         #expect(try modelContext.fetch(FetchDescriptor<Goal>()).map(\.title) == ["Get healthy"])
     }
 
-    /// Every "sort by priority" in the app means one ordering. It existed as six independent
+    /// Every "sort by priority" in the app means one ordering. It existed as eight independent
     /// switches; the enum owns it now, and the surviving free-function spellings delegate.
+    ///
+    /// The point of the loop is that it names **every** spelling a test can reach, over **every**
+    /// case. The previous version asserted the enum's own constants and exactly one forwarder, so
+    /// swapping `.none` and `.low` inside `taskPriorityRank` — the spelling that drives every
+    /// macOS task sort — left the suite green while a low-priority task sorted below an
+    /// unprioritised one. Anything that re-grows a hand-written switch has to fail here.
     @Test func priorityRankIsOneOrderingSharedByEveryCaller() {
         #expect(TaskPriority.high.rank > TaskPriority.medium.rank)
         #expect(TaskPriority.medium.rank > TaskPriority.low.rank)
         #expect(TaskPriority.low.rank > TaskPriority.none.rank)
 
+        // The ordering is total: no two priorities may share a rank.
+        #expect(Set(TaskPriority.allCases.map(\.rank)).count == TaskPriority.allCases.count)
+
         for priority in TaskPriority.allCases {
             #expect(CadenceTaskQuerySupport.priorityRank(priority) == priority.rank)
+            #expect(CalendarBoardPlannerSupport.priorityRank(priority) == priority.rank)
+#if os(macOS)
+            #expect(taskPriorityRank(priority) == priority.rank)
+#endif
         }
+    }
+
+    /// `taskSortPrecedes` is the comparator behind every macOS "sort by priority", and it is the
+    /// only consumer of `taskPriorityRank`. Asserting the forwarder is not enough on its own —
+    /// the comparator could stop calling it. This pins the pair `TaskSortHelperTests` never
+    /// compares: `.low` against `.none`.
+    @Test func macOSPrioritySortRanksALowPriorityTaskAboveAnUnprioritisedOne() {
+#if os(macOS)
+        let low = AppTask(title: "Low")
+        low.priority = .low
+        low.order = 1
+        let unset = AppTask(title: "Unset")
+        unset.priority = TaskPriority.none
+        unset.order = 0
+
+        #expect(taskSortPrecedes(low, unset, field: .priority, direction: .descending))
+        #expect(!taskSortPrecedes(unset, low, field: .priority, direction: .descending))
+        // Ascending is the same ordering read backwards, not a different ordering.
+        #expect(taskSortPrecedes(unset, low, field: .priority, direction: .ascending))
+#endif
     }
 }

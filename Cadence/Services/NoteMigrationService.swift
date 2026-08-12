@@ -41,12 +41,18 @@ struct NoteMigrationHealthReport: Codable, Equatable {
     var meetingNoteMissingEventIDCount: Int = 0
     var meetingNoteMissingCalendarIDCount: Int = 0
 
+    /// Every defect this report counts, summed. `meetingNoteMissingCalendarIDCount` used to be
+    /// left out — so a store whose only problem was event notes that had lost their calendar ID
+    /// reported `issueCount == 0` and read as *healthy* to `CadenceReadService`, which is the one
+    /// consumer that decides whether to surface the report at all. A field worth counting is a
+    /// field worth counting here; leaving one out makes the summary disagree with its own detail.
     var issueCount: Int {
         canonicalDuplicateCount +
             legacyWithoutCanonicalCount +
             orphanedListNoteCount +
             listNoteWithMultipleOwnersCount +
-            meetingNoteMissingEventIDCount
+            meetingNoteMissingEventIDCount +
+            meetingNoteMissingCalendarIDCount
     }
 }
 

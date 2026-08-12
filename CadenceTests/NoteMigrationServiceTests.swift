@@ -208,7 +208,10 @@ struct NoteMigrationServiceTests {
         #expect(health.listNoteWithMultipleOwnersCount == 1)
         #expect(health.meetingNoteMissingEventIDCount == 1)
         #expect(health.meetingNoteMissingCalendarIDCount == 1)
-        #expect(health.issueCount == 5)
+        // Six defects counted, six defects summed. See
+        // `issueCountCountsEveryDefectTheHealthReportItselfCounts` for why the sum has to include
+        // the last one.
+        #expect(health.issueCount == 6)
     }
 
     // MARK: - Deferred-save / partial-failure safety
@@ -367,5 +370,105 @@ struct NoteMigrationServiceTests {
         let notes = try context.fetch(FetchDescriptor<Note>())
         #expect(notes.count == 1)
         #expect(try NoteMigrationService.healthCheck(in: context).legacyWithoutCanonicalCount == 0)
+    }
+
+    /// The migration and the repair pass have to agree about what makes two notes the same note,
+    /// because they run one after the other over the same rows on every launch. They did not:
+    /// the migration keyed *every* dateless daily note as `"daily:"` — so the second one was
+    /// skipped as "already migrated" and its content was lost — while the repair pass gave each
+    /// one a per-UUID key and refused to merge them. Neither side's own tests could see it;
+    /// running both is what makes the disagreement observable.
+    @Test func datelessLegacyNotesSurviveAMigrationFollowedByARepairWithoutMerging() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let firstDaily = DailyNote(date: "")
+        firstDaily.content = "First orphan"
+        let secondDaily = DailyNote(date: "")
+        secondDaily.content = "Second orphan"
+        let firstWeekly = WeeklyNote(weekKey: "")
+        firstWeekly.content = "First weekly orphan"
+        let secondWeekly = WeeklyNote(weekKey: "")
+        secondWeekly.content = "Second weekly orphan"
+        context.insert(firstDaily)
+        context.insert(secondDaily)
+        context.insert(firstWeekly)
+        context.insert(secondWeekly)
+        try context.save()
+
+        let migration = try NoteMigrationService.migrateIfNeeded(in: context, source: "test")
+        #expect(migration.insertedTotal == 4)
+        #expect(try context.fetch(FetchDescriptor<Note>()).count == 4)
+
+        // The migration must not have invented duplicates for the repair pass to find...
+        #expect(try NoteMigrationService.healthCheck(in: context).canonicalDuplicateCount == 0)
+
+        // ...and the repair pass must not merge notes the migration deliberately kept apart.
+        let repair = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test")
+        #expect(repair.duplicateNotesMerged == 0)
+
+        let contents = Set(try context.fetch(FetchDescriptor<Note>()).map(\.content))
+        #expect(contents == ["First orphan", "Second orphan", "First weekly orphan", "Second weekly orphan"])
+
+        // Running the whole sequence again is a no-op, which is what "on every launch" requires.
+        _ = try NoteMigrationService.migrateIfNeeded(in: context, source: "test-again")
+        _ = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test-again")
+        #expect(try context.fetch(FetchDescriptor<Note>()).count == 4)
+    }
+
+    /// `issueCount` is the single number `CadenceReadService` reports, and it used to omit
+    /// `meetingNoteMissingCalendarIDCount` — so a store whose *only* defect was event notes that
+    /// had lost their calendar ID read as healthy. The existing side-by-side assertions blessed
+    /// the gap by asserting both figures without ever asserting they agreed.
+    @Test func issueCountCountsEveryDefectTheHealthReportItselfCounts() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let missingCalendarID = Note(kind: .meeting, title: "Meeting", calendarEventID: "event-1")
+        context.insert(missingCalendarID)
+        try context.save()
+
+        let health = try NoteMigrationService.healthCheck(in: context)
+
+        #expect(health.meetingNoteMissingCalendarIDCount == 1)
+        #expect(health.issueCount == 1)
+
+        // A store with nothing wrong still reports zero, so the sum is not just "some notes".
+        let cleanContainer = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let cleanContext = ModelContext(cleanContainer)
+        cleanContext.insert(Note(kind: .meeting, title: "Meeting", calendarEventID: "event-1", calendarID: "calendar-1"))
+        try cleanContext.save()
+        #expect(try NoteMigrationService.healthCheck(in: cleanContext).issueCount == 0)
+    }
+
+    /// `migrateAndRecordFailure` is the app's actual startup entry point — `CadenceApp` calls it,
+    /// not `migrateIfNeeded` — and it had no test at all. It has to return the same report on the
+    /// happy path and, on a throw, hand back the last recorded report rather than propagating.
+    @Test func migrateAndRecordFailureReturnsTheReportAndRecordsIt() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let legacy = DailyNote(date: "2026-04-29")
+        legacy.content = "Daily content"
+        context.insert(legacy)
+        try context.save()
+
+        let report = try #require(NoteMigrationService.migrateAndRecordFailure(in: context, source: "startup-test"))
+
+        #expect(report.success)
+        #expect(report.source == "startup-test")
+        #expect(report.insertedTotal == 1)
+        #expect(try context.fetch(FetchDescriptor<Note>()).count == 1)
+
+        // The report it returned is the one it persisted, which is what the `catch` path falls
+        // back to reading.
+        let recorded = try #require(NoteMigrationService.lastReport())
+        #expect(recorded == report)
+
+        // Second pass: still non-nil, still successful, and inserts nothing.
+        let second = try #require(NoteMigrationService.migrateAndRecordFailure(in: context, source: "startup-test-2"))
+        #expect(second.success)
+        #expect(second.insertedTotal == 0)
+        #expect(second.skippedAlreadyMigrated == 1)
+        #expect(try context.fetch(FetchDescriptor<Note>()).count == 1)
     }
 }

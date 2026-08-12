@@ -52,12 +52,20 @@ final class HoveredTaskManager {
         hoveredDateKind = nil
     }
 
+    /// Schedules the debounced clear for `task`, but only while `task` is the hovered one.
+    ///
+    /// The identity check is deliberately *here* and nowhere else. It used to be in both places —
+    /// once as this guard and again inside the work item — and the inner copy made this one
+    /// unobservable: with the work item re-checking identity, deleting this line changed no
+    /// behaviour any test could see, so the guard was free to be removed by a tidy-up. One guard,
+    /// checked before any state is touched, is the whole rule. The work item does not need to
+    /// re-check, because every path that replaces `hoveredTask` (`beginHovering`) or nils it
+    /// (`clear()`) cancels the pending item itself.
     func endHovering(_ task: AppTask) {
         guard hoveredTask?.id == task.id else { return }
         pendingClearWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            guard self.hoveredTask?.id == task.id else { return }
             self.hoveredTask = nil
             self.hoveredSource = nil
             self.hoveredDateKind = nil

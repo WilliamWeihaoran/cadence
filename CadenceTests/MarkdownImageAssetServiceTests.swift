@@ -112,8 +112,81 @@ struct MarkdownImageAssetServiceTests {
         #expect(asset.data.isEmpty == false)
         #expect(asset.pixelWidth == 800)
         #expect(asset.pixelHeight == 400)
-        #expect(asset.displayWidth == Double(MarkdownImageAssetService.defaultDisplayWidth))
+        // The literal, not the production constant read back: `== defaultDisplayWidth` is true of
+        // an implementation that ignores the image's own width entirely.
+        #expect(asset.displayWidth == 520)
         #expect(["image/png", "image/jpeg"].contains(asset.mimeType))
+    }
+
+    /// The two clamps around the initial display width, each exercised from the side its input
+    /// actually lands on. Every existing test used an 800px image, which sits past both of them —
+    /// so `min(defaultDisplayWidth, pixelWidth)` could be replaced by `defaultDisplayWidth` and
+    /// `max(minDisplayWidth,)` deleted outright with the suite still green, while every narrow
+    /// image in the editor — a 200px icon, a screenshot crop — silently upscaled to 520pt.
+    @Test func narrowImagesKeepTheirOwnWidthAndTinyOnesFloorAtTheMinimum() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        // Between the floor (120) and the default (520): its own width, untouched.
+        let narrow = try #require(MarkdownImageAssetService.createAsset(
+            from: testImage(size: CGSize(width: 200, height: 100)),
+            in: context
+        ))
+        #expect(narrow.pixelWidth == 200)
+        #expect(narrow.displayWidth == 200)
+
+        // Below the floor: raised to it, not left at 40.
+        let tiny = try #require(MarkdownImageAssetService.createAsset(
+            from: testImage(size: CGSize(width: 40, height: 40)),
+            in: context
+        ))
+        #expect(tiny.pixelWidth == 40)
+        #expect(tiny.displayWidth == 120)
+
+        // Exactly on the default is still the default, from the other side of the `min`.
+        let exact = try #require(MarkdownImageAssetService.createAsset(
+            from: testImage(size: CGSize(width: 520, height: 260)),
+            in: context
+        ))
+        #expect(exact.displayWidth == 520)
+    }
+
+    /// `setDisplayWidth` is the drag-to-resize handler in the markdown editor, and its clamp had
+    /// no test at all — a drag past either end could write a width the editor then draws with.
+    @Test func setDisplayWidthClampsToBothEndsAndIgnoresUnknownAssets() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let asset = try #require(MarkdownImageAssetService.createAsset(
+            from: testImage(size: CGSize(width: 800, height: 400)),
+            in: context
+        ))
+
+        MarkdownImageAssetService.setDisplayWidth(5_000, for: asset.id, in: [asset])
+        #expect(asset.displayWidth == 1_200)
+
+        MarkdownImageAssetService.setDisplayWidth(5, for: asset.id, in: [asset])
+        #expect(asset.displayWidth == 120)
+
+        // In range: written through unchanged, so the clamp is not a constant.
+        MarkdownImageAssetService.setDisplayWidth(300, for: asset.id, in: [asset])
+        #expect(asset.displayWidth == 300)
+
+        // An id that is not in the array must leave every asset alone.
+        MarkdownImageAssetService.setDisplayWidth(900, for: UUID(), in: [asset])
+        #expect(asset.displayWidth == 300)
+    }
+
+    /// Public, called straight from `MarkdownInlinePreviewSupport`, and previously covered only
+    /// indirectly through `references(in:)`.
+    @Test func unescapedAltTextUndoesTheEscapesTheWriterAdds() {
+        #expect(MarkdownImageAssetService.unescapedAltText("Plain caption") == "Plain caption")
+        // The two escapes the writer emits, undone.
+        #expect(MarkdownImageAssetService.unescapedAltText(#"closing \] bracket"#) == "closing ] bracket")
+        #expect(MarkdownImageAssetService.unescapedAltText(#"back\\slash"#) == #"back\slash"#)
+        // An escaped backslash immediately before a real `]` must not eat the bracket.
+        #expect(MarkdownImageAssetService.unescapedAltText(#"trailing\\"#) == #"trailing\"#)
+        // A backslash before anything else predates the escaping and is left alone.
+        #expect(MarkdownImageAssetService.unescapedAltText(#"C:\path"#) == #"C:\path"#)
     }
 
     @Test func downscalesOversizedImagesToLongEdgeLimit() throws {
@@ -142,9 +215,25 @@ struct MarkdownImageAssetServiceTests {
         """
 
         let data = try #require(NoteExportService.renderedPDFData(content: content, imageAssets: [asset]))
+        // The same note rendered without the asset registered: the reference line stays as raw
+        // text and no bitmap is embedded. Anything that distinguishes the two has to compare
+        // against *this*, not against a size floor — a text-only page clears 1 KB comfortably, so
+        // `count > 1_000` was satisfied by a PDF containing no image at all.
+        let withoutImage = try #require(NoteExportService.renderedPDFData(content: content, imageAssets: []))
 
         #expect(data.starts(with: Data("%PDF".utf8)))
-        #expect(data.count > 1_000)
+        #expect(withoutImage.starts(with: Data("%PDF".utf8)))
+
+        // A PDF that draws a bitmap carries an image XObject; a text-only page does not. This is
+        // the only assertion here that is *about the image* — `count > 1_000` was true of a
+        // text-only render, and the un-rendered variant is in fact the longer document, because
+        // the raw `![Preview](cadence-image://…)` line stays visible in it.
+        #expect(contains(data, "/Subtype/Image") || contains(data, "/Subtype /Image"))
+        #expect(!contains(withoutImage, "/Subtype/Image") && !contains(withoutImage, "/Subtype /Image"))
+    }
+
+    private func contains(_ data: Data, _ marker: String) -> Bool {
+        data.range(of: Data(marker.utf8)) != nil
     }
 
     private func testImage(size: CGSize) -> NSImage {

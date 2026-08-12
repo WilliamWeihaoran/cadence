@@ -306,13 +306,18 @@ struct GoalTimelineDateMathAuditTests {
         #expect(frame.width == expectedNormalizedFrame.width)
     }
 
-    @Test func barFrameHandlesRangeFarOutsideVisibleWindowWithoutCrashing() {
+    /// `barFrame` deliberately does **not** window or clamp: it is a pure day-offset × dayWidth
+    /// map, and the scroll view it feeds is what decides what is on screen. So the thing to assert
+    /// for a bar ten years past `rangeStart` is the exact offset, not that it is positive and
+    /// finite — every one of those four old assertions was structurally satisfied by a 30-day span
+    /// starting after `rangeStart`, which is to say by arithmetic, not by this function.
+    @Test func barFramePlacesARangeFarPastTheWindowAtItsExactUnclampedOffset() throws {
         let calendar = Calendar.current
-        let rangeStart = DateFormatters.date(from: "2026-01-01") ?? Date()
+        let rangeStart = try #require(DateFormatters.date(from: "2026-01-01"))
         // A goal spanning far in the future relative to the visible window (e.g. viewing "2W"
         // scale but the goal is 10 years out).
-        let farStart = calendar.date(byAdding: .year, value: 10, to: rangeStart) ?? rangeStart
-        let farEnd = calendar.date(byAdding: .day, value: 30, to: farStart) ?? farStart
+        let farStart = try #require(calendar.date(byAdding: .year, value: 10, to: rangeStart))
+        let farEnd = try #require(calendar.date(byAdding: .day, value: 30, to: farStart))
 
         let frame = GoalTimelineDateMath.barFrame(
             start: farStart,
@@ -322,10 +327,45 @@ struct GoalTimelineDateMathAuditTests {
             calendar: calendar
         )
 
-        #expect(frame.width > 0)
-        #expect(frame.x > 0)
-        #expect(frame.x.isFinite)
-        #expect(frame.width.isFinite)
+        // 2026-01-01 -> 2036-01-01 is 3,652 days: ten 365-day years plus 2028-02-29 and
+        // 2032-02-29 (2036's leap day falls after the end date).
+        let dayOffset = try #require(
+            calendar.dateComponents([.day], from: rangeStart, to: farStart).day
+        )
+        #expect(dayOffset == 3_652)
+        #expect(frame.x == CGFloat(3_652) * 48)
+        // Inclusive of both end days: 31 columns, not 30.
+        #expect(frame.width == CGFloat(31) * 48)
+    }
+
+    /// The floor on the other side of the same function: a bar whose start and end land on the
+    /// same day still has to be one full column wide, or a one-day milestone draws as nothing.
+    @Test func barFrameNeverCollapsesASingleDayRangeBelowOneColumn() throws {
+        let calendar = Calendar.current
+        let rangeStart = try #require(DateFormatters.date(from: "2026-01-01"))
+        let day = try #require(DateFormatters.date(from: "2026-01-11"))
+
+        let frame = GoalTimelineDateMath.barFrame(
+            start: day,
+            end: day,
+            rangeStart: rangeStart,
+            dayWidth: 48,
+            calendar: calendar
+        )
+
+        #expect(frame.x == CGFloat(10) * 48)
+        #expect(frame.width == 48)
+
+        // A reversed range is read as the range it describes, not as a negative width.
+        let reversed = GoalTimelineDateMath.barFrame(
+            start: try #require(DateFormatters.date(from: "2026-01-21")),
+            end: day,
+            rangeStart: rangeStart,
+            dayWidth: 48,
+            calendar: calendar
+        )
+        #expect(reversed.x == CGFloat(10) * 48)
+        #expect(reversed.width == CGFloat(11) * 48)
     }
 
     @Test func monthMarkersReturnsEmptyForReversedVisibleRangeInsteadOfCrashing() {
