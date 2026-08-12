@@ -151,15 +151,17 @@ enum GoalContributionResolver {
                 if lhs.priority != rhs.priority {
                     return priorityRank(lhs.priority) > priorityRank(rhs.priority)
                 }
-                let lhsDue = lhs.dueDate.isEmpty ? "9999-12-31" : lhs.dueDate
-                let rhsDue = rhs.dueDate.isEmpty ? "9999-12-31" : rhs.dueDate
+                let lhsDue = TaskOrdering.dateSortKey(lhs.dueDate)
+                let rhsDue = TaskOrdering.dateSortKey(rhs.dueDate)
                 if lhsDue != rhsDue { return lhsDue < rhsDue }
-                if lhs.scheduledDate != rhs.scheduledDate {
-                    let lhsDo = lhs.scheduledDate.isEmpty ? "9999-12-31" : lhs.scheduledDate
-                    let rhsDo = rhs.scheduledDate.isEmpty ? "9999-12-31" : rhs.scheduledDate
-                    return lhsDo < rhsDo
-                }
-                return lhs.order < rhs.order
+                let lhsDo = TaskOrdering.dateSortKey(lhs.scheduledDate)
+                let rhsDo = TaskOrdering.dateSortKey(rhs.scheduledDate)
+                if lhsDo != rhsDo { return lhsDo < rhsDo }
+                // This sort feeds `.first`, so an incomplete tie-break does not merely reorder a
+                // list — it changes *which task the goal card names as your next action* between
+                // one render and the next. `order` alone was not enough: it is per-container, and
+                // a goal's tasks come from several lists.
+                return TaskOrdering.fallbackPrecedes(lhs, rhs)
             }
             .first
 

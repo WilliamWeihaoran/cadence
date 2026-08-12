@@ -7,18 +7,10 @@ enum TasksPanelMode {
     case byDoDate
 }
 
-enum TaskSortField: String, CaseIterable, Identifiable {
-    case custom = "Custom"
-    case date = "Date"
-    case priority = "Priority"
-    var id: String { rawValue }
-}
-
-enum TaskSortDirection: String, CaseIterable, Identifiable {
-    case ascending = "Ascending"
-    case descending = "Descending"
-    var id: String { rawValue }
-}
+// `TaskSortField` and `TaskSortDirection` live in `Cadence/Models/TaskOrdering.swift`, next to
+// the comparator that reads them, so `CadenceWidgets` and `CadenceMCPServer` can reach both.
+// `TaskGroupingMode` stays here: grouping is a macOS list-surface concern with no comparator
+// behind it, and no other target has a grouped task list.
 
 enum TaskGroupingMode: String, CaseIterable, Identifiable {
     case none = "None"

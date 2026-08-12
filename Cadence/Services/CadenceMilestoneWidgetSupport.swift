@@ -173,7 +173,7 @@ enum CadenceMilestoneWidgetSupport {
 
     private nonisolated static func normalizedDate(_ value: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "9999-12-31" : trimmed
+        return trimmed.isEmpty ? TaskOrdering.noDateSortKey : trimmed
     }
 
     private nonisolated static func normalizedTitle(_ title: String) -> String {

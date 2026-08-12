@@ -150,18 +150,21 @@ enum CadenceTodayWidgetSupport {
         from tasks: [AppTask],
         todayKey: String
     ) -> [AppTask] {
-        tasks.compactMap { task -> (task: AppTask, rank: Int, priorityRank: Int, order: Int)? in
+        tasks.compactMap { task -> (task: AppTask, rank: Int, priorityRank: Int)? in
             guard !task.isDone && !task.isCancelled else { return nil }
             let taskRank = rank(task, todayKey: todayKey)
             guard taskRank < 3 else { return nil }
-            return (task, taskRank, priorityRank(task.priority), task.order)
+            return (task, taskRank, priorityRank(task.priority))
         }
             .sorted { lhs, rhs in
                 if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
                 if lhs.priorityRank != rhs.priorityRank {
                     return lhs.priorityRank > rhs.priorityRank
                 }
-                return lhs.order < rhs.order
+                // The shared tie-break rather than a bare `order`. A widget renders the first
+                // few rows of this list, so an unstable tail is the difference between "the
+                // widget updated" and "the widget shuffled".
+                return TaskOrdering.fallbackPrecedes(lhs.task, rhs.task)
             }
             .map(\.task)
     }

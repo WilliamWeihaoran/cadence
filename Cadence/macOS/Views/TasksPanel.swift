@@ -704,8 +704,11 @@ struct TasksPanel: View {
             let leftRank = todayTaskSortRank(lhs)
             let rightRank = todayTaskSortRank(rhs)
             if leftRank != rightRank { return leftRank < rightRank }
-            if lhs.order != rhs.order { return lhs.order < rhs.order }
-            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            // The tie-break is the shared one, not a local `order`-then-`title` pair. `order` is
+            // assigned per container, so this cross-list view routinely compares tasks with equal
+            // `order` — and equal titles are not rare either. Without `createdAt` and `id` behind
+            // them the rank ties were an unstable sort.
+            return TaskOrdering.fallbackPrecedes(lhs, rhs)
         }
 
         return taskSortPrecedes(lhs, rhs, field: activeSortField, direction: activeSortDirection)

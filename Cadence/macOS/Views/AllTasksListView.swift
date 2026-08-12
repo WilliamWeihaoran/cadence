@@ -39,12 +39,7 @@ struct AllTasksListView: View {
     private var completedTasks: [AppTask] {
         visibleTaskUniverse
             .filter { $0.isDone || $0.isCancelled }
-            .sorted { lhs, rhs in
-                let lhsDate = lhs.completedAt ?? lhs.createdAt
-                let rhsDate = rhs.completedAt ?? rhs.createdAt
-                if lhsDate != rhsDate { return lhsDate > rhsDate }
-                return taskSortPrecedes(lhs, rhs, field: .custom, direction: .ascending)
-            }
+            .taskCompletionSorted()
     }
 
     private var completedTaskCount: Int {

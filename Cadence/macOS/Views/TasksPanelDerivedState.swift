@@ -132,7 +132,7 @@ struct TasksPanelDerivedState {
                 }
                 return todayRange.contains(completedAt)
             }
-            .sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
+            .taskCompletionSorted()
     }
 
     var todayEligibleTasks: [AppTask] {
