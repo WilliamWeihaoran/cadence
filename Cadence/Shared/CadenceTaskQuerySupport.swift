@@ -38,7 +38,7 @@ enum CadenceTaskQuerySupport {
                 }
                 return false
             }
-            .sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
+            .taskCompletionSorted()
     }
 
     /// The same four sections macOS's `todayDateSections` draws, in the same order. A due date
@@ -74,7 +74,7 @@ enum CadenceTaskQuerySupport {
     static func completedInboxTasks(from tasks: [AppTask]) -> [AppTask] {
         tasks
             .filter { $0.area == nil && $0.project == nil && $0.isDone && !$0.isCancelled }
-            .sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
+            .taskCompletionSorted()
     }
 
     static func activeTasks(
@@ -90,7 +90,7 @@ enum CadenceTaskQuerySupport {
     static func completedTasks(from tasks: [AppTask]) -> [AppTask] {
         tasks
             .filter { $0.isDone && !$0.isCancelled }
-            .sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
+            .taskCompletionSorted()
     }
 
     static func sortedTasks(

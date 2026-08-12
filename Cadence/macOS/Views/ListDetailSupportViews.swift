@@ -338,7 +338,7 @@ struct ListLogView: View {
     let tasks: [AppTask]
 
     private var doneTasks: [AppTask] {
-        tasks.filter { $0.isDone || $0.isCancelled }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) }
+        tasks.filter { $0.isDone || $0.isCancelled }.taskCompletionSorted()
     }
 
     var body: some View {

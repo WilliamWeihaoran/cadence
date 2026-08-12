@@ -27,7 +27,7 @@ struct InboxView: View {
         let sorted = CadenceTaskQuerySupport.openTasks(from: inboxTasks).taskSorted(by: sortField, direction: sortDirection)
         return applyFrozenTaskOrder(sorted, frozen: frozenTaskOrder)
     }
-    private var doneTasks: [AppTask] { inboxTasks.filter { $0.isDone || $0.isCancelled }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) } }
+    private var doneTasks: [AppTask] { inboxTasks.filter { $0.isDone || $0.isCancelled }.taskCompletionSorted() }
     private var inboxItemCount: Int { activeTasks.count + remindersManager.reminders.count }
     private var shouldShowRemindersSection: Bool {
         !remindersManager.isAuthorized || remindersManager.isLoading || !remindersManager.reminders.isEmpty

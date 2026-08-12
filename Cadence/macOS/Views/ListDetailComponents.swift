@@ -22,7 +22,7 @@ struct ListTasksView: View {
         let sorted = CadenceTaskQuerySupport.openTasks(from: tasks).taskSorted(by: sortField, direction: sortDirection)
         return applyFrozenTaskOrder(sorted, frozen: frozenTaskOrder)
     }
-    private var doneTasks: [AppTask] { tasks.filter { $0.isDone || $0.isCancelled }.sorted { ($0.completedAt ?? $0.createdAt) > ($1.completedAt ?? $1.createdAt) } }
+    private var doneTasks: [AppTask] { tasks.filter { $0.isDone || $0.isCancelled }.taskCompletionSorted() }
     private var sectionNames: [String] { area?.sectionNames ?? project?.sectionNames ?? [TaskSectionDefaults.defaultName] }
     private var todayKey: String { DateFormatters.todayKey() }
 
