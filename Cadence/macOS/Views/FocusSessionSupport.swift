@@ -16,6 +16,19 @@ enum FocusSessionSupport {
         CadenceFocusSupport.readyTasks(from: tasks, todayKey: todayKey)
     }
 
+    /// The hour/minute pair the "Log session" popovers pre-fill from the stopwatch.
+    ///
+    /// Goes through `CadenceFocusSupport.minutes(fromElapsedSeconds:)` — the one place that turns
+    /// elapsed seconds into logged minutes — rather than re-deriving it. Both popovers used to
+    /// ceil (`(seconds + 59) / 60`), which is the rounding that helper's own doc comment describes
+    /// as a bug it fixed: a 61-second session pre-filled 2 minutes while `FocusManager.commitElapsed`
+    /// logged 1 for the same stopwatch reading, and a 20-second session pre-filled a whole minute
+    /// of work that never happened. Logged time is a record, so the two paths have to agree.
+    static func logFieldSeed(elapsedSeconds: Int) -> (hours: Int, minutes: Int) {
+        let total = CadenceFocusSupport.minutes(fromElapsedSeconds: elapsedSeconds)
+        return (total / 60, total % 60)
+    }
+
     static func logSession(
         hours: Int,
         minutes: Int,

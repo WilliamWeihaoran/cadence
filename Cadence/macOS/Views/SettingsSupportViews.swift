@@ -40,7 +40,11 @@ struct CalendarLinkRow: View {
 
 struct ContextSettingsRow: View {
     @Bindable var context: Context
-    let onDropBefore: (UUID) -> Void
+    /// Hands back the id of the context that was **dragged onto this row** — not this row's own
+    /// id. Named for what it carries: as `onDropBefore` it read like the drop *target*, and the
+    /// call site duly passed it into the target slot and this row's `context.id` into the dragged
+    /// slot, so dropping C onto A reordered A instead of C.
+    let onDropDraggedContext: (UUID) -> Void
     let onArchive: () -> Void
     let onDelete: () -> Void
 
@@ -143,7 +147,7 @@ struct ContextSettingsRow: View {
         .draggable(context.id.uuidString)
         .dropDestination(for: String.self) { items, _ in
             guard let draggedID = items.compactMap(UUID.init(uuidString:)).first else { return false }
-            onDropBefore(draggedID)
+            onDropDraggedContext(draggedID)
             isDropTarget = false
             return true
         } isTargeted: { targeted in

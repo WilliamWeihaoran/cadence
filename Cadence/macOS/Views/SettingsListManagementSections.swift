@@ -311,7 +311,10 @@ struct SettingsContextsSection: View {
                         ForEach(Array(activeContexts.enumerated()), id: \.element.id) { _, context in
                             ContextSettingsRow(
                                 context: context,
-                                onDropBefore: { targetID in onMoveContext(context.id, targetID) },
+                                // (dragged, target) — the row hands back the dragged id and *is*
+                                // the target, matching `SidebarTabSettingsRow`'s wiring. Reversed,
+                                // dropping C onto A moved A and left C where it was.
+                                onDropDraggedContext: { draggedID in onMoveContext(draggedID, context.id) },
                                 onArchive: { onArchiveContext(context) },
                                 onDelete: { onDeleteContext(context) }
                             )

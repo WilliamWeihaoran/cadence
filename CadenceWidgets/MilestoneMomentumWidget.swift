@@ -316,10 +316,18 @@ struct MilestoneMomentumWidgetView: View {
         CadenceWidgetDateSupport.dueLabel(for: goal.nextActionDueDate, todayKey: todayKey)
     }
 
+    /// Red / amber / blue, the same three stops `TodayTasksWidgetView.statusPresentation` and
+    /// `CalendarSnapshotWidget.upcomingDueTint` use — all three tint a label that
+    /// `CadenceWidgetDateSupport.dueLabel` produced, so they have to agree on what it means.
+    ///
+    /// The `dueToday` branch was missing here, so a next action due *today* rendered the string
+    /// "Due today" in `Theme.blueLight`, the app's not-urgent stop, while the Today and Calendar
+    /// widgets on the same home screen painted the identical string amber.
     private func nextActionDueTint(for goal: CadenceMilestoneWidgetGoal) -> Color {
-        goal.nextActionDueDate < todayKey
-            ? Theme.red
-            : Theme.blueLight
+        let dueDate = goal.nextActionDueDate
+        if dueDate < todayKey { return Theme.red }
+        if dueDate == todayKey { return Theme.amber }
+        return Theme.blueLight
     }
 
     private var todayKey: String {

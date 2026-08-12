@@ -58,7 +58,7 @@ struct FocusView: View {
             FocusSessionHeader(
                 task: task,
                 estimateLabel: durationLabel(for: task),
-                onClose: { focusManager.activeTask = nil }
+                onClose: { focusManager.endSession() }
             )
 
             HSplitView {
@@ -154,7 +154,7 @@ struct FocusView: View {
             FocusBundleHeader(
                 bundle: bundle,
                 selectedCount: selectedBundleTasks(bundle).count,
-                onClose: { focusManager.activeSession = nil }
+                onClose: { focusManager.endSession() }
             )
 
             HSplitView {

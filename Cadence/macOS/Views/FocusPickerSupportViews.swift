@@ -15,9 +15,25 @@ enum FocusPickItem: Identifiable {
     static func filtered(tasks: [AppTask], bundles: [TaskBundle], query: String, todayKey: String) -> [FocusPickItem] {
         let activeBundles = bundles
             .filter { !$0.sortedTasks.isEmpty && !$0.isCompleted }
+            // Rank first, *then* the day inside a rank. Comparing "keys differ" before "ranks
+            // differ" meant two bundles in the same rank but on different days — every pair of
+            // future bundles, and every pair of past ones — compared as equal, so the day was
+            // never consulted and `startMin`/`createdAt` were never reached: a bundle eight days
+            // out could sort above tomorrow's. It also made the comparator inconsistent (A on the
+            // 13th "equals" both B and C on the 20th, while B and C order strictly by `startMin`),
+            // which is not a strict weak ordering and leaves `sorted(by:)` free to return anything.
             .sorted { lhs, rhs in
+                let lhsRank = bundleDateRank(lhs.dateKey, todayKey: todayKey)
+                let rhsRank = bundleDateRank(rhs.dateKey, todayKey: todayKey)
+                if lhsRank != rhsRank {
+                    return lhsRank < rhsRank
+                }
                 if lhs.dateKey != rhs.dateKey {
-                    return bundleDateRank(lhs.dateKey, todayKey: todayKey) < bundleDateRank(rhs.dateKey, todayKey: todayKey)
+                    // Upcoming days read soonest-first; past days read most-recent-first, so a
+                    // bundle left over from yesterday sits above one from six months ago.
+                    return lhsRank == pastBundleRank
+                        ? lhs.dateKey > rhs.dateKey
+                        : lhs.dateKey < rhs.dateKey
                 }
                 if lhs.startMin != rhs.startMin {
                     return lhs.startMin < rhs.startMin
@@ -34,10 +50,12 @@ enum FocusPickItem: Identifiable {
         return items.filter { $0.matches(cleanedQuery) }
     }
 
+    private static let pastBundleRank = 3
+
     private static func bundleDateRank(_ dateKey: String, todayKey: String) -> Int {
         if dateKey == todayKey { return 0 }
         if dateKey.isEmpty { return 2 }
-        return dateKey > todayKey ? 1 : 3
+        return dateKey > todayKey ? 1 : pastBundleRank
     }
 
     private func matches(_ query: String) -> Bool {

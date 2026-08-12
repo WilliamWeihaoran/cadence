@@ -85,6 +85,23 @@ final class FocusManager {
         elapsed = 0
     }
 
+    /// Leave the current session the way switching to another one leaves it: bank the elapsed
+    /// time against the task (or bundle) that earned it, then clear the session.
+    ///
+    /// Clearing `activeSession` directly is what the close buttons used to do, and it stranded the
+    /// stopwatch: `isRunning` stayed `true`, so `FocusView`'s one-second timer kept incrementing
+    /// `elapsed` with no session attached — the idle "Pick a task" card showed a clock still
+    /// counting up. Picking the next task then called `startFocus`, whose `commitElapsed()` hit the
+    /// `case nil` branch and zeroed `elapsed`, so a 25-minute session closed rather than switched
+    /// away from logged nothing at all. `startFocus` already commits on a switch; closing is the
+    /// same act of leaving a session, so it commits too.
+    func endSession() {
+        commitElapsed()
+        activeSession = nil
+        selectedBundleTaskIDs.removeAll()
+        reset()
+    }
+
     func reset() {
         isRunning = false
         elapsed = 0

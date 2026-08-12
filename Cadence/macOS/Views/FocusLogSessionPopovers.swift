@@ -14,9 +14,9 @@ struct LogSessionPopover: View {
         self.task = task
         self.onLog = onLog
         self.onDiscard = onDiscard
-        let totalMins = (elapsedSeconds + 59) / 60
-        _logHours = State(initialValue: totalMins / 60)
-        _logMinutes = State(initialValue: totalMins % 60)
+        let seed = FocusSessionSupport.logFieldSeed(elapsedSeconds: elapsedSeconds)
+        _logHours = State(initialValue: seed.hours)
+        _logMinutes = State(initialValue: seed.minutes)
     }
 
     private var totalMinutes: Int { logHours * 60 + logMinutes }
@@ -150,9 +150,9 @@ struct BundleLogSessionPopover: View {
         self.selectedTasks = selectedTasks
         self.onLog = onLog
         self.onDiscard = onDiscard
-        let totalMins = (elapsedSeconds + 59) / 60
-        _logHours = State(initialValue: totalMins / 60)
-        _logMinutes = State(initialValue: totalMins % 60)
+        let seed = FocusSessionSupport.logFieldSeed(elapsedSeconds: elapsedSeconds)
+        _logHours = State(initialValue: seed.hours)
+        _logMinutes = State(initialValue: seed.minutes)
     }
 
     private var totalMinutes: Int { logHours * 60 + logMinutes }
