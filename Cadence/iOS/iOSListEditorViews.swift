@@ -465,27 +465,6 @@ private struct iOSSectionColorPicker: View {
 
 // MARK: - Identity strips
 
-/// The **icon** half of the list identity picker. Colours come from `CadenceColorPalette`.
-///
-/// The icon set is still iOS-local because macOS's `IconGrid` is `#if os(macOS)` in
-/// `macOS/Sheets/` — the same shape the colour palettes were in before they were consolidated,
-/// and the same fix applies whenever someone needs a third icon grid.
-enum iOSListPalette {
-
-    /// The icons lists actually get given, in the order macOS's `IconGrid` opens with.
-    static let icons = [
-        "folder.fill", "checklist", "tray.fill", "briefcase.fill",
-        "house.fill", "book.fill", "graduationcap.fill", "heart.fill",
-        "dumbbell.fill", "leaf.fill", "airplane", "dollarsign.circle.fill",
-    ]
-
-    static func offeredIcons(for selected: String) -> [String] {
-        let stored = selected.trimmingCharacters(in: .whitespaces)
-        guard !stored.isEmpty, !icons.contains(stored) else { return icons }
-        return icons + [stored]
-    }
-}
-
 /// A hex text field is not a colour picker. This is the same swatch strip `ListEditorColorStrip`
 /// gives the macOS list editors, at touch size.
 private struct iOSListColorStrip: View {
@@ -539,7 +518,7 @@ private struct iOSListIconStrip: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                ForEach(iOSListPalette.offeredIcons(for: selected), id: \.self) { icon in
+                ForEach(CadenceIconPalette.offeredIcons(for: selected), id: \.self) { icon in
                     let isSelected = icon == selected
                     Button {
                         selected = icon

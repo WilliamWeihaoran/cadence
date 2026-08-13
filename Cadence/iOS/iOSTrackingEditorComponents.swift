@@ -239,7 +239,10 @@ struct iOSHabitFrequencyEditor: View {
 
 struct iOSTrackingIconGrid: View {
     @Binding var selection: String
-    private let icons = ["sparkles", "star.fill", "flag.fill", "flame.fill", "book.fill", "figure.run", "heart.fill", "brain.head.profile", "paintbrush.fill", "briefcase.fill", "leaf.fill", "music.note"]
+    /// The shared set, not a fourth private one. This used to offer `sparkles`, `figure.run` and
+    /// `brain.head.profile`, none of which macOS can select — so an icon chosen for a goal here
+    /// showed no selection when the same goal was opened on the Mac.
+    private var icons: [String] { CadenceIconPalette.offeredIcons(for: selection) }
 
     var body: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {

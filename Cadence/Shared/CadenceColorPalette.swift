@@ -46,3 +46,43 @@ enum CadenceColorPalette {
         lhs.caseInsensitiveCompare(rhs) == .orderedSame
     }
 }
+
+
+/// The SF Symbol set offered wherever a user picks an `icon` for a list, goal or habit.
+///
+/// This had the same three-way split the colour palette did, with a sharper edge: macOS's
+/// `IconGrid` offered 44 symbols, iOS offered a 12-symbol strip that was *not* a subset — it
+/// included `dollarsign.circle.fill`, which macOS could not select — and `IconGrid` had no
+/// "keep a stored value that is no longer offered" rule. So an icon chosen on iPhone could open
+/// on the Mac with no swatch reading as selected, and the next save would silently replace it.
+///
+/// One set, and the same append rule as `CadenceColorPalette`.
+enum CadenceIconPalette {
+    static let icons = [
+        // Organization
+        "square.stack.fill", "folder.fill", "tray.fill", "archivebox.fill",
+        "doc.fill", "doc.text.fill", "checklist", "list.bullet.clipboard",
+        // Work & study
+        "briefcase.fill", "graduationcap.fill", "book.fill", "pencil",
+        "chart.bar.fill", "chart.line.uptrend.xyaxis", "lightbulb.fill", "brain",
+        // Home & life
+        "house.fill", "heart.fill", "person.fill", "person.2.fill",
+        "star.fill", "bookmark.fill", "flag.fill", "tag.fill",
+        // Activities
+        "dumbbell.fill", "flame.fill", "leaf.fill", "drop.fill",
+        "music.note", "headphones", "gamecontroller.fill", "paintbrush.fill",
+        // Travel & places
+        "airplane", "car.fill", "map.fill", "globe",
+        // Other
+        "bolt.fill", "camera.fill", "cart.fill", "stethoscope",
+        "trophy.fill", "medal.fill", "crown.fill", "building.2.fill",
+    ]
+
+    /// The palette, plus `selected` when the palette no longer contains it — so a stored symbol
+    /// is never silently swapped for a different one just because the grid changed.
+    static func offeredIcons(for selected: String) -> [String] {
+        let stored = selected.trimmingCharacters(in: .whitespaces)
+        guard !stored.isEmpty, !icons.contains(stored) else { return icons }
+        return icons + [stored]
+    }
+}

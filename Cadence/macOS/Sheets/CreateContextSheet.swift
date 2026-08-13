@@ -81,25 +81,6 @@ struct ColorGrid: View {
 struct IconGrid: View {
     @Binding var selected: String
 
-    static let icons = [
-        // Organization
-        "square.stack.fill", "folder.fill", "tray.fill", "archivebox.fill",
-        "doc.fill", "doc.text.fill", "checklist", "list.bullet.clipboard",
-        // Work & study
-        "briefcase.fill", "graduationcap.fill", "book.fill", "pencil",
-        "chart.bar.fill", "chart.line.uptrend.xyaxis", "lightbulb.fill", "brain",
-        // Home & life
-        "house.fill", "heart.fill", "person.fill", "person.2.fill",
-        "star.fill", "bookmark.fill", "flag.fill", "tag.fill",
-        // Activities
-        "dumbbell.fill", "flame.fill", "leaf.fill", "drop.fill",
-        "music.note", "headphones", "gamecontroller.fill", "paintbrush.fill",
-        // Travel & places
-        "airplane", "car.fill", "map.fill", "globe",
-        // Other
-        "bolt.fill", "camera.fill", "cart.fill", "stethoscope",
-        "trophy.fill", "medal.fill", "crown.fill", "building.2.fill",
-    ]
 
     var columns: Int = 8
     var cellSize: CGFloat = 36
@@ -110,7 +91,7 @@ struct IconGrid: View {
             columns: Array(repeating: GridItem(.fixed(cellSize), spacing: spacing), count: columns),
             spacing: spacing
         ) {
-            ForEach(Self.icons, id: \.self) { icon in
+            ForEach(CadenceIconPalette.offeredIcons(for: selected), id: \.self) { icon in
                 ZStack {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(selected == icon ? Theme.blue.opacity(0.2) : Theme.surfaceElevated)

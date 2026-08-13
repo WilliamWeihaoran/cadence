@@ -93,7 +93,18 @@ struct iOSCalendarContextStrip: View {
             iOSMetaChip(label: "\(totalCount) total", color: Theme.blue, systemImage: "calendar")
             iOSMetaChip(label: "\(timedCount) timed", color: Theme.purple, systemImage: "clock.fill")
             iOSMetaChip(label: "\(taskCount) tasks", color: Theme.green, systemImage: "checklist")
-            iOSMetaChip(label: "\(eventCount + bundleCount) events", color: Theme.amber, systemImage: "tray.full.fill")
+            // Blocks and events are separate things and used to be reported separately, by an
+            // inspector strip this replaced. Summing them made a day of 2 blocks + 1 event read
+            // identically to a day of 0 blocks + 3 events. Each is shown only when it has one.
+            if bundleCount > 0 {
+                iOSMetaChip(label: "\(bundleCount) blocks", color: Theme.amber, systemImage: "tray.full.fill")
+            }
+            if eventCount > 0 {
+                iOSMetaChip(label: "\(eventCount) events", color: Theme.amber, systemImage: "calendar.badge.clock")
+            }
+            if bundleCount == 0 && eventCount == 0 {
+                iOSMetaChip(label: "0 events", color: Theme.amber, systemImage: "calendar.badge.clock")
+            }
         }
         .fixedSize()
     }

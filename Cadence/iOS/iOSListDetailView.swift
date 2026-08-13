@@ -112,7 +112,15 @@ struct iOSListDetailView: View {
                 onEdit: presentEditor
             )
 
-            iOSListDetailPagePicker(page: $page)
+            iOSListDetailPagePicker(
+                page: $page,
+                counts: [
+                    .tasks: activeTasks.count,
+                    .kanban: activeTasks.count,
+                    .planning: activeTasks.count,
+                    .completed: completedTasks.count
+                ]
+            )
                 .padding(.horizontal, horizontalSizeClass == .regular ? 18 : 12)
                 .padding(.bottom, 8)
 

@@ -168,6 +168,10 @@ struct iOSListCreateButtonsRow: View {
 /// which would stack a second selection layer on top of this one.
 struct iOSListDetailPagePicker: View {
     @Binding var page: iOSListDetailPage
+    /// How many items each tab holds, for the tabs where a total means something. Each tab used
+    /// to draw its own header carrying this number; removing those headers — the tab bar already
+    /// names the tab — took the counts with them, and the count was not the redundant half.
+    var counts: [iOSListDetailPage: Int] = [:]
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -177,10 +181,21 @@ struct iOSListDetailPagePicker: View {
                     Button {
                         page = item
                     } label: {
-                        Text(item.rawValue)
-                            .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                            .foregroundStyle(isSelected ? Theme.text : Theme.dim)
-                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Text(item.rawValue)
+                                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                                // `muted`, not `dim`: an unselected tab is a label you read and
+                                // tap, and `dim` on this surface sits under the AA floor at 13pt.
+                                .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                                .lineLimit(1)
+
+                            if let count = counts[item], count > 0 {
+                                Text("\(count)")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(isSelected ? Theme.muted : Theme.dim)
+                            }
+                        }
                             .padding(.horizontal, 12)
                             .frame(minHeight: 44)
                             .background(
