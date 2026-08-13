@@ -13,6 +13,7 @@ struct iOSCalendarView: View {
     @AppStorage("ios.calendar.selectedDateKey") private var selectedDateKeyRaw = ""
     @AppStorage("ios.calendar.anchorDateKey") private var anchorDateKeyRaw = ""
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dismiss) private var dismiss
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var anchorDate = Calendar.current.startOfDay(for: Date())
     @State private var quickCreateSeed: iOSCalendarQuickCreateSeed?
@@ -162,6 +163,7 @@ struct iOSCalendarView: View {
         VStack(spacing: 0) {
             iOSCalendarToolbar(
                 title: titleLabel,
+                onBack: isCompact ? { dismiss() } : nil,
                 viewMode: Binding(get: { viewMode }, set: setViewMode),
                 presentation: Binding(get: { presentation }, set: setPresentation),
                 zoomLevel: $zoomLevel,
@@ -219,6 +221,7 @@ struct iOSCalendarView: View {
             }
         }
         .background(Theme.bg.ignoresSafeArea())
+        .iOSHidesCompactNavigationBar()
         .onAppear(perform: restorePersistedCalendarDates)
         .onChange(of: selectedDate) { _, newDate in
             persistSelectedDate(newDate)

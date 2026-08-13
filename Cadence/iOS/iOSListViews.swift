@@ -9,6 +9,7 @@ enum iOSListRoute: Hashable {
 
 struct iOSListsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -76,7 +77,12 @@ struct iOSListsView: View {
 
     private var compactLayout: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSListsPageHeader(count: activeAreas.count + activeProjects.count)
+            // The nav bar above is hidden (see `.toolbar(.hidden…)` on the body), which is what
+            // left iPhone with no way back other than the swipe gesture. The chevron lives here.
+            iOSListsPageHeader(
+                count: activeAreas.count + activeProjects.count,
+                onBack: { dismiss() }
+            )
 
             iOSListCreateButtonsRow(editorMode: $editorMode)
                 .padding(.horizontal, 16)

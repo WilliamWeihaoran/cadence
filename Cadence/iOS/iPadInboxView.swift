@@ -61,8 +61,9 @@ struct iPadInboxView: View {
             }
         }
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle("Inbox")
-        .navigationBarTitleDisplayMode(.large)
+        // Both layouts head themselves with "CAPTURE / Inbox", so a nav title repeated the word
+        // one row higher. See `iOSHidesCompactNavigationBar()`.
+        .iOSHidesCompactNavigationBar()
     }
 
     private var inboxColumn: some View {

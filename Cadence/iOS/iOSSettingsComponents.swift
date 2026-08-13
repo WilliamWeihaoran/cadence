@@ -571,20 +571,31 @@ struct iOSSettingsCard<Content: View>: View {
 /// Local stand-in for the shared `CadenceSettingsHeader`, same layout, riding on
 /// `iOSSettingsCard`'s soft-elevation styling instead of the shared hard-border card.
 struct iOSSettingsPageHeader<TrailingContent: View>: View {
+    /// Only set where this header is the top of a pushed screen whose navigation bar is hidden, so
+    /// the word "Settings" survives the bar it used to live in. Elsewhere the title alone is the
+    /// category name and an eyebrow would just label the label.
+    let eyebrow: String?
     let title: String
     let icon: String
     let tint: Color
+    /// Set on iPhone, where this row is the top of the screen. See
+    /// `iOSHidesCompactNavigationBar()`.
+    let onBack: (() -> Void)?
     @ViewBuilder let trailingContent: TrailingContent
 
     init(
+        eyebrow: String? = nil,
         title: String,
         icon: String,
         tint: Color,
+        onBack: (() -> Void)? = nil,
         @ViewBuilder trailingContent: () -> TrailingContent = { EmptyView() }
     ) {
+        self.eyebrow = eyebrow
         self.title = title
         self.icon = icon
         self.tint = tint
+        self.onBack = onBack
         self.trailingContent = trailingContent()
     }
 
@@ -593,6 +604,12 @@ struct iOSSettingsPageHeader<TrailingContent: View>: View {
             // Single-line row now that the description is gone, so the glyph, title,
             // and badge center against each other instead of hanging from the top.
             HStack(alignment: .center, spacing: 14) {
+                if let onBack {
+                    iOSHeaderBackButton(action: onBack)
+                        .padding(.leading, -8)
+                        .padding(.trailing, -6)
+                }
+
                 RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                     .fill(tint.opacity(0.18))
                     .frame(width: 42, height: 42)
@@ -602,9 +619,19 @@ struct iOSSettingsPageHeader<TrailingContent: View>: View {
                             .foregroundStyle(tint)
                     }
 
-                Text(title)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Theme.text)
+                VStack(alignment: .leading, spacing: 2) {
+                    if let eyebrow {
+                        Text(eyebrow)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                            .textCase(.uppercase)
+                            .kerning(0.8)
+                    }
+
+                    Text(title)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                }
 
                 Spacer(minLength: 0)
                 trailingContent

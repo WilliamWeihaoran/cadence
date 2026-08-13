@@ -4,6 +4,7 @@ import SwiftData
 import SwiftUI
 
 struct iOSSettingsView: View {
+    @Environment(\.dismiss) private var dismiss
     @Environment(AISettingsManager.self) private var aiSettingsManager
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Environment(NotificationManager.self) private var notificationManager
@@ -61,6 +62,10 @@ struct iOSSettingsView: View {
         iOSMarkdownEditorPreferences.mode(from: notesEditorModeRaw)
     }
 
+    private var isCompactWidth: Bool {
+        horizontalSizeClass != .regular
+    }
+
     var body: some View {
         Group {
             if horizontalSizeClass == .regular {
@@ -79,7 +84,7 @@ struct iOSSettingsView: View {
                 .scrollIndicators(.hidden)
             }
         }
-        .navigationTitle("Settings")
+        .iOSHidesCompactNavigationBar()
         .background(Theme.bg.ignoresSafeArea())
         .sheet(item: $contextEditorMode) { mode in
             iOSContextEditorSheet(mode: mode)
@@ -119,11 +124,16 @@ struct iOSSettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    /// On iPhone this card is the top of the screen: it takes the back control and the word
+    /// "Settings" the hidden navigation bar used to carry, over the category name it already had.
+    /// On iPad the rail beside it says both, so neither is repeated here.
     private var settingsHeader: some View {
         iOSSettingsPageHeader(
+            eyebrow: isCompactWidth ? "Settings" : nil,
             title: selectedCategory.title,
             icon: selectedCategory.icon,
-            tint: selectedCategory.tint
+            tint: selectedCategory.tint,
+            onBack: isCompactWidth ? { dismiss() } : nil
         ) {
             switch selectedCategory {
             case .navigation:

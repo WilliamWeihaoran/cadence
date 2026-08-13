@@ -89,8 +89,10 @@ struct iPadTodayView: View {
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle("Today")
-        .navigationBarTitleDisplayMode(.large)
+        // No `.navigationTitle("Today")`. Both layouts head themselves — the compact one with
+        // "THURSDAY, AUGUST 13 / Today", the iPad one with `iPadTodayTaskHeader` — so a large nav
+        // title said "Today" a second time, 60pt above the first.
+        .iOSHidesCompactNavigationBar()
     }
 
     @ViewBuilder

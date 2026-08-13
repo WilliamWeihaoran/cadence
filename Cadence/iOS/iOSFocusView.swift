@@ -4,6 +4,7 @@ import SwiftUI
 
 struct iOSFocusView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
@@ -43,6 +44,7 @@ struct iOSFocusView: View {
             }
         }
         .background(Theme.bg.ignoresSafeArea())
+        .iOSHidesCompactNavigationBar()
         .onAppear {
             selectedTaskID = selectedTaskID ?? readyTasks.first?.id
         }
@@ -80,7 +82,8 @@ struct iOSFocusView: View {
                     eyebrow: statusEyebrow,
                     title: "Focus",
                     systemImage: "timer",
-                    color: Theme.red
+                    color: Theme.red,
+                    onBack: { dismiss() }
                 )
 
                 if readyTasks.isEmpty {

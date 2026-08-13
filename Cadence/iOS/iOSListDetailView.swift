@@ -15,6 +15,7 @@ enum iOSListDetailPage: String, CaseIterable, Identifiable {
 
 struct iOSListDetailView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     let area: Area?
@@ -109,6 +110,7 @@ struct iOSListDetailView: View {
                 title: title,
                 icon: icon,
                 colorHex: colorHex,
+                onBack: horizontalSizeClass == .compact ? { dismiss() } : nil,
                 onEdit: presentEditor
             )
 
@@ -129,13 +131,13 @@ struct iOSListDetailView: View {
             pageBody
         }
         .background(Theme.bg.ignoresSafeArea())
-        // The page carries its own header, so the nav bar is only here for the back button on
-        // compact. Titling it as well would name the list twice on iPhone — and on iPad this view
-        // is hosted with no navigation stack at all, which is why the edit control had to move out
-        // of the toolbar: as a `ToolbarItem` it had nowhere to render and the list editor was
-        // unreachable from the detail pane.
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
+        // The page carries its own header, so an empty inline nav title was the only thing keeping
+        // the bar around — 44pt of chrome holding one chevron above a header that already named the
+        // list. The chevron is in the header now and the bar is gone. On iPad this view is hosted
+        // with no navigation stack at all, which is why the edit control had to move out of the
+        // toolbar: as a `ToolbarItem` it had nowhere to render and the list editor was unreachable
+        // from the detail pane.
+        .iOSHidesCompactNavigationBar()
         .sheet(item: $editorMode) { mode in
             iOSListEditorSheet(mode: mode)
         }
@@ -267,8 +269,9 @@ struct iOSListDetailView: View {
 
 }
 
-/// The one place this page names itself: identity tile in the list's own colour, the context path
-/// it lives under, its name, and the control that opens the list editor.
+/// The one place this page names itself: the back control on iPhone, an identity tile in the list's
+/// own colour, the context path it lives under, its name, and the control that opens the list
+/// editor.
 ///
 /// It replaces a `.navigationBarTitleDisplayMode(.large)` title *plus* a second `iOSPanelHeader`
 /// inside the Tasks tab that repeated the same name and context one row lower, and it carries the
@@ -279,6 +282,7 @@ private struct iOSListDetailHeader: View {
     let title: String
     let icon: String
     let colorHex: String
+    var onBack: (() -> Void)? = nil
     let onEdit: () -> Void
 
     private var isRegularWidth: Bool {
@@ -287,6 +291,11 @@ private struct iOSListDetailHeader: View {
 
     var body: some View {
         HStack(spacing: isRegularWidth ? 12 : 10) {
+            if let onBack {
+                iOSHeaderBackButton(action: onBack)
+                    .padding(.leading, -8)
+            }
+
             iOSListIconBadge(icon: icon, colorHex: colorHex, size: isRegularWidth ? 36 : 32)
 
             VStack(alignment: .leading, spacing: 2) {

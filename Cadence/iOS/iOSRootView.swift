@@ -27,7 +27,12 @@ struct iOSRootView: View {
     @Query private var allTasksForNotifications: [AppTask]
     @Query private var allHabitsForNotifications: [Habit]
     @State private var selection: iOSSidebarItem? = .today
-    @State private var compactPath: [CadenceFeatureDestination] = []
+    /// Type-erased on purpose. A `NavigationStack(path:)` bound to a homogeneous
+    /// `[CadenceFeatureDestination]` can only ever push that one type — a
+    /// `NavigationLink(value:)` carrying any other value is silently discarded, with no warning
+    /// and no push. That is what made every list row on the Lists page dead on iPhone: it pushes
+    /// an `iOSListRoute`. `NavigationPath` holds any `Hashable`, so both types travel.
+    @State private var compactPath = NavigationPath()
 
     var body: some View {
         Group {
@@ -110,7 +115,7 @@ struct iOSRootView: View {
 /// NavigationStack rooted at a home list of every destination, with an always-available
 /// floating quick-add button for capture. iPad keeps its own sidebar shell untouched.
 private struct iOSCompactRootShell: View {
-    @Binding var path: [CadenceFeatureDestination]
+    @Binding var path: NavigationPath
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
     @State private var showQuickCapture = false
@@ -171,15 +176,15 @@ private struct iOSCompactRootShell: View {
     /// pushed screen — most visibly the note editor, where it sat on top of the word count and
     /// offered to create a task while you were writing prose. macOS shows its floating `+` only on
     /// task pages, for the same reason.
+    /// Home only.
+    ///
+    /// `NavigationPath` is deliberately opaque — you cannot ask it what is on top — but the
+    /// answer turned out to be simpler than the typed path allowed anyway: every pushed screen
+    /// where creating a loose task makes sense (Today, All Tasks, Inbox, a list's detail) already
+    /// carries its own `iOSTaskCaptureBar`, so a floating button there was a second affordance for
+    /// the same job. Home is the one screen with no capture field of its own.
     private var showsQuickAdd: Bool {
-        switch path.last {
-        case .none:
-            return true // Home
-        case .today, .allTasks, .inbox:
-            return true
-        default:
-            return false
-        }
+        path.isEmpty
     }
 
     private func captureQuickTask() {
@@ -265,16 +270,16 @@ private extension iOSRootView {
         switch route {
         case .today, .task:
             selection = .today
-            compactPath = [.today]
+            compactPath = NavigationPath([CadenceFeatureDestination.today])
         case .habits:
             selection = .habits
-            compactPath = [.habits]
+            compactPath = NavigationPath([CadenceFeatureDestination.habits])
         case .goals:
             selection = .goals
-            compactPath = [.goals]
+            compactPath = NavigationPath([CadenceFeatureDestination.goals])
         case .calendar:
             selection = .calendar
-            compactPath = [.calendar]
+            compactPath = NavigationPath([CadenceFeatureDestination.calendar])
         }
     }
 }

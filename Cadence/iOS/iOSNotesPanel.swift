@@ -192,6 +192,8 @@ struct iOSNotesPanel: View {
 struct iOSCompactNotesView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
@@ -220,7 +222,14 @@ struct iOSCompactNotesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            iOSPanelHeader(eyebrow: "Notes", title: activePage.compactTitle)
+            // On iPhone this is a pushed screen with its navigation bar hidden, so the header
+            // carries the back control. On iPad the same view is the root of its own stack (the
+            // bar is already hidden there) and there is nothing to go back to.
+            iOSPanelHeader(
+                eyebrow: "Notes",
+                title: activePage.compactTitle,
+                onBack: isCompactWidth ? { dismiss() } : nil
+            )
 
             pageTabRow
 
@@ -251,6 +260,7 @@ struct iOSCompactNotesView: View {
             }
         }
         .background(Theme.surface.ignoresSafeArea())
+        .iOSHidesCompactNavigationBar()
         .onAppear {
             migrateLiveEditorDefaultIfNeeded()
             loadNotes()
@@ -335,6 +345,10 @@ struct iOSCompactNotesView: View {
     private var selectedCoreNote: Note? {
         guard let coreTab = activePage.coreTab else { return nil }
         return notesSnapshot.note(for: coreTab)
+    }
+
+    private var isCompactWidth: Bool {
+        horizontalSizeClass == .compact
     }
 
     private var meetingNotes: [Note] {

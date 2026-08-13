@@ -48,6 +48,61 @@ extension View {
     }
 }
 
+// MARK: - Pushed-page chrome
+
+/// The back control a pushed compact screen carries **inside** its own header.
+///
+/// On iPhone every screen is pushed onto one `NavigationStack`, and the navigation bar above the
+/// page header was holding a single chevron and nothing else: a full 44pt row of chrome per screen,
+/// directly above a header that already named the page. `iOSHidesCompactNavigationBar()` drops that
+/// row and its one control moves down here, onto the header row that was already being drawn.
+struct iOSHeaderBackButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Theme.blue)
+                // Small in layout so it neither pushes the title off a 6.1" screen nor makes the
+                // header row taller than the text in it, 44pt+ to a finger — the same trick
+                // `iOSIconButton` uses for its plate.
+                .frame(width: 30, height: 38)
+                .contentShape(Rectangle())
+                .iOSExpandedHitArea(7)
+        }
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel("Back")
+    }
+}
+
+private struct iOSCompactNavigationBarHidden: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if horizontalSizeClass == .compact {
+            content.toolbar(.hidden, for: .navigationBar)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// Hides the navigation bar on compact width, where the page's own header carries the back
+    /// control (`iOSHeaderBackButton`) instead of letting the bar hold a row for it alone.
+    ///
+    /// `.toolbar(.hidden, for: .navigationBar)` inside a `NavigationStack` keeps the interactive
+    /// swipe-back gesture — it is the old `NavigationView` + `.navigationBarHidden(true)` pairing
+    /// that used to kill it. Regular width is left untouched on purpose: the iPad shell hosts these
+    /// same views with no navigation stack around them, so there is no bar to hide and nothing to
+    /// go back to.
+    func iOSHidesCompactNavigationBar() -> some View {
+        modifier(iOSCompactNavigationBarHidden())
+    }
+}
+
 // MARK: - Icon tile
 
 /// iOS counterpart of `CommitmentIconTile`: a glyph on a tinted rounded square, on the shared

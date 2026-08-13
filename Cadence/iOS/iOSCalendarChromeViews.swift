@@ -40,7 +40,15 @@ struct iOSCalendarContextStrip: View {
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 10) {
-                selectedDayLabel
+                // On iPhone the day inspector sits immediately below this row and heads itself
+                // with the same date tile and the same "Thursday, January 15" — the two were about
+                // 50pt apart. The date belongs to the pane that lists the day's items, so it stays
+                // there and this row keeps only the counts. On iPad the inspector is a column to
+                // the side, not the next thing down, and this is the only date the calendar pane
+                // itself carries.
+                if !isCompact {
+                    selectedDayLabel
+                }
 
                 metricChips
 
@@ -134,6 +142,9 @@ struct iOSCalendarContextStrip: View {
 
 struct iOSCalendarToolbar: View {
     let title: String
+    /// Set on iPhone, where the page is pushed with its navigation bar hidden and this row is the
+    /// top of the screen. See `iOSHidesCompactNavigationBar()`.
+    var onBack: (() -> Void)? = nil
     @Binding var viewMode: CadenceCalendarViewMode
     @Binding var presentation: CadenceCalendarPresentation
     @Binding var zoomLevel: Int
@@ -200,6 +211,12 @@ struct iOSCalendarToolbar: View {
     /// the page you are already looking at, which the tab bar and sidebar both already say.
     private var titleBlock: some View {
         HStack(spacing: horizontalSizeClass == .regular ? 11 : 0) {
+            if let onBack {
+                iOSHeaderBackButton(action: onBack)
+                    .padding(.leading, -8)
+                    .padding(.trailing, 2)
+            }
+
             if horizontalSizeClass == .regular {
                 iOSIconTile(
                     systemImage: CadenceFeatureDestination.calendar.systemImage,

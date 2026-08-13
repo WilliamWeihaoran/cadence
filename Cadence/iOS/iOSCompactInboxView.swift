@@ -2,6 +2,7 @@
 import SwiftUI
 
 struct iOSCompactInboxView: View {
+    @Environment(\.dismiss) private var dismiss
     let inboxTasks: [AppTask]
     let completedInboxTasks: [AppTask]
     @Binding var sortMode: CadenceTaskSortMode
@@ -20,12 +21,14 @@ struct iOSCompactInboxView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 11) {
-                // No subtitle — see the note on the All Tasks header.
+                // No subtitle — see the note on the All Tasks header. No count either: the Active
+                // metric below reports it.
                 iOSCompactPageHeader(
                     eyebrow: "Capture",
                     title: "Inbox",
                     systemImage: "tray.fill",
-                    color: Theme.blue
+                    color: Theme.blue,
+                    onBack: { dismiss() }
                 )
 
                 stats

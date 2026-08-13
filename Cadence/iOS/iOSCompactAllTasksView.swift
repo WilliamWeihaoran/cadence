@@ -2,6 +2,7 @@
 import SwiftUI
 
 struct iOSCompactAllTasksView: View {
+    @Environment(\.dismiss) private var dismiss
     let activeTasks: [AppTask]
     let completedTasks: [AppTask]
     @Binding var sortMode: CadenceTaskSortMode
@@ -20,11 +21,14 @@ struct iOSCompactAllTasksView: View {
                 // No subtitle: a line under "All Tasks" saying it is where you review active work
                 // describes the page you are already looking at. Same rule that deleted
                 // `subtitle` from `DesktopPageHeader` on macOS.
+                //
+                // No `count:` either — the Active stat directly below already reports it.
                 iOSCompactPageHeader(
                     eyebrow: "Tasks",
                     title: "All Tasks",
                     systemImage: "checklist",
-                    color: Theme.blue
+                    color: Theme.blue,
+                    onBack: { dismiss() }
                 )
 
                 stats

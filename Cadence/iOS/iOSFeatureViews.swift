@@ -6,6 +6,7 @@ import SwiftUI
 /// own model; each is listed with its milestones (`subGoals`) nested directly underneath it.
 struct iOSGoalsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Goal.order) private var goals: [Goal]
     @State private var selectedID: UUID?
@@ -52,6 +53,7 @@ struct iOSGoalsView: View {
             }
         }
         .background(Theme.bg)
+        .iOSHidesCompactNavigationBar()
         .onAppear {
             selectedID = selectedID ?? selected?.id
         }
@@ -163,7 +165,8 @@ struct iOSGoalsView: View {
             emptyIcon: "sparkles",
             actionTitle: "New Goal",
             actionSystemImage: "plus",
-            action: { editorMode = .new(nil) }
+            action: { editorMode = .new(nil) },
+            onBack: { dismiss() }
         ) {
             ForEach(topLevelGoals) { goal in
                 NavigationLink {
@@ -247,6 +250,7 @@ struct iOSGoalsView: View {
 
 struct iOSHabitsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Habit.order) private var habits: [Habit]
     @State private var selectedID: UUID?
@@ -280,6 +284,7 @@ struct iOSHabitsView: View {
             }
         }
         .background(Theme.bg)
+        .iOSHidesCompactNavigationBar()
         .onAppear {
             selectedID = selectedID ?? selected?.id
         }
@@ -376,7 +381,8 @@ struct iOSHabitsView: View {
             emptyIcon: "flame.fill",
             actionTitle: "New Habit",
             actionSystemImage: "plus",
-            action: { editorMode = .new(nil) }
+            action: { editorMode = .new(nil) },
+            onBack: { dismiss() }
         ) {
             ForEach(habits) { habit in
                 habitRow(habit, isSelected: false) {

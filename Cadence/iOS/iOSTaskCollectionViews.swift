@@ -47,6 +47,7 @@ struct iOSAllTasksView: View {
             }
         }
         .background(Theme.bg.ignoresSafeArea())
+        .iOSHidesCompactNavigationBar()
     }
 
     private var allTasksPanel: some View {

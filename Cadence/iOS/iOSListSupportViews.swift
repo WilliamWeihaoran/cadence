@@ -93,6 +93,9 @@ struct iOSListIconBadge: View {
 struct iOSListsPageHeader: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let count: Int
+    /// Set on iPhone, where this page is pushed with its navigation bar hidden. See
+    /// `iOSHidesCompactNavigationBar()`.
+    var onBack: (() -> Void)? = nil
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
@@ -100,6 +103,11 @@ struct iOSListsPageHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: isRegularWidth ? 12 : 10) {
+            if let onBack {
+                iOSHeaderBackButton(action: onBack)
+                    .padding(.leading, -8)
+            }
+
             iOSListIconBadge(icon: "folder.fill", colorHex: Theme.blueHex, size: isRegularWidth ? 36 : 32)
 
             VStack(alignment: .leading, spacing: 2) {

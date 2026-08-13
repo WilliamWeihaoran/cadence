@@ -3,6 +3,7 @@ import SwiftData
 import SwiftUI
 
 struct iOSCompactTodayView: View {
+    @Environment(\.dismiss) private var dismiss
     let todayTasks: [AppTask]
     let completedTodayTasks: [AppTask]
     let compactScheduleTasks: [AppTask]
@@ -48,32 +49,18 @@ struct iOSCompactTodayView: View {
         .background(Theme.bg.ignoresSafeArea())
     }
 
+    /// The page's only title, and — with the navigation bar hidden on iPhone — the only row the
+    /// back control has to live on. This was a hand-rolled copy of `iOSCompactPageHeader` with a
+    /// count badge bolted on; the badge is a parameter there now.
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            iOSIconTile(systemImage: "sun.max.fill", color: Theme.amber, size: 36)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(DateFormatters.longDate.string(from: Date()))
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .textCase(.uppercase)
-                    .kerning(0.8)
-                Text("Today")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            Text("\(todayTasks.count)")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Theme.blue)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(Theme.blue.opacity(0.12))
-                .clipShape(Capsule())
-        }
+        iOSCompactPageHeader(
+            eyebrow: DateFormatters.longDate.string(from: Date()),
+            title: "Today",
+            systemImage: "sun.max.fill",
+            color: Theme.amber,
+            count: todayTasks.count,
+            onBack: { dismiss() }
+        )
         .padding(.top, 2)
         .padding(.bottom, 1)
     }

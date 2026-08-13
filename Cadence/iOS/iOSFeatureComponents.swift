@@ -38,11 +38,14 @@ struct iOSFeatureListPane<Content: View>: View {
     var actionTitle: String? = nil
     var actionSystemImage = "plus"
     var action: (() -> Void)? = nil
+    /// Set on iPhone, where this pane is a pushed screen with its navigation bar hidden. See
+    /// `iOSHidesCompactNavigationBar()`.
+    var onBack: (() -> Void)? = nil
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: eyebrow, title: title, count: count)
+            iOSPanelHeader(eyebrow: eyebrow, title: title, count: count, onBack: onBack)
             Divider().background(Theme.borderSubtle)
 
             if let actionTitle, let action {
@@ -86,6 +89,11 @@ struct iOSCompactPageHeader: View {
     var subtitle: String? = nil
     var systemImage: String? = nil
     var color: Color = Theme.blue
+    /// Trailing count badge, same shape and job as `iOSPanelHeader`'s.
+    var count: Int? = nil
+    /// Set on a pushed compact screen whose navigation bar is hidden, so the back control sits on
+    /// this row instead of on one of its own above it. See `iOSHidesCompactNavigationBar()`.
+    var onBack: (() -> Void)? = nil
 
     private var isCompact: Bool {
         horizontalSizeClass == .compact
@@ -93,17 +101,19 @@ struct iOSCompactPageHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: isCompact ? 10 : 12) {
+            if let onBack {
+                iOSHeaderBackButton(action: onBack)
+                    .padding(.leading, -8)
+            }
+
             if let systemImage {
-                Image(systemName: systemImage)
-                    .font(.system(size: isCompact ? 15 : 16, weight: .semibold))
-                    .foregroundStyle(color)
-                    .frame(width: isCompact ? 32 : 36, height: isCompact ? 32 : 36)
-                    .background(color.opacity(0.13))
-                    .clipShape(RoundedRectangle(cornerRadius: isCompact ? 9 : 10, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: isCompact ? 9 : 10, style: .continuous)
-                            .strokeBorder(color.opacity(0.20), lineWidth: 1)
-                    }
+                iOSIconTile(
+                    systemImage: systemImage,
+                    color: color,
+                    size: isCompact ? 32 : 36,
+                    iconSize: isCompact ? 15 : 16,
+                    fillOpacity: 0.13
+                )
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -125,6 +135,17 @@ struct iOSCompactPageHeader: View {
             }
 
             Spacer(minLength: 0)
+
+            if let count {
+                Text("\(count)")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.blue)
+                    .monospacedDigit()
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Theme.blue.opacity(0.12))
+                    .clipShape(Capsule())
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

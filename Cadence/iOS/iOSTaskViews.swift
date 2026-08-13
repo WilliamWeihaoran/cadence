@@ -531,13 +531,21 @@ struct iOSPanelHeader: View {
     let eyebrow: String
     let title: String
     var count: Int? = nil
+    /// Set on a pushed compact screen whose navigation bar is hidden, so the back control sits on
+    /// this row instead of on one of its own above it. See `iOSHidesCompactNavigationBar()`.
+    var onBack: (() -> Void)? = nil
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: onBack == nil ? .firstTextBaseline : .center, spacing: 10) {
+            if let onBack {
+                iOSHeaderBackButton(action: onBack)
+                    .padding(.leading, -8)
+            }
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(eyebrow)
                     .font(.system(size: isRegularWidth ? 10 : 9, weight: .semibold))
