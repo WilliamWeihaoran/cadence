@@ -268,15 +268,7 @@ private struct iOSCalendarTimelineDayBlocks: View {
 
             workHoursBand
 
-            if Calendar.current.isDateInToday(date) {
-                Rectangle()
-                    .fill(Theme.blue.opacity(0.025))
-                    .frame(width: colWidth, height: timelineHeight)
-            } else if isSelected {
-                Rectangle()
-                    .fill(Theme.blue.opacity(0.04))
-                    .frame(width: colWidth, height: timelineHeight)
-            }
+            dayWash
 
             ForEach(bundles) { bundle in
                 iOSCalendarBundleBlock(bundle: bundle)
@@ -302,6 +294,29 @@ private struct iOSCalendarTimelineDayBlocks: View {
             }
         }
         .frame(width: colWidth, height: timelineHeight, alignment: .topLeading)
+    }
+
+    /// The today / selected-day tint, drawn over the whole column.
+    ///
+    /// `.allowsHitTesting(false)` is load-bearing, not decoration. This wash sits above the clear
+    /// `Rectangle` that carries the drag-to-create `SpatialTapGesture`, and a filled `Shape` is
+    /// hit-testable across its whole path however low its opacity — so without this, tapping an
+    /// empty slot on *today's* column did nothing at all, on the one column a user is most likely
+    /// to tap. Every other day worked, which made it read as a flaky control rather than a missing
+    /// one. `workHoursBand` below has always opted out for the same reason.
+    @ViewBuilder
+    private var dayWash: some View {
+        if Calendar.current.isDateInToday(date) {
+            Rectangle()
+                .fill(Theme.blue.opacity(0.025))
+                .frame(width: colWidth, height: timelineHeight)
+                .allowsHitTesting(false)
+        } else if isSelected {
+            Rectangle()
+                .fill(Theme.blue.opacity(0.04))
+                .frame(width: colWidth, height: timelineHeight)
+                .allowsHitTesting(false)
+        }
     }
 
     /// The work-hours emphasis macOS's `TimelineWorkHoursHighlightLayer` draws, on the same shared

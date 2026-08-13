@@ -50,7 +50,6 @@ struct iOSCalendarBoardPlanner: View {
                         let date = CalendarBoardPlannerSupport.date(at: dayIndex, bufferStart: activeWindowStartDate, calendar: calendar)
                         let dateKey = DateFormatters.dateKey(from: date)
                         iOSCalendarBoardDayColumn(
-                            dayIndex: dayIndex,
                             date: date,
                             dateKey: dateKey,
                             tasks: boardTasksByDate[dateKey] ?? [],
@@ -172,7 +171,6 @@ struct iOSCalendarBoardPlanner: View {
 }
 
 private struct iOSCalendarBoardDayColumn: View {
-    let dayIndex: Int
     let date: Date
     let dateKey: String
     let tasks: [AppTask]
@@ -333,7 +331,7 @@ private struct iOSCalendarBoardDayColumn: View {
                         ForEach(completedTasks.sorted { lhs, rhs in
                             CalendarBoardPlannerSupport.boardTaskSort(lhs, rhs)
                         }) { task in
-                            iOSCalendarBoardTaskCard(task: task, dateKey: dateKey)
+                            iOSCalendarBoardTaskCard(task: task)
                                 .draggable(TaskDragPayload.string(for: task.id))
                         }
                     }
@@ -361,7 +359,7 @@ private struct iOSCalendarBoardDayColumn: View {
                 }
             )
         case .task(let task):
-            iOSCalendarBoardTaskCard(task: task, dateKey: dateKey)
+            iOSCalendarBoardTaskCard(task: task)
                 .draggable(TaskDragPayload.string(for: task.id))
         }
     }

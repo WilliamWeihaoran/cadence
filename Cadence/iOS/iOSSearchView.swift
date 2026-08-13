@@ -22,6 +22,16 @@ struct iOSSearchView: View {
     @State private var calendarSearchEvents: [EKEvent] = []
     @State private var scope: iOSSearchScope = .all
     @State private var includeCompletedTasks = false
+    /// Pushes are driven by these two rather than by `NavigationLink(value:)`.
+    ///
+    /// A whole result group is a *single* `List` row (`iOSSearchResultGroup` draws the eyebrow and
+    /// one card around N rows), and `List` gives a row containing navigation links one row-wide
+    /// activation that fires **every** link in it. Tapping "Today" in PAGES pushed Today, All
+    /// Tasks, Focus, Inbox and Calendar in order and left you on Calendar; tapping the first list
+    /// result pushed both lists and left you on the second. The `Button` rows in the same group
+    /// were always correct, because `List` does not extend row activation to plain buttons.
+    @State private var pushedListRoute: iOSListRoute?
+    @State private var pushedDestination: CadenceFeatureDestination?
 
     private var trimmedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -328,7 +338,12 @@ struct iOSSearchView: View {
         .task(id: calendarSearchRequestID) {
             refreshCalendarSearchEvents()
         }
-        .navigationDestination(for: iOSListRoute.self) { route in
+        // `item:` rather than `for:`. Besides being what the button rows above need, this keeps
+        // Search from registering a *second* destination for either type in the iPhone stack,
+        // where `iOSCompactHomeView` already registers `CadenceFeatureDestination` and a pushed
+        // `iOSListsView` registers `iOSListRoute`. Two registrations for one type in one stack is
+        // undefined behaviour in SwiftUI, and these were only ever duplicate clones of them.
+        .navigationDestination(item: $pushedListRoute) { route in
             switch route {
             case .area(let id):
                 if let area = areas.first(where: { $0.id == id }) {
@@ -344,7 +359,7 @@ struct iOSSearchView: View {
                 }
             }
         }
-        .navigationDestination(for: CadenceFeatureDestination.self) { destination in
+        .navigationDestination(item: $pushedDestination) { destination in
             switch destination {
             case .today:
                 iPadTodayView()
@@ -477,12 +492,16 @@ struct iOSSearchView: View {
     @ViewBuilder
     private func searchResultRow(_ result: iOSSearchResult) -> some View {
         if let route = result.listRoute {
-            NavigationLink(value: route) {
+            Button {
+                pushedListRoute = route
+            } label: {
                 iOSSearchResultRow(result: result)
             }
             .buttonStyle(.iosPressable)
         } else if let destination = result.featureDestination {
-            NavigationLink(value: destination) {
+            Button {
+                pushedDestination = destination
+            } label: {
                 iOSSearchResultRow(result: result)
             }
             .buttonStyle(.iosPressable)

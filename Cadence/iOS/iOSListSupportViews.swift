@@ -398,7 +398,8 @@ struct iOSListCompletedPanel: View {
             } else {
                 List {
                     ForEach(tasks) { task in
-                        iOSTaskListRow(task: task, opacity: 0.62)
+                        // Scoped to one list already — see `iOSTaskRow.showsContainer`.
+                        iOSTaskListRow(task: task, opacity: 0.62, showsContainer: false)
                     }
                 }
                 .listStyle(.plain)
@@ -445,7 +446,8 @@ struct iOSListPlanningPanel: View {
     private func planningSection(_ group: CadenceTaskDisplayGroup) -> some View {
         Section {
             ForEach(group.tasks) { task in
-                iOSTaskListRow(task: task)
+                // Scoped to one list already — see `iOSTaskRow.showsContainer`.
+                iOSTaskListRow(task: task, showsContainer: false)
             }
         } header: {
             iOSTaskSectionHeader(title: group.title, color: group.accent)

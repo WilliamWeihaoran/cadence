@@ -165,7 +165,6 @@ struct iOSCalendarBoardEventCard: View {
 
 struct iOSCalendarBoardTaskCard: View {
     @Bindable var task: AppTask
-    let dateKey: String
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass

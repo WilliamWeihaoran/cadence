@@ -207,7 +207,7 @@ struct iOSListDetailView: View {
                     ForEach(sectionGroups, id: \.name) { group in
                         Section {
                             ForEach(group.tasks) { task in
-                                iOSTaskListRow(task: task)
+                                iOSTaskListRow(task: task, showsContainer: false)
                             }
                         } header: {
                             // Same colour the board's column dot takes, so a column is the same
@@ -219,7 +219,7 @@ struct iOSListDetailView: View {
                     if showCompleted && !completedTasks.isEmpty {
                         Section {
                             ForEach(completedTasks.prefix(12)) { task in
-                                iOSTaskListRow(task: task, opacity: 0.62)
+                                iOSTaskListRow(task: task, opacity: 0.62, showsContainer: false)
                             }
                         } header: {
                             iOSTaskSectionHeader(title: "Completed", color: Theme.green)

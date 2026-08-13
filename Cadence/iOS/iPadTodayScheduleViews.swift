@@ -80,6 +80,12 @@ struct iOSSchedulePanel: View {
                 if scheduledTasks.isEmpty && todayBundles.isEmpty && untimedTodayTasks.isEmpty {
                     iOSScheduleEmptyHint()
                         .padding(.horizontal, 20)
+                        // The hint is a caption, not a control, and it floats over the hour rows —
+                        // whose "Add" buttons are showing precisely because the schedule is empty,
+                        // i.e. exactly when this card is on screen. Its card background is a
+                        // hit-testable layer, so without this the two or three hours it covers had
+                        // a visible, enabled Add button that could not be tapped.
+                        .allowsHitTesting(false)
                 }
             }
         }
