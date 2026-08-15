@@ -237,7 +237,19 @@ enum CadenceTaskQuerySupport {
         return sortTasks(lhs, rhs, sortMode: sortMode)
     }
 
-    private static func sortTasks(
+    /// Every branch ends in `TaskOrdering.fallbackPrecedes`, never in a bare `order` comparison.
+    ///
+    /// `order` is assigned **per container** (`CadenceTaskMutationSupport.nextContainerOrder`), so
+    /// on a cross-container surface — All Tasks, whose default mode is `.listOrder` — two tasks
+    /// from different lists routinely share one. A comparator that stops there is a *partial*
+    /// order: `sort` is free to return either arrangement, so the visible sequence is decided by
+    /// whatever row order SwiftData happened to hand back, and the same list can come out
+    /// differently between renders or between devices. macOS's `TaskOrdering` was given a total
+    /// tie-break (`order` → `createdAt` → `title` → `id`) for exactly this reason and
+    /// `TaskOrderingTests` pins it by sorting a tie-heavy set from two permutations and requiring
+    /// byte-identical output; iOS spelled its own comparator and never got that. This is the
+    /// remaining half of that consolidation.
+    static func sortTasks(
         _ lhs: AppTask,
         _ rhs: AppTask,
         sortMode: CadenceTaskSortMode,
@@ -248,12 +260,12 @@ enum CadenceTaskQuerySupport {
             if let sectionNames, lhs.resolvedSectionName != rhs.resolvedSectionName {
                 return sectionRank(lhs.resolvedSectionName, in: sectionNames) < sectionRank(rhs.resolvedSectionName, in: sectionNames)
             }
-            return lhs.order < rhs.order
+            return TaskOrdering.fallbackPrecedes(lhs, rhs)
         case .priority:
             if lhs.priority != rhs.priority {
                 return priorityRank(lhs.priority) > priorityRank(rhs.priority)
             }
-            return lhs.order < rhs.order
+            return TaskOrdering.fallbackPrecedes(lhs, rhs)
         case .doDate:
             let leftDate = sortDateKey(lhs.scheduledDate)
             let rightDate = sortDateKey(rhs.scheduledDate)
@@ -268,16 +280,17 @@ enum CadenceTaskQuerySupport {
             if leftTimed && lhs.scheduledStartMin != rhs.scheduledStartMin {
                 return lhs.scheduledStartMin < rhs.scheduledStartMin
             }
-            return lhs.order < rhs.order
+            return TaskOrdering.fallbackPrecedes(lhs, rhs)
         case .dueDate:
             if lhs.dueDate != rhs.dueDate {
                 if lhs.dueDate.isEmpty { return false }
                 if rhs.dueDate.isEmpty { return true }
                 return lhs.dueDate < rhs.dueDate
             }
-            return lhs.order < rhs.order
+            return TaskOrdering.fallbackPrecedes(lhs, rhs)
         case .newest:
-            return lhs.createdAt > rhs.createdAt
+            if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+            return TaskOrdering.fallbackPrecedes(lhs, rhs)
         }
     }
 
