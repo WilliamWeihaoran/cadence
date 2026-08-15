@@ -203,7 +203,10 @@ import Foundation
         return best
     }
 
-    private func completionCountsByDate() -> [String: Int] {
+    /// Internal rather than private so `HabitInsights.swift` can score a `.timesPerWeek` window in
+    /// the same week vocabulary `weeklyStreak` uses instead of re-deriving the totals from
+    /// `completions` a second time.
+    func completionCountsByDate() -> [String: Int] {
         var result: [String: Int] = [:]
         for completion in completions ?? [] {
             result[completion.date, default: 0] += max(0, completion.count)
@@ -352,13 +355,80 @@ import Foundation
         case .daysOfWeek:
             return frequencyDays.contains(Self.weekdayIndex(for: date, calendar: calendar))
         case .timesPerWeek:
-            return true
+            return isWeeklyTargetOutstanding(on: date, calendar: calendar)
         case .monthly:
             let day = calendar.component(.day, from: date)
             let target = frequencyDays.first ?? 1
             let range = calendar.range(of: .day, in: .month, for: date)
             let lastDay = range?.upperBound.advanced(by: -1) ?? 31
             return day == min(max(1, target), lastDay)
+        }
+    }
+
+    /// Whether a `.timesPerWeek` habit still owes check-ins on `date`.
+    ///
+    /// This case used to `return true` unconditionally, which made "due" a word with no content
+    /// for the one frequency where no individual day is scheduled: `isDueToday` could never be
+    /// false, so the detail's "Due today" chip, the list row badge and the "N of M done today"
+    /// eyebrow all claimed a 3x/week habit was outstanding on a Thursday whose Mon/Tue/Wed had
+    /// already met the target — the same week `weeklyStreak` scored as satisfied.
+    ///
+    /// The rule is `weeklyStreak`'s, not a second one: the fixed Monday-start (ISO) week, summed
+    /// completion counts, `targetCount` as the bar. The sum deliberately **excludes** completions
+    /// recorded on `date` itself, so the check-in that finishes the week still reads as having
+    /// been due — counting it would make the last check-in of every week retroactively pointless.
+    private func isWeeklyTargetOutstanding(on date: Date, calendar: Calendar) -> Bool {
+        let isoCalendar = Self.isoWeekCalendar(inheritingTimeZoneFrom: calendar)
+        guard let weekStart = isoCalendar.dateInterval(of: .weekOfYear, for: date)?.start else { return true }
+
+        let counts = completionCountsByDate()
+        let dayKey = DateFormatters.dateKey(from: date, calendar: isoCalendar)
+        var total = 0
+        var cursor = weekStart
+        for _ in 0..<7 {
+            let key = DateFormatters.dateKey(from: cursor, calendar: isoCalendar)
+            if key != dayKey {
+                total += counts[key] ?? 0
+            }
+            guard let next = isoCalendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = isoCalendar.startOfDay(for: next)
+        }
+        return total < max(1, targetCount)
+    }
+
+    /// The unit `currentStreak` and `bestStreak` count in for this habit.
+    ///
+    /// Every surface used to append a hardcoded `"d"`, so a `.timesPerWeek` habit kept for eight
+    /// weeks — 24+ check-ins — rendered as "8d streak" and read as weaker than a ten-day daily
+    /// habit. The unit is a property of the frequency, so it is answered once, here, next to the
+    /// walk that produces the number.
+    var streakUnit: HabitStreakUnit {
+        switch frequencyType {
+        case .timesPerWeek: return .weeks
+        case .daily, .daysOfWeek, .monthly: return .days
+        }
+    }
+}
+
+/// What a habit streak is counted in. Lives in `Habit.swift` rather than `HabitInsights.swift`
+/// because the MCP server target compiles the former and not the latter.
+enum HabitStreakUnit {
+    case days
+    case weeks
+
+    /// The compact metric-tile spelling: `8d` / `8w`.
+    func shortLabel(_ count: Int) -> String {
+        switch self {
+        case .days: return "\(count)d"
+        case .weeks: return "\(count)w"
+        }
+    }
+
+    /// The spelled-out spelling for search subtitles and other prose: `8 day streak`.
+    func phrase(_ count: Int) -> String {
+        switch self {
+        case .days: return "\(count) day streak"
+        case .weeks: return "\(count) week streak"
         }
     }
 }

@@ -6,6 +6,12 @@ struct iOSTemplatesSettingsSection: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedTemplateID = "project-brief"
     @State private var bodyEditorFocused = false
+    // Title and description are stored trimmed. Binding a text field straight at storage means the
+    // getter hands back the trimmed value on the next render, so a space typed at the end of the
+    // title was undone before the next character arrived and "Daily Plan" + " " + "N" came out as
+    // "Daily PlanN". These hold what the user is typing; storage is written from them.
+    @State private var titleDraft = ""
+    @State private var subtitleDraft = ""
     @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var bodyEditorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
 
     private var bodyEditorModeBinding: Binding<iOSMarkdownEditorMode> {
@@ -60,6 +66,8 @@ struct iOSTemplatesSettingsSection: View {
                 }
             }
         }
+        .onAppear(perform: loadDrafts)
+        .onChange(of: selectedTemplateID) { _, _ in loadDrafts() }
     }
 
     private var templatePicker: some View {
@@ -124,12 +132,12 @@ struct iOSTemplatesSettingsSection: View {
                 }
 
                 iOSSettingsField(title: "Title") {
-                    TextField("Template title", text: titleBinding(for: selectedTemplate))
+                    TextField("Template title", text: titleBinding)
                         .textInputAutocapitalization(.words)
                 }
 
                 iOSSettingsField(title: "Description") {
-                    TextField("Short sidebar description", text: subtitleBinding(for: selectedTemplate))
+                    TextField("Short sidebar description", text: subtitleBinding)
                 }
 
                 iOSTemplateBodyEditor(
@@ -160,33 +168,50 @@ struct iOSTemplatesSettingsSection: View {
         }
     }
 
-    private func titleBinding(for template: NoteTemplate) -> Binding<String> {
+    private var titleBinding: Binding<String> {
         Binding(
-            get: { selectedTemplate?.title ?? template.title },
-            set: { updateSelectedTemplate(title: $0, subtitle: selectedTemplate?.subtitle ?? template.subtitle, body: selectedTemplate?.body ?? template.body) }
+            get: { titleDraft },
+            set: { newValue in
+                titleDraft = newValue
+                commitDrafts()
+            }
         )
     }
 
-    private func subtitleBinding(for template: NoteTemplate) -> Binding<String> {
+    private var subtitleBinding: Binding<String> {
         Binding(
-            get: { selectedTemplate?.subtitle ?? template.subtitle },
-            set: { updateSelectedTemplate(title: selectedTemplate?.title ?? template.title, subtitle: $0, body: selectedTemplate?.body ?? template.body) }
+            get: { subtitleDraft },
+            set: { newValue in
+                subtitleDraft = newValue
+                commitDrafts()
+            }
         )
     }
 
+    /// The body is not trimmed on the way in, so it round-trips unchanged and needs no draft.
     private func bodyBinding(for template: NoteTemplate) -> Binding<String> {
         Binding(
             get: { selectedTemplate?.body ?? template.body },
-            set: { updateSelectedTemplate(title: selectedTemplate?.title ?? template.title, subtitle: selectedTemplate?.subtitle ?? template.subtitle, body: $0) }
+            set: { updateSelectedTemplate(body: $0) }
         )
     }
 
-    private func updateSelectedTemplate(title: String, subtitle: String, body: String) {
+    private func loadDrafts() {
+        guard let selectedTemplate else { return }
+        titleDraft = selectedTemplate.title
+        subtitleDraft = selectedTemplate.subtitle
+    }
+
+    private func commitDrafts() {
+        updateSelectedTemplate(body: selectedTemplate?.body ?? "")
+    }
+
+    private func updateSelectedTemplate(body: String) {
         guard let selectedTemplate else { return }
         templateOverridesRaw = NoteTemplateLibrary.setOverride(
             for: selectedTemplate.id,
-            title: title,
-            subtitle: subtitle,
+            title: titleDraft,
+            subtitle: subtitleDraft,
             body: body,
             in: templateOverridesRaw
         )
@@ -195,6 +220,7 @@ struct iOSTemplatesSettingsSection: View {
     private func resetSelectedTemplate() {
         guard let selectedTemplate else { return }
         templateOverridesRaw = NoteTemplateLibrary.resetOverride(for: selectedTemplate.id, in: templateOverridesRaw)
+        loadDrafts()
     }
 }
 

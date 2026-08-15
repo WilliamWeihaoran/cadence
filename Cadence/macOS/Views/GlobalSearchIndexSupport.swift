@@ -184,7 +184,7 @@ enum GlobalSearchIndexSupport {
                 id: "habit-\(habit.id.uuidString)",
                 category: .habits,
                 title: habit.title,
-                subtitle: "\(goalName.isEmpty ? contextName : goalName) • \(habit.currentStreak) day streak",
+                subtitle: "\(goalName.isEmpty ? contextName : goalName) • \(habit.streakUnit.phrase(habit.currentStreak))",
                 icon: habit.icon,
                 tintHex: habit.colorHex,
                 destination: .habits

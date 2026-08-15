@@ -151,6 +151,33 @@ enum CadenceTaskMutationSupport {
         return names.first ?? TaskSectionDefaults.defaultName
     }
 
+    /// True when `area`/`project` already name the container the task sits in — so assigning them
+    /// would move it nowhere.
+    ///
+    /// Used to decide whether `assignContainer` re-places the task at the end of its container.
+    /// Both nil means Inbox, which is a real container here and not "unset".
+    static func isAlreadyInContainer(_ task: AppTask, area: Area?, project: Project?) -> Bool {
+        if let area {
+            return task.area?.id == area.id && task.project == nil
+        }
+        if let project {
+            return task.project?.id == project.id && task.area == nil
+        }
+        return task.area == nil && task.project == nil
+    }
+
+    /// Re-ordering is what a *move* needs: the task arrives among siblings it has never been
+    /// ordered against, so it goes to the end. Re-assigning the container it is already in is not
+    /// a move, and `nextContainerOrder` would send it to the bottom of a list it never left.
+    ///
+    /// That is not hypothetical. Every caller that re-asserts the current container hit it: the
+    /// iOS task detail sheet seeds `containerSelection` in `onAppear` and its `onChange` cannot
+    /// tell that seeding from an edit, so merely *opening* a task's sheet sent it to the bottom of
+    /// its list — and reopening it bumped it again. The two "Move to List" menus have the same
+    /// shape: they mark the current list with a checkmark, so tapping the row you are already in
+    /// looks like a no-op and silently re-ordered the task.
+    ///
+    /// Genuine moves are untouched: a different container still re-places the task.
     static func assignContainer(
         _ task: AppTask,
         area: Area?,
@@ -160,6 +187,8 @@ enum CadenceTaskMutationSupport {
         updateOrder: Bool = true
     ) {
         let normalizedSectionName = normalizedSectionName(sectionName, area: area, project: project)
+        // Read before the relationships below are rewritten.
+        let isContainerChange = !isAlreadyInContainer(task, area: area, project: project)
 
         if let area {
             task.area = area
@@ -176,7 +205,7 @@ enum CadenceTaskMutationSupport {
         }
 
         task.sectionName = normalizedSectionName
-        if updateOrder {
+        if updateOrder && isContainerChange {
             task.order = nextContainerOrder(excluding: task, in: allTasks, area: area, project: project)
         }
     }

@@ -542,12 +542,46 @@ enum CadenceScheduleSupport {
             .sorted { $0.startMin < $1.startMin }
     }
 
-    static func tasks(in hour: Int, from tasks: [AppTask]) -> [AppTask] {
-        tasks.filter { $0.scheduledStartMin / 60 == hour }
+    /// Which hour row of an hour-by-hour day list a scheduled minute belongs in.
+    ///
+    /// The row list only runs `calendarStartHour..<calendarEndHour`, so a plain
+    /// `startMin / 60 == hour` match silently dropped everything outside it: the task detail's
+    /// time picker offers every quarter hour of the day, so a task set to 05:00 today appeared in
+    /// no hour row *and* not in "Ready to Schedule" (which requires `scheduledStartMin == -1`) —
+    /// it vanished from the pane entirely. Out-of-window times clamp into the first or last row,
+    /// where the block still prints its own real time range.
+    static func timelineHourRow(
+        forMinute minute: Int,
+        startHour: Int = calendarStartHour,
+        endHour: Int = calendarEndHour
+    ) -> Int {
+        let lastRow = max(startHour, endHour - 1)
+        return min(max(minute / 60, startHour), lastRow)
     }
 
-    static func bundles(in hour: Int, from bundles: [TaskBundle]) -> [TaskBundle] {
-        bundles.filter { $0.startMin / 60 == hour }
+    static func tasks(
+        inHourRow hour: Int,
+        from tasks: [AppTask],
+        startHour: Int = calendarStartHour,
+        endHour: Int = calendarEndHour
+    ) -> [AppTask] {
+        // `scheduledStartMin == -1` means "no time at all", which belongs in the unscheduled
+        // list, not clamped into the first row.
+        tasks.filter {
+            $0.scheduledStartMin >= 0 &&
+            timelineHourRow(forMinute: $0.scheduledStartMin, startHour: startHour, endHour: endHour) == hour
+        }
+    }
+
+    static func bundles(
+        inHourRow hour: Int,
+        from bundles: [TaskBundle],
+        startHour: Int = calendarStartHour,
+        endHour: Int = calendarEndHour
+    ) -> [TaskBundle] {
+        bundles.filter {
+            timelineHourRow(forMinute: $0.startMin, startHour: startHour, endHour: endHour) == hour
+        }
     }
 
     static func itemCount(on dateKey: String, tasks: [AppTask], bundles: [TaskBundle]) -> Int {
@@ -708,6 +742,46 @@ enum CadenceScheduleSupport {
             },
             sortMode: .priority
         )
+    }
+
+    /// The minutes-from-midnight span an event occupies **on one particular day**.
+    ///
+    /// Taking only the hour/minute of each end (which is what the iOS timeline did) throws away
+    /// the day, so anything crossing midnight came out with `end < start`: a 23:00 → 00:00 event
+    /// fell through to the 15-minute floor, and every day of a multi-day timed event drew the
+    /// same sliver. Clamping to the day's own bounds instead gives the part of the event that
+    /// belongs on this column, and a day fully inside the event spans the whole column.
+    static func minuteRange(
+        from startDate: Date,
+        to endDate: Date,
+        on day: Date,
+        calendar: Calendar = .current
+    ) -> (start: Int, end: Int) {
+        let dayStart = calendar.startOfDay(for: day)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(24 * 60 * 60)
+
+        let clampedStart = min(max(startDate, dayStart), dayEnd)
+        let clampedEnd = min(max(endDate, clampedStart), dayEnd)
+
+        let start = Int(clampedStart.timeIntervalSince(dayStart) / 60)
+        let end = Int(clampedEnd.timeIntervalSince(dayStart) / 60)
+        return (start, max(start + 15, end))
+    }
+
+    /// The same span, clamped into the hours a day column actually draws, so a block that runs
+    /// past the last hour line is trimmed rather than painted outside the grid. The label keeps
+    /// the true range; only the geometry is clamped.
+    static func timelineVisibleRange(
+        start: Int,
+        end: Int,
+        startHour: Int = calendarStartHour,
+        endHour: Int = calendarEndHour
+    ) -> (start: Int, end: Int) {
+        let lowerBound = startHour * 60
+        let upperBound = endHour * 60
+        let clampedStart = min(max(start, lowerBound), max(lowerBound, upperBound - 15))
+        let clampedEnd = min(max(end, clampedStart + 15), upperBound)
+        return (clampedStart, max(clampedStart + 15, clampedEnd))
     }
 
     static func blockRange(startMinute: Int, fallbackDuration: Int) -> (start: Int, end: Int) {

@@ -75,6 +75,49 @@ struct TrackingDeleteHelpersTests {
         #expect(remaining.first?.subGoals?.isEmpty != false)
     }
 
+    /// The confirmation alert must name what actually goes.
+    ///
+    /// It counted `GoalAssignmentRules.milestones(of:)` — direct children only — while the delete
+    /// collected the whole subtree, so a goal → milestone → sub-milestone tree was announced as
+    /// "its 1 milestone" and then took two. Both now read the same walk.
+    @Test func theNestedGoalCountMatchesWhatDeletingActuallyRemoves() throws {
+        let modelContext = try makeContext()
+
+        let direction = Goal(title: "Finish thesis")
+        let milestone = Goal(title: "Chapter 1")
+        milestone.parentGoal = direction
+        let subMilestone = Goal(title: "Section 1.1")
+        subMilestone.parentGoal = milestone
+        let unrelated = Goal(title: "Learn guitar")
+
+        for goal in [direction, milestone, subMilestone, unrelated] {
+            modelContext.insert(goal)
+        }
+        try modelContext.save()
+
+        let announced = GoalAssignmentRules.nestedGoalCount(under: direction)
+        #expect(announced == 2)
+
+        let before = try modelContext.fetch(FetchDescriptor<Goal>()).count
+        modelContext.deleteGoal(direction)
+        let after = try modelContext.fetch(FetchDescriptor<Goal>()).count
+
+        // The goal itself, plus everything the alert promised.
+        #expect(before - after == announced + 1)
+        #expect(try modelContext.fetch(FetchDescriptor<Goal>()).map(\.title) == ["Learn guitar"])
+    }
+
+    /// A leaf goal announces nothing nested.
+    @Test func aGoalWithNoMilestonesCountsNone() throws {
+        let modelContext = try makeContext()
+
+        let goal = Goal(title: "Read more")
+        modelContext.insert(goal)
+        try modelContext.save()
+
+        #expect(GoalAssignmentRules.nestedGoalCount(under: goal) == 0)
+    }
+
     /// A corrupted `parentGoal` chain must not spin the collection walk forever.
     @Test func deletingAGoalTerminatesOnACycle() throws {
         let modelContext = try makeContext()

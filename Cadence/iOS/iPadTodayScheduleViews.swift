@@ -62,7 +62,7 @@ struct iOSSchedulePanel: View {
             ZStack {
                 ScrollView {
                     VStack(spacing: 0) {
-                        ForEach(6..<23, id: \.self) { hour in
+                        ForEach(CadenceScheduleSupport.calendarStartHour..<CadenceScheduleSupport.calendarEndHour, id: \.self) { hour in
                             iOSScheduleHourRow(
                                 hour: hour,
                                 tasks: tasks(in: hour),
@@ -92,12 +92,16 @@ struct iOSSchedulePanel: View {
         .background(Theme.bg)
     }
 
+    /// Clamped into the drawn rows: the rows stop at 23:00 and start at 06:00, but the task
+    /// detail's time picker offers every quarter hour, so an exact-hour match dropped a 05:00
+    /// task out of this pane altogether — it is not "Ready to Schedule" either, since that list
+    /// only holds tasks with no time at all.
     private func tasks(in hour: Int) -> [AppTask] {
-        CadenceScheduleSupport.tasks(in: hour, from: scheduledTasks)
+        CadenceScheduleSupport.tasks(inHourRow: hour, from: scheduledTasks)
     }
 
     private func bundles(in hour: Int) -> [TaskBundle] {
-        CadenceScheduleSupport.bundles(in: hour, from: todayBundles)
+        CadenceScheduleSupport.bundles(inHourRow: hour, from: todayBundles)
     }
 
     private func selectQuickCreateStart(_ startMin: Int) {

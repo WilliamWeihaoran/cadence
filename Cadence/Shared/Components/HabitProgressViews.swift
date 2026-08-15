@@ -84,50 +84,75 @@ struct HabitHeatmap: View {
     /// unreachable, which is the clearest evidence the grid was meant to run through today.)
     /// Anchoring on the week containing today and counting back puts the current week in the
     /// final column, where a heatmap's most recent week belongs.
+    ///
+    /// The column boundary is the **habit week** — fixed Monday-start, via
+    /// `Habit.isoWeekCalendar` — not `calendar.firstWeekday`. Every weekly *computation* in the
+    /// app already goes through that calendar (`weeklyStreak`, `GoalHabitMomentumResolver`,
+    /// `isDue` for `.timesPerWeek`), so a Sunday-start grid drew a 3x/week habit checked
+    /// Sun/Mon/Tue as one full-looking column while the scoring counted that week 2/3.
     enum HabitHeatmapGrid {
         struct Cell {
             let date: Date
             let key: String
         }
 
+        /// One label per calendar month, at the first column whose week begins in that month.
+        struct MonthLabel: Identifiable {
+            let label: String
+            let weekCol: Int
+
+            var id: Int { weekCol }
+        }
+
         static func startDate(weeks: Int, today: Date, calendar: Calendar) -> Date {
-            let startOfToday = calendar.startOfDay(for: today)
-            let weekday = calendar.component(.weekday, from: startOfToday)
-            let startOfThisWeek = calendar.date(byAdding: .day, value: -(weekday - 1), to: startOfToday) ?? startOfToday
-            return calendar.date(byAdding: .day, value: -(max(1, weeks) - 1) * 7, to: startOfThisWeek) ?? startOfThisWeek
+            let weekCalendar = Habit.isoWeekCalendar(inheritingTimeZoneFrom: calendar)
+            let startOfToday = weekCalendar.startOfDay(for: today)
+            let startOfThisWeek = weekCalendar.dateInterval(of: .weekOfYear, for: startOfToday)?.start ?? startOfToday
+            return weekCalendar.date(byAdding: .day, value: -(max(1, weeks) - 1) * 7, to: startOfThisWeek) ?? startOfThisWeek
         }
 
         /// Every cell the grid draws, in render order. **The view body iterates this**, rather
         /// than re-deriving the same sequence inline — when it did, this type had no production
         /// caller at all and the tests over it proved nothing about what was on screen.
         static func cells(weeks: Int, today: Date, calendar: Calendar) -> [Cell] {
+            let weekCalendar = Habit.isoWeekCalendar(inheritingTimeZoneFrom: calendar)
             let start = startDate(weeks: weeks, today: today, calendar: calendar)
             return (0..<(max(1, weeks) * 7)).compactMap { offset in
-                guard let raw = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
-                let day = calendar.startOfDay(for: raw)
-                return Cell(date: day, key: DateFormatters.dateKey(from: day, calendar: calendar))
+                guard let raw = weekCalendar.date(byAdding: .day, value: offset, to: start) else { return nil }
+                let day = weekCalendar.startOfDay(for: raw)
+                return Cell(date: day, key: DateFormatters.dateKey(from: day, calendar: weekCalendar))
             }
+        }
+
+        /// The month ruler above the grid. **The view body iterates this too**, for the same
+        /// reason `cells` exists.
+        ///
+        /// Dedup is on year *and* month. Keyed on the month number alone — over a 364-day grid,
+        /// whose first and last columns are almost always the same month — the current month was
+        /// emitted once for the column a year ago and then suppressed for every column at the
+        /// right edge, so the last label a reader saw was the month *before* this one and
+        /// counting back from it to date a cell landed a month out.
+        static func monthLabels(weeks: Int, today: Date, calendar: Calendar) -> [MonthLabel] {
+            let weekCalendar = Habit.isoWeekCalendar(inheritingTimeZoneFrom: calendar)
+            let start = startDate(weeks: weeks, today: today, calendar: calendar)
+            var seen = Set<DateComponents>()
+            var result: [MonthLabel] = []
+
+            for weekIdx in 0..<max(1, weeks) {
+                guard let weekStart = weekCalendar.date(byAdding: .day, value: weekIdx * 7, to: start) else { continue }
+                let key = weekCalendar.dateComponents([.year, .month], from: weekStart)
+                guard !seen.contains(key) else { continue }
+                seen.insert(key)
+                result.append(MonthLabel(label: DateFormatters.monthAbbrev.string(from: weekStart), weekCol: weekIdx))
+            }
+            return result
         }
     }
 
     private var cal: Calendar { Calendar.current }
 
-    private var startDate: Date {
-        HabitHeatmapGrid.startDate(weeks: weeks, today: Date(), calendar: cal)
-    }
-
-    private var months: [(label: String, weekCol: Int)] {
-        var result: [(String, Int)] = []
-        var seenMonths = Set<Int>()
-        for weekIdx in 0..<weeks {
-            guard let weekStart = cal.date(byAdding: .day, value: weekIdx * 7, to: startDate) else { continue }
-            let month = cal.component(.month, from: weekStart)
-            if !seenMonths.contains(month) {
-                seenMonths.insert(month)
-                result.append((DateFormatters.monthAbbrev.string(from: weekStart), weekIdx))
-            }
-        }
-        return result
+    private var months: [HabitHeatmapGrid.MonthLabel] {
+        HabitHeatmapGrid.monthLabels(weeks: weeks, today: Date(), calendar: cal)
     }
 
     /// Not on `Theme`'s radius scale on purpose: that scale sizes card-like *surfaces*, and a
@@ -143,7 +168,7 @@ struct HabitHeatmap: View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .topLeading) {
                 Color.clear.frame(height: 16)
-                ForEach(months, id: \.weekCol) { m in
+                ForEach(months) { m in
                     Text(m.label)
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(Theme.subdued)

@@ -68,7 +68,8 @@ struct HabitListCard: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.dim)
 
-                        Text(streak > 0 ? "\(streak)d streak" : "no streak")
+                        // Unit from the frequency: `currentStreak` counts weeks for `.timesPerWeek`.
+                        Text(streak > 0 ? "\(habit.streakUnit.shortLabel(streak)) streak" : "no streak")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Theme.amber)
 
@@ -212,8 +213,8 @@ struct HabitQuietMetrics: View {
 
     var body: some View {
         HStack(spacing: 18) {
-            quietMetric("Streak", "\(habit.currentStreak)d")
-            quietMetric("30 days", "\(habit.last30DayCompletionRate)%")
+            quietMetric("Streak", habit.streakUnit.shortLabel(habit.currentStreak))
+            quietMetric(habit.completionRateWindowLabel, "\(habit.last30DayCompletionRate)%")
             quietMetric("Total", "\(totalCompletions)")
             Spacer()
         }

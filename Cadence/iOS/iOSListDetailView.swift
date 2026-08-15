@@ -48,6 +48,11 @@ struct iOSListDetailView: View {
         return ""
     }
 
+    /// Which list this page is showing, as a value SwiftUI can compare across an update.
+    private var containerIdentity: UUID? {
+        area?.id ?? project?.id
+    }
+
     private var colorHex: String {
         area?.colorHex ?? project?.colorHex ?? Theme.blueHex
     }
@@ -128,9 +133,24 @@ struct iOSListDetailView: View {
 
             iOSListHairline()
 
+            // The identity of the page is the list it belongs to, not just which tab is showing.
+            //
+            // On iPad this view is reached through a `@ViewBuilder switch` on the sidebar route,
+            // which *updates* the subtree when you switch lists rather than rebuilding it — so
+            // every panel's `@State` survived the switch. `iOSListNotesPanel` seeds its note in
+            // `onAppear` and only there, so switching area A → B while the Notes tab was open left
+            // you typing into A's note under B's header, and a task created from inside it landed
+            // in B. `iOSListViews`' own split view already does this with `.id(route)`; this is the
+            // same discipline applied where the panels live, so it holds for every host.
             pageBody
+                .id(containerIdentity)
         }
         .background(Theme.bg.ignoresSafeArea())
+        .onChange(of: containerIdentity) { _, _ in
+            // Otherwise the capture bar keeps the title you were part-way through typing for the
+            // previous list and adds it to this one.
+            newTitle = ""
+        }
         // The page carries its own header, so an empty inline nav title was the only thing keeping
         // the bar around — 44pt of chrome holding one chevron above a header that already named the
         // list. The chevron is in the header now and the bar is gone. On iPad this view is hosted

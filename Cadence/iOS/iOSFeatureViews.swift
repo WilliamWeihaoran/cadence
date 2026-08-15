@@ -37,9 +37,14 @@ struct iOSGoalsView: View {
         GoalAssignmentRules.milestones(of: goal).filter { $0.status != .done }
     }
 
+    /// A selected id that no longer resolves falls through to the default rather than resolving to
+    /// nothing: the goal can disappear from under the selection at any time — deleted on the Mac
+    /// and arriving over CloudKit, or deleted from the compact list — and returning `nil` there
+    /// left the iPad detail pane reading "No goal selected" for as long as the view stayed alive,
+    /// with no way to pick anything again.
     private var selected: Goal? {
-        if let selectedID {
-            return goals.first { $0.id == selectedID }
+        if let selectedID, let match = goals.first(where: { $0.id == selectedID }) {
+            return match
         }
         return topLevelGoals.first ?? activeGoals.first ?? goals.first
     }
@@ -81,7 +86,9 @@ struct iOSGoalsView: View {
     /// survive with their link severed.
     private var deleteMessage: String {
         guard let goal = pendingDelete else { return "" }
-        let milestoneCount = GoalAssignmentRules.milestones(of: goal).count
+        // The whole nested subtree, which is what `deleteGoal` removes — counting direct children
+        // alone said "1 milestone" for a goal → milestone → sub-milestone tree and deleted two.
+        let milestoneCount = GoalAssignmentRules.nestedGoalCount(under: goal)
         let nested = milestoneCount == 1 ? "its 1 milestone" : "its \(milestoneCount) milestones"
         let scope = milestoneCount == 0 ? "This deletes the goal." : "This deletes the goal and \(nested)."
         return "\(scope) Linked tasks, habits and lists are kept."
@@ -265,9 +272,11 @@ struct iOSHabitsView: View {
 
     private var todayKey: String { DateFormatters.todayKey() }
 
+    /// As on the goals screen: a selected id that no longer resolves falls through to the default
+    /// rather than leaving the detail pane permanently empty.
     private var selected: Habit? {
-        if let selectedID {
-            return habits.first { $0.id == selectedID }
+        if let selectedID, let match = habits.first(where: { $0.id == selectedID }) {
+            return match
         }
         return dueToday.first ?? habits.first
     }

@@ -36,15 +36,22 @@ enum iOSCalendarEventSupport {
         return CadenceScheduleSupport.timeRangeLabel(startMinute: range.start, endMinute: range.end)
     }
 
-    static func minuteRange(for event: EKEvent) -> (start: Int, end: Int) {
+    /// The event's span on `day`, in minutes from that day's midnight.
+    ///
+    /// The day matters: this used to read only the hour/minute of each end, so a 23:00 → 00:00
+    /// event produced `end < start` and fell through to the 15-minute floor, and every column of
+    /// a multi-day timed event drew the same 15-minute sliver. Defaults to the event's own start
+    /// day, which is what a label with no column context wants.
+    static func minuteRange(for event: EKEvent, on day: Date? = nil) -> (start: Int, end: Int) {
         let calendar = Calendar.current
         let startDate = event.startDate ?? Date()
         let endDate = event.endDate ?? startDate.addingTimeInterval(30 * 60)
-        let startComponents = calendar.dateComponents([.hour, .minute], from: startDate)
-        let endComponents = calendar.dateComponents([.hour, .minute], from: endDate)
-        let start = (startComponents.hour ?? CadenceScheduleSupport.calendarStartHour) * 60 + (startComponents.minute ?? 0)
-        let end = (endComponents.hour ?? CadenceScheduleSupport.calendarStartHour) * 60 + (endComponents.minute ?? 0)
-        return (start, max(start + 15, end))
+        return CadenceScheduleSupport.minuteRange(
+            from: startDate,
+            to: endDate,
+            on: day ?? startDate,
+            calendar: calendar
+        )
     }
 }
 #endif

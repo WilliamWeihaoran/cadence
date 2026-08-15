@@ -500,6 +500,121 @@ struct HabitInsightsAuditTests {
         }
     }
 
+    // MARK: - `.timesPerWeek` is due until its week is met, and its streak is counted in weeks
+
+    /// `isDue(on:)` returned `true` unconditionally for `.timesPerWeek`, so `isDueToday` could
+    /// never be false: the detail's "Due today" chip, the list row badge and the "N of M done
+    /// today" eyebrow all insisted a 3x/week habit was outstanding on a Thursday whose Mon/Tue/Wed
+    /// had already met the target — the same week `weeklyStreak` scored as satisfied.
+    @Test func aWeeklyTargetHabitStopsBeingDueOnceItsWeekIsMet() throws {
+        let calendar = Calendar.current
+        let habit = makeHabit(frequency: .timesPerWeek, targetCount: 3)
+        // ISO week of Mon 2026-06-15.
+        complete(habit, ["2026-06-15", "2026-06-16", "2026-06-17"])
+
+        let thursday = try #require(DateFormatters.date(from: "2026-06-18"))
+        let wednesday = try #require(DateFormatters.date(from: "2026-06-17"))
+        let nextMonday = try #require(DateFormatters.date(from: "2026-06-22"))
+
+        #expect(habit.isDue(on: thursday, calendar: calendar) == false)
+        // The day whose own check-in finished the week still counts as having been due —
+        // otherwise the last check-in of every week reads as unnecessary.
+        #expect(habit.isDue(on: wednesday, calendar: calendar) == true)
+        // A new week starts owing again, and the streak agrees the old one was satisfied.
+        #expect(habit.isDue(on: nextMonday, calendar: calendar) == true)
+        #expect(habit.currentStreak(asOf: thursday, calendar: calendar) == 1)
+    }
+
+    @Test func aWeeklyTargetHabitIsStillDueWhileItsWeekIsShort() throws {
+        let calendar = Calendar.current
+        let habit = makeHabit(frequency: .timesPerWeek, targetCount: 3)
+        complete(habit, ["2026-06-15", "2026-06-16"])
+
+        let thursday = try #require(DateFormatters.date(from: "2026-06-18"))
+        #expect(habit.isDue(on: thursday, calendar: calendar) == true)
+
+        // Weeks are the ISO ones the streak uses, so a Sunday closes the week that opened Monday
+        // rather than opening a new one.
+        let sunday = try #require(DateFormatters.date(from: "2026-06-21"))
+        complete(habit, ["2026-06-19"])
+        #expect(habit.isDue(on: sunday, calendar: calendar) == false)
+    }
+
+    /// The 30-day tile divided by *due* days, and every day was due, so a "Gym, 3x/week" habit
+    /// kept perfectly for a month read 43% beside a healthy streak — the exact number the doc
+    /// comment on that function holds up as the answer it exists to avoid.
+    @Test func thirtyDayRateScoresWeeklyTargetHabitsInWeeks() throws {
+        let calendar = Calendar.current
+        let today = try #require(DateFormatters.date(from: "2026-06-19"))
+
+        // Four complete ISO weeks before the current one, three check-ins each.
+        let perfect = makeHabit(frequency: .timesPerWeek, targetCount: 3)
+        complete(perfect, [
+            "2026-06-08", "2026-06-10", "2026-06-12",
+            "2026-06-01", "2026-06-03", "2026-06-05",
+            "2026-05-25", "2026-05-27", "2026-05-29",
+            "2026-05-18", "2026-05-20", "2026-05-22",
+        ])
+        #expect(perfect.last30DayCompletionRate(asOf: today, calendar: calendar) == 100)
+
+        // Two of three, every week: two thirds, not a day-count.
+        let short = makeHabit(frequency: .timesPerWeek, targetCount: 3)
+        complete(short, [
+            "2026-06-08", "2026-06-10",
+            "2026-06-01", "2026-06-03",
+            "2026-05-25", "2026-05-27",
+            "2026-05-18", "2026-05-20",
+        ])
+        #expect(short.last30DayCompletionRate(asOf: today, calendar: calendar) == 67)
+
+        // An extra check-in cannot lift a week above its own target.
+        let over = makeHabit(frequency: .timesPerWeek, targetCount: 3)
+        complete(over, [
+            "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12",
+            "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05",
+            "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29",
+            "2026-05-18", "2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22",
+        ])
+        #expect(over.last30DayCompletionRate(asOf: today, calendar: calendar) == 100)
+
+        #expect(makeHabit(frequency: .timesPerWeek, targetCount: 3).last30DayCompletionRate(asOf: today, calendar: calendar) == 0)
+    }
+
+    /// `currentStreak` returns **weeks** for `.timesPerWeek` — the model says so twice — while
+    /// every surface appended a hardcoded "d", so eight kept weeks (24+ check-ins) rendered as
+    /// "8d streak" and read as weaker than a ten-day daily habit.
+    @Test func streakUnitFollowsTheFrequencyRatherThanBeingAssumedInDays() throws {
+        #expect(makeHabit(frequency: .timesPerWeek, targetCount: 3).streakUnit == .weeks)
+        #expect(makeHabit(frequency: .daily).streakUnit == .days)
+        #expect(makeHabit(frequency: .daysOfWeek, days: [1, 3, 5]).streakUnit == .days)
+        #expect(makeHabit(frequency: .monthly, days: [1]).streakUnit == .days)
+
+        #expect(HabitStreakUnit.days.shortLabel(8) == "8d")
+        #expect(HabitStreakUnit.weeks.shortLabel(8) == "8w")
+        #expect(HabitStreakUnit.days.phrase(8) == "8 day streak")
+        #expect(HabitStreakUnit.weeks.phrase(8) == "8 week streak")
+
+        // And the unit has to match the number actually produced: eight satisfied weeks of a
+        // 3x/week habit is "8w", not "8d".
+        let calendar = Calendar.current
+        let habit = makeHabit(frequency: .timesPerWeek, targetCount: 3)
+        var keys: [String] = []
+        var weekStart = try #require(DateFormatters.date(from: "2026-04-27"))
+        for _ in 0..<8 {
+            for offset in [0, 2, 4] {
+                if let day = calendar.date(byAdding: .day, value: offset, to: weekStart) {
+                    keys.append(DateFormatters.dateKey(from: day, calendar: calendar))
+                }
+            }
+            weekStart = calendar.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
+        }
+        complete(habit, keys)
+
+        let asOf = try #require(DateFormatters.date(from: "2026-06-19"))
+        #expect(habit.currentStreak(asOf: asOf, calendar: calendar) == 8)
+        #expect(habit.streakUnit.shortLabel(habit.currentStreak(asOf: asOf, calendar: calendar)) == "8w")
+    }
+
     /// The grid should end on the week containing today, not run arbitrarily far past it.
     @Test func heatmapGridStopsAtTheEndOfTheCurrentWeek() throws {
         let calendar = Calendar.current
@@ -514,5 +629,68 @@ struct HabitInsightsAuditTests {
         let daysPastToday = calendar.dateComponents([.day], from: calendar.startOfDay(for: today), to: lastDate).day ?? -1
         #expect(daysPastToday >= 0)
         #expect(daysPastToday <= 6)
+    }
+
+    /// The month ruler deduped on the month *number* over a 364-day grid, so the first and last
+    /// columns — almost always the same month — collapsed onto the label emitted a year ago. On
+    /// 2026-08-15 the grid opens in Aug 2025, so "Aug" was spent at column 0 and every Aug 2026
+    /// column at the right edge went unlabelled: the last label a reader saw was "Jul", and
+    /// counting back from it to date a cell landed a month out.
+    @Test func heatmapMonthLabelsReachTheCurrentMonthAtTheRightEdge() throws {
+        let calendar = Calendar.current
+        let today = try #require(DateFormatters.date(from: "2026-08-15"))
+        let labels = HabitHeatmap.HabitHeatmapGrid.monthLabels(weeks: 52, today: today, calendar: calendar)
+
+        let last = try #require(labels.last)
+        #expect(last.label == DateFormatters.monthAbbrev.string(from: today))
+        // Not the column a year ago: the current month's label belongs at the right-hand end.
+        #expect(last.weekCol >= 46)
+        // Thirteen months are touched by a 52-week window, and each gets exactly one column.
+        #expect(labels.count == 13)
+        #expect(Set(labels.map(\.weekCol)).count == labels.count)
+
+        // Every label sits on a column whose week really does start in the month it names.
+        for label in labels {
+            let start = HabitHeatmap.HabitHeatmapGrid.startDate(weeks: 52, today: today, calendar: calendar)
+            let weekStart = try #require(calendar.date(byAdding: .day, value: label.weekCol * 7, to: start))
+            #expect(DateFormatters.monthAbbrev.string(from: weekStart) == label.label)
+        }
+    }
+
+    /// The grid hardcoded a Sunday start (`-(weekday - 1)`) while every weekly *computation* goes
+    /// through `Habit.isoWeekCalendar`'s fixed Monday week — so a 3x/week habit checked
+    /// Sun/Mon/Tue drew one full-looking column that the scoring counted as 2/3 of one week and
+    /// 1/3 of the next.
+    @Test func heatmapColumnsUseTheSameMondayWeekTheScoringDoes() throws {
+        let iso = Habit.isoWeekCalendar(inheritingTimeZoneFrom: Calendar.current)
+
+        // A full week of "todays", so no single weekday can pass by luck.
+        let anchor = try #require(DateFormatters.date(from: "2026-08-10"))
+        for offset in 0..<7 {
+            let today = try #require(Calendar.current.date(byAdding: .day, value: offset, to: anchor))
+            let start = HabitHeatmap.HabitHeatmapGrid.startDate(weeks: 52, today: today, calendar: .current)
+            // Monday is weekday 2 in every Gregorian/ISO calendar.
+            #expect(iso.component(.weekday, from: start) == 2, "column boundary is not Monday for offset \(offset)")
+
+            let cells = HabitHeatmap.HabitHeatmapGrid.cells(weeks: 52, today: today, calendar: .current)
+            let firstOfLastColumn = try #require(cells.dropLast(6).last)
+            #expect(iso.component(.weekday, from: firstOfLastColumn.date) == 2)
+        }
+    }
+
+    /// And the boundary must not move with the locale's `firstWeekday`, which is what made the
+    /// old grid disagree with the scoring in the first place.
+    @Test func heatmapColumnsIgnoreTheLocalesFirstWeekday() throws {
+        let today = try #require(DateFormatters.date(from: "2026-08-15"))
+
+        func start(firstWeekday: Int) -> Date {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+            calendar.firstWeekday = firstWeekday
+            return HabitHeatmap.HabitHeatmapGrid.startDate(weeks: 52, today: today, calendar: calendar)
+        }
+
+        #expect(start(firstWeekday: 1) == start(firstWeekday: 2))
+        #expect(start(firstWeekday: 7) == start(firstWeekday: 2))
     }
 }

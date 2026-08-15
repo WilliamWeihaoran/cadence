@@ -54,6 +54,7 @@ struct iOSCalendarEventEditSheet: View {
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
     @State private var confirmDelete = false
+    @State private var actionError: String?
     @State private var pendingAction: PendingAction?
     @State private var showCalendarPicker = false
     @State private var showStartTimePicker = false
@@ -107,9 +108,27 @@ struct iOSCalendarEventEditSheet: View {
         isAllDay ? Calendar.current.startOfDay(for: startDate) : startDate
     }
 
+    /// EventKit refuses writes to Birthdays, Holidays and subscribed calendars, and the sheet is
+    /// reachable from the calendar inspector and from search for exactly those events.
+    private var isEditable: Bool {
+        calendarManager.canModify(event)
+    }
+
+    private var writableCalendarIDs: [String] {
+        calendarManager.writableCalendars.map(\.calendarIdentifier)
+    }
+
+    private var eventCalendarName: String {
+        event.calendar?.title ?? ""
+    }
+
     private var canSave: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        calendarManager.writableCalendars.contains { $0.calendarIdentifier == selectedCalendarID }
+        CadenceCalendarEventEditingSupport.canSave(
+            title: title,
+            isEventEditable: isEditable,
+            selectedCalendarID: selectedCalendarID,
+            writableCalendarIDs: writableCalendarIDs
+        )
     }
 
     private var isRecurringEvent: Bool {
@@ -164,15 +183,20 @@ struct iOSCalendarEventEditSheet: View {
                     .padding(isRegularWidth ? 20 : 18)
             }
             .background(Theme.bg)
-            .navigationTitle("Edit Event")
+            .navigationTitle(isEditable ? "Edit Event" : "Event Details")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(isEditable ? "Cancel" : "Done") { dismiss() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save)
-                        .disabled(!canSave)
+                // No Save at all on a read-only event. It used to be enabled, and tapping it
+                // threw inside EventKit, returned false, and left the sheet open with nothing
+                // said — an enabled control that did nothing.
+                if isEditable {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save", action: save)
+                            .disabled(!canSave)
+                    }
                 }
             }
             .confirmationDialog("Delete Event?", isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -231,6 +255,8 @@ struct iOSCalendarEventEditSheet: View {
 
     private var compactFormLayout: some View {
         VStack(alignment: .leading, spacing: 16) {
+            readOnlyNotice
+            actionErrorNotice
             titleCard
             scheduleCard
             calendarCard
@@ -243,6 +269,7 @@ struct iOSCalendarEventEditSheet: View {
     private var regularFormLayout: some View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 16) {
+                readOnlyNotice
                 titleCard
                 scheduleCard
                 calendarCard
@@ -260,6 +287,39 @@ struct iOSCalendarEventEditSheet: View {
         .frame(maxWidth: .infinity, alignment: .top)
     }
 
+    @ViewBuilder
+    private var actionErrorNotice: some View {
+        if let actionError {
+            Text(actionError)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.red)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
+        }
+    }
+
+    /// Says once, at the top, why the fields below are inert — instead of leaving the reader to
+    /// discover it by tapping a Save button that silently failed.
+    @ViewBuilder
+    private var readOnlyNotice: some View {
+        if !isEditable {
+            HStack(alignment: .top, spacing: 12) {
+                iOSIconTile(systemImage: "lock.fill", color: Theme.amber, size: 34, iconSize: 15)
+
+                Text(CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: eventCalendarName))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
+        }
+    }
+
     private var titleCard: some View {
         iOSEditorSection(title: "Event") {
             TextField("Event title", text: $title, axis: .vertical)
@@ -268,6 +328,9 @@ struct iOSCalendarEventEditSheet: View {
                 .foregroundStyle(Theme.text)
                 .lineLimit(1...3)
         }
+        // Every field below is inert on a read-only event: there is no Save to carry an edit
+        // anywhere, so letting one be typed would be the same false promise in a quieter form.
+        .disabled(!isEditable)
     }
 
     // `contentSpacing` stays at its 0 default: every gap in here is an `iOSEditorDivider`, which
@@ -328,11 +391,21 @@ struct iOSCalendarEventEditSheet: View {
                 }
             }
         }
+        .disabled(!isEditable)
     }
 
     private var calendarCard: some View {
         iOSEditorSection(title: "Apple Calendar") {
-            if calendarManager.writableCalendars.isEmpty {
+            if !isEditable {
+                // The event's real calendar, stated plainly. A picker here could only offer
+                // calendars this event cannot move to.
+                iOSEditorFieldRow(label: "Calendar", systemImage: "calendar", color: Theme.dim) {
+                    Text(eventCalendarName.isEmpty ? "Unknown calendar" : eventCalendarName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(1)
+                }
+            } else if calendarManager.writableCalendars.isEmpty {
                 Text("No writable calendars are available.")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.dim)
@@ -417,6 +490,9 @@ struct iOSCalendarEventEditSheet: View {
                 }
             }
         }
+        // The Apple Calendar note is written back through EventKit on save, which a read-only
+        // calendar refuses. The *Cadence* event note above stays editable — it is our own data.
+        .disabled(!isEditable)
     }
 
     private func openEventNote() {
@@ -445,14 +521,19 @@ struct iOSCalendarEventEditSheet: View {
         }
     }
 
+    /// Absent, not disabled, on a read-only event: EventKit refuses the removal, so the button
+    /// raised a confirmation dialog for a delete that could never happen.
+    @ViewBuilder
     private var deleteCard: some View {
-        iOSActionButton(
-            title: "Delete Event",
-            systemImage: "trash",
-            role: .destructive,
-            fullWidth: true
-        ) {
-            confirmDelete = true
+        if isEditable {
+            iOSActionButton(
+                title: "Delete Event",
+                systemImage: "trash",
+                role: .destructive,
+                fullWidth: true
+            ) {
+                confirmDelete = true
+            }
         }
     }
 
@@ -493,21 +574,34 @@ struct iOSCalendarEventEditSheet: View {
             notes: notes,
             span: scope.eventSpan,
             isAllDay: isAllDay
-        ) else { return }
+        ) else {
+            // A rejected write used to return here and do nothing at all: the sheet stayed open,
+            // unchanged, with no indication that the save had failed.
+            actionError = "Couldn't save this event to Apple Calendar."
+            return
+        }
+        actionError = nil
         dismiss()
     }
 
     private func applyDelete(scope: iOSCalendarRecurrenceEditScope) {
         if calendarManager.deleteEvent(event, span: scope.eventSpan) {
             dismiss()
+        } else {
+            actionError = "Couldn't delete this event from Apple Calendar."
         }
     }
 
+    /// Keeps a writable event pointed at a calendar the picker actually lists — and leaves a
+    /// read-only event on its own calendar, which is the one thing this used to get wrong: it
+    /// substituted the first writable calendar, so a Birthdays event's Calendar row read
+    /// "Personal" and the sheet then offered to save it there.
     private func ensureWritableCalendar() {
-        guard calendarManager.writableCalendars.contains(where: { $0.calendarIdentifier == selectedCalendarID }) else {
-            selectedCalendarID = calendarManager.writableCalendars.first?.calendarIdentifier ?? ""
-            return
-        }
+        selectedCalendarID = CadenceCalendarEventEditingSupport.resolvedCalendarID(
+            eventCalendarID: selectedCalendarID,
+            isEventEditable: isEditable,
+            writableCalendarIDs: writableCalendarIDs
+        )
     }
 
 }

@@ -71,6 +71,31 @@ struct GoalPresentationTests {
         #expect(subject.daysSummary(asOf: now, calendar: tokyo) == "10d left")
     }
 
+    /// The iOS goal detail serves milestones as well as directions, and its "Milestone" action was
+    /// unconditional — so from a milestone you could create a goal nested two levels deep. Nothing
+    /// draws a third level: it is absent from the goals list (which renders top-level rows plus
+    /// their milestones) and from the habit editor's goal picker, and on iPad the save even
+    /// selected it, showing a detail pane for a goal with no row.
+    @Test func onlyATopLevelGoalCanOwnMilestones() {
+        let direction = Goal(title: "Get healthy")
+        let milestone = Goal(title: "Run a 10k")
+        milestone.parentGoal = direction
+        direction.subGoals = [milestone]
+
+        #expect(GoalAssignmentRules.canOwnMilestones(direction) == true)
+        #expect(GoalAssignmentRules.canOwnMilestones(milestone) == false)
+
+        // The rule has to agree with what the two-level list actually renders: every goal that is
+        // drawn somewhere is either top-level or the child of a top-level goal.
+        let all = [direction, milestone]
+        let drawn = GoalAssignmentRules.topLevelGoals(from: all)
+            .flatMap { [$0] + GoalAssignmentRules.milestones(of: $0) }
+        #expect(drawn.count == all.count)
+        for goal in all where !GoalAssignmentRules.canOwnMilestones(goal) {
+            #expect(GoalAssignmentRules.milestones(of: goal).isEmpty)
+        }
+    }
+
     @Test func rangeLabelNeedsBothEndsBeforeItClaimsARange() {
         #expect(goal(start: "2026-08-01", end: "").rangeLabel == "No date range")
         #expect(goal(start: "", end: "2026-08-31").rangeLabel == "No date range")

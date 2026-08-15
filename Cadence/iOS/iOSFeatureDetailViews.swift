@@ -276,13 +276,21 @@ struct iOSGoalDetail: View {
 
             // Green and amber said nothing here — they were not the goal's colour, not a status,
             // and not a warning. Two secondary actions, one secondary treatment.
-            iOSActionButton(
-                title: "Milestone",
-                systemImage: "flag.fill",
-                role: .secondary,
-                size: .compact,
-                action: onNewMilestone
-            )
+            //
+            // Only where a milestone can actually go. This detail serves milestones as well as
+            // directions, and the button was unconditional, so from a milestone it created a
+            // third-level goal that no screen draws — not in the list, not nested under anything,
+            // and absent from the habit editor's goal picker. On iPad the save then selected it
+            // and showed a detail pane for a goal with no row.
+            if GoalAssignmentRules.canOwnMilestones(goal) {
+                iOSActionButton(
+                    title: "Milestone",
+                    systemImage: "flag.fill",
+                    role: .secondary,
+                    size: .compact,
+                    action: onNewMilestone
+                )
+            }
 
             iOSActionButton(
                 title: "Habit",
@@ -375,7 +383,9 @@ struct iOSHabitSummaryRow: View {
 
                     // A live streak is worth a colour; "no streak" is not, and rendering it amber
                     // gave the absence of a streak the same emphasis as a run of forty days.
-                    Text(streak > 0 ? "\(streak)d streak" : "no streak")
+                    // The unit comes from the frequency: `currentStreak` counts weeks for a
+                    // `.timesPerWeek` habit, so a hardcoded "d" rendered eight kept weeks as "8d".
+                    Text(streak > 0 ? "\(habit.streakUnit.shortLabel(streak)) streak" : "no streak")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(streak > 0 ? Theme.amber : Theme.dim)
                         .lineLimit(1)
@@ -547,9 +557,9 @@ struct iOSHabitDetail: View {
     /// it belongs to the icon tile, the check-in control and the heatmap.
     private var metrics: some View {
         HStack(spacing: 10) {
-            iOSMetricTile(title: "Current", value: "\(habit.currentStreak)d", icon: "flame.fill", color: Theme.dim)
-            iOSMetricTile(title: "Best", value: "\(habit.bestStreak)d", icon: "trophy.fill", color: Theme.dim)
-            iOSMetricTile(title: "30 days", value: "\(habit.last30DayCompletionRate)%", icon: "chart.bar.fill", color: Theme.dim)
+            iOSMetricTile(title: "Current", value: habit.streakUnit.shortLabel(habit.currentStreak), icon: "flame.fill", color: Theme.dim)
+            iOSMetricTile(title: "Best", value: habit.streakUnit.shortLabel(habit.bestStreak), icon: "trophy.fill", color: Theme.dim)
+            iOSMetricTile(title: habit.completionRateWindowLabel, value: "\(habit.last30DayCompletionRate)%", icon: "chart.bar.fill", color: Theme.dim)
         }
     }
 

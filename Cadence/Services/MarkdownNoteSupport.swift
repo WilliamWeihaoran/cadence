@@ -52,6 +52,15 @@ enum NoteTemplateLibrary {
         return raw
     }
 
+    /// Whether an override is stored is decided by the template it would actually produce, not by
+    /// the raw text typed into the editor.
+    ///
+    /// An empty title or subtitle falls back to the default in `resolved(_:with:)`, so clearing
+    /// either field asks for the default back. Comparing the raw values instead recorded an
+    /// override of `""` that read as customized while displaying the original text everywhere —
+    /// the blue dot, the "Customized" chip and an enabled "Reset Template" for a template that
+    /// looked untouched. An empty *body* is a real edit and keeps its override; `resolved` has no
+    /// fallback for it.
     static func setOverride(for id: String, title: String, subtitle: String, body: String, in raw: String) -> String {
         var overrides = overrides(from: raw)
         guard let defaultTemplate = defaultTemplates.first(where: { $0.id == id }) else { return raw }
@@ -60,14 +69,23 @@ enum NoteTemplateLibrary {
             subtitle: subtitle.trimmingCharacters(in: .whitespacesAndNewlines),
             body: body
         )
-        if normalized.title == defaultTemplate.title,
-           normalized.subtitle == defaultTemplate.subtitle,
-           normalized.body == defaultTemplate.body {
+        if resolved(defaultTemplate, with: normalized) == defaultTemplate {
             overrides.removeValue(forKey: id)
         } else {
             overrides[id] = normalized
         }
         return rawOverrides(from: overrides)
+    }
+
+    /// The template an override actually produces. `merged(_:with:)` and `setOverride` both go
+    /// through this, so "what the user sees" and "does this count as customized" cannot drift.
+    static func resolved(_ template: NoteTemplate, with override: NoteTemplateOverride) -> NoteTemplate {
+        NoteTemplate(
+            id: template.id,
+            title: override.title.isEmpty ? template.title : override.title,
+            subtitle: override.subtitle.isEmpty ? template.subtitle : override.subtitle,
+            body: override.body
+        )
     }
 
     static func resetOverride(for id: String, in raw: String) -> String {
@@ -110,12 +128,7 @@ enum NoteTemplateLibrary {
     private static func merged(_ templates: [NoteTemplate], with overrides: [String: NoteTemplateOverride]) -> [NoteTemplate] {
         templates.map { template in
             guard let override = overrides[template.id] else { return template }
-            return NoteTemplate(
-                id: template.id,
-                title: override.title.isEmpty ? template.title : override.title,
-                subtitle: override.subtitle.isEmpty ? template.subtitle : override.subtitle,
-                body: override.body
-            )
+            return resolved(template, with: override)
         }
     }
 

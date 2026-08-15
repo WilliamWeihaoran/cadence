@@ -133,4 +133,72 @@ struct NoteTemplateLibraryTests {
         #expect(edited.filter { NoteTemplateLibrary.isCustomized($0, overridesRaw: raw) }.map(\.id) == [brief.id])
         #expect(edited.map(\.id) == all.map(\.id))
     }
+
+    /// Clearing the Title field asks for the default title back — `merged` falls back to it — so it
+    /// must not record an override.
+    ///
+    /// It used to: `""` differs from the default title as a raw string, so an override was stored,
+    /// the field repopulated with the original text on the next read, and the template reported
+    /// itself Customized with an enabled "Reset Template" while looking completely untouched.
+    @Test func clearingTheTitleDoesNotRecordAnOverride() throws {
+        let defaultTemplate = try #require(NoteTemplateLibrary.defaultTemplate(id: "daily-plan"))
+
+        let raw = NoteTemplateLibrary.setOverride(
+            for: defaultTemplate.id,
+            title: "",
+            subtitle: defaultTemplate.subtitle,
+            body: defaultTemplate.body,
+            in: ""
+        )
+
+        #expect(NoteTemplateLibrary.overrides(from: raw).isEmpty)
+        #expect(!NoteTemplateLibrary.isCustomized(defaultTemplate, overridesRaw: raw))
+    }
+
+    /// The same rule has to clear an override that already exists, not merely decline to add one.
+    @Test func clearingTheDescriptionRemovesAnExistingOverride() throws {
+        let defaultTemplate = try #require(NoteTemplateLibrary.defaultTemplate(id: "daily-plan"))
+
+        let customized = NoteTemplateLibrary.setOverride(
+            for: defaultTemplate.id,
+            title: defaultTemplate.title,
+            subtitle: "Rescoped",
+            body: defaultTemplate.body,
+            in: ""
+        )
+        #expect(NoteTemplateLibrary.isCustomized(defaultTemplate, overridesRaw: customized))
+
+        let cleared = NoteTemplateLibrary.setOverride(
+            for: defaultTemplate.id,
+            title: defaultTemplate.title,
+            subtitle: "   ",
+            body: defaultTemplate.body,
+            in: customized
+        )
+
+        #expect(NoteTemplateLibrary.overrides(from: cleared).isEmpty)
+        #expect(!NoteTemplateLibrary.isCustomized(defaultTemplate, overridesRaw: cleared))
+    }
+
+    /// An empty *body* has no fallback in `merged`, so it is a genuine edit and keeps its override.
+    /// This is what stops the "empty means default" rule from swallowing a deliberately blank
+    /// template.
+    @Test func clearingTheBodyIsARealCustomization() throws {
+        let defaultTemplate = try #require(NoteTemplateLibrary.defaultTemplate(id: "daily-plan"))
+
+        let raw = NoteTemplateLibrary.setOverride(
+            for: defaultTemplate.id,
+            title: defaultTemplate.title,
+            subtitle: defaultTemplate.subtitle,
+            body: "",
+            in: ""
+        )
+
+        #expect(NoteTemplateLibrary.isCustomized(defaultTemplate, overridesRaw: raw))
+        let template = try #require(
+            NoteTemplateLibrary.editableTemplates(overridesRaw: raw).first { $0.id == defaultTemplate.id }
+        )
+        #expect(template.body.isEmpty)
+        #expect(template.title == defaultTemplate.title)
+    }
 }

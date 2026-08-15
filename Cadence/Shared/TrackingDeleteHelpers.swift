@@ -21,21 +21,11 @@ extension ModelContext {
     /// mirrors `Goal.subGoals`' `.nullify` rule, and it is the same reasoning that keeps
     /// `TaskBundle.tasks` on nullify.
     func deleteGoal(_ goal: Goal) {
-        // Depth-first, so a milestone's own milestones go before it. `visited` guards the cycle a
-        // corrupted `parentGoal` chain could otherwise produce, matching `GoalContributionResolver`.
-        var visited: Set<UUID> = []
-        var ordered: [Goal] = []
-
-        func collect(_ current: Goal) {
-            guard visited.insert(current.id).inserted else { return }
-            for child in current.subGoals ?? [] {
-                collect(child)
-            }
-            ordered.append(current)
-        }
-        collect(goal)
-
-        for doomed in ordered {
+        // Depth-first, so a milestone's own milestones go before it. The walk lives in
+        // `GoalAssignmentRules` because the delete confirmation counts the same list — an alert
+        // that counted direct children while this collected the subtree promised "1 milestone" and
+        // deleted two.
+        for doomed in GoalAssignmentRules.deletionCascade(from: goal) {
             for link in doomed.listLinks ?? [] {
                 delete(link)
             }

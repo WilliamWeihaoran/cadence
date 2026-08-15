@@ -35,6 +35,13 @@ final class iOSCalendarManager {
         availableCalendars.filter(\.allowsContentModifications)
     }
 
+    /// Whether EventKit will accept writes to this event. Birthdays, Holidays and subscribed
+    /// feeds are visible but read-only, and `fetchEvents` deliberately returns them, so every
+    /// mutation below has to ask before it tries.
+    func canModify(_ event: EKEvent) -> Bool {
+        event.calendar?.allowsContentModifications ?? false
+    }
+
     func refreshAuthorizationState() {
         applyAuthorizationStatus(EKEventStore.authorizationStatus(for: .event))
     }
@@ -158,7 +165,7 @@ final class iOSCalendarManager {
         span: EKSpan = .thisEvent,
         isAllDay: Bool = false
     ) -> Bool {
-        guard isAuthorized, endDate > startDate else { return false }
+        guard isAuthorized, endDate > startDate, canModify(event) else { return false }
         event.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Event" : title
         event.isAllDay = isAllDay
         event.startDate = startDate
@@ -180,7 +187,7 @@ final class iOSCalendarManager {
 
     @discardableResult
     func deleteEvent(_ event: EKEvent, span: EKSpan = .thisEvent) -> Bool {
-        guard isAuthorized else { return false }
+        guard isAuthorized, canModify(event) else { return false }
         do {
             try store.remove(event, span: span)
             storeVersion += 1
@@ -192,7 +199,7 @@ final class iOSCalendarManager {
     }
 
     func updateEventNotes(_ event: EKEvent, notes: String) {
-        guard isAuthorized else { return }
+        guard isAuthorized, canModify(event) else { return }
         let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let nextNotes = trimmed.isEmpty ? nil : notes
         guard event.notes != nextNotes else { return }
