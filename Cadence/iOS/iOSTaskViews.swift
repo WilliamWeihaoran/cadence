@@ -54,15 +54,6 @@ struct iOSTaskRow: View {
             .sheet(isPresented: $showDetail) {
                 iOSTaskDetailSheet(task: task)
             }
-            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                iOSTaskRowTrailingSwipeActions(
-                    task: task,
-                    showDeleteConfirmation: $showDeleteConfirmation
-                )
-            }
-            .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                iOSTaskRowLeadingSwipeActions(task: task)
-            }
             .contextMenu {
                 iOSTaskRowContextMenu(
                     task: task,
@@ -71,6 +62,20 @@ struct iOSTaskRow: View {
                     pendingRecurrenceRule: $pendingRecurrenceRule
                 )
             }
+            // Not `.swipeActions`: that is a `List`-row modifier, and eight of this row's
+            // eighteen call sites render it inside a `ScrollView`/`LazyVStack`, where SwiftUI
+            // discards it without a word. The same row swiped on Today's iPad column and not on
+            // iPhone Today. This container works in either host, so all eighteen behave alike —
+            // including the `List`-hosted ones, which were switched over too rather than left on
+            // a second, near-identical mechanism.
+            .iOSSwipeActions(
+                leading: iOSTaskRowSwipeActions.leading(task: task, modelContext: modelContext),
+                trailing: iOSTaskRowSwipeActions.trailing(
+                    task: task,
+                    modelContext: modelContext,
+                    requestDelete: { showDeleteConfirmation = true }
+                )
+            )
             .iOSTaskRowRecurrenceScopeDialog(
                 task: task,
                 pendingRecurrenceRule: $pendingRecurrenceRule
@@ -170,12 +175,18 @@ struct iOSTaskRow: View {
         return isRegularWidth ? 12 : 11
     }
 
+    /// Wraps rather than scrolls. This was a horizontal `ScrollView`, which could not work here:
+    /// nested inside the page's vertical scroll and under the row's own tap gesture — and now its
+    /// swipe gesture too — the outer gestures always won, so the strip never scrolled and every
+    /// chip past the right edge was unreachable rather than merely off-screen. Wrapping is
+    /// affordable because the colour pass left a typical row carrying two to four chips; a fully
+    /// annotated task costs one extra line, which is cheaper than hiding what it says.
     private var taskBadges: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: isCompact ? 4 : (isRegularWidth ? 6 : 5)) {
-                taskBadgeContent
-            }
-            .padding(.trailing, 1)
+        CadenceWrappingHStack(
+            spacing: isCompact ? 4 : (isRegularWidth ? 6 : 5),
+            lineSpacing: isCompact ? 3 : 4
+        ) {
+            taskBadgeContent
         }
     }
 
@@ -188,11 +199,16 @@ struct iOSTaskRow: View {
         return preview.isEmpty ? nil : preview
     }
 
-    /// Row metadata, in `MacTaskRow`'s vocabulary: a tinted icon carries the *identity* of the
-    /// field (amber sun = do date, red flag = due date, the goal's own colour = goal) while the
-    /// text stays neutral, going red only when a date is genuinely late. Every one of these used
-    /// to be a filled capsule in its own hue, so a task with four attributes rendered as four
-    /// competing colours and urgency stopped standing out.
+    /// Row metadata. **Colour is reserved for the exceptional**: every item is `Theme.dim`, icon
+    /// and text alike, so a red thing in a row means something is actually wrong. Only three
+    /// things earn a hue — an overdue deadline, a do date already in the past, and a task that is
+    /// actively In Progress. Everything else (the list, the goal, the repeat marker, the subtask
+    /// tally, the estimate, a do date that is merely *today*) is ordinary and reads as chrome.
+    ///
+    /// Before this, a task with four attributes rendered four tinted icons — amber sun, purple
+    /// repeat, green checklist, the goal's own colour — and a genuinely late deadline had to
+    /// compete with a recurrence glyph. On the Today screen every row carried the amber sun, which
+    /// is the definition of a colour that says nothing.
     ///
     /// Priority is deliberately absent: it is the completion circle's job here exactly as it is on
     /// macOS, and a chip repeating it was a second affordance for one field.
@@ -202,7 +218,6 @@ struct iOSTaskRow: View {
             iOSTaskContainerChip(
                 icon: task.project?.icon ?? task.area?.icon ?? "tray.fill",
                 name: task.containerName,
-                tint: Color(hex: task.containerColor),
                 compact: isCompact
             )
         }
@@ -215,8 +230,7 @@ struct iOSTaskRow: View {
             taskMeta(
                 systemImage: task.scheduledStartMin >= 0 ? "clock.fill" : "sun.max.fill",
                 text: scheduledDateLabel,
-                tint: Theme.amber,
-                textColor: isOverdo ? Theme.red : (isDoToday ? Theme.amber : Theme.dim)
+                tint: isOverdo ? Theme.red : Theme.dim
             )
         }
 
@@ -224,36 +238,37 @@ struct iOSTaskRow: View {
             taskMeta(
                 systemImage: "flag.fill",
                 text: CadenceTaskPresentationSupport.dueDateLabel(for: task),
-                tint: dueUrgency == .overdue ? Theme.red : Theme.dim,
-                textColor: dueUrgency == .overdue ? Theme.red : Theme.dim
+                tint: dueUrgency == .overdue ? Theme.red : Theme.dim
             )
         }
 
         if task.recurrenceRule != .none {
-            taskMeta(systemImage: task.recurrenceRule.systemImage, text: task.recurrenceRule.shortLabel, tint: Theme.purple)
+            taskMeta(systemImage: task.recurrenceRule.systemImage, text: task.recurrenceRule.shortLabel)
         }
 
         if let subtaskProgress = CadenceTaskPresentationSupport.subtaskProgress(for: task) {
             taskMeta(
                 systemImage: "checklist",
-                text: isCompact ? subtaskProgress.compactLabel : subtaskProgress.label,
-                tint: subtaskProgress.completed == subtaskProgress.total ? Theme.green : Theme.dim
+                text: isCompact ? subtaskProgress.compactLabel : subtaskProgress.label
             )
         }
 
         if task.estimatedMinutes > 0 {
-            taskMeta(systemImage: "clock", text: estimateLabel, tint: Theme.dim)
+            taskMeta(systemImage: "clock", text: estimateLabel)
         }
 
-        if CadenceTaskPresentationSupport.hasNotes(task) {
-            taskMeta(systemImage: "doc.text", text: "Notes", tint: Theme.dim)
+        // The chip and the secondary line are the same `task.notes` string said twice — the line
+        // already shows the words, so a chip announcing that words exist is pure noise. Every
+        // density renders the secondary line today, so in practice this chip no longer appears;
+        // the guard is what keeps the two in agreement if a denser variant ever drops the line.
+        if secondaryLine == nil, CadenceTaskPresentationSupport.hasNotes(task) {
+            taskMeta(systemImage: "doc.text", text: "Notes")
         }
 
         if let goal = task.goal {
             taskMeta(
                 systemImage: goal.icon,
-                text: goal.title.isEmpty ? "Goal" : goal.title,
-                tint: Color(hex: goal.colorHex)
+                text: goal.title.isEmpty ? "Goal" : goal.title
             )
         }
     }
@@ -262,38 +277,41 @@ struct iOSTaskRow: View {
         showsContainer && !task.containerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Same semantics as `KanbanCardComputedSupport.isOverdo` / `.isDoToday`, which macOS's row and
-    /// card both read: a finished task is never late, and the comparison goes through
+    /// Same semantics as `KanbanCardComputedSupport.isOverdo`, which macOS's row and card both
+    /// read: a finished task is never late, and the comparison goes through
     /// `DateFormatters.dayOffset` rather than a string compare so both platforms answer alike.
     /// That helper is behind `#if os(macOS)`; the two should be folded into one shared classifier.
+    ///
+    /// There is no `isDoToday` companion any more. "Do today" was drawn amber, but on the Today
+    /// screen that is every row — a colour that fires on the common case cannot mark an
+    /// exceptional one.
     private var isOverdo: Bool {
         guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
         return (DateFormatters.dayOffset(from: task.scheduledDate) ?? 0) < 0
     }
 
-    private var isDoToday: Bool {
-        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
-        return task.scheduledDate == DateFormatters.todayKey()
-    }
-
+    /// Tags keep the user's own colour — a tag colour is identity they chose, not decoration — so
+    /// the strip is capped at three. Three coloured chips beside an otherwise monochrome row still
+    /// read as one deliberate accent; a row of five was the loudest thing on screen.
     @ViewBuilder
     private var tagScroller: some View {
         if !task.sortedTags.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(task.sortedTags.prefix(4)) { tag in
-                        iOSTagChip(tag: tag)
-                    }
+            // Wraps, for the same reason `taskBadges` does: a horizontal `ScrollView` in a row this
+            // gesture-heavy cannot be scrolled, so a long tag name pushed its neighbours somewhere
+            // no touch could reach them.
+            CadenceWrappingHStack(spacing: 6, lineSpacing: 4) {
+                ForEach(task.sortedTags.prefix(visibleTagLimit)) { tag in
+                    iOSTagChip(tag: tag)
+                }
 
-                    if task.sortedTags.count > 4 {
-                        Text("+\(task.sortedTags.count - 4)")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Theme.dim)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 4)
-                            .background(Theme.surfaceElevated)
-                            .clipShape(Capsule())
-                    }
+                if task.sortedTags.count > visibleTagLimit {
+                    Text("+\(task.sortedTags.count - visibleTagLimit)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Theme.dim)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(Theme.surfaceElevated)
+                        .clipShape(Capsule())
                 }
             }
         }
@@ -314,17 +332,19 @@ struct iOSTaskRow: View {
         CadenceTaskPresentationSupport.scheduledDateLabel(for: task)
     }
 
+    private var visibleTagLimit: Int { 3 }
+
+    /// `tint` defaults to neutral because a meta item is ordinary until proven otherwise; the two
+    /// call sites that pass anything are the ones that have something to report.
     private func taskMeta(
         systemImage: String,
         text: String,
-        tint: Color,
-        textColor: Color = Theme.dim
+        tint: Color = Theme.dim
     ) -> some View {
         iOSTaskMetaLabel(
             systemImage: systemImage,
             text: text,
             tint: tint,
-            textColor: textColor,
             compact: isCompact
         )
     }
@@ -344,15 +364,18 @@ struct iOSTaskRow: View {
     }
 }
 
-/// One piece of row metadata, in the vocabulary `KanbanMetaChip` established on macOS: the icon
-/// carries identity (which field this is, whose colour it belongs to) and the text carries state.
-/// No fill, because a strip of filled capsules turns every attribute into an alert.
+/// One piece of row metadata: an icon and its text, sharing **one** colour. No fill, because a
+/// strip of filled capsules turns every attribute into an alert.
+///
+/// The icon and the text used to be tinted separately — icon for "which field this is", text for
+/// "how urgent it is" — which meant a merely-scheduled task still drew an amber sun next to grey
+/// words. An item is either ordinary, and entirely `Theme.dim`, or exceptional, and entirely the
+/// colour that says so.
 struct iOSTaskMetaLabel: View {
     let systemImage: String
     let text: String
-    /// Icon colour. Identity, not state — see the note on `KanbanMetaHoverStyle`.
-    let tint: Color
-    var textColor: Color = Theme.dim
+    /// Icon *and* text. Neutral unless this item is one of the few that has earned a colour.
+    var tint: Color = Theme.dim
     var compact = false
 
     var body: some View {
@@ -362,27 +385,28 @@ struct iOSTaskMetaLabel: View {
                 .foregroundStyle(tint)
             Text(text)
                 .font(.system(size: compact ? 10 : 11, weight: .medium))
-                .foregroundStyle(textColor)
+                .foregroundStyle(tint)
                 .lineLimit(1)
         }
     }
 }
 
-/// The list chip. The container colour stays on the **icon** — that is the list's identity — while
-/// the chip itself is the same neutral raised surface on every row, so a wall of tasks does not
-/// become a wall of whatever hues the user happened to pick for their lists. Same rule
-/// `KanbanCard.contextMetaItem` documents on macOS.
+/// The list chip: a neutral raised surface carrying the list's icon and name.
+///
+/// The icon used to be painted the list's own `colorHex`, which put a saturated glyph on every row
+/// of every task surface — the chip already says which list this is, in words. Colour in a row is
+/// now spent only on things that are wrong (an overdue deadline, a do date gone past) and on tag
+/// chips, where the colour is the user's own label rather than chrome.
 struct iOSTaskContainerChip: View {
     let icon: String
     let name: String
-    let tint: Color
     var compact = false
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: compact ? 8.5 : 9.5, weight: .semibold))
-                .foregroundStyle(tint)
+                .foregroundStyle(Theme.dim)
             Text(name.isEmpty ? "Inbox" : name)
                 .font(.system(size: compact ? 10 : 11, weight: .medium))
                 .foregroundStyle(Theme.dim)

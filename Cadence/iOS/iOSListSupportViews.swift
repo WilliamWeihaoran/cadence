@@ -620,16 +620,15 @@ private struct iOSListKanbanCard: View {
         !task.scheduledDate.isEmpty || dueUrgency != nil
     }
 
-    /// Tinted icon carries which field this is, neutral text carries its state, and the text only
-    /// goes red when the date is genuinely late — `KanbanCard`'s rule, shared with `iOSTaskRow`.
+    /// Neutral unless the date is genuinely late, icon and text together — the same rule
+    /// `iOSTaskRow` documents, so a card and a row rank the same deadline the same way.
     @ViewBuilder
     private var metadata: some View {
         if !task.scheduledDate.isEmpty {
             iOSTaskMetaLabel(
                 systemImage: task.scheduledStartMin >= 0 ? "clock.fill" : "sun.max.fill",
                 text: CadenceTaskPresentationSupport.scheduledDateLabel(for: task),
-                tint: Theme.amber,
-                textColor: isOverdo ? Theme.red : Theme.dim
+                tint: isOverdo ? Theme.red : Theme.dim
             )
         }
 
@@ -637,8 +636,7 @@ private struct iOSListKanbanCard: View {
             iOSTaskMetaLabel(
                 systemImage: "flag.fill",
                 text: CadenceTaskPresentationSupport.dueDateLabel(for: task),
-                tint: dueUrgency == .overdue ? Theme.red : Theme.dim,
-                textColor: dueUrgency == .overdue ? Theme.red : Theme.dim
+                tint: dueUrgency == .overdue ? Theme.red : Theme.dim
             )
         }
     }

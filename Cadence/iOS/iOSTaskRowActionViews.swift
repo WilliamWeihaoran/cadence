@@ -2,62 +2,62 @@
 import SwiftData
 import SwiftUI
 
-struct iOSTaskRowTrailingSwipeActions: View {
-    let task: AppTask
-    @Binding var showDeleteConfirmation: Bool
-    @Environment(\.modelContext) private var modelContext
-
-    var body: some View {
-        Button {
-            CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
-        } label: {
-            Label(task.isDone ? "Todo" : "Done",
-                  systemImage: task.isDone ? "circle" : "checkmark.circle.fill")
-        }
-        .tint(task.isDone ? Theme.blue : Theme.green)
-
-        Button(role: .destructive) {
-            showDeleteConfirmation = true
-        } label: {
-            Label("Delete", systemImage: "trash")
-        }
-    }
-}
-
-struct iOSTaskRowLeadingSwipeActions: View {
-    let task: AppTask
-    @Environment(\.modelContext) private var modelContext
-
-    var body: some View {
-        Button {
-            CadenceTaskMutationSupport.scheduleToday(task, modelContext: modelContext)
-        } label: {
-            Label("Today", systemImage: "sun.max.fill")
-        }
-        .tint(Theme.amber)
-
-        Button {
-            CadenceTaskMutationSupport.scheduleTomorrow(task, modelContext: modelContext)
-        } label: {
-            Label("Tomorrow", systemImage: "calendar")
-        }
-        .tint(Theme.blue)
-
-        Button {
-            CadenceTaskMutationSupport.dueToday(task, modelContext: modelContext)
-        } label: {
-            Label("Due", systemImage: "flag.fill")
-        }
-        .tint(Theme.red)
-
-        if !task.scheduledDate.isEmpty {
-            Button {
-                CadenceTaskMutationSupport.clearScheduledDate(task, modelContext: modelContext)
-            } label: {
-                Label("Clear", systemImage: "xmark.circle")
+/// The task row's swipe tray, as values rather than views — `iOSSwipeActionsModifier` draws them,
+/// and it needs their titles and tints for VoiceOver's custom actions as well as for the buttons.
+///
+/// Two actions an edge, deliberately. The leading edge used to carry four (Today, Tomorrow, Due,
+/// Clear), which made each button narrow enough to mis-hit and buried the one people actually
+/// reach for. `Due today` and `Clear do date` did not disappear: they are the `Due Date` and
+/// `Do Date` submenus of `iOSTaskRowContextMenu`, which every one of these rows also has.
+enum iOSTaskRowSwipeActions {
+    /// Full swipe right runs `Today`, because it is first and not destructive.
+    static func leading(task: AppTask, modelContext: ModelContext) -> [CadenceSwipeAction] {
+        [
+            CadenceSwipeAction(
+                id: "do-today",
+                title: "Today",
+                systemImage: "sun.max.fill",
+                tint: Theme.amber
+            ) {
+                CadenceTaskMutationSupport.scheduleToday(task, modelContext: modelContext)
+            },
+            CadenceSwipeAction(
+                id: "do-tomorrow",
+                title: "Tomorrow",
+                systemImage: "calendar",
+                tint: Theme.blue
+            ) {
+                CadenceTaskMutationSupport.scheduleTomorrow(task, modelContext: modelContext)
             }
-            .tint(Theme.dim)
-        }
+        ]
+    }
+
+    /// Full swipe left toggles completion, never deletes: `Delete` is second *and* destructive, so
+    /// `CadenceSwipeActionSupport.fullSwipeIndex` will not hand it to a full swipe. It also only
+    /// ever raises the row's existing confirmation alert — nothing is deleted by the gesture.
+    static func trailing(
+        task: AppTask,
+        modelContext: ModelContext,
+        requestDelete: @escaping () -> Void
+    ) -> [CadenceSwipeAction] {
+        [
+            CadenceSwipeAction(
+                id: "toggle-completion",
+                title: task.isDone ? "Todo" : "Done",
+                systemImage: task.isDone ? "circle" : "checkmark.circle.fill",
+                tint: task.isDone ? Theme.blue : Theme.green
+            ) {
+                CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
+            },
+            CadenceSwipeAction(
+                id: "delete",
+                title: "Delete",
+                systemImage: "trash",
+                tint: Theme.red,
+                isDestructive: true,
+                perform: requestDelete
+            )
+        ]
     }
 }
 
