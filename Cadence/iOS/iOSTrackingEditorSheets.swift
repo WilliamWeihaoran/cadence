@@ -399,11 +399,12 @@ struct iOSHabitEditorSheet: View {
             }
 
             iOSTrackingPickerSection(title: "Frequency") {
-                // `compactLabel`, not `label`: four segments across an iPhone are ~80pt each, which
-                // truncated two of the four options to "Days of W…" and "Times per…". The row
-                // directly below spells the chosen one out in full.
+                // Full labels. This call site used to pass a shortened `compactLabel` set because
+                // `iOSSegmentedChoice` truncated anything longer without saying so; the control now
+                // wraps and scales instead, so the workaround — and the second spelling of every
+                // frequency it required — is gone.
                 iOSSegmentedChoice(
-                    options: HabitFrequency.allCases.map { ($0, $0.compactLabel) },
+                    options: HabitFrequency.allCases.map { ($0, $0.label) },
                     selection: $frequencyType
                 )
 

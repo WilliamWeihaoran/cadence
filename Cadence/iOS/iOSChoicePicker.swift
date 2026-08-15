@@ -37,6 +37,39 @@ struct iOSChoiceRow<T: Hashable>: Identifiable {
     }
 }
 
+/// Popover chrome that takes its height from what is actually in it, capped so a long list still
+/// scrolls instead of running off the screen.
+///
+/// Every picker popover in this file used to carry a height that assumed a full list — a flat 320
+/// for the container picker, `rows × 46 + 16` for the generic one. Opening the task composer's list
+/// picker on a workspace whose only container is Inbox produced a 320pt panel around a single 44pt
+/// row, three quarters of it empty. `ViewThatFits` takes the unscrolled stack whenever it fits
+/// inside the cap and falls back to the scrolling one when it does not, so neither end of the range
+/// has to be guessed — a one-row picker is one row tall and a 96-row time picker still scrolls.
+struct iOSFittedPopover<Content: View>: View {
+    var width: CGFloat = 230
+    /// A cap, not a height: past this the content scrolls rather than growing.
+    var maxHeight: CGFloat = 380
+    let content: Content
+
+    init(width: CGFloat = 230, maxHeight: CGFloat = 380, @ViewBuilder content: () -> Content) {
+        self.width = width
+        self.maxHeight = maxHeight
+        self.content = content()
+    }
+
+    var body: some View {
+        ViewThatFits(in: .vertical) {
+            content
+            ScrollView { content }
+        }
+        .frame(width: width)
+        .frame(maxHeight: maxHeight)
+        .background(Theme.surfaceElevated)
+        .presentationCompactAdaptation(.popover)
+    }
+}
+
 /// Popover content: a checkmarked, tap-to-select list. Present via `.popover` from a trigger
 /// (typically `iOSChoiceValueButton`), with `.presentationCompactAdaptation(.popover)` so it
 /// stays a small anchored overlay on iPhone instead of expanding into a sheet.
@@ -47,7 +80,7 @@ struct iOSChoicePopoverList<T: Hashable>: View {
     var width: CGFloat = 230
 
     var body: some View {
-        ScrollView {
+        iOSFittedPopover(width: width) {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(rows) { row in
                     Button {
@@ -93,15 +126,6 @@ struct iOSChoicePopoverList<T: Hashable>: View {
             }
             .padding(6)
         }
-        .frame(width: width, height: min(CGFloat(rows.count) * rowHeight + 16, 380))
-        .background(Theme.surfaceElevated)
-        .presentationCompactAdaptation(.popover)
-    }
-
-    /// Rows are 44pt tall minimum — they are the thing being tapped — and taller again when they
-    /// carry an explanation. Sizing the sheet off a flat 42 left the last row half-scrolled.
-    private var rowHeight: CGFloat {
-        rows.contains { $0.subtitle != nil } ? 62 : 46
     }
 }
 
@@ -137,6 +161,17 @@ struct iOSChoiceValueButton: View {
 }
 
 /// Custom segmented control replacing `.pickerStyle(.segmented)`.
+///
+/// **A segment wraps and shrinks before it truncates.** With `lineLimit(1)` and nothing else, four
+/// options across an iPhone left roughly 80pt each and silently cut "Days of Week" and "Times per
+/// Week" down to "Days of W…" and "Times per…" — two of the four options unreadable and, worse,
+/// indistinguishable from one another. Truncation is the one failure a chooser cannot afford, and
+/// it was invisible from the call site, so every call site that wanted long labels had to discover
+/// the limit for itself. The label now gets a second line and 75% scale before anything is dropped.
+///
+/// Every segment reserves the 44pt touch minimum regardless, which is also what keeps the row
+/// uniform: a control where one option wrapped and its neighbours did not would otherwise render
+/// pills of two different heights. Two lines of 13pt fit inside 44pt, so wrapping costs no height.
 struct iOSSegmentedChoice<T: Hashable>: View {
     let options: [(value: T, label: String)]
     @Binding var selection: T
@@ -151,11 +186,15 @@ struct iOSSegmentedChoice<T: Hashable>: View {
                     Text(option.label)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(selection == option.value ? Theme.onColor : Theme.dim)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.75)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                         .background(selection == option.value ? color : Color.clear)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -174,7 +213,7 @@ struct iOSContainerChoicePopover: View {
     @Binding var isPresented: Bool
 
     var body: some View {
-        ScrollView {
+        iOSFittedPopover(width: 250, maxHeight: 340) {
             VStack(alignment: .leading, spacing: 10) {
                 choiceRow(title: "Inbox", tag: "inbox", systemImage: "tray.full.fill", color: Theme.blue)
 
@@ -204,9 +243,6 @@ struct iOSContainerChoicePopover: View {
             }
             .padding(10)
         }
-        .frame(width: 250, height: 320)
-        .background(Theme.surfaceElevated)
-        .presentationCompactAdaptation(.popover)
     }
 
     private func groupLabel(_ text: String) -> some View {

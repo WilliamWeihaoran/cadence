@@ -14,6 +14,14 @@ struct CadenceHabitWidgetHabit: Identifiable, Hashable {
     let colorHex: String
     let frequencyLabel: String
     let currentStreak: Int
+    /// What `currentStreak` counts in, carried across the snapshot boundary rather than assumed.
+    ///
+    /// The widget renders from this DTO and never sees the `Habit`, so with no unit on it the view
+    /// had nothing to do but append a hardcoded "d". `Habit.currentStreak` returns **weeks** for
+    /// `.timesPerWeek`, so a habit kept for eight perfect weeks read "8d" on the home screen and
+    /// looked weaker than a ten-day daily habit. The unit is decided once, on the model
+    /// (`Habit.streakUnit`), and travels with the number it describes.
+    let streakUnit: HabitStreakUnit
     let isDoneToday: Bool
 }
 
@@ -167,6 +175,7 @@ enum CadenceHabitWidgetSupport {
             colorHex: habit.colorHex,
             frequencyLabel: habit.frequencyShortLabel,
             currentStreak: habit.currentStreak,
+            streakUnit: habit.streakUnit,
             isDoneToday: isDoneToday(
                 habit,
                 todayKey: todayKey,

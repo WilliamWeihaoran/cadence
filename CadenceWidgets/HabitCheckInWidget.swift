@@ -93,6 +93,8 @@ struct HabitCheckInWidgetProvider: TimelineProvider {
             colorHex: colorHex,
             frequencyLabel: "Daily",
             currentStreak: streak,
+            // The gallery placeholders are all daily, so their streaks are counted in days.
+            streakUnit: .days,
             isDoneToday: isDone
         )
     }
@@ -258,12 +260,12 @@ struct HabitCheckInWidgetView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     if !compact {
-                        Text(habit.currentStreak > 0 ? "\(habit.currentStreak)d streak" : habit.frequencyLabel)
+                        Text(habit.currentStreak > 0 ? "\(habit.streakUnit.shortLabel(habit.currentStreak)) streak" : habit.frequencyLabel)
                             .font(.system(size: scale.captionFontSize, weight: .medium))
                             .foregroundStyle(Theme.muted)
                             .lineLimit(1)
                     } else if habit.currentStreak > 0 {
-                        Text("\(habit.currentStreak)d")
+                        Text(habit.streakUnit.shortLabel(habit.currentStreak))
                             .font(.system(size: scale.captionFontSize, weight: .semibold))
                             .foregroundStyle(Theme.muted)
                             .lineLimit(1)

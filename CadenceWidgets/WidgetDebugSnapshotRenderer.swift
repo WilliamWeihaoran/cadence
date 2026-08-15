@@ -62,15 +62,18 @@ public enum CadenceWidgetDebugSnapshotRenderer {
             tasks: todayTasks
         )
 
+        // "Walk" is deliberately the one weekly habit in the sample: the debug sheet is where the
+        // streak line gets eyeballed, so it should show a `w` next to the `d`s rather than eight
+        // identical daily cells that would hide a unit regression.
         let habits = [
-            CadenceHabitWidgetHabit(id: UUID(), title: "Water", icon: "drop.fill", colorHex: "#5DB9FF", frequencyLabel: "Daily", currentStreak: 8, isDoneToday: true),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Read", icon: "book.fill", colorHex: "#FFB347", frequencyLabel: "Daily", currentStreak: 5, isDoneToday: false),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Walk", icon: "figure.walk", colorHex: "#66D28A", frequencyLabel: "Daily", currentStreak: 12, isDoneToday: false),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Stretch", icon: "figure.cooldown", colorHex: "#FF7F7F", frequencyLabel: "Daily", currentStreak: 4, isDoneToday: true),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Journal", icon: "square.and.pencil", colorHex: "#B690FF", frequencyLabel: "Daily", currentStreak: 3, isDoneToday: false),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Meditate", icon: "sparkles", colorHex: "#8FE1D6", frequencyLabel: "Daily", currentStreak: 14, isDoneToday: true),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Protein", icon: "fork.knife", colorHex: "#FF9F68", frequencyLabel: "Daily", currentStreak: 6, isDoneToday: false),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Sleep", icon: "moon.stars.fill", colorHex: "#7FA8FF", frequencyLabel: "Daily", currentStreak: 10, isDoneToday: false),
+            CadenceHabitWidgetHabit(id: UUID(), title: "Water", icon: "drop.fill", colorHex: "#5DB9FF", frequencyLabel: "Daily", currentStreak: 8, streakUnit: .days, isDoneToday: true),
+            CadenceHabitWidgetHabit(id: UUID(), title: "Read", icon: "book.fill", colorHex: "#FFB347", frequencyLabel: "Daily", currentStreak: 5, streakUnit: .days, isDoneToday: false),
+            CadenceHabitWidgetHabit(id: UUID(), title: "Walk", icon: "figure.walk", colorHex: "#66D28A", frequencyLabel: "3x/week", currentStreak: 12, streakUnit: .weeks, isDoneToday: false),
+            CadenceHabitWidgetHabit(id: UUID(), title: "Stretch", icon: "figure.cooldown", colorHex: "#FF7F7F", frequencyLabel: "Daily", currentStreak: 4, streakUnit: .days, isDoneToday: true),
+            CadenceHabitWidgetHabit(id: UUID(), title: "Journal", icon: "square.and.pencil", colorHex: "#B690FF", frequencyLabel: "Daily", currentStreak: 3, streakUnit: .days, isDoneToday: false),
+            CadenceHabitWidgetHabit(id: UUID(), title: "Meditate", icon: "sparkles", colorHex: "#8FE1D6", frequencyLabel: "Daily", currentStreak: 14, streakUnit: .days, isDoneToday: true),
+            CadenceHabitWidgetHabit(id: UUID(), title: "Protein", icon: "fork.knife", colorHex: "#FF9F68", frequencyLabel: "Daily", currentStreak: 6, streakUnit: .days, isDoneToday: false),
+            CadenceHabitWidgetHabit(id: UUID(), title: "Sleep", icon: "moon.stars.fill", colorHex: "#7FA8FF", frequencyLabel: "Daily", currentStreak: 10, streakUnit: .days, isDoneToday: false),
         ]
 
         let habitSnapshot = CadenceHabitWidgetSnapshot(

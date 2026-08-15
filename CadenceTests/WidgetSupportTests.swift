@@ -379,6 +379,36 @@ struct WidgetSupportTests {
         #expect(snapshot.habits.map(\.title) == ["Read", "Walk", "Journal"])
     }
 
+    /// The widget renders from `CadenceHabitWidgetHabit` and never sees the `Habit`, so if the unit
+    /// does not cross that boundary the view has nothing to print but a hardcoded "d" — which is
+    /// what made a `.timesPerWeek` habit kept for eight weeks read "8d" on the home screen.
+    @Test func habitWidgetSnapshotCarriesTheStreakUnitFromTheFrequency() {
+        let today = DateFormatters.date(from: "2026-05-11")!
+
+        let weekly = Habit(title: "Long run")
+        weekly.frequencyType = .timesPerWeek
+        weekly.targetCount = 3
+        weekly.order = 1
+
+        let daily = Habit(title: "Read")
+        daily.frequencyType = .daily
+        daily.order = 2
+
+        let snapshot = CadenceHabitWidgetSupport.snapshot(
+            from: [weekly, daily],
+            today: today,
+            limit: 2,
+            recentCompletionStates: [:]
+        )
+
+        let units = Dictionary(
+            uniqueKeysWithValues: snapshot.habits.map { ($0.title, $0.streakUnit) }
+        )
+        #expect(units["Long run"] == .weeks)
+        #expect(units["Read"] == .days)
+        #expect(HabitStreakUnit.weeks.shortLabel(8) == "8w")
+    }
+
     @Test func habitWidgetSnapshotPrefersRecentCompletionOverride() {
         let today = DateFormatters.date(from: "2026-05-11")!
         let habit = Habit(title: "Read")
