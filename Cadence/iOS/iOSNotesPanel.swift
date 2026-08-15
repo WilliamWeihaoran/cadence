@@ -178,6 +178,8 @@ struct iOSNotesPanel: View {
 }
 
 struct iOSCompactNotesView: View {
+    /// Set when this is the Notes tab's root — see `iOSCalendarView.isCompactTabRoot`.
+    var isCompactTabRoot = false
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
@@ -222,7 +224,7 @@ struct iOSCompactNotesView: View {
                         isSelected: activePage == page
                     ) { activePage = page }
                 },
-                onBack: isCompactWidth ? { dismiss() } : nil
+                onBack: isCompactWidth && !isCompactTabRoot ? { dismiss() } : nil
             )
 
             if let coreTab = activePage.coreTab {

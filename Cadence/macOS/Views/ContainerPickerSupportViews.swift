@@ -7,8 +7,10 @@ import SwiftUI
 enum ContainerPickerFilterSupport {
     typealias Group = (context: Context, areas: [Area], projects: [Project])
 
+    /// Forwards to the shared rule so the `~` suggestions in the iOS composer and this picker
+    /// cannot disagree about what `des` matches.
     static func matches(_ name: String, query: String) -> Bool {
-        query.isEmpty || name.lowercased().hasPrefix(query.lowercased())
+        CadenceTaskComposerSupport.matchesQuery(name, query: query)
     }
 
     static func matchesInbox(query: String) -> Bool {

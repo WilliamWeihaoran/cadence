@@ -2,6 +2,7 @@
 import SwiftUI
 
 struct iOSCompactAllTasksView: View {
+    var showsHeader = true
     @Environment(\.dismiss) private var dismiss
     let activeTasks: [AppTask]
     let completedTasks: [AppTask]
@@ -23,13 +24,15 @@ struct iOSCompactAllTasksView: View {
                 // `subtitle` from `DesktopPageHeader` on macOS.
                 //
                 // No `count:` either — the Active stat directly below already reports it.
-                iOSCompactPageHeader(
-                    eyebrow: "Tasks",
-                    title: "All Tasks",
-                    systemImage: "checklist",
-                    color: Theme.blue,
-                    onBack: { dismiss() }
-                )
+                if showsHeader {
+                    iOSCompactPageHeader(
+                        eyebrow: "Tasks",
+                        title: "All Tasks",
+                        systemImage: "checklist",
+                        color: Theme.blue,
+                        onBack: { dismiss() }
+                    )
+                }
 
                 stats
                 captureCard
@@ -37,7 +40,8 @@ struct iOSCompactAllTasksView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
-            .padding(.bottom, 96)
+            // See the note in `iOSCompactTodayView`: end-of-content padding, not bar clearance.
+            .padding(.bottom, 16)
         }
         .scrollIndicators(.hidden)
         .background(Theme.bg.ignoresSafeArea())

@@ -4,6 +4,10 @@ import SwiftData
 import SwiftUI
 
 struct iOSCalendarView: View {
+    /// Set when this is the Calendar tab's root. A pushed Calendar keeps its back chevron; a tab
+    /// root has nothing behind it, and a chevron there would be a control that looks tappable and
+    /// does nothing.
+    var isCompactTabRoot = false
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query private var allBundles: [TaskBundle]
@@ -186,7 +190,7 @@ struct iOSCalendarView: View {
         VStack(spacing: 0) {
             iOSCalendarToolbar(
                 title: titleLabel,
-                onBack: isCompact ? { dismiss() } : nil,
+                onBack: isCompact && !isCompactTabRoot ? { dismiss() } : nil,
                 viewMode: Binding(get: { viewMode }, set: setViewMode),
                 presentation: Binding(get: { presentation }, set: setPresentation),
                 zoomLevel: $zoomLevel,
@@ -227,7 +231,8 @@ struct iOSCalendarView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.top, 10)
-                    .padding(.bottom, 128)
+                    // See the note in `iOSCompactTodayView`.
+                    .padding(.bottom, 16)
                 }
                 .scrollIndicators(.hidden)
             } else {

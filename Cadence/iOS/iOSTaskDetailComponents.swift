@@ -125,7 +125,7 @@ struct iOSTaskPlacementBreadcrumb: View {
 
     var body: some View {
         CadenceWrappingHStack(spacing: 4, lineSpacing: 4) {
-            iOSTaskBreadcrumbSegment(
+            iOSTaskAttributeChip(
                 title: containerTitle,
                 systemImage: containerIcon,
                 isSet: !isInbox
@@ -147,7 +147,7 @@ struct iOSTaskPlacementBreadcrumb: View {
                     .foregroundStyle(Theme.dim)
                     .accessibilityHidden(true)
 
-                iOSTaskBreadcrumbSegment(
+                iOSTaskAttributeChip(
                     // The real name of where the task is, never "None": dimmer styling is what
                     // conveys "unset", so the segment and its picker cannot disagree.
                     title: CadenceTaskInspectorSupport.sectionSegmentTitle(task.sectionName),
@@ -170,13 +170,25 @@ struct iOSTaskPlacementBreadcrumb: View {
     }
 }
 
-/// One tappable segment of the placement breadcrumb. Neutral throughout: which list a task is in is
-/// ordinary information, and colour in this sheet is spent only on what is exceptional.
-struct iOSTaskBreadcrumbSegment: View {
+/// The one tappable pill that stands for a single task attribute: a segment of the inspector's
+/// placement breadcrumb, and a chip in the create sheet's strip above the keyboard.
+///
+/// Neutral by default, because which list a task is in is ordinary information and colour in these
+/// surfaces is spent only on what is exceptional. `tint` is the opt-out, for the two attributes
+/// whose *value* is a colour the user already reads as one — a list's own `colorHex`, and a
+/// priority.
+struct iOSTaskAttributeChip: View {
     let title: String
-    let systemImage: String?
-    let isSet: Bool
+    var systemImage: String? = nil
+    var isSet: Bool = false
+    /// Glyph colour once the field is set. `nil` keeps the neutral treatment.
+    var tint: Color? = nil
     let action: () -> Void
+
+    private var glyphColor: Color {
+        guard isSet, let tint else { return Theme.dim }
+        return tint
+    }
 
     var body: some View {
         Button(action: action) {
@@ -184,7 +196,7 @@ struct iOSTaskBreadcrumbSegment: View {
                 if let systemImage {
                     Image(systemName: systemImage)
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(glyphColor)
                 }
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
@@ -244,9 +256,13 @@ struct iOSTaskTagStrip: View {
             .accessibilityLabel("Edit tags")
             .popover(isPresented: $showPicker) {
                 iOSTaskTagPickerPopover(
-                    task: task,
+                    selectedTags: Binding(
+                        get: { TagSupport.sorted(task.tags ?? []) },
+                        set: { task.tags = TagSupport.sorted($0) }
+                    ),
                     allTags: allTags,
-                    newTagName: $newTagName
+                    newTagName: $newTagName,
+                    onCommit: { try? modelContext.save() }
                 )
             }
 
@@ -277,10 +293,18 @@ struct iOSTaskTagStrip: View {
 
 /// Tag catalogue + inline creation, in the popover the `+` opens. Same checkmarked-list language as
 /// `iOSChoicePopoverList`, which is single-select and so could not be reused directly.
+///
+/// It edits a **`[Tag]` binding** rather than an `AppTask` so the create sheet — where the task does
+/// not exist yet, and must not until Add is tapped — can present the identical catalogue. The
+/// inspector passes a binding through to `task.tags` and saves in `onCommit`; the create sheet holds
+/// the array in `@State` and commits nothing until creation.
 struct iOSTaskTagPickerPopover: View {
-    @Bindable var task: AppTask
+    @Binding var selectedTags: [Tag]
     let allTags: [Tag]
     @Binding var newTagName: String
+    /// Run after any change to the selection, for callers whose binding writes straight into
+    /// SwiftData. Defaults to nothing, which is what a not-yet-created task wants.
+    var onCommit: () -> Void = {}
     @Environment(\.modelContext) private var modelContext
 
     private var availableTags: [Tag] {
@@ -379,16 +403,16 @@ struct iOSTaskTagPickerPopover: View {
     }
 
     private func isSelected(_ tag: Tag) -> Bool {
-        (task.tags ?? []).contains { $0.id == tag.id }
+        selectedTags.contains { $0.id == tag.id }
     }
 
     private func toggle(_ tag: Tag) {
         if isSelected(tag) {
-            task.tags = (task.tags ?? []).filter { $0.id != tag.id }
+            selectedTags = selectedTags.filter { $0.id != tag.id }
         } else {
-            task.tags = TagSupport.sorted((task.tags ?? []) + [tag])
+            selectedTags = TagSupport.sorted(selectedTags + [tag])
         }
-        try? modelContext.save()
+        onCommit()
     }
 
     private func addTag() {
@@ -396,10 +420,10 @@ struct iOSTaskTagPickerPopover: View {
         guard !name.isEmpty else { return }
         guard let tag = TagSupport.resolveTags(named: [name], in: modelContext)?.first else { return }
         if !isSelected(tag) {
-            task.tags = TagSupport.sorted((task.tags ?? []) + [tag])
+            selectedTags = TagSupport.sorted(selectedTags + [tag])
         }
         newTagName = ""
-        try? modelContext.save()
+        onCommit()
     }
 }
 

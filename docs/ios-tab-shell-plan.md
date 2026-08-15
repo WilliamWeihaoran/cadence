@@ -1,7 +1,21 @@
 # iOS compact shell: replacing the Home grid with a tab bar
 
-Agreed with the user on 2026-08-15. **Not started** — to be built after the calendar, settings,
-notes-header, goals/habits and task-inspector work has landed.
+Agreed with the user on 2026-08-15. **Landed.** Kept as the design record; where it and the code
+disagree, the code wins — see `Cadence/iOS/AGENTS.md` for what is actually there.
+
+Three things changed during the build, all at the user's direction:
+
+- **Tasks → Today has no "up next" hero.** The plan gave Today an up-next item with *Start focus*
+  and *Done* acting on it in place. It was built and then cut: it was one task promoted above the
+  list that already contained it, and its two buttons were tinted red and green for no reason a
+  reader could name. `CadenceHomeSummarySupport`'s `todayStats` / `nextAction` /
+  `nextActionDetail` went with it (git history has them); the greeting, the date and the habit
+  fraction survive in `CadenceCompactShellSupport`.
+- **Tasks → Today has no capture bar.** Capture is the bar's centre `+`, which is the point of
+  putting it there. The capture bars on All Tasks, Inbox, list detail and iPad Today all stay.
+- **The bar is a `VStack` sibling of the content, not a `safeAreaInset`.** See the note in
+  `Cadence/iOS/AGENTS.md`; the inset measured as nothing on screens that paint
+  `Theme.bg.ignoresSafeArea()` behind their scroll view.
 
 ## What is actually there today
 

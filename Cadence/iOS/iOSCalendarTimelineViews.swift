@@ -277,10 +277,14 @@ private struct iOSCalendarTimelineDayBlocks: View {
             }
 
             ForEach(timedEvents, id: \.calendarItemIdentifier) { event in
-                let range = iOSCalendarEventSupport.minuteRange(for: event)
+                // The column's own day, so an event that crosses midnight draws the part that
+                // belongs here. `frame` uses the range clamped into the drawn hours; the block
+                // still labels itself with the true one.
+                let range = iOSCalendarEventSupport.minuteRange(for: event, on: date)
+                let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
                 iOSCalendarEventBlock(event: event, startMin: range.start, endMin: range.end)
-                    .frame(width: colWidth - 18, height: blockHeight(start: range.start, end: range.end))
-                    .offset(x: 9, y: yOffset(for: range.start))
+                    .frame(width: colWidth - 18, height: blockHeight(start: drawn.start, end: drawn.end))
+                    .offset(x: 9, y: yOffset(for: drawn.start))
             }
 
             ForEach(tasks) { task in

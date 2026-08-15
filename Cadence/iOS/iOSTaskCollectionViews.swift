@@ -3,6 +3,9 @@ import SwiftData
 import SwiftUI
 
 struct iOSAllTasksView: View {
+    /// Off when the Tasks tab hosts this as its All segment — see `iPadTodayView.showsCompactHeader`
+    /// for the reasoning. Still on when All Tasks is reached as a pushed screen.
+    var showsCompactHeader = true
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
@@ -31,6 +34,7 @@ struct iOSAllTasksView: View {
         Group {
             if horizontalSizeClass == .compact {
                 iOSCompactAllTasksView(
+                    showsHeader: showsCompactHeader,
                     activeTasks: activeTasks,
                     completedTasks: completedTasks,
                     sortMode: Binding(

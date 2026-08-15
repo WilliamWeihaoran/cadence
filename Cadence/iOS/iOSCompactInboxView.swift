@@ -2,6 +2,7 @@
 import SwiftUI
 
 struct iOSCompactInboxView: View {
+    var showsHeader = true
     @Environment(\.dismiss) private var dismiss
     let inboxTasks: [AppTask]
     let completedInboxTasks: [AppTask]
@@ -23,13 +24,15 @@ struct iOSCompactInboxView: View {
             LazyVStack(alignment: .leading, spacing: 11) {
                 // No subtitle — see the note on the All Tasks header. No count either: the Active
                 // metric below reports it.
-                iOSCompactPageHeader(
-                    eyebrow: "Capture",
-                    title: "Inbox",
-                    systemImage: "tray.fill",
-                    color: Theme.blue,
-                    onBack: { dismiss() }
-                )
+                if showsHeader {
+                    iOSCompactPageHeader(
+                        eyebrow: "Capture",
+                        title: "Inbox",
+                        systemImage: "tray.fill",
+                        color: Theme.blue,
+                        onBack: { dismiss() }
+                    )
+                }
 
                 stats
                 captureCard
@@ -37,7 +40,8 @@ struct iOSCompactInboxView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
-            .padding(.bottom, 96)
+            // See the note in `iOSCompactTodayView`: end-of-content padding, not bar clearance.
+            .padding(.bottom, 16)
         }
         .scrollIndicators(.hidden)
         .background(Theme.bg.ignoresSafeArea())

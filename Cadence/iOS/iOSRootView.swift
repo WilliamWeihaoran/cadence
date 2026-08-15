@@ -27,12 +27,21 @@ struct iOSRootView: View {
     @Query private var allTasksForNotifications: [AppTask]
     @Query private var allHabitsForNotifications: [Habit]
     @State private var selection: iOSSidebarItem? = .today
-    /// Type-erased on purpose. A `NavigationStack(path:)` bound to a homogeneous
-    /// `[CadenceFeatureDestination]` can only ever push that one type — a
-    /// `NavigationLink(value:)` carrying any other value is silently discarded, with no warning
-    /// and no push. That is what made every list row on the Lists page dead on iPhone: it pushes
-    /// an `iOSListRoute`. `NavigationPath` holds any `Hashable`, so both types travel.
-    @State private var compactPath = NavigationPath()
+    /// One `NavigationPath` per compact tab, so switching tabs preserves where you were. Each is
+    /// type-erased — see `iOSCompactTabPaths`.
+    @State private var compactPaths = iOSCompactTabPaths()
+    /// Restored across launches, like `ios.calendar.anchorDateKey`.
+    ///
+    /// Written from exactly two places, both of them deliberate acts: a tap on a bar item, and a
+    /// deep link (which is a tap on a widget or a URL). Nothing derived, nothing measured, nothing
+    /// written during layout — that is the lesson of `ecaf80f`, where a persisted navigation value
+    /// took an initial scroll reading for a user action and then compounded across launches.
+    @AppStorage("ios.compact.selectedTab") private var selectedTabRaw = CadenceCompactTab.defaultTab.rawValue
+    @AppStorage("ios.compact.tasksSection") private var tasksSectionRaw = CadenceTasksSection.defaultSection.rawValue
+
+    private var selectedTab: CadenceCompactTab {
+        CadenceCompactTab.resolved(selectedTabRaw)
+    }
 
     var body: some View {
         Group {
@@ -41,7 +50,17 @@ struct iOSRootView: View {
                     detailView(for: selection ?? .today)
                 }
             } else {
-                iOSCompactRootShell(path: $compactPath)
+                iOSCompactRootShell(
+                    selectedTab: Binding(
+                        get: { selectedTab },
+                        set: { selectedTabRaw = $0.rawValue }
+                    ),
+                    tasksSection: Binding(
+                        get: { CadenceTasksSection.resolved(tasksSectionRaw) },
+                        set: { tasksSectionRaw = $0.rawValue }
+                    ),
+                    paths: $compactPaths
+                )
             }
         }
         .background(Theme.bg)
@@ -111,176 +130,28 @@ struct iOSRootView: View {
     }
 }
 
-/// iPhone navigation, modeled directly on Things 3: no persistent tab bar at all — a single
-/// NavigationStack rooted at a home list of every destination, with an always-available
-/// floating quick-add button for capture. iPad keeps its own sidebar shell untouched.
-private struct iOSCompactRootShell: View {
-    @Binding var path: NavigationPath
-    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @Environment(\.modelContext) private var modelContext
-    @State private var showQuickCapture = false
-    @State private var quickCaptureTitle = ""
-
-    var body: some View {
-        NavigationStack(path: $path) {
-            iOSCompactHomeView()
-                .navigationDestination(for: CadenceFeatureDestination.self, destination: destinationView)
-        }
-        .tint(Theme.blue)
-        .overlay(alignment: .bottomTrailing) {
-            if showsQuickAdd {
-                iOSQuickAddButton {
-                    quickCaptureTitle = ""
-                    showQuickCapture = true
-                }
-                .padding(.trailing, 20)
-                .padding(.bottom, 24)
-            }
-        }
-        .sheet(isPresented: $showQuickCapture) {
-            iOSQuickCaptureSheet(title: $quickCaptureTitle, onAdd: captureQuickTask)
-        }
-    }
-
-    @ViewBuilder
-    private func destinationView(for destination: CadenceFeatureDestination) -> some View {
-        switch destination {
-        case .today:
-            iPadTodayView()
-        case .allTasks:
-            iOSAllTasksView()
-        case .focus:
-            iOSFocusView()
-        case .inbox:
-            iPadInboxView()
-        case .calendar:
-            iOSCalendarView()
-        case .notes:
-            iOSCompactNotesView()
-        case .lists:
-            iOSListsView()
-        case .goals:
-            iOSGoalsView()
-        case .habits:
-            iOSHabitsView()
-        case .search:
-            iOSSearchView()
-        case .settings:
-            iOSSettingsView()
-        }
-    }
-
-    /// Quick capture belongs on the surfaces where a loose task is the thing you would be making.
-    ///
-    /// The button used to be overlaid on the whole `NavigationStack`, so it floated over every
-    /// pushed screen — most visibly the note editor, where it sat on top of the word count and
-    /// offered to create a task while you were writing prose. macOS shows its floating `+` only on
-    /// task pages, for the same reason.
-    /// Home only.
-    ///
-    /// `NavigationPath` is deliberately opaque — you cannot ask it what is on top — but the
-    /// answer turned out to be simpler than the typed path allowed anyway: every pushed screen
-    /// where creating a loose task makes sense (Today, All Tasks, Inbox, a list's detail) already
-    /// carries its own `iOSTaskCaptureBar`, so a floating button there was a second affordance for
-    /// the same job. Home is the one screen with no capture field of its own.
-    private var showsQuickAdd: Bool {
-        path.isEmpty
-    }
-
-    private func captureQuickTask() {
-        let trimmed = quickCaptureTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        _ = try? CadenceTaskMutationSupport.insertTask(title: trimmed, allTasks: allTasks, modelContext: modelContext)
-        quickCaptureTitle = ""
-        showQuickCapture = false
-    }
-}
-
-/// The iPhone shell's capture affordance, in `FloatingNewTaskButton`'s vocabulary — including its
-/// accent glow, rather than the generic modal-card shadow it was borrowing.
-private struct iOSQuickAddButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "plus")
-                .font(.system(size: 21, weight: .semibold))
-                .foregroundStyle(Theme.onColor)
-                .frame(width: 56, height: 56)
-                .background(Theme.blue)
-                .clipShape(Circle())
-                .shadow(color: Theme.blue.opacity(0.32), radius: 18, x: 0, y: 8)
-        }
-        .buttonStyle(.iosPressable)
-        .accessibilityLabel("New Task")
-    }
-}
-
-private struct iOSQuickCaptureSheet: View {
-    @Binding var title: String
-    let onAdd: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("New Task")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.text)
-
-            TextField("What do you need to do?", text: $title)
-                .textFieldStyle(.plain)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Theme.text)
-                .focused($isFocused)
-                .submitLabel(.done)
-                .onSubmit(onAdd)
-                .padding(.horizontal, 13)
-                .frame(height: 44)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-
-            HStack(spacing: 10) {
-                Spacer()
-
-                iOSActionButton(title: "Cancel", role: .ghost, size: .compact) {
-                    dismiss()
-                }
-
-                iOSActionButton(
-                    title: "Add",
-                    role: .primary,
-                    size: .compact,
-                    isDisabled: TaskTitleSupport.isEmpty(title),
-                    action: onAdd
-                )
-            }
-        }
-        .padding(18)
-        .presentationDetents([.height(172)])
-        .presentationBackground(Theme.surface)
-        .presentationCornerRadius(Theme.radiusPanel)
-        .onAppear { isFocused = true }
-    }
-}
-
 private extension iOSRootView {
+    /// One route, resolved once, applied to both shells.
+    ///
+    /// The compact half is the part that changed shape: a link used to be a push onto the single
+    /// stack, and now it has to answer *which tab* first. `CadenceCompactRoute` (in `Shared/`, with
+    /// tests) is where that answer lives, so a widget tap cannot land on the wrong tab without a
+    /// test failing.
     func handleDeepLinkRoute() {
-        guard let route = deepLinkManager.route?.deepLink else { return }
-        switch route {
-        case .today, .task:
-            selection = .today
-            compactPath = NavigationPath([CadenceFeatureDestination.today])
-        case .habits:
-            selection = .habits
-            compactPath = NavigationPath([CadenceFeatureDestination.habits])
-        case .goals:
-            selection = .goals
-            compactPath = NavigationPath([CadenceFeatureDestination.goals])
-        case .calendar:
-            selection = .calendar
-            compactPath = NavigationPath([CadenceFeatureDestination.calendar])
+        guard let deepLink = deepLinkManager.route?.deepLink else { return }
+        let destination = deepLink.featureDestination
+        selection = destination.item
+        apply(deepLink.compactRoute)
+    }
+
+    /// Only the target tab's stack is touched. Pushing onto — or clearing — a tab the link did not
+    /// name would quietly rearrange a screen the user is not looking at and will come back to.
+    func apply(_ route: CadenceCompactRoute) {
+        selectedTabRaw = route.tab.rawValue
+        if let section = route.tasksSection {
+            tasksSectionRaw = section.rawValue
         }
+        compactPaths[route.tab] = route.pushedDestination.map { NavigationPath([$0]) } ?? NavigationPath()
     }
 }
 #endif

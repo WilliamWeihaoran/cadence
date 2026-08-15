@@ -3,6 +3,9 @@ import SwiftData
 import SwiftUI
 
 struct iPadInboxView: View {
+    /// Off when the Tasks tab hosts this as its Inbox segment — see
+    /// `iPadTodayView.showsCompactHeader`. Still on when Inbox is reached as a pushed screen.
+    var showsCompactHeader = true
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
@@ -31,6 +34,7 @@ struct iPadInboxView: View {
         Group {
             if horizontalSizeClass == .compact {
                 iOSCompactInboxView(
+                    showsHeader: showsCompactHeader,
                     inboxTasks: inboxTasks,
                     completedInboxTasks: completedInboxTasks,
                     sortMode: Binding(

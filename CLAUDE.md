@@ -21,7 +21,7 @@ The user does not write code. Claude handles all implementation. When something 
 
 ## Platform Strategy
 - **macOS**: purpose-built sidebar + multi-column layout (`macOS/`). Fully featured, the primary product surface.
-- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, 64 files), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a `TabView` shell on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
+- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, 68 files), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a **four-tab bottom bar** on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
 - **watchOS**: not started
 - Use `#if os(macOS)` / `#if os(iOS)` for platform-specific branches
 
@@ -65,8 +65,11 @@ Cadence/
 │   └── Components/     # CadenceDatePicker, CadenceButtons, CadenceContextPicker, EmptyStateView,
 │                       # SectionEyebrowLabel, CommitmentSharedViews,
 │                       # EstimatePickerControl (iOS-only), CadenceScrollElasticity
-├── iOS/                # Large adaptive iOS/iPadOS surface (64 files) — see "What's Built (iOS)"
-│   └── iOSRootView.swift   # Adaptive root shell: iPad sidebar / compact TabView; deep links, widget refresh
+├── iOS/                # Large adaptive iOS/iPadOS surface (68 files) — see "What's Built (iOS)"
+│   ├── iOSRootView.swift        # Adaptive root shell: iPad sidebar / iPhone tab bar; deep links, widget refresh
+│   ├── iOSCompactTabShell.swift # iPhone bottom bar, per-tab paths, centre capture button
+│   ├── iOSTasksTabView.swift    # Tasks tab: date + greeting header, Today/All/Inbox switcher
+│   └── iOSMoreTabView.swift     # More tab: Focus, Goals, Habits, Lists, Search, Settings
 └── macOS/
     ├── macOSRootView.swift + Views/macOSRoot*   # Shell, command routing, overlays, lifecycle, state
     ├── CadenceCalendarPicker.swift
@@ -683,9 +686,11 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Widget extensions (`CadenceWidgets` target): calendar/today/habit/milestone widgets with app-intent support and a refresh checkpoint (`CadenceWidgetRefreshCenter`) triggered on scenePhase changes — not documented further here yet; check `Cadence/Services/Cadence*WidgetSupport.swift` and `CadenceWidgets/` directly
 
 ## What's Built (iOS)
-`Cadence/iOS/` is a large, actively-developed surface (64 files), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), tab-bar shell on compact width — covering:
-- [x] Today (`iPadTodayView` + compact/schedule/support variants)
-- [x] Tasks (task rows/detail, All Tasks compact view, Inbox)
+`Cadence/iOS/` is a large, actively-developed surface (68 files), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), **four-tab bottom bar** on compact width (`iOSCompactRootShell`) — covering:
+- [x] **iPhone tab bar**: `[ Tasks ] [ Calendar ] ( + ) [ Notes ] [ More ]`. The centre `+` is **not a tab** — it presents task capture and never renders a selected state. Each tab owns its own type-erased `NavigationPath`, so switching tabs preserves position; the selected tab and Tasks segment persist across launches (`ios.compact.selectedTab`, `ios.compact.tasksSection`). Replaced `iOSCompactHomeView`, a grid of eight tiles that was standing in for navigation the app did not have.
+- [x] Tasks tab (`iOSTasksTabView`): date eyebrow + greeting, a **Today / All / Inbox** segmented switcher (the same control Calendar uses for Week/Month/Board), and a search shortcut
+- [x] Today (`iPadTodayView` + compact/schedule/support variants). The compact Today has **no capture bar of its own** — the tab bar's `+` is the capture affordance
+- [x] Tasks (task rows/detail, All Tasks compact view, Inbox) — both keep their own inline capture bars
 - [x] Calendar (EventKit-backed via `iOSCalendarManager`): board view, month/timeline views, event edit/quick-create sheets, inspector
 - [x] Focus timer
 - [x] Goals (top-level directions plus their nested milestones)

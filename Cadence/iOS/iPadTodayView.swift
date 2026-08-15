@@ -3,6 +3,12 @@ import SwiftData
 import SwiftUI
 
 struct iPadTodayView: View {
+    /// Off when the Tasks tab is hosting this as its Today segment: the tab's own header already
+    /// carries the date, the greeting and the switcher that says which slice you are on, so the
+    /// page heading below it would be the second title on one screen. Still on when Today is a
+    /// *pushed* screen (Search results reach it that way), where the header is also the only row
+    /// the back control has.
+    var showsCompactHeader = true
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
@@ -191,35 +197,23 @@ struct iPadTodayView: View {
     private var compactTodayLayout: some View {
         #if DEBUG
         iOSCompactTodayView(
+            showsHeader: showsCompactHeader,
             todayTasks: todayTasks,
             completedTodayTasks: completedTodayTasks,
             compactScheduleTasks: compactScheduleTasks,
             todayTaskGroups: todayTaskGroups,
-            sortMode: Binding(
-                get: { sortMode },
-                set: { sortModeRaw = $0.rawValue }
-            ),
             showCompleted: $showCompleted,
-            newTitle: $newTitle,
-            saveError: $saveError,
-            captureTodayTask: captureTodayTask,
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
         )
         #else
         iOSCompactTodayView(
+            showsHeader: showsCompactHeader,
             todayTasks: todayTasks,
             completedTodayTasks: completedTodayTasks,
             compactScheduleTasks: compactScheduleTasks,
             todayTaskGroups: todayTaskGroups,
-            sortMode: Binding(
-                get: { sortMode },
-                set: { sortModeRaw = $0.rawValue }
-            ),
-            showCompleted: $showCompleted,
-            newTitle: $newTitle,
-            saveError: $saveError,
-            captureTodayTask: captureTodayTask
+            showCompleted: $showCompleted
         )
         #endif
     }

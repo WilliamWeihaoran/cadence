@@ -41,7 +41,7 @@ hand.
 - `Cadence/macOS/Views/` - macOS feature screens and support views (~165 files).
 - `Cadence/macOS/Services/` - macOS-only managers for focus, calendar, reminders, hotkeys, task creation, hover state, deletion, scheduling, note export, privacy reset, Apple account.
 - `Cadence/macOS/Editor/` - AppKit-backed markdown editor bridge (6 files). High risk; preserve NSTextView behavior carefully.
-- `Cadence/iOS/` - large, real iOS/iPadOS surface (64 files: Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings). Do not assume feature parity with macOS.
+- `Cadence/iOS/` - large, real iOS/iPadOS surface (68 files: Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings). iPhone runs a four-tab bottom bar (`iOSCompactTabShell`); iPad keeps its sidebar. Do not assume feature parity with macOS.
 - `CadenceWidgets/` - widget extension. Compiles a subset of app sources (models, `Theme.swift`, `Cadence*WidgetSupport.swift`) directly into the extension target.
 - `CadenceMCPServer/` and `plugins/cadence-mcp/` - MCP server/plugin surfaces. Treat as separate integration boundaries.
 - `CadenceTests/`, `CadenceUITests/` - test targets.

@@ -3,35 +3,24 @@ import SwiftData
 import SwiftUI
 
 struct iOSCompactTodayView: View {
+    var showsHeader = true
     @Environment(\.dismiss) private var dismiss
     let todayTasks: [AppTask]
     let completedTodayTasks: [AppTask]
     let compactScheduleTasks: [AppTask]
     let todayTaskGroups: [CadenceTodayTaskGroup]
-    @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
-    @Binding var newTitle: String
-    @Binding var saveError: String?
-    let captureTodayTask: () -> Void
     #if DEBUG
     let sampleDataStatus: String?
     let seedSampleData: () -> Void
     #endif
 
-    private var summary: CadenceTodaySummary {
-        CadenceTodayPresentationSupport.summary(
-            activeTasks: todayTasks,
-            timedTasks: compactScheduleTasks,
-            completedTasks: completedTodayTasks
-        )
-    }
-
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
-                header
-                captureCard
-                stats
+                if showsHeader {
+                    header
+                }
                 taskSections
                 iOSCompactTodayNotesCard()
 
@@ -43,15 +32,20 @@ struct iOSCompactTodayView: View {
             .frame(maxWidth: .infinity, alignment: .top)
             .padding(.horizontal, 14)
             .padding(.top, 10)
-            .padding(.bottom, 132)
+            // Breathing room at the end of the content, not bar clearance: the tab bar contributes
+            // to the safe area (`safeAreaInset` in `iOSCompactRootShell`), so the scroll view insets
+            // itself and the last row scrolls fully clear on its own. This used to be 132 — hand-cut
+            // clearance for a floating `+` — which is the shape of thing that goes wrong the moment
+            // the bar's height changes.
+            .padding(.bottom, 16)
         }
         .scrollIndicators(.hidden)
         .background(Theme.bg.ignoresSafeArea())
     }
 
-    /// The page's only title, and — with the navigation bar hidden on iPhone — the only row the
-    /// back control has to live on. This was a hand-rolled copy of `iOSCompactPageHeader` with a
-    /// count badge bolted on; the badge is a parameter there now.
+    /// Drawn only when this is a *pushed* screen, where it is the page's only title and — with the
+    /// navigation bar hidden on iPhone — the only row the back control has to live on. Inside the
+    /// Tasks tab the tab's header does both jobs; see `showsHeader`.
     private var header: some View {
         iOSCompactPageHeader(
             eyebrow: DateFormatters.longDate.string(from: Date()),
@@ -63,38 +57,6 @@ struct iOSCompactTodayView: View {
         )
         .padding(.top, 2)
         .padding(.bottom, 1)
-    }
-
-    private var stats: some View {
-        HStack(spacing: 7) {
-            ForEach(summary.metrics) { metric in
-                iOSCompactTodayMetric(metric: metric)
-            }
-        }
-    }
-
-    private var captureCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            iOSTaskCaptureBar(
-                placeholder: "Add a task...",
-                title: $newTitle,
-                action: captureTodayTask
-            )
-
-            if let saveError {
-                iOSInlineErrorBanner(message: saveError) {
-                    self.saveError = nil
-                }
-            }
-
-            iOSTaskViewOptionsBar(
-                sortMode: $sortMode,
-                showCompleted: $showCompleted,
-                completedCount: completedTodayTasks.count
-            )
-        }
-        .padding(10)
-        .cadenceCard(background: Theme.surface.opacity(0.94), cornerRadius: Theme.radiusCard)
     }
 
     @ViewBuilder
@@ -288,36 +250,6 @@ private struct iOSCompactSampleDataCard: View {
     }
 }
 #endif
-
-private struct iOSCompactTodayMetric: View {
-    let metric: CadenceTodaySummaryMetric
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 7) {
-            Image(systemName: metric.systemImage)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(metric.tint)
-                .frame(width: 20, height: 20)
-
-            VStack(alignment: .leading, spacing: 0) {
-                Text("\(metric.value)")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .monospacedDigit()
-                Text(metric.label)
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surfaceElevated.opacity(0.36))
-        .clipShape(Capsule())
-    }
-}
 
 private struct iOSCompactTodayTaskGroup: View {
     let group: CadenceTodayTaskGroup
