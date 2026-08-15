@@ -239,6 +239,23 @@ enum HabitFrequency: String, Codable, CaseIterable, Hashable {
         }
     }
 
+    /// Short label for a four-way segmented control.
+    ///
+    /// `label` is the full name and stays the answer wherever there is room for a sentence. Split
+    /// four ways across an iPhone the segments are ~80pt each, which truncates "Days of Week" and
+    /// "Times per Week" to "Days of W…" and "Times per…" — two of the four options unreadable, and
+    /// indistinguishable from each other at a glance. The control is always followed by the editor
+    /// row that spells the choice out (the day circles, "Times per week", "Day of month"), so the
+    /// segment only has to be distinguishable, not self-describing.
+    var compactLabel: String {
+        switch self {
+        case .daily:        return "Daily"
+        case .daysOfWeek:   return "Set Days"
+        case .timesPerWeek: return "Per Week"
+        case .monthly:      return "Monthly"
+        }
+    }
+
     /// Selectable weekly targets for `.timesPerWeek`.
     ///
     /// Capped at seven because a week only has seven days and completion is a per-day toggle with

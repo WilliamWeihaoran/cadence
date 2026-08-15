@@ -242,20 +242,6 @@ struct iOSMetricTile: View {
     }
 }
 
-struct iOSFeatureSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionEyebrowLabel(text: title)
-            VStack(spacing: 8) {
-                content()
-            }
-        }
-    }
-}
-
 struct iOSFeatureEmptyDetail: View {
     let systemImage: String
     let title: String

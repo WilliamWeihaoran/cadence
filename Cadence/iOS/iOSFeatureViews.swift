@@ -170,7 +170,7 @@ struct iOSGoalsView: View {
         ) {
             ForEach(topLevelGoals) { goal in
                 NavigationLink {
-                    detailView(for: goal)
+                    pushedDetailView(for: goal)
                 } label: {
                     goalRow(goal, isSelected: false)
                 }
@@ -179,7 +179,7 @@ struct iOSGoalsView: View {
 
                 ForEach(milestones(of: goal)) { milestone in
                     NavigationLink {
-                        detailView(for: milestone)
+                        pushedDetailView(for: milestone)
                     } label: {
                         goalRow(milestone, isSelected: false)
                     }
@@ -221,10 +221,7 @@ struct iOSGoalsView: View {
         return "\(summary.activeGoalCount) milestones / \(summary.activeHabitCount) habits"
     }
 
-    /// `onSelectMilestone` is only wired up in the split layout, where re-pointing `selectedID`
-    /// swaps the detail pane. In the compact push stack the list rows already navigate, so the
-    /// detail's milestone rows stay non-interactive there.
-    private func detailView(for goal: Goal, onSelectMilestone: ((Goal) -> Void)? = nil) -> some View {
+    private func detailView(for goal: Goal, showsBackControl: Bool = false) -> some View {
         iOSGoalDetail(
             goal: goal,
             milestones: CadenceGoalGroupSupport.milestones(for: goal),
@@ -232,16 +229,20 @@ struct iOSGoalsView: View {
             onEdit: { editorMode = .edit(goal) },
             onNewMilestone: { editorMode = .new(goal) },
             onNewHabit: { habitEditorMode = .new(goal) },
-            onSelectMilestone: onSelectMilestone
+            showsBackControl: showsBackControl
         )
+    }
+
+    /// The compact push stack's copy, which draws its own back chevron because the navigation bar
+    /// it would otherwise sit in is hidden.
+    private func pushedDetailView(for goal: Goal) -> some View {
+        detailView(for: goal, showsBackControl: true)
     }
 
     @ViewBuilder
     private var detailPane: some View {
         if let goal = selected {
-            detailView(for: goal) { milestone in
-                selectedID = milestone.id
-            }
+            detailView(for: goal)
         } else {
             iOSFeatureEmptyDetail(systemImage: "sparkles", title: "No goal selected")
         }
@@ -387,7 +388,7 @@ struct iOSHabitsView: View {
             ForEach(habits) { habit in
                 habitRow(habit, isSelected: false) {
                     NavigationLink {
-                        detailView(for: habit)
+                        detailView(for: habit, showsBackControl: true)
                     } label: {
                         iOSHabitSummaryRow(habit: habit, todayKey: todayKey, isSelected: false)
                     }
@@ -417,12 +418,13 @@ struct iOSHabitsView: View {
         .contextMenu { deleteMenuItem(for: habit) }
     }
 
-    private func detailView(for habit: Habit) -> some View {
+    private func detailView(for habit: Habit, showsBackControl: Bool = false) -> some View {
         iOSHabitDetail(
             habit: habit,
             todayKey: todayKey,
             toggle: { toggle(habit) },
-            onEdit: { editorMode = .edit(habit) }
+            onEdit: { editorMode = .edit(habit) },
+            showsBackControl: showsBackControl
         )
     }
 

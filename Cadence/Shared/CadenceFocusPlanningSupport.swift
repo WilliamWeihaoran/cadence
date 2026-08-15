@@ -106,6 +106,31 @@ enum CadenceFocusSupport {
         sidebarDetailParts(for: task, todayKey: todayKey, fallback: fallback).text
     }
 
+    /// The stopwatch state after the play/pause control on a pick row is tapped.
+    ///
+    /// The rows in the focus picker each carry a play affordance. It used to be decorative — part
+    /// of the row's own label, so tapping it only re-selected the task and left the timer at
+    /// 00:00. This is the behaviour that makes it honest.
+    ///
+    /// Tapping the control on the task already loaded toggles it, so one row is start and pause.
+    /// Tapping a *different* task's control starts that task from zero rather than inheriting the
+    /// elapsed count: the seconds on the clock were measured against the task they were started
+    /// on, and carrying them over would log one task's minutes onto another when the session is
+    /// finished.
+    static func timerState(
+        afterPlayTapOn tappedTaskID: UUID,
+        selectedTaskID: UUID?,
+        state: CadenceFocusTimerState,
+        now: Date = Date()
+    ) -> CadenceFocusTimerState {
+        var next = state
+        if selectedTaskID != tappedTaskID {
+            next.reset()
+        }
+        next.toggle(now: now)
+        return next
+    }
+
     static func clockDisplay(elapsedSeconds: Int) -> String {
         let hours = elapsedSeconds / 3600
         let minutes = (elapsedSeconds % 3600) / 60

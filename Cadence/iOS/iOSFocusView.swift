@@ -131,13 +131,7 @@ struct iOSFocusView: View {
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(readyTasks) { task in
-                            iOSFocusPickRow(
-                                task: task,
-                                detail: CadenceFocusSupport.sidebarDetail(for: task, todayKey: todayKey),
-                                isSelected: selectedTask?.id == task.id
-                            ) {
-                                select(task)
-                            }
+                            pickRow(task)
                         }
                     }
                     .padding(14)
@@ -146,6 +140,17 @@ struct iOSFocusView: View {
             }
         }
         .background(Theme.surface)
+    }
+
+    private func pickRow(_ task: AppTask) -> some View {
+        iOSFocusPickRow(
+            task: task,
+            detail: CadenceFocusSupport.sidebarDetail(for: task, todayKey: todayKey),
+            isSelected: selectedTask?.id == task.id,
+            isRunning: timerState.isRunning && selectedTaskID == task.id,
+            select: { select(task) },
+            toggleSession: { toggleSession(for: task) }
+        )
     }
 
     // MARK: - Session
@@ -282,7 +287,9 @@ struct iOSFocusView: View {
                 taskEmbeds: taskEmbedInfos,
                 onOpenReference: openMarkdownReference
             )
-            .frame(maxWidth: .infinity, minHeight: 140, maxHeight: isCompact ? 260 : 320, alignment: .topLeading)
+            // No `minHeight`. A two-line note was drawn in a 140pt card with ninety points of
+            // empty surface under it; the cap is what this needs, not a floor.
+            .frame(maxWidth: .infinity, maxHeight: isCompact ? 260 : 320, alignment: .topLeading)
             .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
         }
     }
@@ -305,6 +312,18 @@ struct iOSFocusView: View {
     private func select(_ task: AppTask) {
         selectedTaskID = task.id
         resetTimer()
+    }
+
+    /// Start, or pause, from the row itself. The reset-on-switch rule lives in
+    /// `CadenceFocusSupport.timerState(afterPlayTapOn:selectedTaskID:state:now:)` so it can be
+    /// asserted on — carrying another task's elapsed seconds across would log them onto this one.
+    private func toggleSession(for task: AppTask) {
+        timerState = CadenceFocusSupport.timerState(
+            afterPlayTapOn: task.id,
+            selectedTaskID: selectedTaskID,
+            state: timerState
+        )
+        selectedTaskID = task.id
     }
 
     private func toggleTimer() {
@@ -391,68 +410,95 @@ private struct iOSFocusControlButton: View {
     }
 }
 
+/// Touch size of the pick row's transport control. The plate it draws is smaller; this is the part
+/// a finger has to hit.
+private let iOSFocusTransportSize: CGFloat = 44
+
 /// iOS counterpart of macOS's `FocusPickItemRow`: the task's list colour as a dot in a ring, the
-/// title, one detail line, and a play affordance that says what tapping the row will do.
+/// title, one detail line, and the transport control.
+///
+/// The two controls are **siblings in an `HStack`**, not a small button layered over a full-width
+/// one. Layering is how `iOSHabitsView` does its check-in circle and it works there, but this row
+/// declares a `contentShape` over its whole card, so an overlaid button on top of it ended up with
+/// the row swallowing the tap: pressing play selected the task and left the clock at 00:00 — the
+/// same dead affordance the play glyph was before it became a button at all. Side by side there is
+/// no overlap for the hit test to resolve, and no "reserve exactly N points" coupling between the
+/// row and the thing sitting on it.
 private struct iOSFocusPickRow: View {
     let task: AppTask
     let detail: String
     let isSelected: Bool
-    let action: () -> Void
+    let isRunning: Bool
+    let select: () -> Void
+    let toggleSession: () -> Void
 
     private var tint: Color {
         Color(hex: task.containerColor)
     }
 
+    private var title: String {
+        task.title.isEmpty ? "Untitled Task" : task.title
+    }
+
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle().fill(tint.opacity(0.16))
-                    Circle().fill(tint).frame(width: 9, height: 9)
-                }
-                .frame(width: 28, height: 28)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(task.title.isEmpty ? "Untitled Task" : task.title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Text(detail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.subdued)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                Image(systemName: "play.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isSelected ? Theme.onColor : Theme.blue)
+        HStack(spacing: 0) {
+            Button(action: select) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle().fill(tint.opacity(0.16))
+                        Circle().fill(tint).frame(width: 9, height: 9)
+                    }
                     .frame(width: 28, height: 28)
-                    .background(Circle().fill(isSelected ? Theme.blue : Theme.blue.opacity(0.12)))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Text(detail)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.subdued)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(.leading, 12)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .frame(minHeight: 44)
-            // One selection layer, at the row's own radius: the card fill lifts and a hairline
-            // in the list colour marks the selected row. No second background underneath.
-            .cadenceCard(
-                background: isSelected ? Theme.surfaceElevated : Theme.surface,
-                cornerRadius: Theme.radiusCard,
-                shadowRadius: 10,
-                shadowY: 4
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                    .strokeBorder(tint.opacity(0.7), lineWidth: 1.5)
-                    .opacity(isSelected ? 1 : 0)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+            .buttonStyle(.iosPressable)
+            .accessibilityLabel("Focus \(title)")
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+            Button(action: toggleSession) {
+                Image(systemName: isRunning ? "pause.fill" : "play.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isRunning ? Theme.onColor : tint)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(isRunning ? tint : tint.opacity(0.14)))
+                    .frame(width: iOSFocusTransportSize, height: iOSFocusTransportSize)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.iosPressable)
+            .accessibilityLabel(isRunning ? "Pause \(title)" : "Start focus session for \(title)")
+            .padding(.trailing, 4)
         }
-        .buttonStyle(.iosPressable)
-        .accessibilityLabel("Focus \(task.title.isEmpty ? "Untitled Task" : task.title)")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        // One selection layer, at the row's own radius: the card fill lifts and a hairline in the
+        // list colour marks the selected row. No second background underneath.
+        .cadenceCard(
+            background: isSelected ? Theme.surfaceElevated : Theme.surface,
+            cornerRadius: Theme.radiusCard,
+            shadowRadius: 10,
+            shadowY: 4
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                .strokeBorder(tint.opacity(0.7), lineWidth: 1.5)
+                .opacity(isSelected ? 1 : 0)
+        )
     }
 }
 #endif

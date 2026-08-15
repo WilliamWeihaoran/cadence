@@ -24,6 +24,12 @@ struct iOSTrackingEditorShell<Content: View>: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            // The default bar is transparent until the content scrolls under it, and the material
+            // it then uses is thin enough over `Theme.bg` that the segmented control passing
+            // underneath reads straight through "New Goal" and "Save". An opaque bar in the app's
+            // own surface colour is what the rest of Cadence's chrome does anyway.
+            .toolbarBackground(Theme.surface, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -278,16 +284,17 @@ struct iOSTrackingColorGrid: View {
     @Binding var selection: String
     private var colors: [String] { CadenceColorPalette.offeredColors(for: selection) }
 
-    /// Horizontally scrollable, because the palette is wider than an iPhone.
+    /// Wraps onto a second line rather than scrolling sideways.
     ///
-    /// Twelve 36pt swatches plus their gaps need ~531pt; the enclosing `iOSEditorSection` card
-    /// leaves about 329pt on an iPhone and less on iPad, where the editor is a two-column grid —
-    /// and `cadenceCard` ends in a `clipShape`, so the overflow was not merely off-screen, it was
-    /// untappable. The sibling `iOSSettingsColorSwatchRow` already scrolls for the same reason.
+    /// Twelve 36pt swatches plus their gaps need ~531pt and the enclosing `iOSEditorSection` card
+    /// leaves about 329pt on an iPhone, so this was a horizontal `ScrollView`. That version did
+    /// scroll — the parent scroll is vertical and nothing competes for the gesture — but four of
+    /// the twelve colours sat off the edge with nothing to say so, and the icon grid directly above
+    /// it in the same sheet wraps. `CadenceWrappingHStack` shows the whole palette at once and
+    /// removes the only reason the two grids looked like different kinds of control.
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 9) {
-                ForEach(colors, id: \.self) { color in
+        CadenceWrappingHStack(spacing: 9, lineSpacing: 9) {
+            ForEach(colors, id: \.self) { color in
                 let isOn = CadenceColorPalette.matches(color, selection)
                 Button {
                     selection = color
@@ -306,14 +313,10 @@ struct iOSTrackingColorGrid: View {
                         }
                         .iOSExpandedHitArea(4)
                 }
-                    .buttonStyle(.iosPressable)
-                    .accessibilityLabel("Color \(color)")
-                    .accessibilityAddTraits(isOn ? .isSelected : [])
-                }
+                .buttonStyle(.iosPressable)
+                .accessibilityLabel("Color \(color)")
+                .accessibilityAddTraits(isOn ? .isSelected : [])
             }
-            // The swatch ring is drawn outside the circle's own bounds; without this the
-            // leading and trailing selection rings clip against the scroll view.
-            .padding(.horizontal, 2)
         }
     }
 }

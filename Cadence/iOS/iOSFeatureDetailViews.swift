@@ -5,13 +5,23 @@ import SwiftUI
 /// One detail surface for every goal, top-level or nested. A top-level goal reads as a
 /// direction that owns milestones and habits; a nested goal reads as a milestone of its parent.
 struct iOSGoalDetail: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// Pops *this* view. Reading `dismiss` here rather than taking a closure from the list pane is
+    /// deliberate: the list pane's own `dismiss` pops the list, so a closure handed down from there
+    /// would skip a level. Only consulted when `showsBackControl` is set.
+    @Environment(\.dismiss) private var dismiss
+
     let goal: Goal
     var milestones: [Goal] = []
     var habits: [Habit] = []
     var onEdit: () -> Void = {}
     var onNewMilestone: () -> Void = {}
     var onNewHabit: () -> Void = {}
-    var onSelectMilestone: ((Goal) -> Void)? = nil
+    /// Set on the compact push stack, where this view carries its own back control instead of a
+    /// navigation bar holding one chevron and nothing else — the same trade every list pane in the
+    /// iOS surface already makes (`iOSHidesCompactNavigationBar()`). Left off on iPad, where the
+    /// detail sits beside its list and there is nothing to go back to.
+    var showsBackControl = false
 
     private var summary: GoalContributionSummary {
         GoalContributionResolver.summary(for: goal)
@@ -19,6 +29,10 @@ struct iOSGoalDetail: View {
 
     private var tint: Color {
         Color(hex: goal.colorHex)
+    }
+
+    private var isCompact: Bool {
+        horizontalSizeClass == .compact
     }
 
     private var heroSubtitle: String {
@@ -31,58 +45,118 @@ struct iOSGoalDetail: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 16) {
+                if showsBackControl && isCompact {
+                    HStack(spacing: 0) {
+                        iOSHeaderBackButton { dismiss() }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, -8)
+                }
+
                 hero
 
                 actions
 
                 metrics
 
-                if let nextActionTitle = summary.nextActionTitle {
-                    iOSFeatureSection(title: "Next Action") {
-                        iOSFeatureSummaryRow(
-                            title: nextActionTitle,
-                            subtitle: "Highest priority open task",
-                            icon: "arrow.right.circle.fill",
-                            color: Theme.blue
-                        )
-                    }
-                }
+                linkedWorkChips
 
                 if !milestones.isEmpty {
-                    iOSFeatureSection(title: "Milestones") {
-                        ForEach(milestones) { milestone in
-                            milestoneRow(milestone)
+                    iOSEditorSection(title: "Milestones") {
+                        rows(milestones) { milestone in
+                            iOSEditorFieldRow(
+                                label: milestone.title.isEmpty ? "Untitled Goal" : milestone.title,
+                                systemImage: milestone.icon,
+                                color: Color(hex: milestone.colorHex)
+                            ) {
+                                trailingMetric(GoalContributionResolver.summary(for: milestone).percentLabel)
+                            }
                         }
                     }
                 }
 
                 if !habits.isEmpty {
-                    iOSFeatureSection(title: "Habits") {
-                        ForEach(habits) { habit in
-                            iOSFeatureSummaryRow(
-                                title: habit.title.isEmpty ? "Untitled Habit" : habit.title,
-                                subtitle: habit.frequencySummary,
-                                detail: "\(habit.currentStreak)d",
-                                icon: habit.icon,
+                    iOSEditorSection(title: "Habits") {
+                        rows(habits) { habit in
+                            iOSEditorFieldRow(
+                                label: habit.title.isEmpty ? "Untitled Habit" : habit.title,
+                                systemImage: habit.icon,
                                 color: Color(hex: habit.colorHex)
-                            )
+                            ) {
+                                trailingMetric(habit.frequencyShortLabel)
+                            }
                         }
                     }
                 }
+            }
+            .padding(.horizontal, isCompact ? 16 : 20)
+            .padding(.top, isCompact ? 8 : 20)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+        .background(Theme.bg)
+        .iOSHidesCompactNavigationBar()
+    }
 
-                iOSFeatureSection(title: "Linked Work") {
-                    iOSFeatureSummaryRow(
-                        title: "\(summary.linkedListCount) linked lists",
-                        subtitle: "\(summary.overdueTaskCount) overdue, \(summary.recentCompletedCount) recent completions",
-                        icon: "folder.fill",
-                        color: Theme.green
+    /// Milestones and habits are facts *about* the goal, so they read as editor rows in one card
+    /// rather than a stack of elevated cards. They used to be `iOSFeatureSummaryRow`s — the exact
+    /// shape the Goals list uses for rows that navigate — but only the split layout ever wired a
+    /// tap to them, so on iPhone this was a column of controls that looked identical to the
+    /// tappable ones a screen earlier and did nothing.
+    @ViewBuilder
+    private func rows<Item: Identifiable, Row: View>(
+        _ items: [Item],
+        @ViewBuilder row: @escaping (Item) -> Row
+    ) -> some View {
+        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+            if index > 0 {
+                iOSEditorDivider()
+            }
+            row(item)
+        }
+    }
+
+    private func trailingMetric(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Theme.muted)
+            .monospacedDigit()
+            .lineLimit(1)
+    }
+
+    /// What used to be a "LINKED WORK" section wrapping one `iOSFeatureSummaryRow` whose *title*
+    /// was "0 linked lists" — a tappable-looking card row that was not tappable, saying nothing a
+    /// chip could not. Chips are this app's established read-only vocabulary, and the section
+    /// disappears entirely when there is nothing linked rather than announcing three zeroes.
+    @ViewBuilder
+    private var linkedWorkChips: some View {
+        let summary = self.summary
+        let hasAnything = summary.linkedListCount > 0
+            || summary.overdueTaskCount > 0
+            || summary.recentCompletedCount > 0
+
+        if hasAnything {
+            CadenceWrappingHStack(spacing: 7, lineSpacing: 7) {
+                if summary.linkedListCount > 0 {
+                    iOSMetaChip(
+                        label: summary.linkedListCount == 1 ? "1 list" : "\(summary.linkedListCount) lists",
+                        color: Theme.dim,
+                        systemImage: "folder.fill"
+                    )
+                }
+                if summary.overdueTaskCount > 0 {
+                    // The one exceptional fact in the group, so the one that keeps a colour.
+                    iOSMetaChip(label: "\(summary.overdueTaskCount) overdue", color: Theme.red)
+                }
+                if summary.recentCompletedCount > 0 {
+                    iOSMetaChip(
+                        label: summary.recentCompletedCount == 1 ? "1 done recently" : "\(summary.recentCompletedCount) done recently",
+                        color: Theme.dim
                     )
                 }
             }
-            .padding(20)
         }
-        .background(Theme.bg)
     }
 
     /// Identity, the two badges macOS shows beside a goal's title (kind and status), and the
@@ -132,11 +206,58 @@ struct iOSGoalDetail: View {
                     .monospacedDigit()
             }
 
-            GoalProgressBar(progress: summary.progress, color: tint, height: 5)
+            VStack(alignment: .leading, spacing: 10) {
+                GoalProgressBar(progress: summary.progress, color: tint, height: 5)
+
+                nextActionLine
+            }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusPanel, shadowRadius: 16, shadowY: 6)
+    }
+
+    /// The next action, as one line under the progress bar rather than a "NEXT ACTION" section
+    /// wrapping a card row.
+    ///
+    /// That row was styled exactly like the goal rows that navigate and was not tappable, and its
+    /// subtitle read "Highest priority open task" — a description of the row rather than anything
+    /// about the task in it. The due date is what the reader actually needs, and it is the one
+    /// thing here allowed to carry a colour, because an overdue next action is the exception.
+    @ViewBuilder
+    private var nextActionLine: some View {
+        if let title = summary.nextActionTitle {
+            let todayKey = DateFormatters.todayKey()
+            let dueLabel = summary.nextActionDueDate.flatMap {
+                CadenceFocusSupport.dueLabel(forDueDateKey: $0, todayKey: todayKey)
+            }
+            let isOverdue = summary.nextActionDueDate.map {
+                CadenceFocusSupport.isOverdue(dueDateKey: $0, todayKey: todayKey)
+            } ?? false
+
+            HStack(spacing: 7) {
+                Text("Next")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .textCase(.uppercase)
+                    .kerning(0.6)
+
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
+
+                if let dueLabel {
+                    Text(dueLabel)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isOverdue ? Theme.red : Theme.dim)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
     }
 
     /// `.borderedProminent` / `.bordered` bring the OS's own material, radius and control height,
@@ -153,12 +274,13 @@ struct iOSGoalDetail: View {
                 action: onEdit
             )
 
+            // Green and amber said nothing here — they were not the goal's colour, not a status,
+            // and not a warning. Two secondary actions, one secondary treatment.
             iOSActionButton(
                 title: "Milestone",
                 systemImage: "flag.fill",
                 role: .secondary,
                 size: .compact,
-                tint: Theme.green,
                 action: onNewMilestone
             )
 
@@ -167,7 +289,6 @@ struct iOSGoalDetail: View {
                 systemImage: "flame.fill",
                 role: .secondary,
                 size: .compact,
-                tint: Theme.amber,
                 action: onNewHabit
             )
 
@@ -175,43 +296,17 @@ struct iOSGoalDetail: View {
         }
     }
 
-    /// Five tiles, not six: "Progress" and "Status" both moved into the hero, where the percentage
-    /// now sits beside the bar that draws it and the status reads as the badge macOS shows.
+    /// Two tiles, not four. The "Milestones" and "Habits" tiles counted the two sections directly
+    /// below them — so a goal with milestones stated the number twice, and a goal without them
+    /// showed a tile reading `0` above no section at all. The remaining pair are the only figures
+    /// nothing else on the screen carries, and their icons are `Theme.dim`: four tiles in four
+    /// colours encoded nothing but "these are four different tiles".
     private var metrics: some View {
         let summary = self.summary
 
-        return VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                iOSMetricTile(title: "Tasks", value: summary.taskCountLabel, icon: "checklist", color: Theme.blue)
-                iOSMetricTile(title: "Focus", value: summary.focusLabel, icon: "timer", color: Theme.amber)
-            }
-            HStack(spacing: 10) {
-                iOSMetricTile(title: "Milestones", value: "\(milestones.count)", icon: "flag.fill", color: Theme.green)
-                iOSMetricTile(title: "Habits", value: "\(habits.count)", icon: "flame.fill", color: Theme.amber)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func milestoneRow(_ milestone: Goal) -> some View {
-        let milestoneSummary = GoalContributionResolver.summary(for: milestone)
-        let row = iOSFeatureSummaryRow(
-            title: milestone.title.isEmpty ? "Untitled Goal" : milestone.title,
-            subtitle: milestoneSummary.nextActionTitle ?? milestone.status.label,
-            detail: milestoneSummary.percentLabel,
-            icon: milestone.icon,
-            color: Color(hex: milestone.colorHex)
-        )
-
-        if let onSelectMilestone {
-            Button {
-                onSelectMilestone(milestone)
-            } label: {
-                row
-            }
-            .buttonStyle(.iosPressable)
-        } else {
-            row
+        return HStack(spacing: 10) {
+            iOSMetricTile(title: "Tasks", value: summary.taskCountLabel, icon: "checklist", color: Theme.dim)
+            iOSMetricTile(title: "Focus", value: summary.focusLabel, icon: "timer", color: Theme.dim)
         }
     }
 }
@@ -278,15 +373,20 @@ struct iOSHabitSummaryRow: View {
                         .foregroundStyle(Theme.subdued)
                         .lineLimit(1)
 
+                    // A live streak is worth a colour; "no streak" is not, and rendering it amber
+                    // gave the absence of a streak the same emphasis as a run of forty days.
                     Text(streak > 0 ? "\(streak)d streak" : "no streak")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.amber)
+                        .foregroundStyle(streak > 0 ? Theme.amber : Theme.dim)
                         .lineLimit(1)
 
-                    if habit.isDueToday {
-                        Text(isDoneToday ? "Done today" : "Due today")
+                    // Only the outstanding half. The check-in control on this row already draws
+                    // itself filled and in the habit's colour once today is done, so "Done today"
+                    // beside it was the same fact stated twice.
+                    if habit.isDueToday && !isDoneToday {
+                        Text("Due today")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(isDoneToday ? Theme.green : Theme.blue)
+                            .foregroundStyle(Theme.blue)
                             .lineLimit(1)
                     }
                 }
@@ -331,11 +431,14 @@ struct iOSHabitSummaryRow: View {
 /// and the year-long activity grid.
 struct iOSHabitDetail: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dismiss) private var dismiss
 
     let habit: Habit
     let todayKey: String
     let toggle: () -> Void
     var onEdit: () -> Void = {}
+    /// Set on the compact push stack. See `iOSGoalDetail.showsBackControl`.
+    var showsBackControl = false
 
     private var tint: Color {
         Color(hex: habit.colorHex)
@@ -352,22 +455,37 @@ struct iOSHabitDetail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if showsBackControl && isCompact {
+                    HStack(spacing: 0) {
+                        iOSHeaderBackButton { dismiss() }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, -8)
+                }
+
                 hero
 
                 metrics
 
-                HabitInfoCard(title: "Goal", padding: cardPadding) {
-                    goalContent
+                // Only when there is a goal. An unlinked habit used to get a full titled card
+                // wrapping one sentence explaining that the card had nothing in it.
+                if habit.goal != nil {
+                    HabitInfoCard(title: "Goal", padding: cardPadding) {
+                        goalContent
+                    }
                 }
 
                 HabitInfoCard(title: "Activity", padding: cardPadding) {
                     activityContent
                 }
             }
-            .padding(isCompact ? 16 : 20)
+            .padding(.horizontal, isCompact ? 16 : 20)
+            .padding(.top, isCompact ? 8 : 20)
+            .padding(.bottom, 24)
         }
         .scrollIndicators(.hidden)
         .background(Theme.bg)
+        .iOSHidesCompactNavigationBar()
     }
 
     // MARK: - Hero
@@ -422,51 +540,37 @@ struct iOSHabitDetail: View {
 
     /// Current and Best were deliberately made to agree with each other (both go through
     /// `Habit`'s one definition of a streak); only their presentation is design-owned.
+    ///
+    /// Three neutral figures, so three `Theme.dim` glyphs. Amber, green and blue on the three tiles
+    /// read as three different *kinds* of thing, which is not what a streak, a record streak and a
+    /// completion rate are — the colour that means something on this screen is the habit's own, and
+    /// it belongs to the icon tile, the check-in control and the heatmap.
     private var metrics: some View {
         HStack(spacing: 10) {
-            iOSMetricTile(title: "Current", value: "\(habit.currentStreak)d", icon: "flame.fill", color: Theme.amber)
-            iOSMetricTile(title: "Best", value: "\(habit.bestStreak)d", icon: "trophy.fill", color: Theme.green)
-            iOSMetricTile(title: "30 days", value: "\(habit.last30DayCompletionRate)%", icon: "chart.bar.fill", color: Theme.blue)
+            iOSMetricTile(title: "Current", value: "\(habit.currentStreak)d", icon: "flame.fill", color: Theme.dim)
+            iOSMetricTile(title: "Best", value: "\(habit.bestStreak)d", icon: "trophy.fill", color: Theme.dim)
+            iOSMetricTile(title: "30 days", value: "\(habit.last30DayCompletionRate)%", icon: "chart.bar.fill", color: Theme.dim)
         }
     }
 
     // MARK: - Goal
 
-    /// Context / due / checked-in, on one line where they fit and two where they do not. A
-    /// single `HStack` truncated one of them on an iPhone, and half a "Checked in" is worse
-    /// than a second row.
+    /// Context and today's cadence, wrapping onto a second line rather than truncating.
+    ///
+    /// There used to be a third chip reading "Checked in" / "Pending", directly above a button
+    /// reading "Undo Check-In" / "Check In Today" — the same fact, twice, in two vocabularies, with
+    /// the chip in green and the button in green beside it. The button says it and can act on it,
+    /// so the chip went.
     @ViewBuilder
     private var chips: some View {
-        let context = habit.context
-        let dueChip = iOSMetaChip(
-            label: habit.isDueToday ? "Due today" : "Not due today",
-            color: habit.isDueToday ? Theme.blue : Theme.dim
-        )
-        let stateChip = iOSMetaChip(
-            label: isDoneToday ? "Checked in" : "Pending",
-            color: isDoneToday ? Theme.green : Theme.amber
-        )
-
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                if let context {
-                    iOSMetaChip(label: context.name, color: Color(hex: context.colorHex))
-                }
-                dueChip
-                stateChip
-                Spacer(minLength: 0)
+        CadenceWrappingHStack(spacing: 8, lineSpacing: 8) {
+            if let context = habit.context {
+                iOSMetaChip(label: context.name, color: Color(hex: context.colorHex))
             }
-
-            VStack(alignment: .leading, spacing: 8) {
-                if let context {
-                    iOSMetaChip(label: context.name, color: Color(hex: context.colorHex))
-                }
-                HStack(spacing: 8) {
-                    dueChip
-                    stateChip
-                    Spacer(minLength: 0)
-                }
-            }
+            iOSMetaChip(
+                label: habit.isDueToday ? "Due today" : "Not due today",
+                color: habit.isDueToday ? Theme.blue : Theme.dim
+            )
         }
     }
 
@@ -493,8 +597,6 @@ struct iOSHabitDetail: View {
 
                 Spacer(minLength: 0)
             }
-        } else {
-            iOSInlineEmpty(text: "Not linked to a goal — this habit is tracked on its own.")
         }
     }
 
