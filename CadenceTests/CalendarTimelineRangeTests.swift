@@ -215,4 +215,110 @@ struct CalendarTimelineRangeTests {
         #expect(CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: "Birthdays").hasPrefix("Birthdays"))
         #expect(CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: "  ").contains("read-only calendar"))
     }
+
+    // MARK: - Where a timeline opens
+
+    /// The complaint: Week opened at 6 AM whatever the time of day, because the canvas starts at
+    /// `calendarStartHour` and a scroll view opens at the top of its content. Open it at 2pm and the
+    /// hours you came for are below the fold.
+    @Test func aSpanContainingTodayOpensNearTheCurrentHour() throws {
+        let twoPM = try date("2026-08-15", hour: 14)
+
+        #expect(
+            CadenceScheduleSupport.initialTimelineHour(
+                showsToday: true,
+                now: twoPM,
+                calendar: calendar
+            ) == 13
+        )
+    }
+
+    /// The hour just gone stays on screen, so the timeline opens with context above "now" rather
+    /// than with it pinned to the very top edge.
+    @Test func todayKeepsTheHourJustGoneInView() throws {
+        let nineAM = try date("2026-08-15", hour: 9)
+        let hour = CadenceScheduleSupport.initialTimelineHour(
+            showsToday: true,
+            now: nineAM,
+            calendar: calendar
+        )
+
+        #expect(hour == 8)
+        #expect(hour < 9)
+    }
+
+    /// Early morning and late night both fall outside the drawn window; clamping keeps the
+    /// placement inside the canvas instead of asking for an offset that does not exist.
+    @Test func todayClampsToTheHoursTheCanvasDraws() throws {
+        let threeAM = try date("2026-08-15", hour: 3)
+        let elevenPM = try date("2026-08-15", hour: 23)
+
+        #expect(
+            CadenceScheduleSupport.initialTimelineHour(showsToday: true, now: threeAM, calendar: calendar)
+                == CadenceScheduleSupport.calendarStartHour
+        )
+        #expect(
+            CadenceScheduleSupport.initialTimelineHour(showsToday: true, now: elevenPM, calendar: calendar)
+                == CadenceScheduleSupport.calendarEndHour - 1
+        )
+    }
+
+    /// A week that is not this week has no "now" to honour. The sensible default is the user's own
+    /// work-hours start — the window the amber band on each column is already drawn from — rather
+    /// than a second hardcoded hour.
+    @Test func aSpanWithoutTodayOpensAtTheWorkHoursStart() throws {
+        let twoPM = try date("2026-08-15", hour: 14)
+
+        #expect(
+            CadenceScheduleSupport.initialTimelineHour(
+                showsToday: false,
+                now: twoPM,
+                workHoursStartMinute: 10 * 60 + 30,
+                calendar: calendar
+            ) == 10
+        )
+        #expect(
+            CadenceScheduleSupport.initialTimelineHour(
+                showsToday: false,
+                now: twoPM,
+                calendar: calendar
+            ) == CalendarWorkHoursPreferences.defaultStartMinute / 60
+        )
+    }
+
+    /// A work day starting before the canvas does still has to land on a row the canvas draws.
+    @Test func anEarlyWorkHoursStartClampsToTheFirstDrawnHour() throws {
+        let twoPM = try date("2026-08-15", hour: 14)
+
+        #expect(
+            CadenceScheduleSupport.initialTimelineHour(
+                showsToday: false,
+                now: twoPM,
+                workHoursStartMinute: 4 * 60,
+                calendar: calendar
+            ) == CadenceScheduleSupport.calendarStartHour
+        )
+    }
+
+    /// The offset has to clear the day-header band the canvas scrolls past before its first hour
+    /// line, or every hour lands one header too high and the rule reads as being an hour out.
+    @Test func theScrollOffsetClearsTheDayHeaderBand() {
+        let offset = CadenceScheduleSupport.timelineScrollOffset(
+            forHour: 13,
+            hourHeight: 58,
+            topInset: 101
+        )
+
+        // Spelled as a `CGFloat`: `#expect` records the untyped literal expression as an `Int`, so
+        // an integer right-hand side compares unequal to a `CGFloat` of the same value.
+        #expect(offset == CGFloat(101 + 7 * 58))
+        #expect(
+            CadenceScheduleSupport.timelineScrollOffset(forHour: 6, hourHeight: 58, topInset: 101)
+                == CGFloat(101)
+        )
+    }
+
+    @Test func theScrollOffsetNeverGoesNegative() {
+        #expect(CadenceScheduleSupport.timelineScrollOffset(forHour: 0, hourHeight: 58) == CGFloat(0))
+    }
 }

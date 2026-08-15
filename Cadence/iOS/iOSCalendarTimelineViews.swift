@@ -20,10 +20,16 @@ struct iOSCalendarTimelineGrid: View {
     private var workHoursStartMinute = CalendarWorkHoursPreferences.defaultStartMinute
     @AppStorage(CalendarWorkHoursPreferences.endMinuteKey)
     private var workHoursEndMinute = CalendarWorkHoursPreferences.defaultEndMinute
+    /// Vertical placement of the day canvas. See `placeInitialScroll(contentHeight:)`.
+    @State private var verticalScrollPosition = ScrollPosition(edge: .top)
+    @State private var didPlaceInitialScroll = false
 
     private let calendar = Calendar.current
     private var baseHourHeight: CGFloat { horizontalSizeClass == .regular ? 64 : 58 }
     private var hourHeight: CGFloat { baseHourHeight + CGFloat((zoomLevel - 1) * 16) }
+    private var dayHeaderHeight: CGFloat {
+        iOSCalendarTimelineDayHeaderHeight(isRegularWidth: horizontalSizeClass == .regular)
+    }
     private var timelineHeight: CGFloat {
         CGFloat(CadenceScheduleSupport.calendarEndHour - CadenceScheduleSupport.calendarStartHour) * hourHeight
     }
@@ -38,7 +44,7 @@ struct iOSCalendarTimelineGrid: View {
 
             ScrollView(.vertical) {
                 HStack(alignment: .top, spacing: 0) {
-                    iOSCalendarTimeRail(hourHeight: hourHeight)
+                    iOSCalendarTimeRail(hourHeight: hourHeight, headerHeight: dayHeaderHeight)
                         .frame(width: railWidth)
 
                     ScrollView(.horizontal) {
@@ -87,8 +93,40 @@ struct iOSCalendarTimelineGrid: View {
                 }
             }
             .scrollIndicators(.hidden)
+            .scrollPosition($verticalScrollPosition)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentSize.height
+            } action: { _, contentHeight in
+                placeInitialScroll(contentHeight: contentHeight)
+            }
         }
         .background(Theme.bg)
+    }
+
+    /// Opens the timeline near the hour that matters instead of at 6 AM. See
+    /// `CadenceScheduleSupport.initialTimelineHour` for the rule; this is only where it is applied.
+    ///
+    /// It runs off the scroll view's own reported content height rather than `onAppear` because
+    /// `onAppear` can fire before the canvas has a content size, and a `scrollTo(y:)` against a
+    /// zero-height content silently clamps back to the top — which is exactly the 6 AM this
+    /// removes. Nothing here is written anywhere: the hour is recomputed on every open, so a bad
+    /// placement can only ever be one screen, never a saved anchor that compounds.
+    private func placeInitialScroll(contentHeight: CGFloat) {
+        guard !didPlaceInitialScroll, contentHeight >= timelineHeight else { return }
+        didPlaceInitialScroll = true
+
+        let hour = CadenceScheduleSupport.initialTimelineHour(
+            showsToday: dates.contains { calendar.isDateInToday($0) },
+            workHoursStartMinute: workHoursStartMinute,
+            calendar: calendar
+        )
+        verticalScrollPosition.scrollTo(
+            y: CadenceScheduleSupport.timelineScrollOffset(
+                forHour: hour,
+                hourHeight: hourHeight,
+                topInset: dayHeaderHeight
+            )
+        )
     }
 
     private func scheduledTasks(for date: Date) -> [AppTask] {
@@ -108,6 +146,16 @@ struct iOSCalendarTimelineGrid: View {
     }
 }
 
+/// The height of a timeline day header — the band above the hour canvas carrying the day number and
+/// its chips.
+///
+/// One value rather than three literals: the rail reserves it, the header fills it, and the initial
+/// scroll placement has to skip past it. When those drifted apart the timeline opened an hour off
+/// the hour it had computed, which reads as the rule being wrong rather than the geometry.
+private func iOSCalendarTimelineDayHeaderHeight(isRegularWidth: Bool) -> CGFloat {
+    isRegularWidth ? 112 : 101
+}
+
 private struct iOSCalendarTimelineDayHeader: View {
     let date: Date
     let isSelected: Bool
@@ -122,7 +170,7 @@ private struct iOSCalendarTimelineDayHeader: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var headerHeight: CGFloat {
-        horizontalSizeClass == .regular ? 112 : 101
+        iOSCalendarTimelineDayHeaderHeight(isRegularWidth: horizontalSizeClass == .regular)
     }
 
     var body: some View {
@@ -188,11 +236,12 @@ private struct iOSCalendarTimelineDayHeader: View {
 
 private struct iOSCalendarTimeRail: View {
     let hourHeight: CGFloat
+    let headerHeight: CGFloat
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         VStack(spacing: 0) {
-            Color.clear.frame(height: horizontalSizeClass == .regular ? 112 : 101)
+            Color.clear.frame(height: headerHeight)
             ForEach(CadenceScheduleSupport.calendarStartHour..<CadenceScheduleSupport.calendarEndHour, id: \.self) { hour in
                 Text(hourLabel(hour))
                     .font(.system(size: horizontalSizeClass == .regular ? 11 : 10, weight: .medium))

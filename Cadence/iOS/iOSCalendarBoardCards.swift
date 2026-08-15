@@ -40,6 +40,11 @@ struct iOSCalendarBoardEventItem: Identifiable {
     let isAllDay: Bool
     let isRecurring: Bool
     let color: Color
+    /// The row this was derived from, kept so a surface that lets you open an event — the month
+    /// agenda — does not have to rebuild the mapping from this item's id back to an `EKEvent`. That
+    /// id is assembled here from an identifier, a date key and a start minute, and `items(from:for:)`
+    /// drops events that do not intersect the day, so it is not a lookup a caller can reconstruct.
+    let event: EKEvent
 
     var sortKey: CalendarBoardSortKey {
         CalendarBoardPlannerSupport.sortKeyForCalendarEvent(
@@ -60,6 +65,7 @@ struct iOSCalendarBoardEventItem: Identifiable {
         let dateKey = DateFormatters.dateKey(from: date)
         let rawIdentifier = event.eventIdentifier ?? event.calendarItemIdentifier
         let eventIdentifier = rawIdentifier.isEmpty ? "\(dateKey)-\(event.hash)" : rawIdentifier
+        self.event = event
         title = iOSCalendarEventSupport.title(for: event)
         calendarTitle = event.calendar?.title ?? "Apple Calendar"
         isAllDay = event.isAllDay

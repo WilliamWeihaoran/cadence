@@ -590,6 +590,53 @@ enum CadenceScheduleSupport {
         return taskCount + bundleCount
     }
 
+    /// The hour a freshly opened day timeline should be scrolled to.
+    ///
+    /// A timeline draws from `calendarStartHour` and a scroll view opens at its top, so Week opened
+    /// at 6 AM whatever the time of day: open it at 2pm and you land in the middle of the morning
+    /// with the hours you care about below the fold. When the span on screen includes **today** the
+    /// answer is the current hour, backed off by `leadHours` so the hour just gone is still visible
+    /// for context. Otherwise there is no "now" to honour, and the best available default is the
+    /// user's own work-hours start — the same `calendar.workHours.*.v1` window the amber band on
+    /// each column already draws — rather than a second hardcoded hour.
+    ///
+    /// This is **derived on every open and never persisted**. A measured or derived scroll offset
+    /// written into a defaults key is what put the Calendar Board seven months in the past
+    /// (`ecaf80f`): a garbage reading became a saved anchor and compounded across launches.
+    static func initialTimelineHour(
+        showsToday: Bool,
+        now: Date = Date(),
+        workHoursStartMinute: Int = CalendarWorkHoursPreferences.defaultStartMinute,
+        leadHours: Int = 1,
+        startHour: Int = calendarStartHour,
+        endHour: Int = calendarEndHour,
+        calendar: Calendar = .current
+    ) -> Int {
+        let lastHour = max(startHour, endHour - 1)
+        let preferred: Int
+        if showsToday {
+            preferred = calendar.component(.hour, from: now) - max(0, leadHours)
+        } else {
+            preferred = CalendarWorkHoursPreferences.normalizedStartMinute(workHoursStartMinute) / 60
+        }
+        return min(max(preferred, startHour), lastHour)
+    }
+
+    /// Where that hour sits in a day canvas whose rows are `hourHeight` tall — the content offset a
+    /// scroll view is placed at, not a persisted value.
+    ///
+    /// `topInset` is whatever the canvas scrolls *past* before its first hour line: on iOS the day
+    /// header band with the day numbers and their chips. Leaving it out placed every hour one
+    /// header too high, which reads as the rule being off by an hour rather than the geometry.
+    static func timelineScrollOffset(
+        forHour hour: Int,
+        hourHeight: CGFloat,
+        startHour: Int = calendarStartHour,
+        topInset: CGFloat = 0
+    ) -> CGFloat {
+        max(0, topInset + CGFloat(hour - startHour) * max(0, hourHeight))
+    }
+
     static func startOfWeek(containing date: Date, calendar: Calendar = .current) -> Date {
         calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? calendar.startOfDay(for: date)
     }

@@ -111,10 +111,6 @@ struct iOSCalendarView: View {
         selectedTasks.filter { $0.scheduledDate == selectedKey && $0.scheduledStartMin >= 0 }.count
     }
 
-    private var selectedTotalCount: Int {
-        selectedUniqueTaskCount + selectedBundles.count + selectedEvents.count
-    }
-
     private var selectedLeadItem: iOSCalendarLeadItem? {
         if let bundle = selectedBundles.first {
             return iOSCalendarLeadItem(
@@ -154,36 +150,11 @@ struct iOSCalendarView: View {
         horizontalSizeClass == .compact
     }
 
-    private var isCompactBoard: Bool {
-        isCompact && presentation == .board
-    }
-
-    /// Whether the calendar pane fills the screen on a phone instead of sharing it with a
-    /// day-inspector card above.
-    ///
-    /// The card, the four count chips and the inspector's empty state were one block of chrome
-    /// above every mode, taking most of a 402pt screen before any calendar appeared — the Week
-    /// timeline was left showing four hours. The card said "Saturday, August 15", which the page
-    /// title's range and the grid's own marked day both already say. Month is the exception until
-    /// its agenda is built: its grid alone would list nothing, so it keeps the inspector for now.
-    private var isFullPaneCompact: Bool {
-        isCompact && (presentation == .board || viewMode != .month)
-    }
-
     /// Only Week keeps the counts line on a phone. The Board's columns are meant to start directly
-    /// under the mode control, and Month's inspector below already lists the same day.
+    /// under the mode control, and Month's agenda below lists the selected day item by item — a
+    /// line above it counting the same items is the chrome this page just finished removing.
     private var showsContextStrip: Bool {
         !isCompact || (presentation == .timeline && viewMode != .month)
-    }
-
-    /// Only Week and Month reach this. The compact board is not one card in a scrolling page any
-    /// more; it fills the pane (see `isCompactBoard`).
-    private var compactCalendarHeight: CGFloat {
-        viewMode != .month ? 430 : 420
-    }
-
-    private var compactInspectorMinHeight: CGFloat {
-        selectedTotalCount == 0 ? 260 : 320
     }
 
     var body: some View {
@@ -210,31 +181,14 @@ struct iOSCalendarView: View {
                 )
             }
 
-            if isFullPaneCompact {
+            // Every compact mode fills the pane. Month was the last one that did not: it sat as a
+            // fixed-height card inside this page scroller, which put a vertical scroll view inside
+            // a vertical scroll view and left the grid roughly the bottom 40% of the screen. Its
+            // day inspector is gone — `iOSCalendarMonthAgenda` is what lists the day now — so
+            // there is nothing left for the outer scroller to scroll.
+            if isCompact {
                 calendarContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if isCompact {
-                ScrollView {
-                    VStack(spacing: 10) {
-                        dayInspector
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: compactInspectorMinHeight)
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
-                            .shadow(color: Theme.cardElevationShadow, radius: 12, x: 0, y: 5)
-
-                        calendarContent
-                            .frame(maxWidth: .infinity)
-                            .frame(height: compactCalendarHeight)
-                            .background(Theme.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
-                            .shadow(color: Theme.cardElevationShadow, radius: 12, x: 0, y: 5)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    // See the note in `iOSCompactTodayView`.
-                    .padding(.bottom, 16)
-                }
-                .scrollIndicators(.hidden)
             } else {
                 GeometryReader { proxy in
                     HStack(spacing: 0) {
@@ -281,13 +235,26 @@ struct iOSCalendarView: View {
                 onAddItem: openQuickCreate
             )
         } else if viewMode == .month {
-            iOSCalendarMonthGrid(
-                monthDate: anchorDate,
-                selectedDate: $selectedDate,
-                monthTasksByDate: monthTasksByDate,
-                bundlesByDate: bundlesByDate,
-                eventsByDate: visibleEventsByDate
-            )
+            // iPad keeps the full month grid, because it still has the day inspector beside it to
+            // list what a cell holds. A phone has no room for both, so it gets the grid plus its
+            // own agenda instead.
+            if isCompact {
+                iOSCalendarMonthAgenda(
+                    monthDate: anchorDate,
+                    selectedDate: $selectedDate,
+                    monthTasksByDate: monthTasksByDate,
+                    bundlesByDate: bundlesByDate,
+                    eventsByDate: visibleEventsByDate
+                )
+            } else {
+                iOSCalendarMonthGrid(
+                    monthDate: anchorDate,
+                    selectedDate: $selectedDate,
+                    monthTasksByDate: monthTasksByDate,
+                    bundlesByDate: bundlesByDate,
+                    eventsByDate: visibleEventsByDate
+                )
+            }
         } else {
             iOSCalendarTimelineGrid(
                 dates: visibleDates,

@@ -211,7 +211,9 @@ private struct iOSCalendarInspectorEmptyState: View {
     }
 }
 
-private struct iOSCalendarEventSummaryRow: View {
+/// One Apple Calendar event as a list row. Shared with the compact month agenda, which lists the
+/// same three kinds of thing this inspector does and should not draw a second event row to do it.
+struct iOSCalendarEventSummaryRow: View {
     let event: EKEvent
 
     private var color: Color {
