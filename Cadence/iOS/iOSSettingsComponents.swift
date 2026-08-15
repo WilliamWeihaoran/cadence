@@ -17,6 +17,30 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// Every category mobile offers, grouped, in the order the list draws them. The grouping is
+    /// declared once in `Shared` (`CadenceMobileSettingsLayout`) so the iPhone list and the iPad
+    /// rail cannot end up filing the same destination under different headings.
+    /// Computed rather than a `static let`: a stored static's initializer runs in a nonisolated
+    /// context, and everything in this target is main-actor by default. Twelve cases is not worth
+    /// a caching dance.
+    static var groups: [iOSSettingsCategoryGroup] {
+        CadenceMobileSettingsLayout.groups.map { group in
+            iOSSettingsCategoryGroup(
+                title: group.title,
+                categories: group.kinds.compactMap { iOSSettingsCategory(kind: $0) }
+            )
+        }
+    }
+
+    /// `nil` for the three categories that are macOS-shell concerns and have no mobile screen:
+    /// `sidebar`, `reminders`, `account`.
+    init?(kind: CadenceSettingsCategoryKind) {
+        guard let match = iOSSettingsCategory.allCases.first(where: { $0.sharedKind == kind }) else {
+            return nil
+        }
+        self = match
+    }
+
     var sharedKind: CadenceSettingsCategoryKind {
         switch self {
         case .navigation: return .navigation
@@ -48,30 +72,11 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
     }
 }
 
-private struct iOSSettingsCategoryGroup: Identifiable {
+struct iOSSettingsCategoryGroup: Identifiable {
     let title: String
     let categories: [iOSSettingsCategory]
 
     var id: String { title }
-
-    static let all: [iOSSettingsCategoryGroup] = [
-        iOSSettingsCategoryGroup(
-            title: "Interface",
-            categories: [.navigation]
-        ),
-        iOSSettingsCategoryGroup(
-            title: "Organization",
-            categories: [.organization, .lists, .tags, .templates]
-        ),
-        iOSSettingsCategoryGroup(
-            title: "Connections",
-            categories: [.calendar, .notifications, .sync, .ai]
-        ),
-        iOSSettingsCategoryGroup(
-            title: "Mobile",
-            categories: [.data, .coverage, .about]
-        )
-    ]
 }
 
 enum iOSMobileCapabilityStatus: String, CaseIterable, Identifiable {
@@ -277,7 +282,7 @@ struct iOSSettingsRail: View {
 
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 14) {
-                    ForEach(iOSSettingsCategoryGroup.all) { group in
+                    ForEach(iOSSettingsCategory.groups) { group in
                         iOSSettingsRailGroup(
                             group: group,
                             selectedCategory: $selectedCategory
@@ -362,54 +367,75 @@ private struct iOSSettingsRailButton: View {
     }
 }
 
-struct iOSSettingsCompactCategoryPicker: View {
-    @Binding var selectedCategory: iOSSettingsCategory
+/// The iPhone settings top level: every category as a row you can read, grouped under quiet
+/// eyebrows.
+///
+/// This replaces a horizontally scrolling chip strip. Twelve destinations in a sideways scroller
+/// showed two and a half of them — the third clipped mid-word at "Data Safe…" — and gave no way to
+/// know the rest existed. A vertical list is the right shape for a set this size and it is what
+/// the iPad rail beside it has always been; the two now read from one grouping.
+///
+/// Category glyphs keep their colour here (the rail tints only the selected row) because in a list
+/// with no selection the colour is what makes twelve near-identical rows scannable.
+struct iOSSettingsCategoryList: View {
+    let select: (iOSSettingsCategory) -> Void
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 8) {
-                ForEach(iOSSettingsCategory.allCases) { category in
-                    iOSSettingsCategoryChip(
-                        category: category,
-                        isSelected: selectedCategory == category
-                    ) {
-                        selectedCategory = category
+        VStack(alignment: .leading, spacing: 18) {
+            ForEach(iOSSettingsCategory.groups) { group in
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionEyebrowLabel(text: group.title)
+                        .padding(.horizontal, 4)
+
+                    iOSSettingsCard {
+                        VStack(spacing: 0) {
+                            ForEach(group.categories) { category in
+                                Button {
+                                    select(category)
+                                } label: {
+                                    iOSSettingsCategoryRow(category: category)
+                                }
+                                .buttonStyle(.iosPressable)
+                                .accessibilityIdentifier("settings.category.\(category.rawValue)")
+
+                                if category.id != group.categories.last?.id {
+                                    iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                                }
+                            }
+                        }
                     }
                 }
             }
-            .padding(.horizontal, 1)
         }
-        .scrollIndicators(.hidden)
-        .scrollClipDisabled()
     }
 }
 
-private struct iOSSettingsCategoryChip: View {
+private struct iOSSettingsCategoryRow: View {
     let category: iOSSettingsCategory
-    let isSelected: Bool
-    let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                Image(systemName: category.icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isSelected ? category.tint : Theme.dim)
-                Text(category.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
-            }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 36)
-            // Selected state is carried by the fill alone — the unselected chip used to
-            // add a border the selected one dropped, so the two changed shape as well as
-            // colour.
-            .background(isSelected ? Theme.surfaceElevated : Theme.surface)
-            .clipShape(Capsule())
-            .frame(minHeight: iOSSettingsMetrics.minimumTapTarget)
-            .contentShape(Rectangle())
+        HStack(spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+            iOSIconTile(
+                systemImage: category.icon,
+                color: category.tint,
+                size: iOSSettingsMetrics.glyphSlot,
+                iconSize: 14
+            )
+
+            Text(category.title)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.dim)
         }
-        .buttonStyle(.iosPressable)
+        .padding(.vertical, iOSSettingsMetrics.rowVerticalPadding)
+        .frame(maxWidth: .infinity, minHeight: iOSSettingsMetrics.minimumTapTarget, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 
@@ -570,39 +596,26 @@ struct iOSSettingsCard<Content: View>: View {
 
 /// Local stand-in for the shared `CadenceSettingsHeader`, same layout, riding on
 /// `iOSSettingsCard`'s soft-elevation styling instead of the shared hard-border card.
-struct iOSSettingsPageHeader<TrailingContent: View>: View {
+///
+/// It used to take arbitrary trailing content, and every caller passed a
+/// `CadenceSettingsStatusBadge` — which, on the category the app opens to, was a green pill
+/// repeating the value of the *first setting on the screen below it*. A header that answers a
+/// question the next row answers is a second place for the same fact to go stale, so the slot is
+/// gone rather than parameterised.
+struct iOSSettingsPageHeader: View {
     /// Only set where this header is the top of a pushed screen whose navigation bar is hidden, so
     /// the word "Settings" survives the bar it used to live in. Elsewhere the title alone is the
     /// category name and an eyebrow would just label the label.
-    let eyebrow: String?
+    var eyebrow: String? = nil
     let title: String
     let icon: String
     let tint: Color
     /// Set on iPhone, where this row is the top of the screen. See
     /// `iOSHidesCompactNavigationBar()`.
-    let onBack: (() -> Void)?
-    @ViewBuilder let trailingContent: TrailingContent
-
-    init(
-        eyebrow: String? = nil,
-        title: String,
-        icon: String,
-        tint: Color,
-        onBack: (() -> Void)? = nil,
-        @ViewBuilder trailingContent: () -> TrailingContent = { EmptyView() }
-    ) {
-        self.eyebrow = eyebrow
-        self.title = title
-        self.icon = icon
-        self.tint = tint
-        self.onBack = onBack
-        self.trailingContent = trailingContent()
-    }
+    var onBack: (() -> Void)? = nil
 
     var body: some View {
         iOSSettingsCard {
-            // Single-line row now that the description is gone, so the glyph, title,
-            // and badge center against each other instead of hanging from the top.
             HStack(alignment: .center, spacing: 14) {
                 if let onBack {
                     iOSHeaderBackButton(action: onBack)
@@ -634,7 +647,6 @@ struct iOSSettingsPageHeader<TrailingContent: View>: View {
                 }
 
                 Spacer(minLength: 0)
-                trailingContent
             }
         }
     }

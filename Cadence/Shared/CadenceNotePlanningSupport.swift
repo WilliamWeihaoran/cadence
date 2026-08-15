@@ -16,12 +16,69 @@ enum CadenceCoreNoteTab: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The label the mobile notes header uses now that the tab strip shares one row with the
+    /// page title. See `CadenceMobileNotesTab.shortLabel` for why these are shorter than
+    /// `compactTitle`.
+    var shortLabel: String {
+        CadenceMobileNotesTab(coreTab: self).shortLabel
+    }
 
     var noteKind: NoteKind {
         switch self {
         case .today: return .daily
         case .week: return .weekly
         case .notepad: return .permanent
+        }
+    }
+}
+
+/// The four tabs the mobile Notes screen offers, in order.
+///
+/// This exists as a shared type — rather than the private enum the compact notes view used to
+/// carry — because the labels have a width budget that is worth asserting on: the tab strip now
+/// shares one row with the back control and the word "Notes", instead of sitting on a row of its
+/// own under a title that just repeated the selected tab.
+///
+/// `shortLabel` is deliberately *not* the note kind's name. "Event Notes" and "Notepad" are the
+/// two that do not fit beside the title on a 402pt phone, so they read "Events" and "Pad" here.
+/// **Only the label changes.** `NoteKind.meeting`'s raw value is persisted in `Note.kindRaw` and
+/// is untouched by this type.
+enum CadenceMobileNotesTab: String, CaseIterable, Identifiable {
+    case today
+    case week
+    case events
+    case notepad
+
+    var id: Self { self }
+
+    /// Nothing here may exceed this, or the strip stops fitting beside the title on the narrowest
+    /// supported phone. Asserted in `CadenceTests`.
+    static let shortLabelCharacterBudget = 6
+
+    var shortLabel: String {
+        switch self {
+        case .today: return "Today"
+        case .week: return "Week"
+        case .events: return "Events"
+        case .notepad: return "Pad"
+        }
+    }
+
+    /// `nil` for the one tab that is a list of notes rather than a single standing note.
+    var coreTab: CadenceCoreNoteTab? {
+        switch self {
+        case .today: return .today
+        case .week: return .week
+        case .events: return nil
+        case .notepad: return .notepad
+        }
+    }
+
+    init(coreTab: CadenceCoreNoteTab) {
+        switch coreTab {
+        case .today: self = .today
+        case .week: self = .week
+        case .notepad: self = .notepad
         }
     }
 }

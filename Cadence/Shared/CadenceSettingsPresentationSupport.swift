@@ -98,3 +98,41 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
         }
     }
 }
+
+/// One quiet eyebrow and the categories filed under it.
+struct CadenceSettingsCategoryGroup: Identifiable, Hashable {
+    let title: String
+    let kinds: [CadenceSettingsCategoryKind]
+
+    var id: String { title }
+}
+
+/// The mobile settings surface's shape: which twelve categories it offers, and how they cluster.
+///
+/// Both mobile presentations read from here — the iPad rail and the iPhone category list — so the
+/// two cannot drift into different groupings of the same destinations. It lives in `Shared` rather
+/// than in `Cadence/iOS/` because everything under that tree is inside `#if os(iOS)` and therefore
+/// invisible to the macOS-built test target; the "every category is filed exactly once" invariant
+/// is worth a test.
+enum CadenceMobileSettingsLayout {
+    /// Every category mobile offers, in list order.
+    static let categories: [CadenceSettingsCategoryKind] = groups.flatMap(\.kinds)
+
+    /// Three groups, not twelve loose rows: how the app behaves, what you organise with, and what
+    /// it talks to. macOS's own settings shell keeps its flat category list — this is the mobile
+    /// shape, where the list *is* the top level rather than a rail beside the content.
+    static let groups: [CadenceSettingsCategoryGroup] = [
+        CadenceSettingsCategoryGroup(
+            title: "App",
+            kinds: [.navigation, .notifications, .ai]
+        ),
+        CadenceSettingsCategoryGroup(
+            title: "Content",
+            kinds: [.contexts, .lists, .tags, .templates]
+        ),
+        CadenceSettingsCategoryGroup(
+            title: "System",
+            kinds: [.calendar, .sync, .dataSafety, .coverage, .about]
+        )
+    ]
+}

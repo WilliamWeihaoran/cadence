@@ -35,7 +35,10 @@ struct iOSTaskPropertiesSection: View {
         iOSEditorFieldRow(label: "Priority", systemImage: "flag.fill", color: Theme.dim) {
             iOSChoiceValueButton(
                 title: task.priority.label,
-                color: task.priority == .none ? Theme.dim : Theme.text
+                color: task.priority == .none ? Theme.dim : Theme.text,
+                // The row is 44pt, but the row is not what you tap — this button is. Without the
+                // floor the target is the height of one line of 13pt text, about 18pt.
+                minHeight: 44
             ) {
                 showPriorityPicker = true
             }
@@ -60,7 +63,8 @@ struct iOSTaskPropertiesSection: View {
         iOSEditorFieldRow(label: "Milestone", systemImage: "target", color: Theme.dim) {
             iOSChoiceValueButton(
                 title: selectedGoal.map { $0.title.isEmpty ? "Untitled Milestone" : $0.title } ?? "None",
-                color: selectedGoal == nil ? Theme.dim : Theme.text
+                color: selectedGoal == nil ? Theme.dim : Theme.text,
+                minHeight: 44
             ) {
                 showMilestonePicker = true
             }
@@ -212,7 +216,8 @@ struct iOSTaskScheduleSection: View {
         iOSEditorFieldRow(label: "Time", systemImage: "clock.fill", color: Theme.dim) {
             iOSChoiceValueButton(
                 title: scheduledTimeLabel,
-                color: hasScheduledStartMin ? Theme.text : Theme.dim
+                color: hasScheduledStartMin ? Theme.text : Theme.dim,
+                minHeight: 44
             ) {
                 showTimePicker = true
             }
@@ -238,7 +243,8 @@ struct iOSTaskScheduleSection: View {
         iOSEditorFieldRow(label: "Repeat", systemImage: task.recurrenceRule.systemImage, color: Theme.dim) {
             iOSChoiceValueButton(
                 title: task.recurrenceRule.label,
-                color: task.recurrenceRule == .none ? Theme.dim : Theme.text
+                color: task.recurrenceRule == .none ? Theme.dim : Theme.text,
+                minHeight: 44
             ) {
                 showRepeatPicker = true
             }

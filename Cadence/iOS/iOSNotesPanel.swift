@@ -4,14 +4,14 @@ import SwiftData
 import SwiftUI
 
 /// Fixed height for the notes pane's header when it has to line up with the panes beside it on
-/// iPad — the panel title block plus the tab row under it. Replaces a bare `124` that was sized
-/// around a subtitle line the header no longer carries.
-/// Tall enough for the header block plus a 44pt tab row.
+/// iPad.
 ///
-/// This was 112, which is under the content's own minimum (~120: a 66pt `iOSPanelHeader` at
-/// regular width, a `minHeight: 44` tab row, and 10pt of bottom padding). `.frame(height:)` does
-/// not clip, so the tab row was drawn across the divider below it.
-let iOSNotesPanelHeaderHeight: CGFloat = 124
+/// Two rows now, not three: the title row carries the tab strip (`iOSNotesHeader`, ~58pt — 44pt of
+/// tab plus its padding), and under it the editor's mode picker and template control (~54pt — a
+/// 44pt `iOSSegmentedPillGroup` plus 10pt). `.frame(height:)` does not clip, so this must stay at
+/// or above the content's own minimum or the second row draws across the divider below it; 120
+/// leaves a few points of headroom over the measured ~112.
+let iOSNotesPanelHeaderHeight: CGFloat = 120
 
 struct iOSNotesPanel: View {
     @Environment(\.modelContext) private var modelContext
@@ -98,41 +98,36 @@ struct iOSNotesPanel: View {
 
     /// One header, both hosts.
     ///
-    /// It used to be two near-copies: a bespoke three-line block behind a `GeometryReader` for the
-    /// iPad pane — eyebrow, tab name, and a subtitle spelling out the tab you had just tapped —
-    /// and `iOSPanelHeader` plus a differently-styled tab row for the compact one. They are the
-    /// same header: a panel title with the tab bar under it, exactly like macOS's `NotePanel`.
-    /// `useStandardHeaderHeight` now only decides whether it is pinned to a fixed height so it
-    /// lines up with the panes beside it on iPad.
+    /// It used to be an eyebrow reading NOTES over a large title showing the *selected tab*, with
+    /// the tab strip immediately below — where the same word was highlighted a second time. The
+    /// title described the page you were already on, which is the one thing a page header may not
+    /// do, and it cost a whole row to do it. Title and tabs now share one row: the title is the
+    /// constant word "Notes" and the strip sits at its trailing edge.
     ///
-    /// The subtitle is gone under the standing rule: a header does not describe the page you are
-    /// already looking at, and "Everything you wrote today" under a tab labelled *Today* is a
-    /// label for nobody.
+    /// `useStandardHeaderHeight` only decides whether the block is pinned to a fixed height so it
+    /// lines up with the panes beside it on iPad.
     private var notesHeader: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
-                iOSPanelHeader(eyebrow: "Notes", title: activeTab.rawValue)
+            iOSNotesHeader(
+                tabs: CadenceCoreNoteTab.allCases.map { tab in
+                    iOSNotesHeaderTab(
+                        id: tab.rawValue,
+                        label: tab.shortLabel,
+                        isSelected: activeTab == tab
+                    ) { activeTabRaw = tab.rawValue }
+                }
+            )
+
+            HStack(spacing: 8) {
+                iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
+
+                Spacer(minLength: 8)
 
                 if let note = selectedNote {
                     iOSNoteTemplateMenu(kind: activeTab.noteKind, compact: true) { template in
                         apply(template, to: note)
                     }
-                    .padding(.top, 10)
-                    .padding(.trailing, 16)
                 }
-            }
-
-            HStack(spacing: iOSNotesTabMetrics.spacing) {
-                ForEach(CadenceCoreNoteTab.allCases) { tab in
-                    iOSQuietTabButton(
-                        title: tab.compactTitle,
-                        isSelected: activeTab == tab
-                    ) { activeTabRaw = tab.rawValue }
-                }
-
-                Spacer(minLength: 8)
-
-                iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 10)
@@ -190,7 +185,7 @@ struct iOSCompactNotesView: View {
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @State private var activePage: iOSCompactNotesPage = .today
+    @State private var activePage: CadenceMobileNotesTab = .today
     @State private var todayNote: Note?
     @State private var weekNote: Note?
     @State private var permanentNote: Note?
@@ -219,13 +214,16 @@ struct iOSCompactNotesView: View {
             // On iPhone this is a pushed screen with its navigation bar hidden, so the header
             // carries the back control. On iPad the same view is the root of its own stack (the
             // bar is already hidden there) and there is nothing to go back to.
-            iOSPanelHeader(
-                eyebrow: "Notes",
-                title: activePage.compactTitle,
+            iOSNotesHeader(
+                tabs: CadenceMobileNotesTab.allCases.map { page in
+                    iOSNotesHeaderTab(
+                        id: page.rawValue,
+                        label: page.shortLabel,
+                        isSelected: activePage == page
+                    ) { activePage = page }
+                },
                 onBack: isCompactWidth ? { dismiss() } : nil
             )
-
-            pageTabRow
 
             if let coreTab = activePage.coreTab {
                 HStack(spacing: 8) {
@@ -245,7 +243,7 @@ struct iOSCompactNotesView: View {
 
             Divider().background(Theme.borderSubtle)
 
-            if activePage == .meetings {
+            if activePage == .events {
                 iOSMeetingNotesList(notes: meetingNotes) { note in
                     selectedMeetingNote = note
                 }
@@ -303,26 +301,6 @@ struct iOSCompactNotesView: View {
                 .tint(Theme.blue)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-    }
-
-    /// The same tab bar the iPad pane uses. It was a bespoke blue-underline bar — the exact idiom
-    /// macOS's `NotesView` deleted, on the grounds that blue is reserved for things that are
-    /// actually selected or actionable and a tab bar is neither special nor worth a second idiom.
-    /// Four tabs do not fit across a phone, so the row scrolls rather than truncating its labels.
-    private var pageTabRow: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: iOSNotesTabMetrics.spacing) {
-                ForEach(iOSCompactNotesPage.allCases) { page in
-                    iOSQuietTabButton(
-                        title: page.compactTitle,
-                        isSelected: activePage == page
-                    ) { activePage = page }
-                }
-            }
-            .padding(.horizontal, 12)
-        }
-        .scrollIndicators(.hidden)
-        .padding(.bottom, 8)
     }
 
     private var selectedCoreNote: Note? {
@@ -383,37 +361,6 @@ struct iOSCompactNotesView: View {
             selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
         case .task:
             selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
-        }
-    }
-}
-
-private enum iOSCompactNotesPage: String, CaseIterable, Identifiable {
-    case today
-    case week
-    case meetings
-    case notepad
-
-    var id: Self { self }
-
-    var compactTitle: String {
-        switch self {
-        case .today: return "Today"
-        case .week: return "Week"
-        case .meetings: return "Event Notes"
-        case .notepad: return "Notepad"
-        }
-    }
-
-    var coreTab: CadenceCoreNoteTab? {
-        switch self {
-        case .today:
-            return .today
-        case .week:
-            return .week
-        case .meetings:
-            return nil
-        case .notepad:
-            return .notepad
         }
     }
 }
@@ -562,6 +509,68 @@ struct iOSNoteTemplateMenu: View {
         .frame(minWidth: 44, minHeight: 44)
         .contentShape(Rectangle())
         .accessibilityLabel("Apply template")
+    }
+}
+
+/// One tab in `iOSNotesHeader`. The two hosts offer different sets — the iPad pane has the three
+/// standing notes, the phone adds Event Notes — so the header takes the strip as data rather than
+/// forking per host.
+struct iOSNotesHeaderTab: Identifiable {
+    let id: String
+    let label: String
+    let isSelected: Bool
+    let select: () -> Void
+}
+
+/// The Notes header: back control, the constant word "Notes", and the tab strip, all on one row.
+///
+/// The title is deliberately *not* the selected tab. It used to be, under an eyebrow that also
+/// read NOTES, directly above a strip where the same tab was highlighted again — three ways of
+/// saying one thing, over two rows. The strip stays a plain row rather than a scroller: the labels
+/// (`CadenceMobileNotesTab.shortLabel`) are budgeted to fit beside the title on the narrowest
+/// phone, and a strip that has to be scrolled sideways to find a tab is the problem this replaced.
+private struct iOSNotesHeader: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    let tabs: [iOSNotesHeaderTab]
+    /// Set on a pushed compact screen whose navigation bar is hidden. See
+    /// `iOSHidesCompactNavigationBar()`.
+    var onBack: (() -> Void)? = nil
+
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let onBack {
+                iOSHeaderBackButton(action: onBack)
+                    .padding(.leading, -8)
+                    .padding(.trailing, -4)
+            }
+
+            // A constant word, so it does not need the 21pt the panel titles that carry content
+            // use — and the narrowest host for this row is the 280pt iPad notes pane.
+            Text("Notes")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .fixedSize()
+
+            Spacer(minLength: 8)
+
+            HStack(spacing: iOSNotesTabMetrics.spacing) {
+                ForEach(tabs) { tab in
+                    iOSQuietTabButton(
+                        title: tab.label,
+                        isSelected: tab.isSelected,
+                        action: tab.select
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, isRegularWidth ? 14 : 12)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
     }
 }
 

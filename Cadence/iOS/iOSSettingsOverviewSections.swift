@@ -208,125 +208,189 @@ struct iOSLocalDataSettingsSection: View {
     }
 }
 
+/// The five app defaults, as value rows.
+///
+/// They were five stacked segmented controls, each under a coloured icon tile and a two-line
+/// paragraph: about 150pt per setting, so a phone showed two of the twelve settings in the app.
+/// This is the vocabulary the task inspector already uses — quiet label on the left, the current
+/// value with a chevron on the right, a checkmarked popover behind it — so the two surfaces agree
+/// and all five fit on one screen.
+///
+/// The paragraphs did not survive the move. Three of them ("Choose the first calendar range shown
+/// on mobile" under a row labelled *Calendar view*) said nothing the label did not; the two that
+/// carried real information now sit on the options they describe, inside the picker, where you
+/// read them at the moment you are choosing.
 struct iOSNavigationSettingsSection: View {
     @Binding var todayLayoutMode: iPadTodayLayoutMode
     @Binding var calendarViewMode: CadenceCalendarViewMode
     @Binding var calendarPresentation: CadenceCalendarPresentation
     @Binding var calendarZoomLevel: Int
     @Binding var notesEditorMode: iOSMarkdownEditorMode
+    @State private var openPicker: DefaultsPicker?
+
+    private enum DefaultsPicker: String, Identifiable {
+        case todayLayout
+        case calendarView
+        case calendarStyle
+        case timelineDensity
+        case notesEditor
+
+        var id: String { rawValue }
+    }
+
+    private static let densityLabels: [(value: Int, title: String)] = [
+        (1, "Compact"),
+        (2, "Comfort"),
+        (3, "Spacious")
+    ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            CadenceSettingsSectionLabel(text: "Defaults")
-            iOSSettingsCard {
-                VStack(spacing: 0) {
-                    iOSSettingsControlRow(
-                        title: "iPad Today",
-                        subtitle: "Focus keeps two panes. Mac shows notes, tasks, and timeline on wide iPads.",
-                        icon: todayLayoutMode.systemImage,
-                        color: Theme.green
-                    ) {
-                        iOSSegmentedChoice(
-                            options: iPadTodayLayoutMode.allCases.map { ($0, $0.title) },
-                            selection: $todayLayoutMode
-                        )
-                    }
-
-                    iOSRowDivider()
-
-                    iOSSettingsControlRow(
-                        title: "Calendar View",
-                        subtitle: "Choose the first calendar range shown on mobile.",
-                        icon: "calendar",
-                        color: Theme.purple
-                    ) {
-                        iOSSegmentedChoice(
-                            options: CadenceCalendarViewMode.pickerCases.map { ($0, $0.rawValue) },
-                            selection: $calendarViewMode
-                        )
-                    }
-
-                    iOSRowDivider()
-
-                    iOSSettingsControlRow(
-                        title: "Calendar Style",
-                        subtitle: "Timeline mirrors the Mac schedule; Board gives the iPad planning canvas.",
-                        icon: calendarPresentation == .timeline ? "timeline.selection" : "square.grid.2x2",
-                        color: Theme.blue
-                    ) {
-                        iOSSegmentedChoice(
-                            options: CadenceCalendarPresentation.allCases.map { ($0, $0.rawValue) },
-                            selection: $calendarPresentation
-                        )
-                    }
-
-                    iOSRowDivider()
-
-                    iOSSettingsControlRow(
-                        title: "Timeline Density",
-                        subtitle: "Adjust the vertical spacing of timed blocks.",
-                        icon: "arrow.up.and.down",
-                        color: Theme.amber
-                    ) {
-                        iOSSegmentedChoice(
-                            options: [(1, "Compact"), (2, "Comfort"), (3, "Spacious")],
-                            selection: $calendarZoomLevel
-                        )
-                    }
-
-                    iOSRowDivider()
-
-                    iOSSettingsControlRow(
-                        title: "Notes Editor",
-                        subtitle: "Choose whether notes open with live rendering, raw markdown, or rendered preview.",
-                        icon: notesEditorMode.systemImage,
-                        color: Theme.purple
-                    ) {
-                        iOSSegmentedChoice(
-                            options: iOSMarkdownEditorMode.allCases.map { ($0, $0.rawValue) },
-                            selection: $notesEditorMode
-                        )
-                    }
-                }
-            }
+        iOSEditorSection(title: "Defaults") {
+            todayLayoutRow
+            iOSEditorDivider()
+            calendarViewRow
+            iOSEditorDivider()
+            calendarStyleRow
+            iOSEditorDivider()
+            timelineDensityRow
+            iOSEditorDivider()
+            notesEditorRow
         }
     }
 
-}
-
-private struct iOSSettingsControlRow<Control: View>: View {
-    let title: String
-    let subtitle: String
-    let icon: String
-    let color: Color
-    @ViewBuilder let control: () -> Control
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
-                iOSIconTile(
-                    systemImage: icon,
-                    color: color,
-                    size: iOSSettingsMetrics.glyphSlot,
-                    iconSize: 14
-                )
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text(subtitle)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.subdued)
-                        .fixedSize(horizontal: false, vertical: true)
+    private var todayLayoutRow: some View {
+        iOSEditorFieldRow(label: "iPad Today", systemImage: "sidebar.squares.left") {
+            valueButton(todayLayoutMode.title, picker: .todayLayout)
+                .popover(isPresented: isPresented(.todayLayout)) {
+                    iOSChoicePopoverList(
+                        // `iPadTodayLayoutMode` already carries the one-line explanation of each
+                        // layout; it just had nowhere to be shown.
+                        rows: iPadTodayLayoutMode.allCases.map { mode in
+                            iOSChoiceRow(
+                                value: mode,
+                                title: mode.title,
+                                subtitle: mode.subtitle,
+                                systemImage: mode.systemImage,
+                                color: Theme.green
+                            )
+                        },
+                        selection: $todayLayoutMode,
+                        isPresented: isPresented(.todayLayout),
+                        width: 280
+                    )
                 }
-
-                Spacer(minLength: 0)
-            }
-
-            control()
         }
-        .padding(.vertical, 12)
+    }
+
+    private var calendarViewRow: some View {
+        iOSEditorFieldRow(label: "Calendar view", systemImage: "calendar") {
+            valueButton(calendarViewMode.rawValue, picker: .calendarView)
+                .popover(isPresented: isPresented(.calendarView)) {
+                    iOSChoicePopoverList(
+                        rows: CadenceCalendarViewMode.pickerCases.map { mode in
+                            iOSChoiceRow(
+                                value: mode,
+                                title: mode.rawValue,
+                                systemImage: "calendar",
+                                color: Theme.purple
+                            )
+                        },
+                        selection: $calendarViewMode,
+                        isPresented: isPresented(.calendarView)
+                    )
+                }
+        }
+    }
+
+    private var calendarStyleRow: some View {
+        iOSEditorFieldRow(label: "Calendar style", systemImage: "square.grid.2x2") {
+            valueButton(calendarPresentation.rawValue, picker: .calendarStyle)
+                .popover(isPresented: isPresented(.calendarStyle)) {
+                    iOSChoicePopoverList(
+                        rows: [
+                            iOSChoiceRow(
+                                value: CadenceCalendarPresentation.timeline,
+                                title: CadenceCalendarPresentation.timeline.rawValue,
+                                subtitle: "Hour-by-hour, the way the Mac schedule reads.",
+                                systemImage: "timeline.selection",
+                                color: Theme.blue
+                            ),
+                            iOSChoiceRow(
+                                value: CadenceCalendarPresentation.board,
+                                title: CadenceCalendarPresentation.board.rawValue,
+                                subtitle: "Columns per day, with overdue and unscheduled rails.",
+                                systemImage: "square.grid.2x2",
+                                color: Theme.blue
+                            )
+                        ],
+                        selection: $calendarPresentation,
+                        isPresented: isPresented(.calendarStyle),
+                        width: 280
+                    )
+                }
+        }
+    }
+
+    private var timelineDensityRow: some View {
+        iOSEditorFieldRow(label: "Timeline density", systemImage: "arrow.up.and.down") {
+            valueButton(densityTitle, picker: .timelineDensity)
+                .popover(isPresented: isPresented(.timelineDensity)) {
+                    iOSChoicePopoverList(
+                        rows: Self.densityLabels.map { option in
+                            iOSChoiceRow(
+                                value: option.value,
+                                title: option.title,
+                                systemImage: "arrow.up.and.down",
+                                color: Theme.amber
+                            )
+                        },
+                        selection: $calendarZoomLevel,
+                        isPresented: isPresented(.timelineDensity)
+                    )
+                }
+        }
+    }
+
+    private var notesEditorRow: some View {
+        iOSEditorFieldRow(label: "Notes editor", systemImage: "square.and.pencil") {
+            valueButton(notesEditorMode.rawValue, picker: .notesEditor)
+                .popover(isPresented: isPresented(.notesEditor)) {
+                    iOSChoicePopoverList(
+                        rows: iOSMarkdownEditorMode.allCases.map { mode in
+                            iOSChoiceRow(
+                                value: mode,
+                                title: mode.rawValue,
+                                systemImage: mode.systemImage,
+                                color: Theme.purple
+                            )
+                        },
+                        selection: $notesEditorMode,
+                        isPresented: isPresented(.notesEditor)
+                    )
+                }
+        }
+    }
+
+    private var densityTitle: String {
+        Self.densityLabels.first { $0.value == calendarZoomLevel }?.title ?? Self.densityLabels[0].title
+    }
+
+    /// The value half of a row. `minHeight` hands the row's own 44pt to the button, because here
+    /// the button is the only thing in the row there is to tap.
+    private func valueButton(_ title: String, picker: DefaultsPicker) -> some View {
+        iOSChoiceValueButton(
+            title: title,
+            minHeight: iOSSettingsMetrics.minimumTapTarget
+        ) {
+            openPicker = picker
+        }
+    }
+
+    private func isPresented(_ picker: DefaultsPicker) -> Binding<Bool> {
+        Binding(
+            get: { openPicker == picker },
+            set: { openPicker = $0 ? picker : nil }
+        )
     }
 }
 

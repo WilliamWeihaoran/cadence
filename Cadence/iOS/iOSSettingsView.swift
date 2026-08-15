@@ -28,7 +28,16 @@ struct iOSSettingsView: View {
     @State private var isCheckingAccount = false
     @State private var lastChecked: Date?
     @State private var contextEditorMode: iOSContextEditorMode?
+    /// What the iPad rail is pointing at. On iPad a category is always selected — the rail is
+    /// beside the content, so there is no "no category" state to be in.
     @State private var selectedCategory: iOSSettingsCategory = .navigation
+    /// The category the phone has drilled into, or `nil` for the category list.
+    ///
+    /// Deliberately local state rather than a `NavigationLink`: this same view is hosted with a
+    /// navigation stack around it on iPhone and without one in the iPad shell, and a link whose
+    /// destination is only sometimes reachable is the kind of control that looks tappable and
+    /// does nothing.
+    @State private var drilledCategory: iOSSettingsCategory?
     @State private var aiAPIKeyDraft = ""
     #if DEBUG
     @State private var sampleDataStatus: String?
@@ -62,26 +71,12 @@ struct iOSSettingsView: View {
         iOSMarkdownEditorPreferences.mode(from: notesEditorModeRaw)
     }
 
-    private var isCompactWidth: Bool {
-        horizontalSizeClass != .regular
-    }
-
     var body: some View {
         Group {
             if horizontalSizeClass == .regular {
                 settingsRegularLayout
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        settingsHeader
-                        iOSSettingsCompactCategoryPicker(selectedCategory: $selectedCategory)
-                        selectedSectionContent
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-                    .padding(.bottom, 24)
-                }
-                .scrollIndicators(.hidden)
+                settingsCompactLayout
             }
         }
         .iOSHidesCompactNavigationBar()
@@ -94,6 +89,44 @@ struct iOSSettingsView: View {
                 refreshAccountStatus()
             }
         }
+    }
+
+    /// iPhone: a list of categories, and one category at a time when you pick one.
+    @ViewBuilder
+    private var settingsCompactLayout: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                if let category = drilledCategory {
+                    iOSSettingsPageHeader(
+                        title: category.title,
+                        icon: category.icon,
+                        tint: category.tint,
+                        onBack: { drilledCategory = nil }
+                    )
+
+                    sectionContent(for: category)
+                } else {
+                    iOSSettingsPageHeader(
+                        title: "Settings",
+                        icon: CadenceFeatureDestination.settings.systemImage,
+                        tint: Theme.blue,
+                        onBack: { dismiss() }
+                    )
+
+                    iOSSettingsCategoryList { category in
+                        drilledCategory = category
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+        // Swapping the content inside one `ScrollView` keeps its offset, so drilling in from a
+        // scrolled-down category list landed you mid-page on the category — with the header, and
+        // therefore the way back, above the top of the screen.
+        .id(drilledCategory)
     }
 
     private var settingsRegularLayout: some View {
@@ -112,8 +145,15 @@ struct iOSSettingsView: View {
     private var settingsDetailScroll: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                settingsHeader
-                selectedSectionContent
+                // The rail beside this already says "Settings" and names the selected category,
+                // so the header here is the category's own title and glyph and nothing more.
+                iOSSettingsPageHeader(
+                    title: selectedCategory.title,
+                    icon: selectedCategory.icon,
+                    tint: selectedCategory.tint
+                )
+
+                sectionContent(for: selectedCategory)
             }
             .frame(maxWidth: 920, alignment: .topLeading)
             .padding(.horizontal, 28)
@@ -124,55 +164,9 @@ struct iOSSettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// On iPhone this card is the top of the screen: it takes the back control and the word
-    /// "Settings" the hidden navigation bar used to carry, over the category name it already had.
-    /// On iPad the rail beside it says both, so neither is repeated here.
-    private var settingsHeader: some View {
-        iOSSettingsPageHeader(
-            eyebrow: isCompactWidth ? "Settings" : nil,
-            title: selectedCategory.title,
-            icon: selectedCategory.icon,
-            tint: selectedCategory.tint,
-            onBack: isCompactWidth ? { dismiss() } : nil
-        ) {
-            switch selectedCategory {
-            case .navigation:
-                CadenceSettingsStatusBadge(title: todayLayoutMode.title, isActive: true)
-            case .sync:
-                CadenceSettingsStatusBadge(
-                    title: cloudStatusPresentation.title,
-                    isActive: accountStatus == .available && accountError == nil
-                )
-            case .calendar:
-                CadenceSettingsStatusBadge(title: calendarManager.isAuthorized ? "Connected" : "Not connected", isActive: calendarManager.isAuthorized)
-            case .notifications:
-                CadenceSettingsStatusBadge(
-                    title: notificationManager.isAuthorized && notificationsEnabled ? "Enabled" : "Off",
-                    isActive: notificationManager.isAuthorized && notificationsEnabled
-                )
-            case .organization:
-                CadenceSettingsStatusBadge(title: "\(activeContextCount) contexts", isActive: activeContextCount > 0)
-            case .tags:
-                CadenceSettingsStatusBadge(title: "\(activeTagCount) active", isActive: activeTagCount > 0)
-            case .templates:
-                CadenceSettingsStatusBadge(title: "\(customTemplateCount) customized", isActive: customTemplateCount > 0)
-            case .lists:
-                CadenceSettingsStatusBadge(title: "\(inactiveListCount) inactive", isActive: inactiveListCount > 0)
-            case .ai:
-                CadenceSettingsStatusBadge(title: aiSettingsManager.hasAPIKey ? "Key saved" : "No key", isActive: aiSettingsManager.hasAPIKey)
-            case .data:
-                CadenceSettingsStatusBadge(title: "\(activeTaskCount) active", isActive: activeTaskCount > 0)
-            case .coverage:
-                CadenceSettingsStatusBadge(title: "Companion", isActive: true)
-            case .about:
-                CadenceSettingsStatusBadge(title: "Build \(buildNumber)", isActive: true)
-            }
-        }
-    }
-
     @ViewBuilder
-    private var selectedSectionContent: some View {
-        switch selectedCategory {
+    private func sectionContent(for category: iOSSettingsCategory) -> some View {
+        switch category {
         case .navigation:
             iOSNavigationSettingsSection(
                 todayLayoutMode: Binding(
@@ -367,33 +361,12 @@ struct iOSSettingsView: View {
         activeContexts.count
     }
 
-    private var activeTagCount: Int {
-        tags.filter { !$0.isArchived }.count
-    }
-
-    private var customTemplateCount: Int {
-        NoteTemplateLibrary.overrides(from: noteTemplateOverridesRaw).count
-    }
-
-    private var inactiveListCount: Int {
-        areas.filter { $0.isDone || $0.isArchived }.count +
-            projects.filter { $0.isDone || $0.isArchived }.count
-    }
-
     private var activeAreaCount: Int {
         areas.filter(\.isActive).count
     }
 
     private var activeProjectCount: Int {
         projects.filter(\.isActive).count
-    }
-
-    private var cloudStatusPresentation: iOSCloudStatusPresentation {
-        iOSCloudStatusPresentation(
-            accountStatus: accountStatus,
-            accountError: accountError,
-            isCheckingAccount: isCheckingAccount
-        )
     }
 
     private func refreshAccountStatus() {
