@@ -85,15 +85,6 @@ struct iOSLinkedNoteEditorSheet: View {
                         }
                     }
                 }
-                .toolbar {
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Spacer()
-                        Button("Done") {
-                            persistNote()
-                            isEditorFocused = false
-                        }
-                    }
-                }
                 .onChange(of: note.content) { _, _ in
                     persistNote()
                 }

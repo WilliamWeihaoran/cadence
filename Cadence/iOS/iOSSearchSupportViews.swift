@@ -296,14 +296,6 @@ struct iOSNoteDetailSheet: View {
                 note.updatedAt = Date()
                 try? modelContext.save()
             }
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        isEditorFocused = false
-                    }
-                }
-            }
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,

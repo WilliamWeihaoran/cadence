@@ -93,6 +93,11 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         textView.addGestureRecognizer(renderedBlockTap)
         textView.addGestureRecognizer(referenceTap)
         textView.backgroundColor = .clear
+        // Resigning is enough on its own: `textViewDidEndEditing` publishes the current text and
+        // clears `isFocused`, which is exactly what the old (never-rendered) toolbar buttons did.
+        textView.inputAccessoryView = iOSMarkdownKeyboardAccessoryView { [weak textView] in
+            textView?.resignFirstResponder()
+        }
         textView.keyboardDismissMode = .interactive
         textView.alwaysBounceVertical = true
         textView.isScrollEnabled = true

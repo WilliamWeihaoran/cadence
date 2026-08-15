@@ -194,12 +194,6 @@ struct iOSTaskDetailSheet: View {
                 Image(systemName: "trash")
             }
         }
-        ToolbarItemGroup(placement: .keyboard) {
-            Spacer()
-            Button("Done") {
-                isNotesFocused = false
-            }
-        }
     }
 
     private var overviewSection: some View {

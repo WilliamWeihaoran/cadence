@@ -58,15 +58,6 @@ struct iOSEventNoteEditorSheet: View {
             .onChange(of: note.content) { _, _ in
                 persistNote()
             }
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        persistNote()
-                        isEditorFocused = false
-                    }
-                }
-            }
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,

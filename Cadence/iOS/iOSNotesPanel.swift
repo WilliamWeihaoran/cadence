@@ -26,7 +26,11 @@ struct iOSNotesPanel: View {
     @AppStorage("ios.notes.activeCoreTab") private var activeTabRaw = CadenceCoreNoteTab.today.rawValue
     @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
     @AppStorage(iOSMarkdownEditorPreferences.didMigrateLiveDefaultKey) private var didMigrateLiveEditorDefault = false
-    @FocusState private var isEditorFocused: Bool
+    // Deliberately `@State`, not `@FocusState`. The editor's first responder is a `UITextView`
+    // inside a `UIViewRepresentable`; nothing here is ever attached with `.focused(...)`, so a
+    // `@FocusState` had no view to move focus to and could not report focus back either. The
+    // editor's own `isFocused` binding is what drives — and observes — the text view.
+    @State private var isEditorFocused = false
     var useStandardHeaderHeight = false
 
     private var activeTab: CadenceCoreNoteTab {
@@ -58,10 +62,7 @@ struct iOSNotesPanel: View {
                         get: { note.content },
                         set: { update(note, content: $0) }
                     ),
-                    isFocused: Binding(
-                        get: { isEditorFocused },
-                        set: { isEditorFocused = $0 }
-                    ),
+                    isFocused: $isEditorFocused,
                     mode: editorModeBinding,
                     placeholder: "Start writing...",
                     referenceNotes: allNotes,
@@ -93,14 +94,6 @@ struct iOSNotesPanel: View {
             referenceNotes: allNotes,
             referenceTasks: allTasks
         )
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    isEditorFocused = false
-                }
-            }
-        }
     }
 
     /// One header, both hosts.
@@ -206,7 +199,8 @@ struct iOSCompactNotesView: View {
     @State private var selectedReferenceTask: AppTask?
     @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
     @AppStorage(iOSMarkdownEditorPreferences.didMigrateLiveDefaultKey) private var didMigrateLiveEditorDefault = false
-    @FocusState private var isEditorFocused: Bool
+    /// `@State`, not `@FocusState` — see `iOSNotesPanel`.
+    @State private var isEditorFocused = false
 
     private var editorMode: iOSMarkdownEditorMode {
         get { iOSMarkdownEditorMode(rawValue: editorModeRaw) ?? iOSMarkdownEditorPreferences.defaultMode }
@@ -286,14 +280,6 @@ struct iOSCompactNotesView: View {
             referenceNotes: allNotes,
             referenceTasks: allTasks
         )
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    isEditorFocused = false
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -304,10 +290,7 @@ struct iOSCompactNotesView: View {
                     get: { note.content },
                     set: { update(note, content: $0) }
                 ),
-                isFocused: Binding(
-                    get: { isEditorFocused },
-                    set: { isEditorFocused = $0 }
-                ),
+                isFocused: $isEditorFocused,
                 mode: editorModeBinding,
                 placeholder: "Start writing...",
                 referenceNotes: allNotes,

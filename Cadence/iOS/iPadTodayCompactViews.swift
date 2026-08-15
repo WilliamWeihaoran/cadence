@@ -136,7 +136,8 @@ private struct iOSCompactTodayNotesCard: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var todayNote: Note?
     @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
-    @FocusState private var isEditorFocused: Bool
+    /// `@State`, not `@FocusState` — see `iOSNotesPanel`.
+    @State private var isEditorFocused = false
 
     private var editorMode: iOSMarkdownEditorMode {
         iOSMarkdownEditorPreferences.mode(from: editorModeRaw)
@@ -158,10 +159,7 @@ private struct iOSCompactTodayNotesCard: View {
                         get: { todayNote.content },
                         set: { update(todayNote, content: $0) }
                     ),
-                    isFocused: Binding(
-                        get: { isEditorFocused },
-                        set: { isEditorFocused = $0 }
-                    ),
+                    isFocused: $isEditorFocused,
                     mode: editorModeBinding,
                     placeholder: "Start today's note...",
                     referenceNotes: allNotes,
@@ -180,14 +178,6 @@ private struct iOSCompactTodayNotesCard: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             loadTodayNote()
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    isEditorFocused = false
-                }
-            }
         }
     }
 
