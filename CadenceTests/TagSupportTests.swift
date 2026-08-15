@@ -105,6 +105,35 @@ struct TagSupportTests {
         #expect(MarkdownMetadataParser.metadata(in: content).frontmatter.properties["status"] == "active")
     }
 
+    @Test func hiddenFrontmatterRangeSwallowsTheBlankLinesBelowTheBlock() throws {
+        // What both editors actually suppress. macOS spelled this out inline and iOS suppressed
+        // nothing; hiding the block to two different extents would put the caret in two different
+        // places for the same note, because the caret's first legal position is this range's end.
+        let content = "---\ntags: [\"a\"]\n---\n\n\n# Title\n\nBody"
+        let range = try #require(MarkdownMetadataParser.hiddenFrontmatterRange(in: content))
+
+        #expect(range.location == 0)
+        #expect((content as NSString).substring(with: range) == "---\ntags: [\"a\"]\n---\n\n\n")
+        // The first visible character is the body's, not a blank row above it.
+        #expect((content as NSString).substring(from: NSMaxRange(range)).hasPrefix("# Title"))
+
+        // No block, nothing hidden — and a divider pair is still not a block.
+        #expect(MarkdownMetadataParser.hiddenFrontmatterRange(in: "# Title\n\nBody") == nil)
+        #expect(MarkdownMetadataParser.hiddenFrontmatterRange(in: "---\nDraft\n---\n\nBody") == nil)
+    }
+
+    @Test func frontmatterLineCountMatchesTheLinesTheBlockOccupies() throws {
+        // The preview parser skips this many lines rather than parsing a stripped string, so that
+        // the `lineIndex` it hands back still addresses the original note.
+        #expect(MarkdownMetadataParser.frontmatterLineCount(in: "---\ntags: [\"a\"]\n---\n\nBody") == 3)
+        // A block that runs to the end of the note carries no trailing newline and still occupies
+        // three lines — the off-by-one a newline count alone would get wrong.
+        #expect(MarkdownMetadataParser.frontmatterLineCount(in: "---\ntags: [\"a\"]\n---") == 3)
+        #expect(MarkdownMetadataParser.frontmatterLineCount(in: "---\ntags:\n  - a\n  - b\n---\n\nBody") == 5)
+        #expect(MarkdownMetadataParser.frontmatterLineCount(in: "Body only") == 0)
+        #expect(MarkdownMetadataParser.frontmatterLineCount(in: "---\nA thought.\n---\n\nAfter") == 0)
+    }
+
     @Test func splittingAndReassemblingANotePreservesItsFrontmatter() throws {
         // Applying a template rewrites the note wholesale. Because the block is invisible in the
         // editor, doing that without splitting it off first would silently drop the note's tags.

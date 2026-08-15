@@ -64,6 +64,39 @@ enum MarkdownMetadataParser {
         parseFrontmatter(in: content).range
     }
 
+    /// The range a *renderer* should suppress: the parsed block plus the blank lines that
+    /// conventionally follow it, so the body starts at the top of the surface instead of under a
+    /// stack of empty rows.
+    ///
+    /// Both editors call this. It used to be spelled out inside macOS's `applyFrontmatter`, and
+    /// iOS — which suppressed nothing — would have had to re-derive the same "swallow the trailing
+    /// newlines" rule to match. A block hidden to two different extents on two platforms puts the
+    /// caret in two different places for the same note, which is exactly the drift this repo keeps
+    /// paying for.
+    nonisolated static func hiddenFrontmatterRange(in content: String) -> NSRange? {
+        guard let parsed = frontmatterRange(in: content), parsed.length > 0 else { return nil }
+        let nsContent = content as NSString
+        var end = min(NSMaxRange(parsed), nsContent.length)
+        while end < nsContent.length, nsContent.character(at: end) == 10 { end += 1 }
+        guard end > 0 else { return nil }
+        return NSRange(location: 0, length: end)
+    }
+
+    /// How many leading *lines* the frontmatter block occupies, for line-indexed consumers.
+    ///
+    /// The preview parser hands `lineIndex` back to its caller so a tapped checklist box can be
+    /// toggled in the original markdown, so it cannot simply be handed a frontmatter-stripped
+    /// string — every index after the block would be wrong. It starts its scan at this index
+    /// instead, and its line numbering stays the note's own.
+    nonisolated static func frontmatterLineCount(in content: String) -> Int {
+        let block = splitFrontmatter(in: content).frontmatter
+        guard !block.isEmpty else { return 0 }
+        let newlines = block.reduce(into: 0) { count, character in
+            if character == "\n" { count += 1 }
+        }
+        return block.hasSuffix("\n") ? newlines : newlines + 1
+    }
+
     /// Splits a note into its frontmatter block (empty string when there is none) and the body
     /// after it.
     ///

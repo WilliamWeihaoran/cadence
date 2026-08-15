@@ -125,19 +125,7 @@ struct iOSSearchView: View {
             }
             .prefix(8)
 
-        return suggested.map {
-            iOSSearchResult(
-                kind: .task,
-                title: $0.title.isEmpty ? "Untitled Task" : $0.title,
-                subtitle: taskSubtitle($0),
-                detail: taskDetail($0),
-                icon: $0.isDone ? "checkmark.circle.fill" : "circle",
-                color: Theme.priorityColor($0.priority),
-                score: 0,
-                dueLabel: taskDueLabel($0),
-                task: $0
-            )
-        }
+        return suggested.map { taskResult($0, score: 0) }
     }
 
     private var listResults: [iOSSearchResult] {
@@ -205,25 +193,23 @@ struct iOSSearchView: View {
         let candidates = goals.filter { $0.status != .done }.map { goal in
             let summary = GoalContributionResolver.summary(for: goal)
             return iOSSearchResult(
-                kind: .progress,
+                destination: .feature(.goals),
                 title: goal.title.isEmpty ? "Untitled Goal" : goal.title,
                 subtitle: goal.parentGoal?.title ?? goal.context?.name ?? goal.kind.label,
                 detail: summary.percentLabel,
                 icon: goal.icon,
                 color: Color(hex: goal.colorHex),
-                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [goal.title, goal.desc, goal.parentGoal?.title ?? "", goal.context?.name ?? ""]) ?? 0,
-                featureDestination: .goals
+                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [goal.title, goal.desc, goal.parentGoal?.title ?? "", goal.context?.name ?? ""]) ?? 0
             )
         } + habits.map { habit in
             iOSSearchResult(
-                kind: .progress,
+                destination: .feature(.habits),
                 title: habit.title.isEmpty ? "Untitled Habit" : habit.title,
                 subtitle: habit.goal?.title ?? habit.context?.name ?? habit.frequencySummary,
                 detail: habit.isDueToday ? "Due today" : habit.frequencySummary,
                 icon: "flame.fill",
                 color: Color(hex: habit.colorHex),
-                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [habit.title, habit.goal?.title ?? "", habit.context?.name ?? "", habit.frequencySummary]) ?? 0,
-                featureDestination: .habits
+                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [habit.title, habit.goal?.title ?? "", habit.context?.name ?? "", habit.frequencySummary]) ?? 0
             )
         }
 
@@ -265,19 +251,22 @@ struct iOSSearchView: View {
             ) else {
                 return nil
             }
-            return iOSSearchResult(
-                kind: .task,
-                title: task.title.isEmpty ? "Untitled Task" : task.title,
-                subtitle: taskSubtitle(task),
-                detail: taskDetail(task),
-                icon: task.isDone ? "checkmark.circle.fill" : "circle",
-                color: Theme.priorityColor(task.priority),
-                score: score,
-                dueLabel: taskDueLabel(task),
-                task: task
-            )
+            return taskResult(task, score: score)
         }
         .sorted { $0.score > $1.score }
+    }
+
+    private func taskResult(_ task: AppTask, score: Int) -> iOSSearchResult {
+        iOSSearchResult(
+            destination: .task(task),
+            title: task.title.isEmpty ? "Untitled Task" : task.title,
+            subtitle: taskSubtitle(task),
+            detail: taskDetail(task),
+            icon: task.isDone ? "checkmark.circle.fill" : "circle",
+            color: Theme.priorityColor(task.priority),
+            score: score,
+            dueLabel: taskDueLabel(task)
+        )
     }
 
     var body: some View {
@@ -489,35 +478,30 @@ struct iOSSearchView: View {
         }
     }
 
-    @ViewBuilder
+    /// One button, one exhaustive switch. This was three near-identical `Button`s selected by an
+    /// ordered chain of `if let`s over five optionals — a shape that could not fail loudly if a
+    /// result ever carried two of them.
     private func searchResultRow(_ result: iOSSearchResult) -> some View {
-        if let route = result.listRoute {
-            Button {
-                pushedListRoute = route
-            } label: {
-                iOSSearchResultRow(result: result)
-            }
-            .buttonStyle(.iosPressable)
-        } else if let destination = result.featureDestination {
-            Button {
-                pushedDestination = destination
-            } label: {
-                iOSSearchResultRow(result: result)
-            }
-            .buttonStyle(.iosPressable)
-        } else {
-            Button {
-                if let task = result.task {
-                    selectedTask = task
-                } else if let note = result.note {
-                    selectedNote = note
-                } else if let event = result.event {
-                    selectedEvent = iOSCalendarEventSelection(event: event)
-                }
-            } label: {
-                iOSSearchResultRow(result: result)
-            }
-            .buttonStyle(.iosPressable)
+        Button {
+            open(result.destination)
+        } label: {
+            iOSSearchResultRow(result: result)
+        }
+        .buttonStyle(.iosPressable)
+    }
+
+    private func open(_ destination: iOSSearchResult.Destination) {
+        switch destination {
+        case .task(let task):
+            selectedTask = task
+        case .note(let note):
+            selectedNote = note
+        case .event(let event):
+            selectedEvent = iOSCalendarEventSelection(event: event)
+        case .list(let route):
+            pushedListRoute = route
+        case .feature(let featureDestination):
+            pushedDestination = featureDestination
         }
     }
 
@@ -585,14 +569,13 @@ struct iOSSearchView: View {
 
     private func eventResult(_ event: EKEvent, score: Int) -> iOSSearchResult {
         iOSSearchResult(
-            kind: .event,
+            destination: .event(event),
             title: iOSCalendarEventSupport.title(for: event),
             subtitle: event.calendar?.title ?? "Apple Calendar",
             detail: eventDetail(event),
             icon: event.isAllDay ? "calendar.badge.clock" : "calendar",
             color: iOSCalendarEventSupport.color(for: event.calendar),
-            score: score,
-            event: event
+            score: score
         )
     }
 
@@ -613,14 +596,13 @@ struct iOSSearchView: View {
 
     private func noteResult(_ note: Note, score: Int) -> iOSSearchResult {
         iOSSearchResult(
-            kind: .note,
+            destination: .note(note),
             title: note.displayTitle,
             subtitle: noteSubtitle(note),
             detail: excerpt(note.content),
             icon: "doc.text",
             color: Theme.purple,
-            score: score,
-            note: note
+            score: score
         )
     }
 

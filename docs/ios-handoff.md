@@ -155,11 +155,30 @@ is clipped to visible hours, an out-of-range window draws nothing, weekends are 
   behavioural reason for the cap (a perfect week cannot satisfy a target above seven).
 - **Two more copies of `priorityRank`** at `iOSMarkdownAccessoryViews.swift` and
   `iOSMarkdownEditingSurface.swift`. **Fixed:** both now use `TaskPriority.rank`.
-- **`TaskDragPayload` is declared twice** — `Shared/iOSTaskDragPayload.swift` (`#if os(iOS)`) and
+- **`TaskDragPayload` was declared twice** — `Shared/iOSTaskDragPayload.swift` (`#if os(iOS)`) and
   `macOS/Services/TaskDragPayload.swift` (`#if os(macOS)`) — same type name, byte-identical bodies,
-  no compiler relationship between them. **Still open.** One shared declaration would remove a
-  whole class of silent drift.
-- **iOS renders raw YAML frontmatter** in the note editor where macOS hides it. **Still open.**
+  no compiler relationship between them. **Fixed** (`0625091`): one unfenced
+  `Cadence/Shared/TaskDragPayload.swift`. These strings are the wire format between a drag source
+  and a drop target, so a one-sided edit would have produced a platform whose drags silently
+  stopped matching.
+- **iOS rendered raw YAML frontmatter** in the note editor where macOS hides it. **Fixed.** iOS was
+  not calling the parser that already existed: `MarkdownMetadataParser`. The "what to suppress"
+  rule — the parsed block *plus* the blank lines under it — was spelled out inline in macOS's
+  `MarkdownStylist.applyFrontmatter`, so it is now
+  `MarkdownMetadataParser.hiddenFrontmatterRange(in:)` and both stylers call it; hiding a block to
+  two different extents would put the caret in two different places for the same note.
+  `iOSMarkdownStyler` applies it last (so no earlier pass restyles it back into view), removes the
+  `.attachment` the divider pass hung on the `---` fences — `hide` only shrinks glyphs, an
+  attachment image draws regardless — and tags the run `cadenceMarkdownFrontmatter`, which is what
+  the *already-present* `MarkdownHiddenRangeSupport.snappedCaretLocation` call in
+  `iOSMarkdownEditor` needs to push the caret past the block. Only in live mode: raw `.edit` mode
+  exists to show the file as written, and its caret is deliberately un-snapped.
+  `MarkdownPreviewParser` skips the block too — `---` is divider syntax and `tags: [a]` is a
+  paragraph, so preview mode and every `plainPreviewText` excerpt were rendering rule / prose /
+  rule. It starts its scan at `frontmatterLineCount` rather than parsing a stripped string, because
+  the `lineIndex` a `.checklist` carries is used to toggle that line in the original note.
+  Coverage: `TagSupportTests` (both new helpers) and `MarkdownPreviewParserTests` (skips the block,
+  keeps the note's line numbering, still renders a divider pair that is *not* frontmatter).
 - **iOS had no delete for goals or habits.** A habit created with no context and no goal could not
   be removed on iOS by any means short of a full data reset. **Fixed:** `TrackingDeleteHelpers`
   moved to `Cadence/Shared/` and lost its `#if os(macOS)` fence — nothing in it is AppKit-shaped —

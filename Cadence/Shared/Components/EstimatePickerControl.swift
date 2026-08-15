@@ -13,9 +13,12 @@ struct EstimatePickerControl: View {
             showPicker.toggle()
         } label: {
             HStack(spacing: 4) {
+                // Neutral glyph. A blue timer on every task that has an estimate is a colour that
+                // fires on the ordinary case; the text going from `dim` to `text` already says
+                // whether there is a value. Colour in these surfaces is kept for what is wrong.
                 Image(systemName: "timer")
                     .font(.system(size: 12))
-                    .foregroundStyle(value > 0 ? Theme.blue : Theme.dim)
+                    .foregroundStyle(Theme.dim)
                 Text(label)
                     .font(.system(size: 13))
                     .foregroundStyle(value > 0 ? Theme.text : Theme.dim)
@@ -25,16 +28,23 @@ struct EstimatePickerControl: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .frame(minHeight: 30)
+            // 44pt, not the 30pt desktop control height it was built at: every call site is under
+            // `Cadence/iOS/` (macOS has its own roller behind `TaskInspectorEstimateChip`), and in
+            // the task inspector this chip sits in the title row where a finger has to find it.
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
             .background(Theme.surface.opacity(0.55))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker, arrowEdge: .top) {
             EstimatePickerPopoverContent(value: $value, title: pickerTitle) {
                 showPicker = false
             }
+            // Same reason as `CadenceDatePicker`: compact width otherwise promotes this to a
+            // full-height sheet wrapped around a 238pt panel, so a two-tap duration edit took over
+            // the whole screen while every neighbouring picker stayed an anchored overlay.
+            .presentationCompactAdaptation(.popover)
         }
     }
 

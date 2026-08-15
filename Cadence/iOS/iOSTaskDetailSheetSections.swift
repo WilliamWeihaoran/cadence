@@ -2,112 +2,52 @@
 import SwiftData
 import SwiftUI
 
-/// Consolidated "everything editable about this task" section — status, priority, repeat,
-/// schedule, and placement in one flat card: one narrow column read top to bottom, rather than
-/// a form-per-field spread of cards.
-struct iOSTaskOverviewSection: View {
+/// Priority and milestone: the two properties that are neither a date nor placement.
+///
+/// The group carries no heading, because both rows already name themselves — the well it replaced
+/// was titled "Overview", which named nothing that the rows below it did not already say. Each row
+/// is the **only** control for its field: priority is displayed by the completion circle in the
+/// header and edited here, and nothing else in the sheet writes either value.
+struct iOSTaskPropertiesSection: View {
     @Bindable var task: AppTask
-    let containerSelection: Binding<String>
-    let activeAreas: [Area]
-    let activeProjects: [Project]
-    let availableSectionNames: [String]
     let availableGoals: [Goal]
-    let recurrenceSelection: Binding<TaskRecurrenceRule>
-    let hasScheduledDate: Binding<Bool>
-    let scheduledDate: Binding<Date>
-    let hasDueDate: Binding<Bool>
-    let dueDate: Binding<Date>
-    let hasScheduledStartMin: Bool
-    let scheduledTimeEnabled: Binding<Bool>
-    let scheduledStartSelection: Binding<Int>
-    let scheduledTimeLabel: String
 
-    @State private var showStatusPicker = false
     @State private var showPriorityPicker = false
-    @State private var showRepeatPicker = false
-    @State private var showContainerPicker = false
-    @State private var showSectionPicker = false
     @State private var showMilestonePicker = false
-    @State private var showTimePicker = false
-
-    private var currentContainerTitle: String {
-        if containerSelection.wrappedValue == "inbox" { return "Inbox" }
-        if containerSelection.wrappedValue.hasPrefix("area:"),
-           let id = UUID(uuidString: String(containerSelection.wrappedValue.dropFirst(5))),
-           let area = activeAreas.first(where: { $0.id == id }) {
-            return area.name.isEmpty ? "Untitled Area" : area.name
-        }
-        if containerSelection.wrappedValue.hasPrefix("project:"),
-           let id = UUID(uuidString: String(containerSelection.wrappedValue.dropFirst(8))),
-           let project = activeProjects.first(where: { $0.id == id }) {
-            return project.name.isEmpty ? "Untitled Project" : project.name
-        }
-        return "Inbox"
-    }
 
     private var selectedGoal: Goal? { task.goal }
 
     var body: some View {
-        iOSTaskEditorSection(title: "Overview") {
-            statusRow
-            iOSTaskEditorDivider()
+        // No `contentSpacing`: `iOSEditorDivider` already pads itself by 9pt on each side, so
+        // adding 10 more on both sides counted the same gap twice and gave a 44pt row an 83pt
+        // pitch. The divider owns the spacing between rows; the section does not add to it.
+        iOSEditorSection(title: nil, style: .ruled) {
             priorityRow
-            iOSTaskEditorDivider()
-            repeatRow
-            iOSTaskEditorDivider()
-
-            dateToggleRow(label: "Do date", systemImage: "sun.max.fill", color: Theme.amber, isOn: hasScheduledDate, date: scheduledDate)
-            if hasScheduledDate.wrappedValue {
-                iOSTaskEditorDivider()
-                scheduledTimeRow
-            }
-            iOSTaskEditorDivider()
-            dateToggleRow(label: "Due date", systemImage: "flag.fill", color: Theme.red, isOn: hasDueDate, date: dueDate)
-            iOSTaskEditorDivider()
-
-            iOSTaskEditorRow(label: "Estimate", systemImage: "clock.fill", color: Theme.blue) {
-                EstimatePickerControl(value: $task.estimatedMinutes)
-            }
-            iOSTaskEditorDivider()
-            iOSTaskEditorRow(label: "Logged", systemImage: "timer", color: Theme.green) {
-                EstimatePickerControl(value: $task.actualMinutes, pickerTitle: "LOGGED")
-            }
-            iOSTaskEditorDivider()
-
-            containerRow
-            iOSTaskEditorDivider()
-            sectionRow
-            iOSTaskEditorDivider()
+            iOSEditorDivider()
             milestoneRow
         }
     }
 
-    private var statusRow: some View {
-        iOSTaskEditorRow(label: "Status", systemImage: task.status.systemImage, color: CadenceTaskPresentationSupport.statusColor(task.status)) {
-            iOSChoiceValueButton(title: task.status.label, color: CadenceTaskPresentationSupport.statusColor(task.status)) {
-                showStatusPicker = true
-            }
-            .popover(isPresented: $showStatusPicker) {
-                iOSChoicePopoverList(
-                    rows: TaskStatus.allCases.map { status in
-                        iOSChoiceRow(value: status, title: status.label, color: CadenceTaskPresentationSupport.statusColor(status))
-                    },
-                    selection: $task.status,
-                    isPresented: $showStatusPicker
-                )
-            }
-        }
-    }
-
+    /// The one place priority is set. Its icon is `Theme.dim` like every other ordinary field —
+    /// the priority *value* still shows in the picker and in the completion circle's tint, which
+    /// is where a priority colour actually earns its place.
     private var priorityRow: some View {
-        iOSTaskEditorRow(label: "Priority", systemImage: "flag.fill", color: Theme.priorityColor(task.priority)) {
-            iOSChoiceValueButton(title: task.priority.label, color: Theme.priorityColor(task.priority)) {
+        iOSEditorFieldRow(label: "Priority", systemImage: "flag.fill", color: Theme.dim) {
+            iOSChoiceValueButton(
+                title: task.priority.label,
+                color: task.priority == .none ? Theme.dim : Theme.text
+            ) {
                 showPriorityPicker = true
             }
             .popover(isPresented: $showPriorityPicker) {
                 iOSChoicePopoverList(
                     rows: TaskPriority.allCases.map { priority in
-                        iOSChoiceRow(value: priority, title: priority.label, systemImage: "flag.fill", color: Theme.priorityColor(priority))
+                        iOSChoiceRow(
+                            value: priority,
+                            title: priority.label,
+                            systemImage: "flag.fill",
+                            color: Theme.priorityColor(priority)
+                        )
                     },
                     selection: $task.priority,
                     isPresented: $showPriorityPicker
@@ -116,67 +56,11 @@ struct iOSTaskOverviewSection: View {
         }
     }
 
-    private var repeatRow: some View {
-        iOSTaskEditorRow(label: "Repeat", systemImage: task.recurrenceRule.systemImage, color: Theme.purple) {
-            iOSChoiceValueButton(title: task.recurrenceRule.label, color: Theme.purple) {
-                showRepeatPicker = true
-            }
-            .popover(isPresented: $showRepeatPicker) {
-                iOSChoicePopoverList(
-                    rows: TaskRecurrenceRule.allCases.map { rule in
-                        iOSChoiceRow(value: rule, title: rule.label, systemImage: rule.systemImage, color: Theme.purple)
-                    },
-                    selection: recurrenceSelection,
-                    isPresented: $showRepeatPicker
-                )
-            }
-        }
-    }
-
-    private var containerRow: some View {
-        iOSTaskEditorRow(label: "List", systemImage: "tray.full.fill", color: Theme.blue) {
-            iOSChoiceValueButton(title: currentContainerTitle, color: Theme.text) {
-                showContainerPicker = true
-            }
-            .popover(isPresented: $showContainerPicker) {
-                iOSContainerChoicePopover(
-                    activeAreas: activeAreas,
-                    activeProjects: activeProjects,
-                    selection: containerSelection,
-                    isPresented: $showContainerPicker
-                )
-            }
-        }
-    }
-
-    private var sectionRow: some View {
-        iOSTaskEditorRow(label: "Section", systemImage: "rectangle.split.3x1.fill", color: Theme.purple) {
-            iOSChoiceValueButton(title: task.sectionName.isEmpty ? "Default" : task.sectionName, color: Theme.text) {
-                showSectionPicker = true
-            }
-            .popover(isPresented: $showSectionPicker) {
-                iOSChoicePopoverList(
-                    rows: availableSectionNames.map { name in
-                        iOSChoiceRow(value: name, title: name, color: Theme.purple)
-                    },
-                    selection: $task.sectionName,
-                    isPresented: $showSectionPicker
-                )
-            }
-            .disabled(containerSelection.wrappedValue == "inbox")
-            .opacity(containerSelection.wrappedValue == "inbox" ? 0.45 : 1)
-        }
-    }
-
     private var milestoneRow: some View {
-        iOSTaskEditorRow(
-            label: "Milestone",
-            systemImage: selectedGoal == nil ? "circle.dashed" : "flag.fill",
-            color: selectedGoal.map { Color(hex: $0.colorHex) } ?? Theme.dim
-        ) {
+        iOSEditorFieldRow(label: "Milestone", systemImage: "target", color: Theme.dim) {
             iOSChoiceValueButton(
                 title: selectedGoal.map { $0.title.isEmpty ? "Untitled Milestone" : $0.title } ?? "None",
-                color: selectedGoal.map { Color(hex: $0.colorHex) } ?? Theme.dim
+                color: selectedGoal == nil ? Theme.dim : Theme.text
             ) {
                 showMilestonePicker = true
             }
@@ -184,7 +68,14 @@ struct iOSTaskOverviewSection: View {
                 iOSChoicePopoverList(
                     rows: [iOSChoiceRow<UUID?>(value: nil, title: "None", systemImage: "circle.dashed", color: Theme.dim)]
                         + availableGoals.map { goal in
-                            iOSChoiceRow(value: Optional(goal.id), title: goal.title.isEmpty ? "Untitled Milestone" : goal.title, systemImage: "flag.fill", color: Color(hex: goal.colorHex))
+                            iOSChoiceRow(
+                                value: Optional(goal.id),
+                                title: goal.title.isEmpty ? "Untitled Milestone" : goal.title,
+                                systemImage: goal.icon,
+                                // A goal's colour is the user's own, and it is what tells two
+                                // milestones apart in a list of them.
+                                color: Color(hex: goal.colorHex)
+                            )
                         },
                     selection: goalSelection,
                     isPresented: $showMilestonePicker
@@ -197,44 +88,234 @@ struct iOSTaskOverviewSection: View {
         Binding(
             get: { task.goal?.id },
             set: { goalID in
-                let goal = goalID.flatMap { id in availableGoals.first { $0.id == id } }
-                task.goal = goal
+                task.goal = goalID.flatMap { id in availableGoals.first { $0.id == id } }
+            }
+        )
+    }
+}
+
+/// "SCHEDULE" — do date, time, due date, repeat, and whatever the focus timer has logged.
+///
+/// Each date is **one** control: the chip states the day and its popover offers Today / Tomorrow /
+/// This Weekend, a month grid, and Clear. The toggle that used to sit beside it was a second
+/// affordance for the same field, and the pair could disagree — the toggle said "on" while the
+/// picker below it showed a day the task did not have.
+struct iOSTaskScheduleSection: View {
+    @Bindable var task: AppTask
+    let recurrenceSelection: Binding<TaskRecurrenceRule>
+    let hasScheduledDate: Binding<Bool>
+    let scheduledDate: Binding<Date>
+    let hasDueDate: Binding<Bool>
+    let dueDate: Binding<Date>
+    let scheduledStartSelection: Binding<Int>
+    let scheduledTimeLabel: String
+
+    @State private var showRepeatPicker = false
+    @State private var showTimePicker = false
+
+    /// Colour is spent only on what is wrong. A do date in the past and an overdue deadline are the
+    /// two things in this well that are, so everything else — including a do date of *today*, which
+    /// is the common case — is `Theme.dim`.
+    private var isOverdo: Bool {
+        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
+        return (DateFormatters.dayOffset(from: task.scheduledDate) ?? 0) < 0
+    }
+
+    private var isOverdue: Bool {
+        CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone) == .overdue
+    }
+
+    private var hasScheduledStartMin: Bool {
+        task.scheduledStartMin >= 0
+    }
+
+    var body: some View {
+        // Divider-separated rows, so no `contentSpacing` — see the note on the properties section.
+        iOSEditorSection(title: "Schedule", style: .ruled) {
+            iOSEditorFieldRow(
+                label: "Do",
+                systemImage: "sun.max.fill",
+                color: isOverdo ? Theme.red : Theme.dim
+            ) {
+                CadenceDatePicker(
+                    selection: doDateBinding,
+                    placeholder: hasScheduledDate.wrappedValue ? nil : "No do date",
+                    minHeight: 44,
+                    showsClear: hasScheduledDate.wrappedValue,
+                    onClear: { hasScheduledDate.wrappedValue = false }
+                )
+            }
+
+            if hasScheduledDate.wrappedValue {
+                iOSEditorDivider()
+                timeRow
+            }
+
+            iOSEditorDivider()
+
+            iOSEditorFieldRow(
+                label: "Due",
+                systemImage: "flag.fill",
+                color: isOverdue ? Theme.red : Theme.dim
+            ) {
+                CadenceDatePicker(
+                    selection: dueDateBinding,
+                    placeholder: hasDueDate.wrappedValue ? nil : "No due date",
+                    minHeight: 44,
+                    showsClear: hasDueDate.wrappedValue,
+                    onClear: { hasDueDate.wrappedValue = false }
+                )
+            }
+
+            iOSEditorDivider()
+            repeatRow
+
+            // Logged time is **measured**, not typed: the focus timer writes it. This row used to
+            // be an editable minutes picker, which invited a user to overwrite a measurement by
+            // hand — macOS deleted its equivalent "Actual" row for the same reason. It appears
+            // only when there is something to report.
+            if let logged = CadenceTaskInspectorSupport.loggedLabel(minutes: task.actualMinutes) {
+                iOSEditorDivider()
+                iOSEditorFieldRow(label: "Logged", systemImage: "timer", color: Theme.dim) {
+                    Text(logged)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                }
+            }
+        }
+    }
+
+    /// Picking a day is what gives the task a do date; there is no separate switch to flip first.
+    private var doDateBinding: Binding<Date> {
+        Binding(
+            get: { scheduledDate.wrappedValue },
+            set: { newValue in
+                scheduledDate.wrappedValue = newValue
+                hasScheduledDate.wrappedValue = true
             }
         )
     }
 
-    @ViewBuilder
-    private func dateToggleRow(label: String, systemImage: String, color: Color, isOn: Binding<Bool>, date: Binding<Date>) -> some View {
-        iOSTaskEditorToggleRow(label: label, systemImage: systemImage, color: color, isOn: isOn)
-        if isOn.wrappedValue {
-            CadenceDatePicker(selection: date)
-        }
+    private var dueDateBinding: Binding<Date> {
+        Binding(
+            get: { dueDate.wrappedValue },
+            set: { newValue in
+                dueDate.wrappedValue = newValue
+                hasDueDate.wrappedValue = true
+            }
+        )
     }
 
-    private var scheduledTimeRow: some View {
-        iOSTaskEditorRow(label: "Time", systemImage: "clock.fill", color: Theme.blue) {
-            Toggle("Time", isOn: scheduledTimeEnabled)
-                .labelsHidden()
-                .tint(Theme.blue)
-
-            iOSChoiceValueButton(title: scheduledTimeLabel, color: hasScheduledStartMin ? Theme.text : Theme.dim) {
+    /// One control, again: "No time" is the first row of the same picker that sets a time, rather
+    /// than a toggle beside it that could contradict the value shown.
+    private var timeRow: some View {
+        iOSEditorFieldRow(label: "Time", systemImage: "clock.fill", color: Theme.dim) {
+            iOSChoiceValueButton(
+                title: scheduledTimeLabel,
+                color: hasScheduledStartMin ? Theme.text : Theme.dim
+            ) {
                 showTimePicker = true
             }
-            .disabled(!hasScheduledStartMin)
-            .opacity(hasScheduledStartMin ? 1 : 0.45)
             .popover(isPresented: $showTimePicker) {
                 iOSChoicePopoverList(
-                    rows: stride(from: 0, to: 1440, by: 15).map { minute in
-                        iOSChoiceRow(value: minute, title: TimeFormatters.timeString(from: minute), color: Theme.blue)
-                    },
+                    rows: [iOSChoiceRow(value: -1, title: "No time", color: Theme.dim)]
+                        + stride(from: 0, to: 1440, by: 15).map { minute in
+                            iOSChoiceRow(
+                                value: minute,
+                                title: TimeFormatters.timeString(from: minute),
+                                color: Theme.dim,
+                                id: AnyHashable(minute)
+                            )
+                        },
                     selection: scheduledStartSelection,
                     isPresented: $showTimePicker
                 )
             }
         }
     }
+
+    private var repeatRow: some View {
+        iOSEditorFieldRow(label: "Repeat", systemImage: task.recurrenceRule.systemImage, color: Theme.dim) {
+            iOSChoiceValueButton(
+                title: task.recurrenceRule.label,
+                color: task.recurrenceRule == .none ? Theme.dim : Theme.text
+            ) {
+                showRepeatPicker = true
+            }
+            .popover(isPresented: $showRepeatPicker) {
+                iOSChoicePopoverList(
+                    rows: TaskRecurrenceRule.allCases.map { rule in
+                        iOSChoiceRow(value: rule, title: rule.label, systemImage: rule.systemImage, color: Theme.dim)
+                    },
+                    selection: recurrenceSelection,
+                    isPresented: $showRepeatPicker
+                )
+            }
+        }
+    }
 }
 
+struct iOSTaskSubtasksSection: View {
+    let subtasks: [Subtask]
+    let newSubtaskTitle: Binding<String>
+    let canAddSubtask: Bool
+    let onAdd: () -> Void
+    let onDelete: (Subtask) -> Void
+
+    var body: some View {
+        iOSEditorSection(title: "Subtasks", style: .ruled, contentSpacing: 10) {
+            subtaskList
+            subtaskComposer
+        }
+    }
+
+    @ViewBuilder
+    private var subtaskList: some View {
+        if !subtasks.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(subtasks) { subtask in
+                    iOSSubtaskRow(subtask: subtask) {
+                        onDelete(subtask)
+                    }
+                }
+            }
+        }
+    }
+
+    /// No "No subtasks" placeholder: the field directly below it is captioned "Add subtask", which
+    /// says the same thing and can be typed into.
+    private var subtaskComposer: some View {
+        HStack(spacing: 8) {
+            TextField("Add subtask", text: newSubtaskTitle)
+                .textFieldStyle(.plain)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, 10)
+                .frame(minHeight: 44)
+                .background(Theme.surfaceElevated.opacity(0.55))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                .onSubmit(onAdd)
+
+            Button(action: onAdd) {
+                Image(systemName: "plus")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Theme.onColor)
+                    .frame(width: 44, height: 44)
+                    .background(canAddSubtask ? Theme.blue : Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.iosPressable)
+            .disabled(!canAddSubtask)
+            .opacity(canAddSubtask ? 1 : 0.45)
+            .accessibilityLabel("Add subtask")
+        }
+    }
+}
+
+/// "NOTES" — the markdown editor and nothing else. Tags used to live under this heading, which read
+/// as "these tag the note"; they are the task's tags and now sit under the title where the same
+/// move put them on macOS.
 struct iOSTaskNotesSection: View {
     let notesText: Binding<String>
     let isFocused: Binding<Bool>
@@ -243,18 +324,9 @@ struct iOSTaskNotesSection: View {
     let referenceNotes: [Note]
     let referenceTasks: [AppTask]
     let onOpenReference: (MarkdownReferenceDisplayTarget) -> Void
-    @Bindable var task: AppTask
-    let allTags: [Tag]
-    @Binding var newTagName: String
 
     var body: some View {
-        iOSTaskEditorSection(title: "Notes") {
-            iOSTaskTagEditorSection(
-                task: task,
-                allTags: allTags,
-                newTagName: $newTagName
-            )
-
+        iOSEditorSection(title: "Notes", style: .ruled, contentSpacing: 10) {
             HStack {
                 Spacer()
                 iOSMarkdownModePicker(mode: notesEditorModeBinding)
@@ -269,65 +341,41 @@ struct iOSTaskNotesSection: View {
                 referenceTasks: referenceTasks,
                 onOpenReference: onOpenReference
             )
-                .frame(minHeight: minHeight)
-                .cadenceCard(background: Theme.surfaceElevated.opacity(0.35), cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
+            .frame(minHeight: minHeight)
+            .cadenceCard(background: Theme.surfaceElevated.opacity(0.35), cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
         }
     }
 }
 
-struct iOSTaskSubtasksSection: View {
-    let subtasks: [Subtask]
-    let newSubtaskTitle: Binding<String>
-    let canAddSubtask: Bool
-    let onAdd: () -> Void
-    let onDelete: (Subtask) -> Void
+/// The two status transitions a checkbox cannot express, under no heading — a label over two
+/// buttons names what the buttons already say.
+///
+/// Between these and the header's completion circle, every status value has exactly one control:
+/// the circle owns `done`, "Start" owns `inProgress`, "Cancel" owns `cancelled`, and each of the
+/// two buttons is its own undo back to `todo`. Deleting stays on the toolbar rather than gaining a
+/// second home down here.
+struct iOSTaskStatusActionsSection: View {
+    @Bindable var task: AppTask
+    let onSetStatus: (TaskStatus) -> Void
 
     var body: some View {
-        iOSTaskEditorSection(title: "Subtasks") {
-            subtaskList
-            subtaskComposer
-        }
-    }
+        iOSEditorSection(title: nil, style: .ruled, contentSpacing: 10) {
+            HStack(spacing: 10) {
+                ForEach(CadenceTaskInspectorSupport.StatusAction.allCases, id: \.self) { action in
+                    let isActive = action.isActive(task.status)
 
-    @ViewBuilder
-    private var subtaskList: some View {
-        if subtasks.isEmpty {
-            Text("No subtasks")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.dim)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            VStack(spacing: 7) {
-                ForEach(subtasks) { subtask in
-                    iOSSubtaskRow(subtask: subtask) {
-                        onDelete(subtask)
+                    iOSActionButton(
+                        title: action.title(for: task.status),
+                        systemImage: action.systemImage(for: task.status),
+                        role: isActive ? .primary : .secondary,
+                        size: .compact,
+                        tint: isActive ? CadenceTaskPresentationSupport.statusColor(action.status) : Theme.muted,
+                        fullWidth: true
+                    ) {
+                        onSetStatus(action.target(from: task.status))
                     }
                 }
             }
-        }
-    }
-
-    private var subtaskComposer: some View {
-        HStack(spacing: 8) {
-            TextField("Add subtask", text: newSubtaskTitle)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.text)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 9)
-                .cadenceCard(background: Theme.surfaceElevated.opacity(0.55), cornerRadius: Theme.radiusControl, shadowRadius: 8, shadowY: 3)
-                .onSubmit(onAdd)
-
-            Button(action: onAdd) {
-                Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Theme.onColor)
-                    .frame(width: 44, height: 44)
-                    .background(canAddSubtask ? Theme.blue : Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-            }
-            .buttonStyle(.iosPressable)
-            .disabled(!canAddSubtask)
         }
     }
 }

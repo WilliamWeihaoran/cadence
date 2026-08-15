@@ -46,7 +46,13 @@ enum MarkdownPreviewParser {
             codeLanguage = nil
         }
 
-        var lineIndex = 0
+        // Start after any YAML frontmatter rather than stripping it from `markdown` first: the
+        // `lineIndex` a `.checklist` block carries is handed back to the caller to toggle that line
+        // in the *original* note, so the numbering has to stay the note's own. Skipping the block
+        // matters because `---` is also divider syntax and `tags: [a]` is a perfectly good
+        // paragraph, so an unfiltered parse renders the block as rule / prose / rule — which is
+        // what iOS's preview and every `plainPreviewText` excerpt were showing.
+        var lineIndex = min(MarkdownMetadataParser.frontmatterLineCount(in: markdown), lines.count)
         while lineIndex < lines.count {
             let rawLine = lines[lineIndex]
             let line = rawLine.trimmingCharacters(in: .whitespaces)

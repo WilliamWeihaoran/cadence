@@ -216,15 +216,10 @@ struct TaskDetailPlacementBreadcrumb: View {
     let availableSections: [String]
 
     /// A task in the Inbox has nowhere to be sectioned, so `Inbox › Default` would be a chevron
-    /// pointing at a non-choice. The segment appears as soon as there is a section worth naming:
-    /// more than one to pick from, or a single one the user actually named.
+    /// pointing at a non-choice. The rule itself is `CadenceTaskInspectorSupport`, so the iOS
+    /// inspector's breadcrumb hides the segment on exactly the same tasks this one does.
     private var showsSectionSegment: Bool {
-        let sections = availableSections
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        if sections.count > 1 { return true }
-        guard let only = sections.first else { return false }
-        return only.caseInsensitiveCompare(TaskSectionDefaults.defaultName) != .orderedSame
+        CadenceTaskInspectorSupport.showsSectionSegment(availableSections: availableSections)
     }
 
     var body: some View {

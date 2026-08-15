@@ -99,18 +99,10 @@ struct iOSTaskDetailSheet: View {
         .onChange(of: containerSelection) { _, _ in
             applyContainerSelection()
         }
-        .onChange(of: hasScheduledDate) { _, newValue in
-            if newValue && task.scheduledDate.isEmpty {
-                scheduledDate = Date()
-            }
-            applyDates()
-        }
-        .onChange(of: hasDueDate) { _, newValue in
-            if newValue && task.dueDate.isEmpty {
-                dueDate = Date()
-            }
-            applyDates()
-        }
+        // No "seed today when switched on" fallback any more: nothing turns these on except a day
+        // being picked, so seeding here would overwrite the day the user just chose.
+        .onChange(of: hasScheduledDate) { _, _ in applyDates() }
+        .onChange(of: hasDueDate) { _, _ in applyDates() }
         .onChange(of: scheduledDate) { _, _ in applyDates() }
         .onChange(of: dueDate) { _, _ in applyDates() }
         .onChange(of: task.title) { _, _ in saveTask() }
@@ -171,13 +163,45 @@ struct iOSTaskDetailSheet: View {
         .tint(Theme.blue)
     }
 
+    /// Same order as macOS's inspector, for the same reasons: what the task *is* (title, tags,
+    /// where it lives), then when it happens, then the work inside it, then its notes, then the
+    /// actions that change its state.
     private var taskForm: some View {
         VStack(alignment: .leading, spacing: 14) {
-            iOSTaskEditorTitleCard(task: task, onToggleCompletion: toggleCompletion)
-            overviewSection
-            notesSection
+            headerBlock
+            propertiesSection
+            scheduleSection
             subtasksSection
+            notesSection
+            statusActionsSection
         }
+    }
+
+    /// Title row, then the task's tags and its `List › Section` line indented to the title column —
+    /// the same identity block `TaskDetailHeaderSection` draws on macOS.
+    private var headerBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            iOSTaskEditorTitleCard(task: task, onToggleCompletion: toggleCompletion)
+
+            VStack(alignment: .leading, spacing: 8) {
+                iOSTaskTagStrip(task: task, allTags: tags, newTagName: $newTagName)
+
+                iOSTaskPlacementBreadcrumb(
+                    task: task,
+                    containerSelection: $containerSelection,
+                    activeAreas: activeAreas,
+                    activeProjects: activeProjects,
+                    availableSectionNames: availableSectionNames
+                )
+            }
+            .padding(.leading, titleColumnInset)
+        }
+    }
+
+    /// Completion-circle width plus the title row's spacing, so everything under the title lines up
+    /// with the title text rather than with the circle.
+    private var titleColumnInset: CGFloat {
+        (isRegularWidth ? 26 : 24) + 12
     }
 
     @ToolbarContentBuilder
@@ -196,24 +220,27 @@ struct iOSTaskDetailSheet: View {
         }
     }
 
-    private var overviewSection: some View {
-        iOSTaskOverviewSection(
+    private var propertiesSection: some View {
+        iOSTaskPropertiesSection(task: task, availableGoals: availableGoals)
+    }
+
+    private var scheduleSection: some View {
+        iOSTaskScheduleSection(
             task: task,
-            containerSelection: $containerSelection,
-            activeAreas: activeAreas,
-            activeProjects: activeProjects,
-            availableSectionNames: availableSectionNames,
-            availableGoals: availableGoals,
             recurrenceSelection: recurrenceSelection,
             hasScheduledDate: $hasScheduledDate,
             scheduledDate: $scheduledDate,
             hasDueDate: $hasDueDate,
             dueDate: $dueDate,
-            hasScheduledStartMin: task.scheduledStartMin >= 0,
-            scheduledTimeEnabled: scheduledTimeEnabled,
             scheduledStartSelection: scheduledStartSelection,
             scheduledTimeLabel: scheduledTimeLabel
         )
+    }
+
+    private var statusActionsSection: some View {
+        iOSTaskStatusActionsSection(task: task) { status in
+            CadenceTaskMutationSupport.setStatus(status, for: task, modelContext: modelContext)
+        }
     }
 
     private var notesSection: some View {
@@ -230,10 +257,7 @@ struct iOSTaskDetailSheet: View {
             minHeight: notesEditorMinHeight,
             referenceNotes: allNotes,
             referenceTasks: allTasks,
-            onOpenReference: openMarkdownReference,
-            task: task,
-            allTags: tags,
-            newTagName: $newTagName
+            onOpenReference: openMarkdownReference
         )
     }
 
@@ -269,26 +293,19 @@ struct iOSTaskDetailSheet: View {
         )
     }
 
-    private var scheduledTimeEnabled: Binding<Bool> {
-        Binding(
-            get: { task.scheduledStartMin >= 0 },
-            set: { isEnabled in
-                if isEnabled {
-                    enableScheduledTime()
-                } else {
-                    CadenceTaskMutationSupport.clearScheduledTime(task, modelContext: modelContext)
-                }
-            }
-        )
-    }
-
+    /// The time picker's own "No time" row is what clears the time, so this binding is the single
+    /// control for the field — there is no separate switch beside it to fall out of step.
     private var scheduledStartSelection: Binding<Int> {
         Binding(
-            get: { task.scheduledStartMin >= 0 ? task.scheduledStartMin : defaultScheduledStartMin },
+            get: { task.scheduledStartMin },
             set: { minutes in
+                guard minutes >= 0 else {
+                    CadenceTaskMutationSupport.clearScheduledTime(task, modelContext: modelContext)
+                    return
+                }
                 if !hasScheduledDate {
-                    hasScheduledDate = true
                     scheduledDate = Date()
+                    hasScheduledDate = true
                     applyDates()
                 }
                 CadenceTaskMutationSupport.setScheduledTime(minutes, for: task, modelContext: modelContext)
@@ -305,12 +322,6 @@ struct iOSTaskDetailSheet: View {
 
     private var scheduledTimeLabel: String {
         task.scheduledStartMin >= 0 ? TimeFormatters.timeString(from: task.scheduledStartMin) : "No time"
-    }
-
-    private var defaultScheduledStartMin: Int {
-        let comps = Calendar.current.dateComponents([.hour, .minute], from: Date())
-        let raw = ((comps.hour ?? 9) * 60) + (comps.minute ?? 0)
-        return min(1425, max(0, Int((Double(raw) / 15.0).rounded()) * 15))
     }
 
     private func initializeTaskSheet() {
@@ -411,15 +422,6 @@ struct iOSTaskDetailSheet: View {
 
     private func toggleCompletion() {
         CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
-    }
-
-    private func enableScheduledTime() {
-        if !hasScheduledDate {
-            hasScheduledDate = true
-            scheduledDate = Date()
-            applyDates()
-        }
-        CadenceTaskMutationSupport.setScheduledTime(defaultScheduledStartMin, for: task, modelContext: modelContext)
     }
 
     private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) {

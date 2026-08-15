@@ -97,18 +97,25 @@ struct iPadTodayView: View {
 
     @ViewBuilder
     private func todayLayout(width: CGFloat) -> some View {
-        if isRegularWidth && layoutMode == .mac && width >= 1_500 {
+        // The threshold used to be a bare `width >= 1_500`, which no iPad reaches — see
+        // `CadenceTodayLayoutSupport`, which derives the real floor from the panes' own minimums.
+        switch CadenceTodayLayoutSupport.layout(
+            prefersThreePane: layoutMode == .mac,
+            isRegularWidth: isRegularWidth,
+            paneWidth: width
+        ) {
+        case .threePane:
             threePaneTodayLayout(width: width)
-        } else if isRegularWidth {
+        case .twoPane:
             twoPaneTodayLayout(width: width)
-        } else {
+        case .compact:
             compactTodayLayout
         }
     }
 
     private func threePaneTodayLayout(width: CGFloat) -> some View {
-        let notesWidth = min(max(width * 0.23, 280), 340)
-        let scheduleWidth = min(max(width * 0.24, 300), 360)
+        let notesWidth = min(max(width * 0.23, CadenceTodayLayoutSupport.notesPaneMinWidth), 340)
+        let scheduleWidth = min(max(width * 0.24, CadenceTodayLayoutSupport.schedulePaneMinWidth), 360)
 
         return HStack(spacing: 0) {
             iOSNotesPanel(useStandardHeaderHeight: true)
@@ -117,8 +124,8 @@ struct iPadTodayView: View {
 
             Divider().background(Theme.borderSubtle)
 
-            todayTaskColumn
-                .frame(minWidth: 440, maxWidth: .infinity)
+            todayTaskColumn(paneWidth: width)
+                .frame(minWidth: CadenceTodayLayoutSupport.taskPaneMinWidth, maxWidth: .infinity)
                 .layoutPriority(1)
 
             Divider().background(Theme.borderSubtle)
@@ -131,7 +138,7 @@ struct iPadTodayView: View {
 
     private func twoPaneTodayLayout(width: CGFloat) -> some View {
         HStack(spacing: 0) {
-            todayTaskColumn
+            todayTaskColumn(paneWidth: width)
                 .frame(width: taskPaneWidth(for: width))
                 .layoutPriority(0.58)
 
@@ -217,13 +224,17 @@ struct iPadTodayView: View {
         #endif
     }
 
-    private var todayTaskColumn: some View {
+    private func todayTaskColumn(paneWidth: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             iPadTodayTaskHeader(
                 eyebrow: DateFormatters.longDate.string(from: Date()),
                 title: "Today",
                 summary: todaySummary,
-                layoutMode: layoutModeBinding
+                layoutMode: layoutModeBinding,
+                // The picker used to offer Mac at every width and do nothing below the threshold.
+                // Below the floor there is genuinely no room for three columns, so the option says
+                // so rather than accepting a tap and changing nothing.
+                allowsThreePane: CadenceTodayLayoutSupport.supportsThreePane(paneWidth: paneWidth)
             )
 
             Divider().background(Theme.borderSubtle)

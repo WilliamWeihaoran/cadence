@@ -88,7 +88,55 @@ enum iOSMarkdownStyler {
             excludedRanges: inlineExclusionRanges,
             rendersCodeBlockAttachments: hidesMarkdownMarkers
         )
+        if hidesMarkdownMarkers {
+            // Last, so no earlier pass can style the block back into view — the same ordering
+            // macOS's styler uses, and for the same reason.
+            applyFrontmatter(storage, markdown: markdown)
+        }
         return storage
+    }
+
+    /// Renders a note's YAML frontmatter at zero height, as macOS's editor already does.
+    ///
+    /// The block is kept in `note.content` for portability, but nothing in Cadence reads
+    /// `title`/`status` back and tags round-trip through the note header's `Tag` chips, so showing
+    /// it in the body is noise. iOS was the only surface still showing it — a note tagged on the
+    /// Mac arrived here with three lines of raw YAML above its first heading.
+    ///
+    /// Two details this needs that an inline marker does not:
+    ///
+    /// - The `---` fences are also this editor's divider syntax, so `applyDividerBlock` has already
+    ///   hung an `NSTextAttachment` on each of them. `hide` only shrinks glyphs; an attachment
+    ///   image draws regardless, so the attribute has to come off or the block leaves two rules
+    ///   behind.
+    /// - `hide` leaves each newline opening a line box, so the collapsed paragraph style is what
+    ///   actually reclaims the vertical space.
+    ///
+    /// Tagging the run with `cadenceMarkdownFrontmatter` is what makes the caret behave: the
+    /// editor already routes selection through `MarkdownHiddenRangeSupport.snappedCaretLocation`,
+    /// which pushes the caret past a frontmatter *block* unconditionally rather than treating its
+    /// leading edge as a resting place. That code path existed on iOS and simply had nothing to
+    /// find.
+    ///
+    /// Only in `hidesMarkdownMarkers` (live) mode. The raw `.edit` mode exists to show the file as
+    /// it is written, and its caret is deliberately un-snapped, so hiding a block there would strand
+    /// the caret inside text it cannot see.
+    private static func applyFrontmatter(_ storage: NSMutableAttributedString, markdown: String) {
+        guard let parsed = MarkdownMetadataParser.hiddenFrontmatterRange(in: markdown) else { return }
+        let range = NSIntersectionRange(parsed, NSRange(location: 0, length: storage.length))
+        guard range.length > 0 else { return }
+
+        storage.removeAttribute(.attachment, range: range)
+        hide(storage, range)
+        storage.addAttribute(.cadenceMarkdownFrontmatter, value: true, range: range)
+
+        let collapsed = NSMutableParagraphStyle()
+        collapsed.lineSpacing = 0
+        collapsed.paragraphSpacing = 0
+        collapsed.paragraphSpacingBefore = 0
+        collapsed.minimumLineHeight = 0.1
+        collapsed.maximumLineHeight = 0.1
+        storage.addAttribute(.paragraphStyle, value: collapsed, range: range)
     }
 
     private static func lineRecords(in lines: [String]) -> [iOSMarkdownLineRecord] {

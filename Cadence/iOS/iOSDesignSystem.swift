@@ -399,14 +399,20 @@ enum iOSEditorSectionStyle {
 /// them byte-identical apart from the name, and the fifth differing only in whether the fields sat
 /// on a card. That difference is now the `style` parameter.
 struct iOSEditorSection<Content: View>: View {
-    let title: String
+    /// `nil` draws the group with its rule and spacing but no eyebrow — for groups whose rows
+    /// already name themselves, where a heading would only repeat them. The task inspector's
+    /// properties group and its action row are both this: the heading they used to carry said
+    /// "Overview", which named nothing the rows did not.
+    let title: String?
     var style: iOSEditorSectionStyle = .card
     var contentSpacing: CGFloat = 0
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionEyebrowLabel(text: title)
+        VStack(alignment: .leading, spacing: title == nil ? 0 : 10) {
+            if let title {
+                SectionEyebrowLabel(text: title)
+            }
 
             VStack(alignment: .leading, spacing: contentSpacing) {
                 content()

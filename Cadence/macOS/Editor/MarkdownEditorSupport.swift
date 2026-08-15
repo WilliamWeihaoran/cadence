@@ -322,15 +322,8 @@ enum MarkdownStylist {
     /// hiding mechanism, and additionally tags the run with `cadenceMarkdownFrontmatter` so
     /// `MarkdownHiddenRangeSupport` can apply the stricter block caret rule to it.
     private static func applyFrontmatter(_ storage: NSTextStorage, text: String) {
-        guard let parsed = MarkdownMetadataParser.frontmatterRange(in: text), parsed.length > 0 else { return }
-
-        // Swallow the blank lines that conventionally follow the block, so the body starts at the
-        // top of the editor instead of under a stack of empty rows.
-        let nsText = text as NSString
-        var end = min(NSMaxRange(parsed), storage.length)
-        while end < storage.length, nsText.character(at: end) == 10 { end += 1 }
-
-        let range = NSRange(location: 0, length: end)
+        guard let parsed = MarkdownMetadataParser.hiddenFrontmatterRange(in: text) else { return }
+        let range = NSIntersectionRange(parsed, NSRange(location: 0, length: storage.length))
         guard range.length > 0 else { return }
 
         hide(storage, range)

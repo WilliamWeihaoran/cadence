@@ -69,6 +69,47 @@ struct MarkdownPreviewParserTests {
         #expect(blocks[10] == .divider)
     }
 
+    @Test func skipsFrontmatterButKeepsTheNotesOwnLineNumbering() {
+        // `---` is also divider syntax and `tags: ["a"]` is a perfectly good paragraph, so an
+        // unfiltered parse rendered a tagged note as rule / prose / rule above its first heading.
+        // The `lineIndex` a checklist carries is handed back to toggle that line in the *original*
+        // note, so skipping the block must not renumber anything after it.
+        let markdown = """
+        ---
+        tags: ["a"]
+        ---
+
+        # Title
+
+        - [ ] Write tests
+        """
+
+        let blocks = MarkdownPreviewParser.blocks(in: markdown)
+
+        #expect(blocks == [
+            .heading(level: 1, text: "Title"),
+            .checklist(depth: 0, isDone: false, text: "Write tests", lineIndex: 6)
+        ])
+    }
+
+    @Test func stillRendersADividerPairThatIsNotFrontmatter() {
+        // The parser must not swallow content just because a note opens with a rule.
+        let markdown = """
+        ---
+        A thought worth keeping.
+        ---
+
+        After
+        """
+
+        #expect(MarkdownPreviewParser.blocks(in: markdown) == [
+            .divider,
+            .paragraph("A thought worth keeping."),
+            .divider,
+            .paragraph("After")
+        ])
+    }
+
     @Test func keepsUnclosedCodeFenceAsCodeBlock() {
         let markdown = """
         Before

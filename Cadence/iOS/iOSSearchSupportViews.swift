@@ -47,14 +47,13 @@ struct iOSSearchListCandidate {
 
     func result(score: Int) -> iOSSearchResult {
         iOSSearchResult(
-            kind: .list,
+            destination: .list(route),
             title: title,
             subtitle: subtitle,
             detail: detail,
             icon: icon,
             color: color,
-            score: score,
-            listRoute: route
+            score: score
         )
     }
 }
@@ -70,30 +69,41 @@ struct iOSSearchFeatureCandidate {
 
     func result(score: Int) -> iOSSearchResult {
         iOSSearchResult(
-            kind: .feature,
+            destination: .feature(destination),
             title: title,
             subtitle: subtitle,
             detail: detail,
             icon: icon,
             color: color,
-            score: score,
-            featureDestination: destination
+            score: score
         )
     }
 }
 
 struct iOSSearchResult: Identifiable {
-    enum Kind {
-        case task
-        case list
-        case note
-        case event
-        case progress
-        case feature
+    /// What tapping the row opens.
+    ///
+    /// This replaces a `Kind` enum that was assigned at eight construction sites and read at none,
+    /// sitting beside five mutually exclusive optionals (`task`/`note`/`event`/`listRoute`/
+    /// `featureDestination`) that it was supposed to agree with. `Kind` could not be promoted into
+    /// driving the row, because everything it could have decided is already carried more precisely:
+    /// the icon reflects a task's done state and a list's user-chosen glyph, the colour comes from
+    /// the model's `colorHex` or its priority, and the section eyebrow is supplied by the caller.
+    /// What it *was* good for is the one thing the row could not do safely — dispatch — so it is
+    /// folded into the payload it duplicated. Building a result whose kind disagrees with its
+    /// payload is now unrepresentable, and the row's dispatch is exhaustive instead of an ordered
+    /// chain of `if let`s where a result carrying two of the five would silently take the first
+    /// branch.
+    enum Destination {
+        case task(AppTask)
+        case note(Note)
+        case event(EKEvent)
+        case list(iOSListRoute)
+        case feature(CadenceFeatureDestination)
     }
 
     let id = UUID()
-    let kind: Kind
+    let destination: Destination
     let title: String
     let subtitle: String
     let detail: String
@@ -105,11 +115,6 @@ struct iOSSearchResult: Identifiable {
     /// end of a bullet-joined metadata string, so a long list name plus tags truncated it
     /// away entirely. Carried separately, the row can lay it out with priority.
     var dueLabel: String?
-    var task: AppTask?
-    var note: Note?
-    var event: EKEvent?
-    var listRoute: iOSListRoute?
-    var featureDestination: CadenceFeatureDestination?
 }
 
 /// The filter row above the results. macOS's palette has no scope filter — it is a

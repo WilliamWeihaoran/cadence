@@ -7,6 +7,7 @@ struct iPadTodayTaskHeader: View {
     let title: String
     let summary: CadenceTodaySummary
     @Binding var layoutMode: iPadTodayLayoutMode
+    var allowsThreePane = true
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
@@ -52,12 +53,20 @@ struct iPadTodayTaskHeader: View {
                     iPadTodayHeaderMiniSummary(summary: summary)
                         .layoutPriority(1)
 
-                    iPadTodayLayoutPicker(selection: $layoutMode, showsLabels: true)
-                        .frame(width: 166)
+                    iPadTodayLayoutPicker(
+                        selection: $layoutMode,
+                        allowsThreePane: allowsThreePane,
+                        showsLabels: true
+                    )
+                    .frame(width: 166)
                 }
 
-                iPadTodayLayoutPicker(selection: $layoutMode, showsLabels: false)
-                    .frame(width: 82)
+                iPadTodayLayoutPicker(
+                    selection: $layoutMode,
+                    allowsThreePane: allowsThreePane,
+                    showsLabels: false
+                )
+                .frame(width: 82)
             }
         }
         .padding(.horizontal, isRegularWidth ? 18 : 16)
@@ -347,11 +356,20 @@ private let segmentCornerRadius = Theme.radiusControl - 3
 
 private struct iPadTodayLayoutPicker: View {
     @Binding var selection: iPadTodayLayoutMode
+    /// False when the pane is narrower than `CadenceTodayLayoutSupport.threePaneMinimumWidth`.
+    /// Three columns genuinely do not fit there, so Mac reads as unavailable instead of accepting
+    /// a tap and leaving the screen exactly as it was.
+    var allowsThreePane = true
     var showsLabels = true
+
+    private func isAvailable(_ mode: iPadTodayLayoutMode) -> Bool {
+        mode != .mac || allowsThreePane
+    }
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(iPadTodayLayoutMode.allCases) { mode in
+                let available = isAvailable(mode)
                 Button {
                     selection = mode
                 } label: {
@@ -365,14 +383,16 @@ private struct iPadTodayLayoutPicker: View {
                                 .minimumScaleFactor(0.82)
                         }
                     }
-                    .foregroundStyle(selection == mode ? Theme.text : Theme.dim)
+                    .foregroundStyle(segmentForeground(for: mode, isAvailable: available))
                     .frame(maxWidth: .infinity)
                     .frame(height: 28)
-                    .background(selection == mode ? Theme.blue.opacity(0.22) : Color.clear)
+                    .background(selection == mode && available ? Theme.blue.opacity(0.22) : Color.clear)
                     .clipShape(RoundedRectangle(cornerRadius: segmentCornerRadius, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .disabled(!available)
                 .accessibilityLabel("\(mode.title) layout")
+                .accessibilityHint(available ? "" : "Needs a wider window")
             }
         }
         .padding(3)
@@ -383,6 +403,11 @@ private struct iPadTodayLayoutPicker: View {
             RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                 .strokeBorder(Theme.borderSubtle.opacity(0.45), lineWidth: 1)
         }
+    }
+
+    private func segmentForeground(for mode: iPadTodayLayoutMode, isAvailable: Bool) -> Color {
+        guard isAvailable else { return Theme.dim.opacity(0.45) }
+        return selection == mode ? Theme.text : Theme.dim
     }
 }
 

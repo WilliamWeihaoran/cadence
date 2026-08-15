@@ -4,6 +4,14 @@ import SwiftUI
 struct CadenceDatePicker: View {
     var label: String = ""
     @Binding var selection: Date
+    /// Shown instead of the bound date when the field has no value yet — "No due date" rather than
+    /// today's date, which a caller with an optional date field would otherwise be claiming.
+    /// Set it and this one button covers the whole field: pick a day to set it, Clear to unset it,
+    /// with no separate switch that could disagree with the date beside it.
+    var placeholder: String? = nil
+    /// Minimum height of the trigger. Touch callers pass 44; the default is the desktop control
+    /// height every existing call site was built against.
+    var minHeight: CGFloat = 30
     var showsClear: Bool = false
     var onClear: (() -> Void)? = nil
 
@@ -13,11 +21,15 @@ struct CadenceDatePicker: View {
     init(
         label: String = "",
         selection: Binding<Date>,
+        placeholder: String? = nil,
+        minHeight: CGFloat = 30,
         showsClear: Bool = false,
         onClear: (() -> Void)? = nil
     ) {
         self.label = label
         self._selection = selection
+        self.placeholder = placeholder
+        self.minHeight = minHeight
         self.showsClear = showsClear
         self.onClear = onClear
         var comps = Calendar.current.dateComponents([.year, .month], from: selection.wrappedValue)
@@ -30,14 +42,14 @@ struct CadenceDatePicker: View {
             HStack(spacing: 5) {
                 Image(systemName: "calendar")
                     .font(.system(size: 11))
-                    .foregroundStyle(Theme.blue)
-                Text(formattedDate)
+                    .foregroundStyle(placeholder == nil ? Theme.blue : Theme.dim)
+                Text(placeholder ?? formattedDate)
                     .font(.system(size: 12))
-                    .foregroundStyle(Theme.text)
+                    .foregroundStyle(placeholder == nil ? Theme.text : Theme.dim)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .frame(minHeight: 30)
+            .frame(minHeight: minHeight)
             .contentShape(Rectangle())
             .background(Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: 7))
@@ -52,6 +64,10 @@ struct CadenceDatePicker: View {
                 showsClear: showsClear && onClear != nil,
                 onClear: onClear
             )
+            // Stays an anchored popover on iPhone. Without this, compact width promotes it to a
+            // full-height sheet around a 256×294 calendar — most of the screen empty — while every
+            // other picker in the iOS app stays a small overlay beside the control it edits.
+            .presentationCompactAdaptation(.popover)
         }
         .onChange(of: selection) {
             var comps = Calendar.current.dateComponents([.year, .month], from: selection)
