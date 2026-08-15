@@ -200,7 +200,6 @@ struct iPadTodayView: View {
             showsHeader: showsCompactHeader,
             todayTasks: todayTasks,
             completedTodayTasks: completedTodayTasks,
-            compactScheduleTasks: compactScheduleTasks,
             todayTaskGroups: todayTaskGroups,
             showCompleted: $showCompleted,
             sampleDataStatus: sampleDataStatus,
@@ -211,7 +210,6 @@ struct iPadTodayView: View {
             showsHeader: showsCompactHeader,
             todayTasks: todayTasks,
             completedTodayTasks: completedTodayTasks,
-            compactScheduleTasks: compactScheduleTasks,
             todayTaskGroups: todayTaskGroups,
             showCompleted: $showCompleted
         )

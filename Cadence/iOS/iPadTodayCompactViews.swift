@@ -7,7 +7,6 @@ struct iOSCompactTodayView: View {
     @Environment(\.dismiss) private var dismiss
     let todayTasks: [AppTask]
     let completedTodayTasks: [AppTask]
-    let compactScheduleTasks: [AppTask]
     let todayTaskGroups: [CadenceTodayTaskGroup]
     @Binding var showCompleted: Bool
     #if DEBUG
@@ -21,20 +20,19 @@ struct iOSCompactTodayView: View {
                 if showsHeader {
                     header
                 }
+                // Tasks and nothing else. The day's note card and the schedule preview used to sit
+                // under this list; both are one tab away and better there — the Notes tab opens the
+                // same daily note, and Calendar shows the same schedule at full height. Today's job
+                // in the Tasks tab is the day's tasks.
                 taskSections
-                iOSCompactTodayNotesCard()
-
-                if !compactScheduleTasks.isEmpty {
-                    iOSCompactTodaySchedulePreview(tasks: compactScheduleTasks)
-                }
             }
             .frame(maxWidth: 520, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .top)
             .padding(.horizontal, 14)
             .padding(.top, 10)
-            // Breathing room at the end of the content, not bar clearance: the tab bar contributes
-            // to the safe area (`safeAreaInset` in `iOSCompactRootShell`), so the scroll view insets
-            // itself and the last row scrolls fully clear on its own. This used to be 132 — hand-cut
+            // Breathing room at the end of the content, not bar clearance: the tab bar is a `VStack`
+            // sibling of the tab content in `iOSCompactRootShell`, so this scroll view is handed a
+            // height that already stops where the bar starts. This used to be 132 — hand-cut
             // clearance for a floating `+` — which is the shape of thing that goes wrong the moment
             // the bar's height changes.
             .padding(.bottom, 16)
@@ -89,95 +87,6 @@ struct iOSCompactTodayView: View {
         }
     }
 
-}
-
-private struct iOSCompactTodayNotesCard: View {
-    @Environment(\.modelContext) private var modelContext
-    @Environment(\.scenePhase) private var scenePhase
-    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
-    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @State private var todayNote: Note?
-    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
-    /// `@State`, not `@FocusState` — see `iOSNotesPanel`.
-    @State private var isEditorFocused = false
-
-    private var editorMode: iOSMarkdownEditorMode {
-        iOSMarkdownEditorPreferences.mode(from: editorModeRaw)
-    }
-
-    private var editorModeBinding: Binding<iOSMarkdownEditorMode> {
-        iOSMarkdownEditorPreferences.binding(for: $editorModeRaw)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-
-            Divider().background(Theme.borderSubtle.opacity(0.65))
-
-            if let todayNote {
-                iOSMarkdownEditingSurface(
-                    text: Binding(
-                        get: { todayNote.content },
-                        set: { update(todayNote, content: $0) }
-                    ),
-                    isFocused: $isEditorFocused,
-                    mode: editorModeBinding,
-                    placeholder: "Start today's note...",
-                    referenceNotes: allNotes,
-                    referenceTasks: allTasks
-                )
-                .frame(height: editorMode == .live ? 280 : 260)
-            } else {
-                ProgressView()
-                    .tint(Theme.blue)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 260)
-            }
-        }
-        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
-        .onAppear(perform: loadTodayNote)
-        .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            loadTodayNote()
-        }
-    }
-
-    private var header: some View {
-        HStack(alignment: .center, spacing: 11) {
-            iOSIconTile(systemImage: "note.text", color: Theme.purple)
-
-            // "Quick daily context" under a card headed "Today Note" restates the card.
-            Text("Today Note")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-
-            Spacer(minLength: 8)
-
-            iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
-
-            if let todayNote {
-                iOSNoteTemplateMenu(kind: .daily, compact: true) { template in
-                    apply(template, to: todayNote)
-                }
-            }
-        }
-        .padding(.horizontal, 13)
-        .padding(.vertical, 12)
-    }
-
-    private func loadTodayNote() {
-        todayNote = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext).today
-    }
-
-    private func update(_ note: Note, content: String) {
-        CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
-    }
-
-    private func apply(_ template: NoteTemplate, to note: Note) {
-        CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
-    }
 }
 
 private struct iOSCompactTodayEmptyState: View {
@@ -305,97 +214,5 @@ private struct iOSCompactCompletedTasks: View {
     }
 }
 
-private struct iOSCompactTodaySchedulePreview: View {
-    let tasks: [AppTask]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Schedule")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .textCase(.uppercase)
-                        .kerning(0.8)
-                    Text("Timeline")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                }
-
-                Spacer()
-
-                Text("\(tasks.count)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Theme.purple)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Theme.purple.opacity(0.12))
-                    .clipShape(Capsule())
-            }
-
-            VStack(spacing: 8) {
-                ForEach(tasks) { task in
-                    iOSCompactScheduleTaskRow(task: task)
-                }
-            }
-        }
-        .padding(14)
-        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
-    }
-}
-
-private struct iOSCompactScheduleTaskRow: View {
-    let task: AppTask
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(startLabel)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Theme.purple)
-                    .monospacedDigit()
-                    .lineLimit(1)
-
-                if !endLabel.isEmpty {
-                    Text(endLabel)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.purple.opacity(0.72))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                }
-            }
-            .frame(width: 52, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(task.title.isEmpty ? "Untitled Task" : task.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(2)
-                Text(task.containerName.isEmpty ? "Inbox" : task.containerName)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-        }
-        .padding(.horizontal, 2)
-        .padding(.vertical, 9)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.35))
-                .frame(height: 1)
-        }
-    }
-
-    private var startLabel: String {
-        TimeFormatters.timeString(from: task.scheduledStartMin)
-    }
-
-    private var endLabel: String {
-        guard task.scheduledEndMin > task.scheduledStartMin else { return "" }
-        return TimeFormatters.timeString(from: task.scheduledEndMin)
-    }
-}
 
 #endif
