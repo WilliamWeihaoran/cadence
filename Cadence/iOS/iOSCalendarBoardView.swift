@@ -15,19 +15,44 @@ struct iOSCalendarBoardPlanner: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @State private var isUpdatingSelectedDateFromScroll = false
-    @State private var isProgrammaticScroll = false
+    /// The day column at the board's leading edge — both the scroll position it is *set* to and the
+    /// one it reports back after a scroll. `scrollPosition(id:)` is what places a lazy board, and it
+    /// replaced a `ScrollViewReader` + `onScrollGeometryChange` pair that could not.
+    ///
+    /// That pair had `onAppear` call `proxy.scrollTo(210)` on a 420-column `LazyHStack` whose
+    /// columns had not been built yet, so the scroll silently did nothing; geometry then reported
+    /// column 0 — the start of the leading buffer, `plannerLeadingDayCount` days behind the anchor —
+    /// and that reading was written back into `selectedDate` and `anchorDate` as if the user had
+    /// scrolled there. Every entry into Board landed roughly seven months in the past, and only the
+    /// toolbar's Today button could get out. `scrollPosition(id:)` resolves the initial offset from
+    /// the id itself, before the first render, so there is nothing to race.
+    ///
+    /// Seeded with the index the first window puts the anchor at, so the very first render is
+    /// already correct rather than corrected.
+    @State private var scrolledDayIndex: Int? = CalendarBoardPlannerSupport.plannerLeadingDayCount
     @State private var windowStartDate: Date?
 
     private let calendar = Calendar.current
     private let renderDays = CalendarBoardPlannerSupport.plannerRenderDayCount
     private let columnSpacing: CGFloat = 10
 
-    private var columnWidth: CGFloat {
-        horizontalSizeClass == .regular ? 300 : 268
+    private var isRegularWidth: Bool {
+        horizontalSizeClass == .regular
+    }
+
+    /// iPad keeps its fixed multi-column board. iPhone gets one column per screen with the next one
+    /// peeking — see `CalendarBoardPlannerSupport.compactColumnWidth`.
+    private func columnWidth(containerWidth: CGFloat) -> CGFloat {
+        guard !isRegularWidth else { return 300 }
+        return CalendarBoardPlannerSupport.compactColumnWidth(
+            containerWidth: containerWidth,
+            leadingInset: horizontalPadding,
+            columnSpacing: columnSpacing
+        )
     }
 
     private var horizontalPadding: CGFloat {
-        horizontalSizeClass == .regular ? 20 : 14
+        isRegularWidth ? 20 : 14
     }
 
     /// No `notBefore`: this board has no Overdue rail, so it keeps its full leading buffer and
@@ -43,72 +68,86 @@ struct iOSCalendarBoardPlanner: View {
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: columnSpacing) {
-                    ForEach(0..<renderDays, id: \.self) { dayIndex in
-                        let date = CalendarBoardPlannerSupport.date(at: dayIndex, bufferStart: activeWindowStartDate, calendar: calendar)
-                        let dateKey = DateFormatters.dateKey(from: date)
-                        iOSCalendarBoardDayColumn(
-                            date: date,
-                            dateKey: dateKey,
-                            tasks: boardTasksByDate[dateKey] ?? [],
-                            bundles: bundlesByDate[dateKey] ?? [],
-                            events: eventsByDate[dateKey] ?? [],
-                            allTasks: allTasks,
-                            allBundles: allBundles,
-                            onAddTask: { onAddItem(dateKey) },
-                            onDropTaskOnDay: { task in schedule(task, on: dateKey) },
-                            onDropBundleOnDay: { bundle in move(bundle, on: dateKey) },
-                            onDropTaskOnBundle: { task, bundle in add(task, to: bundle) }
-                        )
-                        .frame(width: columnWidth)
-                        .id(dayIndex)
-                    }
-                }
-                .padding(.horizontal, horizontalPadding)
-                .padding(.vertical, 16)
-            }
-            .scrollIndicators(.hidden)
-            .scrollBounceBehavior(.always, axes: .horizontal)
-            .background(Theme.bg)
-            .onScrollGeometryChange(for: Int.self) { geometry in
-                visibleDayIndex(for: geometry.contentOffset.x)
-            } action: { _, dayIndex in
-                updateSelectedDate(for: dayIndex, proxy: proxy)
-            }
-            .onAppear {
-                resetWindowAndScroll(proxy, to: anchorDate, animated: false)
-            }
-            .onChange(of: anchorDate) { _, newDate in
-                if isUpdatingSelectedDateFromScroll {
-                    isUpdatingSelectedDateFromScroll = false
-                    return
-                }
-                resetWindowAndScroll(proxy, to: newDate, animated: true)
-            }
+        GeometryReader { geometry in
+            board(columnWidth: columnWidth(containerWidth: geometry.size.width))
         }
     }
 
-    private func visibleDayIndex(for offsetX: CGFloat) -> Int {
-        let stride = columnWidth + columnSpacing
-        let rawIndex = Int(((offsetX - horizontalPadding) / stride).rounded())
-        return min(max(rawIndex, 0), renderDays - 1)
+    private func board(columnWidth: CGFloat) -> some View {
+        ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: columnSpacing) {
+                ForEach(0..<renderDays, id: \.self) { dayIndex in
+                    let date = CalendarBoardPlannerSupport.date(at: dayIndex, bufferStart: activeWindowStartDate, calendar: calendar)
+                    let dateKey = DateFormatters.dateKey(from: date)
+                    iOSCalendarBoardDayColumn(
+                        date: date,
+                        dateKey: dateKey,
+                        tasks: boardTasksByDate[dateKey] ?? [],
+                        bundles: bundlesByDate[dateKey] ?? [],
+                        events: eventsByDate[dateKey] ?? [],
+                        allTasks: allTasks,
+                        allBundles: allBundles,
+                        onAddTask: { onAddItem(dateKey) },
+                        onDropTaskOnDay: { task in schedule(task, on: dateKey) },
+                        onDropBundleOnDay: { bundle in move(bundle, on: dateKey) },
+                        onDropTaskOnBundle: { task, bundle in add(task, to: bundle) }
+                    )
+                    .frame(width: columnWidth)
+                    .id(dayIndex)
+                }
+            }
+            // Directly on the lazy stack, so both the paging targets and the ids
+            // `scrollPosition` resolves are the day columns themselves.
+            .scrollTargetLayout()
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, 12)
+        }
+        .scrollIndicators(.hidden)
+        .scrollBounceBehavior(.always, axes: .horizontal)
+        // Compact pages a whole column at a time, so a day is never left half on screen with its
+        // cards clipped mid-word. iPad scrolls freely across its multi-column board.
+        .modifier(iOSBoardColumnPaging(isEnabled: !isRegularWidth))
+        .scrollPosition(id: $scrolledDayIndex, anchor: .leading)
+        .background(Theme.bg)
+        .onAppear {
+            alignWindow(to: anchorDate)
+        }
+        .onChange(of: anchorDate) { _, newDate in
+            if isUpdatingSelectedDateFromScroll {
+                isUpdatingSelectedDateFromScroll = false
+                return
+            }
+            alignWindow(to: newDate, animated: true)
+        }
+        .onChange(of: scrolledDayIndex) { _, dayIndex in
+            guard let dayIndex else { return }
+            adoptVisibleDay(dayIndex)
+        }
     }
 
-    private func resetWindowAndScroll(_ proxy: ScrollViewProxy, to date: Date, animated: Bool) {
+    /// Rebuilds the rendered window around `date` and puts that day at the leading edge.
+    ///
+    /// Setting `scrolledDayIndex` is both the request and, once SwiftUI honours it, the report — so
+    /// the no-op guard matters: re-assigning the index the board is already on would otherwise
+    /// bounce back through `adoptVisibleDay` on every anchor change.
+    private func alignWindow(to date: Date, animated: Bool = false) {
         let startDate = CalendarBoardPlannerSupport.plannerWindowStart(for: date, calendar: calendar)
-        isProgrammaticScroll = true
+        let target = CalendarBoardPlannerSupport.dayIndex(
+            for: date,
+            bufferStart: startDate,
+            calendar: calendar,
+            renderDays: renderDays
+        )
         windowStartDate = startDate
-        let target = CalendarBoardPlannerSupport.dayIndex(for: date, bufferStart: startDate, calendar: calendar, renderDays: renderDays)
-        scroll(proxy, to: target, animated: animated)
-        DispatchQueue.main.asyncAfter(deadline: .now() + (animated ? 0.28 : 0.08)) {
-            isProgrammaticScroll = false
+        guard scrolledDayIndex != target else { return }
+        if animated {
+            withAnimation(.snappy(duration: 0.22)) { scrolledDayIndex = target }
+        } else {
+            scrolledDayIndex = target
         }
     }
 
-    private func recenterWindowIfNeeded(_ proxy: ScrollViewProxy, visibleDayIndex dayIndex: Int, visibleDate: Date) {
-        guard !isProgrammaticScroll else { return }
+    private func recenterWindowIfNeeded(visibleDayIndex dayIndex: Int, visibleDate: Date) {
         guard let startDate = CalendarBoardPlannerSupport.recenteredWindowStart(
             visibleDayIndex: dayIndex,
             visibleDate: visibleDate,
@@ -124,28 +163,11 @@ struct iOSCalendarBoardPlanner: View {
             renderDays: renderDays
         )
 
-        isProgrammaticScroll = true
         windowStartDate = startDate
-        scroll(proxy, to: recenteredDayIndex, animated: false)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-            isProgrammaticScroll = false
-        }
+        scrolledDayIndex = recenteredDayIndex
     }
 
-    private func scroll(_ proxy: ScrollViewProxy, to dayIndex: Int, animated: Bool) {
-        DispatchQueue.main.async {
-            if animated {
-                withAnimation(.snappy(duration: 0.22)) {
-                    proxy.scrollTo(min(max(dayIndex, 0), renderDays - 1), anchor: .leading)
-                }
-            } else {
-                proxy.scrollTo(min(max(dayIndex, 0), renderDays - 1), anchor: .leading)
-            }
-        }
-    }
-
-    private func updateSelectedDate(for dayIndex: Int, proxy: ScrollViewProxy) {
-        guard !isProgrammaticScroll else { return }
+    private func adoptVisibleDay(_ dayIndex: Int) {
         let date = CalendarBoardPlannerSupport.date(at: dayIndex, bufferStart: activeWindowStartDate, calendar: calendar)
         if !calendar.isDate(date, inSameDayAs: selectedDate) {
             selectedDate = date
@@ -154,7 +176,7 @@ struct iOSCalendarBoardPlanner: View {
             isUpdatingSelectedDateFromScroll = true
             anchorDate = date
         }
-        recenterWindowIfNeeded(proxy, visibleDayIndex: dayIndex, visibleDate: date)
+        recenterWindowIfNeeded(visibleDayIndex: dayIndex, visibleDate: date)
     }
 
     private func schedule(_ task: AppTask, on dateKey: String) {
@@ -167,6 +189,21 @@ struct iOSCalendarBoardPlanner: View {
 
     private func add(_ task: AppTask, to bundle: TaskBundle) {
         CadenceTaskMutationSupport.addTask(task, to: bundle, modelContext: modelContext)
+    }
+}
+
+/// `.scrollTargetBehavior` has no erased form, so the compact/regular choice needs a modifier
+/// rather than a ternary at the call site.
+private struct iOSBoardColumnPaging: ViewModifier {
+    let isEnabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.scrollTargetBehavior(.viewAligned)
+        } else {
+            content
+        }
     }
 }
 
@@ -280,7 +317,15 @@ private struct iOSCalendarBoardDayColumn: View {
 
     @ViewBuilder
     private var content: some View {
-        if !activeItems.isEmpty {
+        if activeItems.isEmpty {
+            // One line, next to the ghost add row that is already there. The day inspector's
+            // version of this — icon tile, heading, a three-line explanation of what a planned
+            // task, a time block and an Apple Calendar event are, and a button repeating the ghost
+            // row — took roughly 40% of the phone screen to report that a day is empty.
+            if completedTasks.isEmpty {
+                iOSInlineEmpty(text: "Nothing scheduled")
+            }
+        } else {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(activeItems) { item in

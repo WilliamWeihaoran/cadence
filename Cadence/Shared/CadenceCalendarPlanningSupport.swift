@@ -76,6 +76,31 @@ enum CalendarBoardAddAction: Equatable {
     case presentCreateSheet
 }
 
+/// The one-line "what is on this day" summary the calendar's context strip carries.
+///
+/// It replaced four tinted chips — "N total", "N timed", "N tasks", "N events" — in blue, purple,
+/// green and amber. Four hues that encoded nothing (a count is never the exceptional case colour is
+/// reserved for), on a row that showed all four permanently, so the overwhelmingly common empty day
+/// spent a full band of chrome rendering "0 total · 0 timed · 0 tasks · 0 events" in four colours.
+/// `total` went with them: it is the sum of the three counts printed beside it.
+enum CadenceCalendarDaySummary {
+    /// `nil` when the day is empty — the caller draws nothing rather than a row saying "0".
+    static func line(taskCount: Int, timedCount: Int, bundleCount: Int, eventCount: Int) -> String? {
+        var parts: [String] = []
+        if taskCount > 0 { parts.append(pluralized(taskCount, "task")) }
+        // A subset of the tasks, so it is an aside rather than a separate population — and only
+        // worth saying when some of the day's work is actually pinned to a time.
+        if timedCount > 0 { parts.append("\(timedCount) timed") }
+        if bundleCount > 0 { parts.append(pluralized(bundleCount, "block")) }
+        if eventCount > 0 { parts.append(pluralized(eventCount, "event")) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private static func pluralized(_ count: Int, _ noun: String) -> String {
+        "\(count) \(noun)\(count == 1 ? "" : "s")"
+    }
+}
+
 enum CalendarBoardPlannerSupport {
     static let visibleDayCount = 7
     static let defaultRenderDayCount = 3650
@@ -125,6 +150,25 @@ enum CalendarBoardPlannerSupport {
     ) -> Int {
         let raw = calendar.dateComponents([.day], from: bufferStart, to: calendar.startOfDay(for: date)).day ?? 0
         return min(max(raw, 0), max(0, renderDays - 1))
+    }
+
+    /// The width of one day column on a **compact** board, sized so that one column fills the
+    /// screen and the *next* one peeks in by `peekFraction` of the container.
+    ///
+    /// The peek is load-bearing rather than decorative: it is the only thing on a phone that says
+    /// there is another day to drag a card onto, which is the board's entire reason to exist as a
+    /// mode separate from Week. A fixed 268pt column instead left the neighbour clipped mid-word at
+    /// whatever offset the scroll happened to stop at.
+    static func compactColumnWidth(
+        containerWidth: CGFloat,
+        leadingInset: CGFloat,
+        columnSpacing: CGFloat,
+        peekFraction: CGFloat = 0.17,
+        minimumWidth: CGFloat = 200
+    ) -> CGFloat {
+        let fraction = min(max(peekFraction, 0), 0.5)
+        let width = containerWidth * (1 - fraction) - leadingInset - columnSpacing
+        return max(minimumWidth, width)
     }
 
     /// Whether the visible column has drifted close enough to an end of the rendered window that

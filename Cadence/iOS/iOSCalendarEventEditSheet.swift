@@ -261,7 +261,7 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var titleCard: some View {
-        iOSEditorSection(title: "Event", contentSpacing: 10) {
+        iOSEditorSection(title: "Event") {
             TextField("Event title", text: $title, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .bold))
@@ -270,8 +270,11 @@ struct iOSCalendarEventEditSheet: View {
         }
     }
 
+    // `contentSpacing` stays at its 0 default: every gap in here is an `iOSEditorDivider`, which
+    // already pads itself 9pt each side. Adding 10 on top double-counted it and gave a 44pt row an
+    // 83pt pitch — the same measurement that was taken out of the task inspector.
     private var scheduleCard: some View {
-        iOSEditorSection(title: "Schedule", contentSpacing: 10) {
+        iOSEditorSection(title: "Schedule") {
             Toggle(isOn: $isAllDay) {
                 iOSEditorInlineLabel(label: "All day", systemImage: "sun.max", color: Theme.amber)
             }
@@ -328,7 +331,7 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var calendarCard: some View {
-        iOSEditorSection(title: "Apple Calendar", contentSpacing: 10) {
+        iOSEditorSection(title: "Apple Calendar") {
             if calendarManager.writableCalendars.isEmpty {
                 Text("No writable calendars are available.")
                     .font(.system(size: 13, weight: .medium))
@@ -356,7 +359,7 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var eventNoteCard: some View {
-        iOSEditorSection(title: "Event Note", contentSpacing: 10) {
+        iOSEditorSection(title: "Event Note") {
             HStack(alignment: .center, spacing: 12) {
                 iOSIconTile(systemImage: "doc.text", color: Theme.purple, size: 34, iconSize: 16)
 
@@ -384,7 +387,7 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var notesCard: some View {
-        iOSEditorSection(title: "Notes", contentSpacing: 10) {
+        iOSEditorSection(title: "Notes") {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Apple Calendar note")

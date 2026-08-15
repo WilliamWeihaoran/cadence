@@ -30,8 +30,7 @@ struct iOSCalendarDayInspector: View {
             if !hasItems {
                 iOSCalendarInspectorEmptyState(addItem: addItem)
                     .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .top)
-                    .frame(maxHeight: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .background(Theme.bg)
             } else {
                 ScrollView {
@@ -179,38 +178,36 @@ private struct iOSCalendarInspectorSection<Content: View>: View {
     }
 }
 
+/// One line and one action.
+///
+/// It was an icon tile, a heading, a three-line explanation of what a planned task, a time block and
+/// an Apple Calendar event are, and a button — a card the height of a third of a phone screen, whose
+/// whole content was "there is nothing here". The explanation named the three things the add control
+/// it sits beside already offers, and the header's own `+` offers them too.
 private struct iOSCalendarInspectorEmptyState: View {
     let addItem: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                iOSIconTile(systemImage: "calendar", color: Theme.blue, size: 38, iconSize: 18)
+        HStack(spacing: 12) {
+            Text("Nothing scheduled")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.dim)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Nothing scheduled")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text("Add a planned task, time block, or Apple Calendar event for this date.")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.subdued)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 0)
-            }
+            Spacer(minLength: 8)
 
             iOSActionButton(
-                title: "Add item",
+                title: "Add",
                 systemImage: "plus",
                 role: .secondary,
                 size: .compact,
                 action: addItem
             )
         }
-        .padding(16)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cadenceCard(background: Theme.surfaceElevated.opacity(0.4), cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
+        .background(Theme.surfaceElevated.opacity(0.38))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 }
 

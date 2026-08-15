@@ -150,9 +150,32 @@ struct iOSCalendarView: View {
         horizontalSizeClass == .compact
     }
 
+    private var isCompactBoard: Bool {
+        isCompact && presentation == .board
+    }
+
+    /// Whether the calendar pane fills the screen on a phone instead of sharing it with a
+    /// day-inspector card above.
+    ///
+    /// The card, the four count chips and the inspector's empty state were one block of chrome
+    /// above every mode, taking most of a 402pt screen before any calendar appeared — the Week
+    /// timeline was left showing four hours. The card said "Saturday, August 15", which the page
+    /// title's range and the grid's own marked day both already say. Month is the exception until
+    /// its agenda is built: its grid alone would list nothing, so it keeps the inspector for now.
+    private var isFullPaneCompact: Bool {
+        isCompact && (presentation == .board || viewMode != .month)
+    }
+
+    /// Only Week keeps the counts line on a phone. The Board's columns are meant to start directly
+    /// under the mode control, and Month's inspector below already lists the same day.
+    private var showsContextStrip: Bool {
+        !isCompact || (presentation == .timeline && viewMode != .month)
+    }
+
+    /// Only Week and Month reach this. The compact board is not one card in a scrolling page any
+    /// more; it fills the pane (see `isCompactBoard`).
     private var compactCalendarHeight: CGFloat {
-        if presentation == .board { return 520 }
-        return presentation == .timeline && viewMode != .month ? 430 : 420
+        viewMode != .month ? 430 : 420
     }
 
     private var compactInspectorMinHeight: CGFloat {
@@ -172,19 +195,21 @@ struct iOSCalendarView: View {
                 today: jumpToToday
             )
 
-            iOSCalendarContextStrip(
-                selectedDate: selectedDate,
-                totalCount: selectedTotalCount,
-                timedCount: selectedTimedTaskCount,
-                taskCount: selectedUniqueTaskCount,
-                eventCount: selectedEvents.count,
-                bundleCount: selectedBundles.count,
-                leadItem: selectedLeadItem
-            )
+            if showsContextStrip {
+                iOSCalendarContextStrip(
+                    selectedDate: selectedDate,
+                    timedCount: selectedTimedTaskCount,
+                    taskCount: selectedUniqueTaskCount,
+                    eventCount: selectedEvents.count,
+                    bundleCount: selectedBundles.count,
+                    leadItem: selectedLeadItem
+                )
+            }
 
-            Divider().background(Theme.borderSubtle)
-
-            if isCompact {
+            if isFullPaneCompact {
+                calendarContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isCompact {
                 ScrollView {
                     VStack(spacing: 10) {
                         dayInspector

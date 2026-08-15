@@ -84,8 +84,11 @@ struct iOSCalendarBundleDetailSheet: View {
         }
     }
 
+    // The one section here whose children are *not* separated by an `iOSEditorDivider`, so it is the
+    // one that needs its own spacing: at the 0 default the title field and the summary row below it
+    // sat flush against each other.
     private var titleSection: some View {
-        iOSEditorSection(title: "Block") {
+        iOSEditorSection(title: "Block", contentSpacing: 10) {
             TextField("Block title", text: $title)
                 .textInputAutocapitalization(.words)
                 .font(.system(size: 22, weight: .bold))

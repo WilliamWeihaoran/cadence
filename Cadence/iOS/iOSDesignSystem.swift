@@ -460,39 +460,54 @@ private struct iOSEditorSectionChrome: ViewModifier {
 }
 
 /// Divider between two rows inside an `iOSEditorSection`.
+///
+/// It owns the whole gap between two rows — call sites must not add `contentSpacing` on top, or
+/// the same space is counted twice. At 9pt each side a 44pt row had a 63pt pitch, which read as a
+/// list of mostly-empty rows; 6pt puts it at 57 without letting the rows touch.
 struct iOSEditorDivider: View {
     var body: some View {
         Rectangle()
             .fill(Theme.borderSubtle.opacity(0.55))
             .frame(height: 1)
-            .padding(.vertical, 9)
+            .padding(.vertical, 6)
     }
 }
 
-/// The icon-badge + label pair that opens an `iOSEditorFieldRow`. Also usable on its own, for the
-/// rows whose control is a full-width toggle rather than a trailing value.
+/// A field's name, in the vocabulary macOS's `TaskInspectorFieldRow` established: a **bare glyph
+/// in a fixed leading slot**, then a quiet label.
+///
+/// It used to be a 28pt filled `iOSIconTile` beside a 14pt semibold `Theme.text` label. Stacked
+/// seven deep in the task inspector that read as a column of grey squares shouting the names of
+/// fields while the values — the only part that differs from task to task — sat dim on the far
+/// right. The fixed slot is what makes every label in a group start on the same x, so the column
+/// scans; the glyph carries which field this is, and the caller's `content` carries the answer.
 struct iOSEditorInlineLabel: View {
     let label: String
     let systemImage: String
-    var color: Color = Theme.blue
+    /// Defaults to `Theme.dim`, matching the row-metadata rule: colour is for the exceptional
+    /// (an overdue due date, a past do date), not for every field that happens to have an icon.
+    var color: Color = Theme.dim
 
     var body: some View {
-        HStack(spacing: 10) {
-            iOSIconTile(systemImage: systemImage, color: color, size: 28, iconSize: 13, fillOpacity: 0.12, bordered: false)
+        HStack(spacing: 9) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(color)
+                .frame(width: 22, alignment: .leading)
 
             Text(label)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.text)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.dim)
         }
     }
 }
 
-/// A labelled field row inside an `iOSEditorSection`: tinted icon badge, label, trailing control.
+/// A labelled field row inside an `iOSEditorSection`: glyph, quiet label, trailing control.
 /// 44pt tall, because the control on its trailing edge is the thing being tapped.
 struct iOSEditorFieldRow<Content: View>: View {
     let label: String
     let systemImage: String
-    var color: Color = Theme.blue
+    var color: Color = Theme.dim
     @ViewBuilder let content: () -> Content
 
     var body: some View {

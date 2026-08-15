@@ -211,9 +211,11 @@ struct iOSCalendarQuickCreateSheet: View {
                 Text(DateFormatters.relativeDate(from: dateKey))
                     .font(.system(size: 19, weight: .bold))
                     .foregroundStyle(Theme.text)
-                Text(headerSubtitle)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.subdued)
+                if let headerSubtitle {
+                    Text(headerSubtitle)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.subdued)
+                }
             }
 
             Spacer(minLength: 8)
@@ -289,8 +291,10 @@ struct iOSCalendarQuickCreateSheet: View {
         )
     }
 
+    /// No eyebrow. It read "TASK" / "BLOCK" / "EVENT" — the word the segmented control directly
+    /// above it already has lit up, and the word the field's own placeholder repeats a line below.
     private var titleSection: some View {
-        iOSEditorSection(title: kind.title, style: .ruled, contentSpacing: 10) {
+        iOSEditorSection(title: nil, style: .ruled) {
             TextField(kind.placeholder, text: $title, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .bold))
@@ -304,7 +308,7 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private var calendarSection: some View {
-        iOSEditorSection(title: "Apple Calendar", style: .ruled, contentSpacing: 10) {
+        iOSEditorSection(title: "Apple Calendar", style: .ruled) {
             if !calendarManager.isAuthorized {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Calendar access is needed to create events.")
@@ -346,7 +350,7 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private var taskOptions: some View {
-        iOSEditorSection(title: "Details", style: .ruled, contentSpacing: 10) {
+        iOSEditorSection(title: "Details", style: .ruled) {
             iOSEditorFieldRow(label: "Estimate", systemImage: "clock.fill", color: Theme.blue) {
                 EstimatePickerControl(value: $estimatedMinutes)
             }
@@ -396,7 +400,7 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private var timeSection: some View {
-        iOSEditorSection(title: "Schedule", style: .ruled, contentSpacing: 10) {
+        iOSEditorSection(title: "Schedule", style: .ruled) {
             if kind == .task {
                 Toggle(isOn: $hasTime) {
                     iOSEditorInlineLabel(
@@ -441,17 +445,23 @@ struct iOSCalendarQuickCreateSheet: View {
                     }
                 }
 
-                iOSEditorDivider()
+                // No Duration row for a task. A task's length is `estimatedMinutes`, and the
+                // Estimate row in DETAILS above already edits it — two rows, one field, showing the
+                // same "30m" and moving together. Blocks and events have no Details section, so for
+                // them this is the only place the length can be set.
+                if kind != .task {
+                    iOSEditorDivider()
 
-                iOSEditorFieldRow(label: "Duration", systemImage: "timer", color: Theme.green) {
-                    EstimatePickerControl(value: $estimatedMinutes)
+                    iOSEditorFieldRow(label: "Duration", systemImage: "timer", color: Theme.green) {
+                        EstimatePickerControl(value: $estimatedMinutes)
+                    }
                 }
             }
         }
     }
 
     private var notesSection: some View {
-        iOSEditorSection(title: "Notes", style: .ruled, contentSpacing: 10) {
+        iOSEditorSection(title: "Notes", style: .ruled) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(kind == .event ? "Apple Calendar note" : "Task note")
@@ -588,11 +598,12 @@ struct iOSCalendarQuickCreateSheet: View {
         return max(0, min(23 * 60 + 59, (components.hour ?? 9) * 60 + (components.minute ?? 0)))
     }
 
-    private var headerSubtitle: String {
-        if let initialStartMinute {
-            return "Create around \(CadenceScheduleSupport.timeRangeLabel(startMinute: initialStartMinute, endMinute: initialStartMinute + estimatedMinutes))."
-        }
-        return "Create a planned task, block, or Apple Calendar event."
+    /// Only the slot the sheet was opened on. The other branch used to read "Create a planned task,
+    /// block, or Apple Calendar event." — a subtitle listing the three options the segmented control
+    /// two rows below already lists, on a sheet whose one purpose is creating one of them.
+    private var headerSubtitle: String? {
+        guard let initialStartMinute else { return nil }
+        return "Create around \(CadenceScheduleSupport.timeRangeLabel(startMinute: initialStartMinute, endMinute: initialStartMinute + estimatedMinutes))."
     }
 
     private static func defaultStartTime(dateKey: String, startMinute: Int?) -> Date {

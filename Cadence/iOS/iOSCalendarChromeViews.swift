@@ -25,7 +25,6 @@ struct iOSCalendarLeadItem: Equatable {
 /// space to say nothing.
 struct iOSCalendarContextStrip: View {
     let selectedDate: Date
-    let totalCount: Int
     let timedCount: Int
     let taskCount: Int
     let eventCount: Int
@@ -37,34 +36,64 @@ struct iOSCalendarContextStrip: View {
         horizontalSizeClass == .compact
     }
 
+    private var summary: String? {
+        CadenceCalendarDaySummary.line(
+            taskCount: taskCount,
+            timedCount: timedCount,
+            bundleCount: bundleCount,
+            eventCount: eventCount
+        )
+    }
+
+    /// On iPhone this row exists only to say what the day holds, so a day holding nothing has no
+    /// row: the band used to persist and render "0 total · 0 timed · 0 tasks · 0 events". On iPad it
+    /// also carries the only date the calendar pane itself shows, so it always stays.
+    private var hasContent: Bool {
+        !isCompact || summary != nil || leadItem != nil
+    }
+
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 10) {
-                // On iPhone the day inspector sits immediately below this row and heads itself
-                // with the same date tile and the same "Thursday, January 15" — the two were about
-                // 50pt apart. The date belongs to the pane that lists the day's items, so it stays
-                // there and this row keeps only the counts. On iPad the inspector is a column to
-                // the side, not the next thing down, and this is the only date the calendar pane
-                // itself carries.
-                if !isCompact {
-                    selectedDayLabel
-                }
-
-                metricChips
-
-                if let leadItem {
-                    leadItemLabel(leadItem)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, isCompact ? 16 : 18)
-            .padding(.vertical, 9)
-            .frame(minWidth: horizontalSizeClass == .regular ? nil : 0)
+        if hasContent {
+            strip
         }
-        .scrollIndicators(.hidden)
-        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-        .background(Theme.bg.opacity(0.84))
+    }
+
+    private var strip: some View {
+        VStack(spacing: 0) {
+            ScrollView(.horizontal) {
+                HStack(spacing: 10) {
+                    // On iPhone the day inspector sits immediately below this row and heads itself
+                    // with the same date tile and the same "Thursday, January 15" — the two were
+                    // about 50pt apart. The date belongs to the pane that lists the day's items, so
+                    // it stays there and this row keeps only the counts. On iPad the inspector is a
+                    // column to the side, not the next thing down, and this is the only date the
+                    // calendar pane itself carries.
+                    if !isCompact {
+                        selectedDayLabel
+                    }
+
+                    if let summary {
+                        summaryLabel(summary)
+                    }
+
+                    if let leadItem {
+                        leadItemLabel(leadItem)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, isCompact ? 16 : 18)
+                .padding(.vertical, 9)
+                .frame(minWidth: horizontalSizeClass == .regular ? nil : 0)
+            }
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .background(Theme.bg.opacity(0.84))
+
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(height: 1)
+        }
     }
 
     private var selectedDayLabel: some View {
@@ -96,25 +125,19 @@ struct iOSCalendarContextStrip: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var metricChips: some View {
-        HStack(spacing: 6) {
-            iOSMetaChip(label: "\(totalCount) total", color: Theme.blue, systemImage: "calendar")
-            iOSMetaChip(label: "\(timedCount) timed", color: Theme.purple, systemImage: "clock.fill")
-            iOSMetaChip(label: "\(taskCount) tasks", color: Theme.green, systemImage: "checklist")
-            // Blocks and events are separate things and used to be reported separately, by an
-            // inspector strip this replaced. Summing them made a day of 2 blocks + 1 event read
-            // identically to a day of 0 blocks + 3 events. Each is shown only when it has one.
-            if bundleCount > 0 {
-                iOSMetaChip(label: "\(bundleCount) blocks", color: Theme.amber, systemImage: "tray.full.fill")
-            }
-            if eventCount > 0 {
-                iOSMetaChip(label: "\(eventCount) events", color: Theme.amber, systemImage: "calendar.badge.clock")
-            }
-            if bundleCount == 0 && eventCount == 0 {
-                iOSMetaChip(label: "0 events", color: Theme.amber, systemImage: "calendar.badge.clock")
-            }
-        }
-        .fixedSize()
+    /// One quiet line, not a rank of tinted chips.
+    ///
+    /// This was five `iOSMetaChip`s in four colours — blue "total", purple "timed", green "tasks",
+    /// amber "blocks"/"events" — every one of them permanently on screen, so an empty day, which is
+    /// most days, spent a band of chrome saying "0" four times in four hues. Blocks and events are
+    /// still counted separately (summing them made 2 blocks + 1 event read as 0 blocks + 3 events);
+    /// they, and the row itself, are simply absent at zero. See `CadenceCalendarDaySummary`.
+    private func summaryLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(Theme.dim)
+            .lineLimit(1)
+            .fixedSize()
     }
 
     private func leadItemLabel(_ leadItem: iOSCalendarLeadItem) -> some View {

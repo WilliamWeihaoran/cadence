@@ -250,8 +250,11 @@ struct iOSCalendarBoardTaskCard: View {
                 .init(
                     id: "time",
                     icon: "clock.fill",
+                    // Neutral. A card in a day column having a time is the ordinary case, not the
+                    // exceptional one — blue here fired on nearly every card and left the due chip,
+                    // which does go red when it means something, no louder than its neighbour.
                     title: TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledEndMin),
-                    color: Theme.blue
+                    color: Theme.dim
                 )
             )
         }
