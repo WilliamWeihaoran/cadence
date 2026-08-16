@@ -32,19 +32,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 Started 2026-08-17 06:2x, five agents on disjoint file sets. File ownership is stated in each
 brief so two agents cannot edit the same file.
 
-**A — markdown block rendering follow-ups** (`iOSMarkdownStylingSupport`, `iOSMarkdownBlockCanvasRendering`, list/divider parsing)
-
-- [T-37] **Checkbox markers never render on iOS.** `- [x] a done thing` draws a bullet and a
-  literal `[x]`; `applyCheckboxAttachment` is not reached at all, so this is a *detection* bug in
-  the list-line parse, not the drawing layer that T-33 fixed — the quote bar next to it, which uses
-  the identical mechanism, renders correctly. Start at `applyListLine` in
-  `iOSMarkdownStylingSupport.swift` and work out why a todo line is classified as a plain bullet.
-
-- [T-38] **A `---` on the line directly after text draws its rule through that text.** Seen on a
-  seeded Aug 15 daily note: the divider canvas lands in the *previous* line fragment rather than its
-  own. A `---` with a blank line above it is correct (verified). Note that `---` under text is
-  setext-H2 syntax in real markdown, so the parse may be the thing to settle first, not the
-  placement. Uncovered by T-33, which is what made dividers visible in the first place.
 
 **B — calendar** (`iOS/iOSCalendar*`, `Shared/CadenceCalendar*`)
 
@@ -93,6 +80,13 @@ brief so two agents cannot edit the same file.
   three targets above.
 
 ## Open — known, unscheduled
+
+- [T-41] **`CadenceTests/iOSMarkdownStylingSupportTests.swift` never runs.** The whole file is
+  inside `#if os(iOS)`, and the test target builds for macOS — so its two tests have never executed
+  once. Dead coverage that reads as real coverage, which is worse than none. Either move the logic
+  under test into `Shared/`/`Services/` so it can be exercised, or delete the file; leaving it is
+  the one option that misleads. Found while fixing T-37, whose fixes could not be pinned there for
+  exactly this reason.
 
 - [T-39] **Group headers should be drop targets too.** `47328af` made task *rows* accept a dropped
   `+`, which covers every grouping by construction but cannot reach an **empty** group — the one
@@ -166,6 +160,9 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-32] `a43b8fd` A checkbox you typed was never a checkbox, and tagged notes grew two
+  rules (T-37, T-38).
 
 - [D-31] `47328af` Drag the + onto a task and the new one lands where that one lives (T-05).
 
