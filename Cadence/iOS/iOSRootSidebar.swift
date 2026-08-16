@@ -11,7 +11,10 @@ struct iPadMacStyleRootShell<Content: View>: View {
             let sidebarStyle = iOSSidebarStyle.style(for: proxy.size.width)
 
             HStack(spacing: 0) {
-                iOSSidebar(selection: $selection, style: sidebarStyle)
+                // The window's own size, handed down so the lists drawer can be sized to the screen
+                // it opens on. It was a hardcoded 342×640 popover — two thirds of the height of an
+                // 11" iPad in portrait, with the rest of the panel below the fold.
+                iOSSidebar(selection: $selection, style: sidebarStyle, containerSize: proxy.size)
                     .frame(width: sidebarStyle.width)
                     // `Theme.surface` against the detail pane's `Theme.bg`, closed by a full-weight
                     // hairline — the same construction and the same reasoning as macOS's
@@ -43,12 +46,17 @@ struct iPadMacStyleRootShell<Content: View>: View {
 struct iOSSidebar: View {
     @Binding var selection: iOSSidebarItem?
     let style: iOSSidebarStyle
+    /// The whole window, not this column — see `iOSListsDrawerMetrics`.
+    let containerSize: CGSize
     @Query private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query private var habits: [Habit]
     @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
-    @State private var isWorkspaceDrawerPresented = false
+    @State private var isListsDrawerPresented = false
+    /// Owned here rather than by the drawer, because the drawer is a popover: it is gone by the
+    /// time the editor would present, and a sheet whose presenter has been dismissed never appears.
+    @State private var listEditorMode: iOSListEditorMode?
 
     private var activeListCount: Int {
         areas.filter(\.isActive).count + projects.filter(\.isActive).count
@@ -65,12 +73,10 @@ struct iOSSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSSidebarBrand(style: style) {
-                isWorkspaceDrawerPresented = true
-            }
-            .padding(.horizontal, style.horizontalPadding)
-            .padding(.top, style == .expanded ? 18 : 14)
-            .padding(.bottom, style == .expanded ? 18 : 14)
+            iOSSidebarBrand(style: style)
+                .padding(.horizontal, style.horizontalPadding)
+                .padding(.top, style == .expanded ? 18 : 14)
+                .padding(.bottom, style == .expanded ? 18 : 14)
 
             if style == .expanded {
                 expandedNavigation
@@ -78,10 +84,21 @@ struct iOSSidebar: View {
                 railNavigation
             }
         }
-        .popover(isPresented: $isWorkspaceDrawerPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .leading) {
-            iOSWorkspaceDrawer(selection: $selection)
-                .frame(width: 342, height: 640)
-                .presentationCompactAdaptation(.sheet)
+        // Anchored on the column and opening to its trailing side, which is where the detail pane
+        // the choice lands in already is. It used to say `.leading` — the one direction with
+        // nothing but screen edge behind it.
+        .popover(isPresented: $isListsDrawerPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
+            iOSListsDrawer(selection: $selection) { mode in
+                listEditorMode = mode
+            }
+            .frame(
+                width: iOSListsDrawerMetrics.width(for: containerSize),
+                height: iOSListsDrawerMetrics.height(for: containerSize)
+            )
+            .presentationCompactAdaptation(.sheet)
+        }
+        .sheet(item: $listEditorMode) { mode in
+            iOSListEditorSheet(mode: mode)
         }
     }
 
@@ -175,15 +192,60 @@ struct iOSSidebar: View {
             title: destination.compactTitle,
             systemImage: destination.systemImage,
             count: count(for: destination),
-            isSelected: selection == destination.item,
+            isSelected: isSelected(destination),
             style: style
         ) {
-            selection = destination.item
+            // Lists is the one row that opens rather than navigates. The sidebar has no row per
+            // list — it cannot, the collection is unbounded — so the drawer is where a list is
+            // picked, and the row that says which list you are in is the row that changes it.
+            // `All Lists` inside the drawer is what still reaches the Lists page itself.
+            if destination == .lists {
+                isListsDrawerPresented = true
+            } else {
+                selection = destination.item
+            }
         }
+    }
+
+    private func isSelected(_ destination: CadenceFeatureDestination) -> Bool {
+        selection?.sidebarNavigationRoot == destination.item
     }
 
     private func count(for destination: CadenceFeatureDestination) -> Int? {
         badgeSnapshot.count(for: destination)
+    }
+}
+
+extension iOSSidebarItem {
+    /// The nav row a selection lights up.
+    ///
+    /// A list is reached *through* Lists, and has no row of its own, so `.area` and `.project`
+    /// resolve to `.lists`. Without this the sidebar showed no selection at all while a list was
+    /// open — eleven dim rows and nothing saying where you were, on the one screen whose job is to
+    /// say where you are.
+    var sidebarNavigationRoot: iOSSidebarItem {
+        switch self {
+        case .area, .project:
+            return .lists
+        case .today, .allTasks, .focus, .inbox, .calendar, .goals, .habits, .notes, .lists, .search, .settings:
+            return self
+        }
+    }
+}
+
+/// How big the lists drawer is, given the window it opens over.
+///
+/// It was `.frame(width: 342, height: 640)` — a constant, on a surface that runs from an iPad mini
+/// in Split View to a 13" in landscape.
+enum iOSListsDrawerMetrics {
+    static func width(for containerSize: CGSize) -> CGFloat {
+        min(380, max(300, containerSize.width * 0.32))
+    }
+
+    /// Full height less the two safe areas and the popover's own margins. The floor matters for
+    /// Split View, where a proportional height would collapse the panel.
+    static func height(for containerSize: CGSize) -> CGFloat {
+        max(420, containerSize.height - 132)
     }
 }
 
@@ -254,34 +316,34 @@ struct iOSSidebarRailDivider: View {
     }
 }
 
-/// The app mark, and the control that opens `iOSWorkspaceDrawer`.
+/// The app mark. Just the mark.
 ///
 /// It used to read "Cadence / Workspace". "Workspace" is a subtitle naming the app you are already
 /// in — the same thing the `subtitle` parameter was deleted from `DesktopPageHeader` for. The word
 /// is gone; the app name stays, because that is identity rather than description.
+///
+/// It also used to be the button that opened the drawer, wearing a `sidebar.leading` glyph that
+/// promised to collapse the sidebar and did not. Now that the drawer is a list picker, the control
+/// that opens it is the **Lists** row, and the mark went back to being a mark.
 struct iOSSidebarBrand: View {
     let style: iOSSidebarStyle
-    let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 9) {
-                iOSIconTile(systemImage: "sidebar.leading", color: Theme.blue, size: 32)
+        HStack(spacing: 9) {
+            iOSIconTile(systemImage: "circle.hexagongrid.fill", color: Theme.blue, size: 32)
 
-                if style == .expanded {
-                    Text("Cadence")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
+            if style == .expanded {
+                Text("Cadence")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
 
-                    Spacer(minLength: 0)
-                }
+                Spacer(minLength: 0)
             }
-            .frame(minHeight: 44)
-            .frame(maxWidth: .infinity, alignment: style == .expanded ? .leading : .center)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.iosPressable)
+        .frame(minHeight: 44)
+        .frame(maxWidth: .infinity, alignment: style == .expanded ? .leading : .center)
+        .accessibilityElement(children: .combine)
         .accessibilityLabel("Cadence")
     }
 }

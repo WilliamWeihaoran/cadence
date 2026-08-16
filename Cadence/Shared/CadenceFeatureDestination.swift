@@ -1,7 +1,6 @@
 import SwiftUI
 
 enum CadenceFeatureSectionKind: String, Identifiable, Hashable {
-    case plan
     case progress
     case organize
     case workspace
@@ -10,7 +9,6 @@ enum CadenceFeatureSectionKind: String, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .plan: return "Plan"
         case .progress: return "Progress"
         case .organize: return "Organize"
         case .workspace: return "Workspace"
@@ -71,12 +69,9 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         .settings
     ]
 
-    static let workspaceDrawerSections: [CadenceFeatureSection] = [
-        CadenceFeatureSection(kind: .plan, destinations: primaryOrder),
-        CadenceFeatureSection(kind: .progress, destinations: [.focus, .goals, .habits]),
-        CadenceFeatureSection(kind: .organize, destinations: [.notes, .lists]),
-        CadenceFeatureSection(kind: .workspace, destinations: utilityOrder)
-    ]
+    // `workspaceDrawerSections` used to list every destination for the iPad drawer to draw. The
+    // drawer is a list picker now — at expanded width each of those rows was already on screen in
+    // the sidebar the drawer opens from — so the table has no reader left.
 
     var isPrimaryNavigation: Bool {
         switch self {

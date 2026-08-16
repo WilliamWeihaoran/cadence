@@ -2,17 +2,6 @@
 import SwiftData
 import SwiftUI
 
-enum iOSListDetailPage: String, CaseIterable, Identifiable {
-    case tasks = "Tasks"
-    case kanban = "Kanban"
-    case planning = "Planning"
-    case notes = "Notes"
-    case links = "Links"
-    case completed = "Completed"
-
-    var id: String { rawValue }
-}
-
 struct iOSListDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -22,7 +11,11 @@ struct iOSListDetailView: View {
     let project: Project?
     @State private var newTitle = ""
     @State private var editorMode: iOSListEditorMode?
-    @State private var page: iOSListDetailPage = .tasks
+    /// `nil` until the reader taps a tab — the page they see before that is the one they chose in
+    /// Settings, read live rather than copied into `@State` in `onAppear`, so changing the
+    /// preference does not need a relaunch to take effect and a stale copy cannot outlive it.
+    @State private var selectedPage: ListDetailPage?
+    @AppStorage(CadencePreferenceKeys.listDetailDefaultPage) private var defaultPageRaw = ListDetailPage.defaultPage.rawValue
 
     init(area: Area) {
         self.area = area
@@ -46,6 +39,17 @@ struct iOSListDetailView: View {
             return [project.context?.name, project.area?.name].compactMap { $0 }.joined(separator: " / ")
         }
         return ""
+    }
+
+    /// The tab on screen. The stored preference is resolved rather than force-unwrapped from its
+    /// raw value: it can still read "Planning", a tab that no longer exists on either platform, and
+    /// `ListDetailPage.resolved(_:)` lands that on Tasks instead of on nothing.
+    private var page: ListDetailPage {
+        selectedPage ?? ListDetailPage.resolved(defaultPageRaw)
+    }
+
+    private var pageBinding: Binding<ListDetailPage> {
+        Binding(get: { page }, set: { selectedPage = $0 })
     }
 
     /// Which list this page is showing, as a value SwiftUI can compare across an update.
@@ -120,11 +124,10 @@ struct iOSListDetailView: View {
             )
 
             iOSListDetailPagePicker(
-                page: $page,
+                page: pageBinding,
                 counts: [
                     .tasks: activeTasks.count,
                     .kanban: activeTasks.count,
-                    .planning: activeTasks.count,
                     .completed: completedTasks.count
                 ]
             )
@@ -183,9 +186,7 @@ struct iOSListDetailView: View {
                 sectionConfigs: sectionConfigs,
                 accent: accent
             )
-        case .planning:
-            iOSListPlanningPanel(tasks: activeTasks)
-        case .notes:
+        case .documents:
             iOSListNotesPanel(area: area, project: project)
         case .links:
             iOSListLinksPanel(area: area, project: project)

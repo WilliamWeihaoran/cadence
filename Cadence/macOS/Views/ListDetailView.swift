@@ -28,36 +28,8 @@ struct ProjectDetailLoader: View {
 
 // MARK: - Detail View
 
-/// Per-list pages. Planning used to live here, then briefly as its own first-level page;
-/// both are gone — the Calendar Board's Overdue and Unscheduled rails do that job now.
-enum ListDetailPage: String, CaseIterable, Identifiable {
-    case tasks     = "Tasks"
-    case kanban    = "Kanban"
-    case documents = "Notes"
-    case links     = "Links"
-    case completed = "Completed"
-
-    var id: String { rawValue }
-
-    /// A persisted raw value can name a page that no longer exists — the "Planning" tab was
-    /// removed from this enum, and any user who had it saved as their default would otherwise
-    /// leave the Settings picker with nothing selected. Resolve stale values to `.tasks`.
-    static func resolved(_ rawValue: String) -> ListDetailPage {
-        ListDetailPage(rawValue: rawValue) ?? .tasks
-    }
-
-    /// The tab bar itself is text-only; this is still used by the Settings
-    /// "default list page" picker.
-    var icon: String {
-        switch self {
-        case .tasks:     return "checkmark.square"
-        case .kanban:    return "square.grid.3x2"
-        case .documents: return "doc.text"
-        case .links:     return "link"
-        case .completed: return "list.bullet.clipboard"
-        }
-    }
-}
+// `ListDetailPage` — the tabs below — lives in `Shared/CadenceListDetailPage.swift`, because iOS
+// draws the same five tabs and had its own drifting copy of this enum.
 
 private struct ListDetailView: View {
     var area: Area?

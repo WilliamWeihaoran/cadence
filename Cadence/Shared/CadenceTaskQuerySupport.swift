@@ -150,28 +150,10 @@ enum CadenceTaskQuerySupport {
         return groups.filter { !$0.tasks.isEmpty }
     }
 
-    static func planningDisplayGroups(from tasks: [AppTask], todayKey: String) -> [CadenceTaskDisplayGroup] {
-        let overdue = tasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey }
-        let dueToday = tasks.filter { $0.dueDate == todayKey }
-        let scheduledToday = tasks.filter { $0.scheduledDate == todayKey && $0.dueDate != todayKey }
-        let upcoming = tasks
-            .filter { task in
-                let dueFuture = !task.dueDate.isEmpty && task.dueDate > todayKey
-                let scheduledFuture = !task.scheduledDate.isEmpty && task.scheduledDate > todayKey
-                return dueFuture || scheduledFuture
-            }
-            .sorted { planningKey(for: $0) < planningKey(for: $1) }
-        let unscheduled = tasks.filter { $0.dueDate.isEmpty && $0.scheduledDate.isEmpty }
-
-        return [
-            CadenceTaskDisplayGroup(id: "overdue", title: "Overdue", accent: Theme.red, tasks: overdue),
-            CadenceTaskDisplayGroup(id: "due-today", title: "Due Today", accent: Theme.amber, tasks: dueToday),
-            CadenceTaskDisplayGroup(id: "scheduled-today", title: "Scheduled Today", accent: Theme.blue, tasks: scheduledToday),
-            CadenceTaskDisplayGroup(id: "upcoming", title: "Upcoming", accent: Theme.purple, tasks: upcoming),
-            CadenceTaskDisplayGroup(id: "unscheduled", title: "Unscheduled", accent: Theme.dim, tasks: unscheduled)
-        ]
-        .filter { !$0.tasks.isEmpty }
-    }
+    // `planningDisplayGroups` used to sit here, bucketing a list's tasks into Overdue / Due Today /
+    // Scheduled Today / Upcoming / Unscheduled for the iOS list-detail Planning tab. That tab is
+    // gone, as macOS's was: the Calendar Board's Overdue and Unscheduled rails and its day columns
+    // are where that bucketing lives now.
 
     static func priorityDisplayGroups(from tasks: [AppTask]) -> [CadenceTaskDisplayGroup] {
         TaskPriority.allCases.reversed().compactMap { priority in
@@ -322,12 +304,6 @@ enum CadenceTaskQuerySupport {
             dueTodayIDs: dueTodayIDs,
             doTodayIDs: doTodayIDs
         )
-    }
-
-    private static func planningKey(for task: AppTask) -> String {
-        [task.dueDate, task.scheduledDate]
-            .filter { !$0.isEmpty }
-            .min() ?? "9999-99-99"
     }
 
     private static func sectionRank(_ name: String, in sectionNames: [String]) -> Int {

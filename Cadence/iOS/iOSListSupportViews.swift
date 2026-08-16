@@ -175,16 +175,16 @@ struct iOSListCreateButtonsRow: View {
 /// `.plain` rather than `.cadencePlain` on purpose — that style paints its own fill and stroke,
 /// which would stack a second selection layer on top of this one.
 struct iOSListDetailPagePicker: View {
-    @Binding var page: iOSListDetailPage
+    @Binding var page: ListDetailPage
     /// How many items each tab holds, for the tabs where a total means something. Each tab used
     /// to draw its own header carrying this number; removing those headers — the tab bar already
     /// names the tab — took the counts with them, and the count was not the redundant half.
-    var counts: [iOSListDetailPage: Int] = [:]
+    var counts: [ListDetailPage: Int] = [:]
 
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 2) {
-                ForEach(iOSListDetailPage.allCases) { item in
+                ForEach(ListDetailPage.allCases) { item in
                     let isSelected = page == item
                     Button {
                         page = item
@@ -408,50 +408,6 @@ struct iOSListCompletedPanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg)
-    }
-}
-
-struct iOSListPlanningPanel: View {
-    let tasks: [AppTask]
-
-    private var todayKey: String { DateFormatters.todayKey() }
-
-    private var planningGroups: [CadenceTaskDisplayGroup] {
-        CadenceTaskQuerySupport.planningDisplayGroups(from: tasks, todayKey: todayKey)
-    }
-
-    var body: some View {
-        Group {
-            if tasks.isEmpty {
-                iOSEmptyPanel(
-                    systemImage: "calendar",
-                    title: "No active tasks",
-                    subtitle: "Add tasks before planning dates."
-                )
-            } else {
-                List {
-                    ForEach(planningGroups) { group in
-                        planningSection(group)
-                    }
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.bg)
-    }
-
-    @ViewBuilder
-    private func planningSection(_ group: CadenceTaskDisplayGroup) -> some View {
-        Section {
-            ForEach(group.tasks) { task in
-                // Scoped to one list already — see `iOSTaskRow.showsContainer`.
-                iOSTaskListRow(task: task, showsContainer: false)
-            }
-        } header: {
-            iOSTaskSectionHeader(title: group.title, color: group.accent)
-        }
     }
 }
 
