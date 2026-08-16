@@ -56,6 +56,15 @@ enum MarkdownListSupport {
     /// margin into a list item.
     static let orderedMarkerPattern = #"(?:\d+|[A-Za-z]|[ivxlcdmIVXLCDM]+)[.)]"#
 
+    /// Every character Cadence accepts as an unordered list marker: markdown's own `- * +`, plus
+    /// the `• ◦ ▪` glyphs `unorderedMarker(forLevel:)` emits and the `–` some notes carry.
+    ///
+    /// It is a shared constant because `MarkdownChecklistSupport` has to agree with it. `- ` is
+    /// rewritten to `• ` the instant it is typed, so a checkbox typed into a Cadence list is
+    /// almost never spelled `- [x] ` on disk — it is `• [x] `, and a checklist matcher that only
+    /// knows `[-*+]` reads that as a plain bullet with a literal `[x]` after it.
+    static let unorderedMarkerCharacters = "-*+•◦▪–"
+
     private static let orderedMarkerRegex = try! NSRegularExpression(pattern: #"^("# + orderedMarkerPattern + #")\s"#)
     private static let bulletCheckboxRegex = try! NSRegularExpression(pattern: #"^([*+-])\s+(?:\[([ xX])\]\s+)?"#)
 

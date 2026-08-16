@@ -44,6 +44,19 @@ enum MarkdownBlockSupport {
         )
     }
 
+    /// **`---` under text is a divider in Cadence, never a setext heading.**
+    ///
+    /// CommonMark reads `Title` followed by `---` as an H2 and only calls a lone `---` a thematic
+    /// break. Cadence deliberately does not: headings here are ATX-only end to end —
+    /// `headingLineInfo` above, `MarkdownOutlineParser`, the note-title/`# ` sync, both editors'
+    /// stylers and the slash-command inserts all match `#{1,6} `. Adding a second heading spelling
+    /// would have to land in every one of them at once, and it would mean typing a rule under a
+    /// paragraph in a *live* editor silently reformats the paragraph above the caret — which is a
+    /// worse surprise than an unsupported syntax.
+    ///
+    /// So this stays context-free: a line of three or more `-`, `*` or `_` is a rule wherever it
+    /// sits. `***` and `___` have no setext reading at all, so treating `---` the same way is also
+    /// what keeps the three spellings interchangeable.
     static func isDividerLine(_ line: String) -> Bool {
         let trimmed = line
             .trimmingCharacters(in: .whitespacesAndNewlines)

@@ -74,6 +74,34 @@ struct MarkdownChecklistSupportTests {
         #expect(MarkdownChecklistSupport.emptiedPrefix(in: "• ") == nil)
     }
 
+    /// A checkbox typed into a Cadence bullet list is spelled `• [x] `, not `- [x] `: `- ` is
+    /// rewritten to `• ` on the keystroke after it, and pressing return in a bullet list continues
+    /// with `• `. While the matcher only accepted `[-*+]`, every one of those lines fell through to
+    /// the plain-bullet branch and rendered as a bullet glyph with a literal `[x]` beside it — the
+    /// reported "checkbox markers never render on iOS", which was a detection failure, not a
+    /// drawing one.
+    @MainActor @Test func readsCadencesOwnBulletGlyphsAsCheckboxMarkers() throws {
+        for line in ["• [x] ship", "◦ [x] ship", "▪ [x] ship", "– [x] ship", "  • [X] ship"] {
+            let info = try #require(MarkdownChecklistSupport.lineInfo(in: line), "\(line) should be a checkbox")
+            #expect(info.syntax == .github)
+            #expect(info.isDone)
+            #expect(info.content == "ship")
+        }
+
+        let todo = try #require(MarkdownChecklistSupport.lineInfo(in: "• [ ] ship"))
+        #expect(!todo.isDone)
+        #expect(MarkdownChecklistSupport.toggledLine("• [ ] ship") == "• [x] ship")
+        #expect(MarkdownChecklistSupport.emptiedPrefix(in: "• [x] ") == "• [ ] ")
+    }
+
+    /// The widening above is to the *bullet* only. A bullet with no box is still a bullet, and a
+    /// box with no space after the marker is not a list line at all.
+    @MainActor @Test func stillRequiresABoxAfterTheBullet() {
+        #expect(MarkdownChecklistSupport.lineInfo(in: "• plain bullet") == nil)
+        #expect(MarkdownChecklistSupport.lineInfo(in: "•[x] no space") == nil)
+        #expect(MarkdownChecklistSupport.lineInfo(in: "Sales • [x] not at line start") == nil)
+    }
+
     @Test func togglesLineInsideMarkdownText() {
         let text = "Intro\n- [ ] First\n○ Second"
 

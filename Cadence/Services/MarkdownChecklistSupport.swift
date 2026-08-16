@@ -7,6 +7,9 @@ import Foundation
 /// notes, and is still what the editor's own to-do affordances produce. Both render as a
 /// checkbox; only the GitHub form survives a round trip through another tool, which is why the
 /// editor no longer rewrites it into the glyph.
+///
+/// The `github` case is a little wider than GitHub's: the bullet may be any of
+/// `MarkdownListSupport.unorderedMarkerCharacters`, not just `-`/`*`/`+`. See the regex below.
 enum MarkdownChecklistSyntax: Equatable {
     case github
     case legacy
@@ -29,7 +32,21 @@ struct MarkdownChecklistToggle: Equatable {
 }
 
 enum MarkdownChecklistSupport {
-    private static let githubChecklistRegex = try! NSRegularExpression(pattern: #"^([ \t]*[-*+]\s+\[)([ xX])(\]\s+)"#)
+    /// The bullet class is every unordered marker Cadence recognises, not markdown's `[-*+]`.
+    ///
+    /// `- ` is rewritten to `• ` by `MarkdownTypingTransformSupport` on the keystroke after it is
+    /// typed, and pressing return in a bullet list continues with `• ` too — so by the time
+    /// someone types `[x] ` after it the line reads `• [x] done`, which the narrow class did not
+    /// match. It fell through to the plain-bullet branch and rendered as a bullet glyph with a
+    /// literal `[x]` beside it, on both platforms and in the preview parser. Widening the class
+    /// here fixes every one of them at once, and fixes the notes already written that way; the
+    /// alternative — teaching the typing transform to reach back over the bullet — would only
+    /// have fixed the next line someone typed.
+    private static let githubChecklistRegex = try! NSRegularExpression(
+        pattern: #"^([ \t]*["#
+            + NSRegularExpression.escapedPattern(for: MarkdownListSupport.unorderedMarkerCharacters)
+            + #"]\s+\[)([ xX])(\]\s+)"#
+    )
     private static let legacyChecklistRegex = try! NSRegularExpression(pattern: #"^([ \t]*)([○●✓])\s+"#)
 
     static func lineInfo(in line: String) -> MarkdownChecklistLine? {

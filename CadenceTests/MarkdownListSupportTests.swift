@@ -137,6 +137,41 @@ struct MarkdownListSupportTests {
         #expect(bullet.visualLevel == 0)
     }
 
+    /// What both stylers switch on when they decide whether to draw a checkbox canvas: the kind is
+    /// `.done`/`.todo`, `checklistSyntax` is `.github`, and `markerRange` covers the whole prefix
+    /// so the run can be hidden under the drawn box. `• [x] ` has to answer this the same way
+    /// `- [x] ` does — it is the spelling the editor itself produces.
+    @MainActor @Test func lineInfoDescribesCheckboxPrefixesWhicheverBulletTheyUse() throws {
+        for line in ["- [x] ship it", "• [x] ship it", "▪ [x] ship it"] {
+            let info = try #require(MarkdownListSupport.lineInfo(in: line), "\(line) should be a checkbox")
+            #expect(info.kind == .done)
+            #expect(info.checklistSyntax == .github)
+            #expect(info.markerRange == NSRange(location: 0, length: 6))
+            #expect(info.contentStart == 6)
+        }
+
+        let indented = try #require(MarkdownListSupport.lineInfo(in: "    • [ ] ship it"))
+        #expect(indented.kind == .todo)
+        #expect(indented.checklistSyntax == .github)
+        #expect(indented.markerRange == NSRange(location: 4, length: 6))
+        #expect(indented.visualLevel == 1)
+
+        // The legacy glyph stays legacy: it is one visible character, styled in place.
+        #expect(try #require(MarkdownListSupport.lineInfo(in: "✓ ship it")).checklistSyntax == .legacy)
+        // And a bullet with no box is still a bullet.
+        #expect(try #require(MarkdownListSupport.lineInfo(in: "• ship it")).checklistSyntax == nil)
+    }
+
+    /// The prefix normalizer must leave a checkbox alone whichever bullet it carries. `- [x] ` was
+    /// already exempt; `• [x] ` reaches the same guard by not matching the dash/star/plus rewrite
+    /// at all, and a regression there would rewrite a checkbox into a plain bullet on every
+    /// keystroke.
+    @Test func normalizerLeavesCheckboxesAlone() {
+        #expect(MarkdownListSupport.normalizedMarkdownListPrefixes(in: "- [x] ship") == "- [x] ship")
+        #expect(MarkdownListSupport.normalizedMarkdownListPrefixes(in: "• [x] ship") == "• [x] ship")
+        #expect(MarkdownListSupport.normalizedMarkdownListPrefixes(in: "- ship") == "• ship")
+    }
+
     @Test func orderedMarkerUsesSharedDesktopListCycle() {
         #expect(MarkdownListSupport.orderedMarker(for: 0, index: 3) == "3.")
         #expect(MarkdownListSupport.orderedMarker(for: 1, index: 3) == "c.")

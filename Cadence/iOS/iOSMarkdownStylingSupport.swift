@@ -100,9 +100,16 @@ enum iOSMarkdownStyler {
     /// Two details this needs that an inline marker does not:
     ///
     /// - The `---` fences are also this editor's divider syntax, so `applyDividerBlock` has already
-    ///   hung an `NSTextAttachment` on each of them. `hide` only shrinks glyphs; an attachment
-    ///   image draws regardless, so the attribute has to come off or the block leaves two rules
-    ///   behind.
+    ///   hung a rule canvas on each of them. `hide` only shrinks glyphs; the layout manager paints
+    ///   a `cadenceMarkdownBlockCanvas` regardless, so the attribute has to come off or the block
+    ///   leaves two rules behind — drawn against the *collapsed* line boxes, which puts them on top
+    ///   of the note's first visible line rather than anywhere near the fences.
+    ///
+    ///   This removed `.attachment` until now. That was the right key when the canvases were
+    ///   `NSTextAttachment`s, and it became a no-op the moment `drawCanvas` replaced them
+    ///   (`f1c55ea`) — nothing sets `.attachment` any more. Nobody noticed because before that
+    ///   commit the canvases did not draw at all, so a stale removal and a working one looked
+    ///   identical.
     /// - `hide` leaves each newline opening a line box, so the collapsed paragraph style is what
     ///   actually reclaims the vertical space.
     ///
@@ -121,7 +128,7 @@ enum iOSMarkdownStyler {
         let range = NSIntersectionRange(parsed, NSRange(location: 0, length: storage.length))
         guard range.length > 0 else { return }
 
-        storage.removeAttribute(.attachment, range: range)
+        storage.removeAttribute(.cadenceMarkdownBlockCanvas, range: range)
         hide(storage, range)
         storage.addAttribute(.cadenceMarkdownFrontmatter, value: true, range: range)
 
@@ -289,7 +296,16 @@ enum iOSMarkdownStyler {
         lineStart: Int,
         list: iOSMarkdownListMatch
     ) {
-        let paragraph = listParagraphStyle(for: list.visualLevel, markerWidth: list.markerWidth)
+        let paragraph = listParagraphStyle(
+            for: list.visualLevel,
+            markerWidth: list.markerWidth,
+            // A checkbox has no visible marker glyph to sit in the first line's indent — the whole
+            // `- [x] ` prefix is hidden and the box is painted into the gutter beside it — so the
+            // first line has to start at the same column its wrapped lines do. Left at the normal
+            // list indent, the hidden prefix put the text 19pt to the left of where the box lands
+            // and the two overlapped.
+            indentsFirstLineToContent: list.kind.isDrawnCheckbox
+        )
         storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
 
         let markerRange = list.markerRange.shifted(by: lineStart)
@@ -926,10 +942,13 @@ enum iOSMarkdownStyler {
         guard let info = MarkdownListSupport.lineInfo(in: line) else { return nil }
         let kind: iOSMarkdownListMatch.Kind
         switch info.kind {
+        // Which spelling a checklist uses comes from `checklistSyntax`, not from testing `marker`
+        // against a `["○", "●", "✓"]` literal — the same read macOS's `applyListLine` does. The
+        // literal happened to agree, but it agreed by listing the legacy glyphs a second time.
         case .todo:
-            kind = ["○", "●", "✓"].contains(info.marker) ? .legacyChecklist(isDone: false) : .checkbox(isDone: false)
+            kind = info.checklistSyntax == .legacy ? .legacyChecklist(isDone: false) : .checkbox(isDone: false)
         case .done:
-            kind = ["○", "●", "✓"].contains(info.marker) ? .legacyChecklist(isDone: true) : .checkbox(isDone: true)
+            kind = info.checklistSyntax == .legacy ? .legacyChecklist(isDone: true) : .checkbox(isDone: true)
         case .ordered:
             kind = .ordered(marker: info.marker)
         case .bullet, .dash, .plus:
@@ -945,14 +964,19 @@ enum iOSMarkdownStyler {
         )
     }
 
-    private static func listParagraphStyle(for level: Int, markerWidth: Int) -> NSParagraphStyle {
+    private static func listParagraphStyle(
+        for level: Int,
+        markerWidth: Int,
+        indentsFirstLineToContent: Bool = false
+    ) -> NSParagraphStyle {
         let unit: CGFloat = 12
         let markerInset: CGFloat = 8
         let contentGap: CGFloat = 8
         let base = CGFloat(level) * unit
         let paragraph = NSMutableParagraphStyle()
-        paragraph.firstLineHeadIndent = base + markerInset
-        paragraph.headIndent = base + markerInset + CGFloat(Double(markerWidth) * 5.5) + contentGap
+        let contentIndent = base + markerInset + CGFloat(Double(markerWidth) * 5.5) + contentGap
+        paragraph.firstLineHeadIndent = indentsFirstLineToContent ? contentIndent : base + markerInset
+        paragraph.headIndent = contentIndent
         paragraph.lineSpacing = 4
         paragraph.paragraphSpacing = 2
         return paragraph
@@ -1105,6 +1129,14 @@ private struct iOSMarkdownListMatch {
         case bullet(marker: String)
         case checkbox(isDone: Bool)
         case legacyChecklist(isDone: Bool)
+
+        /// Whether the marker is painted by `iOSMarkdownCheckboxLayoutInfo` rather than being a
+        /// glyph the text itself still shows. `legacyChecklist` is the second kind: its `○`/`✓` is
+        /// real text, styled in place, so it needs the ordinary list indent.
+        var isDrawnCheckbox: Bool {
+            if case .checkbox = self { return true }
+            return false
+        }
     }
 }
 

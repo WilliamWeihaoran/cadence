@@ -122,6 +122,21 @@ struct TagSupportTests {
         #expect(MarkdownMetadataParser.hiddenFrontmatterRange(in: "---\nDraft\n---\n\nBody") == nil)
     }
 
+    /// Both of a block's fences are also divider lines, so both stylers have already turned them
+    /// into horizontal rules by the time the frontmatter pass runs — and the pass then collapses
+    /// their line boxes to nothing, which drops those rules on top of the note's first visible
+    /// line. The hidden range is what a styler has to strip its rule decoration over, so this pins
+    /// that the range really does contain both fences.
+    @Test func hiddenFrontmatterRangeCoversBothFencesWhichAreAlsoDividerLines() throws {
+        let content = "---\ntags: [\"review\"]\n---\n\nZ# Heading\n\nBody."
+        let range = try #require(MarkdownMetadataParser.hiddenFrontmatterRange(in: content))
+        let hidden = (content as NSString).substring(with: range)
+
+        let fences = hidden.components(separatedBy: "\n").filter(MarkdownBlockSupport.isDividerLine)
+        #expect(fences.count == 2)
+        #expect((content as NSString).substring(from: NSMaxRange(range)).hasPrefix("Z# Heading"))
+    }
+
     @Test func frontmatterLineCountMatchesTheLinesTheBlockOccupies() throws {
         // The preview parser skips this many lines rather than parsing a stripped string, so that
         // the `lineIndex` it hands back still addresses the original note.

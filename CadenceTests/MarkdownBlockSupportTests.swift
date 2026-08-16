@@ -24,6 +24,27 @@ struct MarkdownBlockSupportTests {
         #expect(!MarkdownBlockSupport.isDividerLine("- * -"))
     }
 
+    /// Cadence's answer to the one genuinely ambiguous divider: `---` under a line of text is a
+    /// **rule**, not a setext H2. Headings here are ATX-only in every parser, styler and inserter,
+    /// and reformatting the paragraph above the caret while someone types a rule under it would be
+    /// a worse surprise than an unsupported syntax. Pinned because the rule is context-free — the
+    /// preceding line is never consulted — and "make it setext" is the kind of correctness
+    /// argument that gets made again.
+    @Test func readsADividerUnderTextAsARuleNotASetextHeading() {
+        #expect(MarkdownBlockSupport.isDividerLine("---"))
+        #expect(MarkdownBlockSupport.headingLineInfo(in: "---") == nil)
+
+        // The line above is irrelevant to the classification, both ways round.
+        for content in ["Heading text\n---\ntail", "\n---\ntail"] {
+            let lines = content.components(separatedBy: "\n")
+            #expect(MarkdownBlockSupport.isDividerLine(lines[1]))
+        }
+
+        // `===`, markdown's other setext underline, is not a Cadence divider spelling either — it
+        // is plain text, which is the honest rendering of a syntax the app does not implement.
+        #expect(!MarkdownBlockSupport.isDividerLine("==="))
+    }
+
     @Test func returnsStandaloneImageReferencesOnlyForWholeLines() throws {
         let imageID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
         let line = "![Diagram](cadence-image://\(imageID.uuidString))"
