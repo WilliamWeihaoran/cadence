@@ -23,6 +23,12 @@ enum CadenceRootShellLayout {
     static let railWidth: CGFloat = 58
     /// The labelled column.
     static let expandedWidth: CGFloat = 188
+    /// Folded away. **Zero, not a stub.** The point of folding is that the detail pane gets the
+    /// whole window — an 11" Pro in portrait hands the detail 646pt, and 188pt back is the
+    /// difference between a cramped pane and a usable one. Leaving a residual strip would spend
+    /// part of what the fold is for, so the expand affordance floats over the detail instead of
+    /// living in a column of its own.
+    static let collapsedWidth: CGFloat = 0
     /// Full window width (not the column's own). iPad portrait widths run from ~744pt (mini) to
     /// ~1032pt (13"); landscape is comfortably wider on every model. 820pt activates the labelled
     /// column for portrait on 10.9"+ iPads and for both orientations on 11"/13" iPads.
@@ -34,12 +40,17 @@ enum CadenceRootShellLayout {
 
     /// Never wider than the window itself: a sidebar that has taken the whole screen is still
     /// preferable to one that has pushed the page off the side of it.
-    static func sidebarWidth(windowWidth: CGFloat) -> CGFloat {
+    ///
+    /// Collapsing is decided **here** rather than by a second layout path in the shell, so the one
+    /// guarantee this file exists for — `sidebarWidth + detailWidth == windowWidth` — holds folded
+    /// and unfolded alike.
+    static func sidebarWidth(windowWidth: CGFloat, isCollapsed: Bool = false) -> CGFloat {
+        guard !isCollapsed else { return collapsedWidth }
         let preferred = usesExpandedSidebar(windowWidth: windowWidth) ? expandedWidth : railWidth
         return min(preferred, max(0, windowWidth))
     }
 
-    static func detailWidth(windowWidth: CGFloat) -> CGFloat {
-        max(0, windowWidth - sidebarWidth(windowWidth: windowWidth))
+    static func detailWidth(windowWidth: CGFloat, isCollapsed: Bool = false) -> CGFloat {
+        max(0, windowWidth - sidebarWidth(windowWidth: windowWidth, isCollapsed: isCollapsed))
     }
 }

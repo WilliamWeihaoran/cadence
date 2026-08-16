@@ -49,29 +49,11 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
         .habits
     ]
 
-    static let primaryOrder: [CadenceFeatureDestination] = [
-        .today,
-        .allTasks,
-        .inbox,
-        .calendar
-    ]
-
-    static let secondaryOrder: [CadenceFeatureDestination] = [
-        .notes,
-        .focus,
-        .lists,
-        .goals,
-        .habits
-    ]
-
-    static let utilityOrder: [CadenceFeatureDestination] = [
-        .search,
-        .settings
-    ]
-
     // `workspaceDrawerSections` used to list every destination for the iPad drawer to draw. The
-    // drawer is a list picker now — at expanded width each of those rows was already on screen in
-    // the sidebar the drawer opens from — so the table has no reader left.
+    // drawer is gone entirely — lists are rows in the sidebar now — and `primaryOrder`,
+    // `secondaryOrder` and `utilityOrder` went with it: they were the iPad sidebar's own PLAN /
+    // WORKSPACE / PROGRESS grouping, and that column reads `CadenceSidebarLayout` now, which is the
+    // same grouping macOS reads.
 
     var isPrimaryNavigation: Bool {
         switch self {

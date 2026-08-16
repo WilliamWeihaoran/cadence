@@ -44,4 +44,60 @@ struct CadenceRootShellLayoutTests {
         #expect(CadenceRootShellLayout.detailWidth(windowWidth: 834) == 646)
         #expect(CadenceRootShellLayout.detailWidth(windowWidth: 1032) == 844)
     }
+
+    // MARK: - Folding
+
+    /// The guarantee this file exists for has to survive the fold, or a folded sidebar becomes a
+    /// second layout path and the overflow that pushed the column off-screen has a second way back.
+    @Test
+    func theTwoColumnsStillAddUpToTheWindowWhenTheSidebarIsFolded() {
+        for width in Self.windowWidths {
+            let sidebar = CadenceRootShellLayout.sidebarWidth(windowWidth: width, isCollapsed: true)
+            let detail = CadenceRootShellLayout.detailWidth(windowWidth: width, isCollapsed: true)
+            #expect(sidebar + detail == width, "\(sidebar) + \(detail) != \(width)")
+        }
+    }
+
+    /// Zero, not a stub. A residual strip would spend part of what the fold is for — the whole
+    /// point is that the detail pane gets the window.
+    @Test
+    func aFoldedSidebarTakesNoWidthAtAllAndTheDetailTakesTheWholeWindow() {
+        #expect(CadenceRootShellLayout.collapsedWidth == 0)
+
+        for width in Self.windowWidths {
+            #expect(CadenceRootShellLayout.sidebarWidth(windowWidth: width, isCollapsed: true) == 0)
+            #expect(CadenceRootShellLayout.detailWidth(windowWidth: width, isCollapsed: true) == width)
+        }
+    }
+
+    /// Folding is decided by the flag alone. It must not depend on the width threshold, or the
+    /// column would quietly unfold when the user rotated the iPad.
+    @Test
+    func foldingAppliesAtEveryWidthIncludingTheRail() {
+        for width in [CGFloat(744), 819, 820, 1180] {
+            #expect(CadenceRootShellLayout.sidebarWidth(windowWidth: width, isCollapsed: true) == 0)
+        }
+    }
+
+    /// The 188pt the 11" Pro reclaims in portrait, spelled out: 646pt of detail becomes 834.
+    @Test
+    func foldingHandsTheElevenInchPortraitPaneTheColumnsWidthBack() {
+        let unfolded = CadenceRootShellLayout.detailWidth(windowWidth: 834)
+        let folded = CadenceRootShellLayout.detailWidth(windowWidth: 834, isCollapsed: true)
+
+        #expect(unfolded == 646)
+        #expect(folded == 834)
+        #expect(folded - unfolded == CadenceRootShellLayout.expandedWidth)
+    }
+
+    /// Unfolded is the default everywhere, so no existing caller changes behaviour by omitting it.
+    @Test
+    func theDefaultIsUnfolded() {
+        for width in Self.windowWidths {
+            #expect(
+                CadenceRootShellLayout.sidebarWidth(windowWidth: width)
+                    == CadenceRootShellLayout.sidebarWidth(windowWidth: width, isCollapsed: false)
+            )
+        }
+    }
 }
