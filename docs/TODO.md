@@ -67,12 +67,6 @@ brief so two agents cannot edit the same file.
   the case where you already have something and want one more. Calendar is the one iPad page with
   no floating `+`, which is why the bar's `+` mattered.
 
-**C — drag-to-create** (`iOS` task views, compact tab shell, floating button)
-
-- [T-05] **Drag-to-create from the add button** — drag the iPad corner `+` (and the iPhone tab-bar
-  `+`) onto a section, list or date; the created task inherits that destination's attributes.
-  `CadenceTaskDisplayGroup` already carries a `dropKey`, which is the hook.
-
 
 **E — task embeds in notes** (`iOSMarkdownEditor`, `macOS/Editor/`, embed + block-deletion support)
 
@@ -99,6 +93,15 @@ brief so two agents cannot edit the same file.
   three targets above.
 
 ## Open — known, unscheduled
+
+- [T-39] **Group headers should be drop targets too.** `47328af` made task *rows* accept a dropped
+  `+`, which covers every grouping by construction but cannot reach an **empty** group — the one
+  case where seeding a new task from the group is most useful. `CadenceTaskDropSupport`'s resolver
+  already accepts group keys, so this is wiring `iOSTaskSectionHeader`'s 14 call sites, not new
+  logic. Left out only because those files were held by another agent at the time.
+- [T-40] **A stray task is sitting in the iPhone 17e simulator's sample data** — "Dropped from tab
+  bar plus", created while verifying `47328af`. Simulator-only, not in the repo and not on any real
+  device. Delete it next time that simulator is in use and nothing else is driving it.
 
 - [T-32] **Feature-consistency scan across platforms.** Added 2026-08-17 at the user's direction;
   **do not run it yet.** The goal state is that no platform has a feature another lacks — macOS,
@@ -163,6 +166,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-31] `47328af` Drag the + onto a task and the new one lands where that one lives (T-05).
 
 - [D-30] `4c63084` The MCP surface called eight kept weeks "8 day streak" (T-12).
 
