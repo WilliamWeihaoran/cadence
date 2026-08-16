@@ -7,7 +7,7 @@ import UIKit
 struct iOSMarkdownStylingSupportTests {
     @Test func liveInlineCodePreservesLiteralMarkdownInsideCode() {
         let markdown = "`**not bold** [raw](https://example.com) #tag`"
-        let styled = iOSMarkdownStyler.attributedString(for: markdown, hidesMarkdownMarkers: true)
+        let styled = iOSMarkdownStyler.attributedString(for: markdown)
 
         #expect(isHidden(at: 0, in: styled))
         #expect(isHidden(at: (markdown as NSString).length - 1, in: styled))
@@ -20,7 +20,7 @@ struct iOSMarkdownStylingSupportTests {
 
     @Test func liveEmphasisCanWrapInlineCodeWithoutConsumingCodeMarkers() {
         let markdown = "**Review `API` today**"
-        let styled = iOSMarkdownStyler.attributedString(for: markdown, hidesMarkdownMarkers: true)
+        let styled = iOSMarkdownStyler.attributedString(for: markdown)
 
         #expect(isHidden(at: 0, in: styled))
         #expect(isHidden(at: 1, in: styled))

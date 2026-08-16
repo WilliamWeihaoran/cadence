@@ -225,7 +225,6 @@ struct iOSNavigationSettingsSection: View {
     @Binding var calendarViewMode: CadenceCalendarViewMode
     @Binding var calendarPresentation: CadenceCalendarPresentation
     @Binding var calendarZoomLevel: Int
-    @Binding var notesEditorMode: iOSMarkdownEditorMode
     @State private var openPicker: DefaultsPicker?
 
     private enum DefaultsPicker: String, Identifiable {
@@ -233,7 +232,6 @@ struct iOSNavigationSettingsSection: View {
         case calendarView
         case calendarStyle
         case timelineDensity
-        case notesEditor
 
         var id: String { rawValue }
     }
@@ -253,8 +251,6 @@ struct iOSNavigationSettingsSection: View {
             calendarStyleRow
             iOSEditorDivider()
             timelineDensityRow
-            iOSEditorDivider()
-            notesEditorRow
         }
     }
 
@@ -346,26 +342,6 @@ struct iOSNavigationSettingsSection: View {
                         },
                         selection: $calendarZoomLevel,
                         isPresented: isPresented(.timelineDensity)
-                    )
-                }
-        }
-    }
-
-    private var notesEditorRow: some View {
-        iOSEditorFieldRow(label: "Notes editor", systemImage: "square.and.pencil") {
-            valueButton(notesEditorMode.rawValue, picker: .notesEditor)
-                .popover(isPresented: isPresented(.notesEditor)) {
-                    iOSChoicePopoverList(
-                        rows: iOSMarkdownEditorMode.allCases.map { mode in
-                            iOSChoiceRow(
-                                value: mode,
-                                title: mode.rawValue,
-                                systemImage: mode.systemImage,
-                                color: Theme.purple
-                            )
-                        },
-                        selection: $notesEditorMode,
-                        isPresented: isPresented(.notesEditor)
                     )
                 }
         }

@@ -15,13 +15,8 @@ struct iOSEventNoteEditorSheet: View {
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var isEditorFocused = false
-    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
-
-    private var editorModeBinding: Binding<iOSMarkdownEditorMode> {
-        iOSMarkdownEditorPreferences.binding(for: $editorModeRaw)
-    }
 
     private var title: String {
         note.displayTitle
@@ -102,7 +97,6 @@ struct iOSEventNoteEditorSheet: View {
         iOSMarkdownEditingSurface(
             text: $note.content,
             isFocused: $isEditorFocused,
-            mode: editorModeBinding,
             placeholder: "Start writing...",
             referenceNotes: allNotes,
             referenceTasks: allTasks,
@@ -120,12 +114,6 @@ struct iOSEventNoteEditorSheet: View {
                 .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(2)
-
-            HStack {
-                Spacer()
-                iOSMarkdownModePicker(mode: editorModeBinding)
-            }
-            .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxHeight: isRegularWidth ? .infinity : nil, alignment: .topLeading)

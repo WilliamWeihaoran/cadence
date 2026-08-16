@@ -3,117 +3,20 @@ import PhotosUI
 import SwiftData
 import SwiftUI
 
-enum iOSMarkdownEditorMode: String, CaseIterable, Identifiable {
-    case live = "Live"
-    case edit = "Edit"
-    case preview = "Preview"
-
-    var id: Self { self }
-
-    var systemImage: String {
-        switch self {
-        case .live: return "rectangle.split.2x1"
-        case .edit: return "pencil"
-        case .preview: return "doc.richtext"
-        }
-    }
-}
-
-enum iOSMarkdownEditorPreferences {
-    static let modeKey = "ios.notes.editorMode"
-    static let didMigrateLiveDefaultKey = "ios.notes.didMigrateLiveEditorDefault"
-    static let defaultMode = iOSMarkdownEditorMode.live
-
-    static func mode(from rawValue: String) -> iOSMarkdownEditorMode {
-        iOSMarkdownEditorMode(rawValue: rawValue) ?? defaultMode
-    }
-
-    static func binding(for rawValue: Binding<String>) -> Binding<iOSMarkdownEditorMode> {
-        Binding(
-            get: { mode(from: rawValue.wrappedValue) },
-            set: { rawValue.wrappedValue = $0.rawValue }
-        )
-    }
-}
-
-struct iOSMarkdownModePicker: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Binding var mode: iOSMarkdownEditorMode
-    var compact = false
-
-    private var showsLabels: Bool {
-        horizontalSizeClass == .regular && !compact
-    }
-
-    var body: some View {
-        // The shared segmented control from `iOSDesignSystem.swift` — the same one the calendar's
-        // view-mode switch wears. This used to be a private capsule with its own trough fill, its
-        // own hairline alpha and its own 6/7pt inner radius: a separate idiom for "one of these is
-        // selected", sitting a few points away from the format toolbar's.
-        iOSSegmentedPillGroup {
-            ForEach(iOSMarkdownEditorMode.allCases) { candidate in
-                iOSMarkdownModeSegment(
-                    title: showsLabels ? candidate.rawValue : nil,
-                    systemImage: candidate.systemImage,
-                    accessibilityTitle: candidate.rawValue,
-                    isSelected: mode == candidate
-                ) {
-                    mode = candidate
-                }
-            }
-        }
-    }
-}
-
-/// One segment of the editor's mode picker.
+/// The note editor. One mode: the live, editable preview.
 ///
-/// This is `iOSSegmentedPill` with the label made optional, and it exists only for that: the
-/// picker has to fit inside a navigation-bar toolbar item and inside dense section-header rows,
-/// where three labelled segments do not fit, and `iOSSegmentedPill` cannot express icon-only
-/// today. Every other value here — the trough, the inner radius, the tint wash and hairline, the
-/// 38pt height, the press feedback — is the design system's, so the two read as one control. Fold
-/// this back into `iOSSegmentedPill` as soon as that grows an icon-only affordance.
-private struct iOSMarkdownModeSegment: View {
-    let title: String?
-    let systemImage: String
-    let accessibilityTitle: String
-    let isSelected: Bool
-    var tint: Color = Theme.blue
-    let action: () -> Void
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.radiusControl - 3, style: .continuous)
-
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 11, weight: .semibold))
-                if let title {
-                    Text(title)
-                        .font(.system(size: 12, weight: isSelected ? .bold : .semibold))
-                        .lineLimit(1)
-                }
-            }
-            .foregroundStyle(isSelected ? tint : Theme.dim)
-            .padding(.horizontal, 10)
-            .frame(minWidth: title == nil ? 38 : 58, minHeight: 38)
-            .background(shape.fill(isSelected ? tint.opacity(0.14) : Color.clear))
-            .overlay(shape.strokeBorder(isSelected ? tint.opacity(0.26) : Color.clear, lineWidth: 1))
-            .contentShape(shape)
-        }
-        .buttonStyle(.iosPressable)
-        .accessibilityLabel(accessibilityTitle)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
+/// It used to be three — `Live`, `Edit` (raw markdown) and `Preview` (read-only) — behind a
+/// three-icon segmented control repeated in a dozen editor headers, with the choice persisted
+/// app-wide under `ios.notes.editorMode`. Two of those modes were the same text with its styling
+/// turned off or its editability turned off, and the picker was the only way to discover that; the
+/// editor now just renders live-styled text you can type into. `CadenceNotesEditorPreferences`
+/// clears the stored selection at launch.
 struct iOSMarkdownEditingSurface: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
     @Binding var text: String
     @Binding var isFocused: Bool
-    @Binding var mode: iOSMarkdownEditorMode
     let placeholder: String
     var referenceNotes: [Note] = []
     var referenceTasks: [AppTask] = []
@@ -133,14 +36,7 @@ struct iOSMarkdownEditingSurface: View {
 
     var body: some View {
         return VStack(spacing: 0) {
-            switch mode {
-            case .live:
-                editorSurface(hidesMarkdownMarkers: true)
-            case .edit:
-                editorSurface(hidesMarkdownMarkers: false)
-            case .preview:
-                renderedPreview
-            }
+            editorSurface
 
             Divider().background(Theme.borderSubtle)
 
@@ -156,9 +52,6 @@ struct iOSMarkdownEditingSurface: View {
         .onChange(of: text) { _, newValue in
             guard !isFocused, newValue != draftText else { return }
             draftText = newValue
-        }
-        .onChange(of: mode) { _, _ in
-            commitDraftImmediately()
         }
         .onChange(of: isFocused) { _, focused in
             if focused {
@@ -193,28 +86,7 @@ struct iOSMarkdownEditingSurface: View {
         }
     }
 
-    private var renderedPreview: some View {
-        iOSMarkdownPreview(
-            markdown: draftText,
-            imageAssets: imageAssets,
-            taskEmbeds: taskEmbedInfos,
-            onToggleChecklist: { lineIndex in
-                toggleChecklistItem(at: lineIndex)
-            },
-            onToggleEmbeddedTask: { taskID in
-                _ = toggleEmbeddedTask(id: taskID)
-            },
-            onToggleEmbeddedSubtask: { taskID, subtaskID in
-                _ = toggleEmbeddedSubtask(taskID: taskID, subtaskID: subtaskID)
-            },
-            onOpenEmbeddedTask: { taskID in
-                openEmbeddedTask(id: taskID)
-            },
-            onOpenReference: onOpenReference
-        )
-    }
-
-    private func editorSurface(hidesMarkdownMarkers: Bool) -> some View {
+    private var editorSurface: some View {
         let createEmbeddedTask: ((String) -> String?)? = allowsEmbeddedTaskCreation
             ? { title in createEmbeddedTaskReference(title: title) }
             : nil
@@ -263,26 +135,22 @@ struct iOSMarkdownEditingSurface: View {
                     ),
                     isFocused: $isFocused,
                     selectedRange: $selectedRange,
-                    hidesMarkdownMarkers: hidesMarkdownMarkers,
                     imageAssets: imageAssets,
                     taskEmbeds: taskEmbedInfos,
-                    onToggleChecklistLine: hidesMarkdownMarkers ? { lineIndex in
+                    onToggleChecklistLine: { lineIndex in
                         toggleChecklistItem(at: lineIndex)
-                    } : nil,
-                    onToggleEmbeddedTask: hidesMarkdownMarkers ? { taskID in
+                    },
+                    onToggleEmbeddedTask: { taskID in
                         toggleEmbeddedTask(id: taskID)
-                    } : nil,
-                    onToggleEmbeddedSubtask: hidesMarkdownMarkers ? { taskID, subtaskID in
+                    },
+                    onToggleEmbeddedSubtask: { taskID, subtaskID in
                         toggleEmbeddedSubtask(taskID: taskID, subtaskID: subtaskID)
-                    } : nil,
+                    },
                     onCreateEmbeddedTask: createEmbeddedTask,
                     onOpenEmbeddedTask: { taskID in
                         openEmbeddedTask(id: taskID)
                     },
-                    onOpenReference: hidesMarkdownMarkers ? onOpenReference : nil,
-                    onEditRenderedBlock: hidesMarkdownMarkers ? { range in
-                        revealRenderedBlockForEditing(range)
-                    } : nil,
+                    onOpenReference: onOpenReference,
                     onCreatePastedImages: createPastedImageAssets
                 )
                 .background(Color.clear)
@@ -311,12 +179,12 @@ struct iOSMarkdownEditingSurface: View {
     }
 
     private var referenceCompletionContext: MarkdownReferenceCompletionContext? {
-        guard isFocused, mode != .preview else { return nil }
+        guard isFocused else { return nil }
         return MarkdownReferenceCompletionSupport.context(in: draftText, selection: selectedRange)
     }
 
     private var slashCommandContext: MarkdownSlashCommandContext? {
-        guard isFocused, mode != .preview else { return nil }
+        guard isFocused else { return nil }
         return MarkdownSlashCommandTokenSupport.context(in: draftText, selection: selectedRange)
     }
 
@@ -544,12 +412,6 @@ struct iOSMarkdownEditingSurface: View {
         }
     }
 
-    private func revealRenderedBlockForEditing(_ range: NSRange) {
-        selectedRange = range
-        mode = .edit
-        isFocused = true
-    }
-
     private func insertReferenceMarkdown(_ markdown: String) {
         applyCommandToDraft(.insertMarkdown(markdown))
     }
@@ -562,7 +424,9 @@ struct iOSMarkdownEditingSurface: View {
         )
         updateDraft(mutation.text)
         selectedRange = mutation.selection
-        mode = .live
+        // No `mode = .live` here any more. It used to run after *every* toolbar command and every
+        // slash command, which quietly moved a user who was in `Edit` into `Live` and persisted the
+        // switch app-wide. With one mode there is nothing to set.
         isFocused = refocusEditor
     }
 

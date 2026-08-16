@@ -19,7 +19,6 @@ struct iOSCalendarQuickCreateSheet: View {
     @State private var priority: TaskPriority = .none
     @State private var estimatedMinutes = 30
     @State private var notes = ""
-    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var notesEditorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
     @State private var notesEditorFocused = false
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
@@ -114,10 +113,6 @@ struct iOSCalendarQuickCreateSheet: View {
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
-    }
-
-    private var notesEditorModeBinding: Binding<iOSMarkdownEditorMode> {
-        iOSMarkdownEditorPreferences.binding(for: $notesEditorModeRaw)
     }
 
     var body: some View {
@@ -463,20 +458,13 @@ struct iOSCalendarQuickCreateSheet: View {
     private var notesSection: some View {
         iOSEditorSection(title: "Notes", style: .ruled) {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(kind == .event ? "Apple Calendar note" : "Task note")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.subdued)
-
-                    Spacer(minLength: 0)
-
-                    iOSMarkdownModePicker(mode: notesEditorModeBinding, compact: true)
-                }
+                Text(kind == .event ? "Apple Calendar note" : "Task note")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.subdued)
 
                 iOSMarkdownEditingSurface(
                     text: $notes,
                     isFocused: $notesEditorFocused,
-                    mode: notesEditorModeBinding,
                     placeholder: "Add markdown notes...",
                     referenceNotes: allNotes,
                     referenceTasks: allTasks,

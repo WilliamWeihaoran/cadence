@@ -48,13 +48,8 @@ struct iOSLinkedNoteEditorSheet: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @State private var isEditorFocused = false
-    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
-
-    private var editorModeBinding: Binding<iOSMarkdownEditorMode> {
-        iOSMarkdownEditorPreferences.binding(for: $editorModeRaw)
-    }
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
@@ -131,12 +126,6 @@ struct iOSLinkedNoteEditorSheet: View {
                 .font(.system(size: isRegularWidth ? 24 : 22, weight: .bold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(2)
-
-            HStack {
-                Spacer()
-                iOSMarkdownModePicker(mode: editorModeBinding)
-            }
-            .padding(.top, 6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxHeight: isRegularWidth ? .infinity : nil, alignment: .topLeading)
@@ -149,7 +138,6 @@ struct iOSLinkedNoteEditorSheet: View {
         iOSMarkdownEditingSurface(
             text: $note.content,
             isFocused: $isEditorFocused,
-            mode: editorModeBinding,
             placeholder: "Start writing...",
             referenceNotes: referenceNotes,
             referenceTasks: referenceTasks,

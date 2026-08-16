@@ -16,6 +16,10 @@ struct CadenceApp: App {
         // early. Deliberately does NOT call requestAuthorization() here — that stays gated behind an
         // explicit Settings button so there's no jarring cold-launch permission prompt.
         _ = NotificationManager.shared
+        // The notes editor's Live/Edit/Preview picker is gone and live is the only mode, so the
+        // stored selection is a key nobody reads. Clearing it is idempotent and touches no model
+        // state — see `CadenceNotesEditorPreferences`.
+        CadenceNotesEditorPreferences.purgeRetiredKeys()
         sharedModelContainer = PersistenceController.shared.container
     }
 

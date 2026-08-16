@@ -22,7 +22,6 @@ struct iOSTaskDetailSheet: View {
     @State private var containerSelection = "inbox"
     @State private var showDeleteConfirmation = false
     @State private var isNotesFocused = false
-    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var notesEditorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
@@ -75,19 +74,8 @@ struct iOSTaskDetailSheet: View {
         horizontalSizeClass == .regular
     }
 
-    private var notesEditorMode: iOSMarkdownEditorMode {
-        iOSMarkdownEditorPreferences.mode(from: notesEditorModeRaw)
-    }
-
-    private var notesEditorModeBinding: Binding<iOSMarkdownEditorMode> {
-        iOSMarkdownEditorPreferences.binding(for: $notesEditorModeRaw)
-    }
-
     private var notesEditorMinHeight: CGFloat {
-        if notesEditorMode == .live {
-            return isRegularWidth ? 360 : 340
-        }
-        return isRegularWidth ? 240 : 170
+        isRegularWidth ? 360 : 340
     }
 
     var body: some View {
@@ -253,7 +241,6 @@ struct iOSTaskDetailSheet: View {
                 }
             ),
             isFocused: $isNotesFocused,
-            notesEditorModeBinding: notesEditorModeBinding,
             minHeight: notesEditorMinHeight,
             referenceNotes: allNotes,
             referenceTasks: allTasks,

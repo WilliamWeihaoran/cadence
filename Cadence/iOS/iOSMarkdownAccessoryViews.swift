@@ -679,9 +679,10 @@ struct iOSMarkdownEmptyPrompt: View {
 /// The one line under the editor: how much you have written.
 ///
 /// It used to lead with the editor mode ("Live Markdown" / "Markdown" / "Rendered"), each in its
-/// own accent — purple, blue, green — for a value the mode picker a few points above already shows
-/// as a selected segment. Two affordances for one field, and three accents spent on static chrome.
-/// The counts are the part of this line that nothing else on screen says.
+/// own accent — purple, blue, green — restating what the mode picker a few points above already
+/// showed as a selected segment. Two affordances for one field, and three accents spent on static
+/// chrome. The picker is gone too now, and live is the only mode; the counts are the part of this
+/// line that nothing else on screen says.
 struct iOSMarkdownStatusBar: View {
     let wordCount: Int
     let lineCount: Int

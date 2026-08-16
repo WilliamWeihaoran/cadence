@@ -6,11 +6,12 @@ import SwiftUI
 /// Fixed height for the notes pane's header when it has to line up with the panes beside it on
 /// iPad.
 ///
-/// Two rows now, not three: the title row carries the tab strip (`iOSNotesHeader`, ~58pt — 44pt of
-/// tab plus its padding), and under it the editor's mode picker and template control (~54pt — a
-/// 44pt `iOSSegmentedPillGroup` plus 10pt). `.frame(height:)` does not clip, so this must stay at
-/// or above the content's own minimum or the second row draws across the divider below it; 120
-/// leaves a few points of headroom over the measured ~112.
+/// Two rows: the title row carries the tab strip (`iOSNotesHeader`, ~58pt — 44pt of tab plus its
+/// padding), and under it the template control (~54pt — a 44pt tap target plus 10pt). The editor's
+/// Live/Edit/Preview picker used to share that second row and is gone; the row stays because the
+/// template menu still needs one. `.frame(height:)` does not clip, so this must stay at or above the
+/// content's own minimum or the second row draws across the divider below it; 120 leaves a few
+/// points of headroom over the measured ~112.
 let iOSNotesPanelHeaderHeight: CGFloat = 120
 
 struct iOSNotesPanel: View {
@@ -24,8 +25,6 @@ struct iOSNotesPanel: View {
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
     @AppStorage("ios.notes.activeCoreTab") private var activeTabRaw = CadenceCoreNoteTab.today.rawValue
-    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
-    @AppStorage(iOSMarkdownEditorPreferences.didMigrateLiveDefaultKey) private var didMigrateLiveEditorDefault = false
     // Deliberately `@State`, not `@FocusState`. The editor's first responder is a `UITextView`
     // inside a `UIViewRepresentable`; nothing here is ever attached with `.focused(...)`, so a
     // `@FocusState` had no view to move focus to and could not report focus back either. The
@@ -42,18 +41,6 @@ struct iOSNotesPanel: View {
         set { activeTabRaw = newValue.rawValue }
     }
 
-    private var editorMode: iOSMarkdownEditorMode {
-        get { iOSMarkdownEditorMode(rawValue: editorModeRaw) ?? iOSMarkdownEditorPreferences.defaultMode }
-        set { editorModeRaw = newValue.rawValue }
-    }
-
-    private var editorModeBinding: Binding<iOSMarkdownEditorMode> {
-        Binding(
-            get: { editorMode },
-            set: { editorModeRaw = $0.rawValue }
-        )
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             notesHeader
@@ -67,7 +54,6 @@ struct iOSNotesPanel: View {
                         set: { update(note, content: $0) }
                     ),
                     isFocused: $isEditorFocused,
-                    mode: editorModeBinding,
                     placeholder: "Start writing...",
                     referenceNotes: allNotes,
                     referenceTasks: allTasks,
@@ -81,10 +67,7 @@ struct iOSNotesPanel: View {
             }
         }
         .background(Theme.surface)
-        .onAppear {
-            migrateLiveEditorDefaultIfNeeded()
-            loadNotes()
-        }
+        .onAppear(perform: loadNotes)
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             loadNotes()
@@ -124,8 +107,6 @@ struct iOSNotesPanel: View {
             )
 
             HStack(spacing: 8) {
-                iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
-
                 Spacer(minLength: 8)
 
                 if let note = selectedNote {
@@ -154,14 +135,6 @@ struct iOSNotesPanel: View {
         todayNote = snapshot.today
         weekNote = snapshot.week
         permanentNote = snapshot.notepad
-    }
-
-    private func migrateLiveEditorDefaultIfNeeded() {
-        guard !didMigrateLiveEditorDefault else { return }
-        if editorModeRaw == iOSMarkdownEditorMode.edit.rawValue {
-            editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
-        }
-        didMigrateLiveEditorDefault = true
     }
 
     private func update(_ note: Note, content: String) {
@@ -218,22 +191,8 @@ struct iOSCompactNotesView: View {
     @State private var selectedMeetingNote: Note?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
-    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
-    @AppStorage(iOSMarkdownEditorPreferences.didMigrateLiveDefaultKey) private var didMigrateLiveEditorDefault = false
     /// `@State`, not `@FocusState` — see `iOSNotesPanel`.
     @State private var isEditorFocused = false
-
-    private var editorMode: iOSMarkdownEditorMode {
-        get { iOSMarkdownEditorMode(rawValue: editorModeRaw) ?? iOSMarkdownEditorPreferences.defaultMode }
-        set { editorModeRaw = newValue.rawValue }
-    }
-
-    private var editorModeBinding: Binding<iOSMarkdownEditorMode> {
-        Binding(
-            get: { editorMode },
-            set: { editorModeRaw = $0.rawValue }
-        )
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -253,8 +212,6 @@ struct iOSCompactNotesView: View {
 
             if let coreTab = activePage.coreTab {
                 HStack(spacing: 8) {
-                    iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
-
                     Spacer(minLength: 8)
 
                     if let note = selectedCoreNote {
@@ -279,10 +236,7 @@ struct iOSCompactNotesView: View {
         }
         .background(Theme.surface.ignoresSafeArea())
         .iOSHidesCompactNavigationBar()
-        .onAppear {
-            migrateLiveEditorDefaultIfNeeded()
-            loadNotes()
-        }
+        .onAppear(perform: loadNotes)
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             loadNotes()
@@ -315,7 +269,6 @@ struct iOSCompactNotesView: View {
                     set: { update(note, content: $0) }
                 ),
                 isFocused: $isEditorFocused,
-                mode: editorModeBinding,
                 placeholder: "Start writing...",
                 referenceNotes: allNotes,
                 referenceTasks: allTasks,
@@ -363,14 +316,6 @@ struct iOSCompactNotesView: View {
         todayNote = snapshot.today
         weekNote = snapshot.week
         permanentNote = snapshot.notepad
-    }
-
-    private func migrateLiveEditorDefaultIfNeeded() {
-        guard !didMigrateLiveEditorDefault else { return }
-        if editorModeRaw == iOSMarkdownEditorMode.edit.rawValue {
-            editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
-        }
-        didMigrateLiveEditorDefault = true
     }
 
     private func update(_ note: Note, content: String) {

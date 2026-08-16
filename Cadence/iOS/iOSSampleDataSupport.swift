@@ -52,7 +52,7 @@ enum iOSSampleDataSupport {
             task.estimatedMinutes = 30
             task.scheduledStartMin = (9 * 60) + 30
             assign(task, to: workspace.mobileArea, allTasks: currentTasks, sectionName: "Editor")
-            task.notes = "Try **bold**, `code`, checklists, links, and preview mode."
+            task.notes = "Try **bold**, `code`, checklists, and links."
             TagSupport.setTags(named: ["docs", "polish"], on: task, in: modelContext)
         }
 
@@ -173,7 +173,7 @@ enum iOSSampleDataSupport {
 
                 - [ ] Check iPad landscape spacing with the task list populated.
                 - [ ] Tap a scheduled task and confirm the detail sheet still feels native.
-                - [ ] Try switching this note between Live, Edit, and Preview mode.
+                - [ ] Type into a code block or table and confirm it shows its source, then re-renders.
                 - [ ] Open a markdown link: [Cadence repo](https://github.com/WilliamWeihaoran/cadence)
 
                 ## Linked review tasks
@@ -183,7 +183,7 @@ enum iOSSampleDataSupport {
                 | Surface | What to check | Status |
                 | --- | --- | --- |
                 | Today | tasks, notes, timeline | reviewing |
-                | Notes | live markdown, preview, keyboard | active |
+                | Notes | live markdown, keyboard | active |
                 | iPhone | vertical layout and tab bar | pending |
 
                 ## Friction

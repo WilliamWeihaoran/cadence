@@ -48,7 +48,6 @@ struct iOSCalendarEventEditSheet: View {
     @State private var isAllDay: Bool
     @State private var selectedCalendarID: String
     @State private var notes: String
-    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var notesEditorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
     @State private var notesEditorFocused = false
     @State private var presentedEventNote: Note?
     @State private var selectedReferenceNote: Note?
@@ -157,10 +156,6 @@ struct iOSCalendarEventEditSheet: View {
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
-    }
-
-    private var notesEditorModeBinding: Binding<iOSMarkdownEditorMode> {
-        iOSMarkdownEditorPreferences.binding(for: $notesEditorModeRaw)
     }
 
     init(event: EKEvent) {
@@ -462,20 +457,13 @@ struct iOSCalendarEventEditSheet: View {
     private var notesCard: some View {
         iOSEditorSection(title: "Notes") {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Apple Calendar note")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.subdued)
-
-                    Spacer(minLength: 0)
-
-                    iOSMarkdownModePicker(mode: notesEditorModeBinding, compact: true)
-                }
+                Text("Apple Calendar note")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.subdued)
 
                 iOSMarkdownEditingSurface(
                     text: $notes,
                     isFocused: $notesEditorFocused,
-                    mode: notesEditorModeBinding,
                     placeholder: "Add markdown notes...",
                     referenceNotes: allNotes,
                     referenceTasks: allTasks,

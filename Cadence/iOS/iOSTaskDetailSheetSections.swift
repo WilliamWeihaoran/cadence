@@ -325,7 +325,6 @@ struct iOSTaskSubtasksSection: View {
 struct iOSTaskNotesSection: View {
     let notesText: Binding<String>
     let isFocused: Binding<Bool>
-    let notesEditorModeBinding: Binding<iOSMarkdownEditorMode>
     let minHeight: CGFloat
     let referenceNotes: [Note]
     let referenceTasks: [AppTask]
@@ -333,15 +332,9 @@ struct iOSTaskNotesSection: View {
 
     var body: some View {
         iOSEditorSection(title: "Notes", style: .ruled, contentSpacing: 10) {
-            HStack {
-                Spacer()
-                iOSMarkdownModePicker(mode: notesEditorModeBinding)
-            }
-
             iOSMarkdownEditingSurface(
                 text: notesText,
                 isFocused: isFocused,
-                mode: notesEditorModeBinding,
                 placeholder: "Add notes...",
                 referenceNotes: referenceNotes,
                 referenceTasks: referenceTasks,

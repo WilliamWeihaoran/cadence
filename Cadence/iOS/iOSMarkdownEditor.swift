@@ -8,7 +8,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     @Binding var isFocused: Bool
     @Binding var pendingCommand: MarkdownFormatCommand?
     @Binding var selectedRange: NSRange
-    var hidesMarkdownMarkers: Bool
     var imageAssets: [MarkdownImageAsset]
     var taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo]
     var onToggleChecklistLine: ((Int) -> Void)?
@@ -17,7 +16,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     var onCreateEmbeddedTask: ((String) -> String?)?
     var onOpenEmbeddedTask: ((UUID) -> Void)?
     var onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)?
-    var onEditRenderedBlock: ((NSRange) -> Void)?
     var onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])?
 
     init(
@@ -25,7 +23,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         isFocused: Binding<Bool>,
         pendingCommand: Binding<MarkdownFormatCommand?> = .constant(nil),
         selectedRange: Binding<NSRange> = .constant(NSRange(location: 0, length: 0)),
-        hidesMarkdownMarkers: Bool = true,
         imageAssets: [MarkdownImageAsset] = [],
         taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:],
         onToggleChecklistLine: ((Int) -> Void)? = nil,
@@ -34,14 +31,12 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         onCreateEmbeddedTask: ((String) -> String?)? = nil,
         onOpenEmbeddedTask: ((UUID) -> Void)? = nil,
         onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)? = nil,
-        onEditRenderedBlock: ((NSRange) -> Void)? = nil,
         onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])? = nil
     ) {
         _text = text
         _isFocused = isFocused
         _pendingCommand = pendingCommand
         _selectedRange = selectedRange
-        self.hidesMarkdownMarkers = hidesMarkdownMarkers
         self.imageAssets = imageAssets
         self.taskEmbeds = taskEmbeds
         self.onToggleChecklistLine = onToggleChecklistLine
@@ -50,7 +45,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         self.onCreateEmbeddedTask = onCreateEmbeddedTask
         self.onOpenEmbeddedTask = onOpenEmbeddedTask
         self.onOpenReference = onOpenReference
-        self.onEditRenderedBlock = onEditRenderedBlock
         self.onCreatePastedImages = onCreatePastedImages
     }
 
@@ -156,13 +150,13 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
         var parent: iOSMarkdownEditor
         private var isApplyingStyle = false
-        private var styleSignature = iOSMarkdownStyleSignature.current(hidesMarkdownMarkers: true, imageAssets: [], taskEmbeds: [:])
+        private var styleSignature = iOSMarkdownStyleSignature.current(revealedBlockRange: nil, imageAssets: [], taskEmbeds: [:])
         private var pendingStyleWorkItem: DispatchWorkItem?
 
         init(parent: iOSMarkdownEditor) {
             self.parent = parent
             styleSignature = iOSMarkdownStyleSignature.current(
-                hidesMarkdownMarkers: parent.hidesMarkdownMarkers,
+                revealedBlockRange: nil,
                 imageAssets: parent.imageAssets,
                 taskEmbeds: parent.taskEmbeds
             )
@@ -170,11 +164,13 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
         func textViewDidBeginEditing(_ textView: UITextView) {
             parent.isFocused = true
+            refreshStylingIfNeeded(on: textView)
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
             publishCurrentText(from: textView)
             parent.isFocused = false
+            refreshStylingIfNeeded(on: textView)
         }
 
         func textViewDidChange(_ textView: UITextView) {
@@ -192,6 +188,34 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
         func textViewDidChangeSelection(_ textView: UITextView) {
             publishSelectedRange(from: textView)
+            // A code fence or table renders as one flat canvas, so the only way to reach its source
+            // is for the block holding the caret to un-render itself. Moving the caret in or out of
+            // one is not a text edit, so nothing else here would trigger the restyle.
+            refreshStylingIfNeeded(on: textView)
+        }
+
+        /// The fenced code block or table the caret is inside, which the styler leaves as source
+        /// instead of drawing its canvas.
+        ///
+        /// This replaces the editor's old escape hatch. Both block kinds are drawn as a single
+        /// `NSTextAttachment` with every character of the block hidden behind it, so before this
+        /// they could only be edited by leaving live mode entirely — a double tap flipped the whole
+        /// app to the raw `Edit` mode, which no longer exists. Nil while the editor is unfocused, so
+        /// a note at rest always shows finished blocks.
+        private func revealedBlockRange(in textView: UITextView) -> NSRange? {
+            guard textView.isFirstResponder else { return nil }
+            guard let block = MarkdownRenderedBlockDeletionSupport.renderedBlock(
+                atUTF16Location: textView.selectedRange.location,
+                in: textView.text ?? ""
+            ) else { return nil }
+            switch block.kind {
+            case .code, .table:
+                return block.storageRange
+            case .image, .task, .divider:
+                // These are reachable without their source: images come from the picker, task
+                // embeds open their own sheet, and a divider is one keystroke to retype.
+                return nil
+            }
         }
 
         func textView(
@@ -234,7 +258,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             replacementText replacement: String
         ) -> Bool {
             if replacement.isEmpty,
-               parent.hidesMarkdownMarkers,
                expandRenderedBlockDeletionIfNeeded(range: range, in: textView) {
                 return false
             }
@@ -330,8 +353,9 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         }
 
         func refreshStylingIfNeeded(on textView: UITextView) {
+            guard !isApplyingStyle else { return }
             let current = iOSMarkdownStyleSignature.current(
-                hidesMarkdownMarkers: parent.hidesMarkdownMarkers,
+                revealedBlockRange: revealedBlockRange(in: textView),
                 imageAssets: parent.imageAssets,
                 taskEmbeds: parent.taskEmbeds,
                 contentWidth: textView.markdownContentWidth
@@ -458,9 +482,10 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             defer { isApplyingStyle = false }
 
             let storage = textView.textStorage
+            let revealed = revealedBlockRange(in: textView)
             let styled = iOSMarkdownStyler.attributedString(
                 for: text,
-                hidesMarkdownMarkers: parent.hidesMarkdownMarkers,
+                revealedBlockRange: revealed,
                 imageAssets: parent.imageAssets,
                 taskEmbeds: parent.taskEmbeds,
                 contentWidth: textView.markdownContentWidth
@@ -468,7 +493,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             storage.setAttributedString(styled)
             textView.typingAttributes = iOSMarkdownStyler.baseTypingAttributes
             styleSignature = iOSMarkdownStyleSignature.current(
-                hidesMarkdownMarkers: parent.hidesMarkdownMarkers,
+                revealedBlockRange: revealed,
                 imageAssets: parent.imageAssets,
                 taskEmbeds: parent.taskEmbeds,
                 contentWidth: textView.markdownContentWidth
@@ -498,7 +523,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
         func publishSelectedRange(from textView: UITextView) {
             var selection = clamped(textView.selectedRange, in: textView.textStorage)
-            if parent.hidesMarkdownMarkers, selection.length == 0 {
+            if selection.length == 0 {
                 let movingForward = selection.location >= parent.selectedRange.location
                 let snapped = MarkdownHiddenRangeSupport.snappedCaretLocation(
                     selection.location,
@@ -516,7 +541,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
         @objc func handleReferenceTap(_ recognizer: UITapGestureRecognizer) {
             guard recognizer.state == .ended,
-                  parent.hidesMarkdownMarkers,
                   let textView = recognizer.view as? UITextView else {
                 return
             }
@@ -550,23 +574,32 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             }
         }
 
+        /// Double-tapping a rendered code fence or table puts the caret in it.
+        ///
+        /// `revealedBlockRange(in:)` then keeps that block as editable source for as long as the
+        /// caret stays inside it. This used to flip the whole app into the raw `Edit` mode instead,
+        /// which persisted app-wide and took every other editor with it.
         @objc func handleRenderedBlockEditTap(_ recognizer: UITapGestureRecognizer) {
             guard recognizer.state == .ended,
-                  parent.hidesMarkdownMarkers,
                   let textView = recognizer.view as? UITextView,
                   let hit = characterHit(at: recognizer.location(in: textView), in: textView, hitPadding: 18),
                   let block = MarkdownRenderedBlockDeletionSupport.renderedBlock(
                     atUTF16Location: hit.characterIndex,
                     in: textView.text ?? ""
-                  ) else {
+                  ),
+                  block.kind == .code || block.kind == .table else {
                 return
             }
 
             publishCurrentText(from: textView)
+            if !textView.isFirstResponder {
+                textView.becomeFirstResponder()
+            }
             let selection = clamped(block.storageRange, in: textView.textStorage)
             textView.selectedRange = selection
             parent.selectedRange = selection
-            parent.onEditRenderedBlock?(selection)
+            parent.isFocused = true
+            refreshStylingIfNeeded(on: textView)
         }
 
         private func handleTaskEmbedHit(

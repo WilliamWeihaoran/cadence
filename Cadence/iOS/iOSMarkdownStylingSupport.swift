@@ -23,7 +23,7 @@ enum iOSMarkdownStyler {
 
     static func attributedString(
         for markdown: String,
-        hidesMarkdownMarkers: Bool = true,
+        revealedBlockRange: NSRange? = nil,
         imageAssets: [MarkdownImageAsset] = [],
         taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:],
         contentWidth: CGFloat = 560
@@ -47,8 +47,7 @@ enum iOSMarkdownStyler {
         let inlineExclusionRanges = inlineStyleExclusionRanges(
             lineRecords: lineRecords,
             tableRows: tableRows,
-            codeBlocks: codeBlocks,
-            hidesMarkdownMarkers: hidesMarkdownMarkers
+            codeBlocks: codeBlocks
         )
         for lineRecord in lineRecords {
             styleLine(
@@ -60,39 +59,34 @@ enum iOSMarkdownStyler {
                 codeLineIndexes: codeLineIndexes,
                 imageAssets: renderAssets,
                 taskEmbeds: taskEmbeds,
-                contentWidth: contentWidth,
-                hidesMarkdownMarkers: hidesMarkdownMarkers
+                contentWidth: contentWidth
             )
         }
 
-        if hidesMarkdownMarkers {
-            applyLiveCodeBlocks(
-                storage,
-                codeBlocks: codeBlocks,
-                lineRecords: lineRecords,
-                contentWidth: contentWidth
-            )
-            applyLiveTableBlocks(
-                storage,
-                lines: lines,
-                lineRecords: lineRecords,
-                tableRows: tableRows,
-                contentWidth: contentWidth
-            )
-        }
+        applyLiveCodeBlocks(
+            storage,
+            codeBlocks: codeBlocks,
+            lineRecords: lineRecords,
+            contentWidth: contentWidth,
+            revealedBlockRange: revealedBlockRange
+        )
+        applyLiveTableBlocks(
+            storage,
+            lines: lines,
+            lineRecords: lineRecords,
+            tableRows: tableRows,
+            contentWidth: contentWidth,
+            revealedBlockRange: revealedBlockRange
+        )
 
         styleInline(
             storage,
             markdown: markdown,
-            hidesMarkdownMarkers: hidesMarkdownMarkers,
-            excludedRanges: inlineExclusionRanges,
-            rendersCodeBlockAttachments: hidesMarkdownMarkers
+            excludedRanges: inlineExclusionRanges
         )
-        if hidesMarkdownMarkers {
-            // Last, so no earlier pass can style the block back into view — the same ordering
-            // macOS's styler uses, and for the same reason.
-            applyFrontmatter(storage, markdown: markdown)
-        }
+        // Last, so no earlier pass can style the block back into view — the same ordering
+        // macOS's styler uses, and for the same reason.
+        applyFrontmatter(storage, markdown: markdown)
         return storage
     }
 
@@ -118,9 +112,10 @@ enum iOSMarkdownStyler {
     /// leading edge as a resting place. That code path existed on iOS and simply had nothing to
     /// find.
     ///
-    /// Only in `hidesMarkdownMarkers` (live) mode. The raw `.edit` mode exists to show the file as
-    /// it is written, and its caret is deliberately un-snapped, so hiding a block there would strand
-    /// the caret inside text it cannot see.
+    /// Unconditional now. It used to run only in live mode, because the raw `Edit` mode showed the
+    /// file as written and left its caret un-snapped, so hiding a block there would have stranded the
+    /// caret inside text it could not see. Live is the only mode, the caret is always snapped, and
+    /// frontmatter is therefore hidden on every surface that shows a note.
     private static func applyFrontmatter(_ storage: NSMutableAttributedString, markdown: String) {
         guard let parsed = MarkdownMetadataParser.hiddenFrontmatterRange(in: markdown) else { return }
         let range = NSIntersectionRange(parsed, NSRange(location: 0, length: storage.length))
@@ -159,8 +154,7 @@ enum iOSMarkdownStyler {
         codeLineIndexes: Set<Int>,
         imageAssets: [UUID: MarkdownImageRenderAsset],
         taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo],
-        contentWidth: CGFloat,
-        hidesMarkdownMarkers: Bool
+        contentWidth: CGFloat
     ) {
         guard range.length > 0 else { return }
 
@@ -173,14 +167,12 @@ enum iOSMarkdownStyler {
             return
         }
 
-        if hidesMarkdownMarkers,
-           let image = standaloneImage(in: line, imageAssets: imageAssets) {
+        if let image = standaloneImage(in: line, imageAssets: imageAssets) {
             applyImageBlock(storage, lineRange: range, image: image, contentWidth: contentWidth)
             return
         }
 
-        if hidesMarkdownMarkers,
-           let task = standaloneTaskEmbed(in: line, taskEmbeds: taskEmbeds) {
+        if let task = standaloneTaskEmbed(in: line, taskEmbeds: taskEmbeds) {
             applyTaskEmbedBlock(storage, lineRange: range, task: task, contentWidth: contentWidth)
             return
         }
@@ -191,7 +183,7 @@ enum iOSMarkdownStyler {
                 .font: UIFont.systemFont(ofSize: size, weight: .bold),
                 .foregroundColor: UIColor(Theme.text)
             ], range: range)
-            if hidesMarkdownMarkers && hasVisibleHeadingContent(line, markerRange: heading.markerRange) {
+            if hasVisibleHeadingContent(line, markerRange: heading.markerRange) {
                 hide(storage, heading.markerRange.shifted(by: range.location))
             } else {
                 storage.addAttribute(.foregroundColor, value: UIColor(Theme.dim), range: heading.markerRange.shifted(by: range.location))
@@ -210,14 +202,7 @@ enum iOSMarkdownStyler {
 
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         if isDivider(trimmed) {
-            if hidesMarkdownMarkers {
-                applyDividerBlock(storage, lineRange: range, contentWidth: contentWidth)
-                return
-            }
-            storage.addAttributes([
-                .foregroundColor: UIColor(Theme.borderSubtle),
-                .font: monoFont
-            ], range: range)
+            applyDividerBlock(storage, lineRange: range, contentWidth: contentWidth)
             return
         }
 
@@ -226,8 +211,7 @@ enum iOSMarkdownStyler {
                 storage,
                 lineRange: range,
                 lineStart: range.location,
-                quote: quote,
-                hidesMarkdownMarkers: hidesMarkdownMarkers
+                quote: quote
             )
             return
         }
@@ -237,8 +221,7 @@ enum iOSMarkdownStyler {
                 storage,
                 lineRange: range,
                 lineStart: range.location,
-                list: list,
-                hidesMarkdownMarkers: hidesMarkdownMarkers
+                list: list
             )
         }
     }
@@ -247,8 +230,7 @@ enum iOSMarkdownStyler {
         _ storage: NSMutableAttributedString,
         lineRange: NSRange,
         lineStart: Int,
-        quote: iOSMarkdownQuoteMatch,
-        hidesMarkdownMarkers: Bool
+        quote: iOSMarkdownQuoteMatch
     ) {
         let levelInset = CGFloat(max(quote.depth - 1, 0)) * 12
         let paragraph = NSMutableParagraphStyle()
@@ -264,12 +246,7 @@ enum iOSMarkdownStyler {
             .font: italicFont(from: baseFont)
         ], range: lineRange)
 
-        let prefixRange = quote.prefixRange.shifted(by: lineStart)
-        if hidesMarkdownMarkers {
-            applyQuoteAttachment(storage, markerRange: prefixRange, depth: quote.depth)
-        } else {
-            storage.addAttribute(.foregroundColor, value: UIColor(Theme.blue), range: prefixRange)
-        }
+        applyQuoteAttachment(storage, markerRange: quote.prefixRange.shifted(by: lineStart), depth: quote.depth)
     }
 
     private static func applyQuoteAttachment(
@@ -324,8 +301,7 @@ enum iOSMarkdownStyler {
         _ storage: NSMutableAttributedString,
         lineRange: NSRange,
         lineStart: Int,
-        list: iOSMarkdownListMatch,
-        hidesMarkdownMarkers: Bool
+        list: iOSMarkdownListMatch
     ) {
         let paragraph = listParagraphStyle(for: list.visualLevel, markerWidth: list.markerWidth)
         storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
@@ -338,7 +314,7 @@ enum iOSMarkdownStyler {
                 .font: UIFont.systemFont(ofSize: 13, weight: .semibold),
                 .kern: 3.5
             ], range: markerRange)
-            if hidesMarkdownMarkers, marker.hasSuffix(")") {
+            if marker.hasSuffix(")") {
                 storage.addAttribute(.foregroundColor, value: UIColor(Theme.dim), range: markerRange)
             }
 
@@ -360,14 +336,7 @@ enum iOSMarkdownStyler {
             }
 
         case let .checkbox(isDone):
-            if hidesMarkdownMarkers {
-                applyCheckboxAttachment(storage, markerRange: markerRange, isDone: isDone)
-            } else {
-                storage.addAttributes([
-                    .foregroundColor: isDone ? UIColor(Theme.green) : UIColor(Theme.dim),
-                    .font: monoFont
-                ], range: markerRange)
-            }
+            applyCheckboxAttachment(storage, markerRange: markerRange, isDone: isDone)
             if isDone {
                 applyCompletedListText(storage, lineRange: lineRange, contentStart: list.contentStart)
             }
@@ -378,7 +347,8 @@ enum iOSMarkdownStyler {
         _ storage: NSMutableAttributedString,
         codeBlocks: [MarkdownFencedCodeBlock],
         lineRecords: [iOSMarkdownLineRecord],
-        contentWidth: CGFloat
+        contentWidth: CGFloat,
+        revealedBlockRange: NSRange?
     ) {
         guard !codeBlocks.isEmpty else { return }
         let recordsByIndex = Dictionary(uniqueKeysWithValues: lineRecords.map { ($0.index, $0) })
@@ -386,6 +356,14 @@ enum iOSMarkdownStyler {
         for block in codeBlocks {
             guard let firstRecord = recordsByIndex[block.startLineIndex],
                   firstRecord.range.length > 0 else {
+                continue
+            }
+
+            // The caret is inside this fence, so show its source instead of the canvas. `styleLine`
+            // has already mono-styled every line of the block, so skipping is all it takes.
+            if let revealedBlockRange,
+               let blockRange = combinedLineRange(for: block.lineIndexes, recordsByIndex: recordsByIndex),
+               NSIntersectionRange(blockRange, revealedBlockRange).length > 0 {
                 continue
             }
 
@@ -439,7 +417,8 @@ enum iOSMarkdownStyler {
         lines: [String],
         lineRecords: [iOSMarkdownLineRecord],
         tableRows: [Int: MarkdownTableRowStyle],
-        contentWidth: CGFloat
+        contentWidth: CGFloat,
+        revealedBlockRange: NSRange?
     ) {
         guard !tableRows.isEmpty else { return }
         var cursor = 0
@@ -464,6 +443,18 @@ enum iOSMarkdownStyler {
             guard let firstRecord = lineRecords.first(where: { $0.index == cursor }),
                   firstRecord.range.length > 0,
                   !headers.isEmpty else {
+                cursor = max(nextIndex, cursor + 1)
+                continue
+            }
+
+            // Same reveal rule as a fenced code block: caret inside the table, show its pipes.
+            let lastRecord = lineRecords.first { $0.index == tableLineIndexes.last }
+            let tableRange = NSRange(
+                location: firstRecord.range.location,
+                length: NSMaxRange(lastRecord?.range ?? firstRecord.range) - firstRecord.range.location
+            )
+            if let revealedBlockRange,
+               NSIntersectionRange(tableRange, revealedBlockRange).length > 0 {
                 cursor = max(nextIndex, cursor + 1)
                 continue
             }
@@ -634,16 +625,11 @@ enum iOSMarkdownStyler {
     private static func inlineStyleExclusionRanges(
         lineRecords: [iOSMarkdownLineRecord],
         tableRows: [Int: MarkdownTableRowStyle],
-        codeBlocks: [MarkdownFencedCodeBlock],
-        hidesMarkdownMarkers: Bool
+        codeBlocks: [MarkdownFencedCodeBlock]
     ) -> [NSRange] {
         let recordsByIndex = Dictionary(uniqueKeysWithValues: lineRecords.map { ($0.index, $0) })
         var ranges: [NSRange] = codeBlocks.compactMap { block in
             combinedLineRange(for: block.lineIndexes, recordsByIndex: recordsByIndex)
-        }
-
-        guard hidesMarkdownMarkers else {
-            return ranges.filter { $0.length > 0 }
         }
 
         ranges += tableRows.keys.compactMap { recordsByIndex[$0]?.range }
@@ -673,32 +659,26 @@ enum iOSMarkdownStyler {
     private static func styleInline(
         _ storage: NSMutableAttributedString,
         markdown: String,
-        hidesMarkdownMarkers: Bool,
-        excludedRanges: [NSRange],
-        rendersCodeBlockAttachments: Bool
+        excludedRanges: [NSRange]
     ) {
         let inlineCodeRanges = regexRanges(#"`([^`\n]+?)`"#, in: markdown)
 
-        styleBoldItalic(storage, markdown: markdown, hidesMarkdownMarkers: hidesMarkdownMarkers, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
-        styleBold(storage, markdown: markdown, hidesMarkdownMarkers: hidesMarkdownMarkers, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
-        styleItalic(storage, markdown: markdown, hidesMarkdownMarkers: hidesMarkdownMarkers, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
-        styleStrikethrough(storage, markdown: markdown, hidesMarkdownMarkers: hidesMarkdownMarkers, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
-        styleInlineCode(storage, markdown: markdown, hidesMarkdownMarkers: hidesMarkdownMarkers, excludedRanges: excludedRanges)
-        styleHighlight(storage, markdown: markdown, hidesMarkdownMarkers: hidesMarkdownMarkers, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
-        styleImageLink(storage, markdown: markdown, hidesMarkdownMarkers: hidesMarkdownMarkers, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
-        styleMarkdownLinks(storage, markdown: markdown, hidesMarkdownMarkers: hidesMarkdownMarkers, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
-        styleWikiReferences(storage, markdown: markdown, hidesMarkdownMarkers: hidesMarkdownMarkers, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
+        styleBoldItalic(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
+        styleBold(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
+        styleItalic(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
+        styleStrikethrough(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
+        styleInlineCode(storage, markdown: markdown, excludedRanges: excludedRanges)
+        styleHighlight(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
+        styleImageLink(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
+        styleMarkdownLinks(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
+        styleWikiReferences(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
         styleHashtags(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
-        if !rendersCodeBlockAttachments {
-            styleFallbackCodeBlockText(storage, markdown: markdown, hidesMarkdownMarkers: hidesMarkdownMarkers)
-        }
     }
 
     /// Handles both `***bold italic***` and `___bold italic___`.
     private static func styleBoldItalic(
         _ storage: NSMutableAttributedString,
         markdown: String,
-        hidesMarkdownMarkers: Bool,
         excludedRanges: [NSRange],
         inlineCodeRanges: [NSRange]
     ) {
@@ -708,7 +688,7 @@ enum iOSMarkdownStyler {
                 guard match.numberOfRanges >= 2 else { return }
                 let content = match.range(at: 1)
                 storage.addAttribute(.font, value: italicFont(from: boldFont(at: content.location, in: storage)), range: content)
-                hideMarkers(around: content, in: match, storage: storage, if: hidesMarkdownMarkers)
+                hideMarkers(around: content, in: match, storage: storage)
             }
         }
     }
@@ -717,7 +697,6 @@ enum iOSMarkdownStyler {
     private static func styleBold(
         _ storage: NSMutableAttributedString,
         markdown: String,
-        hidesMarkdownMarkers: Bool,
         excludedRanges: [NSRange],
         inlineCodeRanges: [NSRange]
     ) {
@@ -727,7 +706,7 @@ enum iOSMarkdownStyler {
                 guard match.numberOfRanges >= 2 else { return }
                 let content = match.range(at: 1)
                 storage.addAttribute(.font, value: boldFont(at: content.location, in: storage), range: content)
-                hideMarkers(around: content, in: match, storage: storage, if: hidesMarkdownMarkers)
+                hideMarkers(around: content, in: match, storage: storage)
             }
         }
     }
@@ -736,7 +715,6 @@ enum iOSMarkdownStyler {
     private static func styleItalic(
         _ storage: NSMutableAttributedString,
         markdown: String,
-        hidesMarkdownMarkers: Bool,
         excludedRanges: [NSRange],
         inlineCodeRanges: [NSRange]
     ) {
@@ -749,7 +727,7 @@ enum iOSMarkdownStyler {
                 guard match.numberOfRanges >= 2 else { return }
                 let content = match.range(at: 1)
                 storage.addAttribute(.font, value: italicFont(from: font(at: content.location, in: storage)), range: content)
-                hideMarkers(around: content, in: match, storage: storage, if: hidesMarkdownMarkers)
+                hideMarkers(around: content, in: match, storage: storage)
             }
         }
     }
@@ -757,7 +735,6 @@ enum iOSMarkdownStyler {
     private static func styleStrikethrough(
         _ storage: NSMutableAttributedString,
         markdown: String,
-        hidesMarkdownMarkers: Bool,
         excludedRanges: [NSRange],
         inlineCodeRanges: [NSRange]
     ) {
@@ -769,14 +746,13 @@ enum iOSMarkdownStyler {
                 .foregroundColor: UIColor(Theme.dim),
                 .strikethroughStyle: NSUnderlineStyle.single.rawValue
             ], range: content)
-            hideMarkers(around: content, in: match, storage: storage, if: hidesMarkdownMarkers)
+            hideMarkers(around: content, in: match, storage: storage)
         }
     }
 
     private static func styleInlineCode(
         _ storage: NSMutableAttributedString,
         markdown: String,
-        hidesMarkdownMarkers: Bool,
         excludedRanges: [NSRange]
     ) {
         applyRegex(#"`([^`\n]+?)`"#, in: markdown) { match in
@@ -789,14 +765,13 @@ enum iOSMarkdownStyler {
                 .backgroundColor: UIColor(Theme.surfaceElevated).withAlphaComponent(0.65),
                 .cadenceMarkdownInlineCode: true
             ], range: content)
-            hideMarkers(around: content, in: match, storage: storage, if: hidesMarkdownMarkers)
+            hideMarkers(around: content, in: match, storage: storage)
         }
     }
 
     private static func styleHighlight(
         _ storage: NSMutableAttributedString,
         markdown: String,
-        hidesMarkdownMarkers: Bool,
         excludedRanges: [NSRange],
         inlineCodeRanges: [NSRange]
     ) {
@@ -808,14 +783,13 @@ enum iOSMarkdownStyler {
                 .foregroundColor: UIColor(Theme.amberLight),
                 .backgroundColor: UIColor(Theme.amber).withAlphaComponent(0.18)
             ], range: content)
-            hideMarkers(around: content, in: match, storage: storage, if: hidesMarkdownMarkers)
+            hideMarkers(around: content, in: match, storage: storage)
         }
     }
 
     private static func styleImageLink(
         _ storage: NSMutableAttributedString,
         markdown: String,
-        hidesMarkdownMarkers: Bool,
         excludedRanges: [NSRange],
         inlineCodeRanges: [NSRange]
     ) {
@@ -833,7 +807,7 @@ enum iOSMarkdownStyler {
                 .font: UIFont.systemFont(ofSize: font(at: full.location, in: storage).pointSize, weight: .semibold)
             ], range: label.location == NSNotFound || label.length == 0 ? full : label)
 
-            if hidesMarkdownMarkers, label.location != NSNotFound, label.length > 0 {
+            if label.location != NSNotFound, label.length > 0 {
                 hide(storage, NSRange(location: full.location, length: max(0, label.location - full.location)))
                 hide(storage, NSRange(location: label.location + label.length, length: max(0, id.location - (label.location + label.length))))
                 hide(storage, NSRange(location: id.location, length: max(0, NSMaxRange(full) - id.location)))
@@ -849,7 +823,6 @@ enum iOSMarkdownStyler {
     private static func styleMarkdownLinks(
         _ storage: NSMutableAttributedString,
         markdown: String,
-        hidesMarkdownMarkers: Bool,
         excludedRanges: [NSRange],
         inlineCodeRanges: [NSRange]
     ) {
@@ -869,18 +842,15 @@ enum iOSMarkdownStyler {
                 .foregroundColor: UIColor(Theme.dim),
                 .font: monoFont
             ], range: url)
-            if hidesMarkdownMarkers {
-                hide(storage, NSRange(location: full.location, length: 1))
-                hide(storage, NSRange(location: label.location + label.length, length: max(0, url.location - (label.location + label.length))))
-                hide(storage, NSRange(location: url.location + url.length, length: max(0, NSMaxRange(full) - (url.location + url.length))))
-            }
+            hide(storage, NSRange(location: full.location, length: 1))
+            hide(storage, NSRange(location: label.location + label.length, length: max(0, url.location - (label.location + label.length))))
+            hide(storage, NSRange(location: url.location + url.length, length: max(0, NSMaxRange(full) - (url.location + url.length))))
         }
     }
 
     private static func styleWikiReferences(
         _ storage: NSMutableAttributedString,
         markdown: String,
-        hidesMarkdownMarkers: Bool,
         excludedRanges: [NSRange],
         inlineCodeRanges: [NSRange]
     ) {
@@ -914,17 +884,10 @@ enum iOSMarkdownStyler {
                     range: styledRange
                 )
             }
-            if hidesMarkdownMarkers {
-                hide(storage, NSRange(location: full.location, length: 2))
-                hide(storage, NSRange(location: NSMaxRange(full) - 2, length: 2))
-                if reference.hiddenPrefixUTF16Length > 0 {
-                    hide(storage, NSRange(location: labelLocation, length: reference.hiddenPrefixUTF16Length))
-                }
-            } else if reference.hiddenPrefixUTF16Length > 0 {
-                storage.addAttributes([
-                    .foregroundColor: UIColor(Theme.dim),
-                    .font: monoFont
-                ], range: NSRange(location: labelLocation, length: reference.hiddenPrefixUTF16Length))
+            hide(storage, NSRange(location: full.location, length: 2))
+            hide(storage, NSRange(location: NSMaxRange(full) - 2, length: 2))
+            if reference.hiddenPrefixUTF16Length > 0 {
+                hide(storage, NSRange(location: labelLocation, length: reference.hiddenPrefixUTF16Length))
             }
         }
     }
@@ -941,28 +904,6 @@ enum iOSMarkdownStyler {
                 .foregroundColor: UIColor(Theme.greenLight),
                 .backgroundColor: UIColor(Theme.green).withAlphaComponent(0.10)
             ], range: match.range)
-        }
-    }
-
-    /// Only reached when code-block attachments are disabled (plain-markdown mode); the "live"
-    /// path renders fenced code blocks as image attachments via `applyLiveCodeBlocks` instead.
-    private static func styleFallbackCodeBlockText(
-        _ storage: NSMutableAttributedString,
-        markdown: String,
-        hidesMarkdownMarkers: Bool
-    ) {
-        let fullRange = NSRange(location: 0, length: (markdown as NSString).length)
-        applyRegex(#"(?s)(```.*?```)"#, in: markdown) { match in
-            storage.addAttributes([
-                .font: monoFont,
-                .foregroundColor: UIColor(Theme.muted),
-                .backgroundColor: UIColor(Theme.surfaceElevated).withAlphaComponent(0.48)
-            ], range: NSIntersectionRange(match.range(at: 1), fullRange))
-            guard hidesMarkdownMarkers else { return }
-            let full = match.range(at: 1)
-            guard full.length >= 6 else { return }
-            hide(storage, NSRange(location: full.location, length: 3))
-            hide(storage, NSRange(location: NSMaxRange(full) - 3, length: 3))
         }
     }
 
@@ -1091,10 +1032,8 @@ enum iOSMarkdownStyler {
     private static func hideMarkers(
         around contentRange: NSRange,
         in match: NSTextCheckingResult,
-        storage: NSMutableAttributedString,
-        if shouldHide: Bool
+        storage: NSMutableAttributedString
     ) {
-        guard shouldHide else { return }
         for range in match.markerRanges(contentRange: contentRange) {
             hide(storage, range)
         }
@@ -1114,20 +1053,23 @@ enum iOSMarkdownStyler {
 
 struct iOSMarkdownStyleSignature: Equatable {
     let theme: String
-    let hidesMarkdownMarkers: Bool
+    /// The code fence or table the caret is currently inside, which the styler leaves un-rendered
+    /// so its source can be edited. Part of the signature because moving the caret in or out of one
+    /// changes the styling with no text edit to trigger a refresh.
+    let revealedBlockRange: NSRange?
     let contentWidthBucket: Int
     let imageAssetRevision: String
     let taskEmbedRevision: String
 
     static func current(
-        hidesMarkdownMarkers: Bool,
+        revealedBlockRange: NSRange?,
         imageAssets: [MarkdownImageAsset],
         taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:],
         contentWidth: CGFloat = 0
     ) -> iOSMarkdownStyleSignature {
         iOSMarkdownStyleSignature(
             theme: "fixed",
-            hidesMarkdownMarkers: hidesMarkdownMarkers,
+            revealedBlockRange: revealedBlockRange,
             contentWidthBucket: Int(max(0, contentWidth).rounded()),
             imageAssetRevision: imageAssets
                 .sorted { $0.id.uuidString < $1.id.uuidString }

@@ -12,11 +12,6 @@ struct iOSTemplatesSettingsSection: View {
     // "Daily PlanN". These hold what the user is typing; storage is written from them.
     @State private var titleDraft = ""
     @State private var subtitleDraft = ""
-    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var bodyEditorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
-
-    private var bodyEditorModeBinding: Binding<iOSMarkdownEditorMode> {
-        iOSMarkdownEditorPreferences.binding(for: $bodyEditorModeRaw)
-    }
 
     private var templates: [NoteTemplate] {
         NoteTemplateLibrary.editableTemplates(overridesRaw: templateOverridesRaw)
@@ -141,7 +136,6 @@ struct iOSTemplatesSettingsSection: View {
                 }
 
                 iOSTemplateBodyEditor(
-                    mode: bodyEditorModeBinding,
                     isFocused: $bodyEditorFocused,
                     text: bodyBinding(for: selectedTemplate)
                 )
@@ -552,27 +546,19 @@ private struct iOSTemplateIcon: View {
 }
 
 private struct iOSTemplateBodyEditor: View {
-    @Binding var mode: iOSMarkdownEditorMode
     @Binding var isFocused: Bool
     @Binding var text: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .center, spacing: 10) {
-                Text("BODY")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.dim)
-                    .tracking(0.8)
-
-                Spacer(minLength: 0)
-
-                iOSMarkdownModePicker(mode: $mode, compact: true)
-            }
+            Text("BODY")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Theme.dim)
+                .tracking(0.8)
 
             iOSMarkdownEditingSurface(
                 text: $text,
                 isFocused: $isFocused,
-                mode: $mode,
                 placeholder: "Write the reusable note template...",
                 allowsEmbeddedTaskCreation: false
             )

@@ -256,13 +256,8 @@ struct iOSNoteDetailSheet: View {
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var isEditorFocused = false
-    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
-
-    private var editorModeBinding: Binding<iOSMarkdownEditorMode> {
-        iOSMarkdownEditorPreferences.binding(for: $editorModeRaw)
-    }
 
     var body: some View {
         NavigationStack {
@@ -273,7 +268,6 @@ struct iOSNoteDetailSheet: View {
                         set: { updateContent($0) }
                     ),
                     isFocused: $isEditorFocused,
-                    mode: editorModeBinding,
                     placeholder: "Start writing...",
                     referenceNotes: allNotes,
                     referenceTasks: allTasks,
@@ -291,10 +285,6 @@ struct iOSNoteDetailSheet: View {
                         try? modelContext.save()
                         dismiss()
                     }
-                }
-
-                ToolbarItem(placement: .primaryAction) {
-                    iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
                 }
             }
             .onChange(of: note.content) { _, _ in
