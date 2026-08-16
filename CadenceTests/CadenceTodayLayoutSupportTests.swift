@@ -73,3 +73,50 @@ struct CadenceTodayLayoutSupportTests {
         ) == .twoPane)
     }
 }
+
+/// Two panes had no floor at all: `layout(...)` gated only the three-pane case and returned
+/// `.twoPane` for every regular-width device, however little room there was.
+struct CadenceTodayTwoPaneFloorTests {
+    private func layout(paneWidth: CGFloat, prefersThreePane: Bool = false) -> CadenceTodayLayout {
+        CadenceTodayLayoutSupport.layout(
+            prefersThreePane: prefersThreePane,
+            isRegularWidth: true,
+            paneWidth: paneWidth
+        )
+    }
+
+    @Test
+    func anElevenInchIPadInPortraitGetsOneColumnRatherThanTwoStarvedOnes() {
+        // 820pt window − 188pt sidebar. Two panes here meant a 312pt task column, too narrow for
+        // its own header: the date wrapped to "SUND AY, …" and the layout picker read "Fo…".
+        #expect(layout(paneWidth: 632) == .compact)
+    }
+
+    @Test
+    func aThirteenInchIPadInPortraitStillGetsTwoPanes() {
+        // 1032 − 188 = 844, comfortably past the 761 floor.
+        #expect(layout(paneWidth: 844) == .twoPane)
+    }
+
+    @Test
+    func theFloorIsDerivedFromThePanesRatherThanPicked() {
+        #expect(CadenceTodayLayoutSupport.twoPaneMinimumWidth == 761)
+        #expect(layout(paneWidth: 761) == .twoPane)
+        #expect(layout(paneWidth: 760) == .compact)
+    }
+
+    @Test
+    func theTwoPaneFloorNeverExceedsTheThreePaneFloor() {
+        // A width that fits three panes must necessarily fit two.
+        #expect(CadenceTodayLayoutSupport.twoPaneMinimumWidth <= CadenceTodayLayoutSupport.threePaneMinimumWidth)
+        #expect(layout(paneWidth: 1_188, prefersThreePane: true) == .threePane)
+        #expect(layout(paneWidth: 1_188, prefersThreePane: false) == .twoPane)
+    }
+
+    @Test
+    func aStoredThreePanePreferenceStillFallsBackSensiblyOnANarrowDevice() {
+        // The preference is never discarded, but it cannot conjure space: a narrow pane that
+        // prefers three should land on one column, not on a two-pane layout it also cannot fit.
+        #expect(layout(paneWidth: 632, prefersThreePane: true) == .compact)
+    }
+}

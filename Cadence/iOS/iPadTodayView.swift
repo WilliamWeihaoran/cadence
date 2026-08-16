@@ -169,11 +169,23 @@ struct iPadTodayView: View {
         }
     }
 
+    /// The task column's width, which must **never** exceed what is left after the inspector's
+    /// floor.
+    ///
+    /// The previous spelling could return more space than existed. On an 11" iPad in portrait the
+    /// pane is 632pt: the task floor (520) and the inspector floor (320) sum to 840, and the guard
+    /// meant to catch that — `max(420, width - inspectorFloor)` — has a 420 floor of its own, so it
+    /// returned 420 against 312pt of actual room. An `HStack` does not shrink a fixed
+    /// `.frame(width:)`; it overflows and clips, which is why the capture field read "l a task for
+    /// today…" with its leading edge off the left of the column.
+    ///
+    /// The floors are preferences, not guarantees. `available` is the guarantee.
     private func taskPaneWidth(for width: CGFloat) -> CGFloat {
-        let inspectorFloor = sidePanelMinWidth(for: width)
-        let maximumTaskWidth = max(420, width - inspectorFloor)
-        let proposedWidth = width * 0.60
-        return min(max(proposedWidth, 520), min(maximumTaskWidth, 760))
+        let available = max(0, width - sidePanelMinWidth(for: width))
+        guard available > 0 else { return width }
+
+        let preferred = min(max(width * 0.60, 520), 760)
+        return min(preferred, available)
     }
 
     private func sidePanelMinWidth(for width: CGFloat) -> CGFloat {

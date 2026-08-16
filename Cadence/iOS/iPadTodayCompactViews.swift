@@ -5,6 +5,7 @@ import SwiftUI
 struct iOSCompactTodayView: View {
     var showsHeader = true
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let todayTasks: [AppTask]
     let completedTodayTasks: [AppTask]
     let todayTaskGroups: [CadenceTodayTaskGroup]
@@ -44,6 +45,12 @@ struct iOSCompactTodayView: View {
     /// Drawn only when this is a *pushed* screen, where it is the page's only title and — with the
     /// navigation bar hidden on iPhone — the only row the back control has to live on. Inside the
     /// Tasks tab the tab's header does both jobs; see `showsHeader`.
+    ///
+    /// `onBack` is passed **only** on compact width. This view is now also the iPad's Today at pane
+    /// widths below the two-pane floor, where `iPadMacStyleRootShell` hosts it with no
+    /// `NavigationStack` around it — so `dismiss()` has nothing to dismiss and the chevron would be
+    /// a control that looks wired and does nothing, which is the defect this whole sweep has been
+    /// removing. The header draws no button when `onBack` is nil.
     private var header: some View {
         iOSCompactPageHeader(
             eyebrow: DateFormatters.longDate.string(from: Date()),
@@ -51,7 +58,7 @@ struct iOSCompactTodayView: View {
             systemImage: "sun.max.fill",
             color: Theme.amber,
             count: todayTasks.count,
-            onBack: { dismiss() }
+            onBack: horizontalSizeClass == .compact ? { dismiss() } : nil
         )
         .padding(.top, 2)
         .padding(.bottom, 1)
