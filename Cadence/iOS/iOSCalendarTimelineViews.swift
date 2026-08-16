@@ -36,10 +36,17 @@ struct iOSCalendarTimelineGrid: View {
 
     var body: some View {
         GeometryReader { geo in
-            let railWidth: CGFloat = horizontalSizeClass == .regular ? 58 : 48
+            // Seven columns on screen is the guarantee; 112pt is the wish. See
+            // `CadenceCalendarWeekGridLayout` — this used to be a `max(…, 112)` that made the wish
+            // the guarantee and put the last day or two behind a horizontal scroller.
+            let isRegularWidth = horizontalSizeClass == .regular
+            let railWidth = CadenceCalendarWeekGridLayout.timeRailWidth(isRegularWidth: isRegularWidth)
             let availableWidth = max(geo.size.width - railWidth, 1)
-            let minColumnWidth: CGFloat = horizontalSizeClass == .regular ? 112 : 104
-            let colWidth = max(dates.count <= 7 ? availableWidth / CGFloat(max(dates.count, 1)) : 126, minColumnWidth)
+            let colWidth = CadenceCalendarWeekGridLayout.dayColumnWidth(
+                availableWidth: availableWidth,
+                dayCount: dates.count,
+                isRegularWidth: isRegularWidth
+            )
             let contentWidth = colWidth * CGFloat(dates.count)
 
             ScrollView(.vertical) {

@@ -36,6 +36,100 @@ enum CadenceRegularSplitLayout {
     }
 }
 
+/// The Week timeline's own width arithmetic: an hour rail, then one column per day, with all seven
+/// of them on screen at once.
+///
+/// `iOSCalendarTimelineGrid` computed this inline as
+/// `max(dates.count <= 7 ? available / count : 126, isRegular ? 112 : 104)` — a floor treated as a
+/// guarantee, the same shape as the two bugs below, and the one that survived them. That `max`
+/// means the grid needs `58 + 7 × 112 = 842pt` before a week fits without a horizontal scroller,
+/// and no iPad pane is that wide once the day inspector has taken its 340: an 11" Pro in landscape
+/// is 1022 and keeps 682, a 13" in portrait is 844 and keeps 503. So Week ran behind a scroller
+/// showing roughly six of seven days on the primary target and four and a half on a 13" — the
+/// seventh day off the right edge of the one view whose entire subject is the week. It starved
+/// *below* the split too: an 11" in portrait gives the grid its whole 632pt pane and 632 is still
+/// short of 842, so removing the inspector there had taken it from two visible days to five, not
+/// to seven.
+///
+/// The inversion is the one the rest of this file already made: **seven columns on screen is the
+/// guarantee and 112pt is the wish.** A pane that cannot pay for seven full-width columns gets
+/// seven narrower ones rather than five and a scrollbar, down to `minimumDayColumnWidth`.
+///
+/// Compression alone was not enough, though, and the reason is worth keeping: at a 13" iPad's
+/// 844pt pane the inspector's 340 leaves 445, which divides into seven columns of 63.6 — over the
+/// touch floor, so it *fits*, and every block in it reads `[S…` over `3…`. Seven columns that say
+/// nothing are not a week either. So `fullSizeWidth` is what
+/// `CadenceCalendarPaneLayout.showsInspector(paneWidth:calendarMinimumWidth:)` gates on: the
+/// inspector may only have space the week does not need to draw itself at full size. Compression is
+/// for panes that are simply small, where the alternative is not a narrower inspector but a missing
+/// day.
+enum CadenceCalendarWeekGridLayout {
+    static let daysInWeek = 7
+
+    /// The hour rail down the left of the canvas, as `iOSCalendarTimelineGrid` already had it.
+    static func timeRailWidth(isRegularWidth: Bool) -> CGFloat {
+        isRegularWidth ? 58 : 48
+    }
+
+    /// What a day column asks for when the pane can pay for it — wide enough for a block to label
+    /// itself with a title *and* a time range. This is the number that used to be spelled `max(…)`.
+    static func preferredDayColumnWidth(isRegularWidth: Bool) -> CGFloat {
+        isRegularWidth ? 112 : 104
+    }
+
+    /// A timeline block is inset this far from each edge of its column — `colWidth - 18` in
+    /// `iOSCalendarTimelineDayBlocks`, at `x: 9`.
+    static let blockHorizontalInset: CGFloat = 9
+    /// The floor any control has to clear to stay usable.
+    static let minimumTouchTarget: CGFloat = 44
+
+    /// The least a day column can be. Derived, not picked: a column's widest hard requirement is
+    /// that the block drawn inside it stays tappable, and that block is inset by
+    /// `blockHorizontalInset` on both sides. Below this a column stops being *usable* rather than
+    /// merely tight, so there is nothing left to buy by compressing further and the grid scrolls
+    /// instead. The narrowest iPad pane, 632pt of 11" portrait, lands at 82 — comfortably clear.
+    static var minimumDayColumnWidth: CGFloat {
+        minimumTouchTarget + blockHorizontalInset * 2
+    }
+
+    /// A span longer than a week scrolls by design: fourteen columns cannot be a fortnight and a
+    /// legible day at the same time on any iPad. `.twoWeeks` is not in `pickerCases`, so this is
+    /// only reachable from a value persisted by an older build.
+    static let multiWeekDayColumnWidth: CGFloat = 126
+
+    /// The width at which every day column is the size it asks for — the rail plus seven columns at
+    /// `preferredDayColumnWidth`. 842pt at regular width.
+    ///
+    /// This is what the grid claims before an inspector may take anything, so it is the number that
+    /// decides where Week splits: 842 + 340 + 1 = 1183pt of pane, reached only by a 13" iPad in
+    /// landscape. An 11" Pro in landscape is 1022 and gives the week its whole pane, at 137.7pt a
+    /// column. That is the trade this makes on the primary target — no day inspector in Week, and a
+    /// week you can actually read — and it is deliberate. The same day, in the same sections, is
+    /// still one tap away in Month's `Day` reading.
+    static func fullSizeWidth(isRegularWidth: Bool) -> CGFloat {
+        timeRailWidth(isRegularWidth: isRegularWidth)
+            + preferredDayColumnWidth(isRegularWidth: isRegularWidth) * CGFloat(daysInWeek)
+    }
+
+    /// The width of one day column in `availableWidth` (the grid less its hour rail).
+    ///
+    /// Wider than the preference where there is room — a week is meant to fill its pane — and
+    /// narrower where there is not, down to `minimumDayColumnWidth`. Under that there is nothing to
+    /// be gained by shrinking further, so the grid falls back to the preferred width and scrolls,
+    /// which is what a phone does and has always done: 393pt of iPhone leaves 49pt a column.
+    static func dayColumnWidth(
+        availableWidth: CGFloat,
+        dayCount: Int,
+        isRegularWidth: Bool
+    ) -> CGFloat {
+        let preferred = preferredDayColumnWidth(isRegularWidth: isRegularWidth)
+        guard dayCount > 0 else { return preferred }
+        guard dayCount <= daysInWeek else { return max(multiWeekDayColumnWidth, preferred) }
+        let fitted = availableWidth / CGFloat(dayCount)
+        return fitted >= minimumDayColumnWidth ? fitted : preferred
+    }
+}
+
 /// How the Calendar pane divides between the calendar itself and the day inspector.
 ///
 /// `iOSCalendarView.regularInspectorWidth(for:)` was `min(max(width * 0.30, 340), 430)` — a floor
@@ -57,19 +151,49 @@ enum CadenceCalendarPaneLayout {
     static let inspectorFraction: CGFloat = 0.30
     static let paneDividerWidth: CGFloat = 1
 
-    /// 681pt of pane. A 13" iPad in portrait (844pt) keeps the inspector at exactly the width it had
-    /// before; an 11" in portrait (632pt) gives the whole pane to the calendar.
+    /// 681pt of pane, for a calendar that states no minimum of its own. A 13" iPad in portrait
+    /// (844pt) keeps the inspector at exactly the width it had before; an 11" in portrait (632pt)
+    /// gives the whole pane to the calendar.
     static var splitMinimumWidth: CGFloat {
         inspectorMinWidth * 2 + paneDividerWidth
     }
 
-    static func showsInspector(paneWidth: CGFloat) -> Bool {
-        paneWidth >= splitMinimumWidth
+    /// The inspector's share of the pane — never more than what is left once the calendar has taken
+    /// the width it needs to draw itself.
+    ///
+    /// `calendarMinimumWidth` defaults to `inspectorMinWidth`, which is the stand-in the original
+    /// `min(preferred, (paneWidth - paneDividerWidth) / 2)` amounted to: absent a real number from
+    /// the surface being annotated, "at least as much as the thing annotating it" is the honest
+    /// guess, and it is still the right one for the Board, whose columns page rather than fitting.
+    /// Week is the case where the guess was short by 500pt — see `CadenceCalendarWeekGridLayout`.
+    /// At the default this returns exactly what it always did at every pane width where
+    /// `showsInspector` is true.
+    ///
+    /// Only meaningful where `showsInspector(paneWidth:calendarMinimumWidth:)` is true.
+    static func inspectorWidth(
+        forPaneWidth paneWidth: CGFloat,
+        calendarMinimumWidth: CGFloat = inspectorMinWidth
+    ) -> CGFloat {
+        let preferred = min(max(paneWidth * inspectorFraction, inspectorMinWidth), inspectorMaxWidth)
+        return min(preferred, paneWidth - paneDividerWidth - calendarMinimumWidth)
     }
 
-    /// Only meaningful where `showsInspector(paneWidth:)` is true.
-    static func inspectorWidth(forPaneWidth paneWidth: CGFloat) -> CGFloat {
-        let preferred = min(max(paneWidth * inspectorFraction, inspectorMinWidth), inspectorMaxWidth)
-        return min(preferred, (paneWidth - paneDividerWidth) / 2)
+    /// What the calendar keeps when the inspector sits beside it.
+    static func calendarWidth(
+        forPaneWidth paneWidth: CGFloat,
+        calendarMinimumWidth: CGFloat = inspectorMinWidth
+    ) -> CGFloat {
+        paneWidth - paneDividerWidth
+            - inspectorWidth(forPaneWidth: paneWidth, calendarMinimumWidth: calendarMinimumWidth)
+    }
+
+    /// Whether both sides clear their own minimum — which is what this type always claimed to check
+    /// and, until Week supplied a minimum, never did on the calendar's side.
+    static func showsInspector(
+        paneWidth: CGFloat,
+        calendarMinimumWidth: CGFloat = inspectorMinWidth
+    ) -> Bool {
+        inspectorWidth(forPaneWidth: paneWidth, calendarMinimumWidth: calendarMinimumWidth)
+            >= inspectorMinWidth
     }
 }

@@ -166,7 +166,25 @@ struct iOSCalendarView: View {
     /// full-width and gains an inspector reads as the inspector arriving, where the reverse reads as
     /// content being taken away.
     private var hasInspector: Bool {
-        !isCompact && CadenceCalendarPaneLayout.showsInspector(paneWidth: paneWidth)
+        !isCompact
+            && CadenceCalendarPaneLayout.showsInspector(
+                paneWidth: paneWidth,
+                calendarMinimumWidth: calendarMinimumWidth
+            )
+    }
+
+    /// What has to fit beside the inspector before there is one.
+    ///
+    /// Week is the mode that can answer this with a real number: an hour rail and seven day
+    /// columns, none of which can be dropped, at the width a column needs to label a block with
+    /// something more than an ellipsis. Every other mode keeps the inspector's own width as the
+    /// stand-in it always used — the Board's columns page, so a narrower board is a shorter page
+    /// rather than a lost column, and Month's grid flexes.
+    private var calendarMinimumWidth: CGFloat {
+        guard presentation == .timeline, viewMode == .week else {
+            return CadenceCalendarPaneLayout.inspectorMinWidth
+        }
+        return CadenceCalendarWeekGridLayout.fullSizeWidth(isRegularWidth: true)
     }
 
     private var isMonthTimeline: Bool {
@@ -246,7 +264,12 @@ struct iOSCalendarView: View {
                     Divider().background(Theme.borderSubtle)
 
                     dayInspector
-                        .frame(width: CadenceCalendarPaneLayout.inspectorWidth(forPaneWidth: paneWidth))
+                        .frame(
+                            width: CadenceCalendarPaneLayout.inspectorWidth(
+                                forPaneWidth: paneWidth,
+                                calendarMinimumWidth: calendarMinimumWidth
+                            )
+                        )
                         .frame(maxHeight: .infinity)
                 }
             } else {

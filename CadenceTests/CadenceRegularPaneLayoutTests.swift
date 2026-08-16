@@ -64,6 +64,19 @@ struct CadenceCalendarPaneLayoutTests {
         #expect(!CadenceCalendarPaneLayout.showsInspector(paneWidth: 680))
     }
 
+    /// Generalising the gate must not move it for the surfaces that were not asking a new question.
+    /// The Board and Month both still split at 681.
+    @Test
+    func aCalendarThatStatesNoMinimumSplitsExactlyWhereItAlwaysDid() {
+        for paneWidth in stride(from: CGFloat(300), through: 2000, by: 1) {
+            #expect(
+                CadenceCalendarPaneLayout.showsInspector(paneWidth: paneWidth)
+                    == (paneWidth >= CadenceCalendarPaneLayout.splitMinimumWidth),
+                "gate moved at pane \(paneWidth)"
+            )
+        }
+    }
+
     @Test
     func anElevenInchPortraitPaneGivesTheWholeThingToTheCalendar() {
         // 632pt: the old `min(max(width * 0.30, 340), 430)` returned 340 — 54% of the pane — and
@@ -92,5 +105,150 @@ struct CadenceCalendarPaneLayoutTests {
     func theInspectorHasACeilingEvenThoughNoIPadReachesIt() {
         #expect(CadenceCalendarPaneLayout.inspectorWidth(forPaneWidth: 1188) == 1188 * CadenceCalendarPaneLayout.inspectorFraction)
         #expect(CadenceCalendarPaneLayout.inspectorWidth(forPaneWidth: 2000) == CadenceCalendarPaneLayout.inspectorMaxWidth)
+    }
+}
+
+/// Week has to show a week.
+///
+/// Every one of these runs the *whole* chain a pane goes through — does the inspector fit, what is
+/// left for the grid, what is left for the columns — rather than any one number in it, because the
+/// bug was never in a single value. `showsInspector` was right about the inspector, `dayColumnWidth`
+/// was right about a column, and between them seven columns did not fit.
+struct CadenceCalendarWeekGridLayoutTests {
+    /// Window width less the 188pt shell sidebar. 632 and 1022 are an 11" iPad Pro (820 and 1210 of
+    /// window), 646 the 11" Pro M4 in portrait (834), 844 and 1188 a 13" (1032 and 1376).
+    private static let realPaneWidths: [CGFloat] = [632, 646, 844, 1022, 1188]
+
+    /// What Week claims before an inspector may take anything: seven full-size columns and the rail.
+    private static let claim = CadenceCalendarWeekGridLayout.fullSizeWidth(isRegularWidth: true)
+
+    /// The grid width Week is actually handed at a given pane width.
+    private func gridWidth(paneWidth: CGFloat) -> CGFloat {
+        guard CadenceCalendarPaneLayout.showsInspector(paneWidth: paneWidth, calendarMinimumWidth: Self.claim) else {
+            return paneWidth
+        }
+        return CadenceCalendarPaneLayout.calendarWidth(forPaneWidth: paneWidth, calendarMinimumWidth: Self.claim)
+    }
+
+    private func dayColumnWidth(paneWidth: CGFloat) -> CGFloat {
+        let available = gridWidth(paneWidth: paneWidth)
+            - CadenceCalendarWeekGridLayout.timeRailWidth(isRegularWidth: true)
+        return CadenceCalendarWeekGridLayout.dayColumnWidth(
+            availableWidth: available,
+            dayCount: CadenceCalendarWeekGridLayout.daysInWeek,
+            isRegularWidth: true
+        )
+    }
+
+    /// The property that matters. Not "the columns are wide enough" and not "the threshold is N" —
+    /// seven columns and the hour rail fit inside the grid, at every pane an iPad can produce.
+    @Test
+    func sevenDaysFitAtEveryRealPaneWidth() {
+        for paneWidth in Self.realPaneWidths {
+            let content = CadenceCalendarWeekGridLayout.timeRailWidth(isRegularWidth: true)
+                + dayColumnWidth(paneWidth: paneWidth) * CGFloat(CadenceCalendarWeekGridLayout.daysInWeek)
+            let grid = gridWidth(paneWidth: paneWidth)
+            #expect(
+                content <= grid + 0.5,
+                "week needed \(content) of \(grid) at pane \(paneWidth) — the seventh day is behind a scroller"
+            )
+        }
+    }
+
+    /// And they stay tappable while doing it, so "it fits" is not bought by shaving the columns to
+    /// nothing. The binding case is the narrowest pane, 632pt of 11" portrait, at 82pt a column.
+    @Test
+    func everyColumnStaysALegalTouchTargetAtEveryRealPaneWidth() {
+        for paneWidth in Self.realPaneWidths {
+            #expect(
+                dayColumnWidth(paneWidth: paneWidth) >= CadenceCalendarWeekGridLayout.minimumDayColumnWidth,
+                "column \(dayColumnWidth(paneWidth: paneWidth)) at pane \(paneWidth)"
+            )
+        }
+    }
+
+    /// The stronger claim the split gate buys: not merely seven columns, but seven columns wide
+    /// enough for a block to say something. Compression exists for panes that are small, not to pay
+    /// for an inspector — 844pt divided seven ways after the inspector's 340 is 63.6, which clears
+    /// the touch floor and still renders every block as `[S…` over `3…`.
+    @Test
+    func noRealPaneEverBuysAnInspectorWithColumnWidth() {
+        for paneWidth in Self.realPaneWidths where paneWidth >= Self.claim {
+            #expect(
+                dayColumnWidth(paneWidth: paneWidth)
+                    >= CadenceCalendarWeekGridLayout.preferredDayColumnWidth(isRegularWidth: true),
+                "column \(dayColumnWidth(paneWidth: paneWidth)) at pane \(paneWidth)"
+            )
+        }
+    }
+
+    @Test
+    func onlyAPaneThatCanPayForBothGetsAnInspector() {
+        #expect(Self.claim == 842)
+        // 842 + 340 + 1. Below this the grid takes the pane, exactly as it does on a phone.
+        #expect(CadenceCalendarPaneLayout.showsInspector(paneWidth: 1183, calendarMinimumWidth: Self.claim))
+        #expect(!CadenceCalendarPaneLayout.showsInspector(paneWidth: 1182, calendarMinimumWidth: Self.claim))
+        // The two target iPad panes are both below it, so Week fills them.
+        #expect(!CadenceCalendarPaneLayout.showsInspector(paneWidth: 646, calendarMinimumWidth: Self.claim))
+        #expect(!CadenceCalendarPaneLayout.showsInspector(paneWidth: 1022, calendarMinimumWidth: Self.claim))
+        // A 13" in landscape can pay for both, and the inspector takes the remainder rather than
+        // its 30% — 356.4 would have left the grid 831 and put it back under its own claim.
+        #expect(CadenceCalendarPaneLayout.showsInspector(paneWidth: 1188, calendarMinimumWidth: Self.claim))
+        #expect(CadenceCalendarPaneLayout.inspectorWidth(forPaneWidth: 1188, calendarMinimumWidth: Self.claim) == 345)
+        #expect(gridWidth(paneWidth: 1188) == Self.claim)
+    }
+
+    /// A week fills the pane it is given rather than stopping at 112 and leaving a gutter — which is
+    /// what `max(available / 7, 112)` did right and must keep doing.
+    @Test
+    func aWideGridSpendsItsWholeWidthOnTheWeek() {
+        let available: CGFloat = 964 // an 11" Pro in landscape with the pane to itself, less the rail
+        let column = CadenceCalendarWeekGridLayout.dayColumnWidth(
+            availableWidth: available,
+            dayCount: 7,
+            isRegularWidth: true
+        )
+        #expect(column == available / 7)
+        #expect(column > CadenceCalendarWeekGridLayout.preferredDayColumnWidth(isRegularWidth: true))
+    }
+
+    /// A phone cannot hold seven legible columns at any zoom — 393pt leaves 49 a column — so it
+    /// keeps the preferred width and scrolls, which is what it already did.
+    @Test
+    func aPhoneStillScrollsItsWeekRatherThanShavingItToNothing() {
+        let rail = CadenceCalendarWeekGridLayout.timeRailWidth(isRegularWidth: false)
+        let column = CadenceCalendarWeekGridLayout.dayColumnWidth(
+            availableWidth: 393 - rail,
+            dayCount: 7,
+            isRegularWidth: false
+        )
+        #expect(column == CadenceCalendarWeekGridLayout.preferredDayColumnWidth(isRegularWidth: false))
+    }
+
+    /// Fourteen columns are a fortnight or a legible day, never both. `.twoWeeks` is off the picker
+    /// and only reachable from an older persisted value, but the width it used must not change.
+    @Test
+    func aFortnightKeepsItsFixedColumnAndItsScroller() {
+        for isRegularWidth in [true, false] {
+            #expect(
+                CadenceCalendarWeekGridLayout.dayColumnWidth(
+                    availableWidth: 1188,
+                    dayCount: 14,
+                    isRegularWidth: isRegularWidth
+                ) == CadenceCalendarWeekGridLayout.multiWeekDayColumnWidth
+            )
+        }
+    }
+
+    @Test
+    func aZeroWidthGridDoesNotProduceAZeroWidthColumn() {
+        #expect(
+            CadenceCalendarWeekGridLayout.dayColumnWidth(availableWidth: 0, dayCount: 7, isRegularWidth: true)
+                == CadenceCalendarWeekGridLayout.preferredDayColumnWidth(isRegularWidth: true)
+        )
+        #expect(
+            CadenceCalendarWeekGridLayout.dayColumnWidth(availableWidth: 800, dayCount: 0, isRegularWidth: true)
+                == CadenceCalendarWeekGridLayout.preferredDayColumnWidth(isRegularWidth: true)
+        )
     }
 }
