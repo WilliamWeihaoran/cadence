@@ -28,7 +28,10 @@ struct iOSCalendarBoardPlanner: View {
     /// the id itself, before the first render, so there is nothing to race.
     ///
     /// Seeded with the index the first window puts the anchor at, so the very first render is
-    /// already correct rather than corrected.
+    /// already correct rather than corrected — and re-asserted once the `LazyHStack` reports that
+    /// it has laid out, because a seeded value is not a scroll position until there are columns for
+    /// it to resolve against. Month's agenda paid for the missing half of that rule; see
+    /// `CadenceLazyScrollAnchor`.
     @State private var scrolledDayIndex: Int? = CalendarBoardPlannerSupport.plannerLeadingDayCount
     @State private var windowStartDate: Date?
 
@@ -59,6 +62,17 @@ struct iOSCalendarBoardPlanner: View {
     /// stays scrollable into the past. The floor is the macOS board's, where the rails cover it.
     private var activeWindowStartDate: Date {
         windowStartDate ?? CalendarBoardPlannerSupport.plannerWindowStart(for: anchorDate, calendar: calendar)
+    }
+
+    /// The column the board should be showing at its leading edge, in the window as it currently
+    /// stands. Re-read every pass, so the one-shot assertion uses the anchor at first layout.
+    private var anchorDayIndex: Int {
+        CalendarBoardPlannerSupport.dayIndex(
+            for: anchorDate,
+            bufferStart: activeWindowStartDate,
+            calendar: calendar,
+            renderDays: renderDays
+        )
     }
 
     /// Folds due-only work into its due day. Without an Unscheduled rail these day columns are the
@@ -108,6 +122,7 @@ struct iOSCalendarBoardPlanner: View {
         // cards clipped mid-word. iPad scrolls freely across its multi-column board.
         .modifier(iOSBoardColumnPaging(isEnabled: !isRegularWidth))
         .scrollPosition(id: $scrolledDayIndex, anchor: .leading)
+        .cadenceLazyScrollAnchor($scrolledDayIndex, target: anchorDayIndex, axis: .horizontal)
         .background(Theme.bg)
         .onAppear {
             alignWindow(to: anchorDate)
@@ -296,23 +311,10 @@ private struct iOSCalendarBoardDayColumn: View {
     }
 
     private var addTaskButton: some View {
-        Button(action: onAddTask) {
-            HStack(spacing: 8) {
-                Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("Add task")
-                    .font(.system(size: 14, weight: .semibold))
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(Theme.dim)
-            .padding(.horizontal, 12)
-            .frame(height: 44)
-            .background(Theme.surfaceElevated.opacity(0.70))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-        }
-        .buttonStyle(.iosPressable)
-        .accessibilityLabel("Add task on \(DateFormatters.longDate.string(from: date))")
+        iOSCalendarAddItemRow(
+            accessibilityLabel: "Add task on \(DateFormatters.longDate.string(from: date))",
+            action: onAddTask
+        )
     }
 
     @ViewBuilder

@@ -190,21 +190,16 @@ struct iOSCalendarView: View {
         isCompact ? .below : CadenceCalendarMonthLayout.placement(paneWidth: paneWidth)
     }
 
-    /// Only Week keeps the counts line on a phone. The Board's columns are meant to start directly
-    /// under the mode control, and Month's agenda below lists the selected day item by item — a
-    /// line above it counting the same items is the chrome this page just finished removing.
-    ///
-    /// Month now decides for itself, because both of its readings head themselves with a date: the
-    /// agenda per day, the inspector once. See
-    /// `CadenceCalendarMonthLayout.showsDaySummaryStrip(placement:detail:)`.
+    /// Whether the day summary band sits under the toolbar. The whole rule — including why the
+    /// Board no longer has one at any width — is in
+    /// `CadenceCalendarPaneLayout.showsDaySummaryStrip`.
     private var showsContextStrip: Bool {
-        if isMonthTimeline {
-            return CadenceCalendarMonthLayout.showsDaySummaryStrip(
-                placement: monthPlacement,
-                detail: monthDetail
-            )
-        }
-        return !isCompact || presentation == .timeline
+        CadenceCalendarPaneLayout.showsDaySummaryStrip(
+            presentation: presentation,
+            viewMode: viewMode,
+            monthPlacement: monthPlacement,
+            monthDetail: monthDetail
+        )
     }
 
     var body: some View {

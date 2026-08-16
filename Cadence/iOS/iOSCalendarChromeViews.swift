@@ -47,7 +47,9 @@ struct iOSCalendarContextStrip: View {
 
     /// On iPhone this row exists only to say what the day holds, so a day holding nothing has no
     /// row: the band used to persist and render "0 total · 0 timed · 0 tasks · 0 events". On iPad it
-    /// also carries the only date the calendar pane itself shows, so it always stays.
+    /// also carries the date, and every surface that still asks for this row is one where nothing
+    /// else names the selected day — the Board, where the leading column did, no longer asks. See
+    /// `CadenceCalendarPaneLayout.showsDaySummaryStrip`.
     private var hasContent: Bool {
         !isCompact || summary != nil || leadItem != nil
     }
@@ -160,6 +162,41 @@ struct iOSCalendarContextStrip: View {
         .padding(.leading, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Next up: \(leadItem.title), \(leadItem.detail)")
+    }
+}
+
+/// The ghost add row a day surface carries — one line, full width, no date on it.
+///
+/// The Calendar Board's day column has had this row since it was built; Month's `Day` reading lost
+/// its only add control in `42de745`, when the day header bar that carried the `+` came out for
+/// naming a day the grid beside it had already named. The row is the shape that gives it back
+/// without giving the bar back: it says what it does and nothing about which day it is on, so it can
+/// sit under a grid cell that is already lit up.
+///
+/// One row rather than two near-copies, because the two surfaces open the same quick-create sheet.
+struct iOSCalendarAddItemRow: View {
+    var title = "Add task"
+    var accessibilityLabel: String?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Theme.dim)
+            .padding(.horizontal, 12)
+            .frame(height: 44)
+            .background(Theme.surfaceElevated.opacity(0.70))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+        }
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel(accessibilityLabel ?? title)
     }
 }
 

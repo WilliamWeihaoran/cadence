@@ -107,6 +107,65 @@ struct CalendarMonthDetailTests {
         #expect(!CadenceCalendarMonthLayout.showsDaySummaryStrip(placement: .below, detail: .agenda))
     }
 
+    /// The Board has no strip at any width, in any orientation, on any device.
+    ///
+    /// Its columns *are* days. The leading one is the selected day and carries that date in its own
+    /// header, its own count badge, and every item the strip would count, listed out below. With the
+    /// day inspector gone (`42de745`) the band read "Wednesday, August 19" directly over a column
+    /// headed `WED · AUG 19` — and on an empty day that date was the whole band, because
+    /// `CadenceCalendarDaySummary.line` returns nil at zero.
+    @Test
+    func theBoardCarriesNoDaySummaryBand() {
+        for viewMode in [CadenceCalendarViewMode.week, .month] {
+            for placement in [CadenceCalendarMonthLayout.Placement.beside, .below] {
+                for detail in CadenceCalendarMonthDetail.allCases {
+                    #expect(
+                        !CadenceCalendarPaneLayout.showsDaySummaryStrip(
+                            presentation: .board,
+                            viewMode: viewMode,
+                            monthPlacement: placement,
+                            monthDetail: detail
+                        ),
+                        "board kept a summary band at \(viewMode)/\(placement)/\(detail)"
+                    )
+                }
+            }
+        }
+    }
+
+    /// Week and 2 Weeks keep it: seven columns say which days exist, not which one you are on, so
+    /// this band is the only place the selection is named or counted.
+    @Test
+    func aTimedGridKeepsTheBandThatNamesItsSelectedDay() {
+        for viewMode in [CadenceCalendarViewMode.week, .twoWeeks] {
+            #expect(
+                CadenceCalendarPaneLayout.showsDaySummaryStrip(
+                    presentation: .timeline,
+                    viewMode: viewMode,
+                    monthPlacement: .below,
+                    monthDetail: .agenda
+                )
+            )
+        }
+    }
+
+    /// Month still answers for itself, and the page-level gate must not quietly overrule it.
+    @Test
+    func monthKeepsItsOwnAnswerThroughThePageGate() {
+        for placement in [CadenceCalendarMonthLayout.Placement.beside, .below] {
+            for detail in CadenceCalendarMonthDetail.allCases {
+                #expect(
+                    CadenceCalendarPaneLayout.showsDaySummaryStrip(
+                        presentation: .timeline,
+                        viewMode: .month,
+                        monthPlacement: placement,
+                        monthDetail: detail
+                    ) == CadenceCalendarMonthLayout.showsDaySummaryStrip(placement: placement, detail: detail)
+                )
+            }
+        }
+    }
+
     // MARK: - What the grid is capped against when the detail is under it
 
     /// Both readings now reserve the same room, because both now open the same way — on a heading

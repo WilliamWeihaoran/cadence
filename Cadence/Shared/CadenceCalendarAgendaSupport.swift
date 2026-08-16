@@ -44,6 +44,19 @@ enum CadenceCalendarMonthAgendaSupport {
 
     // MARK: - Two-way selection sync
 
+    /// The section the agenda **opens** on.
+    ///
+    /// The selected day, but only where the agenda actually lists it. `.scrollPosition(id:)` drops a
+    /// scroll to an id that is not in the stack, and a dropped scroll leaves the grid lit on one day
+    /// and the agenda parked on another with no gesture that reconciles them — the same failure
+    /// `scrollTarget` guards for a *later* selection, which the opening position had no equivalent
+    /// of. A selection outside this month opens on the month's first listed day instead.
+    ///
+    /// `nil` only for a month with no days at all, which no calendar produces.
+    static func initialScrollTarget(selectedKey: String, agendaDayKeys: [String]) -> String? {
+        agendaDayKeys.contains(selectedKey) ? selectedKey : agendaDayKeys.first
+    }
+
     /// The agenda section a **selection change** should scroll to, or `nil` to leave the agenda
     /// where it is.
     ///

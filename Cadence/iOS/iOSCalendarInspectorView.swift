@@ -5,11 +5,13 @@ import SwiftUI
 
 /// One day, in sections: blocks, Apple Calendar, timed, do date, due.
 ///
-/// It opens on its first section heading. There used to be a bar above that carrying a rounded
-/// `SUN`/`30` tile, "Sunday, August 30" at 19pt, and an add button — a fixed 63pt strip naming a day
-/// that whichever surface placed this pane had already named. Month puts it under or beside a grid
-/// with that day lit up; the Board, which is the other place it used to appear, is a row of day
-/// columns each headed with its own date. The date was never this pane's to state.
+/// It opens on an add row and then its first section heading. There used to be a bar above that
+/// carrying a rounded `SUN`/`30` tile, "Sunday, August 30" at 19pt, and an add button — a fixed 63pt
+/// strip naming a day that whichever surface placed this pane had already named. Month puts it under
+/// or beside a grid with that day lit up; the Board, which is the other place it used to appear, is
+/// a row of day columns each headed with its own date. The date was never this pane's to state — but
+/// the `+` was, and it went out with the bar it happened to be sitting in. It is back as a row that
+/// states no date, so nothing here repeats the grid.
 struct iOSCalendarDayInspector: View {
     let date: Date
     let tasks: [AppTask]
@@ -39,6 +41,16 @@ struct iOSCalendarDayInspector: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 14) {
+                        // A day that already holds something still needs a way to add to it. The
+                        // empty state has always offered one; the non-empty case had the `+` in the
+                        // date bar `42de745` deleted, and lost it with the bar — on the one iPad
+                        // page with no floating `+` anywhere else. Same row the Board's day column
+                        // uses, in the same place: under the heading, above the items.
+                        iOSCalendarAddItemRow(
+                            accessibilityLabel: "Add task on \(DateFormatters.longDate.string(from: date))",
+                            action: addItem
+                        )
+
                         if !bundles.isEmpty {
                             iOSCalendarInspectorSection(title: "Blocks", color: Theme.amber) {
                                 ForEach(bundles) { bundle in
@@ -129,7 +141,7 @@ private struct iOSCalendarInspectorSection<Content: View>: View {
 /// It was an icon tile, a heading, a three-line explanation of what a planned task, a time block and
 /// an Apple Calendar event are, and a button — a card the height of a third of a phone screen, whose
 /// whole content was "there is nothing here". The explanation named the three things the add control
-/// it sits beside already offers, and the header's own `+` offers them too.
+/// it sits beside already offers.
 private struct iOSCalendarInspectorEmptyState: View {
     let addItem: () -> Void
 

@@ -89,8 +89,15 @@ struct iOSCalendarMonthAgendaList: View {
     /// The agenda section at the top of the scroll view — both the position the agenda is *set* to
     /// when a grid day is tapped and the one it reports back as it is scrolled. `scrollPosition(id:)`
     /// is what places a lazy stack; an `onAppear` → `scrollTo` against one runs before its rows
-    /// exist and silently does nothing (`ecaf80f`). Seeded from the selected day so the very first
-    /// render already opens on it.
+    /// exist and silently does nothing (`ecaf80f`).
+    ///
+    /// Seeded from the selected day, and **that seed is not a scroll position on its own.** A value
+    /// handed to `.scrollPosition(id:)` in `init` is resolved against a `LazyVStack` that has not
+    /// built a row yet, so the offset comes out of estimates of nothing and the pane opens blank —
+    /// which is what Month → Agenda did at iPad regular width until you stepped a month, that step
+    /// being the one thing that re-assigned this binding *after* layout. The seed is what makes the
+    /// first frame right where it can be; `cadenceLazyScrollAnchor` is what makes it right where it
+    /// cannot. See `CadenceLazyScrollAnchor`.
     @State private var scrolledDayKey: String?
     @State private var selectedBundle: TaskBundle?
     @State private var selectedEvent: iOSCalendarEventSelection?
@@ -109,7 +116,12 @@ struct iOSCalendarMonthAgendaList: View {
         self.monthTasksByDate = monthTasksByDate
         self.bundlesByDate = bundlesByDate
         self.eventsByDate = eventsByDate
-        self._scrolledDayKey = State(initialValue: DateFormatters.dateKey(from: selectedDate.wrappedValue))
+        self._scrolledDayKey = State(
+            initialValue: CadenceCalendarMonthAgendaSupport.initialScrollTarget(
+                selectedKey: DateFormatters.dateKey(from: selectedDate.wrappedValue),
+                agendaDayKeys: CadenceCalendarMonthAgendaSupport.agendaDayKeys(forMonthContaining: monthDate)
+            )
+        )
     }
 
     private var agendaDays: [Date] {
@@ -118,6 +130,15 @@ struct iOSCalendarMonthAgendaList: View {
 
     private var agendaDayKeys: [String] {
         CadenceCalendarMonthAgendaSupport.agendaDayKeys(forMonthContaining: monthDate, calendar: calendar)
+    }
+
+    /// The section the agenda opens on, re-read every pass so the one-shot assertion below uses the
+    /// selection as it stands at first layout rather than as it stood in `init`.
+    private var initialScrollTarget: String? {
+        CadenceCalendarMonthAgendaSupport.initialScrollTarget(
+            selectedKey: DateFormatters.dateKey(from: selectedDate),
+            agendaDayKeys: agendaDayKeys
+        )
     }
 
     var body: some View {
@@ -147,6 +168,7 @@ struct iOSCalendarMonthAgendaList: View {
         }
         .scrollIndicators(.hidden)
         .scrollPosition(id: $scrolledDayKey, anchor: .top)
+        .cadenceLazyScrollAnchor($scrolledDayKey, target: initialScrollTarget)
         .onChange(of: selectedDate) { _, newValue in
             scrollAgenda(toSelected: DateFormatters.dateKey(from: newValue))
         }
