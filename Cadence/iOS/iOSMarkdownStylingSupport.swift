@@ -256,14 +256,7 @@ enum iOSMarkdownStyler {
     ) {
         guard markerRange.length > 0 else { return }
         let canvas = iOSMarkdownQuoteMarkerLayoutInfo(depth: depth).renderedMarker()
-        let attachment = NSTextAttachment()
-        attachment.image = canvas
-        attachment.bounds = CGRect(origin: CGPoint(x: 0, y: -3), size: canvas.size)
-
-        storage.addAttribute(.attachment, value: attachment, range: NSRange(location: markerRange.location, length: 1))
-        if markerRange.length > 1 {
-            hide(storage, NSRange(location: markerRange.location + 1, length: markerRange.length - 1))
-        }
+        drawCanvas(storage, canvas, over: markerRange, isBlock: false, yOffset: 3)
     }
 
     private static func applyCheckboxAttachment(
@@ -273,14 +266,7 @@ enum iOSMarkdownStyler {
     ) {
         guard markerRange.length > 0 else { return }
         let canvas = iOSMarkdownCheckboxLayoutInfo(isDone: isDone).renderedMarker()
-        let attachment = NSTextAttachment()
-        attachment.image = canvas
-        attachment.bounds = CGRect(origin: CGPoint(x: 0, y: -3), size: canvas.size)
-
-        storage.addAttribute(.attachment, value: attachment, range: NSRange(location: markerRange.location, length: 1))
-        if markerRange.length > 1 {
-            hide(storage, NSRange(location: markerRange.location + 1, length: markerRange.length - 1))
-        }
+        drawCanvas(storage, canvas, over: markerRange, isBlock: false, yOffset: 3)
     }
 
     private static func applyCompletedListText(
@@ -401,15 +387,8 @@ enum iOSMarkdownStyler {
         paragraph.paragraphSpacingBefore = 8
         paragraph.paragraphSpacing = 6
 
-        let attachment = NSTextAttachment()
-        attachment.image = canvas
-        attachment.bounds = CGRect(origin: CGPoint(x: 0, y: -8), size: canvas.size)
-
         storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
-        storage.addAttribute(.attachment, value: attachment, range: NSRange(location: lineRange.location, length: 1))
-        if lineRange.length > 1 {
-            hide(storage, NSRange(location: lineRange.location + 1, length: lineRange.length - 1))
-        }
+        drawCanvas(storage, canvas, over: lineRange, isBlock: true, yOffset: 0)
     }
 
     private static func applyLiveTableBlocks(
@@ -487,15 +466,8 @@ enum iOSMarkdownStyler {
         paragraph.paragraphSpacingBefore = 8
         paragraph.paragraphSpacing = 6
 
-        let attachment = NSTextAttachment()
-        attachment.image = canvas
-        attachment.bounds = CGRect(origin: CGPoint(x: 0, y: -8), size: canvas.size)
-
         storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
-        storage.addAttribute(.attachment, value: attachment, range: NSRange(location: lineRange.location, length: 1))
-        if lineRange.length > 1 {
-            hide(storage, NSRange(location: lineRange.location + 1, length: lineRange.length - 1))
-        }
+        drawCanvas(storage, canvas, over: lineRange, isBlock: true, yOffset: 0)
     }
 
     private static func applyDividerBlock(
@@ -513,15 +485,8 @@ enum iOSMarkdownStyler {
         paragraph.paragraphSpacingBefore = 6
         paragraph.paragraphSpacing = 6
 
-        let attachment = NSTextAttachment()
-        attachment.image = canvas
-        attachment.bounds = CGRect(origin: CGPoint(x: 0, y: -5), size: canvas.size)
-
         storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
-        storage.addAttribute(.attachment, value: attachment, range: NSRange(location: lineRange.location, length: 1))
-        if lineRange.length > 1 {
-            hide(storage, NSRange(location: lineRange.location + 1, length: lineRange.length - 1))
-        }
+        drawCanvas(storage, canvas, over: lineRange, isBlock: true, yOffset: 0)
     }
 
     private static func collapseLine(_ storage: NSMutableAttributedString, lineRange: NSRange) {
@@ -569,15 +534,8 @@ enum iOSMarkdownStyler {
         paragraph.paragraphSpacingBefore = 8
         paragraph.paragraphSpacing = 6
 
-        let attachment = NSTextAttachment()
-        attachment.image = canvas
-        attachment.bounds = CGRect(origin: CGPoint(x: 0, y: -8), size: canvas.size)
-
         storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
-        storage.addAttribute(.attachment, value: attachment, range: NSRange(location: lineRange.location, length: 1))
-        if lineRange.length > 1 {
-            hide(storage, NSRange(location: lineRange.location + 1, length: lineRange.length - 1))
-        }
+        drawCanvas(storage, canvas, over: lineRange, isBlock: true, yOffset: 0)
     }
 
     private static func standaloneTaskEmbed(
@@ -606,20 +564,13 @@ enum iOSMarkdownStyler {
         paragraph.paragraphSpacingBefore = 7
         paragraph.paragraphSpacing = 5
 
-        let attachment = NSTextAttachment()
-        attachment.image = canvas
-        attachment.bounds = CGRect(origin: CGPoint(x: 0, y: -7), size: canvas.size)
-
         storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
-        storage.addAttribute(.attachment, value: attachment, range: NSRange(location: lineRange.location, length: 1))
+        drawCanvas(storage, canvas, over: lineRange, isBlock: true, yOffset: 0)
         storage.addAttribute(
             .cadenceMarkdownTaskEmbed,
             value: MarkdownTaskEmbedLayoutInfo(task: task),
             range: NSRange(location: lineRange.location, length: 1)
         )
-        if lineRange.length > 1 {
-            hide(storage, NSRange(location: lineRange.location + 1, length: lineRange.length - 1))
-        }
     }
 
     private static func inlineStyleExclusionRanges(
@@ -1037,6 +988,39 @@ enum iOSMarkdownStyler {
         for range in match.markerRanges(contentRange: contentRange) {
             hide(storage, range)
         }
+    }
+
+    /// Hides a run and hangs a pre-rendered canvas over it for the layout manager to paint.
+    ///
+    /// This replaced seven near-identical blocks that each built an `NSTextAttachment`, set its
+    /// `bounds`, hung it on the run's **first character**, and hid only the characters after it.
+    /// None of them drew: TextKit makes an attachment glyph only where the text holds `U+FFFC`, so
+    /// setting `.attachment` on a `|`, a backtick or a `-` painted nothing and left that character
+    /// visible. See `iOSMarkdownBlockCanvas` for the full account and why inserting real attachment
+    /// characters was not the way out.
+    ///
+    /// The whole run is hidden now, including its first character — there is no longer anything the
+    /// image needs to sit on, and that stray glyph was the only part of a table you could see.
+    private static func drawCanvas(
+        _ storage: NSMutableAttributedString,
+        _ canvas: UIImage,
+        over range: NSRange,
+        isBlock: Bool,
+        yOffset: CGFloat,
+        leadingInset: CGFloat = 0
+    ) {
+        guard range.length > 0 else { return }
+        hide(storage, range)
+        storage.addAttribute(
+            .cadenceMarkdownBlockCanvas,
+            value: iOSMarkdownBlockCanvas(
+                image: canvas,
+                isBlock: isBlock,
+                yOffset: yOffset,
+                leadingInset: leadingInset
+            ),
+            range: NSRange(location: range.location, length: 1)
+        )
     }
 
     private static func hide(_ storage: NSMutableAttributedString, _ range: NSRange) {

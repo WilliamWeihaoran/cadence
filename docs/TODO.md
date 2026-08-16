@@ -29,72 +29,45 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-Four strands running in parallel, three of them in agents.
-
-- [T-06] **Remove the Focus/Mac layout picker** — Today is always two panes. Note this deletes a
-  layout the 11" Pro *can* reach in landscape (1022pt); decided anyway. Picker, its enum, and the
-  Settings → Navigation rows that also carried it are out of the working tree; verification pending.
-- [T-27] **The iPad sidebar must be foldable** — collapse/expand it, so the detail pane can have
-  the full window. Note `CadenceRootShellLayout` already owns the sidebar/detail split and
-  guarantees they sum to the window width; a collapsed state is a width of zero there, not a new
-  layout path.
-- [T-07] **iPad sidebar shows lists inline**, like macOS — no floating panel. Supersedes the
-  lists-drawer work in `e792fe8`.
-- [T-28] **Calendar: no inspector on Board, and drop the day date bar** — the Board's right-hand
-  inspector goes entirely, and the standalone date bar comes out of *both* the Month inspector and
-  the Board.
-- [T-29] **Notes header: two rows into one.** The second row held one button — the template menu —
-  left behind when the Live/Edit/Preview picker that shared it was deleted in `c9fb369`. Both hosts
-  (`iOSNotesPanel`, `iOSCompactNotesView`) now pass it as the header's trailing slot; header height
-  120 → 64. Needs a width check on the 393pt phone, where the row is back + "Notes" + four tabs +
-  the button.
+_Nothing._
 
 ## Open — decided, not started
 
-- [T-30] **Merge Today's sort row into the task-column header row.** With the Focus/Mac picker gone
-  (T-06) the header's trailing edge is empty and `iOSTaskViewOptionsBar` sits alone on the band
-  below it. Merging them reclaims a full band. Open question for whoever takes it: what happens to
-  `iPadTodaySummaryLine`, which shares that band and would otherwise be a padded row holding one dim
-  sentence.
-- [T-31] **Daily and Weekly notes need a date picker on iOS and iPadOS.** Jump to a particular day
-  or week. Requested as "iPhone has it, iPad doesn't" — **checked, and it is neither**: both phone
-  and iPad go through `CadenceCoreNoteSupport.loadOrCreateCoreNotes`, which hardcodes
-  `DateFormatters.todayKey()` / `currentWeekKey()` (`CadenceNotePlanningSupport.swift:103-104`, and
-  again at `:112`/`:114`). The only iOS escape hatch is Search, which finds a past note only if it
-  already has text. **macOS is the reference**: `NotesView.swift:550` `NotesDateJumpButton` — a
-  calendar pill wrapping `MonthCalendarPanel` — plus a browse-by-date list of every dated note; both
-  Daily (`:105`) and Weekly (`:197`) have it, and weekly resolves a picked *day* to its week. The
-  two arbitrary-key call sites to copy are `NotesView.swift:161` and `:256`. Note the picker's range
-  is bounded to ±24 months (`CadenceDatePicker.swift:94`). Largest instance of T-32 found so far.
-
-  **Decided 2026-08-17.** *Placement:* the header title becomes the date and **is** the control —
-  `Aug 17 ⌄` on Daily, `Aug 17–23 ⌄` on Weekly, falling back to the constant word `Notes` on Pad and
-  Events, which have no date. This was chosen over a second row and over a second icon button
-  because the phone row is full at 390pt (back + "Notes" + four tabs + template button), and because
-  a header whose title never changes is spending a slot on nothing. *Scope:* jump-to-date only — no
-  browse-by-date list. Picking a day you have never written on must **create** that day's note, which
-  is the thing Search cannot do.
 - [T-05] **Drag-to-create from the add button** — drag the iPad corner `+` (and the iPhone tab-bar
   `+`) onto a section, list or date; the created task inherits that destination's attributes.
   `CadenceTaskDisplayGroup` already carries a `dropKey`, which is the hook.
 - [T-08] **Device-targeting cleanup** — remove handling that exists only for hardware outside the
   three targets above.
 
-## Open — needs a decision
-
-_Nothing open._
-
 ## Open — known, unscheduled
 
-- [T-33] **Markdown tables do not render correctly in Notes.** Reported 2026-08-17; no reproduction
-  case captured yet, so the first job is to pin down *which* surface and *what* "incorrectly" means
-  — the macOS AppKit editor, the iOS editor, or both, and whether it is the parse, the layout, or
-  the caret behaviour inside a table. Where to look: table logic belongs in
-  `Cadence/Services/Markdown*Support.swift` (which has test coverage) and **not** in `macOS/Editor/`,
-  which is only the NSTextView lifecycle and drawing layer. Note tables are a rendered block, so
-  they are neighbours of the code-block and task-embed work — both had the same underlying shape
-  (characters hidden behind an attachment) and both needed the caret-reveal machinery from `c9fb369`.
-  Related: [T-26].
+- [T-37] **Checkbox markers never render on iOS.** `- [x] a done thing` draws a bullet and a
+  literal `[x]`; `applyCheckboxAttachment` is not reached at all, so this is a *detection* bug in
+  the list-line parse, not the drawing layer that T-33 fixed — the quote bar next to it, which uses
+  the identical mechanism, renders correctly. Start at `applyListLine` in
+  `iOSMarkdownStylingSupport.swift` and work out why a todo line is classified as a plain bullet.
+- [T-38] **A `---` on the line directly after text draws its rule through that text.** Seen on a
+  seeded Aug 15 daily note: the divider canvas lands in the *previous* line fragment rather than its
+  own. A `---` with a blank line above it is correct (verified). Note that `---` under text is
+  setext-H2 syntax in real markdown, so the parse may be the thing to settle first, not the
+  placement. Uncovered by T-33, which is what made dividers visible in the first place.
+
+- [T-34] **Month → Agenda opens blank** at iPad regular width, and stays blank until you step a
+  month with either arrow; from then on it works. Confirmed present on a pristine `545f429`, so it
+  predates the Board/inspector work in `42de745`. Diagnosis on hand:
+  `iOSCalendarMonthAgendaList` seeds `@State scrolledDayKey` in `init` and `.scrollPosition(id:)`
+  resolves it against a lazy stack that has not laid out yet; nothing re-asserts it after first
+  layout. This is the third instance of that shape in this repo — see `ecaf80f` and `8a316c4` — so
+  it is worth fixing as the general rule rather than one more special case. Landscape placement is
+  unverified: the simulator tooling has no rotate action.
+- [T-35] **Board's counts strip restates the column beneath it.** With the day inspector gone
+  (`42de745`) the strip reads "Wednesday, August 19" directly above a day column headed
+  `WED · AUG 19` — a full-width band saying what the first column already says, and on an empty day
+  it is the only thing in that band. `showsDaySummaryStrip` is the switch.
+- [T-36] **Month's `Day` reading has no add control for a non-empty day.** The `+` left with the
+  date bar in `42de745`. Empty days still offer "Nothing scheduled · + Add", so the gap is exactly
+  the case where you already have something and want one more. Calendar is the one iPad page with
+  no floating `+`, which is why the bar's `+` mattered.
 
 - [T-32] **Feature-consistency scan across platforms.** Added 2026-08-17 at the user's direction;
   **do not run it yet.** The goal state is that no platform has a feature another lacks — macOS,
@@ -122,12 +95,6 @@ _Nothing open._
   AppKit bridge. Also relevant: `iOSMarkdownEditor.publishSelectedRange` already snaps the caret
   past hidden runs, so there is an existing rule for "where the caret may sit" rather than a blank
   page.
-- [T-24] **Tapping an empty hour lane shoves the timeline grid down.** The "Create at 11 PM"
-  composer inserts *above* the scroll view, pushing the hour grid ~120pt, so the row you tapped
-  jumps away from your finger while the composer appears at the top of the pane. Pre-existing, but
-  far more visible now the grid is 24 rows rather than 17.
-- [T-25] **"Ready to Schedule" offers a hardcoded 9 AM / 1 PM / 4 PM.** Three fixed hours covered a
-  reasonable slice of a 6-to-23 day; against a full 24 they cover much less of it.
 - [T-11] **`iOSSegmentedChoice` truncates silently** past four options for labels over ~9 chars —
   fixed in the control, but worth re-checking call sites as labels change.
 - [T-12] **`CadenceReadService` prints "8d" for week-based streaks** — same mislabel fixed
@@ -183,6 +150,20 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-29] `a4bdaa5` Nothing that renders a block rendered on iOS — tables, code blocks and
+  dividers were all invisible (T-33).
+
+- [D-28] `2929867` Daily and Weekly notes could only ever be today's — the header title became the
+  date and the control that changes it (T-31); tabs renamed Daily/Weekly; template menu moved into
+  the editor's format row.
+- [D-27] `6609bf7` A past-due line measured its colour and its words against different days —
+  `relativeDate` ignored the injected `todayKey` and read the system clock.
+- [D-26] `42de745` Board has no inspector, and no surface repeats the day it is showing (T-28).
+- [D-25] `bea12c7` iPad Today: Focus/Mac picker deleted (T-06), composer stays where you tapped
+  (T-24), free slots derived rather than hardcoded (T-25), sort row merged into the header (T-30).
+- [D-24] `8d1bbab` The iPad sidebar shows its lists, and folds out of the way (T-07, T-27).
+- [D-23] `40e2381` The Notes header's second row held one button; it holds nothing now (T-29).
 
 - [D-22] `545f429` Week could not show a week — seven columns at every real pane width.
 - [D-21] `8a316c4` Month stopped changing mechanism on rotation; Lists eyebrow says its shape.

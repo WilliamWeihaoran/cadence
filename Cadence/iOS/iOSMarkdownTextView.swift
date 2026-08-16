@@ -75,6 +75,36 @@ final class iOSMarkdownTextView: UITextView {
     var layoutInvalidationHandler: (() -> Void)?
     private var lastMarkdownLayoutSize: CGSize = .zero
 
+    /// TextKit 1, built explicitly — **this is what makes rendered blocks visible at all.**
+    ///
+    /// `UITextView()` gives you a TextKit 2 view on iOS 16 and later, and TextKit 2 draws an
+    /// `NSTextAttachment` only where the text actually contains the attachment character U+FFFC.
+    /// Every rendered block in this editor works the other way round: it hangs an attachment on the
+    /// block's *first existing character* and hides the rest of the run
+    /// (`iOSMarkdownStylingSupport.applyTableBlock` and its five siblings). Under TextKit 2 none of
+    /// those images drew. Tables, fenced code blocks and dividers all rendered as a tall empty gap
+    /// with one stray `|`, backtick or hyphen where the block should have been — the paragraph
+    /// style reserved the canvas's height, and nothing was ever painted into it.
+    ///
+    /// The rest of the editor assumes TextKit 1 anyway: hit-testing and the marker rects in
+    /// `iOSMarkdownEditor` go through `textView.layoutManager`, which is TextKit 1 only. Touching
+    /// that property forces UIKit to fall back — silently, mid-session, on whichever gesture gets
+    /// there first. Deciding it here instead of tripping over it later is the whole point.
+    init() {
+        let storage = NSTextStorage()
+        let layoutManager = iOSMarkdownBlockCanvasLayoutManager()
+        storage.addLayoutManager(layoutManager)
+        let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        layoutManager.addTextContainer(container)
+        super.init(frame: .zero, textContainer: container)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("iOSMarkdownTextView is created in code, never from a nib")
+    }
+
     override var keyCommands: [UIKeyCommand]? {
         [
             command("b", [.command], "Bold", #selector(applyBoldCommand)),
