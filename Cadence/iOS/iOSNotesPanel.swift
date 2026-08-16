@@ -6,13 +6,14 @@ import SwiftUI
 /// Fixed height for the notes pane's header when it has to line up with the panes beside it on
 /// iPad.
 ///
-/// Two rows: the title row carries the tab strip (`iOSNotesHeader`, ~58pt — 44pt of tab plus its
-/// padding), and under it the template control (~54pt — a 44pt tap target plus 10pt). The editor's
-/// Live/Edit/Preview picker used to share that second row and is gone; the row stays because the
-/// template menu still needs one. `.frame(height:)` does not clip, so this must stay at or above the
-/// content's own minimum or the second row draws across the divider below it; 120 leaves a few
-/// points of headroom over the measured ~112.
-let iOSNotesPanelHeaderHeight: CGFloat = 120
+/// One row: the title, the tab strip and the template control together — 44pt of tab plus 10pt
+/// above and 4pt below, so ~58pt of content.
+///
+/// It was two rows and 120pt. The second held the Live/Edit/Preview picker beside the template
+/// menu; when the picker went, a ~54pt band was left carrying one 34pt button at its trailing
+/// edge. `.frame(height:)` does not clip, so this must stay at or above the content's own minimum
+/// or the row draws across the divider below it — 64 leaves headroom over the measured ~58.
+let iOSNotesPanelHeaderHeight: CGFloat = 64
 
 struct iOSNotesPanel: View {
     @Environment(\.modelContext) private var modelContext
@@ -104,19 +105,13 @@ struct iOSNotesPanel: View {
                         isSelected: activeTab == tab
                     ) { activeTabRaw = tab.rawValue }
                 }
-            )
-
-            HStack(spacing: 8) {
-                Spacer(minLength: 8)
-
+            ) {
                 if let note = selectedNote {
                     iOSNoteTemplateMenu(kind: activeTab.noteKind, compact: true) { template in
                         apply(template, to: note)
                     }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 10)
         }
         .frame(height: useStandardHeaderHeight ? iOSNotesPanelHeaderHeight : nil, alignment: .top)
         .background(Theme.surface)
@@ -208,20 +203,12 @@ struct iOSCompactNotesView: View {
                     ) { activePage = page }
                 },
                 onBack: isCompactWidth && !isCompactTabRoot ? { dismiss() } : nil
-            )
-
-            if let coreTab = activePage.coreTab {
-                HStack(spacing: 8) {
-                    Spacer(minLength: 8)
-
-                    if let note = selectedCoreNote {
-                        iOSNoteTemplateMenu(kind: coreTab.noteKind, compact: true) { template in
-                            apply(template, to: note)
-                        }
+            ) {
+                if let coreTab = activePage.coreTab, let note = selectedCoreNote {
+                    iOSNoteTemplateMenu(kind: coreTab.noteKind, compact: true) { template in
+                        apply(template, to: note)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
             }
 
             Divider().background(Theme.borderSubtle)
@@ -519,13 +506,17 @@ struct iOSNotesHeaderTab: Identifiable {
 /// saying one thing, over two rows. The strip stays a plain row rather than a scroller: the labels
 /// (`CadenceMobileNotesTab.shortLabel`) are budgeted to fit beside the title on the narrowest
 /// phone, and a strip that has to be scrolled sideways to find a tab is the problem this replaced.
-private struct iOSNotesHeader: View {
+private struct iOSNotesHeader<Trailing: View>: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     var showsTitle = true
     let tabs: [iOSNotesHeaderTab]
     /// Set on a pushed compact screen whose navigation bar is hidden. See
     /// `iOSHidesCompactNavigationBar()`.
     var onBack: (() -> Void)? = nil
+    /// The template control. It had a row of its own — a ~54pt band holding one 34pt button at the
+    /// trailing edge, left behind when the Live/Edit/Preview picker that shared it was removed.
+    /// A row existing to hold a single button is the header saying nothing twice as tall.
+    @ViewBuilder var trailing: () -> Trailing
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
@@ -568,6 +559,8 @@ private struct iOSNotesHeader: View {
             if !showsTitle {
                 Spacer(minLength: 0)
             }
+
+            trailing()
         }
         .padding(.horizontal, isRegularWidth ? 14 : 12)
         .padding(.top, 10)

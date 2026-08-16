@@ -6,6 +6,11 @@ The running record of work: open, in progress, done, cancelled. Started 2026-08-
 cancelled or done item can still be referenced later. Done items keep their commit sha, because the
 commit message is where the *reasoning* lives; this file is only the index.
 
+**Rule (set 2026-08-17).** *Every* request the user makes lands here the moment it is made, whether
+or not work starts on it — under **In progress** if it is being worked now, otherwise under the
+right Open section. An item moves to **Done** only when the code behind it is committed (or
+otherwise verified), not when it is written.
+
 **Target devices** (set 2026-08-16). Build and verify for these three only; anything that exists
 solely to serve other hardware is dead weight and should be removed rather than maintained:
 
@@ -15,47 +20,55 @@ solely to serve other hardware is dead weight and should be removed rather than 
 | iPad Pro 11" | 834 × 1210 portrait · 1210 × 834 landscape | pane = window − 188pt sidebar → **646** portrait, **1022** landscape |
 | MacBook Pro 14" | 1512 × 982 | the macOS surface |
 
-The 11" Pro landscape pane of 1022pt is *exactly* the three-pane floor
-(`CadenceTodayLayoutSupport.threePaneMinimumWidth`). Worth remembering before anyone tunes that
-number: it is the difference between the three-pane layout existing on the target hardware or not.
+Both iPad panes matter to Today's layout: 646pt portrait falls **below**
+`CadenceTodayLayoutSupport.twoPaneMinimumWidth` (761), so portrait is one column and landscape is
+two. The three-pane floor of 1022pt that this note used to cite is gone with the layout itself
+(T-06).
 
 ---
 
 ## In progress
 
-- [T-01] **Corner add button + capture-bar removal** — every inline "Add a task…" bar comes out
-  app-wide; iPad gets one blue circular button bottom-right, iPhone keeps the tab bar `+`. Also in
-  this pass: iPad sidebar clipped in portrait ("KSPACE"/"GRESS"), and the Inbox Overview pane
-  deleted.
-- [T-02] **Timeline shows all 24 hours** — Today's timeline was hardcoded 06:00–22:59. Must open
-  near the current hour, without persisting a measured scroll value (see `ecaf80f`).
-- [T-03] **Delete the notes editor mode picker** — Live/Edit/Preview goes on iOS, iPadOS **and**
-  macOS; live editable preview becomes the only mode. A stored `edit`/`preview` must resolve to
-  live.
-- [T-09] **Sidebar restructure, all platforms** — Today/Tasks/Calendar/Notes pinned top; lists
-  scrolling in the middle; Goals/Habits/Focus/Settings bottom. List rows lose their icon and gain a
-  2pt coloured leading bar in the list's own `colorHex` — a bar rather than a dot, so names stay
-  aligned and the column scans. Counts only when non-zero; red on Today's overdue alone. macOS is
-  building now; **iPad/iOS follows and must read the same shared code, not a second copy**.
-- [T-10] **Month: agenda/day toggle** — the two ways of seeing a day were mutually exclusive *by
-  width*, so rotating an 11" Pro silently swapped the mechanism (agenda at 646pt, inspector at
-  1022pt). Both are now available in both orientations, chosen by a toggle that persists. The
-  toggle picks the *content*; pane width picks the *placement* — beside the grid when there is room,
-  below it when there is not, because the inspector's 340pt floor at 646pt would leave ~43pt per
-  weekday column.
-- [T-04] **macOS Today panel colour pass ("option A")** — red survives only on the date that is
-  actually late. Background washes, the "List" chip, the red section heading and red group counts
-  all go.
+Four strands running in parallel, three of them in agents.
+
+- [T-06] **Remove the Focus/Mac layout picker** — Today is always two panes. Note this deletes a
+  layout the 11" Pro *can* reach in landscape (1022pt); decided anyway. Picker, its enum, and the
+  Settings → Navigation rows that also carried it are out of the working tree; verification pending.
+- [T-27] **The iPad sidebar must be foldable** — collapse/expand it, so the detail pane can have
+  the full window. Note `CadenceRootShellLayout` already owns the sidebar/detail split and
+  guarantees they sum to the window width; a collapsed state is a width of zero there, not a new
+  layout path.
+- [T-07] **iPad sidebar shows lists inline**, like macOS — no floating panel. Supersedes the
+  lists-drawer work in `e792fe8`.
+- [T-28] **Calendar: no inspector on Board, and drop the day date bar** — the Board's right-hand
+  inspector goes entirely, and the standalone date bar comes out of *both* the Month inspector and
+  the Board.
+- [T-29] **Notes header: two rows into one.** The second row held one button — the template menu —
+  left behind when the Live/Edit/Preview picker that shared it was deleted in `c9fb369`. Both hosts
+  (`iOSNotesPanel`, `iOSCompactNotesView`) now pass it as the header's trailing slot; header height
+  120 → 64. Needs a width check on the 393pt phone, where the row is back + "Notes" + four tabs +
+  the button.
 
 ## Open — decided, not started
 
+- [T-30] **Merge Today's sort row into the task-column header row.** With the Focus/Mac picker gone
+  (T-06) the header's trailing edge is empty and `iOSTaskViewOptionsBar` sits alone on the band
+  below it. Merging them reclaims a full band. Open question for whoever takes it: what happens to
+  `iPadTodaySummaryLine`, which shares that band and would otherwise be a padded row holding one dim
+  sentence.
+- [T-31] **Daily and Weekly notes need a date picker on iOS and iPadOS.** Jump to a particular day
+  or week. Requested as "iPhone has it, iPad doesn't" — **checked, and it is neither**: both phone
+  and iPad go through `CadenceCoreNoteSupport.loadOrCreateCoreNotes`, which hardcodes
+  `DateFormatters.todayKey()` / `currentWeekKey()` (`CadenceNotePlanningSupport.swift:103-104`, and
+  again at `:112`/`:114`). The only iOS escape hatch is Search, which finds a past note only if it
+  already has text. **macOS is the reference**: `NotesView.swift:550` `NotesDateJumpButton` — a
+  calendar pill wrapping `MonthCalendarPanel` — plus a browse-by-date list of every dated note; both
+  Daily (`:105`) and Weekly (`:197`) have it, and weekly resolves a picked *day* to its week. The
+  two arbitrary-key call sites to copy are `NotesView.swift:161` and `:256`. Note the picker's range
+  is bounded to ±24 months (`CadenceDatePicker.swift:94`). Largest instance of T-32 found so far.
 - [T-05] **Drag-to-create from the add button** — drag the iPad corner `+` (and the iPhone tab-bar
   `+`) onto a section, list or date; the created task inherits that destination's attributes.
   `CadenceTaskDisplayGroup` already carries a `dropKey`, which is the hook.
-- [T-06] **Remove the Focus/Mac layout picker** — Today is always two panes. Note this deletes a
-  layout the 11" Pro *can* reach in landscape (1022pt); decided anyway.
-- [T-07] **iPad sidebar shows lists inline**, like macOS — no floating panel. Supersedes the
-  lists-drawer work in `e792fe8`.
 - [T-08] **Device-targeting cleanup** — remove handling that exists only for hardware outside the
   three targets above.
 
@@ -65,11 +78,32 @@ _Nothing open._
 
 ## Open — known, unscheduled
 
-- [T-23] **Week starves its own grid just above the 681pt split.** At an 844pt pane the day
-  inspector takes 340, leaving 503 for a grid whose columns have a 112pt minimum — so Week shows
-  about four and a half of its seven days behind a horizontal scroller. Same starvation shape
-  `8b5b0d8` fixed *below* 681pt; it survives just above it. Found while building the Month toggle,
-  left alone because Week was out of that scope.
+- [T-32] **Feature-consistency scan across platforms.** Added 2026-08-17 at the user's direction;
+  **do not run it yet.** The goal state is that no platform has a feature another lacks — macOS,
+  iPadOS and iOS offer the same set, differing only in how it is laid out. This directly reverses
+  the standing "iOS is not guaranteed parity with macOS by design" note in `CLAUDE.md`, which will
+  need rewriting when this lands. Known gaps to fold in when it starts: T-31 (daily/weekly date
+  picker missing on iPad), and the `EstimatePickerControl` / macOS-roller split. Two things to
+  settle before doing the work rather than during it: whether "same feature" means the same
+  *capability* or the same *control*, and what happens to macOS-only surfaces that have no phone
+  shape at all (the MCP bridge, global hot keys, the AppKit markdown editor).
+
+- [T-26] **Task embeds in notes are rough to actually use.** The insert works; living with it does
+  not. Reported symptoms, all in the markdown editor's task-embed path:
+  - **The caret does not move to the task title after inserting one** — you insert an embed and
+    then have to go find the title to type it, which makes the common case (insert, name it, carry
+    on) two gestures longer than it should be.
+  - **Selection behaves oddly around the embed** — selecting across or into it does not do what a
+    reader expects.
+  - **Position and movement.** Where the embed lands on insert, and moving it once placed.
+  Worth knowing before starting: an embed is an `NSTextAttachment` with the underlying characters
+  hidden behind it, which is the same construction that made code blocks uneditable until the
+  caret-reveal work in `c9fb369` — the reveal machinery and `MarkdownRenderedBlockDeletionSupport`
+  are the neighbours to read first. Embed *references* are `[[task:UUID|Title]]`, parsed in
+  `Services/Markdown*Support.swift`, which is where behaviour belongs; `macOS/Editor/` is only the
+  AppKit bridge. Also relevant: `iOSMarkdownEditor.publishSelectedRange` already snaps the caret
+  past hidden runs, so there is an existing rule for "where the caret may sit" rather than a blank
+  page.
 - [T-24] **Tapping an empty hour lane shoves the timeline grid down.** The "Create at 11 PM"
   composer inserts *above* the scroll view, pushing the hour grid ~120pt, so the row you tapped
   jumps away from your finger while the composer appears at the top of the pane. Pre-existing, but
@@ -132,6 +166,13 @@ whoever picks these up, not a plan.
 
 Newest first. The commit message carries the reasoning; this is the index.
 
+- [D-22] `545f429` Week could not show a week — seven columns at every real pane width.
+- [D-21] `8a316c4` Month stopped changing mechanism on rotation; Lists eyebrow says its shape.
+- [D-20] `71fbd1f` macOS sidebar: one nav block, colour bar instead of icons, Inbox restored.
+- [D-19] `f2a1227` Today panel said "late" four times; now once.
+- [D-18] `c9fb369` Notes has one live editable mode; code blocks stay editable.
+- [D-17] `5a3cd63` Timeline shows 24 hours; three range spellings collapsed to one.
+- [D-16] `cce1a4d` Sidebar pushed off-screen by a pane three levels down; capture bars deleted.
 - [D-15] `8b5b0d8` iPad pane layouts: Calendar mode picker rendered as "…" at 632pt; day inspector
   took 54% of an 11" pane leaving 2 of 7 days; Goals/Habits/Focus split every pane exactly in half.
 - [D-14] `e792fe8` Workspace drawer → lists picker; Planning deleted from iOS list detail; iOS and
