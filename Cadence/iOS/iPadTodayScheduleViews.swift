@@ -14,6 +14,8 @@ struct iOSSchedulePanel: View {
     @State private var quickCreateStartMin: Int?
     @State private var quickCreateTitle = ""
     @State private var quickCreateError: String?
+    /// See `placeInitialScroll(contentHeight:proxy:)`. Not persisted anywhere, deliberately.
+    @State private var didPlaceInitialScroll = false
 
     private var todayKey: String {
         DateFormatters.todayKey()
@@ -78,40 +80,70 @@ struct iOSSchedulePanel: View {
             // controls outright — `.allowsHitTesting(false)` kept them tappable but left them
             // invisible, which is worse than an empty state that is simply not there. It is one
             // line at the top of the scrolled content now, so it can never cover a row.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if hasNoBlocks {
-                        Text(CadenceTodayPresentationSupport.emptyScheduleHint)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Theme.dim)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 12)
-                            .padding(.bottom, 14)
-                    }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if hasNoBlocks {
+                            Text(CadenceTodayPresentationSupport.emptyScheduleHint)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Theme.dim)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 12)
+                                .padding(.bottom, 14)
+                        }
 
-                    ForEach(CadenceScheduleSupport.calendarStartHour..<CadenceScheduleSupport.calendarEndHour, id: \.self) { hour in
-                        iOSScheduleHourRow(
-                            hour: hour,
-                            tasks: tasks(in: hour),
-                            bundles: bundles(in: hour),
-                            rowHeight: horizontalSizeClass == .regular ? 58 : 48,
-                            selectedStartMin: quickCreateStartMin,
-                            onSelectStart: selectQuickCreateStart
-                        )
+                        ForEach(CadenceScheduleSupport.calendarHours, id: \.self) { hour in
+                            iOSScheduleHourRow(
+                                hour: hour,
+                                tasks: tasks(in: hour),
+                                bundles: bundles(in: hour),
+                                rowHeight: rowHeight,
+                                selectedStartMin: quickCreateStartMin,
+                                onSelectStart: selectQuickCreateStart
+                            )
+                            .id(hour)
+                        }
                     }
+                    .padding(.trailing, horizontalSizeClass == .regular ? 12 : 8)
                 }
-                .padding(.trailing, horizontalSizeClass == .regular ? 12 : 8)
+                .scrollIndicators(.hidden)
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentSize.height
+                } action: { _, contentHeight in
+                    placeInitialScroll(contentHeight: contentHeight, proxy: proxy)
+                }
             }
-            .scrollIndicators(.hidden)
         }
         .background(Theme.bg)
     }
 
-    /// Clamped into the drawn rows: the rows stop at 23:00 and start at 06:00, but the task
-    /// detail's time picker offers every quarter hour, so an exact-hour match dropped a 05:00
-    /// task out of this pane altogether — it is not "Ready to Schedule" either, since that list
-    /// only holds tasks with no time at all.
+    private var rowHeight: CGFloat {
+        horizontalSizeClass == .regular ? 58 : 48
+    }
+
+    /// Opens the pane near the hour that matters. The grid is the whole day now, and a scroll view
+    /// opens at the top of its content — so left alone this pane would open at midnight, which is
+    /// a worse place to land than the 06:00 it replaced. The rule is
+    /// `CadenceScheduleSupport.initialTimelineHour`; this pane always shows today, so it always
+    /// takes the "current hour, one hour of context above it" branch.
+    ///
+    /// Driven by the scroll view's own reported content height rather than `onAppear`, for the
+    /// reason `ecaf80f` records: `onAppear` can run before the content has a size, and a scroll
+    /// against nothing silently does nothing while looking like it worked. Nothing here is written
+    /// to defaults — the hour is recomputed on every open, so a bad placement costs one screen and
+    /// can never compound into a saved anchor.
+    private func placeInitialScroll(contentHeight: CGFloat, proxy: ScrollViewProxy) {
+        guard !didPlaceInitialScroll,
+              contentHeight >= CGFloat(CadenceScheduleSupport.calendarHourCount) * rowHeight
+        else { return }
+        didPlaceInitialScroll = true
+
+        proxy.scrollTo(CadenceScheduleSupport.initialTimelineHour(showsToday: true), anchor: .top)
+    }
+
+    /// Every real minute-of-day now has a row of its own, so nothing is clamped in practice; see
+    /// `CadenceScheduleSupport.timelineHourRow` for why the clamp is still there.
     private func tasks(in hour: Int) -> [AppTask] {
         CadenceScheduleSupport.tasks(inHourRow: hour, from: scheduledTasks)
     }
@@ -298,8 +330,8 @@ private struct iOSScheduleHourRow: View {
                     .padding(.top, 5)
                 } else {
                     // The empty hour *is* the control. This used to be a visible "+ Add" chip, and
-                    // because every hour of an unplanned day is empty, seventeen identical chips
-                    // stacked down the pane were the loudest thing in it — a column of controls
+                    // because every hour of an unplanned day is empty, one identical chip per hour
+                    // stacked down the pane was the loudest thing in it — a column of controls
                     // shouting over the schedule they were meant to frame. The lane takes the whole
                     // row as its tap target and draws nothing until it is the hour being created
                     // in, which is the only one with something to say.

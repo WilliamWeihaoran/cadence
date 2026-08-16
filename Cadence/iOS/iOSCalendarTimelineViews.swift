@@ -31,7 +31,7 @@ struct iOSCalendarTimelineGrid: View {
         iOSCalendarTimelineDayHeaderHeight(isRegularWidth: horizontalSizeClass == .regular)
     }
     private var timelineHeight: CGFloat {
-        CGFloat(CadenceScheduleSupport.calendarEndHour - CadenceScheduleSupport.calendarStartHour) * hourHeight
+        CGFloat(CadenceScheduleSupport.calendarHourCount) * hourHeight
     }
 
     var body: some View {
@@ -103,12 +103,13 @@ struct iOSCalendarTimelineGrid: View {
         .background(Theme.bg)
     }
 
-    /// Opens the timeline near the hour that matters instead of at 6 AM. See
+    /// Opens the timeline near the hour that matters instead of at the top of the canvas — which is
+    /// midnight now that the grid draws the whole day. See
     /// `CadenceScheduleSupport.initialTimelineHour` for the rule; this is only where it is applied.
     ///
     /// It runs off the scroll view's own reported content height rather than `onAppear` because
     /// `onAppear` can fire before the canvas has a content size, and a `scrollTo(y:)` against a
-    /// zero-height content silently clamps back to the top — which is exactly the 6 AM this
+    /// zero-height content silently clamps back to the top — which is exactly the placement this
     /// removes. Nothing here is written anywhere: the hour is recomputed on every open, so a bad
     /// placement can only ever be one screen, never a saved anchor that compounds.
     private func placeInitialScroll(contentHeight: CGFloat) {
@@ -242,7 +243,7 @@ private struct iOSCalendarTimeRail: View {
     var body: some View {
         VStack(spacing: 0) {
             Color.clear.frame(height: headerHeight)
-            ForEach(CadenceScheduleSupport.calendarStartHour..<CadenceScheduleSupport.calendarEndHour, id: \.self) { hour in
+            ForEach(CadenceScheduleSupport.calendarHours, id: \.self) { hour in
                 Text(hourLabel(hour))
                     .font(.system(size: horizontalSizeClass == .regular ? 11 : 10, weight: .medium))
                     .foregroundStyle(Theme.dim.opacity(hour % 3 == 0 ? 0.9 : 0.45))
@@ -281,7 +282,7 @@ struct iOSCalendarTimelineGridLines: View {
                     .offset(x: CGFloat(index) * colWidth)
             }
 
-            ForEach(0...(CadenceScheduleSupport.calendarEndHour - CadenceScheduleSupport.calendarStartHour), id: \.self) { index in
+            ForEach(0...CadenceScheduleSupport.calendarHourCount, id: \.self) { index in
                 Rectangle()
                     .fill(Theme.borderSubtle.opacity(index % 3 == 0 ? 0.46 : 0.20))
                     .frame(height: 0.5)
@@ -402,7 +403,7 @@ private struct iOSCalendarTimelineDayBlocks: View {
     }
 
     private var timelineHeight: CGFloat {
-        CGFloat(CadenceScheduleSupport.calendarEndHour - CadenceScheduleSupport.calendarStartHour) * hourHeight
+        CGFloat(CadenceScheduleSupport.calendarHourCount) * hourHeight
     }
 
     private var timedEvents: [EKEvent] {

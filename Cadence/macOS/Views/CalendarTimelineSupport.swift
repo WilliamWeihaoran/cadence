@@ -4,8 +4,9 @@ import EventKit
 import SwiftUI
 
 let calBaseHourHeight: CGFloat = 60
-let calStartHour = 0
-let calEndHour = 24
+// See `CadenceScheduleSupport.calendarStartHour`: one range, aliased here rather than respelled.
+let calStartHour = CadenceScheduleSupport.calendarStartHour
+let calEndHour = CadenceScheduleSupport.calendarEndHour
 let calTimeWidth: CGFloat = 44
 let calTimeInset: CGFloat = 10
 let calTimeTotalWidth: CGFloat = calTimeWidth + calTimeInset

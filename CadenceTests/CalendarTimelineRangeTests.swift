@@ -73,33 +73,51 @@ struct CalendarTimelineRangeTests {
     }
 
     /// The drawn geometry is clamped to the hours the column actually paints; the label keeps the
-    /// true range.
+    /// true range. With the column painting the whole day, an event anywhere in it is drawn where
+    /// it happens — nothing is trimmed except a range that leaves the day altogether.
     @Test func theDrawnRangeStaysInsideTheHoursTheColumnPaints() {
         let lateNight = CadenceScheduleSupport.timelineVisibleRange(start: 23 * 60, end: 24 * 60)
-        #expect(lateNight.start <= CadenceScheduleSupport.calendarEndHour * 60 - 15)
-        #expect(lateNight.end <= CadenceScheduleSupport.calendarEndHour * 60)
+        #expect(lateNight == (23 * 60, 24 * 60))
 
         let earlyMorning = CadenceScheduleSupport.timelineVisibleRange(start: 0, end: 5 * 60)
-        #expect(earlyMorning.start == CadenceScheduleSupport.calendarStartHour * 60)
-        #expect(earlyMorning.end > earlyMorning.start)
+        #expect(earlyMorning == (0, 5 * 60))
 
         let midday = CadenceScheduleSupport.timelineVisibleRange(start: 9 * 60, end: 10 * 60)
         #expect(midday == (9 * 60, 10 * 60))
+
+        // Only a range that runs off the end of the day is trimmed.
+        let overrun = CadenceScheduleSupport.timelineVisibleRange(start: 23 * 60 + 30, end: 25 * 60)
+        #expect(overrun.end == CadenceScheduleSupport.calendarEndHour * 60)
+    }
+
+    // MARK: - The hours every timeline draws
+
+    /// The complaint: Today's timeline showed 06:00–22:59, so a third of the day did not exist on
+    /// it. Every day canvas in the app draws all 24 hours, and there is exactly one place that
+    /// says so — macOS's two globals are aliases of it. Three independent spellings is how the
+    /// iOS one drifted to `6..<23` while macOS stayed on the whole day.
+    @Test func everyTimelineOnEveryPlatformDrawsTheSameHours() {
+        #expect(CadenceScheduleSupport.calendarStartHour == 0)
+        #expect(CadenceScheduleSupport.calendarEndHour == 24)
+        #expect(CadenceScheduleSupport.calendarHourCount == 24)
+        #expect(Array(CadenceScheduleSupport.calendarHours) == Array(0...23))
+
+        #expect(schedStartHour == CadenceScheduleSupport.calendarStartHour)
+        #expect(schedEndHour == CadenceScheduleSupport.calendarEndHour)
+        #expect(calStartHour == CadenceScheduleSupport.calendarStartHour)
+        #expect(calEndHour == CadenceScheduleSupport.calendarEndHour)
     }
 
     // MARK: - Hour rows on iPad Today
 
-    /// The Timeline pane draws `06:00..<23:00` and matched `startMin / 60 == hour`, so a task set
-    /// to 05:00 — which the task detail's picker happily offers — appeared in no hour row, and it
-    /// is not in "Ready to Schedule" either (that list needs `scheduledStartMin == -1`). It
-    /// vanished from the pane.
-    @Test func aTaskTimedOutsideTheDrawnHoursStillLandsInARow() {
-        let startHour = CadenceScheduleSupport.calendarStartHour
-        let endHour = CadenceScheduleSupport.calendarEndHour
-
-        #expect(CadenceScheduleSupport.timelineHourRow(forMinute: 5 * 60) == startHour)
-        #expect(CadenceScheduleSupport.timelineHourRow(forMinute: 0) == startHour)
-        #expect(CadenceScheduleSupport.timelineHourRow(forMinute: 23 * 60 + 30) == endHour - 1)
+    /// The two times the window used to swallow. 05:00 was clamped up into the 06:00 row and 23:30
+    /// down into the 22:00 row, each printing a time its row contradicted; before the clamp existed
+    /// they matched no row at all and vanished, since "Ready to Schedule" needs
+    /// `scheduledStartMin == -1`. Both now land on their own hour.
+    @Test func aTaskAtFiveAMOrHalfPastElevenLandsInItsOwnRow() {
+        #expect(CadenceScheduleSupport.timelineHourRow(forMinute: 5 * 60) == 5)
+        #expect(CadenceScheduleSupport.timelineHourRow(forMinute: 23 * 60 + 30) == 23)
+        #expect(CadenceScheduleSupport.timelineHourRow(forMinute: 0) == 0)
         #expect(CadenceScheduleSupport.timelineHourRow(forMinute: 13 * 60 + 45) == 13)
 
         let dawn = AppTask(title: "Dawn run")
@@ -112,23 +130,42 @@ struct CalendarTimelineRangeTests {
         untimed.scheduledStartMin = -1
 
         let all = [dawn, midnight, midday, untimed]
-        let rows = (startHour..<endHour).map { CadenceScheduleSupport.tasks(inHourRow: $0, from: all) }
+        let rows = CadenceScheduleSupport.calendarHours.map {
+            CadenceScheduleSupport.tasks(inHourRow: $0, from: all)
+        }
 
         // Every timed task lands in exactly one row, and the untimed one lands in none.
         #expect(rows.flatMap { $0 }.count == 3)
-        #expect(rows.first?.map(\.title) == ["Dawn run"])
-        #expect(rows.last?.map(\.title) == ["Wind down"])
-        #expect(rows[13 - startHour].map(\.title) == ["Standup"])
+        #expect(rows[5].map(\.title) == ["Dawn run"])
+        #expect(rows[23].map(\.title) == ["Wind down"])
+        #expect(rows[13].map(\.title) == ["Standup"])
+        #expect(rows[6].isEmpty)
+        #expect(rows[22].isEmpty)
         #expect(rows.contains { $0.contains { $0.title == "Someday" } } == false)
     }
 
-    @Test func bundlesClampIntoTheDrawnRowsTheSameWay() {
+    @Test func bundlesTakeTheirOwnHourTheSameWay() {
         let early = TaskBundle(title: "Morning block", dateKey: "2026-06-19", startMin: 5 * 60, durationMinutes: 60)
         let normal = TaskBundle(title: "Deep work", dateKey: "2026-06-19", startMin: 10 * 60, durationMinutes: 60)
 
-        let firstRow = CadenceScheduleSupport.bundles(inHourRow: CadenceScheduleSupport.calendarStartHour, from: [early, normal])
-        #expect(firstRow.map(\.title) == ["Morning block"])
+        #expect(CadenceScheduleSupport.bundles(inHourRow: 5, from: [early, normal]).map(\.title) == ["Morning block"])
         #expect(CadenceScheduleSupport.bundles(inHourRow: 10, from: [early, normal]).map(\.title) == ["Deep work"])
+        #expect(CadenceScheduleSupport.bundles(inHourRow: 0, from: [early, normal]).isEmpty)
+    }
+
+    /// The clamp inside `timelineHourRow` no longer has a *range* to defend — every minute of the
+    /// day has a row. It is kept for the other job: `startMin` is a plain stored `Int`, and a value
+    /// from outside `0..<1440` must still be shown somewhere rather than dropped silently, which is
+    /// the failure the function was written for.
+    @Test func aGarbageMinuteIsStillShownRatherThanDropped() {
+        #expect(CadenceScheduleSupport.timelineHourRow(forMinute: -600) == 0)
+        #expect(CadenceScheduleSupport.timelineHourRow(forMinute: 40 * 60) == 23)
+
+        let corrupt = TaskBundle(title: "Impossible", dateKey: "2026-06-19", startMin: 99 * 60, durationMinutes: 60)
+        let rows = CadenceScheduleSupport.calendarHours.map {
+            CadenceScheduleSupport.bundles(inHourRow: $0, from: [corrupt])
+        }
+        #expect(rows.flatMap { $0 }.count == 1)
     }
 
     // MARK: - Read-only calendars
@@ -218,9 +255,10 @@ struct CalendarTimelineRangeTests {
 
     // MARK: - Where a timeline opens
 
-    /// The complaint: Week opened at 6 AM whatever the time of day, because the canvas starts at
-    /// `calendarStartHour` and a scroll view opens at the top of its content. Open it at 2pm and the
-    /// hours you came for are below the fold.
+    /// The canvas starts at `calendarStartHour` and a scroll view opens at the top of its content,
+    /// so a timeline left to itself opens at its first hour whatever the time of day. That was 6 AM
+    /// and is now midnight, which is strictly worse — this rule is what keeps a 24-hour grid from
+    /// being a regression.
     @Test func aSpanContainingTodayOpensNearTheCurrentHour() throws {
         let twoPM = try date("2026-08-15", hour: 14)
 
@@ -247,20 +285,20 @@ struct CalendarTimelineRangeTests {
         #expect(hour < 9)
     }
 
-    /// Early morning and late night both fall outside the drawn window; clamping keeps the
-    /// placement inside the canvas instead of asking for an offset that does not exist.
-    @Test func todayClampsToTheHoursTheCanvasDraws() throws {
+    /// Early morning used to be clamped up to 06:00 because the canvas did not draw it. It does
+    /// now, so 3 AM opens at 2 AM — the same "one hour of context" every other time of day gets.
+    /// Only midnight itself has no hour above it to show.
+    @Test func earlyMorningOpensWhereItActuallyIs() throws {
         let threeAM = try date("2026-08-15", hour: 3)
+        let midnight = try date("2026-08-15", hour: 0)
         let elevenPM = try date("2026-08-15", hour: 23)
 
+        #expect(CadenceScheduleSupport.initialTimelineHour(showsToday: true, now: threeAM, calendar: calendar) == 2)
         #expect(
-            CadenceScheduleSupport.initialTimelineHour(showsToday: true, now: threeAM, calendar: calendar)
+            CadenceScheduleSupport.initialTimelineHour(showsToday: true, now: midnight, calendar: calendar)
                 == CadenceScheduleSupport.calendarStartHour
         )
-        #expect(
-            CadenceScheduleSupport.initialTimelineHour(showsToday: true, now: elevenPM, calendar: calendar)
-                == CadenceScheduleSupport.calendarEndHour - 1
-        )
+        #expect(CadenceScheduleSupport.initialTimelineHour(showsToday: true, now: elevenPM, calendar: calendar) == 22)
     }
 
     /// A week that is not this week has no "now" to honour. The sensible default is the user's own
@@ -286,8 +324,10 @@ struct CalendarTimelineRangeTests {
         )
     }
 
-    /// A work day starting before the canvas does still has to land on a row the canvas draws.
-    @Test func anEarlyWorkHoursStartClampsToTheFirstDrawnHour() throws {
+    /// A work day starting at 04:00 is a row the canvas draws now, so it is honoured rather than
+    /// pushed forward to whatever the canvas happened to begin at. The clamp is still the guard
+    /// against a nonsense stored value.
+    @Test func anEarlyWorkHoursStartIsHonouredNotPushedForward() throws {
         let twoPM = try date("2026-08-15", hour: 14)
 
         #expect(
@@ -295,6 +335,14 @@ struct CalendarTimelineRangeTests {
                 showsToday: false,
                 now: twoPM,
                 workHoursStartMinute: 4 * 60,
+                calendar: calendar
+            ) == 4
+        )
+        #expect(
+            CadenceScheduleSupport.initialTimelineHour(
+                showsToday: false,
+                now: twoPM,
+                workHoursStartMinute: -90,
                 calendar: calendar
             ) == CadenceScheduleSupport.calendarStartHour
         )
@@ -311,9 +359,9 @@ struct CalendarTimelineRangeTests {
 
         // Spelled as a `CGFloat`: `#expect` records the untyped literal expression as an `Int`, so
         // an integer right-hand side compares unequal to a `CGFloat` of the same value.
-        #expect(offset == CGFloat(101 + 7 * 58))
+        #expect(offset == CGFloat(101 + 13 * 58))
         #expect(
-            CadenceScheduleSupport.timelineScrollOffset(forHour: 6, hourHeight: 58, topInset: 101)
+            CadenceScheduleSupport.timelineScrollOffset(forHour: 0, hourHeight: 58, topInset: 101)
                 == CGFloat(101)
         )
     }

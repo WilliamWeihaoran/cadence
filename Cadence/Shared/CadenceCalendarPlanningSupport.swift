@@ -497,8 +497,26 @@ struct CalendarBoardSortKey: Equatable, Comparable {
 }
 
 enum CadenceScheduleSupport {
-    static let calendarStartHour = 6
-    static let calendarEndHour = 23
+    /// The hours every day canvas in the app draws: the whole day, `00:00..<24:00`.
+    ///
+    /// It used to be `6..<23` here and `0..<24` in macOS's two globals — the same idea spelled
+    /// three times, and the two spellings disagreed. A task at 05:00 or 23:30 had no row of its
+    /// own on iOS: it was clamped into 06:00 or 22:00, printing a time the row it sat in
+    /// contradicted. A window is only worth having if something outside it cannot exist, and the
+    /// task detail's time picker offers every quarter hour of the day.
+    ///
+    /// `schedStartHour` / `schedEndHour` (macOS schedule panel) and `calStartHour` / `calEndHour`
+    /// (macOS calendar page) are now aliases of these two, so there is one number to change and
+    /// `CalendarTimelineRangeTests.everyTimelineOnEveryPlatformDrawsTheSameHours` fails if a
+    /// fourth spelling appears.
+    static let calendarStartHour = 0
+    static let calendarEndHour = 24
+
+    /// The hour rows a day canvas draws, in order — `ForEach(CadenceScheduleSupport.calendarHours)`
+    /// rather than a fourth place that writes `calendarStartHour..<calendarEndHour` by hand.
+    static var calendarHours: Range<Int> { calendarStartHour..<calendarEndHour }
+
+    static var calendarHourCount: Int { calendarEndHour - calendarStartHour }
 
     // `includeCompleted` is deliberately **not** defaulted on any function below.
     //
@@ -544,12 +562,18 @@ enum CadenceScheduleSupport {
 
     /// Which hour row of an hour-by-hour day list a scheduled minute belongs in.
     ///
-    /// The row list only runs `calendarStartHour..<calendarEndHour`, so a plain
-    /// `startMin / 60 == hour` match silently dropped everything outside it: the task detail's
-    /// time picker offers every quarter hour of the day, so a task set to 05:00 today appeared in
-    /// no hour row *and* not in "Ready to Schedule" (which requires `scheduledStartMin == -1`) —
-    /// it vanished from the pane entirely. Out-of-window times clamp into the first or last row,
-    /// where the block still prints its own real time range.
+    /// The clamp is no longer doing the job it was written for. It was added because the row list
+    /// ran `6..<23` while the task detail's time picker offered every quarter hour, so a task at
+    /// 05:00 matched no row *and* was not in "Ready to Schedule" (which needs
+    /// `scheduledStartMin == -1`) — it vanished from the pane. Now that the rows are the whole day
+    /// every real minute-of-day has a row of its own and nothing is clamped.
+    ///
+    /// It stays because the argument is an `Int`, not a time. `bundles(inHourRow:)` reads
+    /// `TaskBundle.startMin` with no lower-bound filter of its own, and both fields are plain
+    /// stored properties that a drag, a bad import or a CloudKit row from an older build can leave
+    /// outside `0..<1440`. Clamping keeps such an item visible in the first or last row — where it
+    /// still prints its own real time range — instead of dropping it out of the pane silently,
+    /// which is the failure this function exists to prevent.
     static func timelineHourRow(
         forMinute minute: Int,
         startHour: Int = calendarStartHour,
@@ -592,13 +616,13 @@ enum CadenceScheduleSupport {
 
     /// The hour a freshly opened day timeline should be scrolled to.
     ///
-    /// A timeline draws from `calendarStartHour` and a scroll view opens at its top, so Week opened
-    /// at 6 AM whatever the time of day: open it at 2pm and you land in the middle of the morning
-    /// with the hours you care about below the fold. When the span on screen includes **today** the
-    /// answer is the current hour, backed off by `leadHours` so the hour just gone is still visible
-    /// for context. Otherwise there is no "now" to honour, and the best available default is the
-    /// user's own work-hours start — the same `calendar.workHours.*.v1` window the amber band on
-    /// each column already draws — rather than a second hardcoded hour.
+    /// A timeline draws from `calendarStartHour` and a scroll view opens at its top, so a canvas
+    /// left to itself opens at its first hour whatever the time of day. That was already wrong at
+    /// 6 AM; at midnight it is worse, and the grid now starts at midnight. When the span on screen
+    /// includes **today** the answer is the current hour, backed off by `leadHours` so the hour
+    /// just gone is still visible for context. Otherwise there is no "now" to honour, and the best
+    /// available default is the user's own work-hours start — the same `calendar.workHours.*.v1`
+    /// window the amber band on each column already draws — rather than a second hardcoded hour.
     ///
     /// This is **derived on every open and never persisted**. A measured or derived scroll offset
     /// written into a defaults key is what put the Calendar Board seven months in the past

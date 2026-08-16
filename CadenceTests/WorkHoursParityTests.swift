@@ -69,6 +69,40 @@ struct WorkHoursParityTests {
         #expect(frame.height == 3 * hourHeight)
     }
 
+    /// Against the hours the app's canvases actually draw, the band is now the user's whole window
+    /// rather than the part of it the canvas happened to cover. A 07:00–19:00 work day used to be
+    /// trimmed at both ends by a `6..<23` canvas on iOS; there is nothing left to trim.
+    @Test func theBandIsNotTrimmedByTheCanvasItSitsOn() throws {
+        let hourHeight: CGFloat = 58
+        let start = CadenceScheduleSupport.calendarStartHour
+        let yOffset: (CGFloat) -> CGFloat = { ($0 - CGFloat(start * 60)) / 60 * hourHeight }
+
+        let frame = try #require(
+            CalendarWorkHoursPreferences.highlightFrame(
+                startMinute: 7 * 60,
+                endMinute: 19 * 60,
+                timelineStartHour: CadenceScheduleSupport.calendarStartHour,
+                timelineEndHour: CadenceScheduleSupport.calendarEndHour,
+                yOffset: yOffset
+            )
+        )
+
+        #expect(frame.y == 7 * hourHeight)
+        #expect(frame.height == 12 * hourHeight)
+
+        // And a window that runs to the very end of the day keeps its last hour.
+        let lateShift = try #require(
+            CalendarWorkHoursPreferences.highlightFrame(
+                startMinute: 22 * 60,
+                endMinute: 24 * 60,
+                timelineStartHour: CadenceScheduleSupport.calendarStartHour,
+                timelineEndHour: CadenceScheduleSupport.calendarEndHour,
+                yOffset: yOffset
+            )
+        )
+        #expect(lateShift.height == 2 * hourHeight)
+    }
+
     /// Weekends are excluded on both platforms; the iOS column asks the same question macOS's
     /// highlight layer does.
     @Test func theBandIsSuppressedOnWeekends() throws {

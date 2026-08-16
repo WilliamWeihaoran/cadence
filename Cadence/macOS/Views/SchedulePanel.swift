@@ -28,8 +28,10 @@ private struct PlainTextExportDocument: FileDocument {
     }
 }
 
-let schedStartHour = 0
-let schedEndHour   = 24
+// The hours this panel draws. Aliases, not literals: this was one of three independent spellings
+// of the same range, and the iOS one had drifted to `6..<23`.
+let schedStartHour = CadenceScheduleSupport.calendarStartHour
+let schedEndHour   = CadenceScheduleSupport.calendarEndHour
 let timeLabelWidth: CGFloat = 36
 let timeLabelPad:   CGFloat = 6
 let blockInset:     CGFloat = timeLabelWidth + timeLabelPad  // 42
