@@ -260,6 +260,11 @@ private struct iOSCompactCaptureButton: View {
         }
         .buttonStyle(.iosPressable)
         .accessibilityLabel("New Task")
+        // Draggable as well as tappable, and the two do not compete: `.onDrag` is a
+        // `UIDragInteraction` whose long-press recognizer fails as soon as the finger lifts, so a
+        // tap still presents unscoped capture instantly. Dropped on a task row it opens the same
+        // sheet seeded with that row's placement instead. See `iOSNewTaskDragSourceModifier`.
+        .iOSNewTaskDragSource()
     }
 }
 #endif

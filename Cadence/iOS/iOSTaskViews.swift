@@ -46,6 +46,13 @@ struct iOSTaskRow: View {
                     .frame(height: 1)
             }
             .contentShape(Rectangle())
+            // The destination half of drag-to-create. A row is the drop target because it is the
+            // only thing on an iOS task surface that reliably knows its group: grouping here is by
+            // section, by date or by list, and a row inside such a group carries that group's
+            // defining attribute by construction. `CadenceTaskDropSupport.dropKey(for:)` documents
+            // what it hands over and what it withholds; it is called at drop time so the seed
+            // reflects the row as it is then, not as it last rendered.
+            .iOSNewTaskDropTarget { CadenceTaskDropSupport.dropKey(for: task) }
             .onTapGesture {
                 showDetail = true
             }

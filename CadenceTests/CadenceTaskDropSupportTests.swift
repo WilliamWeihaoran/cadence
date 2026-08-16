@@ -1,0 +1,331 @@
+import Foundation
+import SwiftData
+import Testing
+@testable import Cadence
+
+/// Drag-to-create: what a destination's `dropKey` says, and what a new task therefore starts life
+/// with.
+///
+/// The drag itself lives under `Cadence/iOS/` and is invisible to this target, which is exactly
+/// why the two questions worth pinning were kept out of it — the key a row offers, and the seed a
+/// key resolves to. Between them they are the whole feature; the view layer only carries them.
+@MainActor
+struct CadenceTaskDropSupportTests {
+
+    // MARK: - Payload
+
+    @Test func payloadRoundTripsItsSourceButton() {
+        let sourceID = UUID()
+        let payload = CadenceTaskDropPayload.string(for: sourceID)
+
+        #expect(payload.hasPrefix("newTask:"))
+        #expect(CadenceTaskDropPayload.sourceID(from: payload) == sourceID)
+    }
+
+    /// The prefix table in `CLAUDE.md` exists so a drop target cannot be handed another context's
+    /// payload. These are the four spellings already in use plus a bare task UUID.
+    @Test func foreignDragPayloadsAreRejected() {
+        let id = UUID().uuidString
+        for foreign in ["listTask:\(id)", "taskBundle:\(id)", "area:\(id)", "project:\(id)", id] {
+            #expect(CadenceTaskDropPayload.sourceID(from: foreign) == nil)
+        }
+    }
+
+    @Test func aMalformedPayloadOfOurOwnPrefixIsStillRejected() {
+        #expect(CadenceTaskDropPayload.sourceID(from: "newTask:not-a-uuid") == nil)
+    }
+
+    // MARK: - What a row offers
+
+    @Test func anInboxRowWithNoDatesOffersItsListAndNothingElse() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Buy milk")
+        context.insert(task)
+
+        #expect(CadenceTaskDropSupport.dropKey(for: task) == "list:inbox")
+    }
+
+    /// Inbox is the absence of a list and a list is what owns sections, so a section is not named.
+    @Test func anInboxRowDoesNotOfferASection() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Buy milk")
+        task.sectionName = "Backlog"
+        context.insert(task)
+
+        #expect(!CadenceTaskDropSupport.dropKey(for: task).contains("section:"))
+    }
+
+    @Test func anAreaRowOffersItsListAndSection() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let area = Area(name: "Home")
+        let task = AppTask(title: "Fix the door")
+        task.area = area
+        task.sectionName = "Backlog"
+        context.insert(area)
+        context.insert(task)
+
+        let key = CadenceTaskDropSupport.dropKey(for: task)
+        #expect(key.contains("list:a_\(area.id.uuidString)"))
+        #expect(key.contains("section:Backlog"))
+    }
+
+    @Test func aProjectRowOffersTheProjectRatherThanTheArea() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let area = Area(name: "Home")
+        let project = Project(name: "Kitchen")
+        let task = AppTask(title: "Order tiles")
+        task.area = area
+        task.project = project
+        context.insert(area)
+        context.insert(project)
+        context.insert(task)
+
+        let key = CadenceTaskDropSupport.dropKey(for: task)
+        #expect(key.contains("list:p_\(project.id.uuidString)"))
+        #expect(!key.contains("list:a_"))
+    }
+
+    @Test func aSectionlessListRowFallsBackToTheDefaultSectionName() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let area = Area(name: "Home")
+        let task = AppTask(title: "Fix the door")
+        task.area = area
+        context.insert(area)
+        context.insert(task)
+
+        #expect(CadenceTaskDropSupport.dropKey(for: task).contains("section:\(TaskSectionDefaults.defaultName)"))
+    }
+
+    @Test func aDatedRowOffersBothOfItsDates() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Ship it")
+        task.scheduledDate = "2026-08-20"
+        task.dueDate = "2026-08-22"
+        context.insert(task)
+
+        let key = CadenceTaskDropSupport.dropKey(for: task)
+        #expect(key.contains("date:2026-08-20"))
+        #expect(key.contains("due:2026-08-22"))
+    }
+
+    /// Placement, not judgement. A brand-new empty task has not earned a priority, and the
+    /// composer has `!`/`!!`/`!!!` and a chip for saying otherwise in the same keystroke.
+    @Test func aRowDoesNotOfferItsPriority() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Ship it")
+        task.priority = .high
+        context.insert(task)
+
+        #expect(!CadenceTaskDropSupport.dropKey(for: task).contains("priority:"))
+    }
+
+    // MARK: - What a key resolves to
+
+    @Test func anEmptyKeyResolvesToTheSameSeedATapWouldOpen() {
+        let seed = CadenceTaskDropSupport.seed(forDropKey: "", todayKey: "2026-08-17")
+
+        #expect(seed == CadenceTaskComposerSeed())
+    }
+
+    @Test func aListKeyResolvesToItsContainer() {
+        let areaID = UUID()
+        let projectID = UUID()
+
+        #expect(CadenceTaskDropSupport.seed(forDropKey: "list:inbox", todayKey: "2026-08-17").container == .inbox)
+        #expect(CadenceTaskDropSupport.seed(forDropKey: "list:a_\(areaID.uuidString)", todayKey: "2026-08-17").container == .area(areaID))
+        #expect(CadenceTaskDropSupport.seed(forDropKey: "list:p_\(projectID.uuidString)", todayKey: "2026-08-17").container == .project(projectID))
+    }
+
+    /// A stale identifier — a list deleted while the drag was in flight — reads as Inbox, which is
+    /// where a task with no list lives. It must not fail the drop.
+    @Test func anUnknownListKeyFallsBackToInbox() {
+        let seed = CadenceTaskDropSupport.seed(forDropKey: "list:a_not-a-uuid", todayKey: "2026-08-17")
+
+        #expect(seed.container == .inbox)
+    }
+
+    @Test func aCompoundKeyContributesEveryAttributeItNames() {
+        let areaID = UUID()
+        let key = "list:a_\(areaID.uuidString)|section:Backlog|date:2026-08-20|due:2026-08-22"
+
+        let seed = CadenceTaskDropSupport.seed(forDropKey: key, todayKey: "2026-08-17")
+
+        #expect(seed.container == .area(areaID))
+        #expect(seed.sectionName == "Backlog")
+        #expect(seed.doDateKey == "2026-08-20")
+        #expect(seed.dueDateKey == "2026-08-22")
+    }
+
+    @Test func aRowsOwnKeyRoundTripsBackIntoItsPlacement() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let project = Project(name: "Kitchen")
+        let task = AppTask(title: "Order tiles")
+        task.project = project
+        task.sectionName = "Review"
+        task.scheduledDate = "2026-08-20"
+        context.insert(project)
+        context.insert(task)
+
+        let seed = CadenceTaskDropSupport.seed(
+            forDropKey: CadenceTaskDropSupport.dropKey(for: task),
+            todayKey: "2026-08-17"
+        )
+
+        #expect(seed.container == .project(project.id))
+        #expect(seed.sectionName == "Review")
+        #expect(seed.doDateKey == "2026-08-20")
+        #expect(seed.dueDateKey.isEmpty)
+        #expect(seed.priority == .none)
+    }
+
+    /// A section belongs to a list. A key naming both Inbox and a section contradicts itself, and
+    /// the list wins — the section is a subdivision of the field it disagrees with.
+    @Test func aSectionNamedAlongsideInboxIsDiscarded() {
+        let seed = CadenceTaskDropSupport.seed(forDropKey: "list:inbox|section:Backlog", todayKey: "2026-08-17")
+
+        #expect(seed.sectionName == TaskSectionDefaults.defaultName)
+    }
+
+    @Test func anEmptySectionNameFallsBackToTheDefault() {
+        let areaID = UUID()
+        let seed = CadenceTaskDropSupport.seed(
+            forDropKey: "list:a_\(areaID.uuidString)|section:   ",
+            todayKey: "2026-08-17"
+        )
+
+        #expect(seed.sectionName == TaskSectionDefaults.defaultName)
+    }
+
+    // MARK: - Dates
+
+    @Test func todayResolvesToTheDayHandedIn() {
+        let seed = CadenceTaskDropSupport.seed(forDropKey: "date:today|due:today", todayKey: "2026-08-17")
+
+        #expect(seed.doDateKey == "2026-08-17")
+        #expect(seed.dueDateKey == "2026-08-17")
+    }
+
+    /// Overdue and Past Do are real groups on the Today screen, and their rows carry days that
+    /// have already gone by. A new task cannot be done yesterday.
+    @Test func aDateAlreadyInThePastIsDroppedRatherThanSeeded() {
+        let seed = CadenceTaskDropSupport.seed(
+            forDropKey: "date:2026-08-10|due:2026-08-11",
+            todayKey: "2026-08-17"
+        )
+
+        #expect(seed.doDateKey.isEmpty)
+        #expect(seed.dueDateKey.isEmpty)
+    }
+
+    @Test func todayItselfIsNotInThePast() {
+        let seed = CadenceTaskDropSupport.seed(forDropKey: "date:2026-08-17", todayKey: "2026-08-17")
+
+        #expect(seed.doDateKey == "2026-08-17")
+    }
+
+    /// `TasksPanelSupport.assignTask` reads these two as "push to tomorrow" and "clear the date"
+    /// because it is *moving* a task out of a bucket. Creating is not moving: neither names a day,
+    /// so neither contributes one.
+    @Test func bucketNamesThatAreNotDaysContributeNothing() {
+        for key in ["date:scheduled", "date:unscheduled"] {
+            let seed = CadenceTaskDropSupport.seed(forDropKey: key, todayKey: "2026-08-17")
+            #expect(seed.doDateKey.isEmpty)
+            #expect(seed.scheduledStartMin == -1)
+        }
+    }
+
+    @Test func aMalformedDateIsIgnoredRatherThanGuessedAt() {
+        let seed = CadenceTaskDropSupport.seed(forDropKey: "date:next-tuesday", todayKey: "2026-08-17")
+
+        #expect(seed.doDateKey.isEmpty)
+    }
+
+    // MARK: - Priority groups
+
+    /// No row emits `priority:`, but `CadenceTaskQuerySupport.priorityDisplayGroups` already
+    /// produces exactly this key, so the resolver honours the vocabulary it joined.
+    @Test func aPriorityGroupsOwnDropKeyResolvesToThatPriority() throws {
+        for priority in TaskPriority.allCases {
+            let group = CadenceTaskDisplayGroup(
+                id: "priority-\(priority.rawValue)",
+                title: priority.label,
+                accent: Theme.priorityColor(priority),
+                tasks: [],
+                dropKey: "priority:\(priority.rawValue)"
+            )
+            let seed = CadenceTaskDropSupport.seed(
+                forDropKey: try #require(group.dropKey),
+                todayKey: "2026-08-17"
+            )
+
+            #expect(seed.priority == priority)
+        }
+    }
+
+    // MARK: - Routing
+
+    @Test func aDropIsHandedToTheButtonItWasDraggedFrom() {
+        let coordinator = CadenceTaskDropCoordinator()
+        let source = UUID()
+        let other = UUID()
+
+        #expect(coordinator.deliver(
+            payload: CadenceTaskDropPayload.string(for: source),
+            dropKey: "list:inbox",
+            todayKey: "2026-08-17"
+        ))
+
+        #expect(coordinator.consume(for: other) == nil)
+        #expect(coordinator.consume(for: source) != nil)
+    }
+
+    /// Two floating buttons can be alive at once on iPad. One drop must not open two composers.
+    @Test func aDropIsHandedOverOnlyOnce() {
+        let coordinator = CadenceTaskDropCoordinator()
+        let source = UUID()
+        coordinator.deliver(
+            payload: CadenceTaskDropPayload.string(for: source),
+            dropKey: "list:inbox",
+            todayKey: "2026-08-17"
+        )
+
+        #expect(coordinator.consume(for: source) != nil)
+        #expect(coordinator.consume(for: source) == nil)
+    }
+
+    @Test func aForeignPayloadDeliversNothing() {
+        let coordinator = CadenceTaskDropCoordinator()
+
+        #expect(coordinator.deliver(
+            payload: "listTask:\(UUID().uuidString)",
+            dropKey: "list:inbox",
+            todayKey: "2026-08-17"
+        ) == false)
+        #expect(coordinator.pending == nil)
+    }
+
+    @Test func theDeliveredSeedIsTheOneTheDropKeyResolvesTo() {
+        let coordinator = CadenceTaskDropCoordinator()
+        let source = UUID()
+        let areaID = UUID()
+
+        coordinator.deliver(
+            payload: CadenceTaskDropPayload.string(for: source),
+            dropKey: "list:a_\(areaID.uuidString)|section:Backlog|date:today",
+            todayKey: "2026-08-17"
+        )
+
+        let request = coordinator.consume(for: source)
+        #expect(request?.seed.container == .area(areaID))
+        #expect(request?.seed.sectionName == "Backlog")
+        #expect(request?.seed.doDateKey == "2026-08-17")
+    }
+}
