@@ -763,7 +763,12 @@ final class CadenceReadService {
                     entityType: "habit",
                     entityId: habit.id.uuidString,
                     title: resolvedTitle(habit.title, fallback: "Untitled Habit"),
-                    subtitle: [habit.context?.name ?? "No context", "\(habit.currentStreak) day streak"].joined(separator: " - "),
+                    // The unit comes from the frequency, not from the sentence: `currentStreak`
+                    // counts *weeks* for `.timesPerWeek`, so a hardcoded "day" turned eight kept
+                    // weeks into "8 day streak" — a number an MCP client would then repeat back to
+                    // the user as weaker than a ten-day daily habit. `HabitStreakUnit.phrase` is
+                    // the same spelling the in-app search index uses for this exact subtitle.
+                    subtitle: [habit.context?.name ?? "No context", habit.streakUnit.phrase(habit.currentStreak)].joined(separator: " - "),
                     excerpt: habit.goal?.title ?? "",
                     score: score
                 )

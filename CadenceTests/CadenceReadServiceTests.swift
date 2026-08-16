@@ -217,6 +217,65 @@ struct CadenceReadServiceTests {
         #expect(eventNoteScopedBodyHits.map(\.entityType) == ["event_note"])
     }
 
+    /// A week-based streak must be spelled in weeks on the MCP search surface.
+    ///
+    /// `Habit.currentStreak` counts *weeks* for `.timesPerWeek` and *days* for every other
+    /// frequency, but the habit search subtitle hardcoded `"\(streak) day streak"`, so three kept
+    /// weeks were handed to an MCP client as "3 day streak" — a number the client then repeats to
+    /// the user as if the habit were three days old. The unit belongs to the frequency
+    /// (`Habit.streakUnit`), so both spellings are pinned here: a mislabel is only visible as a
+    /// bug when the two frequencies are asserted against each other.
+    @Test func habitSearchSubtitleSpellsStreakInTheFrequencysOwnUnit() throws {
+        let fixture = try Fixture()
+        let isoCalendar = Habit.isoWeekCalendar()
+        guard let currentWeekStart = isoCalendar.dateInterval(of: .weekOfYear, for: Date())?.start else {
+            Issue.record("Could not resolve the current ISO week")
+            return
+        }
+
+        // Three complete prior weeks satisfied, current (in-progress) week empty. `weeklyStreak`
+        // forgives the in-progress week, so this is a deterministic streak of 3 regardless of
+        // which weekday the suite runs on.
+        let weekly = Habit(title: "Swim laps", context: fixture.context)
+        weekly.frequencyType = .timesPerWeek
+        weekly.targetCount = 1
+        fixture.modelContext.insert(weekly)
+        for weeksBack in 1...3 {
+            guard let weekStart = isoCalendar.date(byAdding: .day, value: -7 * weeksBack, to: currentWeekStart) else { continue }
+            let completion = HabitCompletion(
+                date: DateFormatters.dateKey(from: weekStart, calendar: isoCalendar),
+                habit: weekly
+            )
+            fixture.modelContext.insert(completion)
+        }
+
+        // Same shape, day-based frequency: completed today and yesterday, so a streak of 2 days.
+        let daily = Habit(title: "Swim warmup", context: fixture.context)
+        daily.frequencyType = .daily
+        daily.targetCount = 1
+        fixture.modelContext.insert(daily)
+        for daysBack in 0...1 {
+            guard let day = isoCalendar.date(byAdding: .day, value: -daysBack, to: Date()) else { continue }
+            let completion = HabitCompletion(
+                date: DateFormatters.dateKey(from: day, calendar: isoCalendar),
+                habit: daily
+            )
+            fixture.modelContext.insert(completion)
+        }
+        try fixture.modelContext.save()
+
+        let weeklySubtitle = try #require(
+            fixture.service.search(query: "Swim laps", scopes: ["habits"]).first?.subtitle
+        )
+        #expect(weeklySubtitle == "Work - 3 week streak")
+        #expect(!weeklySubtitle.contains("day"))
+
+        let dailySubtitle = try #require(
+            fixture.service.search(query: "Swim warmup", scopes: ["habits"]).first?.subtitle
+        )
+        #expect(dailySubtitle == "Work - 2 day streak")
+    }
+
     @Test func invalidEnumsAndPartialContainerFiltersThrow() throws {
         let fixture = try Fixture()
 
