@@ -326,6 +326,12 @@ enum MarkdownStylist {
         let range = NSIntersectionRange(parsed, NSRange(location: 0, length: storage.length))
         guard range.length > 0 else { return }
 
+        // The `---` fences are also this editor's divider syntax, so `applyLine` has already tagged
+        // both of them `cadenceMarkdownDivider`. `hide` only shrinks glyphs; `drawDividerRules`
+        // paints from the attribute alone and does not care whether the run is visible, so the
+        // attribute has to come off or the block leaves two ~160pt rules behind — drawn against the
+        // 0.1pt line boxes collapsed below, i.e. straight through the note's first visible line.
+        storage.removeAttribute(.cadenceMarkdownDivider, range: range)
         hide(storage, range)
         storage.addAttribute(.cadenceMarkdownFrontmatter, value: true, range: range)
 

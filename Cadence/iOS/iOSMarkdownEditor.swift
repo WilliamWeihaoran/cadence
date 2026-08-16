@@ -284,6 +284,14 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             return false
         }
 
+        /// Turns the `( ) …` line under the caret into a real task embed, on Return.
+        ///
+        /// Return is the only trigger. Typing the marker used to create an "Untitled Task" the
+        /// instant the trailing space landed, and then put the selection on the reference's title —
+        /// characters the styler hides behind the rendered card. So the caret was invisible, the
+        /// title could not be typed where the user was looking, and typing anyway rewrote
+        /// `[[task:UUID|Title]]` without renaming the task. Waiting for Return means the title is
+        /// typed in plain visible text and the task is created already named.
         private func createEmbeddedTaskIfNeeded(in textView: UITextView, selection: NSRange) -> Bool {
             guard selection.length == 0,
                   let onCreateEmbeddedTask = parent.onCreateEmbeddedTask else {
@@ -298,8 +306,13 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 length: min(lineRange.length, nsText.length - lineRange.location)
             ))
             let line = rawLine.trimmingCharacters(in: .newlines)
+            let draftTitle = MarkdownTaskEmbedParser.draftTitle(in: line)
+                ?? (MarkdownTaskEmbedParser.isUntitledDraftLine(line)
+                    ? MarkdownTaskEmbedRenderInfo.untitledTaskTitle
+                    : nil)
+
             guard selection.location >= lineRange.location + (line as NSString).length,
-                  let title = MarkdownTaskEmbedParser.draftTitle(in: line),
+                  let title = draftTitle,
                   let taskReference = onCreateEmbeddedTask(title),
                   MarkdownTaskEmbedParser.standaloneTaskReference(in: taskReference) != nil else {
                 return false
@@ -418,10 +431,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         }
 
         private func applyTypingTransformIfNeeded(to textView: UITextView, text: String) -> Bool {
-            if createUntitledEmbeddedTaskIfNeeded(in: textView, text: text) {
-                return true
-            }
-
             guard let mutation = MarkdownTypingTransformSupport.mutation(
                 in: text,
                 cursor: textView.selectedRange.location
@@ -437,44 +446,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 textView.becomeFirstResponder()
             }
             return true
-        }
-
-        private func createUntitledEmbeddedTaskIfNeeded(in textView: UITextView, text: String) -> Bool {
-            guard let onCreateEmbeddedTask = parent.onCreateEmbeddedTask else { return false }
-            let nsText = text as NSString
-            let cursor = textView.selectedRange.location
-            let candidates = [
-                (snippet: "( ) ", length: 4),
-                (snippet: "() ", length: 3)
-            ]
-
-            for candidate in candidates where cursor >= candidate.length {
-                let range = NSRange(location: cursor - candidate.length, length: candidate.length)
-                guard nsText.substring(with: range) == candidate.snippet,
-                      MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil,
-                      let taskReference = onCreateEmbeddedTask(MarkdownTaskEmbedRenderInfo.untitledTaskTitle),
-                      MarkdownTaskEmbedParser.standaloneTaskReference(in: taskReference) != nil,
-                      let textRange = textView.textRange(from: range) else {
-                    continue
-                }
-
-                textView.replace(textRange, withText: taskReference)
-                if let titleRange = MarkdownTaskEmbedParser.referenceTitleRange(
-                    in: taskReference,
-                    lineStart: range.location
-                ) {
-                    textView.selectedRange = clamped(titleRange, in: textView.textStorage)
-                } else {
-                    textView.selectedRange = clamped(
-                        NSRange(location: range.location + (taskReference as NSString).length, length: 0),
-                        in: textView.textStorage
-                    )
-                }
-                textViewDidChange(textView)
-                return true
-            }
-
-            return false
         }
 
         func applyMarkdownStyle(to textView: UITextView, text: String) {
@@ -523,6 +494,16 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
         func publishSelectedRange(from textView: UITextView) {
             var selection = clamped(textView.selectedRange, in: textView.textStorage)
+            // Same rule as the caret snap below, applied to a range: a selection that only covers
+            // characters the editor draws a card, image or rule over is a selection of nothing, so
+            // it collapses to the far edge of the block rather than showing handles over the canvas.
+            if let collapsed = MarkdownRenderedBlockDeletionSupport.collapsedSelection(
+                for: selection,
+                in: textView.text ?? ""
+            ) {
+                selection = clamped(collapsed, in: textView.textStorage)
+                textView.selectedRange = selection
+            }
             if selection.length == 0 {
                 let movingForward = selection.location >= parent.selectedRange.location
                 let snapped = MarkdownHiddenRangeSupport.snappedCaretLocation(

@@ -36,6 +36,39 @@ enum MarkdownRenderedBlockDeletionSupport {
         }?.deletionRange
     }
 
+    /// Block kinds whose source stays hidden no matter where the caret is.
+    ///
+    /// Code fences and tables are deliberately absent: the editor un-renders whichever of those the
+    /// caret is inside (`revealedBlockRange`), so a selection there is a selection over visible
+    /// source and must be left alone.
+    private static let alwaysRenderedKinds: Set<MarkdownRenderedBlockKind> = [.image, .task, .divider]
+
+    /// Collapses a selection that lies entirely inside a block whose characters are never visible.
+    ///
+    /// Selecting hidden text produces selection UI with nothing under it — on iOS, a full-height
+    /// bar and two drag handles down the leading edge of the rendered card — and any typing then
+    /// rewrites markdown the user cannot see. A task embed is the sharp case: overtyping its hidden
+    /// title edits the `[[task:UUID|Title]]` reference without renaming the task, so the card keeps
+    /// showing the old title while the note's source drifts away from it.
+    ///
+    /// Returns nil for an empty selection (that is `MarkdownHiddenRangeSupport.snappedCaretLocation`'s
+    /// job) and for a selection that also covers text outside the block, which is a legitimate
+    /// "select this paragraph and the card under it" gesture.
+    static func collapsedSelection(for selection: NSRange, in markdown: String) -> NSRange? {
+        guard selection.length > 0 else { return nil }
+        let nsMarkdown = markdown as NSString
+        guard nsMarkdown.length > 0 else { return nil }
+        let safeSelection = clamped(selection, length: nsMarkdown.length)
+        guard safeSelection.length > 0 else { return nil }
+
+        guard let block = renderedBlockRanges(in: markdown).first(where: { block in
+            alwaysRenderedKinds.contains(block.kind) &&
+                NSIntersectionRange(block.storageRange, safeSelection) == safeSelection
+        }) else { return nil }
+
+        return NSRange(location: NSMaxRange(block.storageRange), length: 0)
+    }
+
     static func renderedBlock(
         atUTF16Location location: Int,
         in markdown: String

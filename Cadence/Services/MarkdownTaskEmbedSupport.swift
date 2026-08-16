@@ -165,6 +165,24 @@ enum MarkdownTaskEmbedParser {
         return nil
     }
 
+    /// True for a bare `( )` / `()` draft line — the marker typed, no title yet.
+    ///
+    /// The companion to `draftTitle`, which needs a title to match. Together they are what Return
+    /// consults: `( ) Buy milk` creates a task called "Buy milk", a bare marker creates an untitled
+    /// one, and neither is created before Return. The marker used to create an untitled task the
+    /// instant its trailing space landed, which is what made the title untypeable — the finished
+    /// embed collapses to a fully hidden `[[task:UUID|Title]]` run with a card drawn over it, so
+    /// there is nowhere visible to put the caret afterwards. Resolving the title first means it is
+    /// typed in plain text at the caret.
+    ///
+    /// The untitled placeholder itself is deliberately not returned from here: it lives on
+    /// `MarkdownTaskEmbedRenderInfo`, which is main-actor isolated, and this parser is `nonisolated`.
+    nonisolated static func isUntitledDraftLine(_ line: String) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: #"^\s*\(\s*\)\s*$"#) else { return false }
+        let nsLine = line as NSString
+        return regex.firstMatch(in: line, range: NSRange(location: 0, length: nsLine.length)) != nil
+    }
+
     nonisolated static func standaloneTaskReference(in line: String, lineStart: Int = 0) -> MarkdownTaskEmbedReference? {
         guard let regex = try? NSRegularExpression(pattern: #"^\s*\[\[task:([0-9A-Fa-f-]{36})\|([^\]\n]+)\]\]\s*$"#) else {
             return nil
