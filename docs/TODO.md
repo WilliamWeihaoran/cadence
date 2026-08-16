@@ -73,10 +73,6 @@ brief so two agents cannot edit the same file.
   `+`) onto a section, list or date; the created task inherits that destination's attributes.
   `CadenceTaskDisplayGroup` already carries a `dropKey`, which is the hook.
 
-**D — MCP streak label** (`Services/MCPReadOnly/`)
-
-- [T-12] **`CadenceReadService` prints "8d" for week-based streaks** — same mislabel fixed
-  elsewhere in `38af360`; left alone because the MCP boundary is out of scope without an MCP task.
 
 **E — task embeds in notes** (`iOSMarkdownEditor`, `macOS/Editor/`, embed + block-deletion support)
 
@@ -167,6 +163,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-30] `4c63084` The MCP surface called eight kept weeks "8 day streak" (T-12).
 
 - [D-29] `a4bdaa5` Nothing that renders a block rendered on iOS — tables, code blocks and
   dividers were all invisible (T-33).
