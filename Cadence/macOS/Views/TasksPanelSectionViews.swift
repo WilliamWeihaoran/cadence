@@ -26,10 +26,11 @@ struct FrozenTodayTaskGroup {
     let taskIDs: [UUID]
 }
 
+/// No `labelColor`. It only ever reached `CollapsibleTaskGroupHeader`'s count, which is neutral
+/// now, so carrying it was a parameter that promised to colour a section and coloured nothing.
 struct FrozenFlatTaskSection {
     let id: String
     let title: String
-    let labelColor: Color
     let dropKey: String?
     let taskIDs: [UUID]
 }
@@ -77,10 +78,12 @@ struct TasksPanelGroupSectionView: View {
 
                 Spacer()
 
+                // Neutral, like `CollapsibleTaskGroupHeader`'s: `Theme.muted` still reads as the
+                // emphasised half of "3 / 7" without spending red on a number.
                 if let overdueCount, overdueCount > 0 {
                     Text("\(overdueCount)")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.red)
+                        .foregroundStyle(Theme.muted)
                     Text("/")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Theme.dim.opacity(0.8))
@@ -136,7 +139,6 @@ struct TasksPanelGroupSectionView: View {
 struct TasksPanelFlatSectionView: View {
     let label: String
     let tasks: [AppTask]
-    let labelColor: Color
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
@@ -161,7 +163,6 @@ struct TasksPanelFlatSectionView: View {
                 isCollapsed: isCollapsed,
                 overdueCount: overdueCount,
                 regularCount: regularCount,
-                accent: labelColor,
                 onToggle: onToggle
             )
             .padding(.horizontal, 16)
@@ -264,16 +265,25 @@ struct TasksPanelRolloverNoticeSectionView: View {
 
                 Spacer()
 
-                Button("Roll Over", action: onRollOver)
-                    .buttonStyle(.cadencePlain)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.onColor)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                // The pill's padding and fill live *inside* the button label. They used to be
+                // applied to the `Button` itself, which leaves the button's hit region at the
+                // bare text — the blue ring around "Roll Over" looked pressable and was inert.
+                Button(action: onRollOver) {
+                    Text("Roll Over")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.onColor)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Theme.blue)
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                        .contentShape(RoundedRectangle(cornerRadius: 7))
+                }
+                .buttonStyle(.plain)
             }
 
+            // Plain rows, like every other task row in the panel. Each of these used to sit on a
+            // `Theme.amber.opacity(0.12)` wash, so a banner that already says "rolling over to
+            // today" said it again once per task. The dot keeps the list's own `colorHex`.
             VStack(spacing: 4) {
                 ForEach(tasks) { task in
                     HStack(spacing: 8) {
@@ -293,8 +303,6 @@ struct TasksPanelRolloverNoticeSectionView: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(Theme.amber.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
                 }
             }
         }

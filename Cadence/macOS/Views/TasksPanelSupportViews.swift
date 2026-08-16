@@ -44,12 +44,76 @@ struct TasksPanelHeader: View {
     }
 }
 
+/// The one caption both past-due cards use: the deadline in red, everything around it neutral.
+///
+/// Rendered as separate `Text` runs rather than one string so the tint can land on the date
+/// alone. The fragments and the "is it actually late" call come from
+/// `CadenceOverdueSummaryPresentation`, so the two cards cannot drift apart on either.
+private struct OverdueSummaryCaption: View {
+    let line: CadenceOverdueSummaryLine
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if let leadingDetail = line.leadingDetail {
+                Text(leadingDetail).foregroundStyle(Theme.dim)
+                Text(CadenceOverdueSummaryLine.separator).foregroundStyle(Theme.dim)
+            }
+            Text(line.dateText).foregroundStyle(line.dateTint)
+            if let trailingDetail = line.trailingDetail {
+                Text(CadenceOverdueSummaryLine.separator).foregroundStyle(Theme.dim)
+                Text(trailingDetail).foregroundStyle(Theme.dim)
+            }
+        }
+        .font(.system(size: 11))
+        .lineLimit(1)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(line.plainText)
+    }
+}
+
+/// Shared chrome for the two past-due cards: a neutral surface with one hover layer at one radius.
+///
+/// It used to be a `Theme.red.opacity(0.08)` wash under `.cadencePlain`, whose blue hover fill and
+/// stroke are drawn at radius 10 behind an opaque radius-18 card — a second hover layer at a second
+/// radius, visible only as four coloured nicks at the corners. `.plain` plus
+/// `TaskHoverVisuals.cardFill` is the treatment the kanban cards and `CollapsibleTaskGroupHeader`
+/// already use.
+private struct OverdueSummaryCard<Content: View>: View {
+    let action: () -> Void
+    @ViewBuilder let content: Content
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            content
+                .padding(16)
+                .cadenceCard(
+                    background: TaskHoverVisuals.cardFill(isHovered: isHovered),
+                    cornerRadius: Theme.radiusCard,
+                    shadowRadius: 12,
+                    shadowY: 5
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                        .stroke(Theme.borderSubtle, lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+                .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+}
+
+/// The list's own `colorHex` icon stays coloured — that is identity the user chose, not state.
+/// State is carried by the date alone.
 struct TodayOverdueListCard: View {
     let summary: TodayOverdueListSummary
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        OverdueSummaryCard(action: action) {
             HStack(spacing: 12) {
                 RoundedRectangle(cornerRadius: 7)
                     .fill(summary.color.opacity(0.16))
@@ -65,26 +129,21 @@ struct TodayOverdueListCard: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
-                    Text("\(DateFormatters.relativeDate(from: summary.dueDateKey)) • \(summary.activeTaskCount) active tasks")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.red)
-                        .lineLimit(1)
+                    // No "List" chip beside this: the card is already sitting under a heading
+                    // reading PAST DUE LISTS, so the chip was the same fact a third time.
+                    OverdueSummaryCaption(
+                        line: CadenceOverdueSummaryPresentation.line(
+                            dueDateKey: summary.dueDateKey,
+                            trailingDetail: CadenceOverdueSummaryPresentation.activeTaskDetail(
+                                count: summary.activeTaskCount
+                            )
+                        )
+                    )
                 }
 
                 Spacer()
-
-                Text("List")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.red)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(Theme.red.opacity(0.12))
-                    .clipShape(Capsule())
             }
-            .padding(16)
-            .cadenceCard(background: Theme.red.opacity(0.08), cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
         }
-        .buttonStyle(.cadencePlain)
     }
 }
 
@@ -93,7 +152,7 @@ struct TodayOverdueSectionCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        OverdueSummaryCard(action: action) {
             HStack(spacing: 12) {
                 RoundedRectangle(cornerRadius: 7)
                     .fill(summary.parentColor.opacity(0.16))
@@ -109,10 +168,12 @@ struct TodayOverdueSectionCard: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
-                    Text("\(summary.parentName) • \(DateFormatters.relativeDate(from: summary.dueDateKey))")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.red)
-                        .lineLimit(1)
+                    OverdueSummaryCaption(
+                        line: CadenceOverdueSummaryPresentation.line(
+                            dueDateKey: summary.dueDateKey,
+                            leadingDetail: summary.parentName
+                        )
+                    )
                 }
 
                 Spacer()
@@ -128,10 +189,7 @@ struct TodayOverdueSectionCard: View {
                     }
                 }
             }
-            .padding(16)
-            .cadenceCard(background: Theme.red.opacity(0.08), cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
         }
-        .buttonStyle(.cadencePlain)
     }
 }
 
@@ -511,12 +569,15 @@ struct TaskPickerRowHover: ViewModifier {
     }
 }
 
+/// Counts here are deliberately colourless. The header used to tint `regularCount` with the
+/// section's accent (red under "Past Due", amber under "Past Do", the priority hue under a
+/// priority section) and `overdueCount` with `Theme.red` — so the loudest thing in the header was
+/// a number. A count is not urgent; the dates on the rows below it are, and those still say so.
 struct CollapsibleTaskGroupHeader: View {
     let title: String
     let isCollapsed: Bool
     let overdueCount: Int?
     let regularCount: Int
-    var accent: Color = Theme.dim
     let onToggle: () -> Void
 
     @State private var isHovered = false
@@ -536,14 +597,14 @@ struct CollapsibleTaskGroupHeader: View {
                 if let overdueCount, overdueCount > 0 {
                     Text("\(overdueCount)")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.red)
+                        .foregroundStyle(Theme.muted)
                     Text("/")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Theme.dim.opacity(0.8))
                 }
                 Text("\(regularCount)")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(accent)
+                    .foregroundStyle(Theme.dim)
             }
             .foregroundStyle(Theme.dim)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -573,7 +634,6 @@ struct CompletedSectionHeader: View {
             isCollapsed: isCollapsed,
             overdueCount: nil,
             regularCount: count,
-            accent: Theme.green,
             onToggle: { onToggle?() }
         )
         .allowsHitTesting(onToggle != nil)

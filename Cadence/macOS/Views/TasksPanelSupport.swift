@@ -98,14 +98,12 @@ enum TasksPanelSupport {
         id: String,
         title: String,
         tasks: [AppTask],
-        labelColor: Color,
         dropKey: String? = nil
     ) -> FrozenFlatTaskSection? {
         guard !tasks.isEmpty else { return nil }
         return FrozenFlatTaskSection(
             id: id,
             title: title,
-            labelColor: labelColor,
             dropKey: dropKey,
             taskIDs: tasks.map(\.id)
         )

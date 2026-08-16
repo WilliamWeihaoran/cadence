@@ -143,7 +143,6 @@ struct TasksPanel: View {
             return FrozenFlatTaskSection(
                 id: section.id,
                 title: section.title,
-                labelColor: section.labelColor,
                 dropKey: section.dropKey,
                 taskIDs: resolvedTasks.map(\.id)
             )
@@ -259,8 +258,7 @@ struct TasksPanel: View {
                 frozenSections: resolvedFrozenFlatSections,
                 tasksByID: tasksByID,
                 label: "Today Tasks",
-                tasks: todayTasks,
-                labelColor: Theme.dim
+                tasks: todayTasks
             )
         case .byDate:
             if let frozenSections = resolvedFrozenFlatSections {
@@ -277,10 +275,10 @@ struct TasksPanel: View {
 
     @ViewBuilder
     private func todayDateSections(derived: TasksPanelDerivedState) -> some View {
-        if !derived.overdue.isEmpty { liveFlatSection(label: "Past Due", tasks: derived.overdue, labelColor: Theme.red) }
-        if !derived.overdoTasks.isEmpty { liveFlatSection(label: "Past Do", tasks: derived.overdoTasks, labelColor: Theme.amber) }
-        if !derived.dueTodayTasks.isEmpty { liveFlatSection(label: "Due Today", tasks: derived.dueTodayTasks, labelColor: Theme.red.opacity(0.85)) }
-        if !derived.doTodayTasks.isEmpty { liveFlatSection(label: "Do Today", tasks: derived.doTodayTasks, labelColor: Theme.blue) }
+        if !derived.overdue.isEmpty { liveFlatSection(label: "Past Due", tasks: derived.overdue) }
+        if !derived.overdoTasks.isEmpty { liveFlatSection(label: "Past Do", tasks: derived.overdoTasks) }
+        if !derived.dueTodayTasks.isEmpty { liveFlatSection(label: "Due Today", tasks: derived.dueTodayTasks) }
+        if !derived.doTodayTasks.isEmpty { liveFlatSection(label: "Do Today", tasks: derived.doTodayTasks) }
     }
 
     @ViewBuilder
@@ -294,8 +292,7 @@ struct TasksPanel: View {
                 frozenSections: resolvedFrozenFlatSections,
                 tasksByID: tasksByID,
                 label: "Tasks",
-                tasks: sortedTasks,
-                labelColor: Theme.dim
+                tasks: sortedTasks
             )
         case .byDate:
             if let frozenSections = resolvedFrozenFlatSections {
@@ -317,13 +314,13 @@ struct TasksPanel: View {
         let unscheduledTasks = sortedTasks.filter { taskIsUnscheduled($0) }
 
         if !todayTasks.isEmpty {
-            liveFlatSection(label: "Do Today", tasks: todayTasks, labelColor: Theme.blue, dropKey: "date:today")
+            liveFlatSection(label: "Do Today", tasks: todayTasks, dropKey: "date:today")
         }
         if !upcomingTasks.isEmpty {
-            liveFlatSection(label: "Scheduled", tasks: upcomingTasks, labelColor: Theme.dim, dropKey: "date:scheduled")
+            liveFlatSection(label: "Scheduled", tasks: upcomingTasks, dropKey: "date:scheduled")
         }
         if !unscheduledTasks.isEmpty {
-            liveFlatSection(label: "Unscheduled", tasks: unscheduledTasks, labelColor: Theme.amber, dropKey: "date:unscheduled")
+            liveFlatSection(label: "Unscheduled", tasks: unscheduledTasks, dropKey: "date:unscheduled")
         }
     }
 
@@ -362,13 +359,12 @@ struct TasksPanel: View {
         frozenSections: [FrozenFlatTaskSection]?,
         tasksByID: [UUID: AppTask],
         label: String,
-        tasks: [AppTask],
-        labelColor: Color
+        tasks: [AppTask]
     ) -> some View {
         if let frozenSections {
             frozenFlatSections(frozenSections, tasksByID: tasksByID)
         } else if !tasks.isEmpty {
-            liveFlatSection(label: label, tasks: tasks, labelColor: labelColor)
+            liveFlatSection(label: label, tasks: tasks)
         }
     }
 
@@ -394,7 +390,6 @@ struct TasksPanel: View {
                     liveFlatSection(
                         label: priority.label,
                         tasks: priorityTasks,
-                        labelColor: Theme.priorityColor(priority),
                         dropKey: "priority:\(priority.rawValue)"
                     )
                 }
@@ -468,11 +463,10 @@ struct TasksPanel: View {
     }
 
     @ViewBuilder
-    private func liveFlatSection(label: String, tasks: [AppTask], labelColor: Color, dropKey: String? = nil) -> some View {
+    private func liveFlatSection(label: String, tasks: [AppTask], dropKey: String? = nil) -> some View {
         TasksPanelFlatSectionView(
             label: label,
             tasks: tasks,
-            labelColor: labelColor,
             contexts: contexts,
             areas: areas,
             projects: projects,
@@ -491,7 +485,7 @@ struct TasksPanel: View {
     @ViewBuilder
     private func sectionView(from section: FrozenFlatTaskSection, tasksByID: [UUID: AppTask]) -> some View {
         let sectionTasks = section.taskIDs.compactMap { tasksByID[$0] }
-        liveFlatSection(label: section.title, tasks: sectionTasks, labelColor: section.labelColor, dropKey: section.dropKey)
+        liveFlatSection(label: section.title, tasks: sectionTasks, dropKey: section.dropKey)
     }
 
     private var controlsBar: some View {
@@ -509,12 +503,7 @@ struct TasksPanel: View {
 
     private func overdueListsSection(summaries: [TodayOverdueListSummary]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Past Due Lists")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.red)
-                .kerning(0.8)
-                .textCase(.uppercase)
-                .padding(.horizontal, 16)
+            overdueSectionHeading("Past Due Lists", count: summaries.count)
 
             VStack(spacing: 8) {
                 ForEach(summaries) { summary in
@@ -530,12 +519,7 @@ struct TasksPanel: View {
 
     private func overdueSectionsSection(summaries: [TodayOverdueSectionSummary]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Past Due Sections")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.red.opacity(0.9))
-                .kerning(0.8)
-                .textCase(.uppercase)
-                .padding(.horizontal, 16)
+            overdueSectionHeading("Past Due Sections", count: summaries.count)
 
             VStack(spacing: 8) {
                 ForEach(summaries) { summary in
@@ -547,6 +531,20 @@ struct TasksPanel: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
         }
+    }
+
+    /// Neutral eyebrow with its count beside it. It used to be `Theme.red` — the third telling of
+    /// "late" over rows that already say so, above cards that said so twice more.
+    private func overdueSectionHeading(_ title: String, count: Int) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .kerning(0.8)
+                .textCase(.uppercase)
+            Text("\(count)")
+        }
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(Theme.dim)
+        .padding(.horizontal, 16)
     }
 
     // MARK: - Grouping
@@ -608,7 +606,6 @@ struct TasksPanel: View {
         id: String,
         title: String,
         tasks: [AppTask],
-        labelColor: Color,
         dropKey: String? = nil
     ) -> FrozenFlatTaskSection? {
         guard !tasks.isEmpty else { return nil }
@@ -616,7 +613,6 @@ struct TasksPanel: View {
             id: id,
             title: title,
             tasks: tasks,
-            labelColor: labelColor,
             dropKey: dropKey
         )
     }
@@ -646,13 +642,13 @@ struct TasksPanel: View {
                 : derived.todayEligibleTasks
             switch activeGroupingMode {
             case .none:
-                return [makeFlatSection(id: "today-tasks", title: "Today Tasks", tasks: todayTasks, labelColor: Theme.dim)].compactMap { $0 }
+                return [makeFlatSection(id: "today-tasks", title: "Today Tasks", tasks: todayTasks)].compactMap { $0 }
             case .byDate:
                 return [
-                    makeFlatSection(id: "past-due", title: "Past Due", tasks: derived.overdue, labelColor: Theme.red),
-                    makeFlatSection(id: "past-do", title: "Past Do", tasks: derived.overdoTasks, labelColor: Theme.amber),
-                    makeFlatSection(id: "due-today", title: "Due Today", tasks: derived.dueTodayTasks, labelColor: Theme.red.opacity(0.85)),
-                    makeFlatSection(id: "do-today", title: "Do Today", tasks: derived.doTodayTasks, labelColor: Theme.blue)
+                    makeFlatSection(id: "past-due", title: "Past Due", tasks: derived.overdue),
+                    makeFlatSection(id: "past-do", title: "Past Do", tasks: derived.overdoTasks),
+                    makeFlatSection(id: "due-today", title: "Due Today", tasks: derived.dueTodayTasks),
+                    makeFlatSection(id: "do-today", title: "Do Today", tasks: derived.doTodayTasks)
                 ].compactMap { $0 }
             case .byList:
                 return []
@@ -662,7 +658,6 @@ struct TasksPanel: View {
                         id: "priority-\(priority.rawValue)",
                         title: priority.label,
                         tasks: todayTasks.filter { $0.priority == priority },
-                        labelColor: Theme.priorityColor(priority),
                         dropKey: "priority:\(priority.rawValue)"
                     )
                 }
@@ -672,15 +667,15 @@ struct TasksPanel: View {
             let byDoDateSortedTasks = byDoDateSortedTasks(derived)
             switch activeGroupingMode {
             case .none:
-                return [makeFlatSection(id: "tasks", title: "Tasks", tasks: byDoDateSortedTasks, labelColor: Theme.dim)].compactMap { $0 }
+                return [makeFlatSection(id: "tasks", title: "Tasks", tasks: byDoDateSortedTasks)].compactMap { $0 }
             case .byDate:
                 let todayTasks = byDoDateSortedTasks.filter { $0.scheduledDate == todayK }
                 let upcomingTasks = byDoDateSortedTasks.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate != todayK }
                 let unscheduledTasks = byDoDateSortedTasks.filter { taskIsUnscheduled($0) }
                 return [
-                    makeFlatSection(id: "do-today", title: "Do Today", tasks: todayTasks, labelColor: Theme.blue, dropKey: "date:today"),
-                    makeFlatSection(id: "scheduled", title: "Scheduled", tasks: upcomingTasks, labelColor: Theme.dim, dropKey: "date:scheduled"),
-                    makeFlatSection(id: "unscheduled", title: "Unscheduled", tasks: unscheduledTasks, labelColor: Theme.amber, dropKey: "date:unscheduled")
+                    makeFlatSection(id: "do-today", title: "Do Today", tasks: todayTasks, dropKey: "date:today"),
+                    makeFlatSection(id: "scheduled", title: "Scheduled", tasks: upcomingTasks, dropKey: "date:scheduled"),
+                    makeFlatSection(id: "unscheduled", title: "Unscheduled", tasks: unscheduledTasks, dropKey: "date:unscheduled")
                 ].compactMap { $0 }
             case .byList:
                 return []
@@ -690,7 +685,6 @@ struct TasksPanel: View {
                         id: "priority-\(priority.rawValue)",
                         title: priority.label,
                         tasks: byDoDateSortedTasks.filter { $0.priority == priority },
-                        labelColor: Theme.priorityColor(priority),
                         dropKey: "priority:\(priority.rawValue)"
                     )
                 }
