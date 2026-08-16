@@ -2,13 +2,16 @@
 import SwiftUI
 import SwiftData
 
-/// The sidebar is one column, top to bottom: app header, primary nav, lists, secondary
-/// nav, settings.
+/// The sidebar is one column, top to bottom: app header, primary nav (Today, All Tasks,
+/// Calendar, Notes), lists, secondary nav (Goals, Habits, Focus, Settings).
 ///
 /// **Only the lists region scrolls.** Everything else is pinned. Navigation and lists
-/// share a column now, and if the whole column scrolled, a long list collection would
-/// push the secondary nav and Settings below the fold — so the two nav groups and the
-/// header are fixed and the lists region absorbs all remaining height.
+/// share a column, and if the whole column scrolled, a long list collection would push
+/// the secondary nav and Settings below the fold — so the two nav groups and the header
+/// are fixed and the lists region absorbs all remaining height.
+///
+/// Group membership lives in `CadenceSidebarLayout` rather than here; this view is the
+/// macOS rendering of it, and the iPad sidebar is being brought to the same layout.
 struct SidebarView: View {
     @Binding var selection: SidebarItem?
     @Query(sort: \Context.order) private var contexts: [Context]
@@ -23,55 +26,30 @@ struct SidebarView: View {
 
     @State private var contextForNewList: Context? = nil
 
-    private var tasksInActiveContainers: [AppTask] {
-        allTasks.filter(\.isInActiveContainer)
-    }
-
-    private var fullBadgeSnapshot: CadenceFeatureBadgeSupport.Snapshot {
-        CadenceFeatureBadgeSupport.Snapshot(
-            tasks: allTasks,
+    /// Built once per render and handed to both groups. Each tally is one pass over the task
+    /// list; this used to build two `CadenceFeatureBadgeSupport.Snapshot`s — three passes each —
+    /// once per destination.
+    ///
+    /// All Tasks counts only work inside still-active areas/projects, the same scope its page
+    /// uses. Today's overdue tally counts against every task, because Today itself does.
+    private var countInputs: CadenceSidebarCountInputs {
+        CadenceSidebarCountInputs(
+            todayOverdueCount: CadenceSidebarLayout.overdueTaskCount(
+                from: allTasks,
+                todayKey: DateFormatters.todayKey()
+            ),
+            openTaskCount: CadenceTaskQuerySupport.openTaskCount(
+                from: allTasks.filter(\.isInActiveContainer)
+            ),
             activeGoalCount: activeGoals.count,
             habitCount: habits.count
         )
-    }
-
-    private var activeContainerBadgeSnapshot: CadenceFeatureBadgeSupport.Snapshot {
-        CadenceFeatureBadgeSupport.Snapshot(
-            tasks: tasksInActiveContainers,
-            activeGoalCount: activeGoals.count,
-            habitCount: habits.count
-        )
-    }
-
-    /// Both snapshots for one render, built once. Each `Snapshot.init` makes three full passes
-    /// over the task list, and this used to be called once per destination — with
-    /// `primaryNavItems` itself evaluated twice in a single `body`, about eleven snapshots per
-    /// render. Nothing is retained between passes.
-    private struct BadgeCounts {
-        let full: CadenceFeatureBadgeSupport.Snapshot
-        let activeContainers: CadenceFeatureBadgeSupport.Snapshot
-
-        // All Tasks counts only work inside still-active areas/projects; everything else
-        // counts against the full task set. `full` already returns nil for the badge-less
-        // destinations (focus, calendar, notes…), so a default branch here stays correct
-        // even if new destinations are added to the enum.
-        func count(for destination: SidebarStaticDestination) -> Int? {
-            switch destination {
-            case .allTasks:
-                return activeContainers.count(for: destination.feature)
-            default:
-                return full.count(for: destination.feature)
-            }
-        }
     }
 
     var body: some View {
-        let badgeCounts = BadgeCounts(
-            full: fullBadgeSnapshot,
-            activeContainers: activeContainerBadgeSnapshot
-        )
-        let primaryItems = navItems(for: Self.primaryFeatures, badgeCounts: badgeCounts)
-        let secondaryItems = navItems(for: Self.secondaryFeatures, badgeCounts: badgeCounts)
+        let counts = countInputs
+        let primaryItems = navItems(in: .primary, counts: counts)
+        let secondaryItems = navItems(in: .secondary, counts: counts)
 
         return VStack(alignment: .leading, spacing: 0) {
             SidebarAppHeader { globalSearchManager.present() }
@@ -128,26 +106,16 @@ struct SidebarView: View {
         }
     }
 
-    /// Secondary nav plus Settings. Pinned to the bottom of the column by the lists
-    /// region above it, which is the only part that flexes.
+    /// The secondary group, Settings included. Pinned to the bottom of the column by the
+    /// lists region above it, which is the only part that flexes.
+    ///
+    /// Settings used to be appended here by hand, outside the group it belongs to; it is a
+    /// member of `CadenceSidebarLayout.secondaryDestinations` now, and the layout keeps it
+    /// last because it is one of the rows the stored order cannot move.
     private func bottomGroup(secondaryItems: [SidebarNavItem]) -> some View {
-        VStack(spacing: SidebarMetrics.rowSpacing) {
-            navGroup(secondaryItems, emphasis: .secondary)
-
-            SidebarNavRow(
-                icon: CadenceFeatureDestination.settings.systemImage,
-                label: CadenceFeatureDestination.settings.title,
-                tint: CadenceFeatureDestination.settings.tint,
-                count: nil,
-                isSelected: selection == .settings,
-                emphasis: .secondary,
-                accessibilityID: "sidebar.settings"
-            ) {
-                selection = .settings
-            }
-        }
-        .padding(.top, SidebarMetrics.groupSpacing)
-        .padding(.bottom, SidebarMetrics.bottomInset)
+        navGroup(secondaryItems, emphasis: .secondary)
+            .padding(.top, SidebarMetrics.groupSpacing)
+            .padding(.bottom, SidebarMetrics.bottomInset)
     }
 
     // MARK: - Lists
@@ -179,73 +147,55 @@ struct SidebarView: View {
         Set(sidebarHiddenTabsRaw.split(separator: ",").compactMap { SidebarStaticDestination(rawValue: String($0)) })
     }
 
-    private var allVisibleDestinations: [SidebarStaticDestination] {
-        SidebarStaticDestination
-            .orderedDestinations(from: sidebarTabOrderRaw)
-            .filter { !hiddenTabs.contains($0) }
+    /// Every row Settings → Sidebar offers a handle for — a visibility toggle, a place in the
+    /// stored order, and a colour override.
+    private static let customisableDestinations: Set<CadenceFeatureDestination> =
+        Set(SidebarStaticDestination.allCases.map(\.feature))
+
+    /// What the user actually dragged, parsed straight from the preference rather than through
+    /// `orderedDestinations(from:)`. That spelling fills the gaps from a stored *default*
+    /// sequence, which would silently reorder a group nobody has customised — Focus would climb
+    /// above Goals and Habits on a fresh install because the old default listed it third.
+    private var storedOrder: [CadenceFeatureDestination] {
+        sidebarTabOrderRaw
+            .split(separator: ",")
+            .compactMap { SidebarStaticDestination(rawValue: String($0))?.feature }
     }
 
     // MARK: - Nav grouping
 
-    // The two nav groups are fixed structure, not user data: "where the day's work
-    // happens" sits above the lists, "everything else I navigate to" sits below them.
-    // The stored `sidebarTabOrder` therefore sorts *within* a group rather than across
-    // groups — reordering in Settings still moves a row, it just can't move it past the
-    // lists into the other group.
-    private static let primaryFeatures: [CadenceFeatureDestination] = [
-        .today, .inbox, .calendar, .allTasks
-    ]
-    private static let secondaryFeatures: [CadenceFeatureDestination] = [
-        .notes, .focus, .goals, .habits
-    ]
-
-    private static let staticDestinationFeatures: Set<CadenceFeatureDestination> =
-        Set(SidebarStaticDestination.allCases.map(\.feature))
-
+    // Which destinations sit in which group is `CadenceSidebarLayout`'s decision, not this
+    // view's: the iPad sidebar is being brought to the same structure, and the grouping and
+    // ordering rules are the parts worth having exactly once. The stored `sidebarTabOrder`
+    // sorts *within* a group — reordering in Settings still moves a row, it just can't move it
+    // past the lists into the other group.
     private func navItems(
-        for features: [CadenceFeatureDestination],
-        badgeCounts: BadgeCounts
+        in group: CadenceSidebarLayout.NavGroup,
+        counts: CadenceSidebarCountInputs
     ) -> [SidebarNavItem] {
-        let featureSet = Set(features)
-        var items: [SidebarNavItem] = []
-
-        // Notes has no `SidebarStaticDestination` case (and therefore no hide toggle, no
-        // color override, and no entry in the stored order), so it is rendered straight
-        // from the shared feature metadata and pinned to its declared position at the
-        // head of its group — it can't take part in the sort the other rows use. If a
-        // case is ever added, the branch below takes over and both settings start
-        // working for it automatically.
-        if featureSet.contains(.notes), !Self.staticDestinationFeatures.contains(.notes) {
-            items.append(
-                SidebarNavItem(
-                    id: CadenceFeatureDestination.notes.rawValue,
-                    item: .notes,
-                    icon: CadenceFeatureDestination.notes.systemImage,
-                    label: CadenceFeatureDestination.notes.title,
-                    tint: CadenceFeatureDestination.notes.tint,
-                    count: nil,
-                    accessibilityID: "sidebar.destination.notes"
-                )
+        CadenceSidebarLayout.resolvedDestinations(
+            in: group,
+            customisable: Self.customisableDestinations,
+            storedOrder: storedOrder,
+            hidden: Set(hiddenTabs.map(\.feature))
+        )
+        .compactMap { destination in
+            guard let item = destination.macSidebarItem else { return nil }
+            return SidebarNavItem(
+                id: destination.rawValue,
+                item: item,
+                icon: destination.systemImage,
+                label: destination.title,
+                // Notes and Settings have no `SidebarStaticDestination` case, so Settings →
+                // Sidebar offers them no colour picker and they fall back to the shared feature
+                // tint. Every row that *does* have one keeps the user's override.
+                tint: destination.sidebarStaticDestination
+                    .map { Color(hex: $0.resolvedColorHex(from: sidebarTabColorsRaw)) }
+                    ?? destination.tint,
+                count: CadenceSidebarLayout.count(for: destination, counts: counts),
+                accessibilityID: "sidebar.destination.\(destination.rawValue)"
             )
         }
-
-        // `allVisibleDestinations` is already in the user's stored order with hidden
-        // tabs stripped, so filtering it preserves both settings at once.
-        items += allVisibleDestinations
-            .filter { featureSet.contains($0.feature) }
-            .map { destination in
-                SidebarNavItem(
-                    id: destination.rawValue,
-                    item: destination.item,
-                    icon: destination.icon,
-                    label: destination.label,
-                    tint: Color(hex: destination.resolvedColorHex(from: sidebarTabColorsRaw)),
-                    count: badgeCounts.count(for: destination),
-                    accessibilityID: "sidebar.destination.\(destination.rawValue)"
-                )
-            }
-
-        return items
     }
 }
 

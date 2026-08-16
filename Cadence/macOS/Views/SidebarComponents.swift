@@ -156,10 +156,11 @@ struct ContextSection: View {
                 }
             } else {
                 Button(action: onAddList) {
-                    HStack(spacing: SidebarMetrics.listIconLabelSpacing) {
+                    // Starts on the same x as a list name would, so an empty context and a
+                    // populated one share a left edge.
+                    HStack(spacing: 6) {
                         Image(systemName: "plus.circle")
                             .font(.system(size: SidebarMetrics.listIconSize, weight: .semibold))
-                            .frame(width: SidebarMetrics.listIconSlotWidth)
                         Text("Add first list")
                             .font(.system(size: SidebarMetrics.listLabelFontSize, weight: .medium))
                         Spacer(minLength: SidebarMetrics.listTrailingGap)
@@ -201,10 +202,12 @@ struct ContextSection: View {
     private func areaRow(_ area: Area, target: SidebarListDragItem) -> some View {
         SidebarListRow(
             item: .area(area.id),
-            icon: area.icon,
             label: area.name,
             color: Color(hex: area.colorHex),
             kind: .area,
+            count: CadenceSidebarLayout.listCount(
+                openTaskCount: CadenceTaskQuerySupport.openTaskCount(for: area)
+            ),
             dueDateKey: nil,
             onSetDueDate: nil,
             selection: $selection,
@@ -230,10 +233,12 @@ struct ContextSection: View {
     private func projectRow(_ project: Project, target: SidebarListDragItem) -> some View {
         SidebarListRow(
             item: .project(project.id),
-            icon: project.icon,
             label: project.name,
             color: Color(hex: project.colorHex),
             kind: .project,
+            count: CadenceSidebarLayout.listCount(
+                openTaskCount: CadenceTaskQuerySupport.openTaskCount(for: project)
+            ),
             dueDateKey: project.dueDate,
             onSetDueDate: { newKey in
                 project.dueDate = newKey

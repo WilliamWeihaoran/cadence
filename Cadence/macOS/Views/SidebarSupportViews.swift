@@ -98,7 +98,7 @@ struct SidebarNavRow: View {
     let icon: String
     let label: String
     let tint: Color
-    let count: Int?
+    let count: CadenceSidebarCount?
     let isSelected: Bool
     var emphasis: Emphasis = .primary
     let accessibilityID: String
@@ -122,9 +122,9 @@ struct SidebarNavRow: View {
 
                 Spacer(minLength: SidebarMetrics.badgeLeadingGap)
 
-                if let count, count > 0 {
-                    SidebarNavCountBadge(count: count, tint: tint, isSelected: isSelected)
-                        // The badge is the row's fixed element; the label is what gives.
+                if let count {
+                    SidebarCountLabel(count: count)
+                        // The count is the row's fixed element; the label is what gives.
                         .layoutPriority(1)
                 }
             }
@@ -170,30 +170,35 @@ struct SidebarNavRow: View {
     }
 }
 
-/// Trailing count for a nav row. Fixed-size on purpose: three digits must never be
-/// squeezed or clipped by a long destination label.
-struct SidebarNavCountBadge: View {
-    let count: Int
-    let tint: Color
-    let isSelected: Bool
+/// The trailing count on **every** sidebar row — nav and list alike.
+///
+/// One component rather than one per row type, and one colour rule: `Theme.dim`, except for the
+/// single count `CadenceSidebarLayout` marks urgent (Today's overdue tally), which is the only red
+/// in this column. The sidebar used to decide colour for itself — a tinted capsule that inverted
+/// on selection — while the task rows and the calendar had already settled on "red means late".
+///
+/// Fixed-size on purpose: three digits must never be squeezed or clipped by a long label.
+struct SidebarCountLabel: View {
+    let count: CadenceSidebarCount
 
     private var text: String {
-        count > 999 ? "999+" : "\(count)"
+        count.value > 999 ? "999+" : "\(count.value)"
+    }
+
+    private var tint: Color {
+        switch count.emphasis {
+        case .urgent: return Theme.red
+        case .neutral: return Theme.dim
+        }
     }
 
     var body: some View {
         Text(text)
-            .font(.system(size: SidebarMetrics.badgeFontSize, weight: .semibold))
+            .font(.system(size: SidebarMetrics.countFontSize, weight: .medium))
             .monospacedDigit()
-            .foregroundStyle(isSelected ? Theme.bg : Theme.muted)
+            .foregroundStyle(tint)
             .lineLimit(1)
             .fixedSize()
-            .padding(.horizontal, SidebarMetrics.badgeHorizontalPadding)
-            .frame(minWidth: SidebarMetrics.badgeMinWidth, minHeight: SidebarMetrics.badgeHeight)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(isSelected ? tint : Theme.borderSubtle)
-            )
             .accessibilityHidden(true)
     }
 }
@@ -208,15 +213,13 @@ struct SidebarSectionDivider: View {
     }
 }
 
-/// One area/project row.
+/// One area/project row: a 2pt colour bar, the name, and an optional trailing count.
 ///
-/// The glyph is **neutral except when the row is selected**, where it takes the list's
-/// own `colorHex`. Seven saturated hues stacked down the column read as noise; spending
-/// colour only on the current list makes it mean "you are here". Hover deliberately does
-/// not colour it — that would put two rows in colour at once.
-///
-/// This is a sidebar presentation choice only: every other surface (task rows, board
-/// cards, month chips, the inspector's List row) still renders the list's own colour.
+/// **No glyph.** A list's icon was a second identity competing with its colour and its name, and a
+/// column of a dozen different symbols is harder to scan than a column of names. The list's own
+/// `colorHex` survives as a 2pt bar drawn *inside the row's leading padding* — outside the text
+/// column — so every name starts on the same x whatever colour it carries. A dot would have had to
+/// sit in the text column and push the names off that line.
 ///
 /// Hover and selection share **one** background layer at **one** radius, same rule as
 /// `SidebarNavRow` and `TaskInspectorFieldButtonRow`.
@@ -225,26 +228,21 @@ struct SidebarListRow: View {
         case area
         case project
 
+        /// Names the kind for the hover ID and the accessibility identifier. There is no tint
+        /// here: a row's colour is the list's own `colorHex`, never a per-kind hue.
         var label: String {
             switch self {
             case .area: return "Area"
             case .project: return "Project"
             }
         }
-
-        var tint: Color {
-            switch self {
-            case .area: return Theme.blue
-            case .project: return Theme.amber
-            }
-        }
     }
 
     let item: SidebarItem
-    let icon: String
     let label: String
     let color: Color
     let kind: Kind
+    let count: CadenceSidebarCount?
     let dueDateKey: String?
     let onSetDueDate: ((String) -> Void)?
     @Binding var selection: SidebarItem?
@@ -266,15 +264,7 @@ struct SidebarListRow: View {
         Button {
             selection = item
         } label: {
-            HStack(spacing: SidebarMetrics.listIconLabelSpacing) {
-                Image(systemName: icon)
-                    .font(.system(size: SidebarMetrics.listIconSize, weight: .semibold))
-                    // Hover lights the glyph as well as selection: pointing at a row is already
-                    // a statement of intent, and the colour is the fastest confirmation of which
-                    // list is under the cursor. Idle rows stay neutral, which is the whole point.
-                    .foregroundStyle(isSelected || isHovered ? color : Theme.dim)
-                    .frame(width: SidebarMetrics.listIconSlotWidth)
-
+            HStack(spacing: SidebarMetrics.listTrailingItemSpacing) {
                 Text(label)
                     .font(.system(size: SidebarMetrics.listLabelFontSize, weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(isSelected ? Theme.text : Theme.muted)
@@ -286,6 +276,11 @@ struct SidebarListRow: View {
                 if let dueDateKey, !dueDateKey.isEmpty, onSetDueDate != nil {
                     dueDateBadge(dueDateKey)
                 }
+
+                if let count {
+                    SidebarCountLabel(count: count)
+                        .layoutPriority(1)
+                }
             }
             .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
             .padding(.vertical, SidebarMetrics.listRowVerticalPadding)
@@ -294,6 +289,10 @@ struct SidebarListRow: View {
                 RoundedRectangle(cornerRadius: SidebarMetrics.listRowCornerRadius, style: .continuous)
                     .fill(backgroundFill)
             )
+            // Decorative and inside the button's own label, but `allowsHitTesting(false)` is
+            // stated rather than assumed: a filled shape laid over an interactive surface is
+            // exactly the thing that has silently eaten clicks in this repo before.
+            .overlay(alignment: .leading) { colorBar.allowsHitTesting(false) }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -312,6 +311,19 @@ struct SidebarListRow: View {
         }
         .animation(.easeOut(duration: 0.12), value: isHovered)
         .animation(.easeOut(duration: 0.12), value: isSelected)
+    }
+
+    /// The list's own colour, in the row's leading padding. Always drawn — it is the only thing
+    /// left identifying the list, and at 2pt a full column of them reads as a margin rather than
+    /// as the row of saturated glyphs this replaced.
+    private var colorBar: some View {
+        Capsule(style: .continuous)
+            .fill(color)
+            .frame(
+                width: SidebarMetrics.listColorBarWidth,
+                height: SidebarMetrics.listColorBarHeight
+            )
+            .padding(.leading, SidebarMetrics.listColorBarLeadingInset)
     }
 
     private var backgroundFill: Color {

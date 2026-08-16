@@ -16,7 +16,6 @@ struct iOSSettingsView: View {
     @AppStorage("ios.calendar.viewMode") private var calendarViewModeRaw = CadenceCalendarViewMode.week.rawValue
     @AppStorage("ios.calendar.presentation") private var calendarPresentationRaw = CadenceCalendarPresentation.timeline.rawValue
     @AppStorage("ios.calendar.zoomLevel") private var calendarZoomLevel = 1
-    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var notesEditorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
     @Query private var tasks: [AppTask]
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query private var areas: [Area]
@@ -65,10 +64,6 @@ struct iOSSettingsView: View {
 
     private var calendarPresentation: CadenceCalendarPresentation {
         CadenceCalendarPresentation(rawValue: calendarPresentationRaw) ?? .timeline
-    }
-
-    private var notesEditorMode: iOSMarkdownEditorMode {
-        iOSMarkdownEditorPreferences.mode(from: notesEditorModeRaw)
     }
 
     var body: some View {
@@ -181,11 +176,7 @@ struct iOSSettingsView: View {
                     get: { calendarPresentation },
                     set: { calendarPresentationRaw = $0.rawValue }
                 ),
-                calendarZoomLevel: $calendarZoomLevel,
-                notesEditorMode: Binding(
-                    get: { notesEditorMode },
-                    set: { notesEditorModeRaw = $0.rawValue }
-                )
+                calendarZoomLevel: $calendarZoomLevel
             )
         case .sync:
             iOSSyncSettingsSection(

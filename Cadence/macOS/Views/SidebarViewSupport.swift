@@ -96,6 +96,35 @@ extension SidebarStaticDestination {
     }
 }
 
+extension CadenceFeatureDestination {
+    /// The `SidebarStaticDestination` carrying this destination's Settings → Sidebar
+    /// customisation — its visibility toggle, its place in the stored order, and its colour
+    /// override — or `nil` for the destinations Settings does not offer a handle for.
+    ///
+    /// The two enums share raw values by construction; `SidebarStaticDestinationTests` pins that,
+    /// because a rename on one side would silently turn every customisation into a default here.
+    var sidebarStaticDestination: SidebarStaticDestination? {
+        SidebarStaticDestination(rawValue: rawValue)
+    }
+
+    /// The macOS selection this destination navigates to, or `nil` for the ones the sidebar does
+    /// not route to as a page (`.lists` is the scrolling region; `.search` is the header button).
+    var macSidebarItem: SidebarItem? {
+        switch self {
+        case .today: return .today
+        case .allTasks: return .allTasks
+        case .focus: return .focus
+        case .inbox: return .inbox
+        case .calendar: return .calendar
+        case .notes: return .notes
+        case .goals: return .goals
+        case .habits: return .habits
+        case .settings: return .settings
+        case .lists, .search: return nil
+        }
+    }
+}
+
 /// Fixed geometry for the single sidebar column: app header, nav rows, the scrolling
 /// lists region, and the pinned bottom group all size off these values.
 ///
@@ -145,20 +174,33 @@ enum SidebarMetrics {
     // MARK: Lists section
 
     /// The lists region shares the nav rows' left edge rather than indenting under its
-    /// own heading: context header label, list glyph, and nav glyph all start at
-    /// `horizontalInset + rowHorizontalPadding`, and list labels land on the same x as
-    /// nav labels. These are derived from the nav values instead of restated so the two
+    /// own heading. A list row carries **no glyph**: the list's colour is a 2pt bar drawn
+    /// inside the row's own leading padding, so the name starts at
+    /// `horizontalInset + listRowHorizontalPadding` — the same x as the context eyebrow
+    /// above it, and the same x for every list whether or not it has a colour worth
+    /// noticing. A dot would have had to sit *in* the text column and push the names off
+    /// that line. These are derived from the nav values instead of restated so the two
     /// halves of the column can't drift apart again.
     static let listRowHorizontalPadding: CGFloat = SidebarMetrics.rowHorizontalPadding
-    static let listIconSlotWidth: CGFloat = SidebarMetrics.iconSlotWidth
     static let listIconLabelSpacing: CGFloat = SidebarMetrics.iconLabelSpacing
     static let listRowCornerRadius: CGFloat = SidebarMetrics.rowCornerRadius
     static let listRowSpacing: CGFloat = SidebarMetrics.rowSpacing
+    /// Only the empty-state "Add first list" button still draws a glyph in this region.
     static let listIconSize: CGFloat = 12
     static let listLabelFontSize: CGFloat = 13
     static let listRowVerticalPadding: CGFloat = 7
-    /// Minimum gap between a truncating list name and its trailing due-date flag.
+    /// Minimum gap between a truncating list name and its trailing metadata.
     static let listTrailingGap: CGFloat = 8
+    /// Gap between the trailing due-date flag and the trailing count.
+    static let listTrailingItemSpacing: CGFloat = 8
+
+    // MARK: List colour bar
+
+    /// Narrow enough to read as an edge marker rather than a swatch. Sits in the row's
+    /// leading padding, clear of both the rounded corners and the first letter of the name.
+    static let listColorBarWidth: CGFloat = 2
+    static let listColorBarHeight: CGFloat = 14
+    static let listColorBarLeadingInset: CGFloat = 3
 
     // MARK: Context headers
 
@@ -176,14 +218,14 @@ enum SidebarMetrics {
     static let listDueDateFontSize: CGFloat = 10
     static let listDueDateSpacing: CGFloat = 4
 
-    // MARK: Count badges
+    // MARK: Counts
 
-    static let badgeFontSize: CGFloat = 10
-    static let badgeMinWidth: CGFloat = 20
-    static let badgeHeight: CGFloat = 16
-    static let badgeHorizontalPadding: CGFloat = 5
-    /// Minimum gap held between a row's truncating label and its count badge. The badge
-    /// is fixed-size and wins layout priority, so this is the point at which the *label*
+    /// Counts are bare digits, not filled capsules: a pill drew a border, a fill and a
+    /// radius around a number that says everything it has to say in `Theme.dim`. Nav rows
+    /// and list rows render the same `SidebarCountLabel`.
+    static let countFontSize: CGFloat = 11
+    /// Minimum gap held between a row's truncating label and its count. The count is
+    /// fixed-size and wins layout priority, so this is the point at which the *label*
     /// starts truncating — a three-digit count never overlaps it.
     static let badgeLeadingGap: CGFloat = 8
 
@@ -194,16 +236,16 @@ enum SidebarMetrics {
 }
 
 /// One navigation row. Modelled as a value type rather than a
-/// `SidebarStaticDestination` so Notes — which has no static-destination case, and
-/// therefore no hide toggle or color override in Settings — can sit in the nav groups
-/// alongside the destinations that do.
+/// `SidebarStaticDestination` so Notes and Settings — which have no static-destination
+/// case, and therefore no hide toggle or color override in Settings — can sit in the nav
+/// groups alongside the destinations that do.
 struct SidebarNavItem: Identifiable {
     let id: String
     let item: SidebarItem
     let icon: String
     let label: String
     let tint: Color
-    let count: Int?
+    let count: CadenceSidebarCount?
     let accessibilityID: String
 }
 #endif
