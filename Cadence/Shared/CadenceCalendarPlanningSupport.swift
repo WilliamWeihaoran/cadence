@@ -865,4 +865,110 @@ enum CadenceScheduleSupport {
     static func timeRangeLabel(startMinute: Int, endMinute: Int) -> String {
         TimeFormatters.timeRange(startMin: startMinute, endMin: endMinute)
     }
+
+    // MARK: - Ready-to-schedule slots
+
+    /// The grid the one-tap slots snap to. Half hours, which is also the granularity
+    /// `CalendarWorkHoursPreferences.selectable*Minutes` offers, so a work window can never fall
+    /// between two candidates.
+    static let scheduleSlotStep = 30
+
+    /// The minutes already taken on a day, as half-open `start..<end` spans — what a suggested slot
+    /// must not land inside.
+    static func busyMinuteRanges(tasks: [AppTask], bundles: [TaskBundle]) -> [Range<Int>] {
+        let taskRanges: [Range<Int>] = tasks.compactMap { task in
+            guard task.scheduledStartMin >= 0 else { return nil }
+            let end = max(task.scheduledEndMin, task.scheduledStartMin + 1)
+            return task.scheduledStartMin..<end
+        }
+        let bundleRanges: [Range<Int>] = bundles.map { bundle in
+            bundle.startMin..<max(bundle.endMin, bundle.startMin + 1)
+        }
+        return taskRanges + bundleRanges
+    }
+
+    /// The one-tap start times offered beside a task that has a day but no time.
+    ///
+    /// These were three literals — 9 AM, 1 PM, 4 PM — chosen when the timeline drew 6 AM to 11 PM.
+    /// Against the full 24-hour grid they cover much less of the day, and none of the three knows
+    /// anything about the day it is being offered on: they are unchanged at 6 PM, and unchanged
+    /// when all three hours are already booked solid.
+    ///
+    /// The replacement is derived from three things the app already holds:
+    /// - **now**, so a slot is never in the past. The earliest candidate is the next half hour.
+    /// - **the work-hours window** (`calendar.workHours.*.v1`, the same band the day timeline draws
+    ///   in amber), so the suggestions sit inside the hours the user actually works. When what is
+    ///   left of that window cannot supply `count` free slots — late in the day, or a full
+    ///   calendar — the search widens to the rest of the day rather than repeating a booked hour.
+    /// - **the day's existing blocks**, so a slot that would collide with something already
+    ///   scheduled is not offered.
+    ///
+    /// The result is spread across the searched window rather than taken from the front of it:
+    /// three adjacent half hours are one choice presented three times. It is never empty — at
+    /// 23:50 the honest answer is a single 11:30 PM chip, not a row of controls that cannot fire.
+    static func readyScheduleSlots(
+        now: Date = Date(),
+        workStartMinute: Int = CalendarWorkHoursPreferences.defaultStartMinute,
+        workEndMinute: Int = CalendarWorkHoursPreferences.defaultEndMinute,
+        busyRanges: [Range<Int>] = [],
+        durationMinutes: Int = 30,
+        count: Int = 3,
+        calendar: Calendar = .current
+    ) -> [Int] {
+        let step = scheduleSlotStep
+        let duration = max(15, durationMinutes)
+        let dayEnd = calendarEndHour * 60
+        let lastStart = max(0, ((dayEnd - duration) / step) * step)
+        let work = CalendarWorkHoursPreferences.normalizedRange(
+            startMinute: workStartMinute,
+            endMinute: workEndMinute
+        )
+
+        let nowMinute = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
+        let earliest = min(roundedUpToStep(nowMinute, step: step), lastStart)
+        let lowerBound = min(max(earliest, roundedUpToStep(work.startMinute, step: step)), lastStart)
+        let workUpperBound = min(((work.endMinute - duration) / step) * step, lastStart)
+
+        func freeSlots(through upperBound: Int) -> [Int] {
+            guard upperBound >= lowerBound else { return [] }
+            return stride(from: lowerBound, through: upperBound, by: step).filter { start in
+                let end = start + duration
+                return !busyRanges.contains { $0.lowerBound < end && start < $0.upperBound }
+            }
+        }
+
+        var pool = freeSlots(through: workUpperBound)
+        if pool.count < count {
+            let widened = freeSlots(through: lastStart)
+            if widened.count > pool.count { pool = widened }
+        }
+        if pool.isEmpty {
+            // Every remaining half hour is booked. Offering the next one anyway beats offering
+            // nothing: the row's only actions are these chips.
+            pool = Array(stride(from: lowerBound, through: lastStart, by: step))
+        }
+
+        return spread(pool, count: count)
+    }
+
+    private static func roundedUpToStep(_ minute: Int, step: Int) -> Int {
+        guard step > 0 else { return minute }
+        let clamped = max(0, minute)
+        return ((clamped + step - 1) / step) * step
+    }
+
+    /// `count` values taken evenly across `pool`, first and last included, in order and deduplicated.
+    private static func spread(_ pool: [Int], count: Int) -> [Int] {
+        guard count > 0 else { return [] }
+        guard pool.count > count else { return pool }
+        guard count > 1 else { return [pool[0]] }
+
+        var picked: [Int] = []
+        for step in 0..<count {
+            let index = (step * (pool.count - 1)) / (count - 1)
+            let value = pool[index]
+            if picked.last != value { picked.append(value) }
+        }
+        return picked
+    }
 }

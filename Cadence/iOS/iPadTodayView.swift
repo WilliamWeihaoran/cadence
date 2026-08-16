@@ -14,7 +14,6 @@ struct iPadTodayView: View {
     @AppStorage("ios.today.sortMode") private var sortModeRaw = CadenceTaskSortMode.priority.rawValue
     @AppStorage("ios.today.showCompleted") private var showCompleted = false
     @AppStorage("ios.today.sidePanel") private var sidePanelRaw = iPadTodaySidePanel.notes.rawValue
-    @AppStorage("ios.today.layoutMode") private var layoutModeRaw = iPadTodayLayoutMode.focus.rawValue
     #if DEBUG
     /// Only the sample-data seeder writes from this view now that capture is the composer sheet's
     /// job, and the seeder is a debug affordance.
@@ -71,22 +70,10 @@ struct iPadTodayView: View {
         iPadTodaySidePanel(rawValue: sidePanelRaw) ?? .notes
     }
 
-    private var layoutMode: iPadTodayLayoutMode {
-        get { iPadTodayLayoutMode(rawValue: layoutModeRaw) ?? .focus }
-        set { layoutModeRaw = newValue.rawValue }
-    }
-
     private var sidePanelBinding: Binding<iPadTodaySidePanel> {
         Binding(
             get: { sidePanel },
             set: { sidePanelRaw = $0.rawValue }
-        )
-    }
-
-    private var layoutModeBinding: Binding<iPadTodayLayoutMode> {
-        Binding(
-            get: { layoutMode },
-            set: { layoutModeRaw = $0.rawValue }
         )
     }
 
@@ -108,15 +95,10 @@ struct iPadTodayView: View {
 
     @ViewBuilder
     private func todayLayout(width: CGFloat) -> some View {
-        // The threshold used to be a bare `width >= 1_500`, which no iPad reaches — see
-        // `CadenceTodayLayoutSupport`, which derives the real floor from the panes' own minimums.
-        switch CadenceTodayLayoutSupport.layout(
-            prefersThreePane: layoutMode == .mac,
-            isRegularWidth: isRegularWidth,
-            paneWidth: width
-        ) {
-        case .threePane:
-            threePaneTodayLayout(width: width)
+        // Two panes or one; there is no third layout and no stored preference feeding this. See
+        // `CadenceTodayLayoutSupport`, which derives the two-pane floor from the panes' own
+        // minimums.
+        switch CadenceTodayLayoutSupport.layout(isRegularWidth: isRegularWidth, paneWidth: width) {
         case .twoPane:
             twoPaneTodayLayout(width: width)
         case .compact:
@@ -124,32 +106,9 @@ struct iPadTodayView: View {
         }
     }
 
-    private func threePaneTodayLayout(width: CGFloat) -> some View {
-        let notesWidth = min(max(width * 0.23, CadenceTodayLayoutSupport.notesPaneMinWidth), 340)
-        let scheduleWidth = min(max(width * 0.24, CadenceTodayLayoutSupport.schedulePaneMinWidth), 360)
-
-        return HStack(spacing: 0) {
-            iOSNotesPanel(useStandardHeaderHeight: true)
-                .frame(width: notesWidth)
-                .layoutPriority(0.22)
-
-            Divider().background(Theme.borderSubtle)
-
-            todayTaskColumn(paneWidth: width)
-                .frame(minWidth: CadenceTodayLayoutSupport.taskPaneMinWidth, maxWidth: .infinity)
-                .layoutPriority(1)
-
-            Divider().background(Theme.borderSubtle)
-
-            iOSSchedulePanel()
-                .frame(width: scheduleWidth)
-                .layoutPriority(0.28)
-        }
-    }
-
     private func twoPaneTodayLayout(width: CGFloat) -> some View {
         HStack(spacing: 0) {
-            todayTaskColumn(paneWidth: width)
+            todayTaskColumn
                 .frame(width: taskPaneWidth(for: width))
                 .layoutPriority(0.58)
 
@@ -203,15 +162,13 @@ struct iPadTodayView: View {
     /// The two-pane inspector's body. Neither panel draws its own page title here: the switcher row
     /// directly above already has the panel's name lit up in it, and drawing it again — plus, in
     /// the timeline's case, a `SCHEDULE` eyebrow over it — was the same word three times in 120pt.
-    /// `useStandardHeaderHeight` goes with it; it pins the notes header to 120pt so it lines up
-    /// with the panes *beside* it, and in this layout there are none.
     @ViewBuilder
     private var inspectorPanelContent: some View {
         switch sidePanel {
         case .notes:
             iOSNotesPanel(showsTitle: false)
         case .timeline:
-            iOSSchedulePanel(showsHeader: false)
+            iOSSchedulePanel()
         }
     }
 
@@ -238,52 +195,29 @@ struct iPadTodayView: View {
         #endif
     }
 
-    private func todayTaskColumn(paneWidth: CGFloat) -> some View {
+    /// Header, then tasks. There is no band between them any more: the "planning deck" that used to
+    /// sit there held the sort/completed bar and the summary line, both of which now ride on the
+    /// header row itself — see `iPadTodayTaskHeader`. It cost ~70pt of a column whose whole job is
+    /// showing tasks, and it was the last chrome band left after the capture field ("Add a task for
+    /// today…", replaced by the corner composer button) and the layout picker were removed from it.
+    private var todayTaskColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
             iPadTodayTaskHeader(
                 eyebrow: DateFormatters.longDate.string(from: Date()),
                 title: "Today",
                 summary: todaySummary,
-                layoutMode: layoutModeBinding,
-                // The picker used to offer Mac at every width and do nothing below the threshold.
-                // Below the floor there is genuinely no room for three columns, so the option says
-                // so rather than accepting a tap and changing nothing.
-                allowsThreePane: CadenceTodayLayoutSupport.supportsThreePane(paneWidth: paneWidth)
-            )
-
-            Divider().background(Theme.borderSubtle)
-
-            todayPlanningDeck
-
-            Divider().background(Theme.borderSubtle.opacity(0.72))
-
-            todayTaskSections
-        }
-        .background(Theme.surface)
-    }
-
-    /// Sort, completed visibility, and the day's summary line. The "Add a task for today…" field
-    /// that used to head this deck is gone — capture is the floating button in the page's corner,
-    /// which opens the full composer instead of taking a title and guessing the rest.
-    private var todayPlanningDeck: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            iOSTaskViewOptionsBar(
                 sortMode: Binding(
                     get: { sortMode },
                     set: { sortModeRaw = $0.rawValue }
                 ),
-                showCompleted: $showCompleted,
-                completedCount: completedTodayTasks.count
+                showCompleted: $showCompleted
             )
 
-            // Absent on an unplanned day rather than reading "0 timed · 0 done", so the deck does
-            // not reserve a band for a sentence it has nothing to put in. See
-            // `CadenceTodaySummary.line`.
-            iPadTodaySummaryLine(summary: todaySummary)
+            Divider().background(Theme.borderSubtle)
+
+            todayTaskSections
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
-        .background(Theme.bg.opacity(0.36))
+        .background(Theme.surface)
     }
 
     @ViewBuilder

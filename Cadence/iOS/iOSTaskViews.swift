@@ -452,6 +452,11 @@ struct iOSTaskViewOptionsBar: View {
     @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
     var completedCount: Int
+    /// True on a band of its own, where the bar spans the pane and the two chips go to opposite
+    /// ends. False when it is a *guest* on someone else's row — iPad Today puts it on the trailing
+    /// edge of its page header — where an internal `Spacer` would fight the host's own for the
+    /// leftover width and leave the sort chip floating in the middle of the row.
+    var spreads = true
     @State private var showSortPicker = false
 
     private var isRegularWidth: Bool {
@@ -485,7 +490,9 @@ struct iOSTaskViewOptionsBar: View {
                 )
             }
 
-            Spacer()
+            if spreads {
+                Spacer()
+            }
 
             Button {
                 showCompleted.toggle()

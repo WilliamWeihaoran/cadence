@@ -208,7 +208,7 @@ struct iOSLocalDataSettingsSection: View {
     }
 }
 
-/// The five app defaults, as value rows.
+/// The app defaults, as value rows.
 ///
 /// They were five stacked segmented controls, each under a coloured icon tile and a two-line
 /// paragraph: about 150pt per setting, so a phone showed two of the twelve settings in the app.
@@ -221,14 +221,12 @@ struct iOSLocalDataSettingsSection: View {
 /// carried real information now sit on the options they describe, inside the picker, where you
 /// read them at the moment you are choosing.
 struct iOSNavigationSettingsSection: View {
-    @Binding var todayLayoutMode: iPadTodayLayoutMode
     @Binding var calendarViewMode: CadenceCalendarViewMode
     @Binding var calendarPresentation: CadenceCalendarPresentation
     @Binding var calendarZoomLevel: Int
     @State private var openPicker: DefaultsPicker?
 
     private enum DefaultsPicker: String, Identifiable {
-        case todayLayout
         case calendarView
         case calendarStyle
         case timelineDensity
@@ -244,37 +242,11 @@ struct iOSNavigationSettingsSection: View {
 
     var body: some View {
         iOSEditorSection(title: "Defaults") {
-            todayLayoutRow
-            iOSEditorDivider()
             calendarViewRow
             iOSEditorDivider()
             calendarStyleRow
             iOSEditorDivider()
             timelineDensityRow
-        }
-    }
-
-    private var todayLayoutRow: some View {
-        iOSEditorFieldRow(label: "iPad Today", systemImage: "sidebar.squares.left") {
-            valueButton(todayLayoutMode.title, picker: .todayLayout)
-                .popover(isPresented: isPresented(.todayLayout)) {
-                    iOSChoicePopoverList(
-                        // `iPadTodayLayoutMode` already carries the one-line explanation of each
-                        // layout; it just had nowhere to be shown.
-                        rows: iPadTodayLayoutMode.allCases.map { mode in
-                            iOSChoiceRow(
-                                value: mode,
-                                title: mode.title,
-                                subtitle: mode.subtitle,
-                                systemImage: mode.systemImage,
-                                color: Theme.green
-                            )
-                        },
-                        selection: $todayLayoutMode,
-                        isPresented: isPresented(.todayLayout),
-                        width: 280
-                    )
-                }
         }
     }
 

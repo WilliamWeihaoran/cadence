@@ -2,15 +2,19 @@
 import SwiftData
 import SwiftUI
 
+/// Today's timeline, hosted in the two-pane inspector. It draws no header of its own:
+/// `iPadTodayInspectorSwitcher` sits directly above it with "Timeline" lit up in it. The
+/// `showsHeader` flag that used to switch one on existed for the three-pane Today layout, where
+/// this pane stood beside two others; that layout is gone.
 struct iOSSchedulePanel: View {
-    /// Off in Today's two-pane inspector, where `iPadTodayInspectorSwitcher` is the pane's header
-    /// and already has "Timeline" lit up in it. On in the three-pane layout, where this pane sits
-    /// beside two others and its header is the only thing naming it.
-    var showsHeader = true
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query private var allBundles: [TaskBundle]
+    @AppStorage(CalendarWorkHoursPreferences.startMinuteKey)
+    private var workHoursStartMinute = CalendarWorkHoursPreferences.defaultStartMinute
+    @AppStorage(CalendarWorkHoursPreferences.endMinuteKey)
+    private var workHoursEndMinute = CalendarWorkHoursPreferences.defaultEndMinute
     @State private var quickCreateStartMin: Int?
     @State private var quickCreateTitle = ""
     @State private var quickCreateError: String?
@@ -41,36 +45,30 @@ struct iOSSchedulePanel: View {
         scheduledTasks.isEmpty && todayBundles.isEmpty
     }
 
+    /// Derived on every draw from the clock, the work-hours window and what is already on the day —
+    /// see `CadenceScheduleSupport.readyScheduleSlots`. Deliberately not seeded into `@State`: the
+    /// slots go stale as the day moves and as tasks are placed, and a snapshot taken in `onAppear`
+    /// would keep offering an hour that has just been filled.
+    private var readySlots: [Int] {
+        CadenceScheduleSupport.readyScheduleSlots(
+            workStartMinute: workHoursStartMinute,
+            workEndMinute: workHoursEndMinute,
+            busyRanges: CadenceScheduleSupport.busyMinuteRanges(
+                tasks: scheduledTasks,
+                bundles: todayBundles
+            )
+        )
+    }
+
+    /// The scroll target for the inline composer. See `quickCreateComposer(for:)`.
+    private static let quickCreateAnchorID = "schedule.quickCreate"
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if showsHeader {
-                HStack(spacing: 0) {
-                    iOSPanelHeader(eyebrow: "Schedule", title: "Timeline")
-                    Spacer()
-                }
-                .frame(height: iOSPanelHeaderHeight, alignment: .top)
-
-                Divider().background(Theme.borderSubtle)
-            }
-
             if !untimedTodayTasks.isEmpty {
-                iOSScheduleReadyStack(tasks: untimedTodayTasks)
+                iOSScheduleReadyStack(tasks: untimedTodayTasks, slots: readySlots)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 12)
-
-                Divider().background(Theme.borderSubtle.opacity(0.72))
-            }
-
-            if let quickCreateStartMin {
-                iOSScheduleQuickCreateBar(
-                    startMin: quickCreateStartMin,
-                    title: $quickCreateTitle,
-                    errorMessage: quickCreateError,
-                    create: createScheduledTask,
-                    cancel: cancelQuickCreate
-                )
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
 
                 Divider().background(Theme.borderSubtle.opacity(0.72))
             }
@@ -94,14 +92,18 @@ struct iOSSchedulePanel: View {
                         }
 
                         ForEach(CadenceScheduleSupport.calendarHours, id: \.self) { hour in
-                            iOSScheduleHourRow(
-                                hour: hour,
-                                tasks: tasks(in: hour),
-                                bundles: bundles(in: hour),
-                                rowHeight: rowHeight,
-                                selectedStartMin: quickCreateStartMin,
-                                onSelectStart: selectQuickCreateStart
-                            )
+                            VStack(alignment: .leading, spacing: 0) {
+                                iOSScheduleHourRow(
+                                    hour: hour,
+                                    tasks: tasks(in: hour),
+                                    bundles: bundles(in: hour),
+                                    rowHeight: rowHeight,
+                                    selectedStartMin: quickCreateStartMin,
+                                    onSelectStart: selectQuickCreateStart
+                                )
+
+                                quickCreateComposer(for: hour)
+                            }
                             .id(hour)
                         }
                     }
@@ -113,9 +115,49 @@ struct iOSSchedulePanel: View {
                 } action: { _, contentHeight in
                     placeInitialScroll(contentHeight: contentHeight, proxy: proxy)
                 }
+                .onChange(of: quickCreateStartMin) { _, newValue in
+                    revealQuickCreate(startMin: newValue, proxy: proxy)
+                }
             }
         }
         .background(Theme.bg)
+    }
+
+    /// The composer, drawn under the hour lane that was tapped rather than above the whole grid.
+    ///
+    /// It used to be a sibling of the `ScrollView` in the outer `VStack`, so opening it inserted
+    /// ~130pt *above* the grid: every hour row slid down by a composer's height, and the 11 PM lane
+    /// you had just aimed at was somewhere near 8 PM by the time the composer appeared — at the top
+    /// of the pane, nowhere near the tap. That was survivable when the grid ran 6 AM to 11 PM and
+    /// mostly visible at once; with 24 rows it is the whole interaction. Inline, the row you tapped
+    /// does not move at all, and the composer opens directly beneath it saying which hour it is for.
+    @ViewBuilder
+    private func quickCreateComposer(for hour: Int) -> some View {
+        if let quickCreateStartMin, quickCreateStartMin == hour * 60 {
+            iOSScheduleQuickCreateBar(
+                startMin: quickCreateStartMin,
+                title: $quickCreateTitle,
+                errorMessage: quickCreateError,
+                create: createScheduledTask,
+                cancel: cancelQuickCreate
+            )
+            .padding(.leading, 12)
+            .padding(.trailing, 4)
+            .padding(.bottom, 12)
+            .id(Self.quickCreateAnchorID)
+        }
+    }
+
+    /// Scrolls the minimum amount that makes the composer visible, and only when it is not — that
+    /// is what `anchor: nil` means. Tapping a lane in the middle of the pane therefore moves
+    /// nothing; tapping the last lane at the bottom edge lifts the composer into view instead of
+    /// opening it below the fold. Deferred a runloop turn because the composer is not in the
+    /// layout at the instant the selection changes.
+    private func revealQuickCreate(startMin: Int?, proxy: ScrollViewProxy) {
+        guard startMin != nil else { return }
+        DispatchQueue.main.async {
+            proxy.scrollTo(Self.quickCreateAnchorID, anchor: nil)
+        }
     }
 
     private var rowHeight: CGFloat {
@@ -484,6 +526,9 @@ private struct iOSScheduleTaskBlock: View {
 
 private struct iOSScheduleReadyStack: View {
     let tasks: [AppTask]
+    /// Minutes from midnight, computed once for the pane so every row offers the same times and a
+    /// slot that has just been filled disappears from all of them at once.
+    let slots: [Int]
 
     private var visibleTasks: [AppTask] {
         Array(tasks.prefix(4))
@@ -515,7 +560,7 @@ private struct iOSScheduleReadyStack: View {
 
             VStack(spacing: 7) {
                 ForEach(visibleTasks) { task in
-                    iOSScheduleReadyTaskRow(task: task)
+                    iOSScheduleReadyTaskRow(task: task, slots: slots)
                 }
             }
 
@@ -532,6 +577,7 @@ private struct iOSScheduleReadyStack: View {
 
 private struct iOSScheduleReadyTaskRow: View {
     @Bindable var task: AppTask
+    let slots: [Int]
     @Environment(\.modelContext) private var modelContext
     @State private var showDetail = false
 
@@ -573,22 +619,31 @@ private struct iOSScheduleReadyTaskRow: View {
                 .accessibilityLabel("Open task details")
             }
 
+            // 26pt of plate inside a 44pt hit area, the trick `iOSIconButton` and the composer's
+            // cancel control already use — the chips are the row's whole point, so they get a
+            // finger-sized target without a band of 44pt plates dominating the stack. Expanded
+            // vertically only: the chips sit 5pt apart, so a symmetric inset would have made
+            // neighbouring targets overlap and the wrong hour win the tap.
             HStack(spacing: 5) {
-                ForEach(iOSReadyScheduleSlot.defaults) { slot in
+                ForEach(slots, id: \.self) { startMin in
                     Button {
-                        schedule(at: slot.startMin)
+                        schedule(at: startMin)
                     } label: {
-                        Text(slot.title)
+                        Text(TimeFormatters.timeString(from: startMin))
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(Theme.blue)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                             .frame(maxWidth: .infinity)
                             .frame(height: 26)
                             .background(Theme.blue.opacity(0.11))
                             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            .padding(.vertical, 9)
+                            .contentShape(Rectangle())
+                            .padding(.vertical, -9)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Schedule \(task.title.isEmpty ? "task" : task.title) at \(slot.accessibilityTime)")
+                    .accessibilityLabel("Schedule \(task.title.isEmpty ? "task" : task.title) at \(TimeFormatters.timeString(from: startMin))")
                 }
             }
         }
@@ -628,20 +683,4 @@ private struct iOSScheduleReadyTaskRow: View {
     }
 }
 
-private struct iOSReadyScheduleSlot: Identifiable {
-    let title: String
-    let startMin: Int
-
-    var id: Int { startMin }
-
-    var accessibilityTime: String {
-        TimeFormatters.timeString(from: startMin)
-    }
-
-    static let defaults = [
-        iOSReadyScheduleSlot(title: "9 AM", startMin: 9 * 60),
-        iOSReadyScheduleSlot(title: "1 PM", startMin: 13 * 60),
-        iOSReadyScheduleSlot(title: "4 PM", startMin: 16 * 60)
-    ]
-}
 #endif

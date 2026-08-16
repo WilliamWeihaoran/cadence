@@ -12,7 +12,6 @@ struct iOSSettingsView: View {
     @AppStorage(NotificationManager.notificationsEnabledDefaultsKey) private var notificationsEnabled = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
-    @AppStorage("ios.today.layoutMode") private var todayLayoutModeRaw = iPadTodayLayoutMode.focus.rawValue
     @AppStorage("ios.calendar.viewMode") private var calendarViewModeRaw = CadenceCalendarViewMode.week.rawValue
     @AppStorage("ios.calendar.presentation") private var calendarPresentationRaw = CadenceCalendarPresentation.timeline.rawValue
     @AppStorage("ios.calendar.zoomLevel") private var calendarZoomLevel = 1
@@ -52,10 +51,6 @@ struct iOSSettingsView: View {
 
     private var bundleID: String {
         Bundle.main.bundleIdentifier ?? "Unknown"
-    }
-
-    private var todayLayoutMode: iPadTodayLayoutMode {
-        iPadTodayLayoutMode(rawValue: todayLayoutModeRaw) ?? .focus
     }
 
     private var calendarViewMode: CadenceCalendarViewMode {
@@ -164,10 +159,6 @@ struct iOSSettingsView: View {
         switch category {
         case .navigation:
             iOSNavigationSettingsSection(
-                todayLayoutMode: Binding(
-                    get: { todayLayoutMode },
-                    set: { todayLayoutModeRaw = $0.rawValue }
-                ),
                 calendarViewMode: Binding(
                     get: { calendarViewMode },
                     set: { calendarViewModeRaw = $0.rawValue }
