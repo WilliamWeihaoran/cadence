@@ -29,50 +29,7 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-Started 2026-08-17 06:2x, five agents on disjoint file sets. File ownership is stated in each
-brief so two agents cannot edit the same file.
-
-
-**B — calendar** (`iOS/iOSCalendar*`, `Shared/CadenceCalendar*`)
-
-- [T-34] **Month → Agenda opens blank** at iPad regular width, and stays blank until you step a
-  month with either arrow; from then on it works. Confirmed present on a pristine `545f429`, so it
-  predates the Board/inspector work in `42de745`. Diagnosis on hand:
-  `iOSCalendarMonthAgendaList` seeds `@State scrolledDayKey` in `init` and `.scrollPosition(id:)`
-  resolves it against a lazy stack that has not laid out yet; nothing re-asserts it after first
-  layout. This is the third instance of that shape in this repo — see `ecaf80f` and `8a316c4` — so
-  it is worth fixing as the general rule rather than one more special case. Landscape placement is
-  unverified: the simulator tooling has no rotate action.
-
-- [T-35] **Board's counts strip restates the column beneath it.** With the day inspector gone
-  (`42de745`) the strip reads "Wednesday, August 19" directly above a day column headed
-  `WED · AUG 19` — a full-width band saying what the first column already says, and on an empty day
-  it is the only thing in that band. `showsDaySummaryStrip` is the switch.
-
-- [T-36] **Month's `Day` reading has no add control for a non-empty day.** The `+` left with the
-  date bar in `42de745`. Empty days still offer "Nothing scheduled · + Add", so the gap is exactly
-  the case where you already have something and want one more. Calendar is the one iPad page with
-  no floating `+`, which is why the bar's `+` mattered.
-
-
-**E — task embeds in notes** (`iOSMarkdownEditor`, `macOS/Editor/`, embed + block-deletion support)
-
-- [T-26] **Task embeds in notes are rough to actually use.** The insert works; living with it does
-  not. Reported symptoms, all in the markdown editor's task-embed path:
-  - **The caret does not move to the task title after inserting one** — you insert an embed and
-    then have to go find the title to type it, which makes the common case (insert, name it, carry
-    on) two gestures longer than it should be.
-  - **Selection behaves oddly around the embed** — selecting across or into it does not do what a
-    reader expects.
-  - **Position and movement.** Where the embed lands on insert, and moving it once placed.
-  Worth knowing before starting: an embed is an `NSTextAttachment` with the underlying characters
-  hidden behind it, which is the same construction that made code blocks uneditable until the
-  caret-reveal work in `c9fb369` — the reveal machinery and `MarkdownRenderedBlockDeletionSupport`
-  are the neighbours to read first. Embed *references* are `[[task:UUID|Title]]`, parsed in
-  `Services/Markdown*Support.swift`, which is where behaviour belongs; `macOS/Editor/` is only the
-  AppKit bridge. Also relevant: `iOSMarkdownEditor.publishSelectedRange` already snaps the caret
-  past hidden runs, so there is an existing rule for "where the caret may sit" rather than a blank
-  page.
+_Nothing._
 
 ## Open — decided, not started
 
@@ -80,6 +37,29 @@ brief so two agents cannot edit the same file.
   three targets above.
 
 ## Open — known, unscheduled
+
+- [T-42] **Double-tap in the note editor swallows the tap.** `renderedBlockTap` in
+  `iOSMarkdownEditor.makeUIView` has `numberOfTapsRequired = 2` and `cancelsTouchesInView = true`,
+  and fires on *any* double tap — when the hit is not a code or table block the handler returns
+  early having already cancelled the touch, so a double tap on plain text neither places the caret
+  nor selects a word. Hit repeatedly while driving an iPad. The fix is probably
+  `cancelsTouchesInView = false`, but that is an unverified gesture change in the area that has
+  bitten this app before (`.draggable` delaying taps across a whole `ScrollView`), so it wants
+  its own pass with device verification rather than a one-line guess.
+- [T-43] **Renaming a task embed after it is created.** `aca2787` made the embed take its title at
+  creation, which covers the common case. There is still no way to rename one afterwards on iOS:
+  macOS opens a text field over the card (`beginInlineTaskTitleEdit` → `onRenameEmbeddedMarkdownTask`)
+  and iOS has no rename callback at all. A parity gap, and an instance of T-32.
+- [T-44] **No way to move a task embed on iOS.** macOS has drag via `draggingTaskEmbedID`; iOS has
+  nothing. Raised as part of T-26 but it is a missing feature rather than a defect, so it was not
+  built on the way past.
+- [T-45] **Sample data on the two simulators is dirty.** Three agents driving the same simulators
+  left artefacts while verifying: a `[Sample Note] Today review` title line reading
+  `**## [Sample Note] Today review`, stray `Buy bread` / `Buy milk` task embeds and tasks, a
+  `( ) Call mum` fragment on the iPhone scratch note, and the `Dropped from tab bar plus` task from
+  T-40. **All of it is DEBUG-only seeded data (`iOSSampleDataSupport`) on simulators — nothing in
+  the repo, nothing on a real device, nothing synced.** Reset it by wiping the simulators' app data
+  next time neither is in use; not worth doing while agents are running.
 
 - [T-41] **`CadenceTests/iOSMarkdownStylingSupportTests.swift` never runs.** The whole file is
   inside `#if os(iOS)`, and the test target builds for macOS — so its two tests have never executed
@@ -93,10 +73,6 @@ brief so two agents cannot edit the same file.
   case where seeding a new task from the group is most useful. `CadenceTaskDropSupport`'s resolver
   already accepts group keys, so this is wiring `iOSTaskSectionHeader`'s 14 call sites, not new
   logic. Left out only because those files were held by another agent at the time.
-- [T-40] **A stray task is sitting in the iPhone 17e simulator's sample data** — "Dropped from tab
-  bar plus", created while verifying `47328af`. Simulator-only, not in the repo and not on any real
-  device. Delete it next time that simulator is in use and nothing else is driving it.
-
 - [T-32] **Feature-consistency scan across platforms.** Added 2026-08-17 at the user's direction;
   **do not run it yet.** The goal state is that no platform has a feature another lacks — macOS,
   iPadOS and iOS offer the same set, differing only in how it is laid out. This directly reverses
@@ -160,6 +136,11 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-34] `68d78ec` Month's agenda opened past the end of its own content; Board's counts strip and
+  Month Day's missing add control (T-34, T-35, T-36).
+- [D-33] `aca2787` A task embed named itself "Untitled Task" and then argued with the note (T-26);
+  plus the macOS twin of the frontmatter/divider bug.
 
 - [D-32] `a43b8fd` A checkbox you typed was never a checkbox, and tagged notes grew two
   rules (T-37, T-38).
