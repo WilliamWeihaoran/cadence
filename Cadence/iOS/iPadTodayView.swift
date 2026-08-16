@@ -47,11 +47,12 @@ struct iPadTodayView: View {
         CadenceTaskQuerySupport.completedTodayTasks(from: allTasks, todayKey: todayKey)
     }
 
-    private var compactScheduleTasks: [AppTask] {
+    /// Every task pinned to a time today. The `.prefix(3)` this used to carry was left over from a
+    /// deleted three-row schedule preview on the compact layout; its only remaining reader is the
+    /// summary, which was therefore capping its own "timed" count at three.
+    private var timedTodayTasks: [AppTask] {
         CadenceScheduleSupport.scheduledTasks(on: todayKey, from: allTasks, includeCompleted: false, excludeBundled: false)
             .filter { $0.scheduledStartMin >= 0 }
-            .prefix(3)
-            .map { $0 }
     }
 
     private var todayTaskGroups: [CadenceTodayTaskGroup] {
@@ -61,7 +62,7 @@ struct iPadTodayView: View {
     private var todaySummary: CadenceTodaySummary {
         CadenceTodayPresentationSupport.summary(
             activeTasks: todayTasks,
-            timedTasks: compactScheduleTasks,
+            timedTasks: timedTodayTasks,
             completedTasks: completedTodayTasks
         )
     }
@@ -155,7 +156,7 @@ struct iPadTodayView: View {
 
                 Divider().background(Theme.borderSubtle)
 
-                sidePanelContent
+                inspectorPanelContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -183,13 +184,18 @@ struct iPadTodayView: View {
         min(max(width * 0.40, sidePanelMinWidth(for: width)), 540)
     }
 
+    /// The two-pane inspector's body. Neither panel draws its own page title here: the switcher row
+    /// directly above already has the panel's name lit up in it, and drawing it again — plus, in
+    /// the timeline's case, a `SCHEDULE` eyebrow over it — was the same word three times in 120pt.
+    /// `useStandardHeaderHeight` goes with it; it pins the notes header to 120pt so it lines up
+    /// with the panes *beside* it, and in this layout there are none.
     @ViewBuilder
-    private var sidePanelContent: some View {
+    private var inspectorPanelContent: some View {
         switch sidePanel {
         case .notes:
-            iOSNotesPanel(useStandardHeaderHeight: true)
+            iOSNotesPanel(showsTitle: false)
         case .timeline:
-            iOSSchedulePanel()
+            iOSSchedulePanel(showsHeader: false)
         }
     }
 
@@ -254,69 +260,45 @@ struct iPadTodayView: View {
                 }
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: 12) {
-                    todaySummaryStrip
-                        .layoutPriority(1)
+            iOSTaskViewOptionsBar(
+                sortMode: Binding(
+                    get: { sortMode },
+                    set: { sortModeRaw = $0.rawValue }
+                ),
+                showCompleted: $showCompleted,
+                completedCount: completedTodayTasks.count
+            )
 
-                    iOSTaskViewOptionsBar(
-                        sortMode: Binding(
-                            get: { sortMode },
-                            set: { sortModeRaw = $0.rawValue }
-                        ),
-                        showCompleted: $showCompleted,
-                        completedCount: completedTodayTasks.count
-                    )
-                    .frame(width: 232)
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    todaySummaryStrip
-
-                    iOSTaskViewOptionsBar(
-                        sortMode: Binding(
-                            get: { sortMode },
-                            set: { sortModeRaw = $0.rawValue }
-                        ),
-                        showCompleted: $showCompleted,
-                        completedCount: completedTodayTasks.count
-                    )
-                }
-            }
+            // Absent on an unplanned day rather than reading "0 timed · 0 done", so the deck does
+            // not reserve a band for a sentence it has nothing to put in. See
+            // `CadenceTodaySummary.line`.
+            iPadTodaySummaryLine(summary: todaySummary)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 13)
         .background(Theme.bg.opacity(0.36))
     }
 
-    private var todaySummaryStrip: some View {
-        iPadTodaySummaryStrip(summary: todaySummary)
-    }
-
     @ViewBuilder
     private var todayTaskSections: some View {
         if todayTasks.isEmpty && (!showCompleted || completedTodayTasks.isEmpty) {
+            // The same one card the phone shows, not a deck. This was five instructional cards —
+            // "Write notes", "Check timeline", "Completed", "Capture", and a "Plan" card whose text
+            // read "Use the inspector to switch notes and timeline", describing the screen it was
+            // drawn on. An empty day looks empty and says so once.
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    iOSCompactTodayEmptyState()
+                        .cadenceCard(background: Theme.surfaceElevated.opacity(0.36), cornerRadius: Theme.radiusCard)
+
                     #if DEBUG
-                    iPadTodayEmptyReviewDeck(
-                        timedCount: compactScheduleTasks.count,
-                        completedCount: completedTodayTasks.count,
-                        selectedPanel: sidePanelBinding,
-                        sampleDataStatus: sampleDataStatus,
-                        seedSampleData: seedSampleData
-                    )
-                    #else
-                    iPadTodayEmptyReviewDeck(
-                        timedCount: compactScheduleTasks.count,
-                        completedCount: completedTodayTasks.count,
-                        selectedPanel: sidePanelBinding
+                    iOSCompactSampleDataCard(
+                        status: sampleDataStatus,
+                        action: seedSampleData
                     )
                     #endif
-
-                    iPadTodayStarterHints()
                 }
-                .frame(maxWidth: 680, alignment: .leading)
+                .frame(maxWidth: 520, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(.horizontal, 18)
                 .padding(.top, 18)

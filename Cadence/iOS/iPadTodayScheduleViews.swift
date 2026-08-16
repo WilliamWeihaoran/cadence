@@ -3,6 +3,10 @@ import SwiftData
 import SwiftUI
 
 struct iOSSchedulePanel: View {
+    /// Off in Today's two-pane inspector, where `iPadTodayInspectorSwitcher` is the pane's header
+    /// and already has "Timeline" lit up in it. On in the three-pane layout, where this pane sits
+    /// beside two others and its header is the only thing naming it.
+    var showsHeader = true
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
@@ -27,15 +31,25 @@ struct iOSSchedulePanel: View {
         CadenceScheduleSupport.unscheduledTasksByDate(allTasks)[todayKey] ?? []
     }
 
+    /// Drives the one-line hint, and it is about the *grid*, not the day: the hint's job is to say
+    /// that tapping an hour is what fills the grid, so it stays for as long as the grid is empty —
+    /// which is also the only time there is room for it. It goes the moment the first block lands,
+    /// by which point the gesture has been used.
+    private var hasNoBlocks: Bool {
+        scheduledTasks.isEmpty && todayBundles.isEmpty
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 0) {
-                iOSPanelHeader(eyebrow: "Schedule", title: "Timeline")
-                Spacer()
-            }
-            .frame(height: iOSPanelHeaderHeight, alignment: .top)
+            if showsHeader {
+                HStack(spacing: 0) {
+                    iOSPanelHeader(eyebrow: "Schedule", title: "Timeline")
+                    Spacer()
+                }
+                .frame(height: iOSPanelHeaderHeight, alignment: .top)
 
-            Divider().background(Theme.borderSubtle)
+                Divider().background(Theme.borderSubtle)
+            }
 
             if !untimedTodayTasks.isEmpty {
                 iOSScheduleReadyStack(tasks: untimedTodayTasks)
@@ -59,35 +73,37 @@ struct iOSSchedulePanel: View {
                 Divider().background(Theme.borderSubtle.opacity(0.72))
             }
 
-            ZStack {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(CadenceScheduleSupport.calendarStartHour..<CadenceScheduleSupport.calendarEndHour, id: \.self) { hour in
-                            iOSScheduleHourRow(
-                                hour: hour,
-                                tasks: tasks(in: hour),
-                                bundles: bundles(in: hour),
-                                rowHeight: horizontalSizeClass == .regular ? 58 : 48,
-                                selectedStartMin: quickCreateStartMin,
-                                onSelectStart: selectQuickCreateStart
-                            )
-                        }
+            // A plain scroll view, not a `ZStack` with the empty hint floated over it. The hint was
+            // a card laid across the middle of the grid, hiding two hours of rows and their
+            // controls outright — `.allowsHitTesting(false)` kept them tappable but left them
+            // invisible, which is worse than an empty state that is simply not there. It is one
+            // line at the top of the scrolled content now, so it can never cover a row.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if hasNoBlocks {
+                        Text(CadenceTodayPresentationSupport.emptyScheduleHint)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.dim)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                            .padding(.bottom, 14)
                     }
-                    .padding(.trailing, horizontalSizeClass == .regular ? 12 : 8)
-                }
-                .scrollIndicators(.hidden)
 
-                if scheduledTasks.isEmpty && todayBundles.isEmpty && untimedTodayTasks.isEmpty {
-                    iOSScheduleEmptyHint()
-                        .padding(.horizontal, 20)
-                        // The hint is a caption, not a control, and it floats over the hour rows —
-                        // whose "Add" buttons are showing precisely because the schedule is empty,
-                        // i.e. exactly when this card is on screen. Its card background is a
-                        // hit-testable layer, so without this the two or three hours it covers had
-                        // a visible, enabled Add button that could not be tapped.
-                        .allowsHitTesting(false)
+                    ForEach(CadenceScheduleSupport.calendarStartHour..<CadenceScheduleSupport.calendarEndHour, id: \.self) { hour in
+                        iOSScheduleHourRow(
+                            hour: hour,
+                            tasks: tasks(in: hour),
+                            bundles: bundles(in: hour),
+                            rowHeight: horizontalSizeClass == .regular ? 58 : 48,
+                            selectedStartMin: quickCreateStartMin,
+                            onSelectStart: selectQuickCreateStart
+                        )
+                    }
                 }
+                .padding(.trailing, horizontalSizeClass == .regular ? 12 : 8)
             }
+            .scrollIndicators(.hidden)
         }
         .background(Theme.bg)
     }
@@ -153,12 +169,7 @@ private struct iOSScheduleQuickCreateBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .center, spacing: 8) {
-                Image(systemName: "clock.badge.plus")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-                    .frame(width: 28, height: 28)
-                    .background(Theme.blue.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                iOSIconTile(systemImage: "clock.badge.plus", color: Theme.blue, size: 28, iconSize: 12, bordered: false)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Create at \(TimeFormatters.timeString(from: startMin))")
@@ -174,15 +185,19 @@ private struct iOSScheduleQuickCreateBar: View {
 
                 Spacer(minLength: 6)
 
+                // 26pt of plate, 44pt of hit area — the same trick `iOSIconButton` uses, rather
+                // than a 26pt tap target on the control that gets you out of the composer.
                 Button(action: cancel) {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(Theme.dim)
                         .frame(width: 26, height: 26)
                         .background(Theme.surfaceElevated.opacity(0.38))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                        .contentShape(Rectangle())
+                        .iOSExpandedHitArea(9)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.iosPressable)
                 .accessibilityLabel("Cancel timed task")
             }
 
@@ -195,23 +210,24 @@ private struct iOSScheduleQuickCreateBar: View {
                     .submitLabel(.done)
                     .onSubmit(create)
                     .padding(.horizontal, 10)
-                    .frame(height: 34)
+                    .frame(height: 44)
                     .background(Theme.surface.opacity(0.86))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                             .strokeBorder(Theme.borderSubtle.opacity(0.52), lineWidth: 1)
                     }
 
                 Button(action: create) {
                     Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                        .frame(width: 34, height: 34)
-                        .background(trimmedTitle.isEmpty ? Theme.surfaceElevated.opacity(0.42) : Theme.blue.opacity(0.78))
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(trimmedTitle.isEmpty ? Theme.dim : Theme.onColor)
+                        .frame(width: 44, height: 44)
+                        .background(trimmedTitle.isEmpty ? Theme.surfaceElevated.opacity(0.42) : Theme.blue)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.iosPressable)
                 .disabled(trimmedTitle.isEmpty)
                 .accessibilityLabel("Create timed task")
             }
@@ -281,29 +297,55 @@ private struct iOSScheduleHourRow: View {
                     }
                     .padding(.top, 5)
                 } else {
+                    // The empty hour *is* the control. This used to be a visible "+ Add" chip, and
+                    // because every hour of an unplanned day is empty, seventeen identical chips
+                    // stacked down the pane were the loudest thing in it — a column of controls
+                    // shouting over the schedule they were meant to frame. The lane takes the whole
+                    // row as its tap target and draws nothing until it is the hour being created
+                    // in, which is the only one with something to say.
                     Button {
                         onSelectStart(startMin)
                     } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: isSelectedForCreate ? "plus.circle.fill" : "plus")
-                                .font(.system(size: 10, weight: .bold))
-                            Text(isSelectedForCreate ? "Creating here" : "Add")
-                                .font(.system(size: 10, weight: .bold))
-                        }
-                        .foregroundStyle(isSelectedForCreate ? Theme.blue : Theme.dim.opacity(0.58))
-                        .padding(.horizontal, 8)
-                        .frame(height: 24)
-                        .background(isSelectedForCreate ? Theme.blue.opacity(0.12) : Theme.surfaceElevated.opacity(0.18))
-                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        // `Color.clear`, not the marker with a `.frame` on it: an unselected lane's
+                        // marker is an `EmptyView`, which SwiftUI elides from the view tree along
+                        // with the frame and `contentShape` hung off it — the lane laid out at the
+                        // right height and swallowed every tap. A `Color` is a real, hit-testable
+                        // layer at zero visual cost.
+                        Color.clear
+                            .frame(maxWidth: .infinity, minHeight: laneHeight)
+                            .overlay(alignment: .topLeading) { creatingMarker }
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Create timed task at \(hourLabel)")
-                    .padding(.top, 5)
                 }
             }
         }
         .frame(minHeight: rowHeight, alignment: .top)
         .padding(.leading, 4)
+    }
+
+    /// The lane fills the row: rule, the `VStack`'s own 5pt gap, then everything left. Floored at
+    /// the 44pt touch minimum so a shorter row still gives a finger somewhere to land.
+    private var laneHeight: CGFloat {
+        max(44, rowHeight - 6)
+    }
+
+    @ViewBuilder
+    private var creatingMarker: some View {
+        if isSelectedForCreate {
+            HStack(spacing: 6) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 10, weight: .bold))
+                Text("Creating here")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .foregroundStyle(Theme.blue)
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(Theme.blue.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl - 3, style: .continuous))
+        }
     }
 
     private var hourLabel: String {
@@ -569,28 +611,5 @@ private struct iOSReadyScheduleSlot: Identifiable {
         iOSReadyScheduleSlot(title: "1 PM", startMin: 13 * 60),
         iOSReadyScheduleSlot(title: "4 PM", startMin: 16 * 60)
     ]
-}
-
-private struct iOSScheduleEmptyHint: View {
-    var body: some View {
-        VStack(spacing: 9) {
-            Image(systemName: "calendar.badge.clock")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-
-            Text("No timed blocks")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.text)
-
-            Text("Scheduled tasks and bundles appear here.")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Theme.dim)
-                .multilineTextAlignment(.center)
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
-        .frame(maxWidth: .infinity)
-        .cadenceCard(background: Theme.surface.opacity(0.72), cornerRadius: Theme.radiusCard)
-    }
 }
 #endif

@@ -1,42 +1,26 @@
 import SwiftUI
 
-struct CadenceTodaySummaryMetric: Identifiable {
-    let id: String
-    let value: Int
-    let label: String
-    let systemImage: String
-    let tint: Color
-}
-
 struct CadenceTodaySummary: Hashable {
     let activeCount: Int
     let timedCount: Int
     let completedCount: Int
 
-    var metrics: [CadenceTodaySummaryMetric] {
-        [
-            CadenceTodaySummaryMetric(
-                id: "active",
-                value: activeCount,
-                label: "Active",
-                systemImage: "checklist",
-                tint: Theme.blue
-            ),
-            CadenceTodaySummaryMetric(
-                id: "timed",
-                value: timedCount,
-                label: "Timed",
-                systemImage: "clock.fill",
-                tint: Theme.purple
-            ),
-            CadenceTodaySummaryMetric(
-                id: "done",
-                value: completedCount,
-                label: "Done",
-                systemImage: "checkmark.circle.fill",
-                tint: Theme.green
-            )
-        ]
+    /// The one quiet line that says what today holds, in the treatment
+    /// `CadenceCalendarDaySummary.line` settled on: zeros omitted, `nil` when there is nothing to
+    /// say, rendered as a single `Theme.dim` line rather than a rank of tinted chips.
+    ///
+    /// It replaced three `Theme.blue`/`Theme.purple`/`Theme.green` capsules reading
+    /// "0 Active · 0 Timed · 0 Done" plus a second two-chip copy of the first two in the header —
+    /// so an empty day, which is most days before it is planned, said "0" five times in three hues
+    /// beside a header badge already reading 0.
+    ///
+    /// `activeCount` is deliberately absent: the header badge beside this line *is* the active
+    /// count, and repeating it here is the duplication this replaced.
+    var line: String? {
+        var parts: [String] = []
+        if timedCount > 0 { parts.append("\(timedCount) timed") }
+        if completedCount > 0 { parts.append("\(completedCount) done") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 
@@ -82,5 +66,10 @@ enum CadenceTodayPresentationSupport {
     static let emptyTitle = "Nothing planned for today"
     static let emptyCompactTitle = "Nothing planned"
     static let emptySubtitle = "Add a task above or schedule one from Inbox."
-    static let emptyReviewSubtitle = "Add a task above, schedule one from Inbox, or seed review tasks to check the layout."
+
+    /// The schedule pane's whole empty state: one line, and the one line teaches the gesture.
+    ///
+    /// It was a floating card — glyph, heading, explanation — laid over the middle of the hour
+    /// grid in a `ZStack`, covering two hours of rows. See `iOSSchedulePanel`.
+    static let emptyScheduleHint = "No timed blocks yet — tap an hour to schedule one."
 }

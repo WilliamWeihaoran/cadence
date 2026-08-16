@@ -32,6 +32,10 @@ struct iOSNotesPanel: View {
     // editor's own `isFocused` binding is what drives — and observes — the text view.
     @State private var isEditorFocused = false
     var useStandardHeaderHeight = false
+    /// Off in Today's two-pane inspector, where `iPadTodayInspectorSwitcher` is the pane's header
+    /// and already has "Notes" lit up in it — the same duplication the title itself was fixed for.
+    /// The kind tabs stay either way; they are the only thing in this row that is not a restatement.
+    var showsTitle = true
 
     private var activeTab: CadenceCoreNoteTab {
         get { CadenceCoreNoteTab(rawValue: activeTabRaw) ?? .today }
@@ -109,6 +113,7 @@ struct iOSNotesPanel: View {
     private var notesHeader: some View {
         VStack(alignment: .leading, spacing: 0) {
             iOSNotesHeader(
+                showsTitle: showsTitle,
                 tabs: CadenceCoreNoteTab.allCases.map { tab in
                     iOSNotesHeaderTab(
                         id: tab.rawValue,
@@ -163,8 +168,27 @@ struct iOSNotesPanel: View {
         CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
     }
 
+    /// Clearing focus first is load-bearing, not tidiness.
+    ///
+    /// `iOSMarkdownEditingSurface` ignores external writes to its `text` binding while the editor
+    /// is focused — it has to, or the debounced commit would fight the keystrokes it just saved.
+    /// A SwiftUI `Menu` does **not** resign the text view's first responder, so picking a template
+    /// with the caret in the editor wrote `note.content` into a binding nobody was reading: the
+    /// template vanished, and the stale draft then committed back over it. Verified on device —
+    /// picking "Daily Plan" with the editor focused produced an empty note and "0 words".
+    ///
+    /// Dropping focus commits the draft and lets the surface accept the write on the next runloop
+    /// turn, so the template lands on top of what the user had actually typed.
     private func apply(_ template: NoteTemplate, to note: Note) {
-        CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
+        guard isEditorFocused else {
+            CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
+            return
+        }
+
+        isEditorFocused = false
+        DispatchQueue.main.async {
+            CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
+        }
     }
 
     private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
@@ -353,8 +377,27 @@ struct iOSCompactNotesView: View {
         CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
     }
 
+    /// Clearing focus first is load-bearing, not tidiness.
+    ///
+    /// `iOSMarkdownEditingSurface` ignores external writes to its `text` binding while the editor
+    /// is focused — it has to, or the debounced commit would fight the keystrokes it just saved.
+    /// A SwiftUI `Menu` does **not** resign the text view's first responder, so picking a template
+    /// with the caret in the editor wrote `note.content` into a binding nobody was reading: the
+    /// template vanished, and the stale draft then committed back over it. Verified on device —
+    /// picking "Daily Plan" with the editor focused produced an empty note and "0 words".
+    ///
+    /// Dropping focus commits the draft and lets the surface accept the write on the next runloop
+    /// turn, so the template lands on top of what the user had actually typed.
     private func apply(_ template: NoteTemplate, to note: Note) {
-        CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
+        guard isEditorFocused else {
+            CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
+            return
+        }
+
+        isEditorFocused = false
+        DispatchQueue.main.async {
+            CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
+        }
     }
 
     private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
@@ -533,6 +576,7 @@ struct iOSNotesHeaderTab: Identifiable {
 /// phone, and a strip that has to be scrolled sideways to find a tab is the problem this replaced.
 private struct iOSNotesHeader: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    var showsTitle = true
     let tabs: [iOSNotesHeaderTab]
     /// Set on a pushed compact screen whose navigation bar is hidden. See
     /// `iOSHidesCompactNavigationBar()`.
@@ -552,13 +596,17 @@ private struct iOSNotesHeader: View {
 
             // A constant word, so it does not need the 21pt the panel titles that carry content
             // use — and the narrowest host for this row is the 280pt iPad notes pane.
-            Text("Notes")
-                .font(.system(size: 17, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-                .fixedSize()
+            if showsTitle {
+                Text("Notes")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
 
-            Spacer(minLength: 8)
+            if showsTitle {
+                Spacer(minLength: 8)
+            }
 
             HStack(spacing: iOSNotesTabMetrics.spacing) {
                 ForEach(tabs) { tab in
@@ -568,6 +616,12 @@ private struct iOSNotesHeader: View {
                         action: tab.select
                     )
                 }
+            }
+
+            // Without the title the strip is the only thing on the row, so it leads rather than
+            // hanging off the trailing edge with nothing opposite it.
+            if !showsTitle {
+                Spacer(minLength: 0)
             }
         }
         .padding(.horizontal, isRegularWidth ? 14 : 12)

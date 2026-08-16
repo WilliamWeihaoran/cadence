@@ -89,7 +89,14 @@ struct iOSCompactTodayView: View {
 
 }
 
-private struct iOSCompactTodayEmptyState: View {
+/// The one Today empty state, on both widths.
+///
+/// iPad used to run its own: a card, then a row of three tinted "Write notes" / "Check timeline" /
+/// "Completed" tiles, then two more "Capture" / "Plan" hint cards — five instructional cards
+/// standing in for content, one of which ("Plan — Use the inspector to switch notes and timeline")
+/// described the page it was drawn on. That is the mistake the deleted `iOSCompactHomeView` grid
+/// made. An empty day looks empty and says so once, in `Theme.dim`.
+struct iOSCompactTodayEmptyState: View {
     var body: some View {
         HStack(alignment: .center, spacing: 13) {
             Image(systemName: "checkmark.circle")
@@ -121,8 +128,10 @@ private struct iOSCompactTodayEmptyState: View {
     }
 }
 
+/// Debug-only, on both widths — the seeding affordance cannot ship. iPad had its own "Samples"
+/// button welded into its empty-state card; it is this card now.
 #if DEBUG
-private struct iOSCompactSampleDataCard: View {
+struct iOSCompactSampleDataCard: View {
     let status: String?
     let action: () -> Void
 

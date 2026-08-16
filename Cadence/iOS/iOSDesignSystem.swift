@@ -350,6 +350,11 @@ struct iOSSegmentedPill: View {
     let isSelected: Bool
     var tint: Color = Theme.blue
     var minWidth: CGFloat = 58
+    /// For a segment that genuinely cannot be chosen at the current size — Today's three-pane "Mac"
+    /// layout below the width its three columns fit in. It reads as unavailable instead of
+    /// accepting a tap and leaving the screen exactly as it was.
+    var isEnabled = true
+    var accessibilityHint: String? = nil
     let action: () -> Void
 
     var body: some View {
@@ -368,15 +373,17 @@ struct iOSSegmentedPill: View {
             // `Theme.muted`, not `Theme.dim`: an unselected segment is a label you are meant to
             // read and tap. `dim` (#71717a) on `Theme.bg` lands at roughly 4.1:1 at 12pt, under
             // the 4.5:1 floor for normal text — `dim` is for genuinely de-emphasised content.
-            .foregroundStyle(isSelected ? tint : Theme.muted)
+            .foregroundStyle(isEnabled ? (isSelected ? tint : Theme.muted) : Theme.dim.opacity(0.45))
             .padding(.horizontal, 10)
             .frame(minWidth: minWidth, minHeight: 38)
-            .background(shape.fill(isSelected ? tint.opacity(0.14) : Color.clear))
-            .overlay(shape.strokeBorder(isSelected ? tint.opacity(0.26) : Color.clear, lineWidth: 1))
+            .background(shape.fill(isSelected && isEnabled ? tint.opacity(0.14) : Color.clear))
+            .overlay(shape.strokeBorder(isSelected && isEnabled ? tint.opacity(0.26) : Color.clear, lineWidth: 1))
             .contentShape(shape)
         }
         .buttonStyle(.iosPressable)
+        .disabled(!isEnabled)
         .accessibilityLabel(title)
+        .accessibilityHint(accessibilityHint ?? "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
