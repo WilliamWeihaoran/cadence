@@ -43,6 +43,12 @@ enum CadenceCoreNoteTab: String, CaseIterable, Identifiable {
 /// two that do not fit beside the title on a 402pt phone, so they read "Events" and "Pad" here.
 /// **Only the label changes.** `NoteKind.meeting`'s raw value is persisted in `Note.kindRaw` and
 /// is untouched by this type.
+///
+/// The first two read "Daily" and "Weekly", not "Today" and "Week". They used to name a moment
+/// because the surface only had one: both notes were pinned to the current day. Now that the
+/// header carries a date picker, a tab reading "Today" could sit lit up beside a title reading
+/// "Aug 13" — the header contradicting itself. The tab names the *kind* of note; the date beside
+/// it names which one. This is also what the macOS Notes page has always called them.
 enum CadenceMobileNotesTab: String, CaseIterable, Identifiable {
     case today
     case week
@@ -57,8 +63,8 @@ enum CadenceMobileNotesTab: String, CaseIterable, Identifiable {
 
     var shortLabel: String {
         switch self {
-        case .today: return "Today"
-        case .week: return "Week"
+        case .today: return "Daily"
+        case .week: return "Weekly"
         case .events: return "Events"
         case .notepad: return "Pad"
         }
@@ -98,20 +104,37 @@ struct CadenceCoreNoteState {
 }
 
 enum CadenceCoreNoteSupport {
-    static func loadOrCreateCoreNotes(in modelContext: ModelContext) -> CadenceCoreNoteState {
+    /// Loads the three standing notes for a given day.
+    ///
+    /// `dayKey` defaulted to today because for a long time it *was* today: the day was hardcoded
+    /// here, which is what pinned the whole mobile Notes surface to the current date — no picker,
+    /// no arrows, no way to reach yesterday except by searching for text you had already written.
+    /// macOS had a calendar jump the whole time (`NotesView.NotesDateJumpButton`). The default
+    /// stays so the callers that genuinely mean "now" — the macOS Today panel — read as before.
+    ///
+    /// The week is derived from the day rather than passed separately, so the two can never
+    /// disagree about which week is on screen.
+    static func loadOrCreateCoreNotes(
+        in modelContext: ModelContext,
+        dayKey: String = DateFormatters.todayKey()
+    ) -> CadenceCoreNoteState {
         CadenceCoreNoteState(
-            today: try? NoteMigrationService.dailyNote(for: DateFormatters.todayKey(), in: modelContext),
-            week: try? NoteMigrationService.weeklyNote(for: DateFormatters.currentWeekKey(), in: modelContext),
+            today: try? NoteMigrationService.dailyNote(for: dayKey, in: modelContext),
+            week: try? NoteMigrationService.weeklyNote(for: CadenceNoteDateNavigation.weekKey(forDayKey: dayKey), in: modelContext),
             notepad: try? NoteMigrationService.permanentNote(in: modelContext)
         )
     }
 
-    static func note(for tab: CadenceCoreNoteTab, in modelContext: ModelContext) throws -> Note {
+    static func note(
+        for tab: CadenceCoreNoteTab,
+        in modelContext: ModelContext,
+        dayKey: String = DateFormatters.todayKey()
+    ) throws -> Note {
         switch tab {
         case .today:
-            return try NoteMigrationService.dailyNote(for: DateFormatters.todayKey(), in: modelContext)
+            return try NoteMigrationService.dailyNote(for: dayKey, in: modelContext)
         case .week:
-            return try NoteMigrationService.weeklyNote(for: DateFormatters.currentWeekKey(), in: modelContext)
+            return try NoteMigrationService.weeklyNote(for: CadenceNoteDateNavigation.weekKey(forDayKey: dayKey), in: modelContext)
         case .notepad:
             return try NoteMigrationService.permanentNote(in: modelContext)
         }

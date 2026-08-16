@@ -66,6 +66,14 @@ Four strands running in parallel, three of them in agents.
   Daily (`:105`) and Weekly (`:197`) have it, and weekly resolves a picked *day* to its week. The
   two arbitrary-key call sites to copy are `NotesView.swift:161` and `:256`. Note the picker's range
   is bounded to ±24 months (`CadenceDatePicker.swift:94`). Largest instance of T-32 found so far.
+
+  **Decided 2026-08-17.** *Placement:* the header title becomes the date and **is** the control —
+  `Aug 17 ⌄` on Daily, `Aug 17–23 ⌄` on Weekly, falling back to the constant word `Notes` on Pad and
+  Events, which have no date. This was chosen over a second row and over a second icon button
+  because the phone row is full at 390pt (back + "Notes" + four tabs + template button), and because
+  a header whose title never changes is spending a slot on nothing. *Scope:* jump-to-date only — no
+  browse-by-date list. Picking a day you have never written on must **create** that day's note, which
+  is the thing Search cannot do.
 - [T-05] **Drag-to-create from the add button** — drag the iPad corner `+` (and the iPhone tab-bar
   `+`) onto a section, list or date; the created task inherits that destination's attributes.
   `CadenceTaskDisplayGroup` already carries a `dropKey`, which is the hook.
@@ -77,6 +85,16 @@ Four strands running in parallel, three of them in agents.
 _Nothing open._
 
 ## Open — known, unscheduled
+
+- [T-33] **Markdown tables do not render correctly in Notes.** Reported 2026-08-17; no reproduction
+  case captured yet, so the first job is to pin down *which* surface and *what* "incorrectly" means
+  — the macOS AppKit editor, the iOS editor, or both, and whether it is the parse, the layout, or
+  the caret behaviour inside a table. Where to look: table logic belongs in
+  `Cadence/Services/Markdown*Support.swift` (which has test coverage) and **not** in `macOS/Editor/`,
+  which is only the NSTextView lifecycle and drawing layer. Note tables are a rendered block, so
+  they are neighbours of the code-block and task-embed work — both had the same underlying shape
+  (characters hidden behind an attachment) and both needed the caret-reveal machinery from `c9fb369`.
+  Related: [T-26].
 
 - [T-32] **Feature-consistency scan across platforms.** Added 2026-08-17 at the user's direction;
   **do not run it yet.** The goal state is that no platform has a feature another lacks — macOS,

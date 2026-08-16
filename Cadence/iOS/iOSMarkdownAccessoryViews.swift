@@ -470,6 +470,15 @@ struct iOSMarkdownSlashCommandStrip: View {
 struct iOSMarkdownFormatToolbar: View {
     let apply: (MarkdownFormatCommand) -> Void
     let chooseImages: () -> Void
+    /// Set to put the note's template menu in this row rather than in the page header.
+    ///
+    /// Applying a template inserts markdown into the note, which is what every other control here
+    /// does — so this is where it belongs, and on the phone it is also the only place it fits: the
+    /// Notes header spends its row on the date, four tabs and a back control, and a week range
+    /// (`Aug 17–23`) truncated with the button beside it. This row is a horizontal scroller, so an
+    /// extra control costs it nothing.
+    var templateKind: NoteKind? = nil
+    var applyTemplate: ((NoteTemplate) -> Void)? = nil
 
     /// One touch target plus the row's own padding.
     static let height: CGFloat = iOSMarkdownChromeMetrics.touchTarget + 12
@@ -555,6 +564,10 @@ struct iOSMarkdownFormatToolbar: View {
                 }
                 .buttonStyle(.iosPressable)
                 .accessibilityLabel("Image")
+
+                if let templateKind, let applyTemplate {
+                    iOSNoteTemplateMenu(kind: templateKind, compact: true, apply: applyTemplate)
+                }
 
                 if isCompact {
                     Menu {

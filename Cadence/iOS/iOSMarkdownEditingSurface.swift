@@ -24,6 +24,10 @@ struct iOSMarkdownEditingSurface: View {
     var allowsEmbeddedTaskCreation = true
     var embeddedTaskArea: Area? = nil
     var embeddedTaskProject: Project? = nil
+    /// Passed straight through to `iOSMarkdownFormatToolbar`; see the note there for why the
+    /// template menu belongs in the format row rather than a page header.
+    var templateKind: NoteKind? = nil
+    var applyTemplate: ((NoteTemplate) -> Void)? = nil
     @State private var draftText = ""
     @State private var hasLoadedDraft = false
     @State private var pendingCommitWorkItem: DispatchWorkItem?
@@ -92,11 +96,12 @@ struct iOSMarkdownEditingSurface: View {
             : nil
 
         return VStack(spacing: 0) {
-            iOSMarkdownFormatToolbar { command in
-                applyToolbarCommand(command)
-            } chooseImages: {
-                chooseImages()
-            }
+            iOSMarkdownFormatToolbar(
+                apply: { command in applyToolbarCommand(command) },
+                chooseImages: { chooseImages() },
+                templateKind: templateKind,
+                applyTemplate: applyTemplate
+            )
 
             if let context = referenceCompletionContext {
                 iOSMarkdownReferenceCompletionStrip(

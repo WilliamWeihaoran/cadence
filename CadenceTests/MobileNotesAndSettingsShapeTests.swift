@@ -2,15 +2,17 @@ import Foundation
 import Testing
 @testable import Cadence
 
-/// The mobile Notes header collapsed from three stacked rows into one: back control, the constant
-/// word "Notes", and the tab strip right-aligned on the same row. That only works while the labels
-/// stay short, so the width budget is asserted rather than eyeballed.
+/// The mobile Notes header collapsed from three stacked rows into one: the title, and the tab
+/// strip right-aligned beside it. That only works while the labels stay short, so the width budget
+/// is asserted rather than eyeballed — and it got tighter, not looser, when the title stopped being
+/// the constant word "Notes" and became the note's date.
 @MainActor
 struct MobileNotesTabLabelTests {
 
-    /// Measured against the narrowest supported phone (402pt): back control + title + horizontal
-    /// padding costs roughly 90pt, and each tab is its label at 13pt semibold plus 24pt of padding
-    /// with a 44pt floor. Six characters per label keeps all four tabs inside what is left.
+    /// Measured against the narrowest supported phone (390pt). The title is now a date, and its
+    /// widest reading is a week range (`Aug 17–23`, ~80pt at 15pt bold) rather than the ~52pt
+    /// "Notes" this budget was first set against; each tab is its label at 13pt semibold plus 12pt
+    /// of padding with a 44pt floor. Six characters per label is what still fits.
     @Test func everyShortLabelFitsBesideTheTitleOnOneRow() {
         for tab in CadenceMobileNotesTab.allCases {
             #expect(tab.shortLabel.count <= CadenceMobileNotesTab.shortLabelCharacterBudget)
@@ -29,6 +31,20 @@ struct MobileNotesTabLabelTests {
     @Test func theTwoLongLabelsAreTheShortenedOnes() {
         #expect(CadenceMobileNotesTab.events.shortLabel == "Events")
         #expect(CadenceMobileNotesTab.notepad.shortLabel == "Pad")
+    }
+
+    /// The dated tabs name a *kind*, not a moment.
+    ///
+    /// They read "Today" and "Week" while both notes were pinned to the current day and there was
+    /// nothing else they could be showing. The header has a date picker now, so a tab lit up as
+    /// "Today" could sit beside a title reading "Aug 13" — the header disagreeing with itself.
+    @Test func theDatedTabsNameTheKindRatherThanTheMoment() {
+        #expect(CadenceMobileNotesTab.today.shortLabel == "Daily")
+        #expect(CadenceMobileNotesTab.week.shortLabel == "Weekly")
+        for label in CadenceMobileNotesTab.allCases.map(\.shortLabel) {
+            #expect(label != "Today")
+            #expect(label != "Week")
+        }
     }
 
     /// Renaming a *label* must not touch the persisted raw value behind it. `NoteKind.meeting` is

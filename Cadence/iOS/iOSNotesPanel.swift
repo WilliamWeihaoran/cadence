@@ -18,6 +18,7 @@ let iOSNotesPanelHeaderHeight: CGFloat = 64
 struct iOSNotesPanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var todayNote: Note?
@@ -31,6 +32,12 @@ struct iOSNotesPanel: View {
     // `@FocusState` had no view to move focus to and could not report focus back either. The
     // editor's own `isFocused` binding is what drives — and observes — the text view.
     @State private var isEditorFocused = false
+    /// Which day the Daily and Weekly tabs are showing. Deliberately **not** `@AppStorage`: a
+    /// stored day would reopen the app on whatever date you last browsed to, which for a daily
+    /// note is a trap — you would write today's entry into a week-old page. It resets to today
+    /// every launch, and `scenePhase` re-reads from it rather than resetting it, so a session that
+    /// is browsing stays where it is.
+    @State private var selectedDayKey = DateFormatters.todayKey()
     var useStandardHeaderHeight = false
     /// Off in Today's two-pane inspector, where `iPadTodayInspectorSwitcher` is the pane's header
     /// and already has "Notes" lit up in it — the same duplication the title itself was fixed for.
@@ -40,6 +47,15 @@ struct iOSNotesPanel: View {
     private var activeTab: CadenceCoreNoteTab {
         get { CadenceCoreNoteTab(rawValue: activeTabRaw) ?? .today }
         set { activeTabRaw = newValue.rawValue }
+    }
+
+    /// The template menu sits in the header where there is room for it, and in the editor's format
+    /// row where there is not. The phone's header carries the date, four tabs and a back control on
+    /// one 390pt row; the widest thing the date can say is a week range, and it truncated with the
+    /// button beside it. The format row is a horizontal scroller, and applying a template is an
+    /// insertion like everything else in it.
+    private var showsHeaderTemplateMenu: Bool {
+        horizontalSizeClass == .regular
     }
 
     var body: some View {
@@ -58,7 +74,9 @@ struct iOSNotesPanel: View {
                     placeholder: "Start writing...",
                     referenceNotes: allNotes,
                     referenceTasks: allTasks,
-                    onOpenReference: openMarkdownReference
+                    onOpenReference: openMarkdownReference,
+                    templateKind: showsHeaderTemplateMenu ? nil : activeTab.noteKind,
+                    applyTemplate: showsHeaderTemplateMenu ? nil : { apply($0, to: note) }
                 )
                 .id(note.id)
             } else {
@@ -75,6 +93,14 @@ struct iOSNotesPanel: View {
         }
         .onChange(of: activeTab) { _, _ in
             isEditorFocused = false
+        }
+        // Dropping focus first is the same rule `apply(_:to:)` spells out: the editing surface
+        // ignores external writes to its text binding while focused, and swapping to another day's
+        // note is exactly such a write. Without this, jumping dates with the caret in the editor
+        // would show the old day's text over the new day's note.
+        .onChange(of: selectedDayKey) { _, _ in
+            isEditorFocused = false
+            loadNotes()
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
@@ -104,9 +130,15 @@ struct iOSNotesPanel: View {
                         label: tab.shortLabel,
                         isSelected: activeTab == tab
                     ) { activeTabRaw = tab.rawValue }
+                },
+                title: {
+                    iOSNotesDateTitle(
+                        tab: CadenceMobileNotesTab(coreTab: activeTab),
+                        dayKey: $selectedDayKey
+                    )
                 }
             ) {
-                if let note = selectedNote {
+                if showsHeaderTemplateMenu, let note = selectedNote {
                     iOSNoteTemplateMenu(kind: activeTab.noteKind, compact: true) { template in
                         apply(template, to: note)
                     }
@@ -126,7 +158,7 @@ struct iOSNotesPanel: View {
     }
 
     private func loadNotes() {
-        let snapshot = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext)
+        let snapshot = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext, dayKey: selectedDayKey)
         todayNote = snapshot.today
         weekNote = snapshot.week
         permanentNote = snapshot.notepad
@@ -188,6 +220,8 @@ struct iOSCompactNotesView: View {
     @State private var selectedReferenceTask: AppTask?
     /// `@State`, not `@FocusState` — see `iOSNotesPanel`.
     @State private var isEditorFocused = false
+    /// Not persisted, for the reason given in `iOSNotesPanel`.
+    @State private var selectedDayKey = DateFormatters.todayKey()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -202,9 +236,14 @@ struct iOSCompactNotesView: View {
                         isSelected: activePage == page
                     ) { activePage = page }
                 },
-                onBack: isCompactWidth && !isCompactTabRoot ? { dismiss() } : nil
+                onBack: isCompactWidth && !isCompactTabRoot ? { dismiss() } : nil,
+                title: {
+                    iOSNotesDateTitle(tab: activePage, dayKey: $selectedDayKey)
+                }
             ) {
-                if let coreTab = activePage.coreTab, let note = selectedCoreNote {
+                // Regular width only — see `iOSNotesPanel.showsHeaderTemplateMenu`. At compact
+                // width it rides in the editor's format row instead.
+                if !isCompactWidth, let coreTab = activePage.coreTab, let note = selectedCoreNote {
                     iOSNoteTemplateMenu(kind: coreTab.noteKind, compact: true) { template in
                         apply(template, to: note)
                     }
@@ -230,6 +269,11 @@ struct iOSCompactNotesView: View {
         }
         .onChange(of: activePage) { _, _ in
             isEditorFocused = false
+        }
+        // See the same handler in `iOSNotesPanel` for why focus is dropped before the reload.
+        .onChange(of: selectedDayKey) { _, _ in
+            isEditorFocused = false
+            loadNotes()
         }
         .sheet(item: $selectedMeetingNote) { note in
             let event = calendarManager.event(withIdentifier: note.calendarEventID)
@@ -259,7 +303,9 @@ struct iOSCompactNotesView: View {
                 placeholder: "Start writing...",
                 referenceNotes: allNotes,
                 referenceTasks: allTasks,
-                onOpenReference: openMarkdownReference
+                onOpenReference: openMarkdownReference,
+                templateKind: isCompactWidth ? activePage.coreTab?.noteKind : nil,
+                applyTemplate: isCompactWidth ? { apply($0, to: note) } : nil
             )
             .id(note.id)
         } else {
@@ -299,7 +345,7 @@ struct iOSCompactNotesView: View {
     }
 
     private func loadNotes() {
-        let snapshot = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext)
+        let snapshot = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext, dayKey: selectedDayKey)
         todayNote = snapshot.today
         weekNote = snapshot.week
         permanentNote = snapshot.notepad
@@ -506,13 +552,20 @@ struct iOSNotesHeaderTab: Identifiable {
 /// saying one thing, over two rows. The strip stays a plain row rather than a scroller: the labels
 /// (`CadenceMobileNotesTab.shortLabel`) are budgeted to fit beside the title on the narrowest
 /// phone, and a strip that has to be scrolled sideways to find a tab is the problem this replaced.
-private struct iOSNotesHeader<Trailing: View>: View {
+///
+/// The title is now the *date* on the two dated tabs, and it is also the control that changes it —
+/// see `iOSNotesDateTitle`. That is the only place it could go: at 390pt this row already holds a
+/// back control, a title, four tabs and the template button, so a second button or a second row
+/// were both worse than reusing the slot that was spending itself on a word that never changed.
+private struct iOSNotesHeader<Title: View, Trailing: View>: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     var showsTitle = true
     let tabs: [iOSNotesHeaderTab]
     /// Set on a pushed compact screen whose navigation bar is hidden. See
     /// `iOSHidesCompactNavigationBar()`.
     var onBack: (() -> Void)? = nil
+    /// The leading title — a date button on Daily and Weekly, the word "Notes" elsewhere.
+    @ViewBuilder var title: () -> Title
     /// The template control. It had a row of its own — a ~54pt band holding one 34pt button at the
     /// trailing edge, left behind when the Live/Edit/Preview picker that shared it was removed.
     /// A row existing to hold a single button is the header saying nothing twice as tall.
@@ -530,17 +583,14 @@ private struct iOSNotesHeader<Trailing: View>: View {
                     .padding(.trailing, -4)
             }
 
-            // A constant word, so it does not need the 21pt the panel titles that carry content
-            // use — and the narrowest host for this row is the 280pt iPad notes pane.
             if showsTitle {
-                Text("Notes")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                    .fixedSize()
-            }
+                // Same priority as the tab strip, and both above the `Spacer`. Without this the
+                // spacer — greedy by nature, and at the default priority the title also had —
+                // claimed the slack first and squeezed a title that had 25pt of room going spare:
+                // the week range rendered "Aug 17…" on a row that was not actually full.
+                title()
+                    .layoutPriority(1)
 
-            if showsTitle {
                 Spacer(minLength: 8)
             }
 
@@ -549,10 +599,23 @@ private struct iOSNotesHeader<Trailing: View>: View {
                     iOSQuietTabButton(
                         title: tab.label,
                         isSelected: tab.isSelected,
+                        horizontalPadding: isRegularWidth
+                            ? iOSNotesTabMetrics.horizontalPadding
+                            : iOSNotesTabMetrics.compactHorizontalPadding,
                         action: tab.select
                     )
                 }
             }
+            // `fixedSize`, not just a layout priority. Each tab is a `.frame(minWidth:)` with no
+            // maximum — a flexible view — so an `HStack` will happily hand the strip less than its
+            // ideal and let four labels truncate to "To… W… Ev… Pad" while 40pt of the row sat
+            // unused in the spacer. Priority alone did not fix that; refusing to compress does.
+            //
+            // The strip names the destinations and the title names one date, so if the row ever is
+            // genuinely over budget the date is the one that may shorten: "Aug 17" going to "Aug…"
+            // costs a glance, a tab going to "Eve…" costs the label its meaning.
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(1)
 
             // Without the title the strip is the only thing on the row, so it leads rather than
             // hanging off the trailing edge with nothing opposite it.
@@ -568,6 +631,156 @@ private struct iOSNotesHeader<Trailing: View>: View {
     }
 }
 
+/// The Notes header's leading title: the date on Daily and Weekly, the constant word on the two
+/// tabs that have no date, and on Daily/Weekly it is also the button that changes the date.
+///
+/// **This is the whole date-navigation feature on iOS and iPadOS.** Before it, both surfaces went
+/// through `CadenceCoreNoteSupport.loadOrCreateCoreNotes`, which hardcoded `todayKey()` — the only
+/// way to reach an older daily note was Search, which finds a note only if you had already written
+/// something in it. macOS has had a calendar jump the whole time
+/// (`NotesView.NotesDateJumpButton`); this is the same capability in the space a phone actually has.
+///
+/// Picking a day you have never used **creates** that day's note, because `dailyNote(for:)` does.
+/// That is deliberate and matches macOS: an empty note for a browsed day is invisible everywhere it
+/// would matter, since the note lists filter to notes with content
+/// (`NotesListVisibilitySupport`).
+struct iOSNotesDateTitle: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    let tab: CadenceMobileNotesTab
+    /// The constant word to fall back to on a tab with no date.
+    var fallback: String = "Notes"
+    @Binding var dayKey: String
+
+    @State private var isOpen = false
+    @State private var viewMonth = Date()
+
+    /// 15 on the phone, where the widest label this can hold is a week range — `Aug 10–16`, about
+    /// 88pt at 17pt bold against roughly 84pt of room once the tabs and the template button have
+    /// taken theirs. At 17 it truncated to "Aug 1…", which names no week at all. The constant-word
+    /// fallback keeps 17: "Notes" fits either way, and the two never appear together.
+    private var fontSize: CGFloat {
+        horizontalSizeClass == .regular ? 17 : 15
+    }
+
+    private var label: String? {
+        CadenceNoteDateNavigation.title(for: tab, dayKey: dayKey)
+    }
+
+    /// The picker's selection, as a `Date`. `MonthCalendarPanel` speaks `Date`; storage speaks
+    /// `"yyyy-MM-dd"`. Converting in the binding rather than holding a second `@State` date is what
+    /// keeps them from drifting apart — there is one source of truth and it is the key.
+    private var selection: Binding<Date> {
+        Binding(
+            get: { DateFormatters.date(from: dayKey) ?? Date() },
+            set: { dayKey = DateFormatters.dateKey(from: $0) }
+        )
+    }
+
+    var body: some View {
+        if let label {
+            Button {
+                syncViewMonth()
+                isOpen = true
+            } label: {
+                HStack(spacing: 4) {
+                    Text(label)
+                        .font(.system(size: fontSize, weight: .bold))
+                        // Blue when you are looking at some other day, so the header itself says
+                        // you have navigated away — otherwise a past note is indistinguishable
+                        // from today's at a glance, and you can write into the wrong day.
+                        .foregroundStyle(isCurrent ? Theme.text : Theme.blue)
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(isCurrent ? Theme.dim : Theme.blue)
+                }
+                // Deliberately **not** `.fixedSize()`, unlike the constant-word fallback below: the
+                // tab strip has the higher layout priority, so if the row runs out of room the
+                // date is what gives ground. `fixedSize` here would make it refuse, and an `HStack`
+                // does not shrink a view that refuses — it overflows and clips.
+                .lineLimit(1)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.cadencePlain)
+            .accessibilityLabel(tab == .week ? "Week of \(label). Choose a week" : "\(label). Choose a date")
+            // `.top`, not the `.bottom` every other `CadenceDatePicker` call site uses. The arrow
+            // edge names the popover's own edge, so `.bottom` puts the panel *above* its anchor —
+            // fine for a control in the middle of a form, wrong for one in the top chrome, where
+            // it opened off the top of the screen with only its arrow visible.
+            .popover(isPresented: $isOpen, arrowEdge: .top) {
+                iOSNotesDatePopover(tab: tab, dayKey: $dayKey, selection: selection, viewMonth: $viewMonth, isOpen: $isOpen)
+                    // Same reason `CadenceDatePicker` sets it: compact width would otherwise
+                    // promote a 256×294 calendar to a full-height sheet.
+                    .presentationCompactAdaptation(.popover)
+            }
+        } else {
+            Text(fallback)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .fixedSize()
+        }
+    }
+
+    private var isCurrent: Bool {
+        CadenceNoteDateNavigation.isCurrentPeriod(tab: tab, dayKey: dayKey)
+    }
+
+    private func syncViewMonth() {
+        var comps = Calendar.current.dateComponents([.year, .month], from: selection.wrappedValue)
+        comps.day = 1
+        viewMonth = Calendar.current.date(from: comps) ?? Date()
+    }
+}
+
+/// The calendar behind the header date, plus the one shortcut that matters here.
+///
+/// Deliberately *not* `CadenceQuickDatePopover`, whose pills are Today / Tomorrow / This Weekend —
+/// a tomorrow's daily note is a thing you can reach but rarely want, and "this weekend" means
+/// nothing to a weekly note at all. The single way back to now is what a date picker on a phone
+/// needs and what a bare calendar makes you hunt for after scrolling a few months away.
+private struct iOSNotesDatePopover: View {
+    let tab: CadenceMobileNotesTab
+    @Binding var dayKey: String
+    @Binding var selection: Date
+    @Binding var viewMonth: Date
+    @Binding var isOpen: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if !CadenceNoteDateNavigation.isCurrentPeriod(tab: tab, dayKey: dayKey) {
+                Button {
+                    dayKey = DateFormatters.todayKey()
+                    isOpen = false
+                } label: {
+                    Text(tab == .week ? "This week" : "Today")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.blue)
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.cadencePlain)
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
+                .padding(.bottom, 6)
+
+                Divider().background(Theme.borderSubtle)
+            }
+
+            // `inlineStyle` because this popover already owns its width and its background.
+            // Without it the panel pins itself to 256pt and paints its own `surfaceElevated`
+            // inside a container the popover had sized differently — the weekday row drew above
+            // the panel's rounded top and the next month's heading spilled past its bottom corner.
+            MonthCalendarPanel(selection: $selection, viewMonth: $viewMonth, isOpen: $isOpen, inlineStyle: true)
+                // The panel leads with its weekday row and no inset of its own, which sat flush
+                // against the popover's rounded top edge.
+                .padding(.top, 10)
+        }
+        .frame(width: 280)
+        .background(Theme.surfaceElevated)
+    }
+}
+
 enum iOSNotesTabMetrics {
     /// Cluster spacing for a row of tabs. Deliberately tight, like macOS's
     /// `CadenceQuietPillMetrics.clusterSpacing`: the selected tab's fill is what separates them,
@@ -575,6 +788,15 @@ enum iOSNotesTabMetrics {
     static let spacing: CGFloat = 2
     /// Touch floor.
     static let height: CGFloat = 44
+    /// Default label inset. See `compactHorizontalPadding` for why the phone uses less.
+    static let horizontalPadding: CGFloat = 12
+    /// The phone's inset. The Notes header carries a date and four tabs on one 390pt row, and the
+    /// widest thing the date can say is a week range — `Aug 17–23` beside `Daily Weekly Events
+    /// Pad`. At the default 12 the labels truncated. Moving the template menu into the editor's
+    /// format row bought most of the shortfall back, but not all of it: at 6 the row lands with
+    /// about 12pt to spare, so this stays. The 44pt `minWidth` floor is untouched at any inset, so
+    /// the shortest label ("Pad") and every touch target are exactly as wide as before.
+    static let compactHorizontalPadding: CGFloat = 6
 }
 
 /// The iOS translation of macOS's `CadenceQuietTabButton`.
@@ -590,6 +812,12 @@ enum iOSNotesTabMetrics {
 struct iOSQuietTabButton: View {
     let title: String
     let isSelected: Bool
+    /// Tightened on the phone, where the Notes header now spends part of its row on the date. At
+    /// 12 the four labels truncated to "To… We… Eve… Pad" on a 390pt screen — the strip stopped
+    /// naming its own tabs, which is worse than a narrower fill around a label that still reads.
+    /// The 44pt `minWidth` below is untouched, so nothing loses its touch target and the shortest
+    /// label ("Pad") is exactly as wide as it was.
+    var horizontalPadding: CGFloat = iOSNotesTabMetrics.horizontalPadding
     let action: () -> Void
 
     var body: some View {
@@ -602,7 +830,7 @@ struct iOSQuietTabButton: View {
                 // The label sits in a fixed-height frame, so a wrap would overflow the pill rather
                 // than grow it. Under compression this must truncate, never wrap.
                 .lineLimit(1)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, horizontalPadding)
                 .frame(minWidth: iOSNotesTabMetrics.height, minHeight: iOSNotesTabMetrics.height)
                 .background(shape.fill(isSelected ? Theme.surfaceHighlight : Color.clear))
                 .contentShape(shape)
