@@ -171,6 +171,11 @@ struct iOSFeatureSummaryRow: View {
     var detail: String? = nil
     let icon: String
     let color: Color
+    /// Overrides the trailing value's colour. It follows `color` by default, which is right where
+    /// `color` is a calendar's or a list's own `colorHex`. The More tab passes `Theme.dim` for
+    /// `color` — its glyphs are navigation chrome — and a value rendered in `dim` would be the
+    /// quietest thing in a row whose whole point is the number.
+    var detailTint: Color? = nil
     var isSelected = false
 
     var body: some View {
@@ -193,7 +198,7 @@ struct iOSFeatureSummaryRow: View {
             if let detail, !detail.isEmpty {
                 Text(detail)
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(color)
+                    .foregroundStyle(detailTint ?? color)
                     .lineLimit(1)
             }
         }

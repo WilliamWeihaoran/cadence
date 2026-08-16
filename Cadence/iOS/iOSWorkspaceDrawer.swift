@@ -54,25 +54,17 @@ struct iOSWorkspaceDrawer: View {
         .background(Theme.bg)
     }
 
+    /// Same mark and same one line as `iOSSidebarBrand`, which is the control that opens this. The
+    /// two used to disagree twice over: a different glyph (`checklist.checked` against
+    /// `sidebar.leading`), and a "Workspace" subtitle under the app's own name.
     private var drawerHeader: some View {
         HStack(spacing: 11) {
-            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                .fill(Theme.blue.opacity(0.16))
-                .frame(width: 34, height: 34)
-                .overlay {
-                    Image(systemName: "checklist.checked")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.blue)
-                }
+            iOSIconTile(systemImage: "sidebar.leading", color: Theme.blue, size: 34)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Cadence")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                Text("Workspace")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-            }
+            Text("Cadence")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
 
             Spacer(minLength: 8)
 
@@ -82,11 +74,16 @@ struct iOSWorkspaceDrawer: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(Theme.dim)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 30, height: 30)
                     .background(Theme.surfaceElevated.opacity(0.68))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                    // 30pt of plate, 44pt of target — `iOSIconButton`'s trick, so the close control
+                    // is not a 28pt tap in a popover you are trying to get out of.
+                    .contentShape(Rectangle())
+                    .iOSExpandedHitArea(7)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.iosPressable)
+            .accessibilityLabel("Close")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -98,12 +95,13 @@ struct iOSWorkspaceDrawer: View {
         }
     }
 
+    /// A destination row. `glyphColor` is left nil so the glyph reads as chrome — see the note on
+    /// `iOSSidebarButton`, which this drawer sits next to and must not contradict.
     private func drawerFeatureRow(_ destination: CadenceFeatureDestination) -> some View {
         iOSWorkspaceDrawerRow(
             title: destination.title,
             subtitle: destination.subtitle,
             systemImage: destination.systemImage,
-            color: destination.tint,
             count: count(for: destination),
             isSelected: selection == destination.item
         ) {
@@ -122,8 +120,9 @@ struct iOSWorkspaceDrawer: View {
                     title: area.name,
                     subtitle: area.context?.name ?? "Area",
                     systemImage: area.icon,
-                    color: Color(hex: area.colorHex),
-                    count: CadenceTaskQuerySupport.openTaskCount(for: area)
+                    colorHex: area.colorHex,
+                    count: CadenceTaskQuerySupport.openTaskCount(for: area),
+                    isSelected: selection == .area(area.id)
                 ) {
                     selection = .area(area.id)
                     dismiss()
@@ -135,8 +134,9 @@ struct iOSWorkspaceDrawer: View {
                     title: project.name,
                     subtitle: project.area?.name ?? project.context?.name ?? "Project",
                     systemImage: project.icon,
-                    color: Color(hex: project.colorHex),
-                    count: CadenceTaskQuerySupport.openTaskCount(for: project)
+                    colorHex: project.colorHex,
+                    count: CadenceTaskQuerySupport.openTaskCount(for: project),
+                    isSelected: selection == .project(project.id)
                 ) {
                     selection = .project(project.id)
                     dismiss()
@@ -145,21 +145,28 @@ struct iOSWorkspaceDrawer: View {
         }
     }
 
+    /// A list row. Unlike a destination row it *does* colour its glyph, because that hue is the
+    /// `colorHex` the user picked in the list editor — the sanctioned exception to the chrome rule.
+    ///
+    /// `isSelected` used to be hardcoded `false`, so the one screen that can open a list never
+    /// showed which list was open: pick Beta Area and the drawer still looked exactly as it did
+    /// before you touched it.
     private func drawerListRow(
         title: String,
         subtitle: String,
         systemImage: String,
-        color: Color,
+        colorHex: String,
         count: Int,
+        isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
         iOSWorkspaceDrawerRow(
             title: title,
             subtitle: subtitle,
             systemImage: systemImage,
-            color: color,
+            glyphColor: Color(hex: colorHex),
             count: CadenceTaskQuerySupport.badgeCount(count),
-            isSelected: false,
+            isSelected: isSelected,
             action: action
         )
     }
@@ -175,42 +182,58 @@ private struct iOSWorkspaceDrawerSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Theme.dim)
-                .textCase(.uppercase)
+            // The shared eyebrow, not a hand-rolled 10pt bold `.textCase(.uppercase)` — the
+            // sidebar's PLAN / WORKSPACE / PROGRESS and the iPhone More tab both draw
+            // `SectionEyebrowLabel`, and this was the one copy that had drifted (bold vs semibold,
+            // no kerning).
+            SectionEyebrowLabel(text: title)
                 .padding(.horizontal, 2)
 
             VStack(spacing: 0) {
                 content()
             }
+            // 4pt of inset so a selected row's radius-10 fill sits *inside* the card rather than
+            // bleeding into its radius-18 corner.
+            .padding(4)
             .cadenceCard(background: Theme.surface.opacity(0.72), cornerRadius: Theme.radiusCard)
         }
     }
 }
 
+/// A row in the workspace drawer.
+///
+/// Selection is one neutral layer at one radius — `Theme.surfaceHighlight` on
+/// `Theme.radiusControl`, the same treatment `iOSSidebarButton` and `SidebarNavRow` use. It used to
+/// be three simultaneous layers: a tinted row wash, a 3pt coloured rail overlaid on the leading
+/// edge at a bare numeric radius, and a third tint step on the icon plate.
 private struct iOSWorkspaceDrawerRow: View {
     let title: String
     let subtitle: String
     let systemImage: String
-    let color: Color
+    /// `nil` for navigation destinations, whose glyphs are chrome. Set only where the colour is the
+    /// user's own `colorHex` — a list row.
+    var glyphColor: Color? = nil
     let count: Int?
     let isSelected: Bool
     let action: () -> Void
 
+    private var rowShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+    }
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
+                // A bare glyph in a fixed leading slot, the vocabulary `iOSEditorInlineLabel`
+                // established, so every title in the drawer starts on the same x.
                 Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isSelected ? Theme.text : color)
-                    .frame(width: 28, height: 28)
-                    .background(isSelected ? color.opacity(0.30) : color.opacity(0.11))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(glyphColor ?? (isSelected ? Theme.text : Theme.dim))
+                    .frame(width: 24, alignment: .center)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
                     Text(subtitle)
@@ -222,29 +245,18 @@ private struct iOSWorkspaceDrawerRow: View {
                 Spacer(minLength: 8)
 
                 if let count {
-                    Text("\(count)")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(isSelected ? Theme.text : color)
-                        .monospacedDigit()
-                        .padding(.horizontal, 7)
-                        .frame(height: 22)
-                        .background(color.opacity(isSelected ? 0.24 : 0.12))
-                        .clipShape(Capsule())
+                    iOSListCountBadge(count: count)
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(isSelected ? color.opacity(0.12) : Color.clear)
-            .overlay(alignment: .leading) {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(color)
-                        .frame(width: 3, height: 28)
-                }
-            }
-            .contentShape(Rectangle())
+            // 44pt, because this popover is the only way to reach a list from the iPad shell.
+            .frame(minHeight: 44)
+            .background(rowShape.fill(isSelected ? Theme.surfaceHighlight : Color.clear))
+            .contentShape(rowShape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -252,23 +264,23 @@ private struct iOSWorkspaceDrawerEmptyRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "folder.badge.plus")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Theme.dim)
-                .frame(width: 30, height: 30)
-                .background(Theme.surfaceElevated.opacity(0.54))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                .frame(width: 24, alignment: .center)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("No active lists")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.text)
                 Text("Create areas and projects in Lists")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.dim)
             }
+
+            Spacer(minLength: 8)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .frame(minHeight: 44)
     }
 }
 #endif

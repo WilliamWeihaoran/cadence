@@ -51,7 +51,13 @@ struct iOSMoreTabView: View {
                                             habitProgress: habitProgress
                                         ),
                                         icon: destination.systemImage,
-                                        color: destination.tint
+                                        // Chrome, not a colour code — the same call the iPad
+                                        // sidebar makes in `iOSSidebarButton`, so the two lists of
+                                        // the same destinations read alike. The hues encoded
+                                        // nothing anyway: Notes and Calendar shared purple, Lists
+                                        // and Goals green.
+                                        color: Theme.dim,
+                                        detailTint: Theme.muted
                                     )
                                 }
                                 .buttonStyle(.iosPressable)

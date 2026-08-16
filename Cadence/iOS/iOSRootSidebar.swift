@@ -174,7 +174,6 @@ struct iOSSidebar: View {
         iOSSidebarButton(
             title: destination.compactTitle,
             systemImage: destination.systemImage,
-            tint: destination.tint,
             count: count(for: destination),
             isSelected: selection == destination.item,
             style: style
@@ -255,6 +254,11 @@ struct iOSSidebarRailDivider: View {
     }
 }
 
+/// The app mark, and the control that opens `iOSWorkspaceDrawer`.
+///
+/// It used to read "Cadence / Workspace". "Workspace" is a subtitle naming the app you are already
+/// in — the same thing the `subtitle` parameter was deleted from `DesktopPageHeader` for. The word
+/// is gone; the app name stays, because that is identity rather than description.
 struct iOSSidebarBrand: View {
     let style: iOSSidebarStyle
     let action: () -> Void
@@ -265,16 +269,10 @@ struct iOSSidebarBrand: View {
                 iOSIconTile(systemImage: "sidebar.leading", color: Theme.blue, size: 32)
 
                 if style == .expanded {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Cadence")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-
-                        Text("Workspace")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(Theme.dim)
-                    }
-                    .lineLimit(1)
+                    Text("Cadence")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
 
                     Spacer(minLength: 0)
                 }
@@ -304,14 +302,31 @@ struct iOSSidebarSection<Content: View>: View {
     }
 }
 
+/// A navigation row in the iPad shell's sidebar.
+///
+/// **The glyph is chrome, not a colour code.** Every row used to draw its `CadenceFeatureDestination`
+/// tint — Today amber, Tasks blue, Calendar purple, Lists green, Focus red — which put six hues in
+/// one column encoding nothing a reader could act on. Colour in this app is reserved for the
+/// exceptional (overdue, past-do, in-progress) and for a `colorHex` the user chose on a list, tag,
+/// habit or calendar. macOS keeps its tinted sidebar glyphs precisely because there they *are* a
+/// user choice: `SidebarStaticDestination` persists a per-destination colour through
+/// `CadencePreferenceKeys.sidebarTabColors`. iPad has no such picker, so the hue was decoration.
+///
+/// What carries state instead is the row: `Theme.surfaceHighlight` behind it, `Theme.text` on the
+/// glyph and label, semibold. One layer, one radius — `SidebarNavRow`'s rule, and the iPhone More
+/// tab's.
 struct iOSSidebarButton: View {
     let title: String
     let systemImage: String
-    let tint: Color
     let count: Int?
     let isSelected: Bool
     let style: iOSSidebarStyle
     let action: () -> Void
+
+    /// The one place selection is spelled out, so the two label variants cannot drift.
+    private var glyphColor: Color {
+        isSelected ? Theme.text : Theme.dim
+    }
 
     var body: some View {
         Button(action: action) {
@@ -330,7 +345,7 @@ struct iOSSidebarButton: View {
         HStack(spacing: 9) {
             Image(systemName: systemImage)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(tint)
+                .foregroundStyle(glyphColor)
                 .frame(width: 20)
 
             Text(title)
@@ -357,22 +372,19 @@ struct iOSSidebarButton: View {
         ZStack(alignment: .topTrailing) {
             Image(systemName: systemImage)
                 .font(.system(size: iOSSidebarMetrics.iconSize, weight: .semibold))
-                .foregroundStyle(tint)
+                .foregroundStyle(glyphColor)
                 .frame(maxWidth: .infinity)
                 .frame(height: iOSSidebarMetrics.buttonHeight)
 
             if let count, count > 0 {
                 Text("\(count)")
                     .font(.system(size: 9, weight: .bold))
-                    // On a saturated fill the foreground is `onColor`, not `text` — `text` is
-                    // tuned against `bg` and greys out over an arbitrary destination hue.
-                    .foregroundStyle(Theme.onColor)
+                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
                     .monospacedDigit()
                     .padding(.horizontal, 5)
                     .frame(minWidth: 18)
                     .frame(height: 17)
-                    .background(tint)
-                    .clipShape(Capsule())
+                    .background(Capsule().fill(Theme.borderSubtle))
                     .offset(x: -1, y: 1)
             }
         }
@@ -388,24 +400,24 @@ struct iOSSidebarButton: View {
 
     /// One selection layer at one radius, the rule `SidebarNavRow` follows: selection is a step up
     /// the neutral ramp, not a coloured 2pt rail bolted to the leading edge of an otherwise
-    /// unchanged row. The glyph keeps its destination tint either way — those colours are what
-    /// make eleven destinations scannable in one column.
+    /// unchanged row.
     private var selectionLayer: some View {
         selectionShape.fill(isSelected ? Theme.surfaceHighlight : Color.clear)
     }
 
-    /// Neutral capsule, neutral digits, tint only when this row is the current one — the same
-    /// badge `SidebarNavCountBadge` draws.
+    /// Neutral capsule, neutral digits. The capsule used to fill with the destination tint on the
+    /// selected row, which was the last hue left in the column once the glyphs went to `Theme.dim`
+    /// — one orange pill on Today and nothing to explain it. Selection is carried by the row.
     private var countBadge: some View {
         Text("\(count ?? 0)")
             .font(.system(size: 10, weight: .semibold))
             .monospacedDigit()
-            .foregroundStyle(isSelected ? Theme.bg : Theme.muted)
+            .foregroundStyle(isSelected ? Theme.text : Theme.muted)
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, 6)
             .frame(minWidth: 20, minHeight: 19)
-            .background(Capsule(style: .continuous).fill(isSelected ? tint : Theme.borderSubtle))
+            .background(Capsule(style: .continuous).fill(Theme.borderSubtle))
             .accessibilityHidden(true)
     }
 }
