@@ -18,15 +18,16 @@ import SwiftUI
 /// and the grid took the rest, at a 104pt minimum cell — so on a phone the month view showed three
 /// weeks of the month. The grid here is sized by `CadenceCalendarMonthAgendaSupport.gridRowHeight`,
 /// which fits *every* week of the month into a share of the pane and never drops a cell below a
-/// 44pt touch target. `detailMinimumHeight` is what the grid is capped against, so a taller detail
-/// (the inspector opens with a 63pt header) buys its room out of cell height, never out of weeks.
+/// 44pt touch target. `CadenceCalendarMonthAgendaSupport.agendaMinimumHeight` is what the grid is
+/// capped against, so the detail's room comes out of cell height and never out of weeks. Both
+/// readings reserve the same amount: the inspector used to need more only because it opened with a
+/// 63pt date header, and that header is gone.
 struct iOSCalendarMonthStack<Detail: View>: View {
     let monthDate: Date
     @Binding var selectedDate: Date
     let monthTasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
     let eventsByDate: [String: [EKEvent]]
-    let detailMinimumHeight: CGFloat
     @ViewBuilder let detail: () -> Detail
 
     private let calendar = Calendar.current
@@ -49,8 +50,7 @@ struct iOSCalendarMonthStack<Detail: View>: View {
                             forMonthContaining: monthDate,
                             calendar: calendar
                         ),
-                        weekdayHeaderHeight: weekdayHeaderHeight,
-                        agendaMinimumHeight: detailMinimumHeight
+                        weekdayHeaderHeight: weekdayHeaderHeight
                     ),
                     weekdayHeaderHeight: weekdayHeaderHeight,
                     monthTasksByDate: monthTasksByDate,
@@ -78,8 +78,7 @@ struct iOSCalendarMonthStack<Detail: View>: View {
 /// `CadenceCalendarMonthAgendaSupport.scrollTarget` / `selectionTarget`, in `Shared/` and tested.
 ///
 /// There is no add control here. Capture on a compact Calendar tab is the tab bar's centre `+`, the
-/// same as compact Today; the day inspector — the other thing the Month toggle can show — carries
-/// its own `+` for the one day it is reading out.
+/// same as compact Today.
 struct iOSCalendarMonthAgendaList: View {
     let monthDate: Date
     @Binding var selectedDate: Date

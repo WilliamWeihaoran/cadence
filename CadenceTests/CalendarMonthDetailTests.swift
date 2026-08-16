@@ -96,9 +96,9 @@ struct CalendarMonthDetailTests {
 
     // MARK: - The counts strip above the grid
 
-    /// The strip carries the selected date. Every arrangement except one restates that date in the
-    /// next pane down — the agenda heads every day, and an inspector under the grid heads the
-    /// selected one — so only the inspector-as-a-side-column keeps it.
+    /// The strip carries the selected date, and only the inspector-as-a-side-column keeps it: the
+    /// agenda heads every day with its own date, and an inspector under the grid sits directly
+    /// beneath the lit-up cell that already says which day it is reading.
     @Test
     func theCountsStripSurvivesOnlyWhereItIsNotImmediatelyRestated() {
         #expect(CadenceCalendarMonthLayout.showsDaySummaryStrip(placement: .beside, detail: .day))
@@ -109,18 +109,14 @@ struct CalendarMonthDetailTests {
 
     // MARK: - What the grid is capped against when the detail is under it
 
-    /// The inspector opens with a 63pt header carrying the date and the add button, so the agenda's
-    /// 96 would leave it a header and a sliver.
+    /// Both readings now reserve the same room, because both now open the same way — on a heading
+    /// with a row under it. The inspector's separate 168 existed only to pay for a fixed 63pt bar
+    /// carrying the date and an add button, and that bar is gone; a reservation left behind after
+    /// the thing it was reserved for has been deleted is height taken out of the grid's cells for
+    /// nothing.
     @Test
-    func theInspectorReservesMoreRoomUnderTheGridThanTheAgendaDoes() {
-        #expect(
-            CadenceCalendarMonthLayout.detailMinimumHeight(for: .day) >
-            CadenceCalendarMonthLayout.detailMinimumHeight(for: .agenda)
-        )
-        #expect(
-            CadenceCalendarMonthLayout.detailMinimumHeight(for: .agenda) ==
-            CadenceCalendarMonthAgendaSupport.agendaMinimumHeight
-        )
+    func bothReadingsReserveTheSameRoomUnderTheGrid() {
+        #expect(CadenceCalendarMonthAgendaSupport.agendaMinimumHeight == 96)
     }
 
     /// The hazard the whole `gridRowHeight` cap exists for: whichever detail is underneath, the grid
@@ -128,21 +124,18 @@ struct CalendarMonthDetailTests {
     /// month gets.
     @Test
     func neitherDetailCanBeStarvedToNothingByTheGrid() {
-        for detail in CadenceCalendarMonthDetail.allCases {
-            let minimum = CadenceCalendarMonthLayout.detailMinimumHeight(for: detail)
-            for availableHeight in [CGFloat(320), 420, 640, 1050] {
-                let rowHeight = CadenceCalendarMonthAgendaSupport.gridRowHeight(
-                    availableHeight: availableHeight,
-                    rowCount: 6,
-                    weekdayHeaderHeight: 22,
-                    agendaMinimumHeight: minimum
-                )
-                let gridHeight = 22 + rowHeight * 6 + 8
-                #expect(
-                    availableHeight - gridHeight >= minimum - 0.001,
-                    "grid took \(gridHeight) of \(availableHeight), leaving \(availableHeight - gridHeight) for \(detail)"
-                )
-            }
+        let minimum = CadenceCalendarMonthAgendaSupport.agendaMinimumHeight
+        for availableHeight in [CGFloat(320), 420, 640, 1050] {
+            let rowHeight = CadenceCalendarMonthAgendaSupport.gridRowHeight(
+                availableHeight: availableHeight,
+                rowCount: 6,
+                weekdayHeaderHeight: 22
+            )
+            let gridHeight = 22 + rowHeight * 6 + 8
+            #expect(
+                availableHeight - gridHeight >= minimum - 0.001,
+                "grid took \(gridHeight) of \(availableHeight), leaving \(availableHeight - gridHeight)"
+            )
         }
     }
 }

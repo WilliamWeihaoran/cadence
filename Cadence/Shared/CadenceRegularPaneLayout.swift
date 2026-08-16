@@ -164,10 +164,12 @@ enum CadenceCalendarPaneLayout {
     /// `calendarMinimumWidth` defaults to `inspectorMinWidth`, which is the stand-in the original
     /// `min(preferred, (paneWidth - paneDividerWidth) / 2)` amounted to: absent a real number from
     /// the surface being annotated, "at least as much as the thing annotating it" is the honest
-    /// guess, and it is still the right one for the Board, whose columns page rather than fitting.
-    /// Week is the case where the guess was short by 500pt — see `CadenceCalendarWeekGridLayout`.
-    /// At the default this returns exactly what it always did at every pane width where
-    /// `showsInspector` is true.
+    /// guess, and it is still the one Month's grid uses, which flexes. Week is the case where the
+    /// guess was short by 500pt — see `CadenceCalendarWeekGridLayout`. At the default this returns
+    /// exactly what it always did at every pane width where `showsInspector` is true.
+    ///
+    /// The Board no longer asks: its day columns each carry their own date header and their own
+    /// items, so an inspector beside them restated a column already on screen. It takes the pane.
     ///
     /// Only meaningful where `showsInspector(paneWidth:calendarMinimumWidth:)` is true.
     static func inspectorWidth(
@@ -195,5 +197,42 @@ enum CadenceCalendarPaneLayout {
     ) -> Bool {
         inspectorWidth(forPaneWidth: paneWidth, calendarMinimumWidth: calendarMinimumWidth)
             >= inspectorMinWidth
+    }
+
+    /// Whether the Calendar page draws the day inspector as a column beside the calendar.
+    ///
+    /// **Timeline only.** The Board is a row of day columns, each already headed with its own date
+    /// and each already listing that day's items; an inspector beside it spent 340pt restating a
+    /// column that was on screen a finger's width away, and cost the board a column and a half of
+    /// the days it exists to show. The Board takes the whole pane.
+    ///
+    /// **Month is not routed through here.** It has two readings and two placements of its own and
+    /// asks `CadenceCalendarMonthLayout` instead, which is what makes `Day` the inspector's one
+    /// remaining home on an iPad: Week supplies a `calendarMinimumWidth` that puts its split at
+    /// 1183pt, wider than either orientation of the target device.
+    static func showsDayInspector(
+        isCompact: Bool,
+        presentation: CadenceCalendarPresentation,
+        viewMode: CadenceCalendarViewMode,
+        paneWidth: CGFloat
+    ) -> Bool {
+        guard !isCompact, presentation == .timeline, viewMode != .month else { return false }
+        return showsInspector(
+            paneWidth: paneWidth,
+            calendarMinimumWidth: calendarMinimumWidth(for: viewMode)
+        )
+    }
+
+    /// What has to fit beside the inspector before there is one.
+    ///
+    /// Week is the mode that can answer this with a real number: an hour rail and seven day columns,
+    /// none of which can be dropped, at the width a column needs to label a block with more than an
+    /// ellipsis. The only other mode that reaches it is `.twoWeeks`, whose fourteen columns scroll
+    /// by design and which the picker no longer offers, so it keeps the inspector's own width — the
+    /// stand-in every mode used to use.
+    static func calendarMinimumWidth(for viewMode: CadenceCalendarViewMode) -> CGFloat {
+        viewMode == .week
+            ? CadenceCalendarWeekGridLayout.fullSizeWidth(isRegularWidth: true)
+            : inspectorMinWidth
     }
 }

@@ -77,8 +77,15 @@ enum CadenceCalendarMonthAgendaSupport {
         return max(0, days / 7)
     }
 
-    /// The least the agenda is left with, whatever the grid would like — a day heading and the top
-    /// of the first row under it. The agenda is the half of this view that lists anything.
+    /// The least the detail under the grid is left with, whatever the grid would like — a heading
+    /// and the top of the first row under it. The detail is the half of this view that lists
+    /// anything.
+    ///
+    /// It is one number for both readings. The day inspector used to reserve 168 because it opened
+    /// with a fixed 63pt bar carrying the date and an add button; that bar is gone, so the inspector
+    /// now opens on its first section heading — the same shape the agenda opens on, and the same
+    /// claim. Leaving 168 behind would have had the grid buy the detail 72pt it no longer needs out
+    /// of its own cell height, on the one view whose subject is a whole month of cells.
     static let agendaMinimumHeight: CGFloat = 96
 
     /// The height of one week row, so that **every** week of the month is on screen at once — and so
@@ -192,10 +199,13 @@ enum CadenceCalendarMonthLayout {
         return CadenceCalendarMonthDetail(rawValue: storedRawValue) ?? defaultDetail
     }
 
-    /// Beside the grid exactly where the day inspector already fits, so Month splits at the same
-    /// width Week and Board do. Below that the detail goes under the grid instead of disappearing:
-    /// the inspector's 340pt floor against a 646pt pane would leave ~43pt per weekday column, which
-    /// is the starvation `CadenceCalendarPaneLayout` exists to prevent.
+    /// Beside the grid exactly where a 340pt side column fits — 681pt of pane, the width
+    /// `CadenceCalendarPaneLayout` has always split at. Below that the detail goes under the grid
+    /// instead of disappearing: the inspector's 340pt floor against a 646pt pane would leave ~43pt
+    /// per weekday column, which is the starvation `CadenceCalendarPaneLayout` exists to prevent.
+    ///
+    /// Month is now the only surface that splits at this width. Week claims the whole grid before an
+    /// inspector may take anything and so splits at 1183, and the Board does not split at all.
     static func placement(paneWidth: CGFloat) -> Placement {
         CadenceCalendarPaneLayout.showsInspector(paneWidth: paneWidth) ? .beside : .below
     }
@@ -212,22 +222,14 @@ enum CadenceCalendarMonthLayout {
 
     /// Whether Month keeps the one-line counts strip under the toolbar.
     ///
-    /// Only where the detail is a **column beside** the grid and it is the day inspector — which is
-    /// the one arrangement where the strip's date is not immediately restated by the next thing down
-    /// the pane. The agenda heads every day with its own date, and an inspector placed *under* the
-    /// grid heads itself with the selected one, so in both of those the strip is a second copy of a
-    /// line already on screen.
+    /// Only where the detail is a **column beside** the grid and it is the day inspector.
+    ///
+    /// The agenda heads every day with its own date, so the strip's date is a second copy of a line
+    /// a few points below it. The inspector no longer states a date at all — its header bar is gone
+    /// — but under the grid it is directly below the lit-up cell that says which day this is, and a
+    /// full "Sunday, August 30" wedged between the two is chrome the grid has already covered.
+    /// Beside the grid there is nothing between the strip and the calendar, so it stays.
     static func showsDaySummaryStrip(placement: Placement, detail: CadenceCalendarMonthDetail) -> Bool {
         placement == .beside && detail == .day
-    }
-
-    /// The least the detail is left with under the grid, which is what caps how tall the grid may
-    /// grow. The inspector needs more than the agenda because it opens with a 63pt header carrying
-    /// the date and the add button; at the agenda's 96 it would be a header and a sliver.
-    static func detailMinimumHeight(for detail: CadenceCalendarMonthDetail) -> CGFloat {
-        switch detail {
-        case .agenda: return CadenceCalendarMonthAgendaSupport.agendaMinimumHeight
-        case .day: return 168
-        }
     }
 }

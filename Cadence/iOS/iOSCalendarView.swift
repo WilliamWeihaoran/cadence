@@ -157,34 +157,20 @@ struct iOSCalendarView: View {
         horizontalSizeClass == .compact
     }
 
-    /// Whether this pane can carry the day inspector beside the calendar. See
-    /// `CadenceCalendarPaneLayout`: an 11" iPad in portrait cannot, and used to give the inspector
-    /// 340 of its 632 points anyway.
+    /// Whether this pane carries the day inspector beside the calendar. The rule, and why the Board
+    /// is not in it, are in `CadenceCalendarPaneLayout.showsDayInspector`.
     ///
     /// `paneWidth` starts at 0, so the first frame resolves to `false` and the calendar takes the
     /// whole pane until the measurement lands. That is the right way round: a pane that opens
     /// full-width and gains an inspector reads as the inspector arriving, where the reverse reads as
     /// content being taken away.
     private var hasInspector: Bool {
-        !isCompact
-            && CadenceCalendarPaneLayout.showsInspector(
-                paneWidth: paneWidth,
-                calendarMinimumWidth: calendarMinimumWidth
-            )
-    }
-
-    /// What has to fit beside the inspector before there is one.
-    ///
-    /// Week is the mode that can answer this with a real number: an hour rail and seven day
-    /// columns, none of which can be dropped, at the width a column needs to label a block with
-    /// something more than an ellipsis. Every other mode keeps the inspector's own width as the
-    /// stand-in it always used — the Board's columns page, so a narrower board is a shorter page
-    /// rather than a lost column, and Month's grid flexes.
-    private var calendarMinimumWidth: CGFloat {
-        guard presentation == .timeline, viewMode == .week else {
-            return CadenceCalendarPaneLayout.inspectorMinWidth
-        }
-        return CadenceCalendarWeekGridLayout.fullSizeWidth(isRegularWidth: true)
+        CadenceCalendarPaneLayout.showsDayInspector(
+            isCompact: isCompact,
+            presentation: presentation,
+            viewMode: viewMode,
+            paneWidth: paneWidth
+        )
     }
 
     private var isMonthTimeline: Bool {
@@ -267,7 +253,9 @@ struct iOSCalendarView: View {
                         .frame(
                             width: CadenceCalendarPaneLayout.inspectorWidth(
                                 forPaneWidth: paneWidth,
-                                calendarMinimumWidth: calendarMinimumWidth
+                                calendarMinimumWidth: CadenceCalendarPaneLayout.calendarMinimumWidth(
+                                    for: viewMode
+                                )
                             )
                         )
                         .frame(maxHeight: .infinity)
@@ -360,8 +348,7 @@ struct iOSCalendarView: View {
                 selectedDate: $selectedDate,
                 monthTasksByDate: monthTasksByDate,
                 bundlesByDate: bundlesByDate,
-                eventsByDate: visibleEventsByDate,
-                detailMinimumHeight: CadenceCalendarMonthLayout.detailMinimumHeight(for: monthDetail)
+                eventsByDate: visibleEventsByDate
             ) {
                 monthDetailPane
             }

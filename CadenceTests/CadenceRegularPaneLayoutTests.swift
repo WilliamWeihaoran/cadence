@@ -64,8 +64,8 @@ struct CadenceCalendarPaneLayoutTests {
         #expect(!CadenceCalendarPaneLayout.showsInspector(paneWidth: 680))
     }
 
-    /// Generalising the gate must not move it for the surfaces that were not asking a new question.
-    /// The Board and Month both still split at 681.
+    /// Generalising the gate must not move it for the surface that was not asking a new question.
+    /// Month still splits at 681.
     @Test
     func aCalendarThatStatesNoMinimumSplitsExactlyWhereItAlwaysDid() {
         for paneWidth in stride(from: CGFloat(300), through: 2000, by: 1) {
@@ -105,6 +105,88 @@ struct CadenceCalendarPaneLayoutTests {
     func theInspectorHasACeilingEvenThoughNoIPadReachesIt() {
         #expect(CadenceCalendarPaneLayout.inspectorWidth(forPaneWidth: 1188) == 1188 * CadenceCalendarPaneLayout.inspectorFraction)
         #expect(CadenceCalendarPaneLayout.inspectorWidth(forPaneWidth: 2000) == CadenceCalendarPaneLayout.inspectorMaxWidth)
+    }
+}
+
+/// Which Calendar presentations draw the day inspector at all.
+///
+/// The Board used to, and it was the one surface that could least afford it: horizontally scrolling
+/// day columns, each headed with its own date and each listing that day's items, with a 340pt column
+/// beside them repeating one of those days. On an 11" Pro in landscape that is a column and a half
+/// of the days the board exists to show, spent restating one of the days still on screen.
+struct CadenceCalendarDayInspectorGateTests {
+    /// Every pane the target iPad reaches, in both orientations, and then some.
+    private static let paneWidths: [CGFloat] = [0, 646, 681, 844, 1022, 1188, 1183, 1523, 2000]
+
+    @Test
+    func theBoardNeverSplits() {
+        for paneWidth in Self.paneWidths {
+            for viewMode in CadenceCalendarViewMode.allCases {
+                #expect(
+                    !CadenceCalendarPaneLayout.showsDayInspector(
+                        isCompact: false,
+                        presentation: .board,
+                        viewMode: viewMode,
+                        paneWidth: paneWidth
+                    ),
+                    "board split at pane \(paneWidth) in \(viewMode)"
+                )
+            }
+        }
+    }
+
+    /// Month has two readings and two placements of its own; routing it through the pane-wide gate
+    /// would be a third answer to a question `CadenceCalendarMonthLayout` already owns.
+    @Test
+    func monthIsAnsweredByItsOwnLayoutRatherThanThisGate() {
+        for paneWidth in Self.paneWidths {
+            #expect(
+                !CadenceCalendarPaneLayout.showsDayInspector(
+                    isCompact: false,
+                    presentation: .timeline,
+                    viewMode: .month,
+                    paneWidth: paneWidth
+                )
+            )
+        }
+    }
+
+    /// Week keeps the gate it was given in `545f429` — it may only split once seven full-size
+    /// columns are already paid for — which no orientation of the target iPad reaches.
+    @Test
+    func weekSplitsOnlyBeyondEveryPaneTheTargetIPadReaches() {
+        #expect(!CadenceCalendarPaneLayout.showsDayInspector(isCompact: false, presentation: .timeline, viewMode: .week, paneWidth: 646))
+        #expect(!CadenceCalendarPaneLayout.showsDayInspector(isCompact: false, presentation: .timeline, viewMode: .week, paneWidth: 1022))
+        #expect(!CadenceCalendarPaneLayout.showsDayInspector(isCompact: false, presentation: .timeline, viewMode: .week, paneWidth: 1182))
+        #expect(CadenceCalendarPaneLayout.showsDayInspector(isCompact: false, presentation: .timeline, viewMode: .week, paneWidth: 1183))
+    }
+
+    /// A phone has one column and no room for a second.
+    @Test
+    func aCompactPaneNeverSplitsWhateverItMeasures() {
+        for paneWidth in Self.paneWidths {
+            for presentation in [CadenceCalendarPresentation.timeline, .board] {
+                #expect(
+                    !CadenceCalendarPaneLayout.showsDayInspector(
+                        isCompact: true,
+                        presentation: presentation,
+                        viewMode: .week,
+                        paneWidth: paneWidth
+                    )
+                )
+            }
+        }
+    }
+
+    /// The claim is per mode, and only Week states one of its own.
+    @Test
+    func onlyWeekClaimsWidthBeforeTheInspectorMayHaveAny() {
+        #expect(
+            CadenceCalendarPaneLayout.calendarMinimumWidth(for: .week)
+                == CadenceCalendarWeekGridLayout.fullSizeWidth(isRegularWidth: true)
+        )
+        #expect(CadenceCalendarPaneLayout.calendarMinimumWidth(for: .month) == CadenceCalendarPaneLayout.inspectorMinWidth)
+        #expect(CadenceCalendarPaneLayout.calendarMinimumWidth(for: .twoWeeks) == CadenceCalendarPaneLayout.inspectorMinWidth)
     }
 }
 
