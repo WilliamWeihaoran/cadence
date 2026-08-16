@@ -6,16 +6,33 @@ struct iPadMacStyleRootShell<Content: View>: View {
     @Binding var selection: iOSSidebarItem?
     @ViewBuilder let detail: () -> Content
 
+    /// **The detail pane is hard-sized, and the row is pinned `.leading`.**
+    ///
+    /// Both halves of that matter, and neither used to be true. The detail was
+    /// `.frame(maxWidth: .infinity)`, which sets no *minimum* — the minimum came from whatever the
+    /// pane's own content declared, and an `HStack` handed a fixed sidebar plus a detail that will
+    /// not go below 721pt does not shrink either one. It overflows. The row was then pinned into
+    /// `.frame(width: proxy.size.width, height:)` at its **default centre alignment**, so half the
+    /// overflow hung off the leading edge of the screen and the sidebar rendered as "KSPACE" and
+    /// "GRESS". Nothing clipped the sidebar; the sidebar had been positioned off-screen by the
+    /// Inbox's second column.
+    ///
+    /// `CadenceRootShellLayout` (in `Shared/`, with tests) is now the one place the split is
+    /// decided, and it guarantees `sidebar + detail == window`. `.leading` is the belt to that
+    /// braces: if some future pane still insists on more room than it is given, the excess leaves by
+    /// the trailing edge — past content — rather than by the leading one, which is where the app's
+    /// navigation lives.
     var body: some View {
         GeometryReader { proxy in
             let sidebarStyle = iOSSidebarStyle.style(for: proxy.size.width)
+            let detailWidth = CadenceRootShellLayout.detailWidth(windowWidth: proxy.size.width)
 
             HStack(spacing: 0) {
                 // The window's own size, handed down so the lists drawer can be sized to the screen
                 // it opens on. It was a hardcoded 342×640 popover — two thirds of the height of an
                 // 11" iPad in portrait, with the rest of the panel below the fold.
                 iOSSidebar(selection: $selection, style: sidebarStyle, containerSize: proxy.size)
-                    .frame(width: sidebarStyle.width)
+                    .frame(width: CadenceRootShellLayout.sidebarWidth(windowWidth: proxy.size.width))
                     // `Theme.surface` against the detail pane's `Theme.bg`, closed by a full-weight
                     // hairline — the same construction and the same reasoning as macOS's
                     // `SidebarView`: on a near-black palette the tonal step alone does not separate
@@ -31,12 +48,12 @@ struct iPadMacStyleRootShell<Content: View>: View {
                     .zIndex(1)
 
                 detail()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(width: detailWidth, height: proxy.size.height)
                     .background(Theme.bg)
                     .clipped()
                     .zIndex(0)
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
         }
         .background(Theme.bg.ignoresSafeArea())
         .ignoresSafeArea(.container)
@@ -271,21 +288,12 @@ enum iOSSidebarStyle: Equatable {
     case rail
     case expanded
 
+    /// Full window width, not the sidebar's own column width. The threshold and the two widths live
+    /// in `CadenceRootShellLayout` so the shell's arithmetic and this enum cannot drift — the shell
+    /// sizing the detail from one number while the column drew itself at another is exactly how a
+    /// pane ended up pushing the sidebar off-screen.
     static func style(for width: CGFloat) -> iOSSidebarStyle {
-        // Full window width (not the sidebar's own column width). iPad portrait
-        // widths run from ~744pt (mini) to ~1032pt (13"); landscape is comfortably
-        // wider on every model. 820pt activates the labeled `.expanded` sidebar for
-        // portrait on 10.9"+ iPads and for both orientations on 11"/13" iPads, while
-        // still falling back to `.rail` for genuinely narrow contexts (iPad mini
-        // portrait, Slide Over/Split View compact widths).
-        width >= 820 ? .expanded : .rail
-    }
-
-    var width: CGFloat {
-        switch self {
-        case .rail: return iOSSidebarMetrics.railWidth
-        case .expanded: return iOSSidebarMetrics.expandedWidth
-        }
+        CadenceRootShellLayout.usesExpandedSidebar(windowWidth: width) ? .expanded : .rail
     }
 
     var horizontalPadding: CGFloat {
@@ -297,8 +305,6 @@ enum iOSSidebarStyle: Equatable {
 }
 
 enum iOSSidebarMetrics {
-    static let railWidth: CGFloat = 58
-    static let expandedWidth: CGFloat = 188
     /// Also the touch floor: a nav row is the most-tapped control on the iPad shell, so it does
     /// not get to be 40pt.
     static let buttonHeight: CGFloat = 44

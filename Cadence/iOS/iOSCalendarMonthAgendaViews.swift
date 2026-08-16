@@ -3,28 +3,84 @@ import EventKit
 import SwiftData
 import SwiftUI
 
-/// The compact **Month** view: a month grid on top, a live agenda underneath.
+/// Month with its detail **under** the grid: the compact month grid on top, whatever reading of the
+/// day the toggle selected below it. Every phone, and any iPad pane too narrow to place that reading
+/// beside the grid (an 11" in portrait).
 ///
 /// Month was the last calendar mode still carrying the chrome block `ecaf80f` took off Week and
 /// Board — the four "0 total / 0 timed / 0 tasks / 0 events" chips, the selected-day card, and the
 /// oversized empty state. It was left on purpose, because a month grid on its own lists nothing:
 /// removing the day inspector before there was an agenda would have replaced a pane that said too
-/// much with one that said nothing at all. This is the agenda, and the inspector goes with it.
+/// much with one that said nothing at all. This is where the agenda arrived, and the day inspector
+/// is now the other thing this container can hold rather than the thing it replaced.
 ///
-/// What that inspector cost the grid is the other half of the point. It took the top of the pane
+/// What the old inspector cost the grid is the other half of the point. It took the top of the pane
 /// and the grid took the rest, at a 104pt minimum cell — so on a phone the month view showed three
 /// weeks of the month. The grid here is sized by `CadenceCalendarMonthAgendaSupport.gridRowHeight`,
 /// which fits *every* week of the month into a share of the pane and never drops a cell below a
-/// 44pt touch target.
+/// 44pt touch target. `detailMinimumHeight` is what the grid is capped against, so a taller detail
+/// (the inspector opens with a 63pt header) buys its room out of cell height, never out of weeks.
+struct iOSCalendarMonthStack<Detail: View>: View {
+    let monthDate: Date
+    @Binding var selectedDate: Date
+    let monthTasksByDate: [String: [AppTask]]
+    let bundlesByDate: [String: [TaskBundle]]
+    let eventsByDate: [String: [EKEvent]]
+    let detailMinimumHeight: CGFloat
+    @ViewBuilder let detail: () -> Detail
+
+    private let calendar = Calendar.current
+    private let weekdayHeaderHeight: CGFloat = 22
+
+    private var gridDays: [Date] {
+        CadenceCalendarMonthAgendaSupport.agendaDays(forMonthContaining: monthDate, calendar: calendar)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                iOSCalendarMonthCompactGrid(
+                    monthDate: monthDate,
+                    selectedDate: $selectedDate,
+                    days: gridDays,
+                    rowHeight: CadenceCalendarMonthAgendaSupport.gridRowHeight(
+                        availableHeight: proxy.size.height,
+                        rowCount: CadenceCalendarMonthAgendaSupport.weekRowCount(
+                            forMonthContaining: monthDate,
+                            calendar: calendar
+                        ),
+                        weekdayHeaderHeight: weekdayHeaderHeight,
+                        agendaMinimumHeight: detailMinimumHeight
+                    ),
+                    weekdayHeaderHeight: weekdayHeaderHeight,
+                    monthTasksByDate: monthTasksByDate,
+                    bundlesByDate: bundlesByDate,
+                    eventsByDate: eventsByDate
+                )
+
+                Rectangle()
+                    .fill(Theme.borderSubtle)
+                    .frame(height: 1)
+
+                detail()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .background(Theme.bg)
+    }
+}
+
+/// Every day the month grid draws, in sequence, with what each one holds.
 ///
-/// The two panes are one selection, both ways: tapping a grid day scrolls the agenda to that day's
-/// section, and scrolling the agenda moves the grid's selection to whichever day is at the top. The
-/// rules that keep those two from driving each other in a loop are
+/// The grid and this list are one selection, both ways: tapping a grid day scrolls the list to that
+/// day's section, and scrolling the list moves the grid's selection to whichever day is at the top.
+/// The rules that keep those two from driving each other in a loop are
 /// `CadenceCalendarMonthAgendaSupport.scrollTarget` / `selectionTarget`, in `Shared/` and tested.
 ///
 /// There is no add control here. Capture on a compact Calendar tab is the tab bar's centre `+`, the
-/// same as compact Today, and the iPad keeps the day inspector and its own `+`.
-struct iOSCalendarMonthAgenda: View {
+/// same as compact Today; the day inspector — the other thing the Month toggle can show — carries
+/// its own `+` for the one day it is reading out.
+struct iOSCalendarMonthAgendaList: View {
     let monthDate: Date
     @Binding var selectedDate: Date
     let monthTasksByDate: [String: [AppTask]]
@@ -41,7 +97,6 @@ struct iOSCalendarMonthAgenda: View {
     @State private var selectedEvent: iOSCalendarEventSelection?
 
     private let calendar = Calendar.current
-    private let weekdayHeaderHeight: CGFloat = 22
 
     init(
         monthDate: Date,
@@ -67,40 +122,14 @@ struct iOSCalendarMonthAgenda: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            VStack(spacing: 0) {
-                iOSCalendarMonthCompactGrid(
-                    monthDate: monthDate,
-                    selectedDate: $selectedDate,
-                    days: agendaDays,
-                    rowHeight: CadenceCalendarMonthAgendaSupport.gridRowHeight(
-                        availableHeight: proxy.size.height,
-                        rowCount: CadenceCalendarMonthAgendaSupport.weekRowCount(
-                            forMonthContaining: monthDate,
-                            calendar: calendar
-                        ),
-                        weekdayHeaderHeight: weekdayHeaderHeight
-                    ),
-                    weekdayHeaderHeight: weekdayHeaderHeight,
-                    monthTasksByDate: monthTasksByDate,
-                    bundlesByDate: bundlesByDate,
-                    eventsByDate: eventsByDate
-                )
-
-                Rectangle()
-                    .fill(Theme.borderSubtle)
-                    .frame(height: 1)
-
-                agenda
+        agenda
+            .background(Theme.bg)
+            .sheet(item: $selectedBundle) { bundle in
+                iOSCalendarBundleDetailSheet(bundle: bundle)
             }
-        }
-        .background(Theme.bg)
-        .sheet(item: $selectedBundle) { bundle in
-            iOSCalendarBundleDetailSheet(bundle: bundle)
-        }
-        .sheet(item: $selectedEvent) { selection in
-            iOSCalendarEventEditSheet(event: selection.event)
-        }
+            .sheet(item: $selectedEvent) { selection in
+                iOSCalendarEventEditSheet(event: selection.event)
+            }
     }
 
     private var agenda: some View {
@@ -242,8 +271,8 @@ struct iOSCalendarMonthAgenda: View {
 
 /// The month grid in its compact form: a day number and, when the day holds anything at all, a dot.
 ///
-/// The full-size cell (`iOSCalendarMonthDayCell`, still what iPad draws) lists up to five chips per
-/// day and needs 104pt to do it, which is why only three weeks of the month fitted on a phone. Here
+/// The full-size cell (`iOSCalendarMonthDayCell`, still what a split-width iPad pane draws) lists up
+/// to five chips per day and needs 104pt to do it, which is why only three weeks fitted. Here
 /// the day's items are one scroll away in the agenda, so the cell only has to answer "is there
 /// something on this day" — and every week of the month fits.
 private struct iOSCalendarMonthCompactGrid: View {
@@ -320,14 +349,22 @@ private struct iOSCalendarMonthCompactDayCell: View {
         return Color.clear
     }
 
+    /// The day badge is 32pt on every pane tall enough to give the row its 44pt touch target, and
+    /// shrinks with the row below that. `gridRowHeight` only returns a sub-44 row when the pane
+    /// cannot hold the grid and the agenda at once; a fixed 32pt badge plus its dot is 40pt of
+    /// content, which would then overrun the row and let neighbouring weeks overlap.
+    private var badgeSize: CGFloat {
+        min(32, max(18, rowHeight - 12))
+    }
+
     var body: some View {
         Button(action: action) {
             VStack(spacing: 3) {
                 Text(DateFormatters.dayNumber.string(from: date))
-                    .font(.system(size: 15, weight: isToday || isSelected ? .bold : .medium))
+                    .font(.system(size: badgeSize >= 28 ? 15 : 12, weight: isToday || isSelected ? .bold : .medium))
                     .foregroundStyle(dateLabelColor)
                     .monospacedDigit()
-                    .frame(width: 32, height: 32)
+                    .frame(width: badgeSize, height: badgeSize)
                     .background(badgeFill)
                     .clipShape(Circle())
                     .overlay {

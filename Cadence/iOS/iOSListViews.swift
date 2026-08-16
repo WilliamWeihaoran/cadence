@@ -80,7 +80,8 @@ struct iOSListsView: View {
             // The nav bar above is hidden (see `.toolbar(.hidden…)` on the body), which is what
             // left iPhone with no way back other than the swipe gesture. The chevron lives here.
             iOSListsPageHeader(
-                count: activeAreas.count + activeProjects.count,
+                areaCount: activeAreas.count,
+                projectCount: activeProjects.count,
                 onBack: { dismiss() }
             )
 

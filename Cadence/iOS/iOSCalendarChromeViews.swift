@@ -171,6 +171,10 @@ struct iOSCalendarToolbar: View {
     @Binding var viewMode: CadenceCalendarViewMode
     @Binding var presentation: CadenceCalendarPresentation
     @Binding var zoomLevel: Int
+    /// Month's Agenda/Day switch. It shares the row with `zoomControls` because the two are never
+    /// both there: zoom belongs to the timed grids, this belongs to Month.
+    @Binding var monthDetail: CadenceCalendarMonthDetail
+    var showsMonthDetailControl = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let previous: () -> Void
     let next: () -> Void
@@ -200,6 +204,7 @@ struct iOSCalendarToolbar: View {
             ScrollView(.horizontal) {
                 HStack(spacing: 8) {
                     modeControl
+                    monthDetailControl
                     zoomControls
                 }
                 .padding(.trailing, 1)
@@ -220,6 +225,7 @@ struct iOSCalendarToolbar: View {
                 HStack(spacing: 12) {
                     zoomControls
                     modeControl
+                    monthDetailControl
                     navigationControls
                 }
             }
@@ -227,6 +233,7 @@ struct iOSCalendarToolbar: View {
             singleRowToolbar {
                 HStack(spacing: 8) {
                     modeControl
+                    monthDetailControl
                     navigationControls
                 }
             }
@@ -241,6 +248,7 @@ struct iOSCalendarToolbar: View {
 
                 HStack(spacing: 8) {
                     modeControl
+                    monthDetailControl
                     zoomControls
                     Spacer(minLength: 0)
                 }
@@ -315,6 +323,31 @@ struct iOSCalendarToolbar: View {
                 isSelected: presentation == .board
             ) {
                 presentation = .board
+            }
+        }
+    }
+
+    /// Month only, and only where both of its readings can actually be placed — see
+    /// `CadenceCalendarMonthLayout.showsDetailControl`. It sits immediately beside the mode control
+    /// because it is the second half of the same question: Month, read how?
+    ///
+    /// Which reading you got used to be a consequence of window width, so rotating an iPad swapped
+    /// the agenda for the day inspector with nothing on screen admitting it had happened.
+    @ViewBuilder
+    private var monthDetailControl: some View {
+        if showsMonthDetailControl {
+            iOSSegmentedPillGroup {
+                ForEach(CadenceCalendarMonthDetail.allCases, id: \.self) { detail in
+                    iOSSegmentedPill(
+                        title: detail.title,
+                        systemImage: detail.systemImage,
+                        isSelected: monthDetail == detail,
+                        minWidth: 52,
+                        accessibilityHint: detail.accessibilityHint
+                    ) {
+                        monthDetail = detail
+                    }
+                }
             }
         }
     }

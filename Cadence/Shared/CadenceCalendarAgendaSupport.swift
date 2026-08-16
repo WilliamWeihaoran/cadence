@@ -77,25 +77,157 @@ enum CadenceCalendarMonthAgendaSupport {
         return max(0, days / 7)
     }
 
-    /// The height of one week row, so that **every** week of the month is on screen at once.
+    /// The least the agenda is left with, whatever the grid would like — a day heading and the top
+    /// of the first row under it. The agenda is the half of this view that lists anything.
+    static let agendaMinimumHeight: CGFloat = 96
+
+    /// The height of one week row, so that **every** week of the month is on screen at once — and so
+    /// that the agenda under it is on screen *at all*.
     ///
     /// The compact month used to give the grid the bottom ~40% of a pane it shared with a day
     /// inspector, at a 104pt minimum cell — three weeks fitted and the rest were below the fold, on
     /// the one view whose entire job is showing a whole month. Rows are sized to a share of the
     /// pane instead, so the row *count* is what the grid honours and the row *height* is what gives.
-    /// The floor is a 44pt touch target, never less: a cell is a control.
+    ///
+    /// The 44pt touch floor is a floor on the grid's **share of the pane**, not a claim against the
+    /// pane itself. It used to be applied last and unconditionally, which quietly made it outrank
+    /// the agenda: at six rows the grid asked for `weekdayHeader + 6 × 44 + padding` — 294pt — no
+    /// matter how little there was, its `VStack` gave the fixed-height grid what it asked for, and
+    /// the agenda's `ScrollView`, the flexible sibling, got whatever remained. On a pane shorter
+    /// than ~390pt that remainder is nothing, and a zero-height scroll view is not an empty list:
+    /// it is a pane that draws its grid and then shows no day headings, no rows, and no scroll in
+    /// either direction that brings any back, because there is nowhere for them to be. So the grid
+    /// is capped at `availableHeight - agendaMinimumHeight` first and the touch floor applies inside
+    /// that cap. Every pane that can hold both still gets its 44pt cells; a pane that cannot hold
+    /// both gives up cell height rather than giving up the agenda.
     static func gridRowHeight(
         availableHeight: CGFloat,
         rowCount: Int,
         weekdayHeaderHeight: CGFloat,
+        gridBottomPadding: CGFloat = 8,
+        agendaMinimumHeight: CGFloat = Self.agendaMinimumHeight,
         gridHeightFraction: CGFloat = 0.46,
         minimumRowHeight: CGFloat = 44,
         maximumRowHeight: CGFloat = 58
     ) -> CGFloat {
         guard rowCount > 0 else { return minimumRowHeight }
         let fraction = min(max(gridHeightFraction, 0), 1)
-        let budget = max(0, availableHeight * fraction - weekdayHeaderHeight)
-        let fitted = budget / CGFloat(rowCount)
-        return min(max(fitted, minimumRowHeight), max(minimumRowHeight, maximumRowHeight))
+        let preferred = max(0, availableHeight * fraction - weekdayHeaderHeight) / CGFloat(rowCount)
+        let ceiling = max(
+            0,
+            availableHeight - agendaMinimumHeight - weekdayHeaderHeight - gridBottomPadding
+        ) / CGFloat(rowCount)
+        let floor = min(minimumRowHeight, ceiling)
+        return min(max(min(preferred, ceiling), floor), max(floor, maximumRowHeight))
+    }
+}
+
+// MARK: - Which reading of the month, and where it goes
+
+/// The two ways Month can say what is on a day, as a **choice** rather than a consequence of how
+/// wide the window happens to be.
+///
+/// Both already existed. Which one you got was decided by `hasInspector`, i.e. by the pane clearing
+/// 681pt: an 11" iPad in portrait showed the agenda and the same iPad in landscape showed the day
+/// inspector, so rotating the device silently swapped the mechanism — two different answers to
+/// "what is on the 14th", neither reachable from the other.
+enum CadenceCalendarMonthDetail: String, CaseIterable, Hashable {
+    /// Every day of the month in sequence, scrolling, two-way synced with the grid.
+    case agenda
+    /// The selected day on its own, in sections: blocks, Apple Calendar, timed, do date, due.
+    case day
+
+    var title: String {
+        switch self {
+        case .agenda: return "Agenda"
+        case .day: return "Day"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .agenda: return "list.bullet"
+        case .day: return "calendar.day.timeline.left"
+        }
+    }
+
+    var accessibilityHint: String {
+        switch self {
+        case .agenda: return "List every day of the month"
+        case .day: return "Show only the selected day"
+        }
+    }
+}
+
+/// Month's two axes: the **toggle** picks what is shown beside or under the grid, and the pane
+/// width picks which of those two it is.
+///
+/// Keeping them apart is the whole point. The stored preference is written from a tap and from
+/// nothing else — a persisted value written from a measured one compounds across launches, which
+/// `ecaf80f` had already paid for once — while placement is derived every layout pass and never
+/// stored.
+enum CadenceCalendarMonthLayout {
+    /// Where the chosen detail sits relative to the month grid.
+    ///
+    /// `nonisolated` so its synthesized `Equatable` is too: this project builds with
+    /// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which otherwise makes comparing two placements
+    /// from a `nonisolated` context — a test, say — a Swift 6 error.
+    nonisolated enum Placement: Hashable {
+        /// A column beside the grid. What a landscape iPad already did with the day inspector.
+        case beside
+        /// A pane under the grid. What a phone, and a narrow iPad pane, already did with the agenda.
+        case below
+    }
+
+    /// What a compact pane shows whatever is stored. The phone's Month has one shape and no toggle,
+    /// so the stored value is a regular-width preference that a phone neither reads nor writes.
+    static let compactDetail: CadenceCalendarMonthDetail = .agenda
+
+    /// The agenda is the default because it is the reading that actually lists the month, and
+    /// because it is what every phone shows — so a cold launch looks the same on all of them.
+    static let defaultDetail: CadenceCalendarMonthDetail = .agenda
+
+    static func detail(storedRawValue: String, isCompact: Bool = false) -> CadenceCalendarMonthDetail {
+        guard !isCompact else { return compactDetail }
+        return CadenceCalendarMonthDetail(rawValue: storedRawValue) ?? defaultDetail
+    }
+
+    /// Beside the grid exactly where the day inspector already fits, so Month splits at the same
+    /// width Week and Board do. Below that the detail goes under the grid instead of disappearing:
+    /// the inspector's 340pt floor against a 646pt pane would leave ~43pt per weekday column, which
+    /// is the starvation `CadenceCalendarPaneLayout` exists to prevent.
+    static func placement(paneWidth: CGFloat) -> Placement {
+        CadenceCalendarPaneLayout.showsInspector(paneWidth: paneWidth) ? .beside : .below
+    }
+
+    /// Month-only, regular-width-only. Week and Board have one detail each and would gain a control
+    /// with nothing to switch between; a phone has no room to place either one beside the grid.
+    static func showsDetailControl(
+        isCompact: Bool,
+        presentation: CadenceCalendarPresentation,
+        viewMode: CadenceCalendarViewMode
+    ) -> Bool {
+        !isCompact && presentation == .timeline && viewMode == .month
+    }
+
+    /// Whether Month keeps the one-line counts strip under the toolbar.
+    ///
+    /// Only where the detail is a **column beside** the grid and it is the day inspector — which is
+    /// the one arrangement where the strip's date is not immediately restated by the next thing down
+    /// the pane. The agenda heads every day with its own date, and an inspector placed *under* the
+    /// grid heads itself with the selected one, so in both of those the strip is a second copy of a
+    /// line already on screen.
+    static func showsDaySummaryStrip(placement: Placement, detail: CadenceCalendarMonthDetail) -> Bool {
+        placement == .beside && detail == .day
+    }
+
+    /// The least the detail is left with under the grid, which is what caps how tall the grid may
+    /// grow. The inspector needs more than the agenda because it opens with a 63pt header carrying
+    /// the date and the add button; at the agenda's 96 it would be a header and a sliver.
+    static func detailMinimumHeight(for detail: CadenceCalendarMonthDetail) -> CGFloat {
+        switch detail {
+        case .agenda: return CadenceCalendarMonthAgendaSupport.agendaMinimumHeight
+        case .day: return 168
+        }
     }
 }

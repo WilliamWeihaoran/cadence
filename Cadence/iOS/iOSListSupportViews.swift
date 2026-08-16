@@ -92,7 +92,8 @@ struct iOSListIconBadge: View {
 /// variant of each other.
 struct iOSListsPageHeader: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    let count: Int
+    let areaCount: Int
+    let projectCount: Int
     /// Set on iPhone, where this page is pushed with its navigation bar hidden. See
     /// `iOSHidesCompactNavigationBar()`.
     var onBack: (() -> Void)? = nil
@@ -111,7 +112,7 @@ struct iOSListsPageHeader: View {
             iOSListIconBadge(icon: "folder.fill", colorHex: Theme.blueHex, size: isRegularWidth ? 36 : 32)
 
             VStack(alignment: .leading, spacing: 2) {
-                SectionEyebrowLabel(text: "Workspace")
+                SectionEyebrowLabel(text: CadenceListsSummary.eyebrow(areaCount: areaCount, projectCount: projectCount))
                 Text("Lists")
                     .font(.system(size: isRegularWidth ? 21 : 17, weight: .bold))
                     .foregroundStyle(Theme.text)
@@ -120,8 +121,8 @@ struct iOSListsPageHeader: View {
 
             Spacer(minLength: 4)
 
-            if count > 0 {
-                iOSListCountBadge(count: count)
+            if areaCount + projectCount > 0 {
+                iOSListCountBadge(count: areaCount + projectCount)
             }
         }
         .padding(.horizontal, isRegularWidth ? 20 : 16)
@@ -302,20 +303,13 @@ struct iOSListNotesPanel: View {
     let project: Project?
     @State private var note: Note?
     @State private var isEditorFocused = false
-    @AppStorage(iOSMarkdownEditorPreferences.modeKey) private var editorModeRaw = iOSMarkdownEditorPreferences.defaultMode.rawValue
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
-
-    private var editorModeBinding: Binding<iOSMarkdownEditorMode> {
-        iOSMarkdownEditorPreferences.binding(for: $editorModeRaw)
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let note {
                 HStack {
-                    iOSMarkdownModePicker(mode: editorModeBinding, compact: true)
-
                     Spacer()
 
                     iOSNoteTemplateMenu(kind: .list) { template in
@@ -335,7 +329,6 @@ struct iOSListNotesPanel: View {
                         set: { update(note, content: $0) }
                     ),
                     isFocused: $isEditorFocused,
-                    mode: editorModeBinding,
                     placeholder: "Start writing...",
                     referenceNotes: allNotes,
                     referenceTasks: allTasks,

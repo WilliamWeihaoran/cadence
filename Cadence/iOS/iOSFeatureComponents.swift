@@ -292,43 +292,4 @@ struct iOSFeatureEmptyDetail: View {
     }
 }
 
-struct iOSInlineErrorBanner: View {
-    let message: String
-    let dismiss: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.amber)
-                .padding(.top, 1)
-
-            Text(message)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.text)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Spacer(minLength: 8)
-
-            Button(action: dismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 24, height: 24)
-                    .iOSExpandedHitArea(10)
-            }
-            .buttonStyle(.iosPressable)
-            .accessibilityLabel("Dismiss")
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(Theme.amber.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                .strokeBorder(Theme.amber.opacity(0.24), lineWidth: 1)
-        }
-    }
-}
-
 #endif

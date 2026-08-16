@@ -14,6 +14,10 @@ struct iOSCalendarView: View {
     @AppStorage("ios.calendar.viewMode") private var viewModeRaw = CadenceCalendarViewMode.week.rawValue
     @AppStorage("ios.calendar.presentation") private var presentationRaw = CadenceCalendarPresentation.timeline.rawValue
     @AppStorage("ios.calendar.zoomLevel") private var zoomLevel = 1
+    /// Month's Agenda/Day toggle. Written from a tap on that control and from nowhere else — never
+    /// from `paneWidth`, the size class, or anything else the window decides. See
+    /// `CadenceCalendarMonthLayout`.
+    @AppStorage("ios.calendar.monthDetail") private var monthDetailRaw = CadenceCalendarMonthLayout.defaultDetail.rawValue
     @AppStorage("ios.calendar.selectedDateKey") private var selectedDateKeyRaw = ""
     @AppStorage("ios.calendar.anchorDateKey") private var anchorDateKeyRaw = ""
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -165,14 +169,38 @@ struct iOSCalendarView: View {
         !isCompact && CadenceCalendarPaneLayout.showsInspector(paneWidth: paneWidth)
     }
 
+    private var isMonthTimeline: Bool {
+        presentation == .timeline && viewMode == .month
+    }
+
+    /// What Month shows beside or under its grid. This used to be `!hasInspector` — the window
+    /// deciding which of the two mechanisms you were using, so rotating an 11" iPad swapped the
+    /// agenda for the day inspector and back. It is a stored choice now; the width only decides
+    /// where that choice is drawn.
+    private var monthDetail: CadenceCalendarMonthDetail {
+        CadenceCalendarMonthLayout.detail(storedRawValue: monthDetailRaw, isCompact: isCompact)
+    }
+
+    /// Beside the grid where the inspector already fits, under it where it does not.
+    private var monthPlacement: CadenceCalendarMonthLayout.Placement {
+        isCompact ? .below : CadenceCalendarMonthLayout.placement(paneWidth: paneWidth)
+    }
+
     /// Only Week keeps the counts line on a phone. The Board's columns are meant to start directly
     /// under the mode control, and Month's agenda below lists the selected day item by item — a
     /// line above it counting the same items is the chrome this page just finished removing.
     ///
-    /// Still keyed on the size class rather than on the inspector: an iPad pane without an inspector
-    /// keeps its Month **grid**, and the counts line is then the only thing naming the selected day.
+    /// Month now decides for itself, because both of its readings head themselves with a date: the
+    /// agenda per day, the inspector once. See
+    /// `CadenceCalendarMonthLayout.showsDaySummaryStrip(placement:detail:)`.
     private var showsContextStrip: Bool {
-        !isCompact || (presentation == .timeline && viewMode != .month)
+        if isMonthTimeline {
+            return CadenceCalendarMonthLayout.showsDaySummaryStrip(
+                placement: monthPlacement,
+                detail: monthDetail
+            )
+        }
+        return !isCompact || presentation == .timeline
     }
 
     var body: some View {
@@ -183,6 +211,12 @@ struct iOSCalendarView: View {
                 viewMode: Binding(get: { viewMode }, set: setViewMode),
                 presentation: Binding(get: { presentation }, set: setPresentation),
                 zoomLevel: $zoomLevel,
+                monthDetail: Binding(get: { monthDetail }, set: setMonthDetail),
+                showsMonthDetailControl: CadenceCalendarMonthLayout.showsDetailControl(
+                    isCompact: isCompact,
+                    presentation: presentation,
+                    viewMode: viewMode
+                ),
                 previous: { moveAnchor(by: -1) },
                 next: { moveAnchor(by: 1) },
                 today: jumpToToday
@@ -199,7 +233,11 @@ struct iOSCalendarView: View {
                 )
             }
 
-            if hasInspector {
+            if isMonthTimeline {
+                // Month splits itself: it has two possible details and two possible placements, and
+                // the pane-wide `hasInspector` branch below can express neither.
+                monthContent
+            } else if hasInspector {
                 HStack(spacing: 0) {
                     calendarContent
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -252,35 +290,6 @@ struct iOSCalendarView: View {
                 eventsByDate: visibleEventsByDate,
                 onAddItem: openQuickCreate
             )
-        } else if viewMode == .month {
-            // iPad keeps the full month grid. On a phone it had room for three weeks of the month,
-            // which is why compact width gets the grid-plus-agenda instead; on an iPad pane the
-            // 104pt cells fit every week *and* list what each day holds, so the grid still answers
-            // the question with or without the inspector beside it.
-            //
-            // Deliberately still `isCompact` rather than `!hasInspector`. Handing the agenda to a
-            // narrow regular-width pane is the obvious symmetry and it does not work:
-            // `iOSCalendarMonthAgenda` draws its grid and then leaves its whole scroll view blank at
-            // regular width — no day headers, no rows, and no scroll position that brings any back.
-            // That is a real defect in the agenda, but it is not this one, and a blank pane is worse
-            // than a grid.
-            if isCompact {
-                iOSCalendarMonthAgenda(
-                    monthDate: anchorDate,
-                    selectedDate: $selectedDate,
-                    monthTasksByDate: monthTasksByDate,
-                    bundlesByDate: bundlesByDate,
-                    eventsByDate: visibleEventsByDate
-                )
-            } else {
-                iOSCalendarMonthGrid(
-                    monthDate: anchorDate,
-                    selectedDate: $selectedDate,
-                    monthTasksByDate: monthTasksByDate,
-                    bundlesByDate: bundlesByDate,
-                    eventsByDate: visibleEventsByDate
-                )
-            }
         } else {
             iOSCalendarTimelineGrid(
                 dates: visibleDates,
@@ -292,6 +301,63 @@ struct iOSCalendarView: View {
                 zoomLevel: zoomLevel,
                 onCreateAt: openQuickCreate
             )
+        }
+    }
+
+    /// Month: the grid, and the chosen reading of a day either beside it or under it.
+    ///
+    /// Beside, the grid is the full-size one whose 104pt cells chip what each day holds; under, it
+    /// is the compact grid sized so that **every** week of the month is on screen with the detail
+    /// still visible below it. Both were already here — what is new is that either detail can go in
+    /// either place, instead of the pane width choosing one pairing and hiding the other.
+    @ViewBuilder
+    private var monthContent: some View {
+        switch monthPlacement {
+        case .beside:
+            HStack(spacing: 0) {
+                iOSCalendarMonthGrid(
+                    monthDate: anchorDate,
+                    selectedDate: $selectedDate,
+                    monthTasksByDate: monthTasksByDate,
+                    bundlesByDate: bundlesByDate,
+                    eventsByDate: visibleEventsByDate
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                Divider().background(Theme.borderSubtle)
+
+                monthDetailPane
+                    .frame(width: CadenceCalendarPaneLayout.inspectorWidth(forPaneWidth: paneWidth))
+                    .frame(maxHeight: .infinity)
+            }
+
+        case .below:
+            iOSCalendarMonthStack(
+                monthDate: anchorDate,
+                selectedDate: $selectedDate,
+                monthTasksByDate: monthTasksByDate,
+                bundlesByDate: bundlesByDate,
+                eventsByDate: visibleEventsByDate,
+                detailMinimumHeight: CadenceCalendarMonthLayout.detailMinimumHeight(for: monthDetail)
+            ) {
+                monthDetailPane
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var monthDetailPane: some View {
+        switch monthDetail {
+        case .agenda:
+            iOSCalendarMonthAgendaList(
+                monthDate: anchorDate,
+                selectedDate: $selectedDate,
+                monthTasksByDate: monthTasksByDate,
+                bundlesByDate: bundlesByDate,
+                eventsByDate: visibleEventsByDate
+            )
+        case .day:
+            dayInspector
         }
     }
 
@@ -338,6 +404,13 @@ struct iOSCalendarView: View {
         } else if !visibleDates.contains(where: { calendar.isDate($0, inSameDayAs: selectedDate) }) {
             anchorDate = selectedDate
         }
+    }
+
+    /// The **only** writer of `ios.calendar.monthDetail`. A persisted navigation value written from
+    /// anything other than a tap compounds across launches (`ecaf80f`), so nothing derived from
+    /// `paneWidth` or the size class ever reaches this.
+    private func setMonthDetail(_ newDetail: CadenceCalendarMonthDetail) {
+        monthDetailRaw = newDetail.rawValue
     }
 
     private func setPresentation(_ newPresentation: CadenceCalendarPresentation) {

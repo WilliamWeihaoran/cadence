@@ -181,22 +181,95 @@ struct CalendarMonthAgendaTests {
         #expect(rowHeight * 6 + headerHeight < paneHeight * 0.55)
     }
 
-    /// A grid cell is a control, so it never goes below a 44pt touch target however little room the
-    /// pane has — the grid gives up its share of the pane before it gives up being tappable.
-    @Test func rowHeightNeverDropsBelowATouchTarget() {
-        #expect(
-            CadenceCalendarMonthAgendaSupport.gridRowHeight(
-                availableHeight: 200,
+    /// A grid cell is a control, so it holds a 44pt touch target on every pane that can carry the
+    /// grid and the agenda at once — which is every pane a real device hands this view.
+    @Test func rowHeightHoldsATouchTargetOnAnyPaneThatFitsBoth() {
+        for paneHeight in stride(from: CGFloat(400), through: 1400, by: 50) {
+            let rowHeight = CadenceCalendarMonthAgendaSupport.gridRowHeight(
+                availableHeight: paneHeight,
                 rowCount: 6,
                 weekdayHeaderHeight: 22
-            ) == CGFloat(44)
+            )
+            #expect(rowHeight >= 44, "row collapsed below the touch floor at \(paneHeight)pt")
+        }
+    }
+
+    /// The blank-agenda regression, pinned.
+    ///
+    /// The touch floor used to be applied last and unconditionally, so a six-row month asked for
+    /// `22 + 6 × 44 + 8 = 294pt` of grid however short the pane was. The grid is the fixed-height
+    /// child of that `VStack` and the agenda's `ScrollView` is the flexible one, so the grid was
+    /// served first and the agenda was laid out at whatever remained — nothing, on any pane under
+    /// ~300pt. A zero-height scroll view reads as a pane that draws its grid and then shows no day
+    /// headings, no rows, and no scroll in either direction that brings any back.
+    ///
+    /// The floor is a floor on the grid's share, not a claim against the pane: the agenda keeps its
+    /// minimum first, and the cells give up height rather than give up the agenda.
+    @Test func theAgendaAlwaysKeepsRoomToDrawSomething() {
+        let headerHeight: CGFloat = 22
+        let bottomPadding: CGFloat = 8
+
+        for rowCount in 4...6 {
+            for paneHeight in stride(from: CGFloat(120), through: 1400, by: 20) {
+                let rowHeight = CadenceCalendarMonthAgendaSupport.gridRowHeight(
+                    availableHeight: paneHeight,
+                    rowCount: rowCount,
+                    weekdayHeaderHeight: headerHeight
+                )
+                let gridHeight = rowHeight * CGFloat(rowCount) + headerHeight + bottomPadding
+                let agendaHeight = paneHeight - gridHeight
+
+                // On a pane too short even for the grid's own chrome, the agenda gets what is left
+                // after that chrome — but never nothing.
+                let owed = min(
+                    CadenceCalendarMonthAgendaSupport.agendaMinimumHeight,
+                    max(0, paneHeight - headerHeight - bottomPadding)
+                )
+
+                #expect(
+                    agendaHeight >= owed - 0.001,
+                    "\(rowCount) rows in \(paneHeight)pt left the agenda \(agendaHeight)pt"
+                )
+            }
+        }
+    }
+
+    /// The specific pane the old floor blanked: 280pt of calendar, five week rows.
+    @Test func aShortPaneShrinksTheGridRatherThanTheAgenda() {
+        let rowHeight = CadenceCalendarMonthAgendaSupport.gridRowHeight(
+            availableHeight: 280,
+            rowCount: 5,
+            weekdayHeaderHeight: 22
         )
+
+        #expect(rowHeight < 44)
+        #expect(280 - (rowHeight * 5 + 22 + 8) >= 96)
+    }
+
+    @Test func rowHeightSurvivesAPaneWithNoHeight() {
         #expect(
             CadenceCalendarMonthAgendaSupport.gridRowHeight(
                 availableHeight: 0,
                 rowCount: 6,
                 weekdayHeaderHeight: 22
-            ) == CGFloat(44)
+            ) == CGFloat(0)
+        )
+    }
+
+    /// The phone this view shipped on is untouched by the cap: a 402×874 phone gives Month roughly
+    /// 750pt, where the grid's 0.46 share is what decides the row height and the cap never binds.
+    @Test func aPhonePaneIsSizedByItsShareNotByTheCap() {
+        #expect(
+            CadenceCalendarMonthAgendaSupport.gridRowHeight(
+                availableHeight: 750,
+                rowCount: 6,
+                weekdayHeaderHeight: 22
+            ) == CadenceCalendarMonthAgendaSupport.gridRowHeight(
+                availableHeight: 750,
+                rowCount: 6,
+                weekdayHeaderHeight: 22,
+                agendaMinimumHeight: 0
+            )
         )
     }
 

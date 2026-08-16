@@ -16,7 +16,7 @@ struct iOSListsRegularPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSListsPageHeader(count: activeAreas.count + activeProjects.count)
+            iOSListsPageHeader(areaCount: activeAreas.count, projectCount: activeProjects.count)
 
             iOSListCreateButtonsRow(editorMode: $editorMode)
                 .padding(.horizontal, 16)
