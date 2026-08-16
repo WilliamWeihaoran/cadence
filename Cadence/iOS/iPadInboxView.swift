@@ -6,11 +6,8 @@ struct iPadInboxView: View {
     /// Off when the Tasks tab hosts this as its Inbox segment — see
     /// `iPadTodayView.showsCompactHeader`. Still on when Inbox is reached as a pushed screen.
     var showsCompactHeader = true
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @State private var newTitle = ""
-    @State private var saveError: String?
     @AppStorage("ios.inbox.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
     @AppStorage("ios.inbox.showCompleted") private var showCompleted = false
 
@@ -30,6 +27,16 @@ struct iPadInboxView: View {
         CadenceTaskQuerySupport.completedInboxTasks(from: allTasks)
     }
 
+    /// **One full-width column.** The iPad layout used to be an `HStack` of the list and an
+    /// "Overview" pane, which spent about a third of the screen on "0 ACTIVE", "0 DONE" and an
+    /// "OLDEST ITEM" that read "Clear" whenever there was nothing to be oldest. Every one of those
+    /// three was already on screen: the active count is the badge in the page header, and the oldest
+    /// item is the last row of a list sorted by list order.
+    ///
+    /// Deleting it also removed the last pane on this surface that declared a `minWidth` with no way
+    /// to honour it — `440 + 1 + 280` against 632pt of detail on an 11" iPad — which is what
+    /// overflowed the root shell and pushed the sidebar off the leading edge of the screen. See
+    /// `CadenceRootShellLayout`, which now stops that at the shell regardless.
     var body: some View {
         Group {
             if horizontalSizeClass == .compact {
@@ -41,30 +48,16 @@ struct iPadInboxView: View {
                         get: { sortMode },
                         set: { sortModeRaw = $0.rawValue }
                     ),
-                    showCompleted: $showCompleted,
-                    newTitle: $newTitle,
-                    saveError: $saveError,
-                    captureInboxTask: captureInboxTask
+                    showCompleted: $showCompleted
                 )
             } else {
-                HStack(spacing: 0) {
-                    inboxColumn
-                        .frame(minWidth: 440, idealWidth: 560, maxWidth: 680)
-                        .layoutPriority(0.62)
-
-                    Divider().background(Theme.borderSubtle)
-
-                    iPadInboxStatusPanel(
-                        activeCount: inboxTasks.count,
-                        completedCount: completedInboxTasks.count,
-                        oldestTask: inboxTasks.min { $0.createdAt < $1.createdAt }
-                    )
-                    .frame(minWidth: 280, idealWidth: 340)
-                    .layoutPriority(0.38)
-                }
+                inboxColumn
             }
         }
         .background(Theme.bg.ignoresSafeArea())
+        // No seed: the Inbox is where a task goes when it has no list yet, so seeding one would
+        // contradict the surface it was captured from.
+        .iOSFloatingCreateTaskButton()
         // Both layouts head themselves with "CAPTURE / Inbox", so a nav title repeated the word
         // one row higher. See `iOSHidesCompactNavigationBar()`.
         .iOSHidesCompactNavigationBar()
@@ -80,22 +73,6 @@ struct iPadInboxView: View {
 
             Divider().background(Theme.borderSubtle)
 
-            iOSTaskCaptureBar(
-                placeholder: "Add an inbox task...",
-                title: $newTitle,
-                action: captureInboxTask
-            )
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-
-            if let saveError {
-                iOSInlineErrorBanner(message: saveError) {
-                    self.saveError = nil
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-            }
-
             iOSTaskViewOptionsBar(
                 sortMode: Binding(
                     get: { sortMode },
@@ -105,7 +82,7 @@ struct iPadInboxView: View {
                 completedCount: completedInboxTasks.count
             )
             .padding(.horizontal, 16)
-            .padding(.top, 10)
+            .padding(.top, 14)
             .padding(.bottom, 12)
 
             if inboxTasks.isEmpty && (!showCompleted || completedInboxTasks.isEmpty) {
@@ -141,68 +118,7 @@ struct iPadInboxView: View {
                 .background(Theme.bg)
             }
         }
-        .background(Theme.bg)
-    }
-
-    private func captureInboxTask() {
-        let pendingTitle = newTitle
-        do {
-            _ = try CadenceTaskMutationSupport.insertTask(
-                title: newTitle,
-                allTasks: allTasks,
-                modelContext: modelContext
-            )
-            saveError = nil
-            newTitle = ""
-        } catch {
-            newTitle = pendingTitle
-            saveError = "Couldn't save this inbox task. Try again in a moment."
-        }
-    }
-}
-
-private struct iPadInboxStatusPanel: View {
-    let activeCount: Int
-    let completedCount: Int
-    let oldestTask: AppTask?
-
-    private var oldestLabel: String {
-        guard let oldestTask else { return "Clear" }
-        return DateFormatters.relativeDate(from: DateFormatters.dateKey(from: oldestTask.createdAt))
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: "Workspace", title: "Overview")
-
-            Divider().background(Theme.borderSubtle)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                        iOSMetricTile(title: "Active", value: "\(activeCount)", icon: "tray.full.fill", color: Theme.blue)
-                        iOSMetricTile(title: "Done", value: "\(completedCount)", icon: "checkmark.circle.fill", color: Theme.green)
-                    }
-
-                    CadenceSettingsCard {
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text("Oldest item")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(Theme.dim)
-                                .textCase(.uppercase)
-                                .kerning(0.8)
-
-                            Text(oldestLabel)
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundStyle(Theme.text)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .padding(16)
-            }
-            .scrollIndicators(.hidden)
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.bg)
     }
 }

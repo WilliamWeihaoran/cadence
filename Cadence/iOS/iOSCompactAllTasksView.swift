@@ -8,9 +8,6 @@ struct iOSCompactAllTasksView: View {
     let completedTasks: [AppTask]
     @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
-    @Binding var newTitle: String
-    @Binding var saveError: String?
-    let captureTask: () -> Void
 
     private var timedCount: Int {
         activeTasks.filter { !$0.scheduledDate.isEmpty || !$0.dueDate.isEmpty }.count
@@ -35,7 +32,7 @@ struct iOSCompactAllTasksView: View {
                 }
 
                 stats
-                captureCard
+                optionsBar
                 taskSections
             }
             .padding(.horizontal, 16)
@@ -72,26 +69,14 @@ struct iOSCompactAllTasksView: View {
         .cadenceCard(background: Theme.surface.opacity(0.68), shadowRadius: 10, shadowY: 4)
     }
 
-    private var captureCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            iOSTaskCaptureBar(
-                placeholder: "Add a task...",
-                title: $newTitle,
-                action: captureTask
-            )
-
-            if let saveError {
-                iOSInlineErrorBanner(message: saveError) {
-                    self.saveError = nil
-                }
-            }
-
-            iOSTaskViewOptionsBar(
-                sortMode: $sortMode,
-                showCompleted: $showCompleted,
-                completedCount: completedTasks.count
-            )
-        }
+    /// Sort and completed-visibility only — see the note on `iOSCompactInboxView.optionsBar` for why
+    /// the "Add a task…" field above these two controls is gone.
+    private var optionsBar: some View {
+        iOSTaskViewOptionsBar(
+            sortMode: $sortMode,
+            showCompleted: $showCompleted,
+            completedCount: completedTasks.count
+        )
         .padding(12)
         .cadenceCard()
     }

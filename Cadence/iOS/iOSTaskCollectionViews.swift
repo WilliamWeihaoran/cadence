@@ -6,13 +6,10 @@ struct iOSAllTasksView: View {
     /// Off when the Tasks tab hosts this as its All segment — see `iPadTodayView.showsCompactHeader`
     /// for the reasoning. Still on when All Tasks is reached as a pushed screen.
     var showsCompactHeader = true
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @AppStorage("ios.allTasks.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
     @AppStorage("ios.allTasks.showCompleted") private var showCompleted = false
-    @State private var newTitle = ""
-    @State private var saveError: String?
 
     private var sortMode: CadenceTaskSortMode {
         get { CadenceTaskSortMode(rawValue: sortModeRaw) ?? .listOrder }
@@ -41,16 +38,15 @@ struct iOSAllTasksView: View {
                         get: { sortMode },
                         set: { sortModeRaw = $0.rawValue }
                     ),
-                    showCompleted: $showCompleted,
-                    newTitle: $newTitle,
-                    saveError: $saveError,
-                    captureTask: captureTask
+                    showCompleted: $showCompleted
                 )
             } else {
                 allTasksPanel
             }
         }
         .background(Theme.bg.ignoresSafeArea())
+        // No seed. All Tasks is every list at once, so there is no list for it to prefer.
+        .iOSFloatingCreateTaskButton()
         .iOSHidesCompactNavigationBar()
     }
 
@@ -59,22 +55,6 @@ struct iOSAllTasksView: View {
             iOSPanelHeader(eyebrow: "Tasks", title: "All Tasks", count: activeTasks.count)
 
             Divider().background(Theme.borderSubtle)
-
-            iOSTaskCaptureBar(
-                placeholder: "Add a task...",
-                title: $newTitle,
-                action: captureTask
-            )
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-
-            if let saveError {
-                iOSInlineErrorBanner(message: saveError) {
-                    self.saveError = nil
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-            }
 
             iOSTaskViewOptionsBar(
                 sortMode: Binding(
@@ -121,23 +101,8 @@ struct iOSAllTasksView: View {
                 .background(Theme.bg)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.bg.ignoresSafeArea())
-    }
-
-    private func captureTask() {
-        let pendingTitle = newTitle
-        do {
-            _ = try CadenceTaskMutationSupport.insertTask(
-                title: newTitle,
-                allTasks: allTasks,
-                modelContext: modelContext
-            )
-            saveError = nil
-            newTitle = ""
-        } catch {
-            newTitle = pendingTitle
-            saveError = "Couldn't save this task. Try again in a moment."
-        }
     }
 }
 #endif

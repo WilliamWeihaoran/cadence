@@ -506,48 +506,6 @@ struct iOSTaskViewOptionsBar: View {
     }
 }
 
-struct iOSTaskCaptureBar: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    let placeholder: String
-    @Binding var title: String
-    let action: () -> Void
-
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
-    }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            TextField(placeholder, text: $title)
-                .textFieldStyle(.plain)
-                .font(.system(size: isRegularWidth ? 15 : 15))
-                .foregroundStyle(Theme.text)
-                .submitLabel(.done)
-                .onSubmit(action)
-                .padding(.horizontal, isRegularWidth ? 13 : 12)
-                .frame(minHeight: 44)
-                .background(Theme.surfaceElevated.opacity(0.72))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                        .stroke(Theme.borderSubtle.opacity(0.7), lineWidth: 1)
-                }
-
-            Button(action: action) {
-                Image(systemName: "plus")
-                    .font(.system(size: isRegularWidth ? 16 : 15, weight: .bold))
-                    .foregroundStyle(Theme.onColor)
-                    .frame(width: 44, height: 44)
-                    .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-            }
-            .buttonStyle(.iosPressable)
-            .disabled(TaskTitleSupport.isEmpty(title))
-            .opacity(TaskTitleSupport.isEmpty(title) ? 0.45 : 1)
-        }
-    }
-}
-
 let iOSPanelHeaderHeight: CGFloat = 92
 
 struct iOSPanelHeader: View {

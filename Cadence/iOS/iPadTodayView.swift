@@ -9,16 +9,16 @@ struct iPadTodayView: View {
     /// *pushed* screen (Search results reach it that way), where the header is also the only row
     /// the back control has.
     var showsCompactHeader = true
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @State private var newTitle = ""
-    @State private var saveError: String?
     @AppStorage("ios.today.sortMode") private var sortModeRaw = CadenceTaskSortMode.priority.rawValue
     @AppStorage("ios.today.showCompleted") private var showCompleted = false
     @AppStorage("ios.today.sidePanel") private var sidePanelRaw = iPadTodaySidePanel.notes.rawValue
     @AppStorage("ios.today.layoutMode") private var layoutModeRaw = iPadTodayLayoutMode.focus.rawValue
     #if DEBUG
+    /// Only the sample-data seeder writes from this view now that capture is the composer sheet's
+    /// job, and the seeder is a debug affordance.
+    @Environment(\.modelContext) private var modelContext
     @State private var sampleDataStatus: String?
     #endif
 
@@ -96,6 +96,10 @@ struct iPadTodayView: View {
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .background(Theme.bg.ignoresSafeArea())
+        // Seeded with today's do date, which is what the "Add a task for today…" field it replaced
+        // did implicitly and silently. The button says nothing about the date; the sheet's chip
+        // strip shows it, so the assumption is visible before the task is created.
+        .iOSFloatingCreateTaskButton(seed: CadenceTaskComposerSeed(doDateKey: todayKey))
         // No `.navigationTitle("Today")`. Both layouts head themselves — the compact one with
         // "THURSDAY, AUGUST 13 / Today", the iPad one with `iPadTodayTaskHeader` — so a large nav
         // title said "Today" a second time, 60pt above the first.
@@ -258,20 +262,11 @@ struct iPadTodayView: View {
         .background(Theme.surface)
     }
 
+    /// Sort, completed visibility, and the day's summary line. The "Add a task for today…" field
+    /// that used to head this deck is gone — capture is the floating button in the page's corner,
+    /// which opens the full composer instead of taking a title and guessing the rest.
     private var todayPlanningDeck: some View {
         VStack(alignment: .leading, spacing: 11) {
-            iOSTaskCaptureBar(
-                placeholder: "Add a task for today...",
-                title: $newTitle,
-                action: captureTodayTask
-            )
-
-            if let saveError {
-                iOSInlineErrorBanner(message: saveError) {
-                    self.saveError = nil
-                }
-            }
-
             iOSTaskViewOptionsBar(
                 sortMode: Binding(
                     get: { sortMode },
@@ -353,23 +348,6 @@ struct iPadTodayView: View {
             }
             .scrollIndicators(.hidden)
             .background(Theme.surface)
-        }
-    }
-
-    private func captureTodayTask() {
-        let pendingTitle = newTitle
-        do {
-            _ = try CadenceTaskMutationSupport.insertTask(
-                title: newTitle,
-                allTasks: allTasks,
-                modelContext: modelContext,
-                scheduledDate: todayKey
-            )
-            saveError = nil
-            newTitle = ""
-        } catch {
-            newTitle = pendingTitle
-            saveError = "Couldn't save this task. Try again in a moment."
         }
     }
 

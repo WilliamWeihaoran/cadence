@@ -8,9 +8,6 @@ struct iOSCompactInboxView: View {
     let completedInboxTasks: [AppTask]
     @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
-    @Binding var newTitle: String
-    @Binding var saveError: String?
-    let captureInboxTask: () -> Void
 
     private var oldestLabel: String {
         guard let oldestTask = inboxTasks.min(by: { $0.createdAt < $1.createdAt }) else {
@@ -35,7 +32,7 @@ struct iOSCompactInboxView: View {
                 }
 
                 stats
-                captureCard
+                optionsBar
                 taskSections
             }
             .padding(.horizontal, 16)
@@ -79,26 +76,16 @@ struct iOSCompactInboxView: View {
         .cadenceCard(shadowRadius: 10, shadowY: 4)
     }
 
-    private var captureCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            iOSTaskCaptureBar(
-                placeholder: "Add an inbox task...",
-                title: $newTitle,
-                action: captureInboxTask
-            )
-
-            if let saveError {
-                iOSInlineErrorBanner(message: saveError) {
-                    self.saveError = nil
-                }
-            }
-
-            iOSTaskViewOptionsBar(
-                sortMode: $sortMode,
-                showCompleted: $showCompleted,
-                completedCount: completedInboxTasks.count
-            )
-        }
+    /// Sort and completed-visibility only. The "Add an inbox task…" field that used to head this
+    /// card is gone: the tab bar's centre `+` opens the full composer from every compact screen, so
+    /// the field was a second, weaker capture affordance — title-only — a thumb's width from a
+    /// better one.
+    private var optionsBar: some View {
+        iOSTaskViewOptionsBar(
+            sortMode: $sortMode,
+            showCompleted: $showCompleted,
+            completedCount: completedInboxTasks.count
+        )
         .padding(.vertical, 2)
     }
 

@@ -3,13 +3,11 @@ import SwiftData
 import SwiftUI
 
 struct iOSListDetailView: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     let area: Area?
     let project: Project?
-    @State private var newTitle = ""
     @State private var editorMode: iOSListEditorMode?
     /// `nil` until the reader taps a tab — the page they see before that is the one they chose in
     /// Settings, read live rather than copied into `@State` in `onAppear`, so changing the
@@ -55,6 +53,13 @@ struct iOSListDetailView: View {
     /// Which list this page is showing, as a value SwiftUI can compare across an update.
     private var containerIdentity: UUID? {
         area?.id ?? project?.id
+    }
+
+    /// The same list, in the form the task composer takes.
+    private var containerSelection: TaskContainerSelection {
+        if let area { return .area(area.id) }
+        if let project { return .project(project.id) }
+        return .inbox
     }
 
     private var colorHex: String {
@@ -149,11 +154,11 @@ struct iOSListDetailView: View {
                 .id(containerIdentity)
         }
         .background(Theme.bg.ignoresSafeArea())
-        .onChange(of: containerIdentity) { _, _ in
-            // Otherwise the capture bar keeps the title you were part-way through typing for the
-            // previous list and adds it to this one.
-            newTitle = ""
-        }
+        // Seeded with this list, so the composer opens already filed where you are. The seed is
+        // recomputed from `containerSelection` on every update, so switching lists in the iPad
+        // sidebar — which updates this subtree rather than rebuilding it — cannot leave the button
+        // pointing at the list you just left.
+        .iOSFloatingCreateTaskButton(seed: CadenceTaskComposerSeed(container: containerSelection))
         // The page carries its own header, so an empty inline nav title was the only thing keeping
         // the bar around — 44pt of chrome holding one chevron above a header that already named the
         // list. The chevron is in the header now and the bar is gone. On iPad this view is hosted
@@ -197,14 +202,6 @@ struct iOSListDetailView: View {
 
     private var taskColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSTaskCaptureBar(
-                placeholder: "Add a task to \(title)...",
-                title: $newTitle,
-                action: captureTask
-            )
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-
             iOSTaskViewOptionsBar(
                 sortMode: Binding(
                     get: { sortMode },
@@ -214,7 +211,7 @@ struct iOSListDetailView: View {
                 completedCount: completedTasks.count
             )
             .padding(.horizontal, 16)
-            .padding(.top, 10)
+            .padding(.top, 14)
             .padding(.bottom, 12)
 
             if activeTasks.isEmpty && (!showCompleted || completedTasks.isEmpty) {
@@ -267,25 +264,6 @@ struct iOSListDetailView: View {
     private var sectionGroups: [(name: String, tasks: [AppTask])] {
         CadenceTaskQuerySupport.sectionGroups(from: activeTasks, sectionNames: sectionNames)
             .map { ($0.title, $0.tasks) }
-    }
-
-    private func captureTask() {
-        guard (try? CadenceTaskMutationSupport.insertTask(
-            title: newTitle,
-            allTasks: filteredTasks,
-            modelContext: modelContext,
-            configure: { task in
-                CadenceTaskMutationSupport.assignContainer(
-                    task,
-                    area: area,
-                    project: project,
-                    sectionName: TaskSectionDefaults.defaultName,
-                    allTasks: filteredTasks,
-                    updateOrder: false
-                )
-            }
-        )) != nil else { return }
-        newTitle = ""
     }
 
 }
