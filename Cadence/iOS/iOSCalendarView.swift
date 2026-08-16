@@ -22,6 +22,9 @@ struct iOSCalendarView: View {
     @State private var anchorDate = Calendar.current.startOfDay(for: Date())
     @State private var quickCreateSeed: iOSCalendarQuickCreateSeed?
     @State private var didRestorePersistedDates = false
+    /// The width of this page, which on iPad is the window less the shell sidebar. See
+    /// `hasInspector`.
+    @State private var paneWidth: CGFloat = 0
 
     private let calendar = Calendar.current
 
@@ -150,9 +153,24 @@ struct iOSCalendarView: View {
         horizontalSizeClass == .compact
     }
 
+    /// Whether this pane can carry the day inspector beside the calendar. See
+    /// `CadenceCalendarPaneLayout`: an 11" iPad in portrait cannot, and used to give the inspector
+    /// 340 of its 632 points anyway.
+    ///
+    /// `paneWidth` starts at 0, so the first frame resolves to `false` and the calendar takes the
+    /// whole pane until the measurement lands. That is the right way round: a pane that opens
+    /// full-width and gains an inspector reads as the inspector arriving, where the reverse reads as
+    /// content being taken away.
+    private var hasInspector: Bool {
+        !isCompact && CadenceCalendarPaneLayout.showsInspector(paneWidth: paneWidth)
+    }
+
     /// Only Week keeps the counts line on a phone. The Board's columns are meant to start directly
     /// under the mode control, and Month's agenda below lists the selected day item by item — a
     /// line above it counting the same items is the chrome this page just finished removing.
+    ///
+    /// Still keyed on the size class rather than on the inspector: an iPad pane without an inspector
+    /// keeps its Month **grid**, and the counts line is then the only thing naming the selected day.
     private var showsContextStrip: Bool {
         !isCompact || (presentation == .timeline && viewMode != .month)
     }
@@ -181,28 +199,32 @@ struct iOSCalendarView: View {
                 )
             }
 
-            // Every compact mode fills the pane. Month was the last one that did not: it sat as a
-            // fixed-height card inside this page scroller, which put a vertical scroll view inside
-            // a vertical scroll view and left the grid roughly the bottom 40% of the screen. Its
-            // day inspector is gone — `iOSCalendarMonthAgenda` is what lists the day now — so
-            // there is nothing left for the outer scroller to scroll.
-            if isCompact {
+            if hasInspector {
+                HStack(spacing: 0) {
+                    calendarContent
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Theme.surface)
+
+                    Divider().background(Theme.borderSubtle)
+
+                    dayInspector
+                        .frame(width: CadenceCalendarPaneLayout.inspectorWidth(forPaneWidth: paneWidth))
+                        .frame(maxHeight: .infinity)
+                }
+            } else {
+                // Every mode fills the pane once there is no inspector taking a third of it.
                 calendarContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                GeometryReader { proxy in
-                    HStack(spacing: 0) {
-                        calendarContent
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Theme.surface)
-
-                        Divider().background(Theme.borderSubtle)
-
-                        dayInspector
-                            .frame(width: regularInspectorWidth(for: proxy.size.width), height: proxy.size.height)
-                    }
-                }
             }
+        }
+        // Measured, not wrapped. A `GeometryReader` around this `VStack` reads the same width, but
+        // it also becomes the layout container, and this stack holds scroll views that size
+        // themselves from what is left over. Reading the width into state leaves the stack laying
+        // itself out exactly as it did before.
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { newWidth in
+            paneWidth = newWidth
         }
         .background(Theme.bg.ignoresSafeArea())
         .iOSHidesCompactNavigationBar()
@@ -218,10 +240,6 @@ struct iOSCalendarView: View {
         }
     }
 
-    private func regularInspectorWidth(for width: CGFloat) -> CGFloat {
-        min(max(width * 0.30, 340), 430)
-    }
-
     @ViewBuilder
     private var calendarContent: some View {
         if presentation == .board {
@@ -235,9 +253,17 @@ struct iOSCalendarView: View {
                 onAddItem: openQuickCreate
             )
         } else if viewMode == .month {
-            // iPad keeps the full month grid, because it still has the day inspector beside it to
-            // list what a cell holds. A phone has no room for both, so it gets the grid plus its
-            // own agenda instead.
+            // iPad keeps the full month grid. On a phone it had room for three weeks of the month,
+            // which is why compact width gets the grid-plus-agenda instead; on an iPad pane the
+            // 104pt cells fit every week *and* list what each day holds, so the grid still answers
+            // the question with or without the inspector beside it.
+            //
+            // Deliberately still `isCompact` rather than `!hasInspector`. Handing the agenda to a
+            // narrow regular-width pane is the obvious symmetry and it does not work:
+            // `iOSCalendarMonthAgenda` draws its grid and then leaves its whole scroll view blank at
+            // regular width — no day headers, no rows, and no scroll position that brings any back.
+            // That is a real defect in the agenda, but it is not this one, and a blank pane is worse
+            // than a grid.
             if isCompact {
                 iOSCalendarMonthAgenda(
                     monthDate: anchorDate,

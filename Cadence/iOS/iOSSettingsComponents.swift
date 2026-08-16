@@ -122,7 +122,7 @@ struct iOSMobileCapability: Identifiable, Hashable {
         iOSMobileCapability(title: "Today planning", detail: "Capture, sort, complete, notes, samples, and timeline inspector.", status: .ready),
         iOSMobileCapability(title: "All Tasks", detail: "Review active/completed work, edit tasks, and use shared task presentation.", status: .ready),
         iOSMobileCapability(title: "Inbox capture", detail: "Quick add, triage, completion, and scheduling basics.", status: .ready),
-        iOSMobileCapability(title: "Lists", detail: "Areas/projects, list detail, planning, Kanban, links, and lifecycle restore.", status: .ready),
+        iOSMobileCapability(title: "Lists", detail: "Areas/projects, list detail, Kanban, links, and lifecycle restore.", status: .ready),
         iOSMobileCapability(title: "Search", detail: "Find tasks, notes, and feature destinations from mobile.", status: .ready),
         iOSMobileCapability(title: "Markdown notes", detail: "Live rendering, raw edit, preview, formatting, images, references, tables, and templates.", status: .ready),
         iOSMobileCapability(title: "Settings", detail: "Theme, navigation defaults, calendar, tags, templates, sync, AI, data, and about.", status: .ready),

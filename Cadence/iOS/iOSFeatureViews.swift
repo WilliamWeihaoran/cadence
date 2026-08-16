@@ -104,13 +104,7 @@ struct iOSGoalsView: View {
     }
 
     private var horizontalLayout: some View {
-        HStack(spacing: 0) {
-            listPane
-
-            Divider().background(Theme.borderSubtle)
-
-            detailPane
-        }
+        iOSFeatureSplitLayout(list: { listPane }, detail: { detailPane })
     }
 
     private var compactLayout: some View {
@@ -335,13 +329,7 @@ struct iOSHabitsView: View {
     }
 
     private var horizontalLayout: some View {
-        HStack(spacing: 0) {
-            listPane
-
-            Divider().background(Theme.borderSubtle)
-
-            detailPane
-        }
+        iOSFeatureSplitLayout(list: { listPane }, detail: { detailPane })
     }
 
     private var compactLayout: some View {

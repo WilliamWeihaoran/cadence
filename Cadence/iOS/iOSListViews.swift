@@ -110,8 +110,13 @@ struct iOSListsView: View {
         .background(Theme.bg)
     }
 
+    /// The same `CadenceRegularSplitLayout` proportion Goals, Habits and Focus use. It used to be
+    /// `minWidth: 300, idealWidth: 340, maxWidth: 380` here — the only one of the four surfaces that
+    /// declared a maximum at all, and the reason this page was the least starved of them. Measuring
+    /// against the pane rather than declaring a range is what keeps an 11" iPad's 632pt from landing
+    /// on a 315pt chooser beside a 316pt list.
     private var regularSplitLayout: some View {
-        HStack(spacing: 0) {
+        iOSFeatureSplitLayout {
             iOSListsRegularPane(
                 activeAreas: activeAreas,
                 activeProjects: activeProjects,
@@ -125,23 +130,16 @@ struct iOSListsView: View {
                 restoreArea: restore,
                 restoreProject: restore
             )
-                .frame(minWidth: 300, idealWidth: 340, maxWidth: 380)
-
-            Rectangle()
-                .fill(Theme.borderSubtle)
-                .frame(width: 1)
-
+        } detail: {
             if let route = effectiveSelectedRoute {
                 listDetail(for: route)
                     .id(route)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 iOSEmptyPanel(
                     systemImage: "folder",
                     title: "Nothing to show yet",
                     subtitle: "Once you add an area or project, it'll open here."
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Theme.bg)
             }
         }

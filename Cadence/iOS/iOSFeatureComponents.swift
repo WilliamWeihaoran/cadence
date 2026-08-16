@@ -76,8 +76,38 @@ struct iOSFeatureListPane<Content: View>: View {
                 .scrollIndicators(.hidden)
             }
         }
-        .frame(minWidth: 300, idealWidth: 360)
+        // No width of its own. It used to declare `minWidth: 300, idealWidth: 360` and nothing
+        // else, and an `HStack` given two children that are both flexible upwards splits the pane
+        // between them: on a 13" iPad in portrait the Goals chooser took 422pt to draw one-line rows
+        // while the detail it chooses for wrapped its title. The split surfaces size this from
+        // `CadenceRegularSplitLayout`; compact width gives it the whole screen.
         .background(Theme.surface)
+    }
+}
+
+/// The regular-width chooser-plus-detail split, in one place.
+///
+/// Goals, Habits and Focus each spelled this out as a bare `HStack { listPane; Divider(); detail }`
+/// with no width on either side, which is what let an `HStack` hand a 13" iPad's 844pt pane to the
+/// two of them in equal halves. The proportion comes from `CadenceRegularSplitLayout` — measured
+/// against the pane, capped so the chooser never outgrows the thing it is choosing for.
+struct iOSFeatureSplitLayout<List: View, Detail: View>: View {
+    @ViewBuilder let list: () -> List
+    @ViewBuilder let detail: () -> Detail
+
+    var body: some View {
+        GeometryReader { proxy in
+            HStack(spacing: 0) {
+                list()
+                    .frame(width: CadenceRegularSplitLayout.listPaneWidth(forPaneWidth: proxy.size.width))
+                    .frame(maxHeight: .infinity)
+
+                Divider().background(Theme.borderSubtle)
+
+                detail()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
     }
 }
 

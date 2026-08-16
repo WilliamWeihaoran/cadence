@@ -208,24 +208,62 @@ struct iOSCalendarToolbar: View {
         }
     }
 
+    /// `ViewThatFits` falls back to its **last** child when none of them fit, and then squeezes it.
+    /// With only the two single-row options here, an 11" iPad in portrait — 632pt of pane after the
+    /// 188pt sidebar — had no fitting layout, so the mode group was compressed to `iOSSegmentedPill`'s
+    /// 58pt `minWidth` and "Week", "Month" and "Board" all rendered as a bare "…". A chooser whose
+    /// options are indistinguishable is worse than one that has wrapped, so the fallback is now the
+    /// phone's own two-row shape rather than an unreadable single row.
     private var regularToolbar: some View {
-        HStack(spacing: 12) {
-            titleBlock
-
-            Spacer(minLength: 8)
-
-            ViewThatFits(in: .horizontal) {
+        ViewThatFits(in: .horizontal) {
+            singleRowToolbar {
                 HStack(spacing: 12) {
                     zoomControls
                     modeControl
                     navigationControls
                 }
+            }
 
+            singleRowToolbar {
                 HStack(spacing: 8) {
                     modeControl
                     navigationControls
                 }
             }
+
+            VStack(alignment: .leading, spacing: 11) {
+                HStack(spacing: 12) {
+                    titleBlock
+                    Spacer(minLength: 8)
+                    navigationControls
+                        .layoutPriority(1)
+                }
+
+                HStack(spacing: 8) {
+                    modeControl
+                    zoomControls
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    /// The controls hold `layoutPriority(1)`, not the title.
+    ///
+    /// It used to be the other way round, and that is what made the outer `ViewThatFits` lie to
+    /// itself: the fit test measures ideal sizes, but in the real layout a priority-1 `titleBlock`
+    /// grew to its 312pt `maxWidth` whatever the title said, so a row `ViewThatFits` had accepted
+    /// arrived 26pt short and the mode pills were squeezed to "Mo…" and "B…" on a 13" iPad. The
+    /// controls are the part that cannot shrink without becoming unreadable; the title is the part
+    /// with slack in it, and `minWidth` still stops it going under 208.
+    private func singleRowToolbar<Controls: View>(@ViewBuilder controls: () -> Controls) -> some View {
+        HStack(spacing: 12) {
+            titleBlock
+
+            Spacer(minLength: 8)
+
+            controls()
+                .layoutPriority(1)
         }
         .frame(minHeight: 48)
     }
@@ -256,7 +294,6 @@ struct iOSCalendarToolbar: View {
                 .minimumScaleFactor(0.72)
         }
         .frame(minWidth: horizontalSizeClass == .regular ? 208 : 116, idealWidth: 246, maxWidth: 312, alignment: .leading)
-        .layoutPriority(1)
     }
 
     private var modeControl: some View {

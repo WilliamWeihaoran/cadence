@@ -57,14 +57,7 @@ struct iOSFocusView: View {
     }
 
     private var horizontalLayout: some View {
-        HStack(spacing: 0) {
-            taskListPane
-                .frame(minWidth: 300, idealWidth: 360)
-
-            Divider().background(Theme.borderSubtle)
-
-            focusDetailPane
-        }
+        iOSFeatureSplitLayout(list: { taskListPane }, detail: { focusDetailPane })
     }
 
     /// The eyebrow carries the session's state, because the title already says "Focus" and a
