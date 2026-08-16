@@ -47,7 +47,10 @@ enum CadenceOverdueSummaryPresentation {
     ) -> CadenceOverdueSummaryLine {
         CadenceOverdueSummaryLine(
             leadingDetail: normalized(leadingDetail),
-            dateText: DateFormatters.relativeDate(from: dueDateKey),
+            dateText: DateFormatters.relativeDate(
+                from: dueDateKey,
+                relativeTo: DateFormatters.date(from: todayKey) ?? Date()
+            ),
             trailingDetail: normalized(trailingDetail),
             isLate: CadenceDueUrgency.evaluate(dueDateKey: dueDateKey, todayKey: todayKey) == .overdue
         )

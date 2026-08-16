@@ -85,6 +85,32 @@ struct CadenceOverdueSummaryPresentationTests {
         #expect(line.plainText == "46 days ago")
     }
 
+    /// `todayKey` governs the **whole** line, not just `isLate`.
+    ///
+    /// It used not to: `dateText` came from `DateFormatters.relativeDate(from:)`, which read the
+    /// system clock, so the two halves of one line measured against different days. The rest of
+    /// this suite hid it — every case here is only a day or two either side of the real date, so
+    /// "46 days ago" quietly became "47 days ago" when the clock rolled past the hardcoded `today`
+    /// and the suite went red on a date change rather than on a code change. These two keys are
+    /// years from any plausible clock, so a regression cannot be a near miss.
+    @Test
+    func theInjectedTodayGovernsTheWordsAsWellAsTheColour() {
+        let line = CadenceOverdueSummaryPresentation.line(
+            dueDateKey: "2020-01-01",
+            todayKey: "2020-01-08"
+        )
+        #expect(line.dateText == "7 days ago")
+        #expect(line.isLate)
+
+        // ...and the same key read from before it, where it is neither late nor in the past.
+        let upcoming = CadenceOverdueSummaryPresentation.line(
+            dueDateKey: "2020-01-08",
+            todayKey: "2020-01-01"
+        )
+        #expect(upcoming.dateText == "in 7 days")
+        #expect(!upcoming.isLate)
+    }
+
     @Test
     func itCountsOneActiveTaskInTheSingular() {
         #expect(CadenceOverdueSummaryPresentation.activeTaskDetail(count: 1) == "1 active task")

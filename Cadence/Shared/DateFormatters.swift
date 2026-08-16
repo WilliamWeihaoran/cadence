@@ -151,9 +151,15 @@ enum DateFormatters {
 
     /// Converts a `yyyy-MM-dd` storage key to a relative string using task-friendly rules:
     /// "Today", "Tomorrow", "Yesterday", "in 5 days", "30 days ago", or "Mar 28"
-    static func relativeDate(from key: String) -> String {
+    ///
+    /// `relativeTo` exists so a caller that has already decided what "today" is can say so.
+    /// `dayOffset` took one from the start; this did not, so
+    /// `CadenceOverdueSummaryPresentation.line(…todayKey:)` was honouring its injected day for
+    /// `isLate` and silently reading the system clock for the words beside it — the two halves of
+    /// one line disagreeing about the date.
+    static func relativeDate(from key: String, relativeTo referenceDate: Date = Date()) -> String {
         guard let date = ymd.date(from: key) else { return key }
-        let diff = dayOffset(from: key) ?? Int.max
+        let diff = dayOffset(from: key, relativeTo: referenceDate) ?? Int.max
         switch diff {
         case 0:          return "Today"
         case 1:          return "Tomorrow"
