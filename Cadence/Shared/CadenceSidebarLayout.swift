@@ -25,6 +25,20 @@ enum CadenceSidebarLayout {
         .goals, .habits, .focus, .settings
     ]
 
+    /// The two the iPad sidebar renders as glyphs in one footer row rather than as labelled rows —
+    /// Settings leading, Focus trailing.
+    ///
+    /// Deliberately a *view* of `secondaryDestinations` rather than a change to it: macOS reads
+    /// that list too, and its sidebar still wants four labelled rows. Splitting here keeps the two
+    /// platforms agreeing about which destinations exist and in what order, while letting one of
+    /// them spend less height on the last two.
+    static let footerGlyphDestinations: [CadenceFeatureDestination] = [.settings, .focus]
+
+    /// `secondaryDestinations` minus the two that become footer glyphs, in the original order.
+    static var secondaryRowDestinations: [CadenceFeatureDestination] {
+        secondaryDestinations.filter { !footerGlyphDestinations.contains($0) }
+    }
+
     static func destinations(in group: NavGroup) -> [CadenceFeatureDestination] {
         switch group {
         case .primary: return primaryDestinations

@@ -187,10 +187,48 @@ struct iOSSidebar: View {
             iOSSidebarRailDivider()
                 .padding(.horizontal, style.horizontalPadding)
 
-            navGroup(CadenceSidebarLayout.secondaryDestinations, counts: counts)
-                .padding(.top, iOSSidebarMetrics.groupSpacing)
-                .padding(.bottom, 12)
+            // Expanded: Goals and Habits keep labelled rows, Settings and Focus collapse to one
+            // row of two glyphs. Rail is already all glyphs at 58pt, where two across plus the
+            // gap does not fit, so it keeps all four stacked.
+            if style == .expanded {
+                navGroup(CadenceSidebarLayout.secondaryRowDestinations, counts: counts)
+                    .padding(.top, iOSSidebarMetrics.groupSpacing)
+
+                footerGlyphRow
+                    .padding(.horizontal, style.horizontalPadding)
+                    .padding(.top, iOSSidebarMetrics.rowSpacing)
+                    .padding(.bottom, 12)
+            } else {
+                navGroup(CadenceSidebarLayout.secondaryDestinations, counts: counts)
+                    .padding(.top, iOSSidebarMetrics.groupSpacing)
+                    .padding(.bottom, 12)
+            }
         }
+    }
+
+    /// Settings and Focus, one row, pushed to opposite ends.
+    ///
+    /// Ghost glyphs — no plate, no fill — because these are the two least-used destinations in the
+    /// column and a filled control here would out-shout the labelled rows above it. Selection is
+    /// carried by the glyph brightening to `Theme.text`, the same signal the rail rows use, rather
+    /// than by adding a second background layer at a second radius.
+    private var footerGlyphRow: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(CadenceSidebarLayout.footerGlyphDestinations.enumerated()), id: \.element) { index, destination in
+                if index > 0 {
+                    Spacer(minLength: 8)
+                }
+
+                iOSSidebarGlyphButton(
+                    systemImage: destination.systemImage,
+                    label: destination.compactTitle,
+                    isSelected: selection == destination.item
+                ) {
+                    selection = destination.item
+                }
+            }
+        }
+        .frame(minHeight: 44)
     }
 
     // MARK: - Nav groups
@@ -486,13 +524,16 @@ struct iOSSidebarHeader: View {
 private struct iOSSidebarGlyphButton: View {
     let systemImage: String
     let label: String
+    /// Only the footer's Settings/Focus pass this; the header's search and collapse controls are
+    /// actions rather than destinations and can never be the selected one.
+    var isSelected = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.dim)
+                .foregroundStyle(isSelected ? Theme.text : Theme.dim)
                 .frame(width: 26, height: 26)
                 .contentShape(Rectangle())
                 .iOSExpandedHitArea(9)
