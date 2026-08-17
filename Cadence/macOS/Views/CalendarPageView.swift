@@ -18,6 +18,14 @@ struct CalendarPageView: View {
     @State private var selectedBoardDate = Calendar.current.startOfDay(for: Date())
     @State private var scrollToTodayTrigger = false
     @AppStorage("calendarZoomLevel") private var zoomLevel: Int = 1
+    // The remembered timeline position. Both are written from **this** view only, through the
+    // `schedulePersistVisibleTimeline*` closures below, which the timeline calls only once
+    // `didRestoreTimelineScroll` is set — so a restore-time scroll report cannot overwrite the very
+    // position it is restoring, and the writes stay debounced in one place. They used to be
+    // handed down to `CalendarTimelineViewport` as bindings as well, where nothing read them; that
+    // shape is exactly how the Board once came to adopt ungated scroll reports into a persisted
+    // anchor and move the user's saved position for good. Persist from the closures, not from a
+    // binding threaded through the view tree.
     @AppStorage("calendarRememberedTimelineHour") private var rememberedScrollHour: Int = -1
     @AppStorage("calendarRememberedTimelineDateKey") private var anchorDateKey: String = ""
     // Index of the *block* MonthGridView renders, not of a calendar month — the two differ for
@@ -93,8 +101,6 @@ struct CalendarPageView: View {
                         geoSize: geo.size,
                         viewMode: viewMode,
                         zoomLevel: $zoomLevel,
-                        rememberedScrollHour: $rememberedScrollHour,
-                        anchorDateKey: $anchorDateKey,
                         bufferStart: bufferStart,
                         allTasks: allTasks,
                         allBundles: allBundles,

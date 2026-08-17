@@ -288,8 +288,6 @@ struct CalendarTimelineViewport: View {
     let geoSize: CGSize
     let viewMode: CadenceCalendarViewMode
     @Binding var zoomLevel: Int
-    @Binding var rememberedScrollHour: Int
-    @Binding var anchorDateKey: String
     let bufferStart: Date
     let allTasks: [AppTask]
     let allBundles: [TaskBundle]
@@ -377,7 +375,6 @@ struct CalendarTimelineViewport: View {
                             totalDaysWidth: viewportMetrics.totalDaysWidth,
                             timelineViewportWidth: viewportMetrics.timelineViewportWidth,
                             todayDayIdx: todayDayIdx,
-                            anchorDateKey: $anchorDateKey,
                             visibleTimelineDayIndex: $visibleTimelineDayIndex,
                             isRestoringHorizontalScroll: $isRestoringHorizontalScroll,
                             didRestoreTimelineScroll: $didRestoreTimelineScroll,

@@ -619,7 +619,7 @@ struct CollapsibleTaskGroupHeader: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .onTapGesture(count: 2, perform: onToggle)
+        .sectionToggleDoubleClick(perform: onToggle)
     }
 }
 

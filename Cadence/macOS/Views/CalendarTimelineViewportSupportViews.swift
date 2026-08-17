@@ -35,7 +35,6 @@ struct CalendarTimelineDayScroller: View {
     let totalDaysWidth: CGFloat
     let timelineViewportWidth: CGFloat
     let todayDayIdx: Int
-    @Binding var anchorDateKey: String
     @Binding var visibleTimelineDayIndex: Int?
     @Binding var isRestoringHorizontalScroll: Bool
     @Binding var didRestoreTimelineScroll: Bool

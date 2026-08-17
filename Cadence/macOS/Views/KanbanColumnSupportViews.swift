@@ -236,6 +236,22 @@ enum KanbanColumnAddBehavior {
     /// Open the full create sheet. The Calendar Board's Unscheduled rail is the one caller: a
     /// backlog has no date and no list to seed, so there is nothing for a composer to pre-fill.
     case presentSheet(() -> Void)
+
+    /// Whether pressing this column's add affordance opens the *inline composer*, which is also the
+    /// question "does Cmd+N over this column do anything". A column that answers `true` registers
+    /// with `HoveredKanbanColumnManager`; one that answers `false` deliberately does not, so the
+    /// shortcut documented as "open the inline composer in the hovered column" never resolves to a
+    /// modal create sheet under the pointer.
+    var opensInlineComposer: Bool {
+        if case .compose = self { return true }
+        return false
+    }
+}
+
+extension Optional where Wrapped == KanbanColumnAddBehavior {
+    /// `nil` is a column with no add affordance at all (the Overdue rail), so there is nothing for
+    /// Cmd+N to open there either.
+    var opensInlineComposer: Bool { self?.opensInlineComposer ?? false }
 }
 
 /// The scrolling card stack for a column. The `minHeight` and the inner/outer `contentShape`s

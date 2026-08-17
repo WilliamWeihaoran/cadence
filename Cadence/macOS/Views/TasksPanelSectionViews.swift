@@ -99,7 +99,7 @@ struct TasksPanelGroupSectionView: View {
             }
         }
         .buttonStyle(.cadencePlain)
-        .onTapGesture(count: 2, perform: onToggle)
+        .sectionToggleDoubleClick(perform: onToggle)
         .padding(.horizontal, 16)
         .padding(.top, 20)
         .padding(.bottom, 6)

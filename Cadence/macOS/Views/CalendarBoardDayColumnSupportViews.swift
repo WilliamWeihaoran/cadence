@@ -20,6 +20,7 @@ struct CalendarBoardDayColumn: View {
     let onDropBundleOnDay: (TaskBundle) -> Void
     let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
 
+    @Environment(HoveredKanbanColumnManager.self) private var hoveredKanbanColumnManager
     @State private var isDropTargeted = false
     /// Where each bundle card sits, in this column's own coordinate space — the space
     /// `dropDestination` reports its release point in. See `bundleOwningBoardDrop`.
@@ -29,6 +30,15 @@ struct CalendarBoardDayColumn: View {
     @State private var isComposing = false
 
     private var coordinateSpaceName: String { "calendarBoardDayColumn-\(dayIndex)" }
+
+    /// Keyed by the day, not by `dayIndex`: the board slides its render window, so the same index
+    /// is a different day after a recenter, and a hover registered under an index would answer
+    /// Cmd+N for whichever day had drifted into that slot.
+    private var columnHoverID: String { CalendarBoardDayColumn.hoverID(dateKey: dateKey) }
+
+    static func hoverID(dateKey: String) -> String {
+        "calendar-board-day-column-\(dateKey)"
+    }
 
     private var isToday: Bool {
         dateKey == DateFormatters.todayKey()
@@ -67,7 +77,20 @@ struct CalendarBoardDayColumn: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
         .frame(maxHeight: .infinity, alignment: .top)
-        .onHover { isHovered = $0 }
+        // Registering with `HoveredKanbanColumnManager` is what makes Cmd+N work here, the same way
+        // it works over a kanban section column and an All Tasks list column. The day column used to
+        // set only `isHovered`, so the shortcut documented as "open the inline composer in the
+        // hovered column" silently did nothing on this board and the ghost row was the only way in.
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering, add.opensInlineComposer {
+                hoveredKanbanColumnManager.beginHovering(id: columnHoverID) {
+                    isComposing = true
+                }
+            } else {
+                hoveredKanbanColumnManager.endHovering(id: columnHoverID)
+            }
+        }
         .background(laneBackground)
         .overlay(alignment: .trailing) {
             Rectangle()
