@@ -58,16 +58,19 @@ struct TaskEmbedFieldEditorPopover: View {
         case .title:
             EmptyView()
         case .status:
-            optionList(title: "Status") {
-                ForEach(TaskStatus.allCases, id: \.self) { status in
-                    optionButton(
-                        status.label,
-                        isSelected: task.status == status,
-                        color: Theme.statusColor(status)
-                    ) {
-                        setStatus(status)
-                        dismiss()
-                    }
+            // No heading, and no four-option list. `TaskStatus.allCases` offered Todo and Done as
+            // picker rows when the embed card's own checkbox already owns both — one field, two
+            // controls, and the one that looked authoritative was the one nobody used. What is
+            // left is the pair a checkbox cannot express, from the same
+            // `CadenceTaskInspectorSupport.StatusAction` the iOS inspector renders, so the two
+            // platforms cannot drift on what a status control offers again.
+            //
+            // "Start" is deliberately kept rather than deleted with the list: it is the **only**
+            // writer of `.inProgress` on macOS, and dropping it would strand every task already in
+            // that state with no way back out except completing it.
+            VStack(spacing: 2) {
+                ForEach(CadenceTaskInspectorSupport.StatusAction.allCases, id: \.self) { action in
+                    statusActionButton(action)
                 }
             }
         case .priority:
@@ -304,6 +307,35 @@ struct TaskEmbedFieldEditorPopover: View {
         let comps = Calendar.current.dateComponents([.hour, .minute], from: Date())
         let raw = ((comps.hour ?? 9) * 60) + (comps.minute ?? 0)
         return min(1425, max(0, Int((Double(raw) / 15.0).rounded()) * 15))
+    }
+
+    /// One status transition, labelled by what the tap will *do* — so an already-started task
+    /// reads "Stop" and is its own undo back to `todo`.
+    private func statusActionButton(_ action: CadenceTaskInspectorSupport.StatusAction) -> some View {
+        let isActive = action.isActive(task.status)
+        return Button {
+            setStatus(action.target(from: task.status))
+            dismiss()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: action.systemImage(for: task.status))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isActive ? Theme.statusColor(action.status) : Theme.dim)
+                    .frame(width: 14)
+                Text(action.title(for: task.status))
+                    .font(.system(size: 13, weight: isActive ? .semibold : .regular))
+                    .foregroundStyle(isActive ? Theme.text : Theme.muted)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        // `.plain`, not `.cadencePlain`: `TaskPickerRowHover` below is the one hover layer, and
+        // cadencePlain's radius-10 fill would nest a second one at a different radius.
+        .buttonStyle(.plain)
+        .modifier(TaskPickerRowHover())
     }
 
     private func setStatus(_ status: TaskStatus) {
