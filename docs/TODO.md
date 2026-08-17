@@ -29,9 +29,7 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**AJ — short timeline blocks are almost entirely un-tappable** ([T-101])
-
-**AK — Cmd+N dead on Calendar Board columns; two dead calendar bindings** ([T-102])
+_Nothing in flight._
 
 ## Open — decided, not started
 
@@ -45,6 +43,12 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   `iPadTodayView` vs the compact Today, and the compact/regular branches inside the task row — is
   in flight now.
 
+
+- [T-107] **Every single click on a section header waits out the double-click interval.** Measured
+  during `D-75`: a header with the double-tap modifier toggles ~352ms after mouseUp, against 0ms
+  without it. The modifier is not dead — it is what stops a double-click collapsing a section and
+  instantly re-expanding it — so this is a real trade, not a bug: responsiveness on every click
+  against correctness on the rare one. Worth deciding deliberately rather than inheriting.
 
 - [T-105] **`drawBackground` still blocks Swift 6, and the block is structural.** `D-73` resolved
   three of the editor's four errors; the fourth cannot be annotated away. Swift 6 region isolation
@@ -199,6 +203,14 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-75] `1dc7d33` Cmd+N did nothing over a Calendar Board column, and a double-click mystery
+  (T-102). The third item was suspected dead and turned out to be neither hypothesis — measured, not
+  reasoned about.
+
+- [D-74] `7c6e259` A short timeline block was 6pt of tap target and 16pt of resize strip (T-101).
+  Also fixed an unconditional EventKit write on a plain click, which raised an unprompted "Change
+  recurring event?" dialog.
 
 - [D-73] `234a794` Three of the four Swift 6 errors go; the fourth is a refactor (T-96).
 
