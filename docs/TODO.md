@@ -31,11 +31,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 Started 2026-08-17, four agents on disjoint file sets.
 
-**F — drag-to-create drop preview**
-- [T-46] **The drop preview highlights an existing task, which is a lie.** `47328af` lights up the
-  row you hover, but nothing happens *to* that task — it is only read for its placement. Show a
-  ghost block opening **between** rows with the neighbours parting, not a selection on a row that
-  is not the subject.
 
 **G — note editor chrome and gestures** (`iOSMarkdownTextView`, `iOSMarkdownEditor`)
 - [T-47] **Remove the "Done" bar under the iOS note editor.** A full-width bar whose only control
@@ -219,6 +214,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-35] `a911d5a` The drop preview stops highlighting a task nothing happens to (T-46).
 
 - [D-34] `68d78ec` Month's agenda opened past the end of its own content; Board's counts strip and
   Month Day's missing add control (T-34, T-35, T-36).
