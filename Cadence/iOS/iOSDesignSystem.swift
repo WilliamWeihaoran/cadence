@@ -276,17 +276,20 @@ struct iOSIconButton: View {
     let systemImage: String
     let accessibilityLabel: String
     var tint: Color = Theme.text
-    /// Overrides the resting glyph colour. Without it a never-selected button always renders
-    /// `Theme.muted`, which made `tint:` unreachable on buttons that are actions rather than
-    /// toggles — the calendar's "jump to today" passed `Theme.blue` and could never show it.
-    var foreground: Color? = nil
     var isSelected = false
-    var isEnabled = true
     /// Visual size of the plate. The hit area is always at least 44pt regardless.
     var plateSize: CGFloat = 38
     var iconSize: CGFloat = 14
-    var showsPlate = true
     let action: () -> Void
+
+    // `foreground`, `isEnabled` and `showsPlate` are gone. `foreground` existed for one caller —
+    // the calendar's `location.fill` jump-to-today, an action rather than a toggle, which passed
+    // `Theme.blue` and could not show it while the resting colour was hardcoded to `Theme.muted`.
+    // That button went with the `‹ ➤ ›` cluster; jump-to-today is the `Today` row in
+    // `iOSDateJumpTitle`'s popover now, which draws its own blue. The other two never had a caller
+    // at all. All four remaining call sites take the defaults, so removing them changes nothing
+    // that renders — see `iOSSettingsTagsSection`, which reaches `tint` the supported way, through
+    // `isSelected`.
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
@@ -294,7 +297,7 @@ struct iOSIconButton: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: iconSize, weight: .semibold))
-                .foregroundStyle(isEnabled ? (isSelected ? tint : (foreground ?? Theme.muted)) : Theme.dim.opacity(0.38))
+                .foregroundStyle(isSelected ? tint : Theme.muted)
                 .frame(width: plateSize, height: plateSize)
                 .background(shape.fill(plateFill))
                 .overlay(shape.strokeBorder(plateBorder, lineWidth: 1))
@@ -304,20 +307,15 @@ struct iOSIconButton: View {
                 .iOSExpandedHitArea(max(0, (44 - plateSize) / 2))
         }
         .buttonStyle(.iosPressable)
-        .disabled(!isEnabled)
         .accessibilityLabel(accessibilityLabel)
     }
 
     private var plateFill: Color {
-        guard showsPlate else { return .clear }
-        if isSelected { return tint.opacity(0.14) }
-        return isEnabled ? Theme.surfaceElevated.opacity(0.55) : .clear
+        isSelected ? tint.opacity(0.14) : Theme.surfaceElevated.opacity(0.55)
     }
 
     private var plateBorder: Color {
-        guard showsPlate else { return .clear }
-        if isSelected { return tint.opacity(0.28) }
-        return Theme.borderSubtle.opacity(0.45)
+        isSelected ? tint.opacity(0.28) : Theme.borderSubtle.opacity(0.45)
     }
 }
 
@@ -364,12 +362,14 @@ struct iOSSegmentedPill: View {
     /// control that is the only thing tappable in its row should be a full touch target on its own
     /// rather than borrowing the track's 3pt padding to reach the floor.
     var fillsWidth = false
-    /// For a segment that genuinely cannot be chosen at the current size — Today's three-pane "Mac"
-    /// layout below the width its three columns fit in. It reads as unavailable instead of
-    /// accepting a tap and leaving the screen exactly as it was.
-    var isEnabled = true
     var accessibilityHint: String? = nil
     let action: () -> Void
+
+    // No `isEnabled`. It was written for one segment — Today's three-pane "Mac" layout, unavailable
+    // below the width its three columns fit in — and that layout is deleted. No caller has passed
+    // `false` since. A segment that cannot be chosen should not be in the group at all, which is
+    // what the calendar's `monthDetailControl` does: it drops the whole control rather than dimming
+    // a pill.
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Theme.radiusControl - 3, style: .continuous)
@@ -389,19 +389,18 @@ struct iOSSegmentedPill: View {
             // `Theme.muted`, not `Theme.dim`: an unselected segment is a label you are meant to
             // read and tap. `dim` (#71717a) on `Theme.bg` lands at roughly 4.1:1 at 12pt, under
             // the 4.5:1 floor for normal text — `dim` is for genuinely de-emphasised content.
-            .foregroundStyle(isEnabled ? (isSelected ? tint : Theme.muted) : Theme.dim.opacity(0.45))
+            .foregroundStyle(isSelected ? tint : Theme.muted)
             .padding(.horizontal, 10)
             .frame(
                 minWidth: fillsWidth ? nil : minWidth,
                 maxWidth: fillsWidth ? .infinity : nil,
                 minHeight: fillsWidth ? 44 : 38
             )
-            .background(shape.fill(isSelected && isEnabled ? tint.opacity(0.14) : Color.clear))
-            .overlay(shape.strokeBorder(isSelected && isEnabled ? tint.opacity(0.26) : Color.clear, lineWidth: 1))
+            .background(shape.fill(isSelected ? tint.opacity(0.14) : Color.clear))
+            .overlay(shape.strokeBorder(isSelected ? tint.opacity(0.26) : Color.clear, lineWidth: 1))
             .contentShape(shape)
         }
         .buttonStyle(.iosPressable)
-        .disabled(!isEnabled)
         .accessibilityLabel(title)
         .accessibilityHint(accessibilityHint ?? "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])

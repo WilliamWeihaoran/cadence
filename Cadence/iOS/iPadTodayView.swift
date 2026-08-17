@@ -25,9 +25,10 @@ struct iPadTodayView: View {
         horizontalSizeClass == .regular
     }
 
+    /// Read-only: `sortModeBinding` below is the write path. The setter this used to carry was
+    /// uncallable — a `View`'s `body` cannot mutate `self`.
     private var sortMode: CadenceTaskSortMode {
-        get { CadenceTaskSortMode(rawValue: sortModeRaw) ?? .priority }
-        set { sortModeRaw = newValue.rawValue }
+        CadenceTaskSortMode(rawValue: sortModeRaw) ?? .priority
     }
 
     private var todayKey: String {

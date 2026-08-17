@@ -6,7 +6,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     @Environment(\.openURL) private var openURL
     @Binding var text: String
     @Binding var isFocused: Bool
-    @Binding var pendingCommand: MarkdownFormatCommand?
     @Binding var selectedRange: NSRange
     var imageAssets: [MarkdownImageAsset]
     var taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo]
@@ -21,7 +20,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     init(
         text: Binding<String>,
         isFocused: Binding<Bool>,
-        pendingCommand: Binding<MarkdownFormatCommand?> = .constant(nil),
         selectedRange: Binding<NSRange> = .constant(NSRange(location: 0, length: 0)),
         imageAssets: [MarkdownImageAsset] = [],
         taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:],
@@ -35,7 +33,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     ) {
         _text = text
         _isFocused = isFocused
-        _pendingCommand = pendingCommand
         _selectedRange = selectedRange
         self.imageAssets = imageAssets
         self.taskEmbeds = taskEmbeds
@@ -144,13 +141,14 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             context.coordinator.refreshStylingIfNeeded(on: textView)
         }
 
-        if let pendingCommand {
-            context.coordinator.apply(pendingCommand, to: textView)
-            DispatchQueue.main.async {
-                self.pendingCommand = nil
-            }
-        }
-
+        // No `pendingCommand` binding here. There were two ways to reach `Coordinator.apply` and
+        // only one of them was ever used: the hardware keyboard's shortcuts, which arrive through
+        // `iOSMarkdownTextView.formatCommandHandler` in `makeUIView` above. The SwiftUI side never
+        // injected a command — `iOSMarkdownEditingSurface` runs the same
+        // `MarkdownFormatCommandSupport.apply` against its own draft (`applyCommandToDraft`) and
+        // lets the text change flow back down through `text`, which is what the toolbar, the slash
+        // strip and the reference pickers all do. The binding was a second transport to a
+        // destination that was already reachable, not a feature routed around.
         context.coordinator.applyExternalSelectionIfNeeded(to: textView)
 
         if isFocused, !textView.isFirstResponder {

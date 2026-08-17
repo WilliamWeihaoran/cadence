@@ -37,14 +37,16 @@ struct iOSCalendarView: View {
 
     private let calendar = Calendar.current
 
+    // Read-only, like `monthDetail` below. Both of these used to carry a setter writing the raw
+    // value back, and nothing could call it: a `View`'s `body` cannot mutate `self`, and every
+    // write here goes through `setViewMode` / `setPresentation`, which do more than store the value.
+    // A setter that looks like the write path but is not is how one of those extra steps gets lost.
     private var viewMode: CadenceCalendarViewMode {
-        get { CadenceCalendarViewMode(rawValue: viewModeRaw) ?? .week }
-        set { viewModeRaw = newValue.rawValue }
+        CadenceCalendarViewMode(rawValue: viewModeRaw) ?? .week
     }
 
     private var presentation: CadenceCalendarPresentation {
-        get { CadenceCalendarPresentation(rawValue: presentationRaw) ?? .timeline }
-        set { presentationRaw = newValue.rawValue }
+        CadenceCalendarPresentation(rawValue: presentationRaw) ?? .timeline
     }
 
     /// The month the grid is currently reading as, derived from the week row at its top. Month's
