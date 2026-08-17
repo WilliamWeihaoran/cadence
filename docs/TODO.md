@@ -53,6 +53,13 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   52pt title, a 70pt notes box, a 76pt do-date button block and four ~68pt rows. Supersedes the
   height note on [D-50].
 
+  **Decided 2026-08-17: option C, a grid of value tiles.** Do / Due / List / Priority as 2-up tiles
+  with their value under a small caption, Tags full width beneath. ~300pt, so everything clears the
+  keyboard with ~120pt spare. Chosen over tightened rows and over a title-first chip strip. Note the
+  cost being accepted: **a tile grid appears nowhere else in this app**, so it is a new pattern to
+  maintain — build it out of existing tokens rather than inventing a tile style, and if a shared
+  component falls out of it, put it where other surfaces can reach it.
+
 - [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
   `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
   header or picker looks or behaves. This item is the sweep to make the code match that — find the
