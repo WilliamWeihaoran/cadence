@@ -84,7 +84,18 @@ final class iOSMarkdownBlockCanvasLayoutManager: NSLayoutManager {
                 // text, which is the space the `> ` or `- [ ] ` prefix used to occupy.
                 let location = self.location(forGlyphAt: glyphRange.location)
                 let x = max(0, fragment.minX + location.x - size.width - Self.inlineMarkerGap)
-                let y = fragment.minY + location.y - size.height - canvas.yOffset
+
+                // Centred on the **first line's** box, not sat on the baseline.
+                //
+                // Resting the marker's bottom edge on the baseline is the obvious placement and it
+                // reads wrong: a 16pt circle beside ~11pt of lowercase text then occupies the whole
+                // ascender zone and floats above the words. The line fragment is the box the text
+                // actually fills, so centring in it puts the circle level with the text.
+                //
+                // `lineFragmentRect` for this glyph is the run's *first* line, so a checklist item
+                // that wraps keeps its marker beside the first line rather than drifting to the
+                // middle of the paragraph.
+                let y = fragment.minY + (fragment.height - size.height) / 2 - canvas.yOffset
                 rect = CGRect(x: origin.x + x, y: origin.y + y, width: size.width, height: size.height)
             }
 

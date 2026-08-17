@@ -252,7 +252,7 @@ enum iOSMarkdownStyler {
     ) {
         guard markerRange.length > 0 else { return }
         let canvas = iOSMarkdownQuoteMarkerLayoutInfo(depth: depth).renderedMarker()
-        drawCanvas(storage, canvas, over: markerRange, isBlock: false, yOffset: 3)
+        drawCanvas(storage, canvas, over: markerRange, isBlock: false, yOffset: 0)
     }
 
     private static func applyCheckboxAttachment(
@@ -262,7 +262,7 @@ enum iOSMarkdownStyler {
     ) {
         guard markerRange.length > 0 else { return }
         let canvas = iOSMarkdownCheckboxLayoutInfo(isDone: isDone).renderedMarker()
-        drawCanvas(storage, canvas, over: markerRange, isBlock: false, yOffset: 3)
+        drawCanvas(storage, canvas, over: markerRange, isBlock: false, yOffset: 0)
     }
 
     private static func applyCompletedListText(
