@@ -9,17 +9,31 @@ import UniformTypeIdentifiers
 /// error in Swift 6 language mode. The three members below that need nothing from the main actor
 /// are therefore declared `nonisolated`, matching what they override.
 ///
-/// `drawBackground(forGlyphRange:at:)` deliberately is **not**. Its per-feature helpers read
-/// `MarkdownStylist` / `Theme` (main-actor isolated by the same project default) and read and
-/// write `CadenceTextView`'s hit-rect and hover caches — and `CadenceTextView` is main-actor
-/// isolated by AppKit itself, since `NSTextView` is. Declaring the override `nonisolated` and
-/// hopping back with a checked `MainActor.assumeIsolated` does not compile: Swift 6 region
-/// isolation rejects capturing the task-isolated, non-`Sendable` `self` in a main-actor closure
-/// ("sending 'self' risks causing data races"), and that holds for `[weak self]`, for a local
-/// copy, for `@unchecked Sendable` on the class, and for a single closure with no later use of
-/// `self`. Getting past it means either an unsafe escape hatch or moving the whole decoration
-/// pass onto `CadenceTextView` — a real refactor of this bridge, not an annotation. Until that is
-/// done, this override is why the app target stays on `SWIFT_VERSION = 5.0`; see the T-96 notes.
+/// `drawBackground(forGlyphRange:at:)` deliberately is **not**. Declaring the override
+/// `nonisolated` and hopping back with a checked `MainActor.assumeIsolated` does not compile:
+/// Swift 6 region isolation rejects capturing the task-isolated, non-`Sendable` `self` in a
+/// main-actor closure ("sending 'self' risks causing data races"), and that holds for
+/// `[weak self]`, for a local copy, for `@unchecked Sendable` on the class, and for a single
+/// closure with no later use of `self`. So it is a refactor, not an annotation.
+///
+/// A whole-module probe under `-swift-version 6` (T-105) established what that refactor is, and
+/// the dependencies split in two:
+///
+/// - Six of the eight decoration passes need only `MarkdownStylist`'s colour constants and
+///   `MarkdownChecklistBoxDrawing`, which are main-actor solely because of the project default.
+///   They go `nonisolated` with no behaviour change **once `Theme` is `nonisolated`** — every
+///   `MarkdownStylist` colour is `= Theme.ns*`, so a nonisolated constant cannot initialize until
+///   `Theme` is too. That is the prerequisite, and it is in `Shared/Theme.swift`.
+/// - `drawTaskEmbeds` and `drawMarkdownImages` read and write `CadenceTextView`'s hit-rect,
+///   hover and selection state, and `CadenceTextView` is main-actor isolated by AppKit because
+///   `NSTextView` is. Those two must move onto the view and run from its own `draw(_:)`.
+///
+/// Moving them costs a z-order change — AppKit offers no main-actor hook between this pass and
+/// the glyph pass — which is safe here because both draw onto fully hidden lines whose paragraph
+/// style reserves the card's or image's height, but is a *visual* claim and so is unverified.
+/// Until it is seen, this override is why the app target stays on `SWIFT_VERSION = 5.0`.
+/// Do not reach for `nonisolated(unsafe)` or `@preconcurrency`: if this method really could run
+/// off-main, touching `NSTextView` state would be a genuine race, and Swift is being consistent.
 final class CadenceLayoutManager: NSLayoutManager {
     nonisolated override init() {
         super.init()
@@ -470,7 +484,6 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     var referenceSuggestions: [MarkdownReferenceSuggestion] = []
     var tagSuggestions: [MarkdownTagSuggestion] = []
     var onOpenMarkdownReference: ((MarkdownReferenceTarget) -> Void)?
-    var onCreateMarkdownTag: ((String) -> MarkdownTagSuggestion?)?
     var onCreateEmbeddedMarkdownTask: ((String) -> MarkdownReferenceSuggestion?)?
     var onToggleEmbeddedMarkdownTask: ((UUID) -> Void)?
     var onToggleEmbeddedMarkdownSubtask: ((UUID, UUID) -> Void)?

@@ -497,7 +497,6 @@ struct MarkdownEditorView: NSViewRepresentable {
         textView.referenceSuggestions = referenceSuggestions
         textView.tagSuggestions = tagSuggestions
         textView.onOpenMarkdownReference = onOpenReference
-        textView.onCreateMarkdownTag = onCreateTag
         textView.onCreateEmbeddedMarkdownTask = onCreateEmbeddedTask
         textView.onToggleEmbeddedMarkdownTask = onToggleEmbeddedTask
         textView.onToggleEmbeddedMarkdownSubtask = onToggleEmbeddedSubtask
