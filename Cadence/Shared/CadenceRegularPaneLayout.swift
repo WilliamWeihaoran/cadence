@@ -274,7 +274,7 @@ enum CadenceCalendarPaneLayout {
     // followed, for the same reason one step removed — the grid lights the day up in a cell that
     // prints the count. Week was the last holdout, kept because seven columns say which days exist
     // rather than which one you are on. What removed it there was the header becoming a date
-    // control: `iOSCalendarDateTitle` names the leftmost visible column, so the band's first line was
+    // control: `iOSDateJumpTitle` names the leftmost visible column, so the band's first line was
     // a second date a few points below the first. Its counts could not survive on their own —
     // stripped of the date they were a count with no subject, since the header names the leading
     // column and the band counted the *selected* day.

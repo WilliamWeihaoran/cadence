@@ -141,7 +141,7 @@ struct iOSCreateTaskSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
     }
 
-    /// One line at rest, growing to six once you are actually writing in it.
+    /// One line at rest, growing to a three-to-six-line box once you are writing in it.
     ///
     /// It was `lineLimit(2...6)` — a permanently two-line box on a sheet whose height is the
     /// binding constraint. Measured on a 390pt phone: the rows below reach ~580pt, and with a
@@ -156,6 +156,10 @@ struct iOSCreateTaskSheet: View {
             .foregroundStyle(Theme.text)
             .tint(Theme.blue)
             .focused($focusedField, equals: .notes)
+            // `3...6` focused, not `2...6`: a focused field that grew by only one line looked
+            // like it had failed to respond. The resting state is what the height saving comes
+            // from, and a seeded sheet takes the `!notes.isEmpty` branch so pre-filled notes are
+            // never hidden behind a collapsed box.
             .lineLimit(focusedField == .notes || !notes.isEmpty ? 3...6 : 1...1)
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)

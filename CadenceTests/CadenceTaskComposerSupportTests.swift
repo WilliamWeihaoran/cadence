@@ -288,23 +288,7 @@ struct CadenceTaskComposerSupportTests {
 
     // MARK: - Row values
 
-    @Test
-    func anUnsetDateRowShowsItsOwnEmptyWording() {
-        #expect(CadenceTaskComposerSupport.dateValueLabel("", placeholder: "No due date") == "No due date")
-    }
 
-    @Test
-    func nearDatesReadAsWordsAndFarOnesAsDates() {
-        let today = DateFormatters.todayKey()
-        let tomorrow = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
-        let yesterday = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: -1, to: Date())!)
-        let farOff = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: 40, to: Date())!)
-
-        #expect(CadenceTaskComposerSupport.dateValueLabel(today, placeholder: "No due date") == "Today")
-        #expect(CadenceTaskComposerSupport.dateValueLabel(tomorrow, placeholder: "No due date") == "Tomorrow")
-        #expect(CadenceTaskComposerSupport.dateValueLabel(yesterday, placeholder: "No due date") == "Yesterday")
-        #expect(CadenceTaskComposerSupport.dateValueLabel(farOff, placeholder: "No due date") == DateFormatters.shortDateString(from: farOff))
-    }
 
     /// A row is labelled "Priority", so its trailing control answers it in words — the `!!` mark the
     /// chip used to show named the field rather than the value.

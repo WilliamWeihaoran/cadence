@@ -64,7 +64,7 @@ Cadence/
 │   │                   # drop targets, CalendarBoardPlannerSupport, CadenceScheduleSupport
 │   └── Components/     # CadenceDatePicker, CadenceButtons, CadenceContextPicker, EmptyStateView,
 │                       # SectionEyebrowLabel, CommitmentSharedViews,
-│                       # EstimatePickerControl (iOS-only), CadenceScrollElasticity
+│                       # EstimatePickerControl (iOS chip; its popover is shared), CadenceScrollElasticity
 ├── iOS/                # Large adaptive iOS/iPadOS surface (68 files) — see "What's Built (iOS)"
 │   ├── iOSRootView.swift        # Adaptive root shell: iPad sidebar / iPhone tab bar; deep links, widget refresh
 │   ├── iOSCompactTabShell.swift # iPhone bottom bar, per-tab paths, centre capture button
@@ -367,10 +367,12 @@ iOS still has its own vocabulary — `CadenceTaskSortMode` + `CadenceTaskQuerySu
 
 **`MacTaskRow` (TasksPanelComponents.swift):** Container (area/project/inbox) uses pill styling; do/due dates are smaller, lower-contrast metadata (icons + text) with hover affordances, not pills. Due date badge only renders when `!task.dueDate.isEmpty` — no empty clickable badge. Overdue tasks can show red emphasis; “over-do” (past do date) is not amber-tinted on the row. The row has **no** estimate control — trailing metadata is the focus button, due-date badge, optional bundle badge, and a `ContainerPickerBadge(compact: true, flat: true)` list chip. Priority strip height is slightly less than the row; the focus control sits beside the title when hovered.
 
-`EstimatePickerControl` **and** `EstimatePickerPopoverContent` (Shared/Components) are now
-**iOS-only** — every caller is under `Cadence/iOS/`. macOS uses its own two-column roller
-(`TaskInspectorEstimateRollerPopover` / `EstimateRollerColumn`, in
-`TaskInspectorFieldSupportViews.swift`) behind `TaskInspectorEstimateChip`.
+`EstimatePickerPopoverContent` (Shared/Components) is **the** estimate picker on both platforms —
+a two-column roller with preset chips above it. `TaskInspectorEstimateRollerPopover` is now a
+typealias for it, so macOS's inspector chip, its kanban card, its note-embed field editor and every
+iOS surface all open one control. It was two for a while, and `CLAUDE.md` recorded that split as
+deliberate, which is how it survived; the note is here as a warning about that pattern rather than
+as a description of a difference.
 
 **Performance:** `MacTaskRow` does NOT read `TaskCompletionAnimationManager` directly. The completion button and animated background are extracted into `TaskCompletionButton` and `TaskRowBackground` sub-view structs, each with their own `@Environment(TaskCompletionAnimationManager.self)`. This scopes SwiftUI observation so only those small sub-views re-render on animation ticks — not every visible row.
 
@@ -507,7 +509,7 @@ the placement breadcrumb) plus `TaskInspector*SupportViews` (field-row primitive
 sections, recurrence). Current shape, top to bottom: title row, tags, breadcrumb, SCHEDULE,
 SUBTASKS, NOTES, action buttons.
 - **The header tile *is* the priority control.** It used to be a decorative container glyph with a duplicate priority control on the right — two affordances for one field. Tapping the tile opens `TaskPriorityPickerPopover`.
-- **Estimate is a chip at the trailing edge of the title row** (`TaskInspectorEstimateChip`), not a row in the SCHEDULE well — an estimate is a property of the task like its priority, not a date. It is `fixedSize`, so a long title wraps instead of squeezing it, and non-focusable, so clicking it cannot pull the caret out of a title being edited. Same **two-column roller** popover (`TaskInspectorEstimateRollerPopover`) the row used; still not the iOS `EstimatePickerPopoverContent`.
+- **Estimate is a chip at the trailing edge of the title row** (`TaskInspectorEstimateChip`), not a row in the SCHEDULE well — an estimate is a property of the task like its priority, not a date. It is `fixedSize`, so a long title wraps instead of squeezing it, and non-focusable, so clicking it cannot pull the caret out of a title being edited. Same **two-column roller** popover, which is now literally `EstimatePickerPopoverContent` — one picker, both platforms.
 - **Tags sit directly under the title**, indented to the title column, as a chip strip with a `+`. They are `task.tags` and always were — they previously sat under a heading reading NOTES, which implied tagging a task also tagged a note. (`AppTask.notes` is a `String`; there is no note object to tag.)
 - **Placement is one breadcrumb line** under the tags — `China › Documents` (`TaskDetailPlacementBreadcrumb`), replacing a "PLACEMENT" well with a List row and a Section row. Each segment opens its full picker. The section segment is omitted when the container has nothing to choose between — an Inbox task reads simply `Inbox`.
 - **No "Actual" row.** Logged time is measured, not typed; the focus timer accumulates it.
@@ -704,7 +706,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Search
 - [x] Settings (overview, contexts, tags, templates + lists, calendar, notifications)
 - [x] Notification scheduling wiring (see "What's Built (macOS)" above — shared logic, not iOS-specific)
-- [x] `EstimatePickerControl` / `EstimatePickerPopoverContent` in `Shared/Components` are used **only** here; macOS has its own roller
+- [x] `EstimatePickerPopoverContent` in `Shared/Components` is the estimate picker for **both** platforms; `EstimatePickerControl` is the iOS chip wrapper around it
 
 Not guaranteed to have full feature parity with macOS by design — check the actual view file before assuming a macOS feature exists on iOS.
 

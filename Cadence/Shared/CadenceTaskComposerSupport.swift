@@ -241,21 +241,6 @@ enum CadenceTaskComposerSupport {
 
     // MARK: - Row values
 
-    /// What a date row says: the field's own "no value" wording while unset, the day once set.
-    ///
-    /// `DateFormatters.relativeDate` is deliberately not used — its "in 5 days" / "30 days ago"
-    /// spellings run three times the width of the control, and a value that reflows as a date is
-    /// picked is a value that moves out from under the finger heading for it.
-    static func dateValueLabel(_ dateKey: String, placeholder: String) -> String {
-        guard !dateKey.isEmpty else { return placeholder }
-        switch DateFormatters.dayOffset(from: dateKey) {
-        case 0: return "Today"
-        case 1: return "Tomorrow"
-        case -1: return "Yesterday"
-        default: return DateFormatters.shortDateString(from: dateKey)
-        }
-    }
-
     /// What the priority row says. `None` is a value here, not a prompt: the row is already
     /// labelled "Priority", so the trailing control's job is to answer it — the same wording the
     /// task inspector's priority row uses, rather than the `!!` mark the chip used to show.

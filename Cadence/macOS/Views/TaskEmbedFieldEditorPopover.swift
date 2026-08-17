@@ -155,23 +155,30 @@ struct TaskEmbedFieldEditorPopover: View {
                 inlineStyle: true
             )
         case .estimate:
+            // The same roller every other estimate surface opens, not a stepper of its own.
+            //
+            // `3ecfeaf` unified the inspector's roller with the iOS picker and missed this one, so
+            // for a while the app had *three* ways to set one field: editing a task from its embed
+            // card in a note gave 15-minute steps, while the chip beside it gave the roller's
+            // 5-minute column. A value like 50m was not reachable from here at all.
             VStack(alignment: .leading, spacing: 8) {
-                fieldLabel("Estimate")
-                Stepper(value: Binding(
-                    get: { task.estimatedMinutes },
-                    set: {
-                        task.estimatedMinutes = max(0, min($0, 1440))
-                        persist()
-                    }
-                ), in: 0...1440, step: 15) {
-                    Text(task.estimatedMinutes > 0 ? durationLabel(task.estimatedMinutes) : "No estimate")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.text)
-                }
+                EstimatePickerPopoverContent(
+                    value: Binding(
+                        get: { task.estimatedMinutes },
+                        set: {
+                            task.estimatedMinutes = max(0, min($0, 1440))
+                            persist()
+                        }
+                    ),
+                    onClose: { dismiss() }
+                )
+
                 if task.actualMinutes > 0 {
                     Text("Logged \(durationLabel(task.actualMinutes))")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.dim)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
                 }
             }
         case .recurrence:
@@ -192,7 +199,8 @@ struct TaskEmbedFieldEditorPopover: View {
         case .container, .section:
             return 220
         case .estimate:
-            return 190
+            // The shared roller sizes itself; this only has to not squeeze it.
+            return 240
         default:
             return 170
         }
