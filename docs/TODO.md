@@ -31,13 +31,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 **K — calendar chrome, round two** (requested 2026-08-17 with a screenshot)
 
-**L — iPad sidebar footer**
-- [T-67] **Checklist circles sit too high against their text.** The inline marker canvas is placed
-  with its bottom on the text baseline, which reads as top-aligned next to lowercase text. Centre it
-  on the line fragment instead. `iOSMarkdownBlockCanvasLayoutManager`, the `isBlock == false` branch.
-- [T-66] **Settings and Focus collapse to one row of two ghost icon buttons**, Settings left, Focus
-  right. They are currently two full-width labelled rows at the foot of the iPad sidebar.
-
 - [T-61] **Month scrolls vertically**, continuously, and loses its `‹ ➤ ›` cluster — the same trade
   Week made in `40259b0`. Deleting the cluster is only safe once scrolling replaces it, and the date
   title must carry jump-to-today.
@@ -201,6 +194,9 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-42] `8f2fd9f` Settings and Focus share one row of glyphs at the sidebar's foot (T-66).
+- [D-41] `ae3ac48` Checklist circles sat on the baseline, which reads as floating (T-67).
 
 - [D-40] `cf785a8` The calendar scrolls instead of stepping, and its headers stay put (T-50).
 
