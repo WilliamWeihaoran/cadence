@@ -44,29 +44,35 @@ struct iOSTasksTabView: View {
     }
 }
 
+/// The tab's own header row, over the segmented switcher.
+///
+/// The row **is** `iOSPageHeader`, at `.page` role. It used to re-spell that vocabulary by hand — a
+/// 10pt uppercase kerned eyebrow over a 26pt bold title, with its own `Spacer(minLength: 8)` before
+/// a trailing control — which are the header's exact compact `.page` figures, arrived at
+/// independently. It survived the pass that collapsed six of these into one because it is
+/// compact-only and so is not an iPhone-against-iPad divergence; being the *seventh* copy of a
+/// vocabulary is what makes it worth closing anyway, since six copies is what a seventh becomes.
+///
+/// The eyebrow and title are the greeting and the date rather than the word "Tasks": the switcher
+/// below already says which slice you are on, and the tab bar below that already says Tasks.
 private struct iOSTasksTabHeader: View {
     @Binding var section: CadenceTasksSection
     let onSearch: () -> Void
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack(alignment: .center, spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(CadenceCompactShellSupport.dateEyebrow(for: Date()))
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .textCase(.uppercase)
-                        .kerning(0.8)
+        // The switcher's gutter is the header's own, read from the same ramp rather than typed
+        // beside it — the two are one row of chrome and must share an edge.
+        let metrics = iOSPageHeaderMetrics.metrics(
+            role: .page,
+            isRegularWidth: horizontalSizeClass == .regular
+        )
 
-                    Text(CadenceCompactShellSupport.greeting(for: Date()))
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-
-                Spacer(minLength: 8)
-
+        VStack(alignment: .leading, spacing: 0) {
+            iOSPageHeader(
+                eyebrow: CadenceCompactShellSupport.dateEyebrow(for: Date()),
+                title: CadenceCompactShellSupport.greeting(for: Date())
+            ) {
                 iOSIconButton(
                     systemImage: "magnifyingglass",
                     accessibilityLabel: "Search",
@@ -86,10 +92,9 @@ private struct iOSTasksTabHeader: View {
                     }
                 }
             }
+            .padding(.horizontal, metrics.horizontalPadding)
+            .padding(.bottom, metrics.bottomPadding)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 11)
     }
 }
 #endif

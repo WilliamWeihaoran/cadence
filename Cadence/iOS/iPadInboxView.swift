@@ -2,18 +2,35 @@
 import SwiftData
 import SwiftUI
 
+/// Inbox: the query, the two stored preferences, and `iOSTaskCollectionPage`.
+///
+/// **One full-width column, at every width.** The iPad layout was once an `HStack` of the list and
+/// an "Overview" pane, which spent about a third of the screen on "0 ACTIVE", "0 DONE" and an
+/// "OLDEST ITEM" that read "Clear" whenever there was nothing to be oldest — every one of which was
+/// already on screen. What replaced it was a `List` column that still differed from the phone's
+/// `LazyVStack` in its container, its row insets and its separators; that is gone too, and the
+/// `horizontalSizeClass` branch with it. See `iOSTaskCollectionPage`.
+///
+/// The type name is the last trace of the split. It is kept because its remaining callers —
+/// `iOSRootView`, `iOSCompactTabShell`, `iOSSearchView` and `iOSTasksTabView` — are outside this
+/// change's reach, and the name is now simply wrong: this is the Inbox on every device.
 struct iPadInboxView: View {
     /// Off when the Tasks tab hosts this as its Inbox segment — see
     /// `iPadTodayView.showsCompactHeader`. Still on when Inbox is reached as a pushed screen.
     var showsCompactHeader = true
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @AppStorage("ios.inbox.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
     @AppStorage("ios.inbox.showCompleted") private var showCompleted = false
 
     private var sortMode: CadenceTaskSortMode {
-        get { CadenceTaskSortMode(rawValue: sortModeRaw) ?? .listOrder }
-        set { sortModeRaw = newValue.rawValue }
+        CadenceTaskSortMode(rawValue: sortModeRaw) ?? .listOrder
+    }
+
+    private var sortModeBinding: Binding<CadenceTaskSortMode> {
+        Binding(
+            get: { sortMode },
+            set: { sortModeRaw = $0.rawValue }
+        )
     }
 
     private var inboxTasks: [AppTask] {
@@ -27,131 +44,21 @@ struct iPadInboxView: View {
         CadenceTaskQuerySupport.completedInboxTasks(from: allTasks)
     }
 
-    /// **One full-width column.** The iPad layout used to be an `HStack` of the list and an
-    /// "Overview" pane, which spent about a third of the screen on "0 ACTIVE", "0 DONE" and an
-    /// "OLDEST ITEM" that read "Clear" whenever there was nothing to be oldest. Every one of those
-    /// three was already on screen: the active count is the badge in the page header, and the oldest
-    /// item is the last row of a list sorted by list order.
-    ///
-    /// Deleting it also removed the last pane on this surface that declared a `minWidth` with no way
-    /// to honour it — `440 + 1 + 280` against 632pt of detail on an 11" iPad — which is what
-    /// overflowed the root shell and pushed the sidebar off the leading edge of the screen. See
-    /// `CadenceRootShellLayout`, which now stops that at the shell regardless.
     var body: some View {
-        Group {
-            if horizontalSizeClass == .compact {
-                iOSCompactInboxView(
-                    showsHeader: showsCompactHeader,
-                    inboxTasks: inboxTasks,
-                    completedInboxTasks: completedInboxTasks,
-                    sortMode: Binding(
-                        get: { sortMode },
-                        set: { sortModeRaw = $0.rawValue }
-                    ),
-                    showCompleted: $showCompleted
-                )
-            } else {
-                inboxColumn
-            }
-        }
-        .background(Theme.bg.ignoresSafeArea())
+        iOSTaskCollectionPage(
+            collection: .inbox,
+            showsHeader: showsCompactHeader,
+            activeTasks: inboxTasks,
+            completedTasks: completedInboxTasks,
+            sortMode: sortModeBinding,
+            showCompleted: $showCompleted
+        )
         // No seed: the Inbox is where a task goes when it has no list yet, so seeding one would
         // contradict the surface it was captured from.
         .iOSFloatingCreateTaskButton()
-        // Both layouts head themselves with "CAPTURE / Inbox", so a nav title repeated the word
-        // one row higher. See `iOSHidesCompactNavigationBar()`.
+        // The page heads itself with "CAPTURE / Inbox", so a nav title repeated the word one row
+        // higher. See `iOSHidesCompactNavigationBar()`.
         .iOSHidesCompactNavigationBar()
-    }
-
-    private var inboxColumn: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // A `.page` header, not a pane one: this is the whole page ("**One full-width
-            // column**", above), and the phone draws the same page with the same tray tile and the
-            // same title size. It used to be `iOSPanelHeader` — 21pt and no tile — so the two
-            // widths of one screen disagreed about how loudly the screen names itself.
-            iOSPageHeader(
-                eyebrow: "Capture",
-                title: "Inbox",
-                systemImage: "tray.fill",
-                color: Theme.blue,
-                count: inboxTasks.count
-            )
-
-            Divider().background(Theme.borderSubtle)
-
-            iOSTaskViewOptionsBar(
-                sortMode: Binding(
-                    get: { sortMode },
-                    set: { sortModeRaw = $0.rawValue }
-                ),
-                showCompleted: $showCompleted,
-                completedCount: completedInboxTasks.count
-            )
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 12)
-
-            if inboxTasks.isEmpty && (!showCompleted || completedInboxTasks.isEmpty) {
-                iOSEmptyPanel(
-                    systemImage: "tray",
-                    title: CadenceEmptyStateCopy.inboxTitle,
-                    subtitle: CadenceEmptyStateCopy.inboxSubtitle
-                )
-            } else {
-                List {
-                    // No emptiness guard, for the reason the compact layout states: this heading's
-                    // rows are in the Inbox by construction, which makes it a create-task drop
-                    // target, and a drop target that disappears when the group empties is gone at
-                    // the moment it is most useful. The phone reaches the same conclusion through
-                    // `iOSTaskGroupSection.isVisible`; a `List` section has to say it here.
-                    Section {
-                        ForEach(inboxTasks) { task in
-                            // No list chip: see the note on the compact layout's sections. The
-                            // decision is `CadenceTaskSurfaceOptions`', so both widths take it
-                            // from the same place.
-                            iOSTaskListRow(
-                                task: task,
-                                showsContainer: CadenceTaskSurfaceOptions.showsContainerChip(on: .inbox)
-                            )
-                        }
-                    } header: {
-                        // Blue, and counted, exactly as on the phone and on All Tasks at both
-                        // widths. This one header was grey, so "Active" meant something
-                        // different here than three taps away.
-                        iOSTaskGroupHeader(
-                            title: "Active",
-                            color: Theme.blue,
-                            count: inboxTasks.count,
-                            dropIdentity: .list(key: "inbox", name: "Inbox")
-                        )
-                    }
-
-                    if showCompleted && !completedInboxTasks.isEmpty {
-                        Section {
-                            ForEach(CadenceTaskSurfaceOptions.completedRows(from: completedInboxTasks)) { task in
-                                iOSTaskListRow(
-                                    task: task,
-                                    opacity: 0.62,
-                                    showsContainer: CadenceTaskSurfaceOptions.showsContainerChip(on: .inbox)
-                                )
-                            }
-                        } header: {
-                            iOSTaskGroupHeader(
-                                title: "Completed",
-                                color: Theme.green,
-                                count: CadenceTaskSurfaceOptions.completedRows(from: completedInboxTasks).count,
-                                dropIdentity: .completion
-                            )
-                        }
-                    }
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .background(Theme.bg)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Theme.bg)
     }
 }
 #endif
