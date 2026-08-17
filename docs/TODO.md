@@ -29,7 +29,15 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-_Nothing in flight._
+**AL — dead wiring, macOS half** ([T-104])
+
+**AM — dead wiring, iOS half** ([T-104])
+
+**AN — `CadenceEmptyStateCopy` isolation, and the cleanup it unblocks** ([T-106])
+
+**AO — the last Swift 6 blocker in the editor** ([T-105]). Briefed to land a *plan* rather than an
+unverifiable refactor: the editor's correctness is largely visual and macOS UI cannot be
+screenshot-verified from the agent shell ([T-14]).
 
 ## Open — decided, not started
 
