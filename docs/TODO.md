@@ -33,8 +33,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 **AC — one page header, one stat row** (T-73 group B remainder)
 
-**AD — two small cleanups** ([T-90], [T-91], and re-check [T-11])
-
 ## Open — decided, not started
 
 - [T-92] **Stop storing the embed title twice — resolve it from the live task instead.** The real fix
@@ -78,15 +76,8 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — known, unscheduled
 
-- [T-91] **`toggledDoDateKey` and `doDatePickLabel` are unused by the sheet** now the do-date button
-  block is gone (`D-58`). Kept because `CadenceTaskComposerSupportTests` still covers them and that
-  file was held by another agent at the time. Remove both, and their tests, unless another caller
-  turns up.
-
-- [T-90] **Month's date dropdown seeds its selection on the middle day of the displayed window** —
-  Aug 16 under a grid reading "August" — rather than the 1st or today. Cosmetic, and a consequence
-  of Month reading its title from the window's middle row (which is correct, since an August-aligned
-  window starts in July). Worth a look when someone is next in that file.
+- [T-93] **`isCustomDoDate` is production-dead.** It was `doDatePickLabel`'s only caller and outlived
+  it by one commit (`D-60`); a test still exercises it. Two lines to remove, with its test.
 
 - [T-89] **Drag-and-drop cannot be driven from the simulator harness.** Neither `touch_path` nor
   `swipe` lifts a `UIDragInteraction`, so no drop ever fires — verified against the row target from
@@ -129,8 +120,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   *capability* or the same *control*, and what happens to macOS-only surfaces that have no phone
   shape at all (the MCP bridge, global hot keys, the AppKit markdown editor).
 
-- [T-11] **`iOSSegmentedChoice` truncates silently** past four options for labels over ~9 chars —
-  fixed in the control, but worth re-checking call sites as labels change.
 - [T-13] **Empty container directories leak** — every app/test launch leaves an empty
   `<UUID>-<pid>-<hex>` directory in the macOS app's sandbox container; 1,763 of them, 97 MB.
   Reproduced (count rises by one per test run). Not our code — framework-level — but it accumulates.
@@ -182,6 +171,9 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-60] `b554824` Month's date picker opened on a layout constant (T-90, T-91; T-11 closed as
+  already fixed).
 
 - [D-59] `49a273e` macOS rewrites an embed's reference when its inspector closes (T-88).
 
