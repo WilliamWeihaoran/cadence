@@ -973,6 +973,180 @@ enum CadenceScheduleSupport {
     }
 }
 
+// MARK: - How a month grid draws a day
+
+/// The treatment a month grid's day badge takes, as the four states it can actually be in.
+///
+/// The colours are `MonthCalendarPanel`'s — the panel behind every date picker in the app, on both
+/// platforms: a **selected** day is a solid `Theme.blue` circle with `Theme.onColor` on it, **today**
+/// is `Theme.blue` at `washOpacity` with `Theme.blue` on it, and anything else has no circle at all.
+/// The iOS month grids had that pairing the wrong way round — today took the solid fill and the
+/// selection took the wash — so the same two facts read as each other's opposite depending on which
+/// month surface you were looking at.
+///
+/// This is the mapping only; the colours are applied at the call sites, because the two grids differ
+/// in what "no circle" and "not this month" look like. Keeping the *decision* here is what stops a
+/// third and fourth spelling of "today" appearing.
+enum CadenceCalendarDayBadge: Hashable, CaseIterable {
+    case plain
+    case today
+    case selected
+    /// Today, and the selected day. Needs to be distinguishable from either alone — a grid where
+    /// selecting today makes the "today" marker vanish has lost a fact rather than combined two.
+    case todayAndSelected
+
+    /// The fill of `Theme.blue` a wash uses. `MonthCalendarPanel`'s number, named once.
+    static let washOpacity: Double = 0.15
+
+    static func style(isToday: Bool, isSelected: Bool) -> CadenceCalendarDayBadge {
+        switch (isToday, isSelected) {
+        case (true, true):   return .todayAndSelected
+        case (true, false):  return .today
+        case (false, true):  return .selected
+        case (false, false): return .plain
+        }
+    }
+
+    /// The circle behind the day number.
+    enum Fill: Hashable {
+        /// Whatever the grid's resting cell looks like — no accent at all.
+        case none
+        /// `Theme.blue` at `washOpacity`.
+        case wash
+        /// Solid `Theme.blue`.
+        case solid
+    }
+
+    /// The day number itself.
+    enum Label: Hashable {
+        /// The grid's ordinary day-number colour, which also carries "not this month".
+        case normal
+        /// `Theme.blue`, read against a wash.
+        case accent
+        /// `Theme.onColor`, read against a solid fill.
+        case onFill
+    }
+
+    var fill: Fill {
+        switch self {
+        case .plain:                       return .none
+        case .today:                       return .wash
+        case .selected, .todayAndSelected: return .solid
+        }
+    }
+
+    var label: Label {
+        switch self {
+        case .plain:                       return .normal
+        case .today:                       return .accent
+        case .selected, .todayAndSelected: return .onFill
+        }
+    }
+
+    /// A ring drawn just outside the badge. The **only** thing separating "today, and selected" from
+    /// "selected", since both take the solid fill.
+    var showsTodayRing: Bool { self == .todayAndSelected }
+
+    /// Whether the day number is drawn heavier than its neighbours.
+    var isEmphasized: Bool { self != .plain }
+}
+
+// MARK: - The calendar's date title
+
+/// What the calendar's date title names, and how far from "now" it currently is.
+///
+/// Every calendar surface now has the same title: the date at the leading edge of what is on screen,
+/// with a chevron and a popover that jumps somewhere else. What differs is the *unit* — a timed grid
+/// and the Board are looking at a day, Month is looking at a month — and that difference is three
+/// paired questions (what does the label say, when is it "now", what does a picked date mean), which
+/// is exactly the kind of thing that drifts when it is spelled at the call site.
+///
+/// This exists because the `‹ ➤ ›` cluster was deleted from all four surfaces. Its middle control
+/// was `location.fill` — jump to today, not a direction — so the title had to grow that shortcut
+/// before the cluster could go.
+enum CadenceCalendarDateTitleFormat: Hashable {
+    /// One day: Week, 2 Weeks and the Board, all of which scroll a day at a time.
+    case day
+    /// One month: the month grid, which scrolls a week row at a time but is read a month at a time.
+    case month
+}
+
+enum CadenceCalendarDateTitleSupport {
+    static func label(
+        for date: Date,
+        format: CadenceCalendarDateTitleFormat,
+        calendar: Calendar = .current
+    ) -> String {
+        switch format {
+        case .day:
+            return DateFormatters.shortDate.string(from: date)
+        case .month:
+            return DateFormatters.monthYear.string(
+                from: CadenceCalendarMonthWindow.displayedMonth(topRowStart: date, calendar: calendar)
+            )
+        }
+    }
+
+    /// Whether the title is naming the present. The title renders in `Theme.text` when it is and in
+    /// `Theme.blue` when it is not, so the header itself says you have scrolled away — without it a
+    /// week in March is indistinguishable at a glance from this one.
+    static func isAtNow(
+        _ date: Date,
+        format: CadenceCalendarDateTitleFormat,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        switch format {
+        case .day:
+            return calendar.isDate(date, inSameDayAs: now)
+        case .month:
+            let displayed = CadenceCalendarMonthWindow.displayedMonth(topRowStart: date, calendar: calendar)
+            return calendar.isDate(displayed, equalTo: now, toGranularity: .month)
+        }
+    }
+
+    /// The day the title's popover should open on. For Month the bound value is a **week row start**,
+    /// which is a layout position rather than a date the user ever chose — opening the picker on it
+    /// would highlight July 27 under a grid reading "August".
+    static func pickerDate(
+        for date: Date,
+        format: CadenceCalendarDateTitleFormat,
+        calendar: Calendar = .current
+    ) -> Date {
+        switch format {
+        case .day:
+            return calendar.startOfDay(for: date)
+        case .month:
+            return CadenceCalendarMonthWindow.displayedMonth(topRowStart: date, calendar: calendar)
+        }
+    }
+
+    /// The value to write back when a day is picked — the inverse of `pickerDate`. Picking any day of
+    /// August in Month scrolls the grid to August's first row, not to the week that day falls in.
+    static func anchor(
+        forPicked date: Date,
+        format: CadenceCalendarDateTitleFormat,
+        calendar: Calendar = .current
+    ) -> Date {
+        switch format {
+        case .day:
+            return calendar.startOfDay(for: date)
+        case .month:
+            return CadenceCalendarMonthWindow.topRow(forMonthContaining: date, calendar: calendar)
+        }
+    }
+
+    /// Where the popover's `Today` row goes. `anchor(forPicked:)` of now, stated separately because
+    /// this is the half that replaced a toolbar button and it should be findable by name.
+    static func nowAnchor(
+        format: CadenceCalendarDateTitleFormat,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Date {
+        anchor(forPicked: now, format: format, calendar: calendar)
+    }
+}
+
 // MARK: - Timed grid: zoom
 
 /// How tall an hour is on a timed grid, and what a pinch may do to it.

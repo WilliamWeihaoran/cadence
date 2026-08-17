@@ -186,7 +186,6 @@ struct iOSCalendarTimelineGrid: View {
                         let date = date(at: index)
                         iOSCalendarTimelineDayHeader(
                             date: date,
-                            isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
                             unscheduledTasks: items(unscheduledTasksByDate, on: date),
                             eventCount: items(eventsByDate, on: date).count,
                             bundleCount: items(bundlesByDate, on: date).count,
@@ -212,7 +211,6 @@ struct iOSCalendarTimelineGrid: View {
                             let key = DateFormatters.dateKey(from: date)
                             iOSCalendarTimelineDayColumn(
                                 date: date,
-                                isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
                                 tasks: CadenceScheduleSupport.items(on: key, in: scheduledTasksByDate),
                                 bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
                                 events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
@@ -443,9 +441,15 @@ private func iOSCalendarTimelineDayHeaderHeight(isRegularWidth: Bool) -> CGFloat
     isRegularWidth ? 112 : 101
 }
 
+/// The band over one day column.
+///
+/// It carries **no selection state**. Tapping a header still sets the calendar's selected day — the
+/// day inspector beside a wide-enough Week pane is what reads it — but nothing on the grid lights up
+/// for it any more. A grid of seven columns is a span you are looking at, not a list you pick from,
+/// and the blue-on-blue "selected" tint sat a shade away from the "today" tint next to it, so the
+/// two were told apart mostly by knowing which was which.
 private struct iOSCalendarTimelineDayHeader: View {
     let date: Date
-    let isSelected: Bool
     let unscheduledTasks: [AppTask]
     let eventCount: Int
     let bundleCount: Int
@@ -468,10 +472,10 @@ private struct iOSCalendarTimelineDayHeader: View {
                         .font(.system(size: horizontalSizeClass == .regular ? 11 : 10, weight: .semibold))
                         .foregroundStyle(isToday ? Theme.blue : Theme.dim)
                     Text(DateFormatters.dayNumber.string(from: date))
-                        .font(.system(size: horizontalSizeClass == .regular ? 20 : 18, weight: isToday || isSelected ? .bold : .regular))
+                        .font(.system(size: horizontalSizeClass == .regular ? 20 : 18, weight: isToday ? .bold : .regular))
                         .foregroundStyle(isToday ? Theme.onColor : Theme.text)
                         .frame(width: horizontalSizeClass == .regular ? 36 : 32, height: horizontalSizeClass == .regular ? 36 : 32)
-                        .background(isToday ? Theme.blue : isSelected ? Theme.blue.opacity(0.16) : Color.clear)
+                        .background(isToday ? Theme.blue : Color.clear)
                         .clipShape(Circle())
                 }
                 .frame(height: horizontalSizeClass == .regular ? 66 : 58)
@@ -504,7 +508,7 @@ private struct iOSCalendarTimelineDayHeader: View {
                 .padding(.bottom, horizontalSizeClass == .regular ? 7 : 5)
             }
             .frame(height: headerHeight)
-            .background(isSelected ? Theme.blue.opacity(0.055) : isToday ? Theme.blue.opacity(0.035) : Theme.surface)
+            .background(isToday ? Theme.blue.opacity(0.035) : Theme.surface)
             .overlay(alignment: .trailing) {
                 Rectangle()
                     .fill(Theme.borderSubtle.opacity(0.65))
@@ -601,7 +605,6 @@ private struct iOSCalendarTimelineColumnGridLines: View {
 
 private struct iOSCalendarTimelineDayColumn: View {
     let date: Date
-    let isSelected: Bool
     let tasks: [AppTask]
     let bundles: [TaskBundle]
     let events: [EKEvent]
@@ -659,7 +662,10 @@ private struct iOSCalendarTimelineDayColumn: View {
         .frame(width: colWidth, height: timelineHeight, alignment: .topLeading)
     }
 
-    /// The today / selected-day tint, drawn over the whole column.
+    /// The today tint, drawn over the whole column.
+    ///
+    /// Today only. There used to be a second, near-identical wash for the *selected* day; the
+    /// selection no longer shows on this grid at all — see `iOSCalendarTimelineDayHeader`.
     ///
     /// `.allowsHitTesting(false)` is load-bearing, not decoration. This wash sits above the clear
     /// `Rectangle` that carries the drag-to-create `SpatialTapGesture`, and a filled `Shape` is
@@ -672,11 +678,6 @@ private struct iOSCalendarTimelineDayColumn: View {
         if Calendar.current.isDateInToday(date) {
             Rectangle()
                 .fill(Theme.blue.opacity(0.025))
-                .frame(width: colWidth, height: timelineHeight)
-                .allowsHitTesting(false)
-        } else if isSelected {
-            Rectangle()
-                .fill(Theme.blue.opacity(0.04))
                 .frame(width: colWidth, height: timelineHeight)
                 .allowsHitTesting(false)
         }

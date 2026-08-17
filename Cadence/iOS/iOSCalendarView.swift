@@ -47,8 +47,10 @@ struct iOSCalendarView: View {
         set { presentationRaw = newValue.rawValue }
     }
 
-    private var navigationMode: CadenceCalendarViewMode {
-        viewMode
+    /// The month the grid is currently reading as, derived from the week row at its top. Month's
+    /// `anchorDate` is a scroll position, not a month — see `CadenceCalendarMonthWindow`.
+    private var displayedMonth: Date {
+        CadenceCalendarMonthWindow.displayedMonth(topRowStart: anchorDate, calendar: calendar)
     }
 
     private var selectedKey: String {
@@ -103,7 +105,7 @@ struct iOSCalendarView: View {
             return boardEventDates
         }
         if viewMode == .month {
-            return CadenceScheduleSupport.monthGridDays(for: anchorDate, calendar: calendar)
+            return CadenceCalendarMonthWindow.eventWindowDates(displayedMonth: displayedMonth, calendar: calendar)
         }
         return timelineEventDates
     }
@@ -121,8 +123,12 @@ struct iOSCalendarView: View {
         if presentation == .board {
             return "board:\(DateFormatters.dateKey(from: anchorDate))"
         }
+        // The month grid scrolls a week row at a time, so keying on the leading row would re-run the
+        // fetch every week crossed. `displayedMonth` changes once a month, and the window it fetches
+        // is wide enough to cover every row position that reads as that month. Same shape as the
+        // timed grids' week-aligned key below.
         if viewMode == .month {
-            return "month:\(DateFormatters.monthYear.string(from: anchorDate))"
+            return "month:\(DateFormatters.monthYear.string(from: displayedMonth))"
         }
         return "timeline:\(DateFormatters.dateKey(from: CadenceCalendarTimelineWindow.eventWindowStart(leadingDate: anchorDate, calendar: calendar)))"
     }
@@ -141,47 +147,10 @@ struct iOSCalendarView: View {
         CadenceScheduleSupport.dueOnlyTasks(on: selectedKey, from: allTasks)
     }
 
-    private var selectedUniqueTaskCount: Int {
-        Set((selectedTasks + selectedUnscheduledTasks + selectedDueOnlyTasks).map(\.id)).count
-    }
-
-    private var selectedTimedTaskCount: Int {
-        selectedTasks.filter { $0.scheduledDate == selectedKey && $0.scheduledStartMin >= 0 }.count
-    }
-
-    private var selectedLeadItem: iOSCalendarLeadItem? {
-        if let bundle = selectedBundles.first {
-            return iOSCalendarLeadItem(
-                title: bundle.displayTitle,
-                detail: CadenceScheduleSupport.timeRangeLabel(startMinute: bundle.startMin, endMinute: bundle.endMin),
-                systemImage: "tray.full.fill",
-                tint: Theme.amber
-            )
-        }
-        if let event = selectedEvents.first {
-            return iOSCalendarLeadItem(
-                title: iOSCalendarEventSupport.title(for: event),
-                detail: iOSCalendarEventSupport.timeRangeLabel(for: event),
-                systemImage: event.isAllDay ? "calendar" : "calendar.badge.clock",
-                tint: iOSCalendarEventSupport.color(for: event.calendar)
-            )
-        }
-        if let task = (selectedTasks + selectedUnscheduledTasks + selectedDueOnlyTasks).first {
-            return iOSCalendarLeadItem(
-                title: task.title.isEmpty ? "Untitled Task" : task.title,
-                detail: task.containerName.isEmpty ? "Inbox" : task.containerName,
-                systemImage: task.isDone ? "checkmark.circle.fill" : "circle.fill",
-                tint: Color(hex: task.containerColor)
-            )
-        }
-        return nil
-    }
-
-    private var titleLabel: String {
-        if presentation == .board {
-            return CalendarBoardPlannerSupport.title(for: anchorDate, calendar: calendar)
-        }
-        return CadenceScheduleSupport.calendarTitle(for: anchorDate, mode: navigationMode, calendar: calendar)
+    /// What unit the toolbar's date title reads `anchorDate` in. Month scrolls week rows and is read
+    /// a month at a time; every other surface scrolls day columns and is read a day at a time.
+    private var titleFormat: CadenceCalendarDateTitleFormat {
+        isMonthTimeline ? .month : .day
     }
 
     private var isCompact: Bool {
@@ -228,48 +197,21 @@ struct iOSCalendarView: View {
         isCompact ? .below : CadenceCalendarMonthLayout.placement(paneWidth: paneWidth)
     }
 
-    /// Whether the day summary band sits under the toolbar. The whole rule — including why the
-    /// Board no longer has one at any width — is in
-    /// `CadenceCalendarPaneLayout.showsDaySummaryStrip`.
-    private var showsContextStrip: Bool {
-        CadenceCalendarPaneLayout.showsDaySummaryStrip(
-            presentation: presentation,
-            viewMode: viewMode,
-            monthPlacement: monthPlacement,
-            monthDetail: monthDetail
-        )
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             iOSCalendarToolbar(
-                title: titleLabel,
                 onBack: isCompact && !isCompactTabRoot ? { dismiss() } : nil,
                 viewMode: Binding(get: { viewMode }, set: setViewMode),
                 presentation: Binding(get: { presentation }, set: setPresentation),
-                leadingDate: isTimedGrid ? $anchorDate : nil,
+                leadingDate: $anchorDate,
+                titleFormat: titleFormat,
                 monthDetail: Binding(get: { monthDetail }, set: setMonthDetail),
                 showsMonthDetailControl: CadenceCalendarMonthLayout.showsDetailControl(
                     isCompact: isCompact,
                     presentation: presentation,
                     viewMode: viewMode
-                ),
-                showsNavigationControls: !isTimedGrid,
-                previous: { moveAnchor(by: -1) },
-                next: { moveAnchor(by: 1) },
-                today: jumpToToday
-            )
-
-            if showsContextStrip {
-                iOSCalendarContextStrip(
-                    selectedDate: selectedDate,
-                    timedCount: selectedTimedTaskCount,
-                    taskCount: selectedUniqueTaskCount,
-                    eventCount: selectedEvents.count,
-                    bundleCount: selectedBundles.count,
-                    leadItem: selectedLeadItem
                 )
-            }
+            )
 
             if isMonthTimeline {
                 // Month splits itself: it has two possible details and two possible placements, and
@@ -369,7 +311,7 @@ struct iOSCalendarView: View {
         case .beside:
             HStack(spacing: 0) {
                 iOSCalendarMonthGrid(
-                    monthDate: anchorDate,
+                    topRowDate: $anchorDate,
                     selectedDate: $selectedDate,
                     monthTasksByDate: monthTasksByDate,
                     bundlesByDate: bundlesByDate,
@@ -386,7 +328,7 @@ struct iOSCalendarView: View {
 
         case .below:
             iOSCalendarMonthStack(
-                monthDate: anchorDate,
+                topRowDate: $anchorDate,
                 selectedDate: $selectedDate,
                 monthTasksByDate: monthTasksByDate,
                 bundlesByDate: bundlesByDate,
@@ -402,7 +344,7 @@ struct iOSCalendarView: View {
         switch monthDetail {
         case .agenda:
             iOSCalendarMonthAgendaList(
-                monthDate: anchorDate,
+                monthDate: displayedMonth,
                 selectedDate: $selectedDate,
                 monthTasksByDate: monthTasksByDate,
                 bundlesByDate: bundlesByDate,
@@ -473,7 +415,10 @@ struct iOSCalendarView: View {
         // whether the selected day was inside the fixed window and leave the anchor alone if it
         // was; there is no fixed window to be inside any more.
         if newMode == .month {
-            anchorDate = selectedDate
+            // Month's anchor is the week row at the top of its grid, not a day. Entering on the
+            // selected day's month means the first row of that month's grid, so the six visible rows
+            // are that month rather than a window straddling two.
+            anchorDate = CadenceCalendarMonthWindow.topRow(forMonthContaining: selectedDate, calendar: calendar)
         } else {
             anchorDate = CadenceScheduleSupport.startOfWeek(containing: selectedDate, calendar: calendar)
         }
@@ -493,27 +438,9 @@ struct iOSCalendarView: View {
         }
     }
 
-    private func moveAnchor(by value: Int) {
-        if presentation == .board {
-            anchorDate = CalendarBoardPlannerSupport.dateByMovingWindow(anchorDate, by: value, calendar: calendar)
-            selectedDate = anchorDate
-            return
-        }
-
-        anchorDate = CadenceScheduleSupport.shiftedDate(anchorDate, mode: navigationMode, by: value, calendar: calendar)
-        if navigationMode == .month,
-           let first = CadenceScheduleSupport.monthGridDays(for: anchorDate, calendar: calendar).first(where: {
-               calendar.isDate($0, equalTo: anchorDate, toGranularity: .month)
-           }) {
-            selectedDate = first
-        }
-    }
-
-    private func jumpToToday() {
-        let today = calendar.startOfDay(for: Date())
-        selectedDate = today
-        anchorDate = today
-    }
+    // `moveAnchor(by:)` and `jumpToToday()` are gone with the `‹ ➤ ›` cluster that called them.
+    // Every calendar surface scrolls in the axis those chevrons moved, and jump-to-today is the
+    // `Today` row in `iOSCalendarDateTitle`'s popover — see `CadenceCalendarDateTitleSupport`.
 
     private func restorePersistedCalendarDates() {
         guard !didRestorePersistedDates else { return }

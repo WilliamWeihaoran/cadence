@@ -23,39 +23,50 @@ import SwiftUI
 /// readings reserve the same amount: the inspector used to need more only because it opened with a
 /// 63pt date header, and that header is gone.
 struct iOSCalendarMonthStack<Detail: View>: View {
-    let monthDate: Date
+    /// The week row at the top of the grid. The grid scrolls through its rows continuously now, so
+    /// this is a scroll position that reports itself back rather than a month the chevrons rebuilt.
+    @Binding var topRowDate: Date
     @Binding var selectedDate: Date
     let monthTasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
     let eventsByDate: [String: [EKEvent]]
     @ViewBuilder let detail: () -> Detail
 
-    private let calendar = Calendar.current
     private let weekdayHeaderHeight: CGFloat = 22
-
-    private var gridDays: [Date] {
-        CadenceCalendarMonthAgendaSupport.agendaDays(forMonthContaining: monthDate, calendar: calendar)
-    }
+    private let gridBottomPadding: CGFloat = 8
 
     var body: some View {
         GeometryReader { proxy in
+            // Six rows, always. It used to be this month's own row count, which was right while one
+            // month was on screen at a time and wrong the moment the rows scroll: a five-week month
+            // scrolling into a six-week one would have changed the row height under the finger. See
+            // `CadenceCalendarMonthWindow.visibleRowCount`.
+            let rowHeight = CadenceCalendarMonthAgendaSupport.gridRowHeight(
+                availableHeight: proxy.size.height,
+                rowCount: CadenceCalendarMonthWindow.visibleRowCount,
+                weekdayHeaderHeight: weekdayHeaderHeight,
+                gridBottomPadding: gridBottomPadding
+            )
+
             VStack(spacing: 0) {
                 iOSCalendarMonthCompactGrid(
-                    monthDate: monthDate,
+                    topRowDate: $topRowDate,
                     selectedDate: $selectedDate,
-                    days: gridDays,
-                    rowHeight: CadenceCalendarMonthAgendaSupport.gridRowHeight(
-                        availableHeight: proxy.size.height,
-                        rowCount: CadenceCalendarMonthAgendaSupport.weekRowCount(
-                            forMonthContaining: monthDate,
-                            calendar: calendar
-                        ),
-                        weekdayHeaderHeight: weekdayHeaderHeight
-                    ),
+                    rowHeight: rowHeight,
                     weekdayHeaderHeight: weekdayHeaderHeight,
+                    bottomPadding: gridBottomPadding,
                     monthTasksByDate: monthTasksByDate,
                     bundlesByDate: bundlesByDate,
                     eventsByDate: eventsByDate
+                )
+                // Explicit, because the grid is a scroll view now and a scroll view left flexible
+                // takes the whole stack. This is the same total the fixed grid used to occupy —
+                // header, six rows, and the padding under them — which is what
+                // `gridRowHeight`'s cap is stated against.
+                .frame(
+                    height: weekdayHeaderHeight
+                        + rowHeight * CGFloat(CadenceCalendarMonthWindow.visibleRowCount)
+                        + gridBottomPadding
                 )
 
                 Rectangle()
@@ -297,11 +308,11 @@ struct iOSCalendarMonthAgendaList: View {
 /// the day's items are one scroll away in the agenda, so the cell only has to answer "is there
 /// something on this day" — and every week of the month fits.
 private struct iOSCalendarMonthCompactGrid: View {
-    let monthDate: Date
+    @Binding var topRowDate: Date
     @Binding var selectedDate: Date
-    let days: [Date]
     let rowHeight: CGFloat
     let weekdayHeaderHeight: CGFloat
+    let bottomPadding: CGFloat
     let monthTasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
     let eventsByDate: [String: [EKEvent]]
@@ -309,33 +320,23 @@ private struct iOSCalendarMonthCompactGrid: View {
     private let calendar = Calendar.current
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                ForEach(CadenceScheduleSupport.weekdaySymbols(calendar: calendar), id: \.self) { symbol in
-                    Text(symbol)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: weekdayHeaderHeight)
-                }
-            }
-
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
-                ForEach(days, id: \.self) { date in
-                    iOSCalendarMonthCompactDayCell(
-                        date: date,
-                        displayMonth: monthDate,
-                        isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
-                        hasItems: hasItems(on: DateFormatters.dateKey(from: date)),
-                        rowHeight: rowHeight
-                    ) {
-                        selectedDate = date
-                    }
-                }
+        iOSCalendarMonthScrollingGrid(
+            topRowDate: $topRowDate,
+            rowHeight: rowHeight,
+            weekdayHeaderHeight: weekdayHeaderHeight
+        ) { date, displayMonth in
+            iOSCalendarMonthCompactDayCell(
+                date: date,
+                displayMonth: displayMonth,
+                isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
+                hasItems: hasItems(on: DateFormatters.dateKey(from: date)),
+                rowHeight: rowHeight
+            ) {
+                selectedDate = date
             }
         }
         .padding(.horizontal, 6)
-        .padding(.bottom, 8)
+        .padding(.bottom, bottomPadding)
         .background(Theme.surface)
     }
 
@@ -358,16 +359,26 @@ private struct iOSCalendarMonthCompactDayCell: View {
     private var isToday: Bool { calendar.isDateInToday(date) }
     private var isCurrentMonth: Bool { calendar.isDate(date, equalTo: displayMonth, toGranularity: .month) }
 
+    /// The same treatment the full-size cell and every date picker in the app use — see
+    /// `CadenceCalendarDayBadge`. This cell had it inverted too.
+    private var badge: CadenceCalendarDayBadge {
+        CadenceCalendarDayBadge.style(isToday: isToday, isSelected: isSelected)
+    }
+
     private var dateLabelColor: Color {
-        if isToday { return Theme.onColor }
-        if isSelected { return Theme.blue }
-        return isCurrentMonth ? Theme.text : Theme.dim
+        switch badge.label {
+        case .normal: return isCurrentMonth ? Theme.text : Theme.dim
+        case .accent: return Theme.blue
+        case .onFill: return Theme.onColor
+        }
     }
 
     private var badgeFill: Color {
-        if isToday { return Theme.blue }
-        if isSelected { return Theme.blue.opacity(0.16) }
-        return Color.clear
+        switch badge.fill {
+        case .none:  return Color.clear
+        case .wash:  return Theme.blue.opacity(CadenceCalendarDayBadge.washOpacity)
+        case .solid: return Theme.blue
+        }
     }
 
     /// The day badge is 32pt on every pane tall enough to give the row its 44pt touch target, and
@@ -382,15 +393,19 @@ private struct iOSCalendarMonthCompactDayCell: View {
         Button(action: action) {
             VStack(spacing: 3) {
                 Text(DateFormatters.dayNumber.string(from: date))
-                    .font(.system(size: badgeSize >= 28 ? 15 : 12, weight: isToday || isSelected ? .bold : .medium))
+                    .font(.system(size: badgeSize >= 28 ? 15 : 12, weight: badge.isEmphasized ? .bold : .medium))
                     .foregroundStyle(dateLabelColor)
                     .monospacedDigit()
                     .frame(width: badgeSize, height: badgeSize)
                     .background(badgeFill)
                     .clipShape(Circle())
                     .overlay {
-                        if isSelected && !isToday {
-                            Circle().strokeBorder(Theme.blue.opacity(0.65), lineWidth: 1.5)
+                        // Today, when it is also the selected day — both take the solid fill, so
+                        // this ring is what keeps the two facts from collapsing into one.
+                        if badge.showsTodayRing {
+                            Circle()
+                                .strokeBorder(Theme.blue, lineWidth: 1.5)
+                                .padding(-2.5)
                         }
                     }
 

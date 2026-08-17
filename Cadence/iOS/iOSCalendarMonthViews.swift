@@ -3,55 +3,239 @@ import EventKit
 import SwiftData
 import SwiftUI
 
+/// The month grid at full size — the cell that lists what each day holds, on a pane wide enough to
+/// place a detail column beside it.
+///
+/// It scrolls vertically and without end. It used to be exactly the 4/5/6 week rows of one month,
+/// rebuilt by the toolbar's `‹ ›`; the last week of August and the first of September were two
+/// chevron presses and a full redraw apart, on the one surface where "what does the turn of the
+/// month look like" is the obvious question.
 struct iOSCalendarMonthGrid: View {
-    let monthDate: Date
+    /// The week row at the top of the grid — read as "which month am I looking at", written to jump.
+    @Binding var topRowDate: Date
     @Binding var selectedDate: Date
     let monthTasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
     let eventsByDate: [String: [EKEvent]]
 
     private let calendar = Calendar.current
-    private var monthDays: [Date] {
-        CadenceScheduleSupport.monthGridDays(for: monthDate, calendar: calendar)
-    }
+    private let weekdayHeaderHeight: CGFloat = 36
 
     var body: some View {
         GeometryReader { proxy in
-            let headerHeight: CGFloat = 36
-            let cellHeight = max(104, (proxy.size.height - headerHeight) / 6)
+            let rowHeight = max(
+                104,
+                (proxy.size.height - weekdayHeaderHeight) / CGFloat(CadenceCalendarMonthWindow.visibleRowCount)
+            )
 
-            VStack(spacing: 0) {
-                HStack(spacing: 0) {
-                    ForEach(CadenceScheduleSupport.weekdaySymbols(calendar: calendar), id: \.self) { symbol in
-                        Text(symbol)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: headerHeight)
-                    }
-                }
-                .background(Theme.surface)
-
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
-                    ForEach(monthDays, id: \.self) { date in
-                        let key = DateFormatters.dateKey(from: date)
-                        iOSCalendarMonthDayCell(
-                            date: date,
-                            displayMonth: monthDate,
-                            isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
-                            tasks: CadenceScheduleSupport.items(on: key, in: monthTasksByDate),
-                            bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
-                            events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
-                            minHeight: cellHeight
-                        ) {
-                            selectedDate = date
-                        }
-                    }
+            iOSCalendarMonthScrollingGrid(
+                topRowDate: $topRowDate,
+                rowHeight: rowHeight,
+                weekdayHeaderHeight: weekdayHeaderHeight,
+                weekdaySymbolSize: 11
+            ) { date, displayMonth in
+                let key = DateFormatters.dateKey(from: date)
+                iOSCalendarMonthDayCell(
+                    date: date,
+                    displayMonth: displayMonth,
+                    isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
+                    tasks: CadenceScheduleSupport.items(on: key, in: monthTasksByDate),
+                    bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
+                    events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
+                    minHeight: rowHeight
+                ) {
+                    selectedDate = date
                 }
             }
-            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .background(Theme.bg)
+    }
+}
+
+/// A month grid that scrolls vertically through a wide run of week rows, with the weekday header
+/// pinned above it.
+///
+/// One container for both cells — the full-size one above and the compact one under
+/// `iOSCalendarMonthStack` — because what differs between them is a cell, and the scroll machinery is
+/// the part that is easy to get subtly wrong. This repo has now had five scroll-position bugs of one
+/// shape (`ecaf80f`, `8a316c4`, `68d78ec`, and one found mid-flight in `cf785a8`); a second copy of
+/// this would be the place the sixth came from.
+///
+/// The machinery is the Board's, turned ninety degrees:
+///
+/// - **`.scrollPosition(id:)` over a `LazyVStack` of week rows**, not an offset computed by hand.
+///   The id resolves the position, so a row height that changes under it — a rotation, the shell
+///   sidebar folding — moves no dates, and there is no second spelling of "index × height" to keep in
+///   step with the first.
+/// - **`cadenceLazyScrollAnchor` re-asserts that position once the stack reports it has laid out.**
+///   A `@State` seeded before the rows exist is not a scroll position; the first build of this view
+///   proved it again, opening Month on the first row of its window — **four years** behind the anchor,
+///   the same distance and the same cause as `ecaf80f`. See `CadenceLazyScrollAnchor`.
+/// - **Nothing is adopted before that assertion lands.** The position a scroll view reports before
+///   this view has placed itself is whatever the layout started at, and adopting it writes a month
+///   the user never chose into persisted state.
+/// - **The window slides** when the top row nears either end of the rendered run, which is what makes
+///   "without end" true rather than merely large.
+struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
+    @Binding var topRowDate: Date
+    let rowHeight: CGFloat
+    let weekdayHeaderHeight: CGFloat
+    var weekdaySymbolSize: CGFloat = 10
+    /// The cell for one day, given the month the grid is currently *reading as* — which is what
+    /// decides whether the cell is dimmed as a neighbouring month's.
+    @ViewBuilder let cell: (Date, Date) -> Cell
+
+    /// The week row at the top of the scroll view — both the position it is *set* to and the one it
+    /// reports back. Seeded, because a seed makes the first frame right where it can be; the anchor
+    /// modifier is what makes it right where it cannot.
+    @State private var scrolledRowIndex: Int? = CadenceCalendarMonthWindow.leadingRowCount
+    @State private var windowStart: Date?
+    @State private var didPlaceInitialRow = false
+    /// Latches a `topRowDate` write this view made itself, so the change coming back does not
+    /// re-scroll the grid under the finger that caused it. The timed grid and the Board carry the
+    /// same latch.
+    @State private var isReportingTopRow = false
+
+    private let calendar = Calendar.current
+
+    private var activeWindowStart: Date {
+        windowStart ?? CadenceCalendarMonthWindow.windowStart(for: topRowDate, calendar: calendar)
+    }
+
+    /// The row `topRowDate` sits at in the window as it currently stands. Re-read every pass, so the
+    /// one-shot assertion uses the date at first layout rather than one from `init`.
+    private var targetIndex: Int {
+        CadenceCalendarMonthWindow.index(for: topRowDate, windowStart: activeWindowStart, calendar: calendar)
+    }
+
+    private var displayMonth: Date {
+        CadenceCalendarMonthWindow.displayedMonth(topRowStart: topRowDate, calendar: calendar)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            weekdayHeader
+            // **Not built until the row height is real.** `iOSCalendarMonthStack` derives its row
+            // height from a `GeometryReader`, whose first pass reports a height of zero — and
+            // `gridRowHeight` answers zero to that. A `LazyVStack` of 420 zero-height rows has zero
+            // content, so `.scrollPosition(id:)` resolves the seeded row to offset 0, the scroll view
+            // reports row 0 back, and that reading becomes the anchor: Month opened four years behind
+            // itself, twice, before this guard. Deferring the scroll view by one layout pass means
+            // its very first render already has rows with heights for the id to resolve against.
+            if rowHeight > 0 {
+                rows
+            } else {
+                Color.clear
+            }
+        }
+        .onAppear { alignWindow(to: topRowDate) }
+        .onChange(of: topRowDate) { _, newDate in
+            if isReportingTopRow {
+                isReportingTopRow = false
+                return
+            }
+            alignWindow(to: newDate, animated: true)
+        }
+    }
+
+    private var weekdayHeader: some View {
+        HStack(spacing: 0) {
+            ForEach(CadenceScheduleSupport.weekdaySymbols(calendar: calendar), id: \.self) { symbol in
+                Text(symbol)
+                    .font(.system(size: weekdaySymbolSize, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: weekdayHeaderHeight)
+            }
+        }
+        .background(Theme.surface)
+    }
+
+    private var rows: some View {
+        let month = displayMonth
+
+        return ScrollView(.vertical) {
+            LazyVStack(spacing: 0) {
+                ForEach(0..<CadenceCalendarMonthWindow.renderRowCount, id: \.self) { index in
+                    weekRow(at: index, displayMonth: month)
+                        .frame(height: rowHeight)
+                        .id(index)
+                }
+            }
+            // Directly on the lazy stack, so the ids `scrollPosition` resolves are the week rows.
+            .scrollTargetLayout()
+        }
+        .scrollIndicators(.hidden)
+        .scrollPosition(id: $scrolledRowIndex, anchor: .top)
+        .cadenceLazyScrollAnchor($scrolledRowIndex, target: targetIndex, axis: .vertical)
+        .onChange(of: scrolledRowIndex) { _, index in
+            guard let index else { return }
+            guard didPlaceInitialRow else {
+                // The first reading this view believes is the one that **confirms its own
+                // assertion**. Everything before it is the position the layout happened to start at,
+                // and adopting that writes a month the user never chose into persisted state — which
+                // is `ecaf80f`, and is what this surface did twice while being built.
+                // `cadenceLazyScrollAnchor` guarantees the confirmation arrives: it re-drives the
+                // binding once the stack reports it has laid out.
+                if index == targetIndex { didPlaceInitialRow = true }
+                return
+            }
+            adoptTopRow(index)
+        }
+    }
+
+    private func weekRow(at index: Int, displayMonth: Date) -> some View {
+        let start = CadenceCalendarMonthWindow.date(at: index, windowStart: activeWindowStart, calendar: calendar)
+        return HStack(spacing: 0) {
+            ForEach(0..<CadenceCalendarMonthWindow.daysPerRow, id: \.self) { offset in
+                let date = calendar.startOfDay(
+                    for: calendar.date(byAdding: .day, value: offset, to: start) ?? start
+                )
+                cell(date, displayMonth)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    // MARK: - Window and scroll placement
+
+    /// Rebuilds the rendered run around `date` and puts that week at the top.
+    ///
+    /// Setting `scrolledRowIndex` is both the request and, once SwiftUI honours it, the report — so
+    /// the no-op guard matters: re-assigning the row the grid is already on would bounce back through
+    /// `adoptTopRow` on every anchor change.
+    private func alignWindow(to date: Date, animated: Bool = false) {
+        let start = CadenceCalendarMonthWindow.windowStart(for: date, calendar: calendar)
+        let target = CadenceCalendarMonthWindow.index(for: date, windowStart: start, calendar: calendar)
+        windowStart = start
+        guard scrolledRowIndex != target else { return }
+        if animated {
+            withAnimation(.snappy(duration: 0.22)) { scrolledRowIndex = target }
+        } else {
+            scrolledRowIndex = target
+        }
+    }
+
+    private func adoptTopRow(_ index: Int) {
+        guard didPlaceInitialRow else { return }
+        let date = CadenceCalendarMonthWindow.date(at: index, windowStart: activeWindowStart, calendar: calendar)
+        if !calendar.isDate(date, inSameDayAs: topRowDate) {
+            isReportingTopRow = true
+            topRowDate = date
+        }
+        recenterWindowIfNeeded(topIndex: index, topDate: date)
+    }
+
+    private func recenterWindowIfNeeded(topIndex index: Int, topDate date: Date) {
+        guard let start = CadenceCalendarMonthWindow.recenteredWindowStart(
+            topIndex: index,
+            topDate: date,
+            currentWindowStart: activeWindowStart,
+            calendar: calendar
+        ) else { return }
+
+        windowStart = start
+        scrolledRowIndex = CadenceCalendarMonthWindow.index(for: date, windowStart: start, calendar: calendar)
     }
 }
 
@@ -74,14 +258,22 @@ private struct iOSCalendarMonthDayCell: View {
     private var visibleTasks: [AppTask] { Array(tasks.prefix(max(0, 5 - visibleBundles.count - visibleEvents.count))) }
     private var overflow: Int { max(0, tasks.count + bundles.count + events.count - visibleTasks.count - visibleBundles.count - visibleEvents.count) }
 
+    /// `MonthCalendarPanel`'s treatment, via `CadenceCalendarDayBadge` — this cell used to have it
+    /// inverted, giving today the solid fill and the selection the wash.
+    private var badge: CadenceCalendarDayBadge {
+        CadenceCalendarDayBadge.style(isToday: isToday, isSelected: isSelected)
+    }
+
     private var dateLabelColor: Color {
-        if isToday { return Theme.onColor }
-        if isSelected { return Theme.blue }
-        return isCurrentMonth ? Theme.text : Theme.dim.opacity(0.58)
+        switch badge.label {
+        case .normal: return isCurrentMonth ? Theme.text : Theme.dim.opacity(0.58)
+        case .accent: return Theme.blue
+        case .onFill: return Theme.onColor
+        }
     }
 
     private var dateLabelWeight: Font.Weight {
-        if isToday || isSelected { return .bold }
+        if badge.isEmphasized { return .bold }
         return isCurrentMonth ? .medium : .regular
     }
 
@@ -102,6 +294,15 @@ private struct iOSCalendarMonthDayCell: View {
                         .frame(width: 25, height: 25)
                         .background(dateBadgeFill)
                         .clipShape(Circle())
+                        .overlay {
+                            // Today, when it is also the selected day. Both take the solid fill, so
+                            // without this the "today" marker disappears the moment you tap it.
+                            if badge.showsTodayRing {
+                                Circle()
+                                    .strokeBorder(Theme.blue, lineWidth: 1.5)
+                                    .padding(-2.5)
+                            }
+                        }
 
                     Spacer(minLength: 0)
 
@@ -185,9 +386,11 @@ private struct iOSCalendarMonthDayCell: View {
     }
 
     private var dateBadgeFill: Color {
-        if isToday { return Theme.blue }
-        if isSelected { return Theme.blue.opacity(0.16) }
-        return Theme.surfaceElevated.opacity(isCurrentMonth ? 0.18 : 0.08)
+        switch badge.fill {
+        case .none:  return Theme.surfaceElevated.opacity(isCurrentMonth ? 0.18 : 0.08)
+        case .wash:  return Theme.blue.opacity(CadenceCalendarDayBadge.washOpacity)
+        case .solid: return Theme.blue
+        }
     }
 }
 

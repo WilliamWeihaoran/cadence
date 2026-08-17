@@ -233,16 +233,142 @@ enum CadenceCalendarMonthLayout {
         !isCompact && presentation == .timeline && viewMode == .month
     }
 
-    /// Whether Month keeps the one-line counts strip under the toolbar.
+    // Month has no day-summary strip in any placement or reading, and neither does any other
+    // calendar surface — the band and the gate that placed it are both gone. The note on why is in
+    // `CadenceRegularPaneLayout.swift`, where the gate used to be.
+}
+
+// MARK: - Month grid: the week rows it scrolls through
+
+/// The week rows a month grid renders, and how a **vertical** scroll position maps to a date.
+///
+/// Month was the last calendar surface that stepped rather than scrolled: a fixed 4/5/6-row grid of
+/// one month, rebuilt by the toolbar's `‹ ›`. This is the same trade the timed grids made in
+/// `cf785a8`, turned ninety degrees — a wide run of week rows with the anchor near its middle,
+/// recentred when a scroll approaches either end, and the **top** row reported back so the toolbar's
+/// date title can name the month you are looking at.
+///
+/// The row axis is weeks rather than days because that is the unit a month grid is built from: seven
+/// day cells across, one week per row. Scrolling by anything finer would put a row of a week
+/// half-off the top edge with its day numbers clipped.
+enum CadenceCalendarMonthWindow {
+    /// Week rows rendered at once — eight years either way, the same span as the day windows the
+    /// Board and the timed grids scroll through, and windowed by hand the same way.
+    static let renderRowCount = CalendarBoardPlannerSupport.plannerRenderDayCount
+    static let leadingRowCount = renderRowCount / 2
+    static let daysPerRow = 7
+
+    /// How many week rows a month grid shows at once.
     ///
-    /// Only where the detail is a **column beside** the grid and it is the day inspector.
+    /// Fixed at six, which is the most any month needs. It used to be
+    /// `CadenceCalendarMonthAgendaSupport.weekRowCount(forMonthContaining:)` — 4, 5 or 6 for the
+    /// month on screen — and the compact grid divided its share of the pane by it. With one month on
+    /// screen at a time that was right; with the rows scrolling continuously it means the row height
+    /// changes as you scroll from a five-week month into a six-week one, so the grid jumps under the
+    /// finger. Six rows always is the height that never moves.
+    static let visibleRowCount = 6
+
+    /// The first week row rendered: half the window above the anchor's own week.
+    static func windowStart(for anchorDate: Date, calendar: Calendar = .current) -> Date {
+        let weekStart = CadenceScheduleSupport.startOfWeek(containing: anchorDate, calendar: calendar)
+        return calendar.startOfDay(
+            for: calendar.date(byAdding: .day, value: -leadingRowCount * daysPerRow, to: weekStart) ?? weekStart
+        )
+    }
+
+    static func date(at index: Int, windowStart: Date, calendar: Calendar = .current) -> Date {
+        let clamped = min(max(index, 0), max(0, renderRowCount - 1))
+        return calendar.startOfDay(
+            for: calendar.date(byAdding: .day, value: clamped * daysPerRow, to: windowStart) ?? windowStart
+        )
+    }
+
+    static func index(for date: Date, windowStart: Date, calendar: Calendar = .current) -> Int {
+        let weekStart = CadenceScheduleSupport.startOfWeek(containing: date, calendar: calendar)
+        let days = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: windowStart),
+            to: weekStart
+        ).day ?? 0
+        return min(max(days, 0) / daysPerRow, max(0, renderRowCount - 1))
+    }
+
+    /// The week row a month grid should **open** on when Month is entered on `date`: the first row of
+    /// that day's month grid, so the six visible rows are that month rather than a window straddling
+    /// two.
+    static func topRow(forMonthContaining date: Date, calendar: Calendar = .current) -> Date {
+        guard let monthStart = calendar.dateInterval(of: .month, for: date)?.start else {
+            return CadenceScheduleSupport.startOfWeek(containing: date, calendar: calendar)
+        }
+        return CadenceScheduleSupport.startOfWeek(containing: monthStart, calendar: calendar)
+    }
+
+    /// The month a window of `visibleRowCount` rows starting at `topRowStart` is *showing*.
     ///
-    /// The agenda heads every day with its own date, so the strip's date is a second copy of a line
-    /// a few points below it. The inspector no longer states a date at all — its header bar is gone
-    /// — but under the grid it is directly below the lit-up cell that says which day this is, and a
-    /// full "Sunday, August 30" wedged between the two is chrome the grid has already covered.
-    /// Beside the grid there is nothing between the strip and the calendar, so it stays.
-    static func showsDaySummaryStrip(placement: Placement, detail: CadenceCalendarMonthDetail) -> Bool {
-        placement == .beside && detail == .day
+    /// Not the top row's own month: a six-row window aligned to August starts on the week containing
+    /// July 27, so naming the top row would print "July" over a grid that is plainly August. The
+    /// middle of the window is the reading that agrees with what is on screen, and it changes over
+    /// at the point where half the rows have become the next month.
+    static func displayedMonth(
+        topRowStart: Date,
+        visibleRowCount: Int = visibleRowCount,
+        calendar: Calendar = .current
+    ) -> Date {
+        let rows = max(1, visibleRowCount)
+        let middle = (rows * daysPerRow) / 2
+        return calendar.startOfDay(
+            for: calendar.date(byAdding: .day, value: middle, to: topRowStart) ?? topRowStart
+        )
+    }
+
+    /// The window to adopt when the top row nears an end of the rendered run, or `nil` to leave it
+    /// alone. Same threshold and the same no-op guard as the Board and the timed grids — without the
+    /// guard the grid re-scrolls under a finger that is still moving.
+    static func recenteredWindowStart(
+        topIndex: Int,
+        topDate: Date,
+        currentWindowStart: Date,
+        calendar: Calendar = .current
+    ) -> Date? {
+        guard CalendarBoardPlannerSupport.shouldRecenter(
+            dayIndex: topIndex,
+            renderDays: renderRowCount
+        ) else { return nil }
+        let recentered = windowStart(for: topDate, calendar: calendar)
+        guard !calendar.isDate(recentered, inSameDayAs: currentWindowStart) else { return nil }
+        return recentered
+    }
+
+    // The grid does **not** convert a scroll offset into a row index by hand. The timed grids do,
+    // because their columns sit inside two nested scroll views and a `LazyHStack` there would be
+    // driven by whichever of the two SwiftUI decided owned it. This is a single scroll view, so it
+    // uses `.scrollPosition(id:)` over a `LazyVStack` — the Board's shape — and `index` / `date(at:)`
+    // are all the arithmetic there is.
+
+    // MARK: Event fetching
+
+    /// Days of calendar events a month grid holds at once — twelve weeks, starting three weeks
+    /// before the displayed month's own grid.
+    ///
+    /// The grid renders hundreds of rows and cannot ask EventKit about all of them; it also cannot
+    /// ask about exactly what is on screen, because the top row changes on every week scrolled past
+    /// and each change would re-run the whole fetch mid-gesture. So the window is keyed on the
+    /// **displayed month** and is wide enough to cover every top row that can name that month
+    /// (roughly `monthStart − 3 weeks` through `monthEnd + 3 weeks`) plus its six visible rows.
+    static let eventWindowRowCount = 12
+    static let eventWindowLeadRows = 3
+
+    static func eventWindowStart(displayedMonth: Date, calendar: Calendar = .current) -> Date {
+        let gridStart = topRow(forMonthContaining: displayedMonth, calendar: calendar)
+        return calendar.startOfDay(
+            for: calendar.date(byAdding: .day, value: -eventWindowLeadRows * daysPerRow, to: gridStart) ?? gridStart
+        )
+    }
+
+    static func eventWindowDates(displayedMonth: Date, calendar: Calendar = .current) -> [Date] {
+        let start = eventWindowStart(displayedMonth: displayedMonth, calendar: calendar)
+        return (0..<(eventWindowRowCount * daysPerRow)).compactMap {
+            calendar.date(byAdding: .day, value: $0, to: start)
+        }
     }
 }

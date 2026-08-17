@@ -266,41 +266,18 @@ enum CadenceCalendarPaneLayout {
         )
     }
 
-    /// Whether the Calendar page carries the one-line day summary band under its toolbar.
-    ///
-    /// **Never on the Board.** The Board is a row of day columns; the leading one is the selected
-    /// day, and it already carries that date in its own header, its own count badge, and every item
-    /// the band would be counting, listed individually a finger's width below. With the day
-    /// inspector gone (`42de745`) the band became a full-width strip reading "Wednesday, August 19"
-    /// directly above a column headed `WED · AUG 19` — and on an empty day the date was the only
-    /// thing left in it, because `CadenceCalendarDaySummary.line` returns nil at zero. The counts do
-    /// not earn the band on their own either: they are a finer breakdown of one column's badge, over
-    /// the column that spells the same items out.
-    ///
-    /// Week and 2 Weeks keep it. There the band is the only place the *selected* day is named or
-    /// counted at all — a grid of seven columns says which days exist, not which one you are on.
-    ///
-    /// Month asks `CadenceCalendarMonthLayout`, which has two readings and two placements to weigh.
-    ///
-    /// There is no `isCompact` here any more. It used to carry the Board's exclusion — the rule read
-    /// `!isCompact || presentation == .timeline`, which is "no strip on a compact Board" — and once
-    /// the Board is excluded at every width the size class decides nothing left. A parameter no
-    /// input can change the answer through is a parameter a test cannot kill.
-    static func showsDaySummaryStrip(
-        presentation: CadenceCalendarPresentation,
-        viewMode: CadenceCalendarViewMode,
-        monthPlacement: CadenceCalendarMonthLayout.Placement,
-        monthDetail: CadenceCalendarMonthDetail
-    ) -> Bool {
-        guard presentation != .board else { return false }
-        guard viewMode != .month else {
-            return CadenceCalendarMonthLayout.showsDaySummaryStrip(
-                placement: monthPlacement,
-                detail: monthDetail
-            )
-        }
-        return true
-    }
+    // The one-line day summary band under the toolbar is gone from the Calendar page entirely, and
+    // with it the gate that used to decide where it appeared.
+    //
+    // It carried the selected date and a count of that day's items. The Board lost it first
+    // (`42de745`): its columns *are* days, each already headed with its date and its count. Month
+    // followed, for the same reason one step removed — the grid lights the day up in a cell that
+    // prints the count. Week was the last holdout, kept because seven columns say which days exist
+    // rather than which one you are on. What removed it there was the header becoming a date
+    // control: `iOSCalendarDateTitle` names the leftmost visible column, so the band's first line was
+    // a second date a few points below the first. Its counts could not survive on their own —
+    // stripped of the date they were a count with no subject, since the header names the leading
+    // column and the band counted the *selected* day.
 
     /// What has to fit beside the inspector before there is one.
     ///
