@@ -29,10 +29,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**AF — finish the Swift 6 migration** ([T-96])
-
-**AH — All Tasks and Inbox are one screen rendered two ways** ([T-98], [T-99])
-
 **AJ — short timeline blocks are almost entirely un-tappable** ([T-101])
 
 **AK — Cmd+N dead on Calendar Board columns; two dead calendar bindings** ([T-102])
@@ -49,6 +45,20 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   `iPadTodayView` vs the compact Today, and the compact/regular branches inside the task row — is
   in flight now.
 
+
+- [T-105] **`drawBackground` still blocks Swift 6, and the block is structural.** `D-73` resolved
+  three of the editor's four errors; the fourth cannot be annotated away. Swift 6 region isolation
+  rejects capturing task-isolated, non-`Sendable` `self` in a main-actor closure, and the decoration
+  pass reads *and writes* `CadenceTextView`'s hit-rect and hover caches — `CadenceTextView` being
+  main-actor isolated by AppKit, since `NSTextView` is. The real fix is moving the decoration pass
+  onto `CadenceTextView`, a refactor of a documented risk hotspot that needs visual verification.
+  Note also that "four errors" was an undercount: xcodebuild aborts after the first failing batch,
+  so a whole-module probe is the only honest count, and it shows blockers outside that file too.
+
+- [T-106] **`CadenceEmptyStateCopy` is main-actor isolated**, missed by `f94361a`'s `nonisolated`
+  pass. Reading it from a deliberately-`nonisolated` metrics file emits isolation warnings, which is
+  why `D-72` had to keep `emptyTitle`/`emptySubtitle` in a private extension rather than on the enum
+  where they belong. One-word fix plus the cleanup it unblocks.
 
 - [T-104] **The dead wiring the T-97 audit turned up.** None of these misbehaves; each is a control
   or parameter that reads as live and is not, i.e. the raw material for the next real bug. Grouped
@@ -68,29 +78,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
     loss invalidates the pane for nothing.
   - Four `set { }` blocks nothing can call, and a list of never-called helpers and three
     never-instantiated `View` structs. Full inventory in the audit.
-
-- [T-98] **All Tasks and Inbox are one screen rendered two ways.** `iOSCompactAllTasksView` /
-  `iOSCompactInboxView` render `ScrollView` + `LazyVStack` + `iOSTaskGroupSection`;
-  `iOSTaskCollectionViews.allTasksPanel` / `iPadInboxView` render `List` + `Section` +
-  `iOSTaskGroupHeader` + `iOSTaskListRow`. Two scroll containers, two separator treatments, two sets
-  of row insets, one screen. Flagged by the agent that unified Today (`D-66`) as the same shape of
-  near-copy and *worse* than Today was. The choice is real, not cosmetic: `List` gives swipe actions,
-  separators and keyboard behaviour for free; `LazyVStack` gives control over spacing and background
-  and is what Today now uses. Whichever wins, what the loser provided has to be accounted for
-  rather than quietly dropped.
-
-- [T-99] **`iOSTasksTabHeader` is a seventh page header.** It re-spells the vocabulary by hand — 10pt
-  uppercase kerned eyebrow, 26pt bold title — instead of using `iOSPageHeader`. Survived `c5a4ea5`
-  because it is compact-only, so it is not an iPhone/iPad divergence; it is just the drift that
-  produced six headers in the first place, starting over.
-
-- [T-96] **Finish the Swift 6 migration.** `D-61` marked 215 value types `nonisolated` and took Swift 6
-  probing from 10 errors to 4. All four remaining are in `Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift`,
-  an `NSLayoutManager` subclass whose AppKit overrides are nonisolated while the type is not.
-  `CadenceMCPServer` is already `SWIFT_VERSION = 6.0`; the app and tests are still 5.0, so this is
-  the last step before the whole project can move. Also clears the two remaining macOS warnings
-  (`SchedulingService.swift:69`, `SettingsNotificationsSection.swift:69`), which are the documented
-  baseline only because nobody has spent ten minutes on them.
 
 ## Open — known, unscheduled
 
@@ -212,6 +199,17 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-73] `234a794` Three of the four Swift 6 errors go; the fourth is a refactor (T-96).
+
+- [D-72] `7091a6a` All Tasks and Inbox were one page rendered through two containers (T-98, T-99).
+
+- [D-71] `c9d2d78`+`7091a6a` **A commit broke HEAD for iOS.** `git add <paths>` stages *on top of*
+  whatever is already in the index, so another agent's staged deletion of two view files rode into
+  an unrelated commit while their callers were still uncommitted. iOS did not build between the two
+  commits. Third occurrence of this sweep; now a standing rule in `AGENTS.md` (`git commit --only`).
+  Worth recording that verification could not have caught it: isolating a change with
+  `git archive HEAD` reproduces HEAD's tree, not its index.
 
 - [D-70] `d8965a8` Cmd+Return deleted one task and completed another (T-103, from the T-97 audit).
 

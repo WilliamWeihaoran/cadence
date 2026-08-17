@@ -101,6 +101,14 @@ code, and every one of them has been violated by a shipped change at least once.
   `SourcePackages`, which read as a broken checkout and briefly made a correct agent report look
   wrong. Rule: a build failure you cannot explain is a private-`derivedDataPath` re-run before it is
   a finding. Note `-derivedDataPath` requires `-scheme`; it is rejected with `-target` alone.
+- **Commit with `git commit --only <paths>` when agents share a working tree.** `git add <paths>`
+  adds your paths *to whatever is already staged*, so another agent's `git mv` or `git rm` sitting in
+  the index rides along into your commit. This has happened three times. The third was the expensive
+  one: `c9d2d78` swept in a staged deletion of two view files whose callers were not yet committed,
+  so **HEAD did not build for iOS** until the next commit — and it was invisible to verification,
+  because isolating a change with `git archive HEAD` reproduces HEAD's *tree*, not its index, so the
+  files were still present in every check. `--only` takes the paths and ignores the index. Failing
+  that, read `git status --porcelain` for staged entries you did not stage before every commit.
 - **iPhone and iPad are one style, not two.** They differ in *layout* — a tab bar against a
   sidebar, one pane against two — and should not differ in how a row, a chip, a header or a
   picker looks or behaves. So: a change asked for on one is a change to both unless it is
