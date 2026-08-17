@@ -65,9 +65,15 @@ struct iPadInboxView: View {
 
     private var inboxColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(
+            // A `.page` header, not a pane one: this is the whole page ("**One full-width
+            // column**", above), and the phone draws the same page with the same tray tile and the
+            // same title size. It used to be `iOSPanelHeader` — 21pt and no tile — so the two
+            // widths of one screen disagreed about how loudly the screen names itself.
+            iOSPageHeader(
                 eyebrow: "Capture",
                 title: "Inbox",
+                systemImage: "tray.fill",
+                color: Theme.blue,
                 count: inboxTasks.count
             )
 

@@ -468,6 +468,8 @@ struct iOSSettingsEmptyRow: View {
     }
 }
 
+/// Name only. See `iOSMetricTile`, which this and it were two spellings of — same four properties,
+/// same job, different glyph treatment, value size and label case.
 struct iOSSettingsMetricTile: View {
     let title: String
     let value: String
@@ -475,35 +477,7 @@ struct iOSSettingsMetricTile: View {
     let color: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(color)
-                    .frame(width: 30, height: 30)
-                    .background(color.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-
-                Spacer(minLength: 0)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(value)
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-
-                Text(title)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-            }
-        }
-        .padding(13)
-        .frame(minHeight: 104, alignment: .topLeading)
-        .cadenceCard(background: Theme.surfaceElevated.opacity(0.72), cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
+        iOSMetricTile(title: title, value: value, icon: icon, color: color)
     }
 }
 
@@ -615,39 +589,19 @@ struct iOSSettingsPageHeader: View {
     var onBack: (() -> Void)? = nil
 
     var body: some View {
+        // `iOSSettingsCard` supplies the padding, hence `padded: false`; everything inside the card
+        // is the shared header. It used to draw its own rounded square instead of `iOSIconTile` and
+        // set its title `.semibold` at 18pt while the other five page headers were bold — two
+        // differences with no reason behind either.
         iOSSettingsCard {
-            HStack(alignment: .center, spacing: 14) {
-                if let onBack {
-                    iOSHeaderBackButton(action: onBack)
-                        .padding(.leading, -8)
-                        .padding(.trailing, -6)
-                }
-
-                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                    .fill(tint.opacity(0.18))
-                    .frame(width: 42, height: 42)
-                    .overlay {
-                        Image(systemName: icon)
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(tint)
-                    }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    if let eyebrow {
-                        Text(eyebrow)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
-                            .textCase(.uppercase)
-                            .kerning(0.8)
-                    }
-
-                    Text(title)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                }
-
-                Spacer(minLength: 0)
-            }
+            iOSPageHeader(
+                eyebrow: eyebrow,
+                title: title,
+                systemImage: icon,
+                color: tint,
+                onBack: onBack,
+                padded: false
+            )
         }
     }
 }

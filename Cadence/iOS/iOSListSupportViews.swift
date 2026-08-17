@@ -117,43 +117,35 @@ struct iOSListIconBadge: View {
 /// regular (iPad) Lists layouts so the two look like the same page rather than a shrunk/expanded
 /// variant of each other.
 struct iOSListsPageHeader: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let areaCount: Int
     let projectCount: Int
     /// Set on iPhone, where this page is pushed with its navigation bar hidden. See
     /// `iOSHidesCompactNavigationBar()`.
     var onBack: (() -> Void)? = nil
 
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
+    private var totalCount: Int {
+        areaCount + projectCount
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: isRegularWidth ? 12 : 10) {
-            if let onBack {
-                iOSHeaderBackButton(action: onBack)
-                    .padding(.leading, -8)
-            }
-
-            iOSListIconBadge(icon: "folder.fill", colorHex: Theme.blueHex, size: isRegularWidth ? 36 : 32)
-
-            VStack(alignment: .leading, spacing: 2) {
-                SectionEyebrowLabel(text: CadenceListsSummary.eyebrow(areaCount: areaCount, projectCount: projectCount))
-                Text("Lists")
-                    .font(.system(size: isRegularWidth ? 21 : 17, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 4)
-
-            if areaCount + projectCount > 0 {
-                iOSListCountBadge(count: areaCount + projectCount)
-            }
-        }
-        .padding(.horizontal, isRegularWidth ? 20 : 16)
-        .padding(.top, isRegularWidth ? 16 : 13)
-        .padding(.bottom, isRegularWidth ? 11 : 7)
+        // `iOSPageHeader` down to the folder tile and the count, which is what this always was —
+        // it had simply spelled the tile as `iOSListIconBadge`, the eyebrow through
+        // `SectionEyebrowLabel`, and the count as the neutral `iOSListCountBadge` while the other
+        // five headers counted in blue.
+        //
+        // `onBack` is the tell, exactly as in `iOSFeatureListPane`: set, this is the top of a pushed
+        // screen; unset, it is the chooser column of the regular-width Lists split, which speaks at
+        // the same volume as the Goals and Habits choosers beside it rather than shouting over the
+        // detail it is choosing for.
+        iOSPageHeader(
+            role: onBack == nil ? .pane : .page,
+            eyebrow: CadenceListsSummary.eyebrow(areaCount: areaCount, projectCount: projectCount),
+            title: "Lists",
+            systemImage: "folder.fill",
+            color: Theme.blue,
+            count: totalCount > 0 ? totalCount : nil,
+            onBack: onBack
+        )
     }
 }
 

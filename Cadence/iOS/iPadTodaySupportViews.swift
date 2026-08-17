@@ -15,96 +15,40 @@ import SwiftUI
 ///   The date and the summary are both already `Theme.dim`; side by side they read as one quiet
 ///   line, with the date keeping its uppercase/kerned treatment and the summary in sentence case
 ///   so the two halves stay distinguishable.
+///
+/// Both of those are now `iOSPageHeader`'s own: the trailing slot and `eyebrowDetail`. This is a
+/// `.pane` header, because the task column is one of Today's panes and not the page — the date
+/// above it is not the screen's only title. The count moved from beside the title to the trailing
+/// edge, which is where the other five headers put it and where it now sits next to the bar it
+/// counts for. The 92pt fixed height went with the hand-tuned type: the row's content is a 44pt
+/// control against two lines of text either way, so it does not need pinning to stay still.
 struct iPadTodayTaskHeader: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let eyebrow: String
     let title: String
     let summary: CadenceTodaySummary
     @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
 
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
-    }
-
-    private var eyebrowFontSize: CGFloat {
-        isRegularWidth ? 10 : 9
-    }
-
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            iOSIconTile(
-                systemImage: "sun.max.fill",
-                color: Theme.amber,
-                size: isRegularWidth ? 34 : 30,
-                iconSize: isRegularWidth ? 15 : 13
-            )
-
-            VStack(alignment: .leading, spacing: 3) {
-                eyebrowLine
-
-                HStack(alignment: .firstTextBaseline, spacing: 9) {
-                    Text(title)
-                        .font(.system(size: isRegularWidth ? 23 : 17, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-
-                    // The one badge on this screen carrying the active count, in the shape
-                    // `iOSCompactPageHeader` uses for exactly this on the phone. It used to be
-                    // followed on the same row by a two-chip mini summary repeating the first two
-                    // of the three chips already sitting below the capture bar.
-                    Text("\(summary.activeCount)")
-                        .font(.system(size: isRegularWidth ? 12 : 11, weight: .bold))
-                        .foregroundStyle(Theme.blue)
-                        .monospacedDigit()
-                        .padding(.horizontal, isRegularWidth ? 8 : 7)
-                        .padding(.vertical, isRegularWidth ? 4 : 3)
-                        .background(Theme.blue.opacity(0.11))
-                        .clipShape(Capsule())
-                }
-            }
-
-            Spacer(minLength: 10)
-
+        iOSPageHeader(
+            role: .pane,
+            eyebrow: eyebrow,
+            // The half that gives way: `iOSPageHeader` gives the eyebrow proper the layout
+            // priority, so a squeezed header truncates "· 3 timed" before "SUNDAY, AUGUST 17".
+            eyebrowDetail: summary.line,
+            title: title,
+            systemImage: "sun.max.fill",
+            color: Theme.amber,
+            count: summary.activeCount
+        ) {
             iOSTaskViewOptionsBar(
                 sortMode: $sortMode,
                 showCompleted: $showCompleted,
                 completedCount: summary.completedCount,
                 spreads: false
             )
-            // Sized before the text column, so a narrow task column truncates the date rather than
-            // squeezing two 44pt controls. Priority, not `.fixedSize()`: at the very bottom of the
-            // width range the chips still give ground instead of overflowing the header and being
-            // clipped, which is how the capture field once ended up reading "l a task for today…".
-            .layoutPriority(1)
         }
-        .padding(.horizontal, isRegularWidth ? 18 : 16)
-        .padding(.top, isRegularWidth ? 16 : 13)
-        .padding(.bottom, isRegularWidth ? 11 : 7)
-        .frame(height: iOSPanelHeaderHeight, alignment: .center)
         .background(Theme.surface)
-    }
-
-    /// Date, then the day's counts. The summary is the half that gives way: it is `lineLimit(1)`
-    /// with no layout priority against a date that has one, so a squeezed header truncates
-    /// "· 3 timed" before it touches "SUNDAY, AUGUST 17".
-    private var eyebrowLine: some View {
-        HStack(spacing: 6) {
-            Text(eyebrow)
-                .font(.system(size: eyebrowFontSize, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .textCase(.uppercase)
-                .kerning(0.8)
-                .lineLimit(1)
-                .layoutPriority(1)
-
-            if let line = summary.line {
-                Text("· \(line)")
-                    .font(.system(size: eyebrowFontSize, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
-        }
     }
 }
 

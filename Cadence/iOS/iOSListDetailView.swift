@@ -276,7 +276,6 @@ struct iOSListDetailView: View {
 /// inside the Tasks tab that repeated the same name and context one row lower, and it carries the
 /// edit control that a `ToolbarItem` could not render on iPad.
 private struct iOSListDetailHeader: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let eyebrow: String
     let title: String
     let icon: String
@@ -284,39 +283,23 @@ private struct iOSListDetailHeader: View {
     var onBack: (() -> Void)? = nil
     let onEdit: () -> Void
 
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
-    }
-
     var body: some View {
-        HStack(spacing: isRegularWidth ? 12 : 10) {
-            if let onBack {
-                iOSHeaderBackButton(action: onBack)
-                    .padding(.leading, -8)
-            }
-
-            iOSListIconBadge(icon: icon, colorHex: colorHex, size: isRegularWidth ? 36 : 32)
-
-            VStack(alignment: .leading, spacing: 2) {
-                SectionEyebrowLabel(text: eyebrow)
-                    .lineLimit(1)
-                Text(title.isEmpty ? "Untitled" : title)
-                    .font(.system(size: isRegularWidth ? 21 : 18, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
+        // The list's own `colorHex` on the tile is the only thing this header adds to the shared
+        // one; the edit control rides in the single trailing slot, which is where it has to be —
+        // a `ToolbarItem` cannot render it on iPad.
+        iOSPageHeader(
+            eyebrow: eyebrow,
+            title: title.isEmpty ? "Untitled" : title,
+            systemImage: icon,
+            color: Color(hex: colorHex),
+            onBack: onBack
+        ) {
             iOSIconButton(
                 systemImage: "slider.horizontal.3",
                 accessibilityLabel: "Edit list",
                 action: onEdit
             )
         }
-        .padding(.horizontal, isRegularWidth ? 20 : 16)
-        .padding(.top, isRegularWidth ? 14 : 10)
-        .padding(.bottom, 12)
     }
 }
 #endif

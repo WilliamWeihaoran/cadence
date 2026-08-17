@@ -45,7 +45,17 @@ struct iOSFeatureListPane<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: eyebrow, title: title, count: count, onBack: onBack)
+            // `onBack` is the tell, and it is already documented as "set on iPhone, where this pane
+            // is a pushed screen": with it this row is the top of a screen, without it it is the
+            // top of a chooser column in a split. That is exactly the `role` distinction, so it is
+            // read here rather than asked of every caller.
+            iOSPageHeader(
+                role: onBack == nil ? .pane : .page,
+                eyebrow: eyebrow,
+                title: title,
+                count: count,
+                onBack: onBack
+            )
             Divider().background(Theme.borderSubtle)
 
             if let actionTitle, let action {
@@ -151,26 +161,61 @@ struct iOSFeatureRowLink<Label: View, Destination: View>: View {
     }
 }
 
-struct iOSCompactPageHeader: View {
+/// **The** iOS header row: an eyebrow, a title, and optionally an identity tile, a count, a back
+/// chevron and one trailing control.
+///
+/// It replaces six of these. `iOSPanelHeader`, `iOSCompactPageHeader`, `iOSListsPageHeader`,
+/// `iOSListDetailHeader`, `iPadTodayTaskHeader` and `iOSSettingsPageHeader` each drew the same idea
+/// and had drifted into six title sizes, two eyebrow sizes, two count badges (one blue capsule,
+/// one neutral one) and three ways of spelling the leading tile. The five names that had callers
+/// outside this sweep's reach survive as thin wrappers over this; none of them decides anything
+/// about appearance any more.
+///
+/// What survives as a parameter is `role`, and only that: a column inside a split legitimately
+/// speaks more quietly than a whole screen. Everything else is `iOSPageHeaderMetrics`, which is
+/// outside `#if os(iOS)` so the ramp can be pinned by a test.
+///
+/// **No subtitle.** `iOSCompactPageHeader` had one and no caller had passed it since the standing
+/// rule landed — a line under "All Tasks" explaining that All Tasks is where you review tasks
+/// describes the page you are already looking at. Empty states, search results and picker rows are
+/// the documented exceptions and none of them is a page header.
+struct iOSPageHeader<Trailing: View>: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    let eyebrow: String
+    /// What this row is the top of. See `iOSPageHeaderRole`.
+    var role: iOSPageHeaderRole = .page
+    /// Optional only because Settings' category header sits beside a rail that already names the
+    /// category, and an eyebrow there would label the label.
+    var eyebrow: String? = nil
+    /// A second, sentence-case clause after the eyebrow, separated by a middle dot. Today's day
+    /// summary is the one caller: it gives way first when the row is squeezed, so a narrow task
+    /// column truncates "· 3 timed" rather than the date.
+    var eyebrowDetail: String? = nil
     let title: String
-    var subtitle: String? = nil
+    /// The identity tile the row leads with. A list passes its own glyph and `colorHex`; a page
+    /// passes its feature glyph.
     var systemImage: String? = nil
     var color: Color = Theme.blue
-    /// Trailing count badge, same shape and job as `iOSPanelHeader`'s.
     var count: Int? = nil
     /// Set on a pushed compact screen whose navigation bar is hidden, so the back control sits on
     /// this row instead of on one of its own above it. See `iOSHidesCompactNavigationBar()`.
     var onBack: (() -> Void)? = nil
-
-    private var isCompact: Bool {
-        horizontalSizeClass == .compact
-    }
+    /// `false` where the host is a scroll container that already pads its content — the compact
+    /// pages set their own 16pt gutter on the `LazyVStack`, and a header padding itself inside that
+    /// would be indented from the rows below it.
+    var padded: Bool = true
+    /// One trailing control: Today's sort/completed bar, a list's edit button. Deliberately a
+    /// single slot rather than arbitrary content — the status badge that used to ride here on the
+    /// settings header repeated the first setting on the screen below it.
+    @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        HStack(alignment: .center, spacing: isCompact ? 10 : 12) {
+        let metrics = iOSPageHeaderMetrics.metrics(
+            role: role,
+            isRegularWidth: horizontalSizeClass == .regular
+        )
+
+        HStack(alignment: .center, spacing: metrics.rowSpacing) {
             if let onBack {
                 iOSHeaderBackButton(action: onBack)
                     .padding(.leading, -8)
@@ -180,44 +225,129 @@ struct iOSCompactPageHeader: View {
                 iOSIconTile(
                     systemImage: systemImage,
                     color: color,
-                    size: isCompact ? 32 : 36,
-                    iconSize: isCompact ? 15 : 16,
-                    fillOpacity: 0.13
+                    size: metrics.tileSize,
+                    iconSize: metrics.iconSize
                 )
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(eyebrow)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .textCase(.uppercase)
-                    .kerning(0.8)
+                if eyebrow != nil || eyebrowDetail != nil {
+                    eyebrowLine(metrics)
+                }
+
                 Text(title)
-                    .font(.system(size: isCompact ? 26 : 30, weight: .bold))
+                    .font(.system(size: metrics.titleSize, weight: .bold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.system(size: isCompact ? 12 : 13, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(2)
-                }
+                    .minimumScaleFactor(0.8)
             }
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
 
             if let count {
-                Text("\(count)")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Theme.blue)
-                    .monospacedDigit()
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(Theme.blue.opacity(0.12))
-                    .clipShape(Capsule())
+                iOSPageHeaderCountBadge(count: count, metrics: metrics)
             }
+
+            // Sized before the text column, so a narrow column truncates the title rather than
+            // squeezing a 44pt control. Priority, not `.fixedSize()`: at the bottom of the width
+            // range the chips still give ground instead of overflowing the row and being clipped.
+            trailing()
+                .layoutPriority(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, padded ? metrics.horizontalPadding : 0)
+        .padding(.top, padded ? metrics.topPadding : 0)
+        .padding(.bottom, padded ? metrics.bottomPadding : 0)
+    }
+
+    private func eyebrowLine(_ metrics: iOSPageHeaderMetrics) -> some View {
+        HStack(spacing: 6) {
+            if let eyebrow {
+                SectionEyebrowLabel(text: eyebrow)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+            }
+
+            if let eyebrowDetail, !eyebrowDetail.isEmpty {
+                Text("· \(eyebrowDetail)")
+                    .font(.system(size: metrics.eyebrowSize, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
+extension iOSPageHeader where Trailing == EmptyView {
+    init(
+        role: iOSPageHeaderRole = .page,
+        eyebrow: String? = nil,
+        eyebrowDetail: String? = nil,
+        title: String,
+        systemImage: String? = nil,
+        color: Color = Theme.blue,
+        count: Int? = nil,
+        onBack: (() -> Void)? = nil,
+        padded: Bool = true
+    ) {
+        self.init(
+            role: role,
+            eyebrow: eyebrow,
+            eyebrowDetail: eyebrowDetail,
+            title: title,
+            systemImage: systemImage,
+            color: color,
+            count: count,
+            onBack: onBack,
+            padded: padded,
+            trailing: { EmptyView() }
+        )
+    }
+}
+
+/// The one count badge. `iOSListsPageHeader` used the neutral `iOSListCountBadge` instead, whose
+/// reasoning ("a second coloured element per row turns a page of lists into a page of colours") is
+/// about a *row* in a list of rows — there is one header per screen, and every other one of them
+/// counts in blue.
+private struct iOSPageHeaderCountBadge: View {
+    let count: Int
+    let metrics: iOSPageHeaderMetrics
+
+    var body: some View {
+        Text("\(count)")
+            .font(.system(size: metrics.countSize, weight: .bold))
+            .foregroundStyle(Theme.blue)
+            .monospacedDigit()
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, metrics.countPaddingH)
+            .padding(.vertical, metrics.countPaddingV)
+            .background(Theme.blue.opacity(0.11))
+            .clipShape(Capsule())
+    }
+}
+
+/// Name only. See `iOSPageHeader`, which this is a `.page`-role spelling of; the hosts are scroll
+/// containers that pad their own content, hence `padded: false`.
+struct iOSCompactPageHeader: View {
+    let eyebrow: String
+    let title: String
+    var systemImage: String? = nil
+    var color: Color = Theme.blue
+    var count: Int? = nil
+    var onBack: (() -> Void)? = nil
+
+    var body: some View {
+        iOSPageHeader(
+            role: .page,
+            eyebrow: eyebrow,
+            title: title,
+            systemImage: systemImage,
+            color: color,
+            count: count,
+            onBack: onBack,
+            padded: false
+        )
     }
 }
 
@@ -290,6 +420,15 @@ struct iOSFeatureSummaryRow: View {
 }
 
 
+/// One value under one label in a card — goal and habit detail's stat strips, and Settings'
+/// overview grids.
+///
+/// It used to be two tiles with identical signatures: this one and `iOSSettingsMetricTile`, which
+/// drew a bare glyph against an icon tile, 19pt against 22pt, and an uppercase kerned label against
+/// a sentence-case one. Neither difference was a decision. The composite keeps what each did
+/// better — the settings tile's `iOSIconTile` (which is how every other glyph-in-a-square in the
+/// app is spelled) and its scale-down on a long value; this one's `SectionEyebrowLabel` in
+/// `Theme.subdued`, which is the documented token for the label half of a label/value pair.
 struct iOSMetricTile: View {
     let title: String
     let value: String
@@ -297,23 +436,31 @@ struct iOSMetricTile: View {
     let color: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(color)
-            Text(value)
-                .font(.system(size: 19, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-            Text(title)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.subdued)
-                .textCase(.uppercase)
-                .kerning(0.6)
+        VStack(alignment: .leading, spacing: 12) {
+            iOSIconTile(
+                systemImage: icon,
+                color: color,
+                size: 30,
+                iconSize: 14,
+                fillOpacity: 0.12,
+                bordered: false
+            )
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(value)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+
+                SectionEyebrowLabel(text: title, tint: Theme.subdued)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .cadenceCard(background: Theme.surfaceElevated.opacity(0.55), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
+        .padding(13)
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        .cadenceCard(background: Theme.surfaceElevated.opacity(0.72), cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
     }
 }
 

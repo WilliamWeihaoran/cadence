@@ -536,10 +536,13 @@ struct iOSTaskViewOptionsBar: View {
     }
 }
 
-let iOSPanelHeaderHeight: CGFloat = 92
-
+/// Name only. See `iOSPageHeader`, which this is the `.pane`-role spelling of.
+///
+/// The name survives because "panel header" is what the header of a chooser column is, and because
+/// its remaining callers — Focus's task-picker pane and `iOSFeatureListPane` — are exactly that.
+/// It used to set its eyebrow at 9pt on compact width while every other header set 10; nobody
+/// chose that, and it is gone with the rest of the second spelling.
 struct iOSPanelHeader: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let eyebrow: String
     let title: String
     var count: Int? = nil
@@ -547,44 +550,8 @@ struct iOSPanelHeader: View {
     /// this row instead of on one of its own above it. See `iOSHidesCompactNavigationBar()`.
     var onBack: (() -> Void)? = nil
 
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
-    }
-
     var body: some View {
-        HStack(alignment: onBack == nil ? .firstTextBaseline : .center, spacing: 10) {
-            if let onBack {
-                iOSHeaderBackButton(action: onBack)
-                    .padding(.leading, -8)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(eyebrow)
-                    .font(.system(size: isRegularWidth ? 10 : 9, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .textCase(.uppercase)
-                    .kerning(0.8)
-                Text(title)
-                    .font(.system(size: isRegularWidth ? 21 : 17, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            if let count {
-                Text("\(count)")
-                    .font(.system(size: isRegularWidth ? 13 : 12, weight: .bold))
-                    .foregroundStyle(Theme.blue)
-                    .padding(.horizontal, isRegularWidth ? 10 : 8)
-                    .padding(.vertical, isRegularWidth ? 6 : 4)
-                    .background(Theme.blue.opacity(0.11))
-                    .clipShape(Capsule())
-            }
-        }
-        .padding(.horizontal, isRegularWidth ? 20 : 16)
-        .padding(.top, isRegularWidth ? 16 : 13)
-        .padding(.bottom, isRegularWidth ? 11 : 7)
+        iOSPageHeader(role: .pane, eyebrow: eyebrow, title: title, count: count, onBack: onBack)
     }
 }
 

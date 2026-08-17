@@ -52,7 +52,16 @@ struct iOSAllTasksView: View {
 
     private var allTasksPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: "Tasks", title: "All Tasks", count: activeTasks.count)
+            // Same page as `iOSCompactAllTasksView`, so the same `.page` header — eyebrow, checklist
+            // tile, 30/26pt title, blue count. It was `iOSPanelHeader` here and
+            // `iOSCompactPageHeader` there: one screen, two headers.
+            iOSPageHeader(
+                eyebrow: "Tasks",
+                title: "All Tasks",
+                systemImage: "checklist",
+                color: Theme.blue,
+                count: activeTasks.count
+            )
 
             Divider().background(Theme.borderSubtle)
 
