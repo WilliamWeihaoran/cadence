@@ -52,7 +52,14 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
      making the row taller.
   3. **The estimate moves to the trailing edge**, where the chevron was.
   4. **Subtasks render as rows beneath the task**, not as an `0/3` chip.
-  5. Open question answered below: whether the scheduled-time chip earns its place.
+  5. **The scheduled-time chip goes entirely** ("9:30 – 10 AM"). Decided 2026-08-17 against my
+     recommendation to keep it — noting the cost so it is not rediscovered as a bug: on a phone the
+     row is the only place the day's plan is visible, since no timeline sits beside the list there.
+     The Today page's timeline pane and the task inspector still carry it.
+  6. **Subtasks: unfinished only, tappable, no cap.** Finished ones stay hidden — they say nothing
+     new — and there is deliberately no "+N more" cut-off. Watch the consequence on device: one task
+     with a long checklist can push the rest of Today off screen, and if that reads badly the answer
+     is a cap, not bringing the `0/3` chip back.
 
 - [T-54] **`CadenceTodayLayoutSupportTests.swift` still names a 13" iPad** at `:31` and `:47`, left
   behind by the fixture cleanup in `88c05d1` because it was outside that agent's file set. Same
