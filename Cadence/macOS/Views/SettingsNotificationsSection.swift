@@ -65,13 +65,13 @@ struct SettingsNotificationsSection: View {
     private func requestAuthorization() {
         Task {
             let granted = await notificationManager.requestAuthorization()
-            if !granted {
-                await MainActor.run {
-                    NSWorkspace.shared.open(
-                        URL(string: "x-apple.systempreferences:com.apple.preference.notifications")!
-                    )
-                }
-            }
+            guard !granted,
+                  let settingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.notifications")
+            else { return }
+            // Already on the main actor: this view is main-actor isolated and the `Task` inherits it,
+            // so the `MainActor.run` that used to wrap this was a no-op whose discarded `Bool` was
+            // the warning. `open` still returns whether the URL could be handed to a handler.
+            _ = NSWorkspace.shared.open(settingsURL)
         }
     }
 }

@@ -11,14 +11,14 @@ import AppKit
 /// consume-path fell through into the app's global shortcut table. Concretely: with the delete
 /// confirmation up, **Cmd+Return confirmed the delete and then toggled completion on the hovered
 /// task** — two irreversible actions, on two different tasks, from one keystroke.
-enum RootModalKeyAction: Equatable {
+nonisolated enum RootModalKeyAction: Equatable {
     case confirmDelete
     case cancelDelete
     case confirmDatePicker
     case cancelDatePicker
 }
 
-enum RootModalKeyDisposition: Equatable {
+nonisolated enum RootModalKeyDisposition: Equatable {
     /// A modal handled this key. Swallow the event; nothing else may see it.
     case act(RootModalKeyAction)
     /// A modal is up but does not handle this key. Hand it to the responder chain so the overlay's

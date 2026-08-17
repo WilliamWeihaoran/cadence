@@ -27,10 +27,13 @@ An unscoped `test` run also pulls in `CadenceUITests`, which cannot launch headl
 the whole run. The failure reads like a broken suite rather than a harness problem — do not
 conclude "tests can't run here" from it.
 
-**Warning baseline: 2 on macOS, 0 on iOS.** The two are `SchedulingService` and
-`SettingsNotificationsSection`. It was three until `651694b` — `MarkdownLinkSupport` was itself a
-main-actor isolation warning and went with the `nonisolated` pass. Treat any increase as a
-regression introduced by the change in hand.
+**Warning baseline: 0 on macOS, 0 on iOS.** It was three until `651694b` (`MarkdownLinkSupport`
+was itself a main-actor isolation warning and went with the `nonisolated` pass), then two —
+`SchedulingService` and `SettingsNotificationsSection` — until T-96 cleared both. Neither was a
+bug: the first was a `guard let task` whose body had been emptied when the three scheduling
+assignments moved into `TaskCreationDraft`, the second an `await MainActor.run` wrapper that was
+already on the main actor and discarded `NSWorkspace.open`'s `Bool`. The baseline is now zero, so
+**any** warning is a regression introduced by the change in hand.
 
 ## Where Things Live
 
@@ -120,6 +123,13 @@ code, and every one of them has been violated by a shipped change at least once.
 Use extra caution in these areas:
 
 - `Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift` and `MarkdownEditorSupport.swift` - large AppKit/SwiftUI bridge with custom caret, drawing, slash commands, and undo behavior.
+  This file is also what keeps the app target on `SWIFT_VERSION = 5.0`.
+  `CadenceLayoutManager` is main-actor isolated by the project default while `NSLayoutManager` is
+  not, so its overrides disagree with what they override. `init`, `init(coder:)` and `drawGlyphs`
+  are now `nonisolated` and clean; `drawBackground` is not, because its decoration passes need
+  `MarkdownStylist`, `Theme` and `CadenceTextView`, and Swift 6 region isolation refuses the
+  `MainActor.assumeIsolated` hop back (non-`Sendable` `self` cannot be sent). See the comment on
+  the class — the fix is a refactor of where the decoration pass lives, not an annotation.
 - `Cadence/macOS/Views/Timeline*`, `SchedulePanel*`, `CalendarPage*`, `CalendarBoard*` - timeline coordinate math, drag/drop, EventKit, and schedule state.
 - `Cadence/macOS/Views/TasksPanel*`, `ListDetail*`, `Inbox*`, `Kanban*` - shared task surface behavior, grouping, sorting, drag reorder, completion animations.
 - `Cadence/macOS/Services/CalendarManager.swift`, `SchedulingService.swift`, `TaskWorkflowService.swift`, deletion helpers - can affect SwiftData relationships and EventKit side effects.

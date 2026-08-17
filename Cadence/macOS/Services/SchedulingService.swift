@@ -66,9 +66,7 @@ enum SchedulingActions {
             scheduledStartMin: startMin,
             estimatedMinutes: max(5, endMin - startMin)
         )
-        guard let task = TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: context) else {
-            return
-        }
+        TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: context)
     }
 
     /// Move an existing task to a new date/time. Materialises the default estimate if the task has

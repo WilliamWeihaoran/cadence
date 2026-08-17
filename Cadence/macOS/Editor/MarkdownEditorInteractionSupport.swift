@@ -3,8 +3,33 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+/// `NSLayoutManager` is nonisolated in AppKit, but the project builds with
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so this subclass and every member of it is
+/// main-actor isolated by default — and a main-actor override of a nonisolated declaration is an
+/// error in Swift 6 language mode. The three members below that need nothing from the main actor
+/// are therefore declared `nonisolated`, matching what they override.
+///
+/// `drawBackground(forGlyphRange:at:)` deliberately is **not**. Its per-feature helpers read
+/// `MarkdownStylist` / `Theme` (main-actor isolated by the same project default) and read and
+/// write `CadenceTextView`'s hit-rect and hover caches — and `CadenceTextView` is main-actor
+/// isolated by AppKit itself, since `NSTextView` is. Declaring the override `nonisolated` and
+/// hopping back with a checked `MainActor.assumeIsolated` does not compile: Swift 6 region
+/// isolation rejects capturing the task-isolated, non-`Sendable` `self` in a main-actor closure
+/// ("sending 'self' risks causing data races"), and that holds for `[weak self]`, for a local
+/// copy, for `@unchecked Sendable` on the class, and for a single closure with no later use of
+/// `self`. Getting past it means either an unsafe escape hatch or moving the whole decoration
+/// pass onto `CadenceTextView` — a real refactor of this bridge, not an annotation. Until that is
+/// done, this override is why the app target stays on `SWIFT_VERSION = 5.0`; see the T-96 notes.
 final class CadenceLayoutManager: NSLayoutManager {
-    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+    nonisolated override init() {
+        super.init()
+    }
+
+    nonisolated required init?(coder: NSCoder) {
+        super.init(coder: coder)
+    }
+
+    nonisolated override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         for visibleRange in visibleGlyphRanges(in: glyphsToShow) {
             super.drawGlyphs(forGlyphRange: visibleRange, at: origin)
         }
@@ -390,7 +415,9 @@ final class CadenceLayoutManager: NSLayoutManager {
         }
     }
 
-    private func visibleGlyphRanges(in glyphRange: NSRange) -> [NSRange] {
+    /// Pure range arithmetic over `textStorage`, touching no main-actor state, so both drawing
+    /// entry points can call it without hopping first.
+    nonisolated private func visibleGlyphRanges(in glyphRange: NSRange) -> [NSRange] {
         guard let textStorage, glyphRange.length > 0 else { return [glyphRange] }
 
         let characterRange = self.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
@@ -410,7 +437,7 @@ final class CadenceLayoutManager: NSLayoutManager {
         return subtract(hiddenGlyphRanges.sorted { $0.location < $1.location }, from: glyphRange)
     }
 
-    private func subtract(_ excludedRanges: [NSRange], from fullRange: NSRange) -> [NSRange] {
+    nonisolated private func subtract(_ excludedRanges: [NSRange], from fullRange: NSRange) -> [NSRange] {
         var visibleRanges: [NSRange] = []
         var cursor = fullRange.location
         let fullEnd = NSMaxRange(fullRange)
