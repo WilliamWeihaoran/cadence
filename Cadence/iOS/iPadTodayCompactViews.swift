@@ -6,9 +6,14 @@ struct iOSCompactTodayView: View {
     var showsHeader = true
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    let todayTasks: [AppTask]
     let completedTodayTasks: [AppTask]
     let todayTaskGroups: [CadenceTodayTaskGroup]
+    /// The day's counts, as the two-pane column reads them. It used to take a `todayTasks` array
+    /// purely to call `.count` on it for the header badge, which is the same number
+    /// `CadenceTodaySummary.activeCount` already holds — and the rest of the summary was simply not
+    /// drawn here, so the tablet said "· 3 timed · 1 done" beside its date and the phone said
+    /// nothing beside the same date.
+    let summary: CadenceTodaySummary
     @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
     #if DEBUG
@@ -29,7 +34,10 @@ struct iOSCompactTodayView: View {
                 // in the Tasks tab is the day's tasks.
                 taskSections
             }
-            .frame(maxWidth: 520, alignment: .topLeading)
+            // One cap for the header, the bar and the rows together. It is the layout's number,
+            // read from `CadenceTodaySectionMetrics` rather than typed here, so the two hosts
+            // cannot drift apart again the way 520-against-720 was only half a decision.
+            .frame(maxWidth: iOSTodayTaskSections.contentMaxWidth(layout: .compact), alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .top)
             .padding(.horizontal, 14)
             .padding(.top, 10)
@@ -53,13 +61,18 @@ struct iOSCompactTodayView: View {
     /// `NavigationStack` around it — so `dismiss()` has nothing to dismiss and the chevron would be
     /// a control that looks wired and does nothing, which is the defect this whole sweep has been
     /// removing. The header draws no button when `onBack` is nil.
+    ///
+    /// It carries the same `eyebrowDetail` the two-pane column's header does. The summary is a fact
+    /// about the day — how much of it is timed, how much is already done — not a fact about how much
+    /// room the screen has, and the phone had simply never been given it.
     private var header: some View {
         iOSCompactPageHeader(
             eyebrow: DateFormatters.longDate.string(from: Date()),
+            eyebrowDetail: summary.line,
             title: "Today",
             systemImage: "sun.max.fill",
             color: Theme.amber,
-            count: todayTasks.count,
+            count: summary.activeCount,
             onBack: horizontalSizeClass == .compact ? { dismiss() } : nil
         )
         .padding(.top, 2)
@@ -78,50 +91,33 @@ struct iOSCompactTodayView: View {
             iOSTaskViewOptionsBar(
                 sortMode: $sortMode,
                 showCompleted: $showCompleted,
-                completedCount: completedTodayTasks.count
+                completedCount: summary.completedCount
             )
             .padding(.vertical, 2)
         }
     }
 
-    @ViewBuilder
+    /// `iOSTodayTaskSections`, which is also what the two-pane task column draws. This used to be a
+    /// second copy of it, 1pt apart on the group spacing and with its own answer to whether a row
+    /// names its list.
     private var taskSections: some View {
-        if todayTasks.isEmpty && (!showCompleted || completedTodayTasks.isEmpty) {
-            iOSCompactTodayEmptyState()
-
-            #if DEBUG
-            iOSCompactSampleDataCard(
-                status: sampleDataStatus,
-                action: seedSampleData
-            )
-            #endif
-        } else {
-            VStack(alignment: .leading, spacing: 14) {
-                ForEach(todayTaskGroups, id: \.title) { group in
-                    // Due Today and Planned Today accept a dropped `+`; Overdue and Past Do are
-                    // defined by a day that has gone by, so they do not light up.
-                    // `CadenceTaskDropSupport.dropKey(forGroup:)` decides, once, for both widths.
-                    iOSTaskGroupSection(
-                        title: group.title,
-                        color: CadenceTodayPresentationSupport.accent(for: group.kind),
-                        tasks: group.tasks,
-                        dropIdentity: .todayDate(group.kind)
-                    )
-                }
-
-                if showCompleted {
-                    iOSTaskGroupSection(
-                        title: "Completed Today",
-                        color: Theme.green,
-                        tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTodayTasks),
-                        opacity: 0.62,
-                        dropIdentity: .completion
-                    )
-                }
-            }
-            .padding(12)
-            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
-        }
+        #if DEBUG
+        iOSTodayTaskSections(
+            layout: .compact,
+            taskGroups: todayTaskGroups,
+            completedTasks: completedTodayTasks,
+            showsCompleted: showCompleted,
+            sampleDataStatus: sampleDataStatus,
+            seedSampleData: seedSampleData
+        )
+        #else
+        iOSTodayTaskSections(
+            layout: .compact,
+            taskGroups: todayTaskGroups,
+            completedTasks: completedTodayTasks,
+            showsCompleted: showCompleted
+        )
+        #endif
     }
 
 }

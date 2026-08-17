@@ -110,3 +110,60 @@ nonisolated enum CadenceTodayLayoutSupport {
         max(paneWidth * 0.40, inspectorPaneFloor(forPaneWidth: paneWidth))
     }
 }
+
+/// Everything Today's list of task groups is drawn with, in one value — one entry per
+/// `CadenceTodayLayout`.
+///
+/// The two hosts had each grown their own copy of the same list. The phone stacked its groups 14pt
+/// apart inside a card and padded its empty state 14; the two-pane task column stacked the *same*
+/// groups 15pt apart with no card and padded the same empty state 18. Nobody chose 14-against-15 —
+/// it is what two copies of one list become after a few edits each, and it is the drift
+/// `iOSPageHeaderMetrics` was written to stop for headers.
+///
+/// **The card is the one difference with a reason, and the reason is the host's background rather
+/// than the device.** The compact layout is drawn on a `Theme.bg` page, where a `Theme.surface`
+/// card is what separates the day's list from the page; the two-pane task column already *is*
+/// `Theme.surface`, so the same card there would be invisible — which is exactly why
+/// `iOSCompactTodayEmptyState` had to settle on `Theme.surfaceElevated` to read against both hosts.
+///
+/// Keyed on `CadenceTodayLayout` and **not** on the size class, so the iPad's own narrow fallback —
+/// a regular-width pane under `twoPaneMinimumWidth`, which renders the compact layout on a
+/// `Theme.bg` page — takes the card for the same reason the phone does.
+nonisolated struct CadenceTodaySectionMetrics: Equatable, Sendable {
+    /// Between one counted task group and the next. **One number for both layouts**: the gap
+    /// between "Overdue" and "Planned Today" is not something a wider pane needs more of, and it is
+    /// the 14/15 split this type exists to close. It is also what Inbox and All Tasks stack at, so
+    /// the three segments of one tab agree.
+    let groupSpacing: CGFloat
+    /// How wide the column of rows grows before it stops. The one figure that legitimately differs:
+    /// a task pane whose floor is `taskPaneMinWidth` can hold a wider readable column than a phone,
+    /// and a line of text that runs the full width of an iPad is worse than one that does not.
+    let contentMaxWidth: CGFloat
+    /// Whether the group stack sits on a card of its own. See the note above — host background,
+    /// not device.
+    let drawsCard: Bool
+    /// The card's inset, and zero when there is no card, so a call site cannot pad for a card it is
+    /// not drawing.
+    let cardPadding: CGFloat
+
+    static func metrics(layout: CadenceTodayLayout) -> CadenceTodaySectionMetrics {
+        switch layout {
+        case .compact:
+            return CadenceTodaySectionMetrics(
+                groupSpacing: groupSpacing,
+                contentMaxWidth: 520,
+                drawsCard: true,
+                cardPadding: 12
+            )
+        case .twoPane:
+            return CadenceTodaySectionMetrics(
+                groupSpacing: groupSpacing,
+                contentMaxWidth: 720,
+                drawsCard: false,
+                cardPadding: 0
+            )
+        }
+    }
+
+    private static let groupSpacing: CGFloat = 14
+}

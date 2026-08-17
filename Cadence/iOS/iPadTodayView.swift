@@ -165,9 +165,9 @@ struct iPadTodayView: View {
         #if DEBUG
         iOSCompactTodayView(
             showsHeader: showsCompactHeader,
-            todayTasks: todayTasks,
             completedTodayTasks: completedTodayTasks,
             todayTaskGroups: todayTaskGroups,
+            summary: todaySummary,
             sortMode: sortModeBinding,
             showCompleted: $showCompleted,
             sampleDataStatus: sampleDataStatus,
@@ -176,9 +176,9 @@ struct iPadTodayView: View {
         #else
         iOSCompactTodayView(
             showsHeader: showsCompactHeader,
-            todayTasks: todayTasks,
             completedTodayTasks: completedTodayTasks,
             todayTaskGroups: todayTaskGroups,
+            summary: todaySummary,
             sortMode: sortModeBinding,
             showCompleted: $showCompleted
         )
@@ -207,69 +207,48 @@ struct iPadTodayView: View {
         .background(Theme.surface)
     }
 
-    @ViewBuilder
+    /// `iOSTodayTaskSections`, which is also what the phone's Today draws — one list, one empty
+    /// state, one group spacing. This was a second copy of both halves: 15pt between groups against
+    /// the phone's 14, an empty state padded 18 against the phone's 14, and the branch between them
+    /// spelled out again from `todayTasks` rather than from the groups.
+    ///
+    /// The scroll container and its gutters stay here, because they are the *column's* and not the
+    /// list's — the header above sits outside this scroll view so a two-pane column keeps its title
+    /// while the rows move.
     private var todayTaskSections: some View {
-        if todayTasks.isEmpty && (!showCompleted || completedTodayTasks.isEmpty) {
-            // The same one card the phone shows, not a deck. This was five instructional cards —
-            // "Write notes", "Check timeline", "Completed", "Capture", and a "Plan" card whose text
-            // read "Use the inspector to switch notes and timeline", describing the screen it was
-            // drawn on. An empty day looks empty and says so once.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    // The card is the component's own now: this call site and the phone's disagreed
-                    // about its fill, which made one component look like two.
-                    iOSCompactTodayEmptyState()
-
-                    #if DEBUG
-                    iOSCompactSampleDataCard(
-                        status: sampleDataStatus,
-                        action: seedSampleData
-                    )
-                    #endif
-                }
-                .frame(maxWidth: 520, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(.horizontal, 18)
-                .padding(.top, 18)
-                .padding(.bottom, 20)
-            }
-            .scrollIndicators(.hidden)
-            .background(Theme.surface)
-        } else {
-            ScrollView {
-                // The same counted group the phone draws — this column used to head each group
-                // with a bare eyebrow, so "3 Overdue" was information the tablet did not give.
-                LazyVStack(alignment: .leading, spacing: 15) {
-                    ForEach(todayTaskGroups, id: \.title) { group in
-                        // Same identities the phone passes — the drop rule is the grouping's, not
-                        // the shape's. See `iOSCompactTodayView`.
-                        iOSTaskGroupSection(
-                            title: group.title,
-                            color: CadenceTodayPresentationSupport.accent(for: group.kind),
-                            tasks: group.tasks,
-                            dropIdentity: .todayDate(group.kind)
-                        )
-                    }
-
-                    if showCompleted {
-                        iOSTaskGroupSection(
-                            title: "Completed Today",
-                            color: Theme.green,
-                            tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTodayTasks),
-                            opacity: 0.62,
-                            dropIdentity: .completion
-                        )
-                    }
-                }
-                .frame(maxWidth: 720, alignment: .leading)
+        ScrollView {
+            todaySections
+                .frame(
+                    maxWidth: iOSTodayTaskSections.contentMaxWidth(layout: .twoPane),
+                    alignment: .leading
+                )
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(.horizontal, 14)
                 .padding(.top, 12)
                 .padding(.bottom, 20)
-            }
-            .scrollIndicators(.hidden)
-            .background(Theme.surface)
         }
+        .scrollIndicators(.hidden)
+        .background(Theme.surface)
+    }
+
+    private var todaySections: some View {
+        #if DEBUG
+        iOSTodayTaskSections(
+            layout: .twoPane,
+            taskGroups: todayTaskGroups,
+            completedTasks: completedTodayTasks,
+            showsCompleted: showCompleted,
+            sampleDataStatus: sampleDataStatus,
+            seedSampleData: seedSampleData
+        )
+        #else
+        iOSTodayTaskSections(
+            layout: .twoPane,
+            taskGroups: todayTaskGroups,
+            completedTasks: completedTodayTasks,
+            showsCompleted: showCompleted
+        )
+        #endif
     }
 
     // `todayRowDensity` is gone with `iOSTaskRowDensity` — and it was already dead in the direction

@@ -471,7 +471,6 @@ struct iOSTaskSectionHeader: View {
 }
 
 struct iOSTaskViewOptionsBar: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
     var completedCount: Int
@@ -482,9 +481,15 @@ struct iOSTaskViewOptionsBar: View {
     var spreads = true
     @State private var showSortPicker = false
 
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
-    }
+    /// **One size, at every width.** These two were 13pt/12pt-padded on a regular width and
+    /// 12pt/10pt on a compact one, which is a chip that looks different on a phone than on a tablet
+    /// for no stated reason — and this bar is a *guest* on iPad Today's header, so the same control
+    /// changed size depending on which of two screens you had it open on. The app's chip vocabulary
+    /// is already width-invariant: `iOSTaskAttributeChipSize` is 11pt in a row and 13pt in a strip
+    /// on both. 13 is the size that matches `.standard`, which is what these are — a chip you tap,
+    /// on a row of its own — and the phone is the harder touch target of the two, not the easier.
+    private static let fontSize: CGFloat = 13
+    private static let horizontalPadding: CGFloat = 12
 
     /// Both controls are the same neutral chip on the same radius, sized to a 44pt touch target.
     /// They used to be two different treatments for two peer controls — a blue-washed capsule
@@ -495,9 +500,9 @@ struct iOSTaskViewOptionsBar: View {
                 showSortPicker = true
             } label: {
                 Label(sortMode.title, systemImage: "arrow.up.arrow.down")
-                    .font(.system(size: isRegularWidth ? 13 : 12, weight: .semibold))
+                    .font(.system(size: Self.fontSize, weight: .semibold))
                     .foregroundStyle(Theme.text)
-                    .padding(.horizontal, isRegularWidth ? 12 : 10)
+                    .padding(.horizontal, Self.horizontalPadding)
                     .frame(minHeight: 44)
                     .background(Theme.surfaceElevated.opacity(0.72))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
@@ -521,9 +526,9 @@ struct iOSTaskViewOptionsBar: View {
                 showCompleted.toggle()
             } label: {
                 Text(completedCount > 0 ? "Completed \(completedCount)" : "Completed")
-                    .font(.system(size: isRegularWidth ? 13 : 12, weight: .semibold))
+                    .font(.system(size: Self.fontSize, weight: .semibold))
                     .foregroundStyle(showCompleted ? Theme.text : Theme.dim)
-                    .padding(.horizontal, isRegularWidth ? 12 : 10)
+                    .padding(.horizontal, Self.horizontalPadding)
                     .frame(minHeight: 44)
                     .background(showCompleted ? Theme.surfaceElevated.opacity(0.72) : Theme.surfaceElevated.opacity(0.36))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))

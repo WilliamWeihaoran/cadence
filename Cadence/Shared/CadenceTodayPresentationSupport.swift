@@ -63,9 +63,18 @@ enum CadenceTodayPresentationSupport {
         }
     }
 
-    static let emptyTitle = "Nothing planned for today"
+    /// Today's empty state, at both widths — `iOSCompactTodayEmptyState` is the only reader and it
+    /// is the only empty state Today has.
+    ///
+    /// There used to be an `emptyTitle` beside this reading "Nothing planned for today", left over
+    /// from the iPad's own five-card empty deck; nothing had read it since that deck was deleted.
+    /// Two spellings of one sentence, one of them unreachable, is how the two hosts start saying
+    /// different things again.
     static let emptyCompactTitle = "Nothing planned"
-    static let emptySubtitle = "Add a task above or schedule one from Inbox."
+    /// It said "Add a task above…" while the field it pointed at no longer existed on either width:
+    /// compact capture is the tab bar's centre `+` and the iPad's is the floating one on this page.
+    /// A subtitle naming a control that is not on screen is worse than none.
+    static let emptySubtitle = "Add a task with +, or schedule one from Inbox."
 
     /// The schedule pane's whole empty state: one line, and the one line teaches the gesture.
     ///

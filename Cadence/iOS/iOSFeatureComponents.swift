@@ -331,6 +331,9 @@ private struct iOSPageHeaderCountBadge: View {
 /// containers that pad their own content, hence `padded: false`.
 struct iOSCompactPageHeader: View {
     let eyebrow: String
+    /// See `iOSPageHeader.eyebrowDetail`. Today is the caller: it puts the day's summary here at
+    /// both widths, having previously drawn it on the tablet and nowhere else.
+    var eyebrowDetail: String? = nil
     let title: String
     var systemImage: String? = nil
     var color: Color = Theme.blue
@@ -341,6 +344,7 @@ struct iOSCompactPageHeader: View {
         iOSPageHeader(
             role: .page,
             eyebrow: eyebrow,
+            eyebrowDetail: eyebrowDetail,
             title: title,
             systemImage: systemImage,
             color: color,

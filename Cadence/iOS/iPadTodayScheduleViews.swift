@@ -6,8 +6,15 @@ import SwiftUI
 /// `iPadTodayInspectorSwitcher` sits directly above it with "Timeline" lit up in it. The
 /// `showsHeader` flag that used to switch one on existed for the three-pane Today layout, where
 /// this pane stood beside two others; that layout is gone.
+///
+/// **It had a compact ramp, and the compact half of it could not be reached.** `rowHeight` was
+/// `regular ? 58 : 48` and the grid's trailing gutter `regular ? 12 : 8`, but this pane is only ever
+/// built by `iPadTodayView.inspectorPanelContent`, which only `twoPaneTodayLayout` reaches, which
+/// `CadenceTodayLayoutSupport.layout` only returns at regular width. Two dead branches carrying two
+/// numbers nobody had ever seen — the same defect `iPadTodayView`'s deleted `todayRowDensity`
+/// had, in the same file family. The regular figures are the only ones that ever drew, so they are
+/// the ones that stay.
 struct iOSSchedulePanel: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query private var allBundles: [TaskBundle]
@@ -107,7 +114,7 @@ struct iOSSchedulePanel: View {
                             .id(hour)
                         }
                     }
-                    .padding(.trailing, horizontalSizeClass == .regular ? 12 : 8)
+                    .padding(.trailing, 12)
                 }
                 .scrollIndicators(.hidden)
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
@@ -160,9 +167,7 @@ struct iOSSchedulePanel: View {
         }
     }
 
-    private var rowHeight: CGFloat {
-        horizontalSizeClass == .regular ? 58 : 48
-    }
+    private var rowHeight: CGFloat { 58 }
 
     /// Opens the pane near the hour that matters. The grid is the whole day now, and a scroll view
     /// opens at the top of its content — so left alone this pane would open at midnight, which is

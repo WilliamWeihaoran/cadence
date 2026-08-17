@@ -29,6 +29,14 @@ struct iPadTodayTaskHeader: View {
     @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
 
+    /// The same gate the compact layout puts on its own bar. It was unconditional here, so a
+    /// surface that ever stopped offering these controls would have lost them on the phone and kept
+    /// them on the tablet — the exact shape of divergence `CadenceTaskSurfaceOptions` exists to
+    /// rule out, left open by one call site not asking.
+    private var options: CadenceTaskViewOptions {
+        CadenceTaskSurfaceOptions.options(for: .today)
+    }
+
     var body: some View {
         iOSPageHeader(
             role: .pane,
@@ -41,12 +49,14 @@ struct iPadTodayTaskHeader: View {
             color: Theme.amber,
             count: summary.activeCount
         ) {
-            iOSTaskViewOptionsBar(
-                sortMode: $sortMode,
-                showCompleted: $showCompleted,
-                completedCount: summary.completedCount,
-                spreads: false
-            )
+            if options.showsSort || options.showsCompletedToggle {
+                iOSTaskViewOptionsBar(
+                    sortMode: $sortMode,
+                    showCompleted: $showCompleted,
+                    completedCount: summary.completedCount,
+                    spreads: false
+                )
+            }
         }
         .background(Theme.surface)
     }
