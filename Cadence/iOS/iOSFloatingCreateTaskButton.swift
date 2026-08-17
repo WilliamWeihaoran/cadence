@@ -138,11 +138,76 @@ private struct iOSNewTaskDragSourceModifier: ViewModifier {
     }
 }
 
+/// The gap a create-task drag opens: a dashed placeholder that says a new task lands here, and
+/// names the placement it will inherit.
+///
+/// It is **not** a selection fill on the row underneath. The row is read for its coordinates —
+/// list, section, dates — and nothing is done to it, so lighting it up the way a tap-to-select
+/// lights a row up says the wrong thing about the wrong object. What is actually about to happen
+/// is an insertion, so what the drag shows is an insertion.
+///
+/// The caption is the honest half. See `CadenceTaskDropSupport.placementCaption(forDropKey:…)` for
+/// why the *position* of this block promises nothing and the words have to carry the claim.
+private struct iOSNewTaskGhostRow: View {
+    let caption: String
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "plus")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Theme.blue)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("New task")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+                if !caption.isEmpty {
+                    Text(caption)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.subdued)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(minHeight: 44, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                .fill(Theme.blue.opacity(0.1))
+                .overlay {
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                        .strokeBorder(
+                            Theme.blue.opacity(0.55),
+                            style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])
+                        )
+                }
+        }
+        .accessibilityLabel(caption.isEmpty ? "New task" : "New task, \(caption)")
+    }
+}
+
 /// Makes a view a destination for a create-task drag.
 ///
-/// The fill is the view's **only** hover layer — the rows this lands on carry no background of
-/// their own — and it is drawn at `Theme.radiusControl`, so nothing stacks a second highlight at a
-/// second radius on top of it.
+/// **The feedback is an insertion, not a highlight.** The row this attaches to used to take a blue
+/// fill while targeted, which read as "this task is the subject" when the row is only a source of
+/// coordinates — nothing is done to it. Instead a ghost block opens *below* the row and the rows
+/// under it part to make room, which is the shape of what is actually about to happen.
+///
+/// **The gap opens below the pointed row, always — there is no upper-half/lower-half split.** Two
+/// reasons, and the first is the binding one: a drop seeds *placement*, never `order`.
+/// `TaskCreationService` appends and the surface's own sort decides the final index, so "above this
+/// one" and "below this one" is a distinction the code cannot honour, and drawing it would be a
+/// promise broken the moment the sheet closes. One gap in one place keeps the claim at the level
+/// the code can keep — "a new task joins this neighbourhood, with these attributes", which the
+/// ghost's caption states in words. Second, below is the stable choice: the ghost grows *away* from
+/// the finger, so nothing moves under the pointer and the target cannot oscillate between two rows
+/// the way a mid-row split would.
+///
+/// The ghost is also the view's **only** added layer, at one radius — the rows this lands on carry
+/// no background of their own, and the fill that used to sit under them is gone rather than joined.
 ///
 /// `onDrop(of:)` filters by content type synchronously, so this lights up for a create-task drag
 /// and for nothing else: a task-reorder or bundle drag is plain text and never reaches it. See
@@ -150,20 +215,44 @@ private struct iOSNewTaskDragSourceModifier: ViewModifier {
 private struct iOSNewTaskDropTargetModifier: ViewModifier {
     /// Evaluated at drop time, not at layout time, so a row whose list or date changed while the
     /// drag was in flight seeds what it now says rather than what it said when it last rendered.
+    /// Read once more while targeted, to caption the ghost with the same answer.
     let dropKey: () -> String
+    /// The destination list's display name. A `list:` key carries a UUID; only the call site can
+    /// turn that into something a person reads.
+    let listName: () -> String
+    /// Aligns the ghost with the host row's own content inset, so the gap looks like part of the
+    /// list rather than a floating card.
+    let horizontalInset: CGFloat
 
     @State private var isTargeted = false
+    /// Separate from `isTargeted` so the open/close is driven by an explicit
+    /// `withAnimation(.spring(…))`, the same way reorder moves are animated everywhere else.
+    @State private var showsGhost = false
 
     func body(content: Content) -> some View {
-        content
-            .background {
-                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                    .fill(Theme.blue.opacity(isTargeted ? 0.16 : 0))
+        VStack(spacing: 0) {
+            content
+            if showsGhost {
+                iOSNewTaskGhostRow(
+                    caption: CadenceTaskDropSupport.placementCaption(
+                        forDropKey: dropKey(),
+                        todayKey: DateFormatters.todayKey(),
+                        listName: listName()
+                    )
+                )
+                .padding(.horizontal, horizontalInset)
+                .padding(.vertical, 6)
+                .transition(.opacity)
             }
-            .onDrop(of: [.cadenceNewTaskDrag], isTargeted: $isTargeted) { providers in
-                handleDrop(providers, dropKey: dropKey())
+        }
+        .onDrop(of: [.cadenceNewTaskDrag], isTargeted: $isTargeted) { providers in
+            handleDrop(providers, dropKey: dropKey())
+        }
+        .onChange(of: isTargeted) { _, targeted in
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                showsGhost = targeted
             }
-            .animation(.easeOut(duration: 0.12), value: isTargeted)
+        }
     }
 
     private func handleDrop(_ providers: [NSItemProvider], dropKey: String) -> Bool {
@@ -194,9 +283,19 @@ extension View {
     }
 
     /// Offers this view as a destination for a create-task drag. `dropKey` speaks the vocabulary
-    /// in `CadenceTaskDropSupport`.
-    func iOSNewTaskDropTarget(dropKey: @escaping () -> String) -> some View {
-        modifier(iOSNewTaskDropTargetModifier(dropKey: dropKey))
+    /// in `CadenceTaskDropSupport`; `listName` resolves the one thing that vocabulary cannot carry.
+    func iOSNewTaskDropTarget(
+        horizontalInset: CGFloat = 11,
+        listName: @escaping () -> String = { "" },
+        dropKey: @escaping () -> String
+    ) -> some View {
+        modifier(
+            iOSNewTaskDropTargetModifier(
+                dropKey: dropKey,
+                listName: listName,
+                horizontalInset: horizontalInset
+            )
+        )
     }
 }
 #endif

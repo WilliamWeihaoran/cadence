@@ -312,6 +312,95 @@ struct CadenceTaskDropSupportTests {
         #expect(coordinator.pending == nil)
     }
 
+    // MARK: - What the insertion ghost says
+    //
+    // The ghost that opens between rows makes no promise about *where* the task will sit — the
+    // drop seeds placement and never `order`. Everything it does claim is in this one line, so
+    // the line has to agree with the seed the same key resolves to, guard for guard.
+
+    @Test func theGhostNamesInboxWhenThereIsNoList() {
+        #expect(CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:inbox",
+            todayKey: "2026-08-17",
+            listName: ""
+        ) == "Inbox")
+    }
+
+    @Test func theGhostNamesTheListTheSectionAndBothDates() {
+        let caption = CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:a_\(UUID().uuidString)|section:Backlog|date:2026-08-20|due:2026-08-22",
+            todayKey: "2026-08-17",
+            listName: "Home"
+        )
+
+        #expect(caption == "Home › Backlog · Do Aug 20 · Due Aug 22")
+    }
+
+    /// The default section is what a task in that list gets anyway; naming it says nothing the
+    /// list has not said. Same rule the composer's section chip follows.
+    @Test func theGhostDoesNotNameTheDefaultSection() {
+        let caption = CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:a_\(UUID().uuidString)|section:\(TaskSectionDefaults.defaultName)",
+            todayKey: "2026-08-17",
+            listName: "Home"
+        )
+
+        #expect(caption == "Home")
+    }
+
+    /// Today is a word, not a date. The composer's date chips say it that way too.
+    @Test func theGhostSaysTodayRatherThanTodaysDate() {
+        #expect(CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:inbox|date:today",
+            todayKey: "2026-08-17",
+            listName: ""
+        ) == "Inbox · Do Today")
+    }
+
+    /// The caption cannot advertise what the seed drops. A row in Overdue offers a date already
+    /// gone by, `seed(forDropKey:)` refuses it, and the ghost must refuse it in the same breath —
+    /// otherwise the block promises a due date the composer then opens without.
+    @Test func theGhostDoesNotAdvertiseAPastDateTheSeedRefuses() {
+        let caption = CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:inbox|due:2026-08-01",
+            todayKey: "2026-08-17",
+            listName: ""
+        )
+
+        #expect(caption == "Inbox")
+    }
+
+    /// `assignTask`'s bucket keys name *some* future day, not a day. Nothing to print.
+    @Test func theGhostPrintsNothingForABucketKey() {
+        #expect(CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:inbox|date:scheduled",
+            todayKey: "2026-08-17",
+            listName: ""
+        ) == "Inbox")
+    }
+
+    /// A list whose name is empty drops the segment rather than inventing one — and must not
+    /// silently read as Inbox, which is a different place.
+    @Test func theGhostOmitsANamelessListRatherThanCallingItInbox() {
+        let caption = CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:p_\(UUID().uuidString)|section:Backlog|due:2026-08-22",
+            todayKey: "2026-08-17",
+            listName: "   "
+        )
+
+        #expect(caption == "Backlog · Due Aug 22")
+    }
+
+    /// A key that names Inbox *and* a section contradicts itself and the seed resolves the list's
+    /// way. The caption has to resolve it the same way rather than print the section anyway.
+    @Test func theGhostFollowsTheSeedWhenAKeyContradictsItself() {
+        #expect(CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:inbox|section:Backlog",
+            todayKey: "2026-08-17",
+            listName: "Home"
+        ) == "Inbox")
+    }
+
     @Test func theDeliveredSeedIsTheOneTheDropKeyResolvesTo() {
         let coordinator = CadenceTaskDropCoordinator()
         let source = UUID()

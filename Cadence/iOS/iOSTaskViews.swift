@@ -46,13 +46,6 @@ struct iOSTaskRow: View {
                     .frame(height: 1)
             }
             .contentShape(Rectangle())
-            // The destination half of drag-to-create. A row is the drop target because it is the
-            // only thing on an iOS task surface that reliably knows its group: grouping here is by
-            // section, by date or by list, and a row inside such a group carries that group's
-            // defining attribute by construction. `CadenceTaskDropSupport.dropKey(for:)` documents
-            // what it hands over and what it withholds; it is called at drop time so the seed
-            // reflects the row as it is then, not as it last rendered.
-            .iOSNewTaskDropTarget { CadenceTaskDropSupport.dropKey(for: task) }
             .onTapGesture {
                 showDetail = true
             }
@@ -83,6 +76,27 @@ struct iOSTaskRow: View {
                     requestDelete: { showDeleteConfirmation = true }
                 )
             )
+            // The destination half of drag-to-create. A row is the drop target because it is the
+            // only thing on an iOS task surface that reliably knows its group: grouping here is by
+            // section, by date or by list, and a row inside such a group carries that group's
+            // defining attribute by construction. `CadenceTaskDropSupport.dropKey(for:)` documents
+            // what it hands over and what it withholds; it is called at drop time so the seed
+            // reflects the row as it is then, not as it last rendered.
+            //
+            // **The row itself takes no highlight.** It is being *read* for its placement, not
+            // acted on, and a selection-style fill said the opposite. What opens instead is a ghost
+            // row underneath it — see `iOSNewTaskDropTargetModifier` for why the gap is always
+            // below and never split by hover position.
+            //
+            // Applied **after** the tap, context menu and swipe container on purpose: those belong
+            // to the row, and wrapping them in the ghost's `VStack` would quietly hand the ghost a
+            // tap target and a swipe container of its own.
+            .iOSNewTaskDropTarget(
+                horizontalInset: rowHorizontalPadding,
+                listName: { task.containerName }
+            ) {
+                CadenceTaskDropSupport.dropKey(for: task)
+            }
             .iOSTaskRowRecurrenceScopeDialog(
                 task: task,
                 pendingRecurrenceRule: $pendingRecurrenceRule

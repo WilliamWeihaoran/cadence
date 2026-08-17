@@ -180,6 +180,54 @@ enum CadenceTaskDropSupport {
         return .inbox
     }
 
+    // MARK: What the ghost says
+
+    /// The one line the insertion ghost prints under "New task": the placement the drop will
+    /// actually seed, spelled the way the composer's chips will spell it.
+    ///
+    /// **This exists because the ghost's *position* promises nothing.** A drop seeds placement —
+    /// list, section, do date, due date — and never `order`; `TaskCreationService` appends, and the
+    /// surface's own sort decides where the row finally sits. So the gap that opens is only "a new
+    /// task joins here", and the part that *is* kept has to be said in words rather than implied
+    /// by a position. Deriving it from the same `seed(forDropKey:)` the drop will use is what stops
+    /// the caption and the composer disagreeing: the past-date guard, the Inbox/section
+    /// contradiction rule and the `scheduled`/`unscheduled` exclusions are applied once, here and
+    /// there both.
+    ///
+    /// `listName` is supplied by the caller because a `list:` key carries a UUID, not a name, and
+    /// resolving one needs a `ModelContext` this layer deliberately does not have. An empty name —
+    /// a list row whose list has no name — drops the segment rather than inventing one.
+    static func placementCaption(
+        forDropKey key: String,
+        todayKey: String,
+        listName: String
+    ) -> String {
+        let seed = seed(forDropKey: key, todayKey: todayKey)
+        var placement: [String] = []
+
+        if seed.container == .inbox {
+            placement.append("Inbox")
+        } else {
+            let trimmed = listName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { placement.append(trimmed) }
+            // The default section is what a task in that list gets anyway, so naming it says
+            // nothing the list has not already said — the rule `showsSectionChip` applies.
+            if seed.sectionName != TaskSectionDefaults.defaultName {
+                placement.append(seed.sectionName)
+            }
+        }
+
+        var parts: [String] = []
+        if !placement.isEmpty { parts.append(placement.joined(separator: " › ")) }
+        if !seed.doDateKey.isEmpty { parts.append("Do \(dayLabel(seed.doDateKey, todayKey: todayKey))") }
+        if !seed.dueDateKey.isEmpty { parts.append("Due \(dayLabel(seed.dueDateKey, todayKey: todayKey))") }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func dayLabel(_ key: String, todayKey: String) -> String {
+        key == todayKey ? "Today" : DateFormatters.shortDateString(from: key)
+    }
+
     /// `today`, or a `yyyy-MM-dd` day that has not already gone by.
     ///
     /// **A date in the past is dropped, not seeded.** Overdue and Past Do are real groups on the
