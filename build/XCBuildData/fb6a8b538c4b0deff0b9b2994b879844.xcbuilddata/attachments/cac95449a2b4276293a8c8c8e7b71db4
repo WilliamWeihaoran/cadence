@@ -1,4 +1,0 @@
-module CNIOWASI {
-umbrella header "/Users/williamwei/Library/Developer/Xcode/DerivedData/Cadence-cfagpqwpaaoeixfvenakmzkidwtg/SourcePackages/checkouts/swift-nio/Sources/CNIOWASI/include/CNIOWASI.h"
-export *
-}
