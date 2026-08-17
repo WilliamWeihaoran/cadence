@@ -84,12 +84,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   because it is compact-only, so it is not an iPhone/iPad divergence; it is just the drift that
   produced six headers in the first place, starting over.
 
-- [T-100] **The iOS task inspector styles itself by screen width.** `iOSTaskDetailSheet` and
-  `iOSTaskDetailComponents` carry ~8 size-class branches — sheet padding, title size, tile size — so
-  the same inspector on the same task looks different depending on the device. A sheet is the
-  clearest case in the app of something whose width is its own rather than the screen's. Some
-  branches may be legitimate (a phone sheet genuinely has less room); the burden is on the branch.
-
 - [T-96] **Finish the Swift 6 migration.** `D-61` marked 215 value types `nonisolated` and took Swift 6
   probing from 10 errors to 4. All four remaining are in `Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift`,
   an `NSLayoutManager` subclass whose AppKit overrides are nonisolated while the type is not.
@@ -98,28 +92,22 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   (`SchedulingService.swift:69`, `SettingsNotificationsSection.swift:69`), which are the documented
   baseline only because nobody has spent ten minutes on them.
 
-- [T-97] **Audit for controls that look wired and do nothing.** The single most recurrent bug class
-  in this repo: iPhone Today read a `showCompleted` binding nothing could write; the Board adopted
-  ungated scroll reports into a *persisted* `anchorDate`; a task-embed card was tappable only along
-  its leading 8pt; the entire iOS rendered-block layer was invisible because attachments were hung
-  on characters TextKit does not draw. Each was found by accident. This is the deliberate sweep —
-  every `@Binding` with no writer, every gesture whose target is zero-sized or occluded, every
-  toggle whose state is read but never persisted. **Audit first, report findings, fix nothing
-  without triage**, because the fixes will land across files other work owns.
-
 ## Open — known, unscheduled
 
-- [T-95] **Three embed-title readers still trust the cache** — the paths `D-65` deliberately left.
-  Each shows a stale name after a rename, so none is fixed by the cache reading alone:
-  1. **iOS note-list row previews** (`iOSNotesView`, `iOSMarkdownAccessoryViews`) excerpt raw
-     `note.content` through `plainPreviewText`, whose `.taskEmbed` branch reads `reference.title`.
-     Needs `taskTitles` threaded into the row structs across several files.
-  2. **Inline, non-standalone `[[task:UUID|Title]]`** rendered as links take their display text from
-     `MarkdownReferenceDisplaySupport` — a different path from the card renderer, untouched.
-  3. **`ListNotesView` passes list-scoped `relatedTasks`**, so an embed of a task from *another*
-     list falls through to `.missing` and shows the cached title with missing-card styling. This one
-     is a judgement call, not a port: fixing it means either widening the `[[task:` suggestion scope
-     or splitting suggestion tasks from embed tasks in `MarkdownEditorView`.
+- [T-95] **Part 3 only: `ListNotesView` shows out-of-list embeds as missing.** Parts 1 and 2 shipped in `D-67`.
+  `ListNotesView` passes list-scoped `relatedTasks` to its editor, so an embed of a task from
+  *another* list falls through to `.missing` and shows the cached title with missing-card styling —
+  i.e. a live task rendered as if it were deleted. Fixing it means either widening the `[[task:`
+  suggestion scope or splitting suggestion tasks from embed tasks in `MarkdownEditorView`, and those
+  are different products: the first makes any task embeddable from any list, the second keeps
+  suggestions list-scoped while rendering whatever is already embedded. **Needs a decision before
+  the work, not during it.**
+
+  Two more readers left deliberately, both cheap to fix and both wrong to fix here:
+  `iOSMarkdownPreview`'s inline runs (its *cards* are already correct — the one-line remedy is a
+  `resolving(...)` call where `markdown:` enters the view, at `iOSFocusView`), and the reference
+  picker's note *filter*, which searches raw content so a note is not findable under a renamed
+  task's new name.
 
   Also unconverted on purpose: `iOSMarkdownEditingSurface`'s `[[` autocomplete filters notes by
   content, but that is completion rather than user-facing search, and resolving there costs a pass
