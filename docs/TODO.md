@@ -76,6 +76,21 @@ Started 2026-08-17, four agents on disjoint file sets.
   drag-to-create seed path (`47328af`), so whatever shape is chosen has to read well both empty and
   pre-seeded — a seeded value must be visible without scrolling or the assumption is hidden again.
 
+  **Decided 2026-08-17.** *Layout:* value rows for List / Due date / Priority / Tags, each showing
+  its current value on the right, **plus** the do-date expanded into three one-tap buttons
+  (Today / Tomorrow / Pick…) rather than a row. Chosen over rows-only and over chips-only: the rows
+  make a pre-filled sheet readable at a glance, which is what the four entry points need, and the
+  date buttons cover the decision that is actually made every time. *Estimate:* stays off the sheet
+  — it is a judgement made once the task is real, and macOS's create sheet has no estimate control
+  either. *Chips:* the bottom strip goes; nothing is pinned to the sheet's floor.
+
+  **The risk this choice creates, to settle while building:** rows + a date button row + title +
+  notes is taller than either option alone, and on a 390pt phone with the keyboard up the visible
+  area is roughly 390 × 380pt. Measure it before committing to a shape. If it does not fit, the
+  order of retreat is: notes collapses to a single line that grows on focus, *then* Tags moves into
+  the title field's existing `#` inline picker, *then* the sheet scrolls. Do **not** solve it by
+  pushing anything back to a pinned bottom bar — that is the thing being removed.
+
 
 ## Open — known, unscheduled
 
