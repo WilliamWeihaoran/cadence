@@ -65,7 +65,7 @@ struct iOSMarkdownEditingSurface: View {
                 insertReferenceMarkdown(markdown)
             }
         }
-        .sheet(item: $selectedEmbeddedTask) { task in
+        .sheet(item: $selectedEmbeddedTask, onDismiss: reconcileEmbeddedTaskReferenceTitles) { task in
             iOSTaskDetailSheet(task: task)
         }
         .photosPicker(
@@ -144,9 +144,6 @@ struct iOSMarkdownEditingSurface: View {
                         toggleEmbeddedSubtask(taskID: taskID, subtaskID: subtaskID)
                     },
                     onCreateEmbeddedTask: createEmbeddedTask,
-                    onRenameEmbeddedTask: { taskID, title in
-                        renameEmbeddedTask(id: taskID, title: title)
-                    },
                     onOpenEmbeddedTask: { taskID in
                         openEmbeddedTask(id: taskID)
                     },
@@ -332,18 +329,26 @@ struct iOSMarkdownEditingSurface: View {
         return MarkdownTaskEmbedRenderInfo.task(task)
     }
 
-    /// The model half of renaming an embed; the editor rewrites the note's own
-    /// `[[task:UUID|Title]]` source itself.
+    /// Bring the note's `[[task:UUID|Title]]` source back in line with the tasks it points at.
     ///
-    /// Same body as the Mac's `renameEmbeddedTask` in `ListNotesSupportViews` — including running
-    /// the title through `TaskTitleSupport.titleApplyingPriorityShortcut`, so typing `!!` while
-    /// renaming a card sets priority exactly as it does everywhere else a task title is typed.
-    private func renameEmbeddedTask(id: UUID, title: String) {
-        guard let task = embeddedTask(id: id) else { return }
-        var priority = task.priority
-        task.title = TaskTitleSupport.titleApplyingPriorityShortcut(title, priority: &priority)
-        task.priority = priority
-        try? modelContext.save()
+    /// A task embed's title lives in two places: on the task, which is what the card is drawn from,
+    /// and inside the note's own reference text. Renaming a task in the detail sheet only writes the
+    /// first, so the card relabels itself immediately while the markdown underneath keeps the old
+    /// title — invisible until the note is exported, searched, or the task is deleted and the
+    /// reference has to render itself from its own stale text.
+    ///
+    /// Run on the sheet's dismissal rather than on every keystroke in it: the note text is a
+    /// document the user is also editing, and rewriting it mid-rename would interleave with their
+    /// own typing. `MarkdownTaskEmbedParser` owns which runs to rewrite and what a title may look
+    /// like inside a reference — the same rules the Mac's inline rename uses.
+    private func reconcileEmbeddedTaskReferenceTitles() {
+        guard let reconciled = MarkdownTaskEmbedParser.reconcilingReferenceTitles(
+            in: draftText,
+            titles: taskEmbedInfos.mapValues(\.title),
+            fallback: MarkdownTaskEmbedRenderInfo.untitledTaskTitle
+        ) else { return }
+        updateDraft(reconciled)
+        commitDraftImmediately()
     }
 
     private func embeddedTask(id: UUID) -> AppTask? {

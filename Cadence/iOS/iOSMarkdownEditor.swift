@@ -14,7 +14,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     var onToggleEmbeddedTask: ((UUID) -> MarkdownTaskEmbedRenderInfo?)?
     var onToggleEmbeddedSubtask: ((UUID, UUID) -> MarkdownTaskEmbedRenderInfo?)?
     var onCreateEmbeddedTask: ((String) -> String?)?
-    var onRenameEmbeddedTask: ((UUID, String) -> Void)?
     var onOpenEmbeddedTask: ((UUID) -> Void)?
     var onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)?
     var onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])?
@@ -30,7 +29,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         onToggleEmbeddedTask: ((UUID) -> MarkdownTaskEmbedRenderInfo?)? = nil,
         onToggleEmbeddedSubtask: ((UUID, UUID) -> MarkdownTaskEmbedRenderInfo?)? = nil,
         onCreateEmbeddedTask: ((String) -> String?)? = nil,
-        onRenameEmbeddedTask: ((UUID, String) -> Void)? = nil,
         onOpenEmbeddedTask: ((UUID) -> Void)? = nil,
         onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)? = nil,
         onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])? = nil
@@ -45,7 +43,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         self.onToggleEmbeddedTask = onToggleEmbeddedTask
         self.onToggleEmbeddedSubtask = onToggleEmbeddedSubtask
         self.onCreateEmbeddedTask = onCreateEmbeddedTask
-        self.onRenameEmbeddedTask = onRenameEmbeddedTask
         self.onOpenEmbeddedTask = onOpenEmbeddedTask
         self.onOpenReference = onOpenReference
         self.onCreatePastedImages = onCreatePastedImages
@@ -167,13 +164,10 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         Coordinator(parent: self)
     }
 
-    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate, UITextFieldDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         private static let markdownStyleRefreshDelay: TimeInterval = 0.08
 
         var parent: iOSMarkdownEditor
-        private var inlineTaskTitleEditor: UITextField?
-        private var inlineTaskTitleTaskID: UUID?
-        private var isEndingInlineTaskTitleEdit = false
         private var isApplyingStyle = false
         private var styleSignature = iOSMarkdownStyleSignature.current(revealedBlockRange: nil, imageAssets: [], taskEmbeds: [:])
         private var pendingStyleWorkItem: DispatchWorkItem?
@@ -604,7 +598,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         }
 
         private func handleTaskEmbedHit(
-            _ hit: (task: MarkdownTaskEmbedRenderInfo, target: iOSMarkdownTaskEmbedHitTarget, cardRect: CGRect),
+            _ hit: (task: MarkdownTaskEmbedRenderInfo, target: iOSMarkdownTaskEmbedHitTarget),
             in textView: UITextView
         ) {
             guard !hit.task.isMissing else { return }
@@ -614,9 +608,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 refreshed = parent.onToggleEmbeddedTask?(hit.task.id)
             case .subtaskCheckbox(let subtaskID):
                 refreshed = parent.onToggleEmbeddedSubtask?(hit.task.id, subtaskID)
-            case .title:
-                beginInlineTaskTitleEdit(task: hit.task, cardRect: hit.cardRect, in: textView)
-                return
             case .card:
                 parent.isFocused = false
                 textView.resignFirstResponder()
@@ -630,132 +621,6 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 applyMarkdownStyle(to: textView, text: textView.text ?? "")
                 textView.selectedRange = clamped(selection, in: textView.textStorage)
             }
-        }
-
-        /// Renaming an embed: a text field over the card's title, mirroring macOS.
-        ///
-        /// Before this there was no way to change a task embed's title from iOS at all. The Mac
-        /// puts an `NSTextField` over `MarkdownTaskEmbedDrawing.titleRect` and commits through
-        /// `onRenameEmbeddedMarkdownTask` + `replaceEmbeddedTaskReferenceTitle`; this is the same
-        /// two steps with the same two effects — rename the task, then rewrite the note's
-        /// `[[task:UUID|Title]]` source so the card and the text it is drawn over do not drift
-        /// apart.
-        ///
-        /// What differs from macOS, and why:
-        /// - The Mac reaches this from a mouse-down on the title with a hover highlight already
-        ///   telling you the title is a control. Touch has no hover, so the title's rect is simply
-        ///   the tap target; everywhere else on the card still opens the task.
-        /// - Committing returns first responder to the text view rather than to a window, because
-        ///   the keyboard is already up and taking it away to put it straight back flickers.
-        private func beginInlineTaskTitleEdit(
-            task: MarkdownTaskEmbedRenderInfo,
-            cardRect: CGRect,
-            in textView: UITextView
-        ) {
-            endInlineTaskTitleEdit(commit: true, in: textView)
-
-            let titleRect = iOSMarkdownTaskEmbedLayoutInfo(task: task)
-                .titleRect(maxWidth: textView.markdownContentWidth)
-                .offsetBy(dx: cardRect.minX, dy: cardRect.minY)
-                .offsetBy(dx: textView.textContainerInset.left, dy: textView.textContainerInset.top)
-
-            let editor = UITextField(frame: titleRect.insetBy(dx: -4, dy: -2))
-            editor.text = task.title == MarkdownTaskEmbedRenderInfo.untitledTaskTitle ? "" : task.title
-            editor.placeholder = MarkdownTaskEmbedRenderInfo.untitledTaskTitle
-            editor.font = .systemFont(ofSize: 14, weight: .semibold)
-            editor.textColor = UIColor(Theme.text)
-            editor.backgroundColor = UIColor(Theme.surfaceHighlight)
-            editor.tintColor = UIColor(Theme.blue)
-            editor.borderStyle = .none
-            editor.layer.cornerRadius = 6
-            editor.autocorrectionType = .no
-            editor.autocapitalizationType = .none
-            editor.returnKeyType = .done
-            editor.clearButtonMode = .never
-            editor.delegate = self
-            textView.addSubview(editor)
-            inlineTaskTitleEditor = editor
-            inlineTaskTitleTaskID = task.id
-            editor.becomeFirstResponder()
-            editor.selectAll(nil)
-        }
-
-        private func endInlineTaskTitleEdit(commit: Bool, in textView: UITextView) {
-            guard !isEndingInlineTaskTitleEdit,
-                  let editor = inlineTaskTitleEditor,
-                  let taskID = inlineTaskTitleTaskID else { return }
-            isEndingInlineTaskTitleEdit = true
-            let rawTitle = TaskTitleSupport.normalized(editor.text ?? "")
-            let referenceTitle = TaskTitleSupport.priorityShortcut(in: rawTitle)?.title ?? rawTitle
-            editor.delegate = nil
-            editor.removeFromSuperview()
-            inlineTaskTitleEditor = nil
-            inlineTaskTitleTaskID = nil
-            if commit {
-                parent.onRenameEmbeddedTask?(taskID, rawTitle)
-                replaceEmbeddedTaskReferenceTitle(id: taskID, title: referenceTitle, in: textView)
-            }
-            isEndingInlineTaskTitleEdit = false
-        }
-
-        /// The iOS half of the rename: the note's own source.
-        ///
-        /// Renaming the task alone is not enough — the title also lives in the note text, inside
-        /// `[[task:UUID|Title]]`, and a card whose drawn title disagrees with the markdown under it
-        /// is exactly the drift a task embed is supposed to avoid. Which runs to rewrite and what a
-        /// title may look like inside a reference are `MarkdownTaskEmbedParser`'s, shared with the
-        /// Mac; this is only the `UITextView` mutation, done through `replace(_:withText:)` so the
-        /// edit lands on the text view's own undo stack.
-        private func replaceEmbeddedTaskReferenceTitle(id: UUID, title: String, in textView: UITextView) {
-            let displayTitle = MarkdownTaskEmbedParser.sanitizedReferenceTitle(
-                title,
-                fallback: MarkdownTaskEmbedRenderInfo.untitledTaskTitle
-            )
-            let markdown = textView.text ?? ""
-            let nsMarkdown = markdown as NSString
-            let titleRanges = MarkdownTaskEmbedParser.referenceTitleRanges(of: id, in: markdown)
-            var didReplace = false
-            // Back to front: every replacement shifts the ranges after it.
-            for range in titleRanges.reversed() {
-                guard nsMarkdown.substring(with: range) != displayTitle,
-                      let textRange = textView.textRange(from: range) else { continue }
-                textView.replace(textRange, withText: displayTitle)
-                didReplace = true
-            }
-            guard didReplace, let anchor = titleRanges.first?.location else { return }
-
-            // `replace(_:withText:)` leaves the caret at the end of what it inserted, which is in
-            // the middle of `[[task:UUID|Title]]` — hidden characters with a card drawn over them.
-            // Sitting there opens the `[[` completion strip against a reference the user never
-            // typed ("No matching tasks"), and `snappedCaretLocation` cannot rescue it: the newly
-            // inserted run does not carry the hidden attribute until the restyle lands 80ms later.
-            // So the caret goes where `collapsedSelection` already sends anything that lands inside
-            // a rendered block — the block's far edge — instead of a third rule about where a caret
-            // may sit.
-            if let block = MarkdownRenderedBlockDeletionSupport.renderedBlock(
-                atUTF16Location: anchor,
-                in: textView.text ?? ""
-            ) {
-                textView.selectedRange = clamped(
-                    NSRange(location: NSMaxRange(block.storageRange), length: 0),
-                    in: textView.textStorage
-                )
-            }
-            textViewDidChange(textView)
-        }
-
-        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-            guard textField === inlineTaskTitleEditor,
-                  let textView = textField.superview as? UITextView else { return true }
-            endInlineTaskTitleEdit(commit: true, in: textView)
-            textView.becomeFirstResponder()
-            return false
-        }
-
-        func textFieldDidEndEditing(_ textField: UITextField) {
-            guard textField === inlineTaskTitleEditor,
-                  let textView = textField.superview as? UITextView else { return }
-            endInlineTaskTitleEdit(commit: true, in: textView)
         }
 
         func gestureRecognizer(
@@ -831,24 +696,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         private func taskEmbedHit(
             at point: CGPoint,
             in textView: UITextView
-        ) -> (task: MarkdownTaskEmbedRenderInfo, target: iOSMarkdownTaskEmbedHitTarget, cardRect: CGRect)? {
-            guard let card = taskEmbedCard(at: point, in: textView) else { return nil }
-            let localPoint = CGPoint(x: card.textPoint.x - card.rect.minX, y: card.textPoint.y - card.rect.minY)
-            let target = iOSMarkdownTaskEmbedLayoutInfo(task: card.task).hitTarget(
-                at: localPoint,
-                maxWidth: textView.markdownContentWidth
-            )
-            return (card.task, target, card.rect)
-        }
-
-        /// The drawn card under a touch, with the rect it occupies in text-container coordinates.
-        ///
-        /// Split out from `taskEmbedHit` because the inline title editor needs the rect as well as
-        /// the hit — it has to be placed over the title it is replacing.
-        private func taskEmbedCard(
-            at point: CGPoint,
-            in textView: UITextView
-        ) -> (task: MarkdownTaskEmbedRenderInfo, rect: CGRect, textPoint: CGPoint, range: NSRange)? {
+        ) -> (task: MarkdownTaskEmbedRenderInfo, target: iOSMarkdownTaskEmbedHitTarget)? {
             guard textView.bounds.contains(point), textView.textStorage.length > 0 else { return nil }
 
             let textContainer = textView.textContainer
@@ -858,7 +706,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             textPoint.y -= textView.textContainerInset.top
             layoutManager.ensureLayout(for: textContainer)
 
-            var result: (task: MarkdownTaskEmbedRenderInfo, rect: CGRect, textPoint: CGPoint, range: NSRange)?
+            var result: (task: MarkdownTaskEmbedRenderInfo, target: iOSMarkdownTaskEmbedHitTarget)?
             let fullRange = NSRange(location: 0, length: textView.textStorage.length)
             textView.textStorage.enumerateAttribute(.cadenceMarkdownTaskEmbed, in: fullRange, options: []) { value, range, stop in
                 guard let embed = value as? MarkdownTaskEmbedLayoutInfo,
@@ -880,7 +728,12 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 )
                 guard cardRect.insetBy(dx: -4, dy: -4).contains(textPoint) else { return }
 
-                result = (embed.task, cardRect, textPoint, range)
+                let localPoint = CGPoint(x: textPoint.x - cardRect.minX, y: textPoint.y - cardRect.minY)
+                let target = iOSMarkdownTaskEmbedLayoutInfo(task: embed.task).hitTarget(
+                    at: localPoint,
+                    maxWidth: textView.markdownContentWidth
+                )
+                result = (embed.task, target)
                 stop.pointee = true
             }
             return result

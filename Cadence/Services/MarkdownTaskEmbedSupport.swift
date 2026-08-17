@@ -267,6 +267,41 @@ enum MarkdownTaskEmbedParser {
         return didReplace ? (result as String) : nil
     }
 
+    /// `markdown` with every task reference retitled from `titles`, or nil when nothing changed.
+    ///
+    /// The many-tasks spelling of `replacingReferenceTitles`, and the reason that one has a
+    /// production caller at all. A task's title lives both on the task and inside the note's
+    /// `[[task:UUID|Title]]` text; renaming it anywhere other than in the note — the task detail
+    /// sheet, which is now the *only* way to rename an embed on iOS — writes the task and leaves the
+    /// note behind. This is the sweep back: hand it the note and the titles the embeds currently
+    /// render with, and every reference to a task in `titles` is brought back into agreement.
+    ///
+    /// Driven by the references actually present in the text rather than by `titles`, so passing a
+    /// whole note's worth of candidate tasks costs one regex per *embedded* task, not per candidate.
+    /// A reference to a task that is not in `titles` — deleted, or outside the caller's scope — is
+    /// left exactly as it is: its stale title is the only name that reference has left.
+    nonisolated static func reconcilingReferenceTitles(
+        in markdown: String,
+        titles: [UUID: String],
+        fallback: String
+    ) -> String? {
+        var result = markdown
+        var reconciled: Set<UUID> = []
+        for reference in NoteReferenceParser.taskReferences(in: markdown) {
+            guard let id = reference.taskID,
+                  reconciled.insert(id).inserted,
+                  let title = titles[id],
+                  let rewritten = replacingReferenceTitles(
+                    of: id,
+                    in: result,
+                    with: title,
+                    fallback: fallback
+                  ) else { continue }
+            result = rewritten
+        }
+        return result == markdown ? nil : result
+    }
+
     nonisolated static func referenceTitleRange(in markdown: String, lineStart: Int = 0) -> NSRange? {
         guard let regex = try? NSRegularExpression(pattern: #"^\s*\[\[task:[0-9A-Fa-f-]{36}\|([^\]\n]+)\]\]\s*$"#) else {
             return nil
