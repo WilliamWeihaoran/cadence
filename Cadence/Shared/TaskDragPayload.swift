@@ -11,7 +11,11 @@ import Foundation
 ///
 /// The prefixes are load-bearing: each drag context uses its own so a drop target cannot accept a
 /// payload from an unrelated context. See "Drag-to-Reorder Payload Prefixes" in `CLAUDE.md`.
-enum TaskDragPayload {
+///
+/// `nonisolated` for the same reason `CadenceEmptyStateCopy` is: the project defaults value types
+/// to the main actor, and the drop delegates that read these payloads run in `@Sendable` closures.
+/// Parsing a prefix off a string is not main-actor work.
+nonisolated enum TaskDragPayload {
     private static let listTaskPrefix = "listTask:"
     private static let bundlePrefix = "taskBundle:"
 

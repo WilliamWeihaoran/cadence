@@ -1,29 +1,6 @@
 #if os(iOS)
 import SwiftUI
 
-/// The empty state's words, kept out of `CadenceTaskCollection` itself.
-///
-/// They belong beside the rest of that enum, and the only thing stopping them is isolation:
-/// `CadenceEmptyStateCopy` is main-actor isolated, and `CadenceTaskCollection` is deliberately
-/// `nonisolated` so the macOS test target can read it. See the note in `iOSTaskCollectionMetrics`.
-/// Both strings are still stated once, in `CadenceEmptyStateCopy` — which exists because these two
-/// screens each used to write their own and drifted.
-private extension CadenceTaskCollection {
-    var emptyTitle: String {
-        switch self {
-        case .allTasks: return CadenceEmptyStateCopy.allTasksTitle
-        case .inbox: return CadenceEmptyStateCopy.inboxTitle
-        }
-    }
-
-    var emptySubtitle: String {
-        switch self {
-        case .allTasks: return CadenceEmptyStateCopy.allTasksSubtitle
-        case .inbox: return CadenceEmptyStateCopy.inboxSubtitle
-        }
-    }
-}
-
 /// **The** All Tasks / Inbox page, at every width.
 ///
 /// It replaces four views: `iOSCompactAllTasksView` and `iOSCompactInboxView`, which drew

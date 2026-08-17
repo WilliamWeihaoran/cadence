@@ -57,12 +57,24 @@ nonisolated enum CadenceTaskCollection: String, CaseIterable, Sendable {
         }
     }
 
-    // The empty state's *words* are `CadenceEmptyStateCopy`'s, and they are read in an extension in
-    // `iOSTaskCollectionPage.swift` rather than here. `CadenceEmptyStateCopy` is main-actor isolated
-    // — it was missed by the `nonisolated` pass in `f94361a` that unisolated 215 value types — so
-    // reading it from this deliberately `nonisolated` file emits four isolation warnings against a
-    // baseline of zero. Marking that enum `nonisolated` is the actual fix, in a file this change
-    // does not own.
+    /// The empty state's title. The words themselves are `CadenceEmptyStateCopy`'s, because Focus
+    /// and these two pages each used to write their own and drifted; what is decided here is only
+    /// which of them this collection shows.
+    var emptyTitle: String {
+        switch self {
+        case .allTasks: return CadenceEmptyStateCopy.allTasksTitle
+        case .inbox: return CadenceEmptyStateCopy.inboxTitle
+        }
+    }
+
+    /// The line under it, which an empty state keeps: it says what will fill the page, which the
+    /// page itself cannot.
+    var emptySubtitle: String {
+        switch self {
+        case .allTasks: return CadenceEmptyStateCopy.allTasksSubtitle
+        case .inbox: return CadenceEmptyStateCopy.inboxSubtitle
+        }
+    }
 
     /// What the "Active" heading *is*, so a dropped `+` knows what it can inherit from it.
     ///

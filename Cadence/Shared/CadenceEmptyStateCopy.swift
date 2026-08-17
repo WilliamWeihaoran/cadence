@@ -7,7 +7,13 @@ import Foundation
 /// here "on iPad or Mac" at one width and "on iPhone, iPad, or Mac" at the other; the two Inboxes
 /// had a sentence each for one idea; and Focus managed two subtitles under one title inside a
 /// single file. Copy that appears twice lives here so it cannot drift a third time.
-enum CadenceEmptyStateCopy {
+///
+/// `nonisolated` because the project sets `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so a bare
+/// enum here is main-actor isolated: reading it from one of the `nonisolated` presentation values
+/// that need it warns today and is an error under Swift 6. It was missed by the pass that
+/// unisolated the rest of these, which is why `CadenceTaskCollection` kept its empty-state words
+/// in a private iOS-only extension instead of on the enum. Constants have no state to protect.
+nonisolated enum CadenceEmptyStateCopy {
     static let inboxTitle = "Inbox is clear"
     /// Says what to do and what happens next, which the alternative ("Fast capture lives here
     /// before you decide where things belong") only implied.

@@ -129,19 +129,36 @@ struct iOSTaskCollectionMetricsTests {
         }
     }
 
-    /// Every string the header and the empty state need, present and distinct. The empty state's
-    /// *words* are not here — they are `CadenceEmptyStateCopy`'s, read in a `#if os(iOS)` extension
-    /// because that enum is main-actor isolated and this one deliberately is not.
+    /// Every string the header and the empty state need, present and distinct — the empty state's
+    /// *words* included. They spent a while in a private `#if os(iOS)` extension, because
+    /// `CadenceEmptyStateCopy` had been missed by the `nonisolated` pass and could not be read from
+    /// this deliberately-`nonisolated` file; that enum is `nonisolated` now, so the words sit on the
+    /// collection with the rest of what tells the two pages apart, and the test target can see them.
     @Test func eachCollectionNamesItselfCompletelyAndDistinctly() {
         for collection in CadenceTaskCollection.allCases {
             #expect(!collection.eyebrow.isEmpty, "\(collection)")
             #expect(!collection.title.isEmpty, "\(collection)")
             #expect(!collection.systemImage.isEmpty, "\(collection)")
             #expect(!collection.emptyIcon.isEmpty, "\(collection)")
+            #expect(!collection.emptyTitle.isEmpty, "\(collection)")
+            #expect(!collection.emptySubtitle.isEmpty, "\(collection)")
         }
 
         #expect(CadenceTaskCollection.allTasks.title != CadenceTaskCollection.inbox.title)
         #expect(CadenceTaskCollection.allTasks.eyebrow != CadenceTaskCollection.inbox.eyebrow)
         #expect(CadenceTaskCollection.allTasks.systemImage != CadenceTaskCollection.inbox.systemImage)
+        #expect(CadenceTaskCollection.allTasks.emptyTitle != CadenceTaskCollection.inbox.emptyTitle)
+        #expect(
+            CadenceTaskCollection.allTasks.emptySubtitle != CadenceTaskCollection.inbox.emptySubtitle
+        )
+    }
+
+    /// The collection reads the shared constants rather than restating them, which is the whole
+    /// point of `CadenceEmptyStateCopy` — All Tasks and Inbox each used to spell their own.
+    @Test func theEmptyStateWordsAreTheSharedConstantsAndNotACopyOfThem() {
+        #expect(CadenceTaskCollection.allTasks.emptyTitle == CadenceEmptyStateCopy.allTasksTitle)
+        #expect(CadenceTaskCollection.allTasks.emptySubtitle == CadenceEmptyStateCopy.allTasksSubtitle)
+        #expect(CadenceTaskCollection.inbox.emptyTitle == CadenceEmptyStateCopy.inboxTitle)
+        #expect(CadenceTaskCollection.inbox.emptySubtitle == CadenceEmptyStateCopy.inboxSubtitle)
     }
 }
