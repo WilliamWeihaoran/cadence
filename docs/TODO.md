@@ -44,6 +44,16 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-68] **iOS task row rework.** Requested with a screenshot of Today.
+  1. **Drop the trailing chevron** — it says nothing a row's tappability does not.
+  2. **Tapping a chip opens that chip's own picker** (list chip → list picker, date chip → date
+     picker, and so on); tapping anywhere else opens the task inspector. Note the row currently has
+     one tap target; this splits it, and chips become touch targets that must clear 44pt without
+     making the row taller.
+  3. **The estimate moves to the trailing edge**, where the chevron was.
+  4. **Subtasks render as rows beneath the task**, not as an `0/3` chip.
+  5. Open question answered below: whether the scheduled-time chip earns its place.
+
 - [T-54] **`CadenceTodayLayoutSupportTests.swift` still names a 13" iPad** at `:31` and `:47`, left
   behind by the fixture cleanup in `88c05d1` because it was outside that agent's file set. Same
   treatment: pin the behaviour at widths the three target devices actually produce.
