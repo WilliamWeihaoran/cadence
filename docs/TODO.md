@@ -29,16 +29,13 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**AE — the readers that still trust the cached embed title** ([T-95] parts 1 and 2; part 3 is a
-product decision and is left open)
-
 **AF — finish the Swift 6 migration** ([T-96])
-
-**AG — controls that look wired and do nothing** ([T-97], audit only, fixes triaged after)
 
 **AH — All Tasks and Inbox are one screen rendered two ways** ([T-98], [T-99])
 
-**AI — the task inspector styles itself by screen width** ([T-100])
+**AJ — short timeline blocks are almost entirely un-tappable** ([T-101])
+
+**AK — Cmd+N dead on Calendar Board columns; two dead calendar bindings** ([T-102])
 
 ## Open — decided, not started
 
@@ -52,6 +49,25 @@ product decision and is left open)
   `iPadTodayView` vs the compact Today, and the compact/regular branches inside the task row — is
   in flight now.
 
+
+- [T-104] **The dead wiring the T-97 audit turned up.** None of these misbehaves; each is a control
+  or parameter that reads as live and is not, i.e. the raw material for the next real bug. Grouped
+  because they are one afternoon, not one task:
+  - The iOS markdown editor's command-injection path (`iOSMarkdownEditor`) — its only construction
+    site omits `pendingCommand`, so it is permanently `.constant(nil)`; formatting runs through
+    `applyCommandToDraft` instead.
+  - `iOSIconButton` has three parameters no call site passes (`foreground`, `isEnabled`,
+    `showsPlate`). `foreground`'s own doc comment claims it fixed a calendar tint bug — there is no
+    calendar caller at all, so it fixed nothing.
+  - `iOSSegmentedPill.isEnabled` is never passed `false`; the three-pane "Mac" layout it was written
+    for is deleted.
+  - `CadenceTextView.onCreateMarkdownTag` is assigned and never invoked — the only one of that
+    type's fourteen closure properties in that state.
+  - Three identical write-only `@State var isEditorFocused` (`NoteEditorPane`, `NotePanel`,
+    `ListNotesSupportViews`): written on every focus change, read nowhere, so each focus gain and
+    loss invalidates the pane for nothing.
+  - Four `set { }` blocks nothing can call, and a list of never-called helpers and three
+    never-instantiated `View` structs. Full inventory in the audit.
 
 - [T-98] **All Tasks and Inbox are one screen rendered two ways.** `iOSCompactAllTasksView` /
   `iOSCompactInboxView` render `ScrollView` + `LazyVStack` + `iOSTaskGroupSection`;
@@ -208,6 +224,16 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-70] `d8965a8` Cmd+Return deleted one task and completed another (T-103, from the T-97 audit).
+
+- [D-69] The audit for controls that look wired and do nothing (T-97). No code; it produced T-101,
+  T-102, T-103 and T-104, and a *cleared* list — deep links, notification reconcile paths, all 36
+  `@AppStorage` keys, every documented keyboard chord — so the next agent does not re-chase them.
+
+- [D-68] `f35ace2` A sheet's width is its own, not the screen's (T-100).
+
+- [D-67] `c9d2d78` Note rows named tasks by whatever they were called last time (T-95 parts 1, 2).
 
 - [D-66] `9b08364` The phone was not told how much of its day was already timed (T-73 remainder).
 
