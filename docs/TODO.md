@@ -29,13 +29,7 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-_Nothing._
-
-## Open — decided, not started
-
-- [T-54] **`CadenceTodayLayoutSupportTests.swift` still names a 13" iPad** at `:31` and `:47`, left
-  behind by the fixture cleanup in `88c05d1` because it was outside that agent's file set. Same
-  treatment: pin the behaviour at widths the three target devices actually produce.
+**J — iOS calendar rework**
 
 - [T-50] **iOS calendar: sticky headers, infinite horizontal scroll, pinch zoom, and a date button
   that names the day you are looking at.** Requested with three screenshots. Five interlocking
@@ -74,6 +68,37 @@ _Nothing._
 
   Sequencing note: 3 and 5 both depend on 2, and 5 is what makes 3 safe to do. Do not start until
   the device-targeting agent has released `Cadence/Shared/CadenceRegularPaneLayout.swift`.
+
+  **Decisions made 2026-08-17 before starting, so the agent is not guessing:**
+  - *Zoom range is a real multiplier.* The user wrote "zoom between 1 and 3 times zoom", which is a
+    multiplier statement, so `hourHeight` runs from `base` to `3 × base` (58→174 compact,
+    64→192 regular). That is a wider range than the old `− 1x +` control actually delivered — its
+    "3x" was `base + 32`, about 1.55×.
+  - *View mode sets how many columns are **visible**, not how many days exist.* With infinite
+    scrolling, Week means seven columns on screen and scroll for more. This preserves the
+    seven-column guarantee from `545f429` — which was a real bug, Week showing four and a half days
+    — restated as "seven visible" rather than "seven in existence".
+  - *The date dropdown ships before the nav cluster is deleted.* The middle control is jump-to-today
+    (`location.fill`, `iOSCalendarChromeViews.swift:438`), not a direction.
+
+  **Structural findings from reading the code, which are what make this more than a chrome change:**
+  - The day header row sits **inside both scroll views** (`iOSCalendarTimelineViews.swift:57-73`) —
+    inside the horizontal one, which is right, and inside the vertical one, which is why it scrolls
+    away. Pinning it means restructuring the two scrollers and keeping the time rail vertically in
+    sync with the grid while staying put horizontally.
+  - Columns are **fitted to the pane**, not fixed:
+    `CadenceCalendarWeekGridLayout.dayColumnWidth(availableWidth:dayCount:)` divides the width by
+    the day count, so a week never scrolls horizontally today. Infinite scroll requires a fixed
+    column width and an extensible date range — the fitted width becomes the *visible column count*
+    input instead.
+  - `visibleDates` is `CadenceScheduleSupport.dates(containing: anchorDate, mode:)` — a bounded
+    window. That is the clamp to remove.
+
+## Open — decided, not started
+
+- [T-54] **`CadenceTodayLayoutSupportTests.swift` still names a 13" iPad** at `:31` and `:47`, left
+  behind by the fixture cleanup in `88c05d1` because it was outside that agent's file set. Same
+  treatment: pin the behaviour at widths the three target devices actually produce.
 
 - [T-49] **Rework the iOS task creation sheet: fields belong in the page, not pinned to the floor.**
   Requested with a screenshot. Today `iOSCreateTaskSheet` is title + notes at the top, then ~700pt
