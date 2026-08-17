@@ -2,7 +2,8 @@ import Foundation
 import Testing
 @testable import Cadence
 
-/// Pins the shape `CadenceTodaySummary.line` inherited from `CadenceCalendarDaySummary.line`:
+/// Pins the shape `CadenceTodaySummary.line` carries — inherited from the calendar day summary
+/// that has since been deleted with the band it fed:
 /// zeros are absent rather than printed, and an empty day produces no line at all.
 ///
 /// The regression it replaced: iPad Today rendered the same count in three places at once — a

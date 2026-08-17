@@ -6,7 +6,7 @@ struct CadenceTodaySummary: Hashable {
     let completedCount: Int
 
     /// The one quiet line that says what today holds, in the treatment
-    /// `CadenceCalendarDaySummary.line` settled on: zeros omitted, `nil` when there is nothing to
+    /// `CadenceTodaySummary.line` follows: zeros omitted, `nil` when there is nothing to
     /// say, rendered as a single `Theme.dim` line rather than a rank of tinted chips.
     ///
     /// It replaced three `Theme.blue`/`Theme.purple`/`Theme.green` capsules reading

@@ -8,7 +8,7 @@ import Foundation
 /// "1 direction · 0 milestones", Habits "0 of 2 done today", Focus "6 ready". Lists was the one
 /// page still spending that line on a constant.
 ///
-/// Zeros are omitted rather than printed, following `CadenceCalendarDaySummary.line` and
+/// Zeros are omitted rather than printed, following `CadenceTodaySummary.line` and
 /// `CadenceTodaySummary.line`: a count worth showing appears once, and a page with nothing in it
 /// says so in words rather than with a pair of noughts.
 nonisolated enum CadenceListsSummary {

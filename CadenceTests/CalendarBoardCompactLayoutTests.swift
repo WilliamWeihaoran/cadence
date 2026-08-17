@@ -3,49 +3,13 @@ import Foundation
 import Testing
 @testable import Cadence
 
-/// Covers the two pieces of calendar logic the iOS board and context strip lean on that are not
-/// themselves views: the one-line day summary, and the compact day-column geometry that leaves the
-/// next day peeking.
+/// The compact day-column geometry the iOS board leans on, which is not itself a view.
+///
+/// This used to cover a one-line day summary as well. Both the summary and the context strip that
+/// carried it were deleted when the standalone day chip came off every calendar surface — the
+/// header's date title says which day you are on, so a band restating it had no subject left.
 @MainActor
 struct CalendarBoardCompactLayoutTests {
-
-    // MARK: - Day summary line
-
-    @Test func summaryIsNilWhenTheDayHoldsNothing() {
-        #expect(CadenceCalendarDaySummary.line(taskCount: 0, timedCount: 0, bundleCount: 0, eventCount: 0) == nil)
-    }
-
-    @Test func summaryOmitsEveryZeroCount() {
-        #expect(
-            CadenceCalendarDaySummary.line(taskCount: 3, timedCount: 0, bundleCount: 0, eventCount: 0)
-                == "3 tasks"
-        )
-    }
-
-    @Test func summaryJoinsOnlyTheNonZeroCounts() {
-        #expect(
-            CadenceCalendarDaySummary.line(taskCount: 4, timedCount: 2, bundleCount: 1, eventCount: 3)
-                == "4 tasks · 2 timed · 1 block · 3 events"
-        )
-    }
-
-    @Test func summarySingularizesEachNoun() {
-        #expect(
-            CadenceCalendarDaySummary.line(taskCount: 1, timedCount: 1, bundleCount: 1, eventCount: 1)
-                == "1 task · 1 timed · 1 block · 1 event"
-        )
-    }
-
-    /// Blocks and events are counted separately on purpose: summing them made a day of two blocks
-    /// and one event read identically to a day of no blocks and three events.
-    @Test func summaryKeepsBlocksAndEventsApart() {
-        let blocksHeavy = CadenceCalendarDaySummary.line(taskCount: 0, timedCount: 0, bundleCount: 2, eventCount: 1)
-        let eventsOnly = CadenceCalendarDaySummary.line(taskCount: 0, timedCount: 0, bundleCount: 0, eventCount: 3)
-
-        #expect(blocksHeavy == "2 blocks · 1 event")
-        #expect(eventsOnly == "3 events")
-        #expect(blocksHeavy != eventsOnly)
-    }
 
     // MARK: - Compact column geometry
 
