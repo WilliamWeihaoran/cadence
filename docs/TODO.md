@@ -48,7 +48,13 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   the stored title a *cache*: have `NoteExportService`, note-content search and the card renderer
   resolve from the live task, keeping the stored string only as the fallback for a deleted task —
   which is already what `MarkdownTaskEmbedRenderInfo.missing(reference:)` uses it for. Then drift
-  cannot escape and no sweep is needed. Decide between the two before building either.
+  cannot escape and no sweep is needed.
+
+  **Decided 2026-08-18: the cache reading.** Export, content search and the card renderer resolve
+  the title from the live task; the stored string stays only as the fallback for a task that no
+  longer exists. No sweep, no scanning on write, and cross-device renames are covered for free
+  because nothing has to be rewritten. **Queued behind [T-87]** — it needs
+  `Services/MarkdownTaskEmbedSupport.swift`, which that agent currently owns.
 
 - [T-87] **Mark the shared value types `nonisolated`, and unblock Swift 6.** The root cause behind
   T-82's 1195 test warnings: `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` gives every value type
@@ -99,7 +105,9 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   contention. **Mitigation:** every agent brief should require a private `-derivedDataPath`, which
   most already do ad hoc; worth making standing in `AGENTS.md`. Nothing to fix in the app.
 
-- [T-55] **Two things from `64218d1` need a real phone, not a simulator.**
+- [T-55] **Three things need a real phone, not a simulator** — written up as a checklist in
+  `docs/device-checks.md` (keyboard dismissal, double-tap, and drag-to-create per [T-89]).
+  Original note:
   1. **Can a phone still dismiss the keyboard in the Notes tab?** The Done bar was the dedicated
      affordance and it is gone. `keyboardDismissMode = .interactive` remains, so dragging the note
      down should carry the keyboard off — Apple Notes behaves this way — but it was never seen to
