@@ -311,5 +311,28 @@ extension View {
             )
         )
     }
+
+    /// The group-header flavour: offers this view as a destination **only** when the group has
+    /// something to hand over.
+    ///
+    /// A `nil` identity, or one `CadenceTaskDropSupport.dropKey(forGroup:)` resolves to nothing —
+    /// Overdue, Past Do, Active, Completed — attaches no `onDrop` at all, so the header does not
+    /// light up rather than lighting up and seeding nothing. That is the deliberate difference from
+    /// the row target, which always has a list to give; see `dropKey(forGroup:)`.
+    @ViewBuilder
+    func iOSNewTaskDropTarget(
+        group identity: CadenceTaskGroupDropIdentity?,
+        horizontalInset: CGFloat = 0
+    ) -> some View {
+        if let identity, let key = CadenceTaskDropSupport.dropKey(forGroup: identity) {
+            iOSNewTaskDropTarget(
+                horizontalInset: horizontalInset,
+                listName: { CadenceTaskDropSupport.listName(forGroup: identity) },
+                dropKey: { key }
+            )
+        } else {
+            self
+        }
+    }
 }
 #endif

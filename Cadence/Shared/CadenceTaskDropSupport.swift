@@ -56,6 +56,31 @@ enum CadenceTaskDropPayload {
 
 // MARK: - Drop key → seed
 
+/// What a task group *is*, for the purpose of a dropped `+`.
+///
+/// The cases are the grouping modes the app actually offers, not a general taxonomy: iOS groups by
+/// date (Today), by completion status (Inbox, All Tasks) and by kanban section (list detail);
+/// macOS adds by list and by priority. Naming the grouping rather than passing a raw key is what
+/// keeps the rule in one place — `CadenceTaskDropSupport.dropKey(forGroup:)` decides once, for
+/// every surface, what a header of that kind can hand a new task, including that some kinds hand
+/// over nothing and so are not drop targets at all.
+///
+/// This exists because `CadenceTaskDisplayGroup.dropKey` is **not** in fact populated by every
+/// host: only `priorityDisplayGroups` fills it in, `sectionGroups` and `dateDisplayGroups` leave it
+/// nil, and the iOS Today, Inbox and All Tasks surfaces do not use `CadenceTaskDisplayGroup` at
+/// all. Reading the field would have lit headers up that then seeded nothing.
+enum CadenceTaskGroupDropIdentity: Equatable {
+    /// One of the Today screen's four date buckets.
+    case todayDate(CadenceTodayTaskGroupKind)
+    /// "Active" / "Completed" — a status group, which is not a placement.
+    case completion
+    /// A whole list. `key` is the `inbox` / `a_<uuid>` / `p_<uuid>` spelling `assignTask` parses.
+    case list(key: String, name: String)
+    /// A kanban section inside a list. Carries the list too: a section belongs to one.
+    case section(listKey: String, listName: String, name: String)
+    case priority(TaskPriority)
+}
+
 /// What "create a task with the destination's attributes" actually resolves to.
 ///
 /// The vocabulary is the `dropKey` one `CadenceTaskDisplayGroup` already carries and
@@ -105,6 +130,81 @@ enum CadenceTaskDropSupport {
             parts.append("due:\(task.dueDate)")
         }
         return parts.joined(separator: String(separator))
+    }
+
+    // MARK: What a group header offers
+
+    /// The destination key for a drop onto a group *header*.
+    ///
+    /// **A header's key is what every row under it shares** — the row rule lifted one level. A row
+    /// is the drop target because it carries its group's defining attribute by construction; a
+    /// header carries that same attribute directly, and only that. So a header never contributes
+    /// more than the group named, and it reaches the one place a row cannot: a group with no rows,
+    /// which is exactly where seeding a new task from the group is most useful.
+    ///
+    /// **`nil` means the header is not a drop target at all**, and that is the deliberate departure
+    /// from the row rule. A row with nothing to give still degrades to what a tap does, because a
+    /// row is an object: the drag is pointing at something real either way, and refusing some rows
+    /// and not others would be invisible to the eye. A header is a *label*. There is nothing under
+    /// the pointer but words, so a header that lights up and then hands over nothing is pure noise
+    /// — and headers are told apart by their titles, so "Due Today accepts, Overdue does not" is
+    /// legible in a way "this row accepts, that one does not" would never be.
+    ///
+    /// Three families resolve to nothing, for two different reasons:
+    /// - **Overdue** and **Past Do** share a date that has already gone by. `dateValue` would drop
+    ///   it, so the header would accept and seed nothing.
+    /// - **Active** / **Completed** are completion status, not placement. Every new task is active,
+    ///   and none is created done — there is nothing here a composer could start from.
+    static func dropKey(forGroup identity: CadenceTaskGroupDropIdentity) -> String? {
+        switch identity {
+        case .todayDate(let kind):
+            switch kind {
+            // Both of these are defined by a day in the past. See `dateValue`.
+            case .overdue, .pastDo: return nil
+            // On the Today screen these two buckets are exact: `todayGroups` hands `dueToday`
+            // every task whose `dueDate` is today, and — because the overdue and due-today buckets
+            // have already claimed everything holding a due date — `plannedToday` only ever holds
+            // tasks whose `scheduledDate` is today.
+            case .dueToday: return "due:today"
+            case .plannedToday: return "date:today"
+            }
+        case .completion:
+            return nil
+        case .list(let key, _):
+            return "list:\(key)"
+        case .section(let listKey, _, let name):
+            return "list:\(listKey)\(separator)section:\(name)"
+        case .priority(let priority):
+            // The one identity the model already spells this way: `priorityDisplayGroups` populates
+            // `CadenceTaskDisplayGroup.dropKey` with exactly this string. Priority is withheld from
+            // a *row's* key because it is a judgement about that one task; a priority group header
+            // is the field itself, and dropping on it is asking for it by name.
+            return "priority:\(priority.rawValue)"
+        }
+    }
+
+    /// The display name a group's caption needs and its key cannot carry. See `placementCaption`.
+    static func listName(forGroup identity: CadenceTaskGroupDropIdentity) -> String {
+        switch identity {
+        case .list(_, let name): return name
+        case .section(_, let listName, _): return listName
+        case .todayDate, .completion, .priority: return ""
+        }
+    }
+
+    /// Whether a group with no rows still earns its header.
+    ///
+    /// **A group you can still add to does not vanish; a group you cannot does.** An empty kanban
+    /// column is the case this rule exists for — it is a column you made and have not filled, and
+    /// hiding it is what put the only useful drop target out of reach. An empty "Completed" is a
+    /// heading over nothing with nothing to do about it.
+    ///
+    /// It is the same predicate as `dropKey(forGroup:) != nil` on purpose: "visible when empty" and
+    /// "accepts a dropped `+`" are one property, so a header can never be shown as an empty
+    /// invitation it would then refuse.
+    static func showsWhenEmpty(_ identity: CadenceTaskGroupDropIdentity?) -> Bool {
+        guard let identity else { return false }
+        return dropKey(forGroup: identity) != nil
     }
 
     private static func listKey(for task: AppTask) -> String {
@@ -205,7 +305,20 @@ enum CadenceTaskDropSupport {
         let seed = seed(forDropKey: key, todayKey: todayKey)
         var placement: [String] = []
 
-        if seed.container == .inbox {
+        // **Only a key that names a list may print one.** `CadenceTaskComposerSeed.container`
+        // defaults to `.inbox`, so reading the resolved seed alone made every key without a
+        // `list:` part claim "Inbox" — which no task row could ever produce (a row always emits
+        // one) but a group header can: "Due Today" names a date and nothing else. The caption is
+        // what the drop *inherits*; the composer's own chip is where the default belongs.
+        let namesList = key
+            .split(separator: separator)
+            .contains { $0.hasPrefix("list:") }
+
+        if !namesList {
+            if seed.sectionName != TaskSectionDefaults.defaultName {
+                placement.append(seed.sectionName)
+            }
+        } else if seed.container == .inbox {
             placement.append("Inbox")
         } else {
             let trimmed = listName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -221,7 +334,31 @@ enum CadenceTaskDropSupport {
         if !placement.isEmpty { parts.append(placement.joined(separator: " › ")) }
         if !seed.doDateKey.isEmpty { parts.append("Do \(dayLabel(seed.doDateKey, todayKey: todayKey))") }
         if !seed.dueDateKey.isEmpty { parts.append("Due \(dayLabel(seed.dueDateKey, todayKey: todayKey))") }
+        // Only a priority *group* header emits `priority:` — no row does, deliberately. Spelled
+        // "High priority" rather than bare "High" because it sits in a list beside "Inbox" and
+        // "Do Today", where a lone adjective would not say which field it is setting. Without this
+        // the one seed a priority header contributes would be the one thing the ghost did not
+        // mention, which is the disagreement this caption exists to prevent.
+        if seed.priority != .none { parts.append("\(seed.priority.label) priority") }
         return parts.joined(separator: " · ")
+    }
+
+    /// The same caption for a group header, or `nil` when the header is not a drop target.
+    ///
+    /// Deliberately the *same* function the row ghost calls, reached through the same
+    /// `dropKey`→`seed` path. A header and a row that promise different things for the same
+    /// placement would be the defect worth avoiding here, and the only way to be sure they cannot
+    /// is for there to be one sentence-builder and one set of rules behind it.
+    static func placementCaption(
+        forGroup identity: CadenceTaskGroupDropIdentity,
+        todayKey: String
+    ) -> String? {
+        guard let key = dropKey(forGroup: identity) else { return nil }
+        return placementCaption(
+            forDropKey: key,
+            todayKey: todayKey,
+            listName: listName(forGroup: identity)
+        )
     }
 
     private static func dayLabel(_ key: String, todayKey: String) -> String {

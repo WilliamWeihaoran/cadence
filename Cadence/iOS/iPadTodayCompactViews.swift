@@ -98,19 +98,24 @@ struct iOSCompactTodayView: View {
         } else {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(todayTaskGroups, id: \.title) { group in
+                    // Due Today and Planned Today accept a dropped `+`; Overdue and Past Do are
+                    // defined by a day that has gone by, so they do not light up.
+                    // `CadenceTaskDropSupport.dropKey(forGroup:)` decides, once, for both widths.
                     iOSTaskGroupSection(
                         title: group.title,
                         color: CadenceTodayPresentationSupport.accent(for: group.kind),
-                        tasks: group.tasks
+                        tasks: group.tasks,
+                        dropIdentity: .todayDate(group.kind)
                     )
                 }
 
-                if showCompleted && !completedTodayTasks.isEmpty {
+                if showCompleted {
                     iOSTaskGroupSection(
                         title: "Completed Today",
                         color: Theme.green,
                         tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTodayTasks),
-                        opacity: 0.62
+                        opacity: 0.62,
+                        dropIdentity: .completion
                     )
                 }
             }

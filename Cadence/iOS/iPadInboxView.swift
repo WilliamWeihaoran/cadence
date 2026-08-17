@@ -93,23 +93,31 @@ struct iPadInboxView: View {
                 )
             } else {
                 List {
-                    if !inboxTasks.isEmpty {
-                        Section {
-                            ForEach(inboxTasks) { task in
-                                // No list chip: see the note on the compact layout's sections. The
-                                // decision is `CadenceTaskSurfaceOptions`', so both widths take it
-                                // from the same place.
-                                iOSTaskListRow(
-                                    task: task,
-                                    showsContainer: CadenceTaskSurfaceOptions.showsContainerChip(on: .inbox)
-                                )
-                            }
-                        } header: {
-                            // Blue, and counted, exactly as on the phone and on All Tasks at both
-                            // widths. This one header was grey, so "Active" meant something
-                            // different here than three taps away.
-                            iOSTaskGroupHeader(title: "Active", color: Theme.blue, count: inboxTasks.count)
+                    // No emptiness guard, for the reason the compact layout states: this heading's
+                    // rows are in the Inbox by construction, which makes it a create-task drop
+                    // target, and a drop target that disappears when the group empties is gone at
+                    // the moment it is most useful. The phone reaches the same conclusion through
+                    // `iOSTaskGroupSection.isVisible`; a `List` section has to say it here.
+                    Section {
+                        ForEach(inboxTasks) { task in
+                            // No list chip: see the note on the compact layout's sections. The
+                            // decision is `CadenceTaskSurfaceOptions`', so both widths take it
+                            // from the same place.
+                            iOSTaskListRow(
+                                task: task,
+                                showsContainer: CadenceTaskSurfaceOptions.showsContainerChip(on: .inbox)
+                            )
                         }
+                    } header: {
+                        // Blue, and counted, exactly as on the phone and on All Tasks at both
+                        // widths. This one header was grey, so "Active" meant something
+                        // different here than three taps away.
+                        iOSTaskGroupHeader(
+                            title: "Active",
+                            color: Theme.blue,
+                            count: inboxTasks.count,
+                            dropIdentity: .list(key: "inbox", name: "Inbox")
+                        )
                     }
 
                     if showCompleted && !completedInboxTasks.isEmpty {
@@ -125,7 +133,8 @@ struct iPadInboxView: View {
                             iOSTaskGroupHeader(
                                 title: "Completed",
                                 color: Theme.green,
-                                count: CadenceTaskSurfaceOptions.completedRows(from: completedInboxTasks).count
+                                count: CadenceTaskSurfaceOptions.completedRows(from: completedInboxTasks).count,
+                                dropIdentity: .completion
                             )
                         }
                     }

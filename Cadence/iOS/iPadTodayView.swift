@@ -241,19 +241,23 @@ struct iPadTodayView: View {
                 // with a bare eyebrow, so "3 Overdue" was information the tablet did not give.
                 LazyVStack(alignment: .leading, spacing: 15) {
                     ForEach(todayTaskGroups, id: \.title) { group in
+                        // Same identities the phone passes — the drop rule is the grouping's, not
+                        // the shape's. See `iOSCompactTodayView`.
                         iOSTaskGroupSection(
                             title: group.title,
                             color: CadenceTodayPresentationSupport.accent(for: group.kind),
-                            tasks: group.tasks
+                            tasks: group.tasks,
+                            dropIdentity: .todayDate(group.kind)
                         )
                     }
 
-                    if showCompleted && !completedTodayTasks.isEmpty {
+                    if showCompleted {
                         iOSTaskGroupSection(
                             title: "Completed Today",
                             color: Theme.green,
                             tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTodayTasks),
-                            opacity: 0.62
+                            opacity: 0.62,
+                            dropIdentity: .completion
                         )
                     }
                 }

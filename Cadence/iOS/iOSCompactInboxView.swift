@@ -70,22 +70,29 @@ struct iOSCompactInboxView: View {
             let showsContainer = CadenceTaskSurfaceOptions.showsContainerChip(on: .inbox)
 
             VStack(alignment: .leading, spacing: 14) {
-                if !inboxTasks.isEmpty {
-                    iOSTaskGroupSection(
-                        title: "Active",
-                        color: Theme.blue,
-                        tasks: inboxTasks,
-                        showsContainer: showsContainer
-                    )
-                }
+                // No `if !inboxTasks.isEmpty` guard: the group decides. Every row under this
+                // heading is in the Inbox by construction, so the header is a create-task drop
+                // target — and a drop target that vanishes when the group empties is missing at
+                // exactly the moment it is useful. `iOSTaskGroupSection.isVisible` states the rule;
+                // the page's own empty state above still owns the "nothing here at all" case.
+                iOSTaskGroupSection(
+                    title: "Active",
+                    color: Theme.blue,
+                    tasks: inboxTasks,
+                    showsContainer: showsContainer,
+                    dropIdentity: .list(key: "inbox", name: "Inbox")
+                )
 
-                if showCompleted && !completedInboxTasks.isEmpty {
+                if showCompleted {
+                    // `.completion` resolves to no key: done-ness is not something a new task can
+                    // be seeded with, so this header neither lights up nor survives emptying.
                     iOSTaskGroupSection(
                         title: "Completed",
                         color: Theme.green,
                         tasks: CadenceTaskSurfaceOptions.completedRows(from: completedInboxTasks),
                         showsContainer: showsContainer,
-                        opacity: 0.62
+                        opacity: 0.62,
+                        dropIdentity: .completion
                     )
                 }
             }

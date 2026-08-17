@@ -68,20 +68,25 @@ struct iOSCompactAllTasksView: View {
             .cadenceCard()
         } else {
             VStack(alignment: .leading, spacing: 14) {
-                if !activeTasks.isEmpty {
-                    iOSTaskGroupSection(
-                        title: "Active",
-                        color: Theme.blue,
-                        tasks: activeTasks
-                    )
-                }
+                // `.completion` for **both**, including "Active". Inbox's identically-titled group
+                // is `.list("inbox")` because every row under it is in the Inbox by construction;
+                // here the rows span every list, so the heading shares nothing a new task could
+                // start from. Same title, different grouping — and the identity, not the title, is
+                // what decides. Neither header lights up, and neither survives emptying.
+                iOSTaskGroupSection(
+                    title: "Active",
+                    color: Theme.blue,
+                    tasks: activeTasks,
+                    dropIdentity: .completion
+                )
 
-                if showCompleted && !completedTasks.isEmpty {
+                if showCompleted {
                     iOSTaskGroupSection(
                         title: "Completed",
                         color: Theme.green,
                         tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks),
-                        opacity: 0.62
+                        opacity: 0.62,
+                        dropIdentity: .completion
                     )
                 }
             }

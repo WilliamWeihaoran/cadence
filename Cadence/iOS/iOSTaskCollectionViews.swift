@@ -82,7 +82,16 @@ struct iOSAllTasksView: View {
                                 iOSTaskListRow(task: task)
                             }
                         } header: {
-                            iOSTaskGroupHeader(title: "Active", color: Theme.blue, count: activeTasks.count)
+                            // `.completion`, not `.list` — All Tasks is every list at once, so this
+                            // heading shares nothing a new task could inherit and does not accept
+                            // a dropped `+`. The identically titled group on Inbox does, because
+                            // there every row is in the Inbox by construction.
+                            iOSTaskGroupHeader(
+                                title: "Active",
+                                color: Theme.blue,
+                                count: activeTasks.count,
+                                dropIdentity: .completion
+                            )
                         }
                     }
 
@@ -95,7 +104,8 @@ struct iOSAllTasksView: View {
                             iOSTaskGroupHeader(
                                 title: "Completed",
                                 color: Theme.green,
-                                count: CadenceTaskSurfaceOptions.completedRows(from: completedTasks).count
+                                count: CadenceTaskSurfaceOptions.completedRows(from: completedTasks).count,
+                                dropIdentity: .completion
                             )
                         }
                     }

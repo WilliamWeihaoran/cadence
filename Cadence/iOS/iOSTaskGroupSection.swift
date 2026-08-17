@@ -14,6 +14,10 @@ struct iOSTaskGroupHeader: View {
     let title: String
     let color: Color
     let count: Int
+    /// What this group is, so a dropped `+` knows what to inherit from it. `nil` — or an identity
+    /// that resolves to nothing — means the header is not a drop target and takes no highlight.
+    /// See `CadenceTaskDropSupport.dropKey(forGroup:)`.
+    var dropIdentity: CadenceTaskGroupDropIdentity?
 
     var body: some View {
         HStack {
@@ -28,6 +32,18 @@ struct iOSTaskGroupHeader: View {
                 .background(color.opacity(0.11))
                 .clipShape(Capsule())
         }
+        // The second half of drag-to-create, and the half that reaches an **empty** group. A row
+        // carries its group's attribute by construction, which covers every grouping — but a group
+        // with no rows has no row to point at, and that is precisely the group you most want to put
+        // the first task into.
+        //
+        // The ghost opens **below the header**, so on a filled group it parts the header from its
+        // first row and on an empty one it *is* the group's body. Same block, same caption, same
+        // resolver as the row's — see `iOSNewTaskDropTargetModifier`. Inset 0, not the row's 11:
+        // the header shares the group's own leading edge, so the ghost lines up with it.
+        //
+        // The header itself takes no fill. One layer, at one radius, and it is the ghost's.
+        .iOSNewTaskDropTarget(group: dropIdentity)
     }
 }
 
@@ -46,15 +62,37 @@ struct iOSTaskGroupSection: View {
     var showsContainer: Bool = true
     /// Completed groups are dimmed as a whole rather than row by row.
     var opacity: Double = 1
+    /// See `iOSTaskGroupHeader.dropIdentity`. It also decides whether an *empty* group renders at
+    /// all — `CadenceTaskDropSupport.showsWhenEmpty(_:)`.
+    var dropIdentity: CadenceTaskGroupDropIdentity?
+
+    /// **A group you can still add to does not vanish when it empties; a group you cannot does.**
+    /// The call sites used to each guard `if !tasks.isEmpty` before drawing this, which is right for
+    /// "Completed" — a heading over nothing, with nothing to do about it — and wrong for a group
+    /// that is a drop target, because hiding it puts the one useful destination out of reach at
+    /// exactly the moment it matters. One predicate, in the component, so no surface can answer it
+    /// differently.
+    private var isVisible: Bool {
+        !tasks.isEmpty || CadenceTaskDropSupport.showsWhenEmpty(dropIdentity)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            iOSTaskGroupHeader(title: title, color: color, count: tasks.count)
+        if isVisible {
+            VStack(alignment: .leading, spacing: 9) {
+                iOSTaskGroupHeader(
+                    title: title,
+                    color: color,
+                    count: tasks.count,
+                    dropIdentity: dropIdentity
+                )
 
-            VStack(spacing: 7) {
-                ForEach(tasks) { task in
-                    iOSTaskRow(task: task, showsContainer: showsContainer)
-                        .opacity(opacity)
+                if !tasks.isEmpty {
+                    VStack(spacing: 7) {
+                        ForEach(tasks) { task in
+                            iOSTaskRow(task: task, showsContainer: showsContainer)
+                                .opacity(opacity)
+                        }
+                    }
                 }
             }
         }
