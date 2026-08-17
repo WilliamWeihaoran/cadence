@@ -87,6 +87,10 @@ code, and every one of them has been violated by a shipped change at least once.
   estimate pickers each drifted apart before being unified. `KanbanCard`, `BoardColumnHeader`
   and `KanbanColumnScroll` are now shared by the list board, the All Tasks board, and the
   Calendar Board — parameterize them, never fork them.
+- **Build into a private `-derivedDataPath` whenever another build may be running.** The shared
+  DerivedData is a single mutable directory: a clean build deletes `Build/Products/`, and anything
+  launched from there dies in `libsecinit` before `main()` with an `EXC_BREAKPOINT` that looks like
+  an app crash and is not. It also produces `build.db is locked` failures that look like flaky tests.
 - **iPhone and iPad are one style, not two.** They differ in *layout* — a tab bar against a
   sidebar, one pane against two — and should not differ in how a row, a chip, a header or a
   picker looks or behaves. So: a change asked for on one is a change to both unless it is

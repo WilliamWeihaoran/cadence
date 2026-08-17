@@ -72,6 +72,16 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — known, unscheduled
 
+- [T-86] **Agents building into the shared DerivedData can crash a running Mac app.** On 2026-08-17
+  the user hit "Cadence quit unexpectedly" — `EXC_BREAKPOINT` on the main thread, five seconds after
+  launch. **Not app code:** the whole backtrace is `dyld` → `libSystem_initializer` →
+  `_libsecinit_appsandbox`, i.e. App Sandbox setup failing *before `main()` runs*, and the app
+  bundle had vanished from `Build/Products/Debug/` by the time it was inspected — a concurrent agent
+  clean build wiped it under the running process. A fresh build into a private `derivedDataPath`
+  launched and stayed up. Two agents had already reported `build.db is locked` from the same
+  contention. **Mitigation:** every agent brief should require a private `-derivedDataPath`, which
+  most already do ad hoc; worth making standing in `AGENTS.md`. Nothing to fix in the app.
+
 - [T-82] **~1195 macro-generated `#expect` warnings in the test target** surface on a full recompile,
   from pre-existing files (`iPadTodayPaneWidthTests`, `MarkdownChecklistSupportTests`,
   `NotificationSchedulingTests`, and others). Not app-source, so the baseline of 3 is unaffected,
