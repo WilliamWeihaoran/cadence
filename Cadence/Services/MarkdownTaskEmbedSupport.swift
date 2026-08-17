@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SwiftData
 
 nonisolated struct MarkdownTaskEmbedSubtaskRenderInfo: Hashable {
     let id: UUID
@@ -319,4 +320,69 @@ nonisolated enum MarkdownTaskEmbedParser {
     // `CadenceTextView.legacyChecklistMarkerHit` became `checklistMarkerHit`, which asks
     // `MarkdownChecklistSupport.lineInfo(in:)` for the range *and* the spelling — so legacy
     // glyphs and GitHub `- [x] ` syntax are hit-tested through one path instead of two.
+}
+
+/// The read side of `[[task:UUID|Title]]`: the title stored beside the id is a **cache**, and the
+/// task is the record.
+///
+/// The title is written into the note text once, when the embed is created, and every rename that
+/// does not happen inside that note leaves the copy stale — a `TaskDetailPopover` opened from a
+/// task row, a timeline block, a kanban card or the month grid, an MCP write, or a rename merged in
+/// from another device. Reconciling on rename was considered and rejected: it means an unindexed
+/// `contains` scan over every `Note` on each title commit, and the inspector's title field is a
+/// direct binding with no commit boundary, so it would run per keystroke.
+///
+/// So nothing sweeps, and instead every reader that puts an embed title in front of a user resolves
+/// it here first — export, note-content search, and the card renderer (which already does it, by
+/// looking the id up in its `taskEmbeds` map). The stored string survives only as the name of a task
+/// that no longer exists, which is exactly what `MarkdownTaskEmbedRenderInfo.missing(reference:)`
+/// already uses it for. Drift then cannot reach the user, and cross-device renames are covered for
+/// free because nothing has to be rewritten.
+nonisolated enum MarkdownTaskEmbedTitleCache {
+    /// `markdown` with every embed title replaced by the current title of the task it references.
+    ///
+    /// A reference whose id is not in `titles` is left exactly as it is: the cached title is the
+    /// only name that reference has left. Returns a string either way — the nil-means-unchanged
+    /// contract of `MarkdownTaskEmbedParser.reconcilingReferenceTitles` is the right shape for a
+    /// writer deciding whether to save, and the wrong one for a reader that needs text regardless.
+    nonisolated static func resolving(
+        _ markdown: String,
+        titles: [UUID: String],
+        fallback: String = MarkdownTaskEmbedRenderInfo.untitledTaskTitle
+    ) -> String {
+        // Cheap gate first: note-content search runs this over every note on every keystroke, and
+        // most notes embed nothing at all.
+        guard !titles.isEmpty,
+              markdown.range(of: "[[task:", options: [.caseInsensitive]) != nil else {
+            return markdown
+        }
+        return MarkdownTaskEmbedParser.reconcilingReferenceTitles(
+            in: markdown,
+            titles: titles,
+            fallback: fallback
+        ) ?? markdown
+    }
+
+    /// Live titles keyed by task id, for `resolving(_:titles:)`.
+    ///
+    /// Build this once per query rather than per note — a search pass resolves many notes against
+    /// the same task set.
+    static func titles(for tasks: [AppTask]) -> [UUID: String] {
+        Dictionary(tasks.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    static func resolving(_ markdown: String, tasks: [AppTask]) -> String {
+        resolving(markdown, titles: titles(for: tasks))
+    }
+
+    /// The tasks `markdown` embeds, fetched by the ids in its references.
+    ///
+    /// For callers with no task query in scope — note export is the one — so a one-off read does
+    /// not have to observe every task in the store just to name a handful of them.
+    static func embeddedTasks(in markdown: String, modelContext: ModelContext) -> [AppTask] {
+        let ids = Array(Set(NoteReferenceParser.taskReferences(in: markdown).compactMap(\.taskID)))
+        guard !ids.isEmpty else { return [] }
+        let descriptor = FetchDescriptor<AppTask>(predicate: #Predicate { ids.contains($0.id) })
+        return (try? modelContext.fetch(descriptor)) ?? []
+    }
 }

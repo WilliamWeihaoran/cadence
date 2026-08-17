@@ -372,12 +372,16 @@ struct ListNotesView: View {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let requiredTagSlugs = selectedTagFilterSlugs
         guard !query.isEmpty || !requiredTagSlugs.isEmpty else { return notes }
+        // Task embeds are searched under the task's live title, not the copy cached in the note
+        // text — see `MarkdownTaskEmbedTitleCache`. Built once here, not once per note.
+        let taskTitles = MarkdownTaskEmbedTitleCache.titles(for: allTasks)
         return notes.filter { note in
             let noteTagSlugs = Set((note.tags ?? []).map(\.slug))
             guard requiredTagSlugs.isSubset(of: noteTagSlugs) else { return false }
             guard !query.isEmpty else { return true }
             return note.displayTitle.localizedCaseInsensitiveContains(query) ||
-                    note.content.localizedCaseInsensitiveContains(query) ||
+                    MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
+                        .localizedCaseInsensitiveContains(query) ||
                     note.sortedTags.contains { tag in
                         tag.name.localizedCaseInsensitiveContains(query) ||
                             tag.slug.localizedCaseInsensitiveContains(TagSupport.slug(for: query))

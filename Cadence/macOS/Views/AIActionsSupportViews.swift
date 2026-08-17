@@ -192,11 +192,16 @@ struct NoteActionMenu: View {
         NoteActionSubmenuHeader(title: "Export") { page = .root }
         NoteActionPickerRow(icon: "doc.text", title: "Export Markdown") {
             dismissPicker()
-            NoteExportService.export(note, as: .markdown)
+            NoteExportService.export(note, as: .markdown, embeddedTasks: embeddedTasks())
         }
         NoteActionPickerRow(icon: "doc.richtext", title: "Export PDF") {
             dismissPicker()
-            NoteExportService.export(note, as: .pdf, imageAssets: imageAssetsReferencedByNote())
+            NoteExportService.export(
+                note,
+                as: .pdf,
+                imageAssets: imageAssetsReferencedByNote(),
+                embeddedTasks: embeddedTasks()
+            )
         }
     }
 
@@ -319,6 +324,16 @@ struct NoteActionMenu: View {
 
     private func dismissPicker() {
         showsPicker = false
+    }
+
+    /// The live tasks this note embeds, so the export can name them from the task rather than from
+    /// the title cached in `[[task:UUID|Title]]`.
+    ///
+    /// Fetched on click rather than held in a `@Query`: this menu renders in every note header, and
+    /// observing every task in the store to service an export nobody has asked for yet is the wrong
+    /// trade.
+    private func embeddedTasks() -> [AppTask] {
+        MarkdownTaskEmbedTitleCache.embeddedTasks(in: note.content, modelContext: modelContext)
     }
 
     private func imageAssetsReferencedByNote() -> [MarkdownImageAsset] {

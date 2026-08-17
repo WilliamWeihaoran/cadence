@@ -26,7 +26,15 @@ enum GlobalSearchIndexSupport {
         appendSection(.projects, results: projectResults(projects: projects, query: query), into: &sections)
         appendSection(.tasks, results: taskResults(tasks: tasks, query: query), into: &sections)
         appendSection(.events, results: eventResults, into: &sections)
-        appendSection(.meetingNotes, results: eventNoteResults(notes: notes, query: query), into: &sections)
+        appendSection(
+            .meetingNotes,
+            results: eventNoteResults(
+                notes: notes,
+                query: query,
+                taskTitles: MarkdownTaskEmbedTitleCache.titles(for: tasks)
+            ),
+            into: &sections
+        )
         appendSection(.goals, results: goalResults(goals: goals, query: query), into: &sections)
         appendSection(.habits, results: habitResults(habits: habits, query: query), into: &sections)
 
@@ -218,7 +226,14 @@ enum GlobalSearchIndexSupport {
         return rankedResults(mapped, query: query)
     }
 
-    static func eventNoteResults(notes: [Note], query: String) -> [GlobalSearchResult] {
+    /// `taskTitles` names the note's task embeds from the live task rather than from the title
+    /// cached in `[[task:UUID|Title]]`, so renaming a task makes the note findable under its new
+    /// name and stops matching the old one. Built once for the whole pass, not per note.
+    static func eventNoteResults(
+        notes: [Note],
+        query: String,
+        taskTitles: [UUID: String]
+    ) -> [GlobalSearchResult] {
         let sorted = notes.filter { $0.kind == .meeting }.sorted {
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
             return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
@@ -237,7 +252,8 @@ enum GlobalSearchIndexSupport {
                 dateLabel = "Event note"
             }
             let tagText = note.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
-            guard matches(query: query, fields: [title, note.content, dateLabel, tagText]) else { return nil }
+            let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
+            guard matches(query: query, fields: [title, content, dateLabel, tagText]) else { return nil }
             return GlobalSearchResult(
                 id: "event-note-\(note.id.uuidString)",
                 category: .meetingNotes,

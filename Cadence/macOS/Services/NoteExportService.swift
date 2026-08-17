@@ -41,9 +41,27 @@ struct NotePDFRenderOptions {
 }
 
 enum NoteExportService {
-    static func export(_ note: Note, as format: NoteExportFormat, imageAssets: [MarkdownImageAsset] = []) {
+    /// Writes the note out, with every `[[task:UUID|Title]]` embed named by its **live** task.
+    ///
+    /// `embeddedTasks` is what makes that possible, and it does two jobs. The markdown file gets the
+    /// resolved text, so an export does not carry a title the task was renamed out of months ago.
+    /// The PDF gets the same text *and* the render infos: the PDF is produced by running the live
+    /// editor styling over an offscreen text view, and a text view with no `markdownTaskEmbeds` map
+    /// draws every embed through `MarkdownTaskEmbedRenderInfo.missing(reference:)` — so before this,
+    /// exporting a note turned every task card in it into a "missing task" card carrying the stale
+    /// cached title.
+    static func export(
+        _ note: Note,
+        as format: NoteExportFormat,
+        imageAssets: [MarkdownImageAsset] = [],
+        embeddedTasks: [AppTask] = []
+    ) {
         let title = note.displayTitle
-        let content = note.content
+        let content = MarkdownTaskEmbedTitleCache.resolving(note.content, tasks: embeddedTasks)
+        let taskEmbeds = Dictionary(
+            embeddedTasks.map { ($0.id, MarkdownTaskEmbedRenderInfo.task($0)) },
+            uniquingKeysWith: { first, _ in first }
+        )
         presentSavePanelOnMainQueue(
             suggestedName: suggestedName(title: title, pathExtension: format.pathExtension),
             contentType: format.contentType
@@ -52,7 +70,11 @@ enum NoteExportService {
             case .markdown:
                 try? content.write(to: url, atomically: true, encoding: .utf8)
             case .pdf:
-                guard let pdfData = renderedPDFData(content: content, imageAssets: imageAssets) else { return }
+                guard let pdfData = renderedPDFData(
+                    content: content,
+                    imageAssets: imageAssets,
+                    taskEmbeds: taskEmbeds
+                ) else { return }
                 try? pdfData.write(to: url)
             }
         }
@@ -105,6 +127,7 @@ enum NoteExportService {
     static func renderedPDFData(
         content: String,
         imageAssets: [MarkdownImageAsset],
+        taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:],
         options: NotePDFRenderOptions = NotePDFRenderOptions()
     ) -> Data? {
         let contentWidth = options.pageWidth - (options.horizontalInset * 2)
@@ -122,6 +145,7 @@ enum NoteExportService {
                 MarkdownImageAssetService.renderAsset(for: asset.id, in: imageAssets).map { (asset.id, $0) }
             }
         )
+        textView.markdownTaskEmbeds = taskEmbeds
         textView.isEditable = false
         textView.isSelectable = false
         textView.drawsBackground = true

@@ -59,8 +59,12 @@ enum GlobalSearchDataSupport {
         GlobalSearchIndexSupport.eventResults(from: events, query: query)
     }
 
-    static func eventNoteResults(notes: [Note], query: String) -> [GlobalSearchResult] {
-        GlobalSearchIndexSupport.eventNoteResults(notes: notes, query: query)
+    static func eventNoteResults(
+        notes: [Note],
+        query: String,
+        taskTitles: [UUID: String]
+    ) -> [GlobalSearchResult] {
+        GlobalSearchIndexSupport.eventNoteResults(notes: notes, query: query, taskTitles: taskTitles)
     }
 
     static func rankResults(_ results: [GlobalSearchResult], query: String) -> [GlobalSearchResult] {

@@ -171,22 +171,26 @@ struct iOSSearchView: View {
             !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
             !$0.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+        // Task embeds are matched and excerpted under the task's live title, not the copy cached in
+        // the note text — see `MarkdownTaskEmbedTitleCache`. Built once per pass, not per note.
+        let taskTitles = MarkdownTaskEmbedTitleCache.titles(for: tasks)
 
         if isSearching {
             return searchableNotes.compactMap { note in
                 let tagText = note.sortedTags.map(\.name).joined(separator: " ")
+                let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
                 guard let score = CadenceSearchMatcher.matchScore(
                     query: trimmedQuery,
-                    fields: [note.displayTitle, note.content, noteSubtitle(note), tagText]
+                    fields: [note.displayTitle, content, noteSubtitle(note), tagText]
                 ) else {
                     return nil
                 }
-                return noteResult(note, score: score)
+                return noteResult(note, score: score, taskTitles: taskTitles)
             }
             .sorted { $0.score > $1.score }
         }
 
-        return searchableNotes.prefix(8).map { noteResult($0, score: 0) }
+        return searchableNotes.prefix(8).map { noteResult($0, score: 0, taskTitles: taskTitles) }
     }
 
     private var progressResults: [iOSSearchResult] {
@@ -594,12 +598,12 @@ struct iOSSearchView: View {
         }
     }
 
-    private func noteResult(_ note: Note, score: Int) -> iOSSearchResult {
+    private func noteResult(_ note: Note, score: Int, taskTitles: [UUID: String]) -> iOSSearchResult {
         iOSSearchResult(
             destination: .note(note),
             title: note.displayTitle,
             subtitle: noteSubtitle(note),
-            detail: excerpt(note.content),
+            detail: excerpt(MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)),
             icon: "doc.text",
             color: Theme.purple,
             score: score
