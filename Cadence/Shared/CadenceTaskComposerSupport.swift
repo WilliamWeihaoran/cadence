@@ -221,12 +221,6 @@ enum CadenceTaskComposerSupport {
         return DateFormatters.dayOffset(from: doDateKey) == choice.dayOffset
     }
 
-    /// Whether the date is a day neither named day can say.
-    static func isCustomDoDate(_ doDateKey: String) -> Bool {
-        guard !doDateKey.isEmpty else { return false }
-        return !isSelected(.today, doDateKey: doDateKey) && !isSelected(.tomorrow, doDateKey: doDateKey)
-    }
-
     // MARK: - Tile values
 
     /// What a Do or Due tile says.

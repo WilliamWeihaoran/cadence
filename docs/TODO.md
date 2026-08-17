@@ -52,16 +52,6 @@ _Nothing in flight._
   because nothing has to be rewritten. **Queued behind [T-87]** — it needs
   `Services/MarkdownTaskEmbedSupport.swift`, which that agent currently owns.
 
-- [T-87] **Mark the shared value types `nonisolated`, and unblock Swift 6.** The root cause behind
-  T-82's 1195 test warnings: `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` gives every value type
-  without an explicit `nonisolated` a main-actor-isolated synthesized `Equatable`. `D-55` fixed the
-  *symptom* in the test target; the fix is on the app side, exactly as `TaskOrdering` and
-  `CadenceTaskRowMetrics` already do it. **Not cosmetic:** `HabitStreakUnit` lives in `Models/`,
-  which compiles into `CadenceWidgets` and `CadenceMCPServer`, and widget timeline providers run off
-  the main actor — the same reason `TaskOrdering` is `nonisolated`. The compiler says this is an
-  *error* in Swift 6 mode, and `CadenceMCPServer` is already `SWIFT_VERSION = 6.0` while the app and
-  tests are 5.0, so this is a migration blocker rather than tidying.
-
 - [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
   `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
   header or picker looks or behaves. This item is the sweep to make the code match that — find the
@@ -73,9 +63,6 @@ _Nothing in flight._
 
 
 ## Open — known, unscheduled
-
-- [T-93] **`isCustomDoDate` is production-dead.** It was `doDatePickLabel`'s only caller and outlived
-  it by one commit (`D-60`); a test still exercises it. Two lines to remove, with its test.
 
 - [T-89] **Drag-and-drop cannot be driven from the simulator harness.** Neither `touch_path` nor
   `swipe` lifts a `UIDragInteraction`, so no drop ever fires — verified against the row target from
@@ -93,6 +80,13 @@ _Nothing in flight._
   launched and stayed up. Two agents had already reported `build.db is locked` from the same
   contention. **Mitigation:** every agent brief should require a private `-derivedDataPath`, which
   most already do ad hoc; worth making standing in `AGENTS.md`. Nothing to fix in the app.
+
+  **Mitigation shipped 2026-08-18** — the rule is standing in `AGENTS.md`. Left open because the
+  underlying contention still exists and this keeps producing *new* disguises: the same day it
+  reported unresolvable swift-nio modules (`DequeModule`, `Atomics`) from a corrupt `SourcePackages`,
+  which read as a broken package checkout and briefly made a correct agent report look wrong. The
+  standing rule now says an unexplained build failure is a private-path re-run before it is a
+  finding. Close this only if the contention itself is removed.
 
 - [T-55] **Three things need a real phone, not a simulator** — written up as a checklist in
   `docs/device-checks.md` (keyboard dismissal, double-tap, and drag-to-create per [T-89]).
@@ -169,6 +163,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-64] `isCustomDoDate` outlived its only caller (T-93).
 
 - [D-63] The MCP server target compiled a file it never used (T-94).
 

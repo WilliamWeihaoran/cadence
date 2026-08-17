@@ -250,24 +250,13 @@ struct CadenceTaskComposerSupportTests {
         #expect(CadenceTaskComposerSupport.isSelected(.tomorrow, doDateKey: "") == false)
     }
 
-    /// `toggledDoDateKey` and `doDatePickLabel` were tested here until the do-date block became a
-    /// tile. Both were unreachable from any surface by then — the tile's picker carries its own
-    /// Clear, and the tile states a value rather than a `Pick…` prompt — so they and these
-    /// assertions went together rather than the tests keeping dead code alive.
-    ///
-    /// What is left of that block is the pair `dateValueLabel` reads, covered above, and the
-    /// question below.
-    @Test
-    func aDayNeitherNamedDayCanSayIsCustom() {
-        let today = DateFormatters.todayKey()
-        let tomorrow = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
-        let farOff = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: 40, to: Date())!)
-
-        #expect(CadenceTaskComposerSupport.isCustomDoDate("") == false)
-        #expect(CadenceTaskComposerSupport.isCustomDoDate(today) == false)
-        #expect(CadenceTaskComposerSupport.isCustomDoDate(tomorrow) == false)
-        #expect(CadenceTaskComposerSupport.isCustomDoDate(farOff))
-    }
+    // `toggledDoDateKey`, `doDatePickLabel` and `isCustomDoDate` were tested here until the do-date
+    // block became a tile. Each was unreachable from any surface by the time it went — the tile's
+    // picker carries its own Clear, the tile states a value rather than a `Pick…` prompt, and
+    // nothing asked whether a date was "custom" once the tile stopped needing a third label. They
+    // went with their assertions rather than the tests keeping dead code alive.
+    //
+    // What survives of that block is the pair `dateValueLabel` reads, covered above.
 
     // MARK: - Row values
 

@@ -92,6 +92,12 @@ code, and every one of them has been violated by a shipped change at least once.
   DerivedData is a single mutable directory: a clean build deletes `Build/Products/`, and anything
   launched from there dies in `libsecinit` before `main()` with an `EXC_BREAKPOINT` that looks like
   an app crash and is not. It also produces `build.db is locked` failures that look like flaky tests.
+  Every failure mode it causes is **misattributed by default** — it never says "another build is
+  running", it says whatever the half-deleted directory happened to look like when you read it. On
+  2026-08-18 it reported unresolvable swift-nio modules (`DequeModule`, `Atomics`) from a corrupt
+  `SourcePackages`, which read as a broken checkout and briefly made a correct agent report look
+  wrong. Rule: a build failure you cannot explain is a private-`derivedDataPath` re-run before it is
+  a finding. Note `-derivedDataPath` requires `-scheme`; it is rejected with `-target` alone.
 - **iPhone and iPad are one style, not two.** They differ in *layout* — a tab bar against a
   sidebar, one pane against two — and should not differ in how a row, a chip, a header or a
   picker looks or behaves. So: a change asked for on one is a change to both unless it is
