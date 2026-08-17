@@ -67,6 +67,44 @@ Started 2026-08-17, four agents on disjoint file sets.
 
 ## Open — decided, not started
 
+- [T-50] **iOS calendar: sticky headers, infinite horizontal scroll, pinch zoom, and a date button
+  that names the day you are looking at.** Requested with three screenshots. Five interlocking
+  changes to the timed grids (`iOSCalendarTimelineViews`, `iOSCalendarChromeViews`,
+  `iOSCalendarView`):
+
+  1. **The day headers must stick.** `SUN 9 / MON 10 / TUE 11` scrolls away vertically today; it
+     should pin while the hour grid scrolls under it.
+  2. **Infinite horizontal scrolling — no clamping to a range.** Whatever window the grid builds
+     has to extend as you scroll rather than stopping. Read `CadenceLazyScrollAnchor` (`68d78ec`)
+     first: it is the rule for asserting a position in a lazy stack, and it exists because this
+     repo has now had *four* scroll-position bugs of the same shape.
+  3. **Delete the `‹ ➤ ›` cluster.** Scrolling replaces left/right. **But the middle control is
+     "jump to today", not a direction** — deleting the cluster removes the only way back to today
+     unless the new date button provides it. The Notes date picker solves exactly this: its popover
+     grows a `Today` button when you are away from now (`2929867`). Do the same here, and do not
+     ship the deletion before the replacement works.
+  4. **Delete the `− 1x +` control; pinch with two fingers instead**, continuous between 1× and 3×.
+     What it scales is `hourHeight` — the time axis — via
+     `iOSCalendarTimelineViews.swift:29`. Two things to settle:
+     - `zoomLevel` is an `Int` in `@AppStorage("ios.calendar.zoomLevel")` and must become
+       continuous. Reading an Int-backed key as a Double returns the number, so an upgrading user
+       lands on 1.0/2.0/3.0 rather than a default — check that, do not assume it.
+     - **The current "3x" is not 3×.** The formula is `base + (zoom−1)·16` against a base of 58
+       (compact) or 64 (regular), so "3x" is 90/96pt — about 1.5×. Continuous pinch will make the
+       discrepancy obvious. Decide whether 1–3 means a real multiplier of the base or the existing
+       range relabelled, and make the code and the number agree.
+     - Pinch must not fight the horizontal scroller, the vertical scroller, or the drag-to-create
+       gesture already on this canvas. That is four recognisers on one surface, and gesture
+       conflicts are a repeat offender here (`.draggable` delaying taps app-wide; `renderedBlockTap`
+       swallowing double taps — [T-42]).
+  5. **The date button shows the leftmost visible column's date, not a range.** `Aug 19-25` becomes
+     `Aug 19 ⌄`, with the chevron and jump-to-date behaviour of the Notes header title. It has to
+     update live as you scroll, which means the horizontal scroll position has to be readable —
+     the same plumbing item 2 needs.
+
+  Sequencing note: 3 and 5 both depend on 2, and 5 is what makes 3 safe to do. Do not start until
+  the device-targeting agent has released `Cadence/Shared/CadenceRegularPaneLayout.swift`.
+
 - [T-49] **Rework the iOS task creation sheet: fields belong in the page, not pinned to the floor.**
   Requested with a screenshot. Today `iOSCreateTaskSheet` is title + notes at the top, then ~700pt
   of dead space, then a horizontally-scrolling chip strip on the bottom edge — and the strip
