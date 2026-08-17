@@ -8,8 +8,9 @@ import Foundation
 /// invisible to `CadenceTests`, which builds for macOS.
 ///
 /// A seed is a **starting point, not a constraint**: every field it carries is also reachable from
-/// a chip, so a list-scoped entry point can seed its list and still be overruled without leaving
-/// the sheet.
+/// a row on the sheet, so a list-scoped entry point can seed its list and still be overruled
+/// without leaving the sheet. That is also why the seeded fields are *rows* and not chips — a
+/// pre-filled row states its value in the page, where a strip of chips only implied one.
 struct CadenceTaskComposerSeed: Equatable {
     var title: String = ""
     var notes: String = ""
@@ -49,9 +50,9 @@ struct CadenceTaskComposerSeed: Equatable {
 
 /// The composer's editable state, minus the title, notes and tags.
 ///
-/// These five are exactly what the chip strip above the keyboard edits, which is why they travel
-/// together: the strip binds to one of these rather than to five separate `@State` properties that
-/// could be reordered or half-passed.
+/// These five are exactly what the sheet's do-date buttons and value rows edit, which is why they
+/// travel together: the rows bind to one of these rather than to five separate `@State` properties
+/// that could be reordered or half-passed.
 struct CadenceTaskComposerFields: Equatable {
     var container: TaskContainerSelection
     var sectionName: String
@@ -62,8 +63,9 @@ struct CadenceTaskComposerFields: Equatable {
     var priority: TaskPriority
 }
 
-/// The arithmetic behind the iOS create-task sheet: what a seed resolves to, which chips a draft
-/// earns, what each chip says, and what the whole thing hands `TaskCreationService`.
+/// The arithmetic behind the iOS create-task sheet: what a seed resolves to, which rows a draft
+/// earns, what each row and do-date button says, and what the whole thing hands
+/// `TaskCreationService`.
 ///
 /// Nothing here draws anything, and nothing here builds an `AppTask` by hand — creation goes through
 /// `TaskCreationService` exactly as macOS's `CreateTaskSheet` and `InlineTaskComposer` do.
@@ -85,14 +87,16 @@ enum CadenceTaskComposerSupport {
         )
     }
 
-    // MARK: - Chip visibility
+    // MARK: - Row visibility
 
-    /// Whether the section chip is worth a slot in the strip.
+    /// Whether the section row is worth a line on the sheet.
     ///
     /// Inbox is the *absence* of a list, and a list is what owns sections, so there is nothing to
     /// choose between there. Beyond that the rule is the inspector breadcrumb's: a lone `Default`
-    /// section is a control with one option, which is not a control.
-    static func showsSectionChip(
+    /// section is a control with one option, which is not a control. It matters more now than it
+    /// did as a chip — every row costs 57pt of a sheet that has to stay readable with the keyboard
+    /// up, so a row that can only say one thing does not get one.
+    static func showsSectionRow(
         container: TaskContainerSelection,
         availableSections: [String]
     ) -> Bool {
@@ -175,14 +179,74 @@ enum CadenceTaskComposerSupport {
         return name.lowercased().hasPrefix(trimmedQuery.lowercased())
     }
 
-    // MARK: - Chip labels
+    // MARK: - Do date buttons
 
-    /// What a date chip says: its own name while unset, the day once set.
+    /// The two fixed days the do-date buttons offer. The third button is a picker, not a day.
+    enum DoDateChoice: Hashable {
+        case today
+        case tomorrow
+
+        var dayOffset: Int {
+            switch self {
+            case .today: return 0
+            case .tomorrow: return 1
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .today: return "Today"
+            case .tomorrow: return "Tomorrow"
+            }
+        }
+    }
+
+    static func dateKey(for choice: DoDateChoice, from reference: Date = Date()) -> String {
+        let day = Calendar.current.date(byAdding: .day, value: choice.dayOffset, to: reference) ?? reference
+        return DateFormatters.dateKey(from: day)
+    }
+
+    static func isSelected(_ choice: DoDateChoice, doDateKey: String) -> Bool {
+        guard !doDateKey.isEmpty else { return false }
+        return DateFormatters.dayOffset(from: doDateKey) == choice.dayOffset
+    }
+
+    /// What tapping Today or Tomorrow leaves the do date as.
+    ///
+    /// **Tapping the day the task already has clears it.** These three buttons are the whole
+    /// do-date control now — there is no row beside them holding a Clear — so if the only way to
+    /// undo a mis-tapped "Today" were to open the picker, one tap could not be taken back by one
+    /// tap. It is also the behaviour `Cmd+T` has had on macOS since long before this sheet.
+    static func toggledDoDateKey(
+        current: String,
+        tapping choice: DoDateChoice,
+        from reference: Date = Date()
+    ) -> String {
+        isSelected(choice, doDateKey: current) ? "" : dateKey(for: choice, from: reference)
+    }
+
+    /// Whether the do date is a day the two fixed buttons cannot say, and so is being carried by
+    /// the picker button itself.
+    static func isCustomDoDate(_ doDateKey: String) -> Bool {
+        guard !doDateKey.isEmpty else { return false }
+        return !isSelected(.today, doDateKey: doDateKey) && !isSelected(.tomorrow, doDateKey: doDateKey)
+    }
+
+    /// What the third button says: its own name while the date is unset or is one of the other two
+    /// buttons' days, and the day itself once it is holding one — so a seeded "next Thursday" is
+    /// legible without opening anything.
+    static func doDatePickLabel(_ doDateKey: String) -> String {
+        isCustomDoDate(doDateKey) ? DateFormatters.shortDateString(from: doDateKey) : "Pick…"
+    }
+
+    // MARK: - Row values
+
+    /// What a date row says: the field's own "no value" wording while unset, the day once set.
     ///
     /// `DateFormatters.relativeDate` is deliberately not used — its "in 5 days" / "30 days ago"
-    /// spellings run three times the width of the chip beside them, and a strip that reflows as a
-    /// date is picked is a strip whose chips move out from under the finger heading for them.
-    static func dateChipLabel(_ dateKey: String, placeholder: String) -> String {
+    /// spellings run three times the width of the control, and a value that reflows as a date is
+    /// picked is a value that moves out from under the finger heading for it.
+    static func dateValueLabel(_ dateKey: String, placeholder: String) -> String {
         guard !dateKey.isEmpty else { return placeholder }
         switch DateFormatters.dayOffset(from: dateKey) {
         case 0: return "Today"
@@ -192,22 +256,23 @@ enum CadenceTaskComposerSupport {
         }
     }
 
-    /// What the priority chip says. `none` shows the field's name, because a chip reading "None" is
-    /// a value where every other chip in the strip shows a prompt.
-    static func priorityChipLabel(_ priority: TaskPriority) -> String {
-        priority == .none ? "Priority" : TaskTitleSupport.priorityMark(for: priority)
+    /// What the priority row says. `None` is a value here, not a prompt: the row is already
+    /// labelled "Priority", so the trailing control's job is to answer it — the same wording the
+    /// task inspector's priority row uses, rather than the `!!` mark the chip used to show.
+    static func priorityValueLabel(_ priority: TaskPriority) -> String {
+        priority.label
     }
 
-    /// What the tag chip says: the tag while there is one, the count once there are several.
+    /// What the tags row says: the tag while there is one, the count once there are several.
     ///
-    /// Listing every name is what the chips inside the picker are for; this one has to stay one
-    /// chip wide in a strip of six.
-    static func tagChipLabel(names: [String]) -> String {
+    /// Listing every name is what the chips inside the picker are for; this one has to fit on the
+    /// trailing edge of a 44pt row beside its label.
+    static func tagsValueLabel(names: [String]) -> String {
         let usable = names
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         switch usable.count {
-        case 0: return "Tags"
+        case 0: return "None"
         case 1: return usable[0]
         default: return "\(usable.count) tags"
         }

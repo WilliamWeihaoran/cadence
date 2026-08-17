@@ -52,27 +52,27 @@ struct CadenceTaskComposerSupportTests {
         #expect(CadenceTaskComposerSupport.initialFields(for: seed).sectionName == TaskSectionDefaults.defaultName)
     }
 
-    // MARK: - Chip visibility
+    // MARK: - Row visibility
 
     @Test
-    func inboxNeverShowsASectionChip() {
-        #expect(CadenceTaskComposerSupport.showsSectionChip(
+    func inboxNeverShowsASectionRow() {
+        #expect(CadenceTaskComposerSupport.showsSectionRow(
             container: .inbox,
             availableSections: ["Default", "Doing"]
         ) == false)
     }
 
     @Test
-    func aListWithOnlyTheDefaultSectionShowsNoSectionChip() {
-        #expect(CadenceTaskComposerSupport.showsSectionChip(
+    func aListWithOnlyTheDefaultSectionShowsNoSectionRow() {
+        #expect(CadenceTaskComposerSupport.showsSectionRow(
             container: .area(UUID()),
             availableSections: [TaskSectionDefaults.defaultName]
         ) == false)
     }
 
     @Test
-    func aListWithRealSectionsShowsTheSectionChip() {
-        #expect(CadenceTaskComposerSupport.showsSectionChip(
+    func aListWithRealSectionsShowsTheSectionRow() {
+        #expect(CadenceTaskComposerSupport.showsSectionRow(
             container: .project(UUID()),
             availableSections: [TaskSectionDefaults.defaultName, "Doing"]
         ))
@@ -226,12 +226,71 @@ struct CadenceTaskComposerSupportTests {
         #expect(CadenceTaskComposerSupport.matchesQuery("Design", query: "sign") == false)
     }
 
-    // MARK: - Chip labels
+    // MARK: - Do date buttons
 
     @Test
-    func anUnsetDateChipShowsItsOwnName() {
-        #expect(CadenceTaskComposerSupport.dateChipLabel("", placeholder: "Do") == "Do")
-        #expect(CadenceTaskComposerSupport.dateChipLabel("", placeholder: "Due") == "Due")
+    func theTwoFixedButtonsProduceTheirOwnDays() {
+        let reference = Date()
+        let today = DateFormatters.dateKey(from: reference)
+        let tomorrow = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: 1, to: reference)!)
+
+        #expect(CadenceTaskComposerSupport.dateKey(for: .today, from: reference) == today)
+        #expect(CadenceTaskComposerSupport.dateKey(for: .tomorrow, from: reference) == tomorrow)
+    }
+
+    @Test
+    func aButtonIsSelectedOnlyForItsOwnDay() {
+        let today = DateFormatters.todayKey()
+        let tomorrow = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
+
+        #expect(CadenceTaskComposerSupport.isSelected(.today, doDateKey: today))
+        #expect(CadenceTaskComposerSupport.isSelected(.tomorrow, doDateKey: today) == false)
+        #expect(CadenceTaskComposerSupport.isSelected(.tomorrow, doDateKey: tomorrow))
+        #expect(CadenceTaskComposerSupport.isSelected(.today, doDateKey: "") == false)
+        #expect(CadenceTaskComposerSupport.isSelected(.tomorrow, doDateKey: "") == false)
+    }
+
+    /// The three buttons are the whole do-date control — nothing beside them holds a Clear — so a
+    /// mis-tapped "Today" has to be undoable with the button that caused it.
+    @Test
+    func tappingTheDayTheDraftAlreadyHasClearsIt() {
+        let reference = Date()
+        let today = CadenceTaskComposerSupport.dateKey(for: .today, from: reference)
+        let tomorrow = CadenceTaskComposerSupport.dateKey(for: .tomorrow, from: reference)
+
+        #expect(CadenceTaskComposerSupport.toggledDoDateKey(current: "", tapping: .today, from: reference) == today)
+        #expect(CadenceTaskComposerSupport.toggledDoDateKey(current: today, tapping: .today, from: reference).isEmpty)
+        #expect(CadenceTaskComposerSupport.toggledDoDateKey(current: tomorrow, tapping: .tomorrow, from: reference).isEmpty)
+        // Tapping the *other* button moves the date rather than clearing it.
+        #expect(CadenceTaskComposerSupport.toggledDoDateKey(current: today, tapping: .tomorrow, from: reference) == tomorrow)
+        #expect(CadenceTaskComposerSupport.toggledDoDateKey(current: tomorrow, tapping: .today, from: reference) == today)
+    }
+
+    /// A seeded day the two fixed buttons cannot say has to be legible without opening the picker —
+    /// this sheet's whole reason for existing in this shape is that a seeded value is visible.
+    @Test
+    func theThirdButtonCarriesADayTheOtherTwoCannotSay() {
+        let today = DateFormatters.todayKey()
+        let tomorrow = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
+        let farOff = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: 40, to: Date())!)
+        let yesterday = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: -1, to: Date())!)
+
+        #expect(CadenceTaskComposerSupport.doDatePickLabel("") == "Pick…")
+        #expect(CadenceTaskComposerSupport.doDatePickLabel(today) == "Pick…")
+        #expect(CadenceTaskComposerSupport.doDatePickLabel(tomorrow) == "Pick…")
+        #expect(CadenceTaskComposerSupport.doDatePickLabel(farOff) == DateFormatters.shortDateString(from: farOff))
+        #expect(CadenceTaskComposerSupport.doDatePickLabel(yesterday) == DateFormatters.shortDateString(from: yesterday))
+
+        #expect(CadenceTaskComposerSupport.isCustomDoDate("") == false)
+        #expect(CadenceTaskComposerSupport.isCustomDoDate(today) == false)
+        #expect(CadenceTaskComposerSupport.isCustomDoDate(farOff))
+    }
+
+    // MARK: - Row values
+
+    @Test
+    func anUnsetDateRowShowsItsOwnEmptyWording() {
+        #expect(CadenceTaskComposerSupport.dateValueLabel("", placeholder: "No due date") == "No due date")
     }
 
     @Test
@@ -241,26 +300,28 @@ struct CadenceTaskComposerSupportTests {
         let yesterday = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: -1, to: Date())!)
         let farOff = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: 40, to: Date())!)
 
-        #expect(CadenceTaskComposerSupport.dateChipLabel(today, placeholder: "Do") == "Today")
-        #expect(CadenceTaskComposerSupport.dateChipLabel(tomorrow, placeholder: "Do") == "Tomorrow")
-        #expect(CadenceTaskComposerSupport.dateChipLabel(yesterday, placeholder: "Do") == "Yesterday")
-        #expect(CadenceTaskComposerSupport.dateChipLabel(farOff, placeholder: "Do") == DateFormatters.shortDateString(from: farOff))
+        #expect(CadenceTaskComposerSupport.dateValueLabel(today, placeholder: "No due date") == "Today")
+        #expect(CadenceTaskComposerSupport.dateValueLabel(tomorrow, placeholder: "No due date") == "Tomorrow")
+        #expect(CadenceTaskComposerSupport.dateValueLabel(yesterday, placeholder: "No due date") == "Yesterday")
+        #expect(CadenceTaskComposerSupport.dateValueLabel(farOff, placeholder: "No due date") == DateFormatters.shortDateString(from: farOff))
+    }
+
+    /// A row is labelled "Priority", so its trailing control answers it in words — the `!!` mark the
+    /// chip used to show named the field rather than the value.
+    @Test
+    func thePriorityRowSpellsTheValueOut() {
+        #expect(CadenceTaskComposerSupport.priorityValueLabel(.none) == "None")
+        #expect(CadenceTaskComposerSupport.priorityValueLabel(.low) == "Low")
+        #expect(CadenceTaskComposerSupport.priorityValueLabel(.medium) == "Medium")
+        #expect(CadenceTaskComposerSupport.priorityValueLabel(.high) == "High")
     }
 
     @Test
-    func thePriorityChipShowsTheMarkItWasTypedWith() {
-        #expect(CadenceTaskComposerSupport.priorityChipLabel(.none) == "Priority")
-        #expect(CadenceTaskComposerSupport.priorityChipLabel(.low) == "!")
-        #expect(CadenceTaskComposerSupport.priorityChipLabel(.medium) == "!!")
-        #expect(CadenceTaskComposerSupport.priorityChipLabel(.high) == "!!!")
-    }
-
-    @Test
-    func theTagChipNamesOneTagAndCountsSeveral() {
-        #expect(CadenceTaskComposerSupport.tagChipLabel(names: []) == "Tags")
-        #expect(CadenceTaskComposerSupport.tagChipLabel(names: ["  "]) == "Tags")
-        #expect(CadenceTaskComposerSupport.tagChipLabel(names: ["urgent"]) == "urgent")
-        #expect(CadenceTaskComposerSupport.tagChipLabel(names: ["urgent", "home"]) == "2 tags")
+    func theTagsRowNamesOneTagAndCountsSeveral() {
+        #expect(CadenceTaskComposerSupport.tagsValueLabel(names: []) == "None")
+        #expect(CadenceTaskComposerSupport.tagsValueLabel(names: ["  "]) == "None")
+        #expect(CadenceTaskComposerSupport.tagsValueLabel(names: ["urgent"]) == "urgent")
+        #expect(CadenceTaskComposerSupport.tagsValueLabel(names: ["urgent", "home"]) == "2 tags")
     }
 
     // MARK: - Container tokens

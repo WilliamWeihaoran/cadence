@@ -8,10 +8,25 @@ import SwiftUI
 /// a date or a priority only by being created first and then opened again in the inspector. This is
 /// the screen that lets it be said once.
 ///
-/// **Keyboard-first.** The title field takes focus on open and the keyboard comes straight up:
-/// capture is the app's highest-frequency action and now sits on the tab bar of every screen, so
-/// speed is the point. The attribute chips ride *above* the keyboard rather than living in the
-/// scroll view, because reaching them must not mean dismissing it.
+/// **Keyboard-first, but nothing is pinned to the floor.** The title field takes focus on open and
+/// the keyboard comes straight up: capture is the app's highest-frequency action and sits on the
+/// tab bar of every screen, so speed is the point. Everything the task can be given is then stated
+/// **in the page** — a Do row of three one-tap buttons, then labelled rows for List, Section, Due,
+/// Priority and Tags, each showing its current value.
+///
+/// It used to be a horizontally-scrolling chip strip above the keyboard with ~700pt of empty sheet
+/// over it. The strip scrolled, so the sixth chip was off the right edge of a 390pt phone and
+/// unreachable without dragging a control most people never knew moved. The stronger reason for
+/// rows is what this sheet is *for*: it is opened from four places — the tab bar `+`, the iPad
+/// corner `+`, quick capture, and a `+` dragged onto a row — and three of them **seed** fields. A
+/// seeded chip is indistinguishable from an unseeded one until the whole strip has been read; a
+/// seeded row says `List   Errands` at a glance, which is the entire argument.
+///
+/// **No estimate control**, deliberately: how long something takes is a judgement made once the
+/// task is real, and macOS's `CreateTaskSheet` has never had one either.
+///
+/// **Size class changes layout, never content.** iPhone and iPad get the same fields in the same
+/// order; only the width the sheet is drawn at differs.
 ///
 /// The `~` list, `#` tag and `!`/`!!`/`!!!` priority title markers work here exactly as they do in
 /// macOS's `TaskTitleEntryField` — same parser (`TaskTitleSupport`), no second implementation. They
@@ -78,9 +93,6 @@ struct iOSCreateTaskSheet: View {
                             .fontWeight(.semibold)
                             .disabled(!canCreate)
                     }
-                    ToolbarItemGroup(placement: .keyboard) {
-                        chipStrip
-                    }
                 }
         }
         .tint(Theme.blue)
@@ -96,12 +108,16 @@ struct iOSCreateTaskSheet: View {
 
     private var content: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 titleField
                 markerSuggestions
                 notesField
+                iOSTaskComposerDoDateButtons(doDateKey: $fields.doDateKey)
+                fieldRows
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 20)
         }
         .scrollDismissesKeyboard(.never)
         .scrollIndicators(.hidden)
@@ -125,6 +141,14 @@ struct iOSCreateTaskSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
     }
 
+    /// One line at rest, growing to six once you are actually writing in it.
+    ///
+    /// It was `lineLimit(2...6)` — a permanently two-line box on a sheet whose height is the
+    /// binding constraint. Measured on a 390pt phone: the rows below reach ~580pt, and with a
+    /// software keyboard up (~336pt) only ~508pt of the sheet is visible, so the Tags row sat about
+    /// 70pt below the fold — and a seeded value you cannot see is the thing the rows were chosen
+    /// over chips to avoid. Collapsing the resting state is the first step of the retreat the task
+    /// recorded, before folding Tags into the title field's `#` picker or letting the sheet scroll.
     private var notesField: some View {
         TextField("Notes", text: $notes, axis: .vertical)
             .textFieldStyle(.plain)
@@ -132,7 +156,7 @@ struct iOSCreateTaskSheet: View {
             .foregroundStyle(Theme.text)
             .tint(Theme.blue)
             .focused($focusedField, equals: .notes)
-            .lineLimit(2...6)
+            .lineLimit(focusedField == .notes || !notes.isEmpty ? 3...6 : 1...1)
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.surface)
@@ -178,8 +202,8 @@ struct iOSCreateTaskSheet: View {
         }
     }
 
-    private var chipStrip: some View {
-        iOSTaskComposerChipStrip(
+    private var fieldRows: some View {
+        iOSTaskComposerFieldRows(
             fields: $fields,
             selectedTags: $selectedTags,
             newTagName: $newTagName,

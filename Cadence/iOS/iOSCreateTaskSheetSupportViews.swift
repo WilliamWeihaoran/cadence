@@ -2,30 +2,139 @@
 import SwiftData
 import SwiftUI
 
-// The parts of `iOSCreateTaskSheet` that are not the sheet itself: the chip strip that rides above
-// the keyboard, the individual chips, and the suggestion row the `~` and `#` title markers raise.
+// The parts of `iOSCreateTaskSheet` that are not the sheet itself: the do-date buttons, the value
+// rows under them, and the suggestion row the `~` and `#` title markers raise.
 //
-// Every chip here is the shared `iOSTaskAttributeChip` wrapped around an existing picker
-// (`iOSContainerChoicePopover`, `iOSChoicePopoverList`, `CadenceQuickDatePopover`,
-// `iOSTaskTagPickerPopover`). Nothing in this file draws a picker of its own.
+// Every control here is an existing shared one — `iOSEditorSection` / `iOSEditorFieldRow` /
+// `iOSEditorDivider` for the rows, `iOSChoiceValueButton` for a row's trailing value,
+// `iOSContainerChoicePopover` / `iOSChoicePopoverList` / `CadenceDatePicker` /
+// `iOSTaskTagPickerPopover` for what they open. Nothing in this file draws a picker of its own, and
+// the row vocabulary is deliberately the task inspector's: the two screens edit the same fields, so
+// filling one in and correcting it afterwards should not be two different-looking jobs.
 
-// MARK: - Chip strip
+// MARK: - Do date buttons
 
-/// **List · Section · Do · Due · Priority · Tags**, pinned directly above the keyboard.
+/// **Today / Tomorrow / Pick…**, the do date's whole control.
 ///
-/// This strip is the design: capture is the app's highest-frequency action and now sits on the tab
-/// bar of every screen, so the attributes have to be reachable with the thumb that is already on
-/// the keyboard — without dismissing it, and without scrolling the sheet.
+/// It is not a value row, and that is the point: of the five fields on this sheet the do date is the
+/// one decided nearly every time, and a row would put the two answers it almost always gets behind
+/// a picker. Here they are one tap each. Tapping the day the draft already has clears it — see
+/// `CadenceTaskComposerSupport.toggledDoDateKey` — so a mis-tap costs one tap to undo.
 ///
-/// Each chip opens a `.popover`, and every one of those carries
-/// `.presentationCompactAdaptation(.popover)` (inside the picker views themselves) so it stays a
-/// small anchored overlay rather than being promoted into a full-height sheet that would take the
-/// keyboard down with it.
-struct iOSTaskComposerChipStrip: View {
+/// The third button carries a custom day once one is set (`Pick…` → `Sep 3`), so the trio always
+/// states the answer rather than only offering two of them.
+///
+/// It is **not** `iOSSegmentedChoice`: a segmented control asserts that exactly one of its options
+/// is true, and here none may be — an unset do date is the common case — while the third option
+/// opens a popover rather than selecting a value.
+struct iOSTaskComposerDoDateButtons: View {
+    @Binding var doDateKey: String
+
+    @State private var isPickerOpen = false
+    @State private var viewMonth = Date()
+
+    private var pickedDate: Date {
+        DateFormatters.date(from: doDateKey) ?? Date()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // The same glyph-in-a-fixed-slot label the rows below use, so "Do" starts on the same x
+            // as "List" and "Due" and the sheet reads as one column of fields.
+            iOSEditorInlineLabel(label: "Do", systemImage: "sun.max.fill")
+
+            HStack(spacing: 6) {
+                dayButton(.today)
+                dayButton(.tomorrow)
+                pickButton
+            }
+        }
+    }
+
+    private func dayButton(_ choice: CadenceTaskComposerSupport.DoDateChoice) -> some View {
+        let isSelected = CadenceTaskComposerSupport.isSelected(choice, doDateKey: doDateKey)
+
+        return button(title: choice.label, isSelected: isSelected) {
+            doDateKey = CadenceTaskComposerSupport.toggledDoDateKey(current: doDateKey, tapping: choice)
+        }
+        .accessibilityHint(isSelected ? "Clears the do date" : "Sets the do date")
+    }
+
+    private var pickButton: some View {
+        let isSelected = CadenceTaskComposerSupport.isCustomDoDate(doDateKey)
+
+        return button(
+            title: CadenceTaskComposerSupport.doDatePickLabel(doDateKey),
+            isSelected: isSelected
+        ) {
+            viewMonth = monthStart(of: pickedDate)
+            isPickerOpen = true
+        }
+        .popover(isPresented: $isPickerOpen) {
+            CadenceQuickDatePopover(
+                selection: Binding(
+                    get: { pickedDate },
+                    set: { doDateKey = DateFormatters.dateKey(from: $0) }
+                ),
+                viewMonth: $viewMonth,
+                isOpen: $isPickerOpen,
+                showsClear: !doDateKey.isEmpty,
+                onClear: { doDateKey = "" }
+            )
+            .background(Theme.surfaceElevated)
+            // Stays an anchored overlay on iPhone instead of being promoted into a full-height
+            // sheet, which would take the keyboard down with it.
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    private func button(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isSelected ? Theme.onColor : Theme.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .background(isSelected ? Theme.blue : Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                .contentShape(Rectangle())
+                // 40pt plate, 44pt target — the same derivation `iOSTaskAttributeChipSize` makes.
+                .iOSExpandedHitArea(2)
+        }
+        .buttonStyle(.iosPressable)
+    }
+
+    private func monthStart(of date: Date) -> Date {
+        var components = Calendar.current.dateComponents([.year, .month], from: date)
+        components.day = 1
+        return Calendar.current.date(from: components) ?? date
+    }
+}
+
+// MARK: - Value rows
+
+/// **List · Section · Due · Priority · Tags** as labelled rows in the page, each stating its current
+/// value on its trailing edge.
+///
+/// This replaced a horizontally-scrolling chip strip pinned above the keyboard. Two things were
+/// wrong with the strip and only one of them was the clipping: six chips do not fit across a 390pt
+/// phone, so the last of them sat off-screen — but the deeper problem is that this sheet is opened
+/// from four places (the tab bar `+`, the iPad corner `+`, quick capture, and a `+` dragged onto a
+/// row), three of which **seed** fields. A seeded chip reading "Errands" is indistinguishable from
+/// an unseeded one until you have read the whole strip; a row reading `List   Errands` says what was
+/// inherited without being hunted for.
+///
+/// Sizing note, because it is the constraint the whole shape was chosen against: each row is 44pt
+/// with a 13pt divider, so every row costs 57pt of a ~380pt visible area on a phone with the
+/// keyboard up. That is why the section row appears only when a list actually has sections to choose
+/// between, and why the estimate is not here at all.
+struct iOSTaskComposerFieldRows: View {
     @Binding var fields: CadenceTaskComposerFields
     @Binding var selectedTags: [Tag]
     @Binding var newTagName: String
-    /// The live title, read only so the priority chip can preview a `!!!` the moment it is typed.
+    /// The live title, read only so the priority row can show a `!!!` the moment it is typed.
     let titleText: String
     let activeAreas: [Area]
     let activeProjects: [Project]
@@ -67,195 +176,162 @@ struct iOSTaskComposerChipStrip: View {
         selectedProject == nil ? "tray.full.fill" : "checklist"
     }
 
-    /// A list's own colour is the one thing that tells two lists apart at a glance, so it is one of
-    /// the two attributes allowed to tint its chip.
-    private var containerTint: Color? {
-        if let selectedArea { return Color(hex: selectedArea.colorHex) }
-        if let selectedProject { return Color(hex: selectedProject.colorHex) }
-        return nil
+    private var isInbox: Bool {
+        fields.container == .inbox
+    }
+
+    private var showsSectionRow: Bool {
+        CadenceTaskComposerSupport.showsSectionRow(
+            container: fields.container,
+            availableSections: availableSections
+        )
     }
 
     private var resolvedPriority: TaskPriority {
         CadenceTaskComposerSupport.resolvedPriority(title: titleText, selected: fields.priority)
     }
 
+    private var dueDateBinding: Binding<Date> {
+        Binding(
+            get: { DateFormatters.date(from: fields.dueDateKey) ?? Date() },
+            set: { fields.dueDateKey = DateFormatters.dateKey(from: $0) }
+        )
+    }
+
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                containerChip
+        // No `contentSpacing`: `iOSEditorDivider` already pads itself on both sides and owns the
+        // whole gap between two rows.
+        iOSEditorSection(title: nil, style: .ruled) {
+            listRow
 
-                if CadenceTaskComposerSupport.showsSectionChip(
-                    container: fields.container,
-                    availableSections: availableSections
-                ) {
-                    sectionChip
-                }
-
-                iOSTaskComposerDateChip(
-                    placeholder: "Do",
-                    systemImage: "sun.max.fill",
-                    tint: Theme.blue,
-                    dateKey: $fields.doDateKey
-                )
-
-                iOSTaskComposerDateChip(
-                    placeholder: "Due",
-                    systemImage: "flag.fill",
-                    tint: Theme.red,
-                    dateKey: $fields.dueDateKey
-                )
-
-                priorityChip
-                tagChip
+            if showsSectionRow {
+                iOSEditorDivider()
+                sectionRow
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+
+            iOSEditorDivider()
+            dueRow
+
+            iOSEditorDivider()
+            priorityRow
+
+            iOSEditorDivider()
+            tagsRow
         }
-        .frame(maxWidth: .infinity)
-        // `surface`, not `surfaceElevated`: the chips themselves rest on `surfaceElevated` at 62%,
-        // so a strip at the same token made every chip's plate invisible and left six bare
-        // glyph-and-label pairs that read as static metadata rather than six controls.
-        .background(Theme.surface)
     }
 
-    private var containerChip: some View {
-        iOSTaskAttributeChip(
-            title: containerTitle,
+    /// The list's own colour is what tells two lists apart at a glance, so the glyph carries it —
+    /// one of the two fields (with priority) whose *value* is a colour the user already reads as
+    /// one. Everything else on the sheet stays `Theme.dim`.
+    private var listRow: some View {
+        iOSEditorFieldRow(
+            label: "List",
             systemImage: containerIcon,
-            isSet: fields.container != .inbox,
-            tint: containerTint
+            color: isInbox ? Theme.dim : (selectedArea.map { Color(hex: $0.colorHex) } ?? selectedProject.map { Color(hex: $0.colorHex) } ?? Theme.dim)
         ) {
-            showContainerPicker = true
+            iOSChoiceValueButton(
+                title: containerTitle,
+                // Inbox is the absence of a list, so it reads as unset even though it is a real
+                // destination — the same treatment the inspector's breadcrumb gives it.
+                color: isInbox ? Theme.dim : Theme.text,
+                minHeight: 44
+            ) {
+                showContainerPicker = true
+            }
+            .popover(isPresented: $showContainerPicker) {
+                iOSContainerChoicePopover(
+                    activeAreas: activeAreas,
+                    activeProjects: activeProjects,
+                    selection: containerToken,
+                    isPresented: $showContainerPicker
+                )
+            }
         }
-        .popover(isPresented: $showContainerPicker) {
-            iOSContainerChoicePopover(
-                activeAreas: activeAreas,
-                activeProjects: activeProjects,
-                selection: containerToken,
-                isPresented: $showContainerPicker
+    }
+
+    private var sectionRow: some View {
+        iOSEditorFieldRow(label: "Section", systemImage: "rectangle.split.3x1.fill") {
+            iOSChoiceValueButton(
+                // The real name of where the task will go, never "None": dimmer styling is what
+                // conveys "unset", so the row and its picker cannot disagree.
+                title: CadenceTaskInspectorSupport.sectionSegmentTitle(fields.sectionName),
+                color: Theme.text,
+                minHeight: 44
+            ) {
+                showSectionPicker = true
+            }
+            .popover(isPresented: $showSectionPicker) {
+                iOSChoicePopoverList(
+                    rows: availableSections.map { iOSChoiceRow(value: $0, title: $0, color: Theme.dim) },
+                    selection: $fields.sectionName,
+                    isPresented: $showSectionPicker
+                )
+            }
+        }
+    }
+
+    /// The same `CadenceDatePicker` the inspector's Due row uses, placeholder and Clear included —
+    /// one control for the whole field, with no separate switch that could disagree with it.
+    private var dueRow: some View {
+        iOSEditorFieldRow(label: "Due", systemImage: "flag.fill") {
+            CadenceDatePicker(
+                selection: dueDateBinding,
+                placeholder: fields.dueDateKey.isEmpty ? "No due date" : nil,
+                minHeight: 44,
+                showsClear: !fields.dueDateKey.isEmpty,
+                onClear: { fields.dueDateKey = "" }
             )
         }
     }
 
-    private var sectionChip: some View {
-        iOSTaskAttributeChip(
-            title: CadenceTaskInspectorSupport.sectionSegmentTitle(fields.sectionName),
-            systemImage: "rectangle.split.3x1.fill",
-            isSet: true
-        ) {
-            showSectionPicker = true
-        }
-        .popover(isPresented: $showSectionPicker) {
-            iOSChoicePopoverList(
-                rows: availableSections.map { iOSChoiceRow(value: $0, title: $0, color: Theme.dim) },
-                selection: $fields.sectionName,
-                isPresented: $showSectionPicker
-            )
+    private var priorityRow: some View {
+        iOSEditorFieldRow(label: "Priority", systemImage: "exclamationmark.circle.fill") {
+            iOSChoiceValueButton(
+                title: CadenceTaskComposerSupport.priorityValueLabel(resolvedPriority),
+                color: resolvedPriority == .none ? Theme.dim : Theme.priorityColor(resolvedPriority),
+                minHeight: 44
+            ) {
+                showPriorityPicker = true
+            }
+            .popover(isPresented: $showPriorityPicker) {
+                iOSChoicePopoverList(
+                    rows: TaskPriority.allCases.map { priority in
+                        iOSChoiceRow(
+                            value: priority,
+                            title: priority.label,
+                            systemImage: "flag.fill",
+                            color: Theme.priorityColor(priority)
+                        )
+                    },
+                    selection: Binding(
+                        get: { resolvedPriority },
+                        set: { onPickPriority($0) }
+                    ),
+                    isPresented: $showPriorityPicker
+                )
+            }
         }
     }
 
-    /// The label is the `!!` mark rather than "Medium", because the same mark is what the title
-    /// field accepts — the chip teaches the shortcut.
-    ///
-    /// The glyph is deliberately **not** `exclamationmark.2`: paired with a `!!` label it rendered
-    /// as "!! !!" at medium and "!! !" at low, which reads as a count rather than as a field name
-    /// with a value. A single circled bang names the field and lets the label alone carry how
-    /// urgent this is.
-    private var priorityChip: some View {
-        iOSTaskAttributeChip(
-            title: CadenceTaskComposerSupport.priorityChipLabel(resolvedPriority),
-            systemImage: "exclamationmark.circle.fill",
-            isSet: resolvedPriority != .none,
-            tint: Theme.priorityColor(resolvedPriority)
-        ) {
-            showPriorityPicker = true
-        }
-        .popover(isPresented: $showPriorityPicker) {
-            iOSChoicePopoverList(
-                rows: TaskPriority.allCases.map { priority in
-                    iOSChoiceRow(
-                        value: priority,
-                        title: priority.label,
-                        systemImage: "flag.fill",
-                        color: Theme.priorityColor(priority)
-                    )
-                },
-                selection: Binding(
-                    get: { resolvedPriority },
-                    set: { onPickPriority($0) }
+    private var tagsRow: some View {
+        iOSEditorFieldRow(label: "Tags", systemImage: "number") {
+            iOSChoiceValueButton(
+                title: CadenceTaskComposerSupport.tagsValueLabel(
+                    names: selectedTags.map { $0.name.isEmpty ? $0.slug : $0.name }
                 ),
-                isPresented: $showPriorityPicker
-            )
+                color: selectedTags.isEmpty ? Theme.dim : Theme.text,
+                minHeight: 44
+            ) {
+                showTagPicker = true
+            }
+            .popover(isPresented: $showTagPicker) {
+                iOSTaskTagPickerPopover(
+                    selectedTags: $selectedTags,
+                    allTags: allTags,
+                    newTagName: $newTagName
+                )
+            }
         }
-    }
-
-    private var tagChip: some View {
-        iOSTaskAttributeChip(
-            title: CadenceTaskComposerSupport.tagChipLabel(
-                names: selectedTags.map { $0.name.isEmpty ? $0.slug : $0.name }
-            ),
-            systemImage: "number",
-            isSet: !selectedTags.isEmpty
-        ) {
-            showTagPicker = true
-        }
-        .popover(isPresented: $showTagPicker) {
-            iOSTaskTagPickerPopover(
-                selectedTags: $selectedTags,
-                allTags: allTags,
-                newTagName: $newTagName
-            )
-        }
-    }
-}
-
-// MARK: - Date chip
-
-/// A do/due chip over the shared `CadenceQuickDatePopover` — the same Today / Tomorrow / This
-/// Weekend pills, month grid and Clear row the task inspector's date fields open.
-struct iOSTaskComposerDateChip: View {
-    let placeholder: String
-    let systemImage: String
-    let tint: Color
-    @Binding var dateKey: String
-
-    @State private var isOpen = false
-    @State private var viewMonth = Date()
-
-    private var date: Date {
-        DateFormatters.date(from: dateKey) ?? Date()
-    }
-
-    var body: some View {
-        iOSTaskAttributeChip(
-            title: CadenceTaskComposerSupport.dateChipLabel(dateKey, placeholder: placeholder),
-            systemImage: systemImage,
-            isSet: !dateKey.isEmpty,
-            tint: tint
-        ) {
-            viewMonth = monthStart(of: date)
-            isOpen = true
-        }
-        .popover(isPresented: $isOpen) {
-            CadenceQuickDatePopover(
-                selection: Binding(
-                    get: { date },
-                    set: { dateKey = DateFormatters.dateKey(from: $0) }
-                ),
-                viewMonth: $viewMonth,
-                isOpen: $isOpen,
-                showsClear: !dateKey.isEmpty,
-                onClear: { dateKey = "" }
-            )
-            .background(Theme.surfaceElevated)
-            .presentationCompactAdaptation(.popover)
-        }
-    }
-
-    private func monthStart(of date: Date) -> Date {
-        var components = Calendar.current.dateComponents([.year, .month], from: date)
-        components.day = 1
-        return Calendar.current.date(from: components) ?? date
     }
 }
 
