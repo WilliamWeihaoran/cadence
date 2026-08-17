@@ -333,11 +333,19 @@ nonisolated enum MarkdownTaskEmbedParser {
 /// direct binding with no commit boundary, so it would run per keystroke.
 ///
 /// So nothing sweeps, and instead every reader that puts an embed title in front of a user resolves
-/// it here first — export, note-content search, and the card renderer (which already does it, by
-/// looking the id up in its `taskEmbeds` map). The stored string survives only as the name of a task
-/// that no longer exists, which is exactly what `MarkdownTaskEmbedRenderInfo.missing(reference:)`
-/// already uses it for. Drift then cannot reach the user, and cross-device renames are covered for
-/// free because nothing has to be rewritten.
+/// it here first — export, note-content search, the iOS note-index row excerpts, and the card
+/// renderer (which already does it, by looking the id up in its `taskEmbeds` map). The stored string
+/// survives only as the name of a task that no longer exists, which is exactly what
+/// `MarkdownTaskEmbedRenderInfo.missing(reference:)` already uses it for. Drift then cannot reach
+/// the user, and cross-device renames are covered for free because nothing has to be rewritten.
+///
+/// **Resolution is on the text, not on one renderer's model, and that is what makes it complete.**
+/// `[[task:UUID|Title]]` has two spellings — a standalone line, drawn as a card, and an inline
+/// reference in a sentence, drawn as a link — and they are rendered by different code
+/// (`MarkdownTaskEmbedRenderInfo` against `MarkdownReferenceDisplaySupport`), so a fix applied to
+/// either one covers half the cases. Rewriting the string ahead of both covers them together: an
+/// excerpt taken through `CadenceMarkdownPresentationSupport.plainPreviewText` reads the live title
+/// in its `.taskEmbed` branch *and* in its inline-link runs, from this one call.
 nonisolated enum MarkdownTaskEmbedTitleCache {
     /// `markdown` with every embed title replaced by the current title of the task it references.
     ///

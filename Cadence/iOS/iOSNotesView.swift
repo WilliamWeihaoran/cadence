@@ -115,7 +115,13 @@ struct iOSNotesView: View {
             Divider().background(Theme.borderSubtle)
 
             if activeTab == .events {
-                iOSMeetingNotesList(notes: meetingNotes) { note in
+                // The index is the only place on this screen that shows note *text*, so the title
+                // index is built here rather than in `body` — the other three tabs are editors and
+                // would pay for a map nothing reads. See `MarkdownTaskEmbedTitleCache`.
+                iOSMeetingNotesList(
+                    notes: meetingNotes,
+                    taskTitles: MarkdownTaskEmbedTitleCache.titles(for: allTasks)
+                ) { note in
                     selectedMeetingNote = note
                 }
             } else {
@@ -289,6 +295,9 @@ struct iOSNotesView: View {
 /// radius.
 private struct iOSMeetingNotesList: View {
     let notes: [Note]
+    /// Live task titles for the rows' excerpts, built once by the caller. See
+    /// `iOSMeetingNoteRow.preview`.
+    let taskTitles: [UUID: String]
     let open: (Note) -> Void
 
     var body: some View {
@@ -306,7 +315,7 @@ private struct iOSMeetingNotesList: View {
                             Button {
                                 open(note)
                             } label: {
-                                iOSMeetingNoteRow(note: note)
+                                iOSMeetingNoteRow(note: note, taskTitles: taskTitles)
                             }
                             .buttonStyle(.iosPressable)
                         }
@@ -323,6 +332,9 @@ private struct iOSMeetingNotesList: View {
 
 private struct iOSMeetingNoteRow: View {
     let note: Note
+    /// Passed in rather than derived here: an index draws one map for all of its rows, and a
+    /// `@Query` per row would rebuild it once per row instead. See `preview`.
+    let taskTitles: [UUID: String]
 
     /// The event's own day, falling back to the last edit so a note with no metadata still files
     /// under a number rather than dropping out of the column.
@@ -341,8 +353,15 @@ private struct iOSMeetingNoteRow: View {
         return "Updated \(DateFormatters.shortDate.string(from: note.updatedAt))"
     }
 
+    /// The excerpt is taken from the note's text with every `[[task:UUID|Title]]` title replaced by
+    /// the task's current one — the title in the text is a cache, not the record, so a row that
+    /// excerpted the raw string named tasks by whatever they were called when they were embedded.
+    /// This covers both spellings at once: a standalone embed, which `plainPreviewText` excerpts
+    /// through its `.taskEmbed` branch, and an inline reference, which it excerpts as link text
+    /// through `MarkdownReferenceDisplaySupport`.
     private var preview: String {
-        let preview = CadenceMarkdownPresentationSupport.plainPreviewText(from: note.content, limit: 140)
+        let resolved = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
+        let preview = CadenceMarkdownPresentationSupport.plainPreviewText(from: resolved, limit: 140)
         return preview.isEmpty ? "Empty note" : preview
     }
 

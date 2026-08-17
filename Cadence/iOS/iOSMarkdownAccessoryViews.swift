@@ -157,7 +157,12 @@ struct iOSMarkdownReferencePickerSheet: View {
     /// selection plate, so every row carried system chrome at a system radius underneath the app's
     /// own row treatment — two layers at two radii for one row.
     private var referenceList: some View {
-        ScrollView {
+        // Built once per pass rather than once per row, and only on the side that shows note text:
+        // the task rows carry no excerpt, so a map there would be built and never read. See
+        // `MarkdownTaskEmbedTitleCache` and `iOSMarkdownNoteReferenceRow.preview`.
+        let taskTitles = kind == .note ? MarkdownTaskEmbedTitleCache.titles(for: tasks) : [:]
+
+        return ScrollView {
             LazyVStack(alignment: .leading, spacing: 2) {
                 switch kind {
                 case .note:
@@ -166,7 +171,7 @@ struct iOSMarkdownReferencePickerSheet: View {
                             insert(NoteReferenceParser.noteReferenceMarkdown(for: note))
                             dismiss()
                         } label: {
-                            iOSMarkdownNoteReferenceRow(note: note)
+                            iOSMarkdownNoteReferenceRow(note: note, taskTitles: taskTitles)
                         }
                         .buttonStyle(.iosPressable)
                     }
@@ -196,6 +201,8 @@ struct iOSMarkdownReferencePickerSheet: View {
 
 private struct iOSMarkdownNoteReferenceRow: View {
     let note: Note
+    /// Live task titles for `preview`, built once by the list rather than once per row.
+    let taskTitles: [UUID: String]
 
     private var subtitle: String {
         switch note.kind {
@@ -212,8 +219,12 @@ private struct iOSMarkdownNoteReferenceRow: View {
         }
     }
 
+    /// Excerpted from the note's text with embed titles resolved against the live tasks first — the
+    /// title stored in `[[task:UUID|Title]]` is a cache, so the raw string names a renamed task by
+    /// its old name. See `iOSMeetingNoteRow.preview`, which carries the same note.
     private var preview: String {
-        let preview = CadenceMarkdownPresentationSupport.plainPreviewText(from: note.content, limit: 120)
+        let resolved = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
+        let preview = CadenceMarkdownPresentationSupport.plainPreviewText(from: resolved, limit: 120)
         return preview.isEmpty ? "Empty note" : preview
     }
 

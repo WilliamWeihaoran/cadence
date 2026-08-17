@@ -39,6 +39,30 @@ nonisolated struct MarkdownReferenceDisplayRange: Equatable {
     }
 }
 
+/// How a `[[…]]` reference reads once its syntax is hidden: what the user sees, and what it points
+/// at.
+///
+/// **The display text of a `[[task:UUID|Title]]` is the string in the text, verbatim, and that
+/// string is a cache — see `MarkdownTaskEmbedTitleCache`.** Nothing here can resolve it: these are
+/// pure functions of one label, with no task in scope and deliberately no store access, because
+/// they run inside the editor's per-keystroke styling pass. So the resolution belongs to the
+/// *caller*, on the string, before it gets here — `MarkdownTaskEmbedTitleCache.resolving(_:titles:)`
+/// rewrites inline references and standalone embeds together, which is why the iOS note-index rows
+/// call it once and get correct link text and correct card titles out of one pass.
+///
+/// The live editor is the one reader that must **not** resolve
+/// (`iOSMarkdownStylingSupport.styleWikiReferences`; macOS reaches the same decision through its
+/// own copy in `MarkdownEditorSupport`). There the raw text *is* the document: the reference is
+/// hidden syntax wrapped around a title the caret can be placed inside, so drawing a different
+/// string would leave the text view and its own storage disagreeing about how long the line is.
+/// The editor keeps the text honest by writing it instead — see
+/// `MarkdownTaskEmbedParser.reconcilingReferenceTitles`.
+///
+/// One reader still shows the cache, and it is recorded here rather than papered over with an
+/// unused parameter on these functions: `iOSMarkdownPreview` — the read-only note preview in Focus
+/// — resolves standalone embeds through the `taskEmbeds` map it is handed, and inline references
+/// not at all. It wants a `resolving(_:titles:)` call where its markdown enters the view, the same
+/// one line the note-index rows use.
 nonisolated enum MarkdownReferenceDisplaySupport {
     nonisolated static func referenceRanges(in markdown: String) -> [MarkdownReferenceDisplayRange] {
         guard let regex = try? NSRegularExpression(pattern: #"\[\[([^\[\]]+?)\]\]"#) else {
