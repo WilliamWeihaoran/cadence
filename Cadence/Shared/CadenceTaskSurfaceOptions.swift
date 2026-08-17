@@ -15,6 +15,18 @@ struct CadenceTaskViewOptions: Equatable, Sendable {
     var showsSort: Bool
     /// The "Completed N" toggle, which is the only thing that can write `showCompleted`.
     var showsCompletedToggle: Bool
+    /// Whether a row names the list its task is in.
+    ///
+    /// Off for the surfaces that are already scoped to one list, where the chip names the page you
+    /// are standing on: the Inbox drew "Inbox" on every row, and a list's own Tasks tab would draw
+    /// its own name. On for Today and All Tasks, which mix lists and where the chip is both the
+    /// answer and the picker for changing it.
+    ///
+    /// This has to be one value for both widths. When the chip first started rendering for
+    /// container-less tasks it was so the Inbox's tasks — the ones most in need of filing — stopped
+    /// being the only ones that could not be filed from the row; that reasoning is about the *row*,
+    /// and the Inbox page is where it does not apply.
+    var showsContainerChip: Bool
 }
 
 /// What every task surface offers, and how much of the completed list it shows.
@@ -36,10 +48,25 @@ enum CadenceTaskSurfaceOptions {
     /// shown, and All Tasks has been rendering that many since it was written.
     static let completedRowLimit = 24
 
-    /// Ignores its argument today, on purpose: every surface offers the same two controls, and the
-    /// parameter is what keeps a future exception attached to a *surface* rather than to a width.
+    /// Every surface offers the same two chrome controls; they differ only in whether a row names
+    /// its list. The `surface` parameter is what keeps each exception attached to a *surface*
+    /// rather than to a width — an exception written here is written for both widths at once.
     static func options(for surface: CadenceTaskSurface) -> CadenceTaskViewOptions {
-        CadenceTaskViewOptions(showsSort: true, showsCompletedToggle: true)
+        CadenceTaskViewOptions(
+            showsSort: true,
+            showsCompletedToggle: true,
+            showsContainerChip: showsContainerChip(on: surface)
+        )
+    }
+
+    /// Whether a surface's rows name the list each task is in. See `showsContainerChip`.
+    static func showsContainerChip(on surface: CadenceTaskSurface) -> Bool {
+        switch surface {
+        case .today, .allTasks:
+            return true
+        case .inbox, .listDetail:
+            return false
+        }
     }
 
     /// The completed rows a surface actually lists — the full set, capped at `completedRowLimit`.

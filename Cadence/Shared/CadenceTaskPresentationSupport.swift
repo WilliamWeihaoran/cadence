@@ -1,6 +1,86 @@
 import Foundation
 import SwiftUI
 
+/// Every measurement the iOS task row varies, as a function of **width alone**.
+///
+/// This replaces `iOSTaskRowDensity`, a second axis each call site picked for itself. The two were
+/// nearly the same thing: on a phone `.compact` and `.regular` resolved to the same horizontal
+/// padding (11), the same completion glyph (20pt), the same row spacing (9) and the same secondary
+/// line limit (1). They differed by 1pt of vertical padding, half a point of type — and the
+/// **title line limit**, 1 against 2. So the axis' only real effect on a phone was that Today
+/// truncated a task title to one line while Inbox and All Tasks, one tab of the same tab bar away,
+/// wrapped it to two. It also inverted: `.compact` allowed *more* notes preview (80 characters)
+/// than `.regular` did at that width (64), so Today showed less of the title and more of the note
+/// about it.
+///
+/// There is deliberately **no density and no surface parameter here**, for the mirror of the
+/// reason `CadenceTaskSurfaceOptions` has no size class: "iPhone Today's rows differ from iPhone
+/// Inbox's rows" is no longer expressible. A host that wants a tighter row is describing a
+/// narrower *pane*, and the pane is what size class already reports.
+///
+/// The cost, taken deliberately: the two hosts that passed `.compact` at *regular* width — the
+/// calendar day inspector and the month agenda — now draw iPad-width rows in a fairly narrow pane.
+/// That is one style at one width rather than a third setting, and they were the same rows that
+/// made the iPad disagree with itself between its Today column and its Calendar tab.
+///
+/// `nonisolated` for the same reason `TaskOrdering` is: the project compiles with
+/// `-default-isolation MainActor`, which would otherwise make even the synthesized `==`
+/// main-actor isolated, and a value type describing paddings should not need an actor to compare.
+nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
+    /// How many lines a task title gets. **One number, at every width and on every surface** — it
+    /// is the thing T-78 was actually about. Two, because a truncated title on the screen you plan
+    /// your day from is the worse of the two failures, and because it is what every task surface
+    /// other than Today already showed.
+    static let titleLineLimit = 2
+
+    /// The completion circle's drawn diameter. Constant: only its 44pt-reaching *frame* ramps.
+    static let completionCircleDiameter: CGFloat = 16
+
+    let horizontalPadding: CGFloat
+    let verticalPadding: CGFloat
+    /// Between the completion circle, the task, and the estimate chip.
+    let contentSpacing: CGFloat
+    /// Between the title, the notes line, the chips, the tags and the subtask rows.
+    let summarySpacing: CGFloat
+    /// Between chips on one line of the attribute strip. The *line* spacing is not here — it is
+    /// derived from the chip's own hit inset, and a layout ramp must not be able to shrink it.
+    let badgeSpacing: CGFloat
+    /// The layout size the completion glyph takes; its touch target is expanded to 44pt on top.
+    let completionGlyphSize: CGFloat
+    let secondaryFontSize: CGFloat
+    let secondaryLineLimit: Int
+    /// How many characters of the notes preview the secondary line asks for.
+    let notesPreviewLimit: Int
+
+    static func metrics(isRegularWidth: Bool) -> CadenceTaskRowMetrics {
+        isRegularWidth ? .regularWidth : .compactWidth
+    }
+
+    static let regularWidth = CadenceTaskRowMetrics(
+        horizontalPadding: 14,
+        verticalPadding: 12,
+        contentSpacing: 12,
+        summarySpacing: 8,
+        badgeSpacing: 6,
+        completionGlyphSize: 24,
+        secondaryFontSize: 12,
+        secondaryLineLimit: 2,
+        notesPreviewLimit: 120
+    )
+
+    static let compactWidth = CadenceTaskRowMetrics(
+        horizontalPadding: 11,
+        verticalPadding: 9,
+        contentSpacing: 9,
+        summarySpacing: 6,
+        badgeSpacing: 5,
+        completionGlyphSize: 20,
+        secondaryFontSize: 11,
+        secondaryLineLimit: 1,
+        notesPreviewLimit: 64
+    )
+}
+
 struct CadenceSubtaskProgress: Hashable {
     let completed: Int
     let total: Int

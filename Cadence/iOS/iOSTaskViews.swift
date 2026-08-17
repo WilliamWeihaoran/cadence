@@ -2,14 +2,14 @@
 import SwiftData
 import SwiftUI
 
-enum iOSTaskRowDensity {
-    case regular
-    case compact
-}
+// `iOSTaskRowDensity` is gone. It was a second size axis, chosen per call site, that a phone could
+// set two ways in two tabs of one tab bar — and did: Today was `.compact` while Inbox and All Tasks
+// were `.regular`, which on a phone meant one-line titles here and two-line titles there and almost
+// nothing else. The row's measurements are `CadenceTaskRowMetrics` now, read from
+// `horizontalSizeClass` and from nothing else; that file carries the full accounting.
 
 struct iOSTaskRow: View {
     @Bindable var task: AppTask
-    var density: iOSTaskRowDensity = .regular
     /// Off for surfaces that are already scoped to one list, where naming it on every row is
     /// noise — the same knob, and the same reason, as `KanbanCard.showsContainerChip` on macOS.
     var showsContainer: Bool = true
@@ -29,14 +29,14 @@ struct iOSTaskRow: View {
         horizontalSizeClass == .regular
     }
 
-    private var isCompact: Bool {
-        density == .compact
+    private var metrics: CadenceTaskRowMetrics {
+        .metrics(isRegularWidth: isRegularWidth)
     }
 
     var body: some View {
         rowContent
-            .padding(.horizontal, rowHorizontalPadding)
-            .padding(.vertical, rowVerticalPadding)
+            .padding(.horizontal, metrics.horizontalPadding)
+            .padding(.vertical, metrics.verticalPadding)
             .frame(minHeight: 44)
             // One layer, one radius: the divider is the row's only chrome, at the same weight
             // `MacTaskRow` draws its bottom hairline.
@@ -92,7 +92,7 @@ struct iOSTaskRow: View {
             // to the row, and wrapping them in the ghost's `VStack` would quietly hand the ghost a
             // tap target and a swipe container of its own.
             .iOSNewTaskDropTarget(
-                horizontalInset: rowHorizontalPadding,
+                horizontalInset: metrics.horizontalPadding,
                 listName: { task.containerName }
             ) {
                 CadenceTaskDropSupport.dropKey(for: task)
@@ -121,7 +121,7 @@ struct iOSTaskRow: View {
     /// an estimate is a property of the task like its priority, and it has no business in the middle
     /// of the date chips.
     private var rowContent: some View {
-        HStack(alignment: .top, spacing: isCompact ? 9 : (isRegularWidth ? 12 : 9)) {
+        HStack(alignment: .top, spacing: metrics.contentSpacing) {
             completionButton
             taskSummary
 
@@ -129,16 +129,6 @@ struct iOSTaskRow: View {
                 iOSTaskRowEstimateChip(task: task)
             }
         }
-    }
-
-    private var rowHorizontalPadding: CGFloat {
-        if isCompact { return 11 }
-        return isRegularWidth ? 14 : 11
-    }
-
-    private var rowVerticalPadding: CGFloat {
-        if isCompact { return 8 }
-        return isRegularWidth ? 12 : 9
     }
 
     /// The circle carries priority and nothing else, exactly as `MacTaskRow`'s does — and once a
@@ -154,43 +144,41 @@ struct iOSTaskRow: View {
             iOSTaskCompletionCircle(
                 isDone: task.isDone,
                 tint: Theme.priorityColor(task.priority),
-                diameter: isCompact ? 14 : 16
+                diameter: CadenceTaskRowMetrics.completionCircleDiameter
             )
-            .frame(width: completionGlyphSize, height: completionGlyphSize)
-            .iOSExpandedHitArea((44 - completionGlyphSize) / 2)
+            .frame(width: metrics.completionGlyphSize, height: metrics.completionGlyphSize)
+            .iOSExpandedHitArea((44 - metrics.completionGlyphSize) / 2)
         }
         .buttonStyle(.iosPressable)
         .accessibilityLabel(task.isDone ? "Mark task todo" : "Complete task")
     }
 
-    private var completionGlyphSize: CGFloat {
-        if isCompact { return 20 }
-        return isRegularWidth ? 24 : 20
-    }
-
     private var taskSummary: some View {
-        VStack(alignment: .leading, spacing: isCompact ? 5 : (isRegularWidth ? 8 : 6)) {
+        VStack(alignment: .leading, spacing: metrics.summarySpacing) {
+            // `CadenceTaskRowMetrics.titleLineLimit`, not a per-width or per-host number. Today used
+            // to truncate to one line while the next tab along wrapped to two, and it is the day's
+            // planning screen that could least afford to hide half a title.
             Text(task.title.isEmpty ? "Untitled" : task.title)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                 .strikethrough(task.isDone, color: Theme.dim)
-                .lineLimit(isCompact ? 1 : 2)
+                .lineLimit(CadenceTaskRowMetrics.titleLineLimit)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if let secondaryLine {
                 Text(secondaryLine)
-                    .font(.system(size: secondaryFontSize, weight: .medium))
+                    .font(.system(size: metrics.secondaryFontSize, weight: .medium))
                     .foregroundStyle(Theme.dim.opacity(task.isDone ? 0.58 : 0.82))
-                    .lineLimit(isCompact ? 1 : (isRegularWidth ? 2 : 1))
+                    .lineLimit(metrics.secondaryLineLimit)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             taskBadges
 
-            // Both densities carry the same *elements*; only spacing and type scale change. Tags
-            // used to be dropped at compact density, which meant an iPhone's Today row and an
-            // iPad's Today row disagreed about what a task has on it rather than about how much
-            // room it gets to say it.
+            // Both widths carry the same *elements*; only spacing and type scale change. Tags used
+            // to be dropped at compact width, which meant an iPhone's Today row and an iPad's
+            // Today row disagreed about what a task has on it rather than about how much room it
+            // gets to say it.
             tagScroller
 
             subtaskRows
@@ -213,7 +201,7 @@ struct iOSTaskRow: View {
         if !subtasks.isEmpty {
             VStack(spacing: 0) {
                 ForEach(subtasks) { subtask in
-                    iOSTaskRowSubtaskRow(subtask: subtask, compact: isCompact)
+                    iOSTaskRowSubtaskRow(subtask: subtask)
                 }
 
                 if !task.isDone, let hidden = CadenceTaskPresentationSupport.hiddenSubtaskCount(for: task) {
@@ -221,7 +209,7 @@ struct iOSTaskRow: View {
                         showDetail = true
                     } label: {
                         Text("+\(hidden) more")
-                            .font(.system(size: isCompact ? 11 : 12, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Theme.dim)
                             .frame(minHeight: 30)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -232,11 +220,6 @@ struct iOSTaskRow: View {
                 }
             }
         }
-    }
-
-    private var secondaryFontSize: CGFloat {
-        if isCompact { return 10.5 }
-        return isRegularWidth ? 12 : 11
     }
 
     /// Wraps rather than scrolls. This was a horizontal `ScrollView`, which could not work here:
@@ -253,7 +236,7 @@ struct iOSTaskRow: View {
     /// it. Twice the inset is the smallest gap at which every chip owns its own target.
     private var taskBadges: some View {
         CadenceWrappingHStack(
-            spacing: isCompact ? 4 : (isRegularWidth ? 6 : 5),
+            spacing: metrics.badgeSpacing,
             lineSpacing: iOSTaskAttributeChipSize.row.hitInset * 2
         ) {
             taskBadgeContent
@@ -264,8 +247,10 @@ struct iOSTaskRow: View {
     /// (`"Errands - buy milk"`), which read as prose and left the list a task belongs to
     /// unclickable and indistinguishable from its notes. It is a chip now, like macOS's.
     private var secondaryLine: String? {
-        let previewLimit = isCompact ? 80 : (isRegularWidth ? 120 : 64)
-        let preview = CadenceTaskPresentationSupport.plainPreviewText(from: task.notes, limit: previewLimit)
+        let preview = CadenceTaskPresentationSupport.plainPreviewText(
+            from: task.notes,
+            limit: metrics.notesPreviewLimit
+        )
         return preview.isEmpty ? nil : preview
     }
 
@@ -291,7 +276,7 @@ struct iOSTaskRow: View {
     ///
     /// Two chips were dropped rather than wired up. The **subtask tally** is now a set of rows under
     /// the task, and the **notes** chip only ever appeared when the secondary line did not — which no
-    /// density does — so in a strip that is now entirely controls it would have read as one more
+    /// width does — so in a strip that is now entirely controls it would have read as one more
     /// control that did nothing.
     @ViewBuilder
     private var taskBadgeContent: some View {
@@ -313,8 +298,7 @@ struct iOSTaskRow: View {
             iOSTaskMetaLabel(
                 systemImage: task.status.systemImage,
                 text: task.status.label,
-                tint: Theme.blue,
-                compact: isCompact
+                tint: Theme.blue
             )
         }
 
@@ -440,15 +424,14 @@ struct iOSTaskMetaLabel: View {
     let text: String
     /// Icon *and* text. Neutral unless this item is one of the few that has earned a colour.
     var tint: Color = Theme.dim
-    var compact = false
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: systemImage)
-                .font(.system(size: compact ? 8.5 : 9.5, weight: .semibold))
+                .font(.system(size: 9.5, weight: .semibold))
                 .foregroundStyle(tint)
             Text(text)
-                .font(.system(size: compact ? 10 : 11, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(tint)
                 .lineLimit(1)
         }

@@ -244,8 +244,7 @@ struct iPadTodayView: View {
                         iOSTaskGroupSection(
                             title: group.title,
                             color: CadenceTodayPresentationSupport.accent(for: group.kind),
-                            tasks: group.tasks,
-                            density: todayRowDensity
+                            tasks: group.tasks
                         )
                     }
 
@@ -254,7 +253,6 @@ struct iPadTodayView: View {
                             title: "Completed Today",
                             color: Theme.green,
                             tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTodayTasks),
-                            density: todayRowDensity,
                             opacity: 0.62
                         )
                     }
@@ -270,9 +268,10 @@ struct iPadTodayView: View {
         }
     }
 
-    private var todayRowDensity: iOSTaskRowDensity {
-        isRegularWidth ? .regular : .compact
-    }
+    // `todayRowDensity` is gone with `iOSTaskRowDensity` — and it was already dead in the direction
+    // it named: this column only renders inside `twoPaneTodayLayout`, which
+    // `CadenceTodayLayoutSupport.layout` reaches only at regular width, so its `.compact` branch
+    // could not be taken. The row reads `horizontalSizeClass` itself now.
 
     #if DEBUG
     private func seedSampleData() {

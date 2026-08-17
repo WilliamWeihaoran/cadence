@@ -20,13 +20,51 @@ struct CadenceTaskSurfaceOptionsTests {
     /// The sweep's actual claim: no surface is a special case, so no *width* of a surface can be
     /// one either. If a future surface earns an exception it will fail here, which is the point —
     /// the exception has to be written down for both widths at once.
-    @Test func everyTaskSurfaceOffersTheSameOptions() {
-        let today = CadenceTaskSurfaceOptions.options(for: .today)
+    @Test func everyTaskSurfaceOffersTheSameChromeControls() {
+        for surface in CadenceTaskSurface.allCases {
+            let options = CadenceTaskSurfaceOptions.options(for: surface)
 
+            #expect(options.showsSort, "\(surface.rawValue) lost its sort control")
+            #expect(options.showsCompletedToggle, "\(surface.rawValue) lost its completed toggle")
+        }
+    }
+
+    // MARK: - The list chip
+
+    /// Every Inbox row carried a chip reading "Inbox" — the chip's job is to say which list a task
+    /// is in, and on the Inbox page the answer is the page title. It started rendering for
+    /// container-less tasks for a good reason (otherwise the tasks most in need of filing were the
+    /// only ones that could not be filed from their row); that reason is about the row, and this is
+    /// where it does not apply.
+    @Test func theInboxDoesNotNameItselfOnEveryRow() {
+        #expect(CadenceTaskSurfaceOptions.showsContainerChip(on: .inbox) == false)
+        #expect(CadenceTaskSurfaceOptions.options(for: .inbox).showsContainerChip == false)
+    }
+
+    /// The same defect one screen over: a list's own Tasks tab would name that list on every row.
+    /// It was already passing `false` at both widths by hand; this is what stops the hand-written
+    /// answer and the table's answer drifting apart.
+    @Test func aListsOwnPageDoesNotNameItselfOnEveryRow() {
+        #expect(CadenceTaskSurfaceOptions.showsContainerChip(on: .listDetail) == false)
+    }
+
+    /// The mixed surfaces keep it. Today and All Tasks draw rows from every list at once, so the
+    /// chip is both the answer to "which list" and the control for changing it — suppressing it
+    /// there would be the regression the chip was added to fix.
+    @Test func theSurfacesThatMixListsStillNameThem() {
+        #expect(CadenceTaskSurfaceOptions.showsContainerChip(on: .today))
+        #expect(CadenceTaskSurfaceOptions.showsContainerChip(on: .allTasks))
+    }
+
+    /// The point of putting this in `Shared/`: a surface has **one** answer, which both the compact
+    /// and the regular layout of that surface read. `Cadence/iOS/` is invisible to this target, so
+    /// what is pinned here is that there is only one value to read.
+    @Test func everySurfaceHasExactlyOneAnswerForTheListChip() {
         for surface in CadenceTaskSurface.allCases {
             #expect(
-                CadenceTaskSurfaceOptions.options(for: surface) == today,
-                "\(surface.rawValue) diverged from the shared task-surface options"
+                CadenceTaskSurfaceOptions.options(for: surface).showsContainerChip
+                    == CadenceTaskSurfaceOptions.showsContainerChip(on: surface),
+                "\(surface.rawValue) reports the list chip two different ways"
             )
         }
     }

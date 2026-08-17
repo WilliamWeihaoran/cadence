@@ -96,7 +96,13 @@ struct iPadInboxView: View {
                     if !inboxTasks.isEmpty {
                         Section {
                             ForEach(inboxTasks) { task in
-                                iOSTaskListRow(task: task)
+                                // No list chip: see the note on the compact layout's sections. The
+                                // decision is `CadenceTaskSurfaceOptions`', so both widths take it
+                                // from the same place.
+                                iOSTaskListRow(
+                                    task: task,
+                                    showsContainer: CadenceTaskSurfaceOptions.showsContainerChip(on: .inbox)
+                                )
                             }
                         } header: {
                             // Blue, and counted, exactly as on the phone and on All Tasks at both
@@ -109,7 +115,11 @@ struct iPadInboxView: View {
                     if showCompleted && !completedInboxTasks.isEmpty {
                         Section {
                             ForEach(CadenceTaskSurfaceOptions.completedRows(from: completedInboxTasks)) { task in
-                                iOSTaskListRow(task: task, opacity: 0.62)
+                                iOSTaskListRow(
+                                    task: task,
+                                    opacity: 0.62,
+                                    showsContainer: CadenceTaskSurfaceOptions.showsContainerChip(on: .inbox)
+                                )
                             }
                         } header: {
                             iOSTaskGroupHeader(

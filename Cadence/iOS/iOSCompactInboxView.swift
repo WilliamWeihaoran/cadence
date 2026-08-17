@@ -62,12 +62,20 @@ struct iOSCompactInboxView: View {
             .frame(minHeight: 190)
             .cadenceCard()
         } else {
+            // `showsContainer` comes from the surface, not from this view: the iPad panel asks the
+            // same question of the same enum case, so the phone and the tablet cannot answer it
+            // differently. Every row here would otherwise carry an "Inbox" chip naming the page it
+            // is drawn on — the chip's job is to say which list a task is in, and on this page the
+            // answer is the title at the top.
+            let showsContainer = CadenceTaskSurfaceOptions.showsContainerChip(on: .inbox)
+
             VStack(alignment: .leading, spacing: 14) {
                 if !inboxTasks.isEmpty {
                     iOSTaskGroupSection(
                         title: "Active",
                         color: Theme.blue,
-                        tasks: inboxTasks
+                        tasks: inboxTasks,
+                        showsContainer: showsContainer
                     )
                 }
 
@@ -76,6 +84,7 @@ struct iOSCompactInboxView: View {
                         title: "Completed",
                         color: Theme.green,
                         tasks: CadenceTaskSurfaceOptions.completedRows(from: completedInboxTasks),
+                        showsContainer: showsContainer,
                         opacity: 0.62
                     )
                 }

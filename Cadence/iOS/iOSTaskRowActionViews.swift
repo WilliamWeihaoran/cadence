@@ -447,9 +447,11 @@ struct iOSTaskRowEstimateChip: View {
 /// that gets missed. It is a `Button` rather than a tap gesture so it outranks the task row's own
 /// tap — which would otherwise open the detail sheet instead — and `minHeight` keeps the target
 /// honest without an expanded hit area that would overlap its neighbours.
+/// The `compact` flag this used to take is gone with `iOSTaskRowDensity`; see
+/// `CadenceTaskRowMetrics`. Its only writer was the row's density, and on a phone that meant a
+/// subtask under a Today task was drawn 1pt smaller than the same subtask under an Inbox task.
 struct iOSTaskRowSubtaskRow: View {
     let subtask: Subtask
-    var compact = false
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
@@ -457,10 +459,10 @@ struct iOSTaskRowSubtaskRow: View {
             subtask.isDone = true
             try? modelContext.save()
         } label: {
-            HStack(spacing: compact ? 7 : 8) {
-                iOSTaskCompletionCircle(isDone: false, tint: Theme.dim, diameter: compact ? 11 : 12)
+            HStack(spacing: 8) {
+                iOSTaskCompletionCircle(isDone: false, tint: Theme.dim, diameter: 12)
                 Text(subtask.title.isEmpty ? "Untitled" : subtask.title)
-                    .font(.system(size: compact ? 11 : 12, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.muted)
                     .lineLimit(1)
                     .truncationMode(.tail)

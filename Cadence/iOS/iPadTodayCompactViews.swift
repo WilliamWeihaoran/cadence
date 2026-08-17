@@ -101,8 +101,7 @@ struct iOSCompactTodayView: View {
                     iOSTaskGroupSection(
                         title: group.title,
                         color: CadenceTodayPresentationSupport.accent(for: group.kind),
-                        tasks: group.tasks,
-                        density: .compact
+                        tasks: group.tasks
                     )
                 }
 
@@ -111,7 +110,6 @@ struct iOSCompactTodayView: View {
                         title: "Completed Today",
                         color: Theme.green,
                         tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTodayTasks),
-                        density: .compact,
                         opacity: 0.62
                     )
                 }

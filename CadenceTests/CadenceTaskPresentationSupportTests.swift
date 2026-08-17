@@ -254,3 +254,57 @@ struct CadenceRowSubtaskCapTests {
         #expect(shown.map(\.order) == Array(0..<CadenceTaskPresentationSupport.rowSubtaskLimit))
     }
 }
+
+/// The iOS task row's measurements, which used to come from **two** axes — the width it was drawn
+/// at and an `iOSTaskRowDensity` each call site chose for itself. On a phone that meant Today's
+/// rows and Inbox's rows, one tab of the same tab bar apart, disagreed: one-line titles against
+/// two-line titles, 64 characters of notes preview against 80.
+///
+/// `Cadence/iOS/` is inside `#if os(iOS)` and invisible to this macOS-built target, so the metrics
+/// live in `Shared/` — which is also what makes "there is only one axis" assertable at all.
+struct CadenceTaskRowMetricsTests {
+    /// The defect T-78 named, pinned as its inverse: the title line limit is one number, so no
+    /// surface and no width can shorten it. Break this to 1 and iPhone Today goes back to
+    /// truncating titles its neighbouring tabs wrap.
+    @Test func aTaskTitleGetsTheSameNumberOfLinesEverywhere() {
+        #expect(CadenceTaskRowMetrics.titleLineLimit == 2)
+    }
+
+    /// The row varies by width and by nothing else. `metrics(isRegularWidth:)` is total over its
+    /// only input, so the two results below are the complete set of row shapes the app has — if a
+    /// third ever appears it will have to come from a new parameter, and this stops one being added
+    /// silently.
+    @Test func thereAreExactlyTwoRowShapesAndWidthPicksBetweenThem() {
+        #expect(CadenceTaskRowMetrics.metrics(isRegularWidth: true) == CadenceTaskRowMetrics.regularWidth)
+        #expect(CadenceTaskRowMetrics.metrics(isRegularWidth: false) == CadenceTaskRowMetrics.compactWidth)
+        #expect(CadenceTaskRowMetrics.regularWidth != CadenceTaskRowMetrics.compactWidth)
+    }
+
+    /// A wider row is never the tighter of the two. The old axis managed exactly this inversion:
+    /// `.compact` allowed 80 characters of notes preview while `.regular` allowed 64 at the same
+    /// width, so the phone's Today row said *less* of the title and *more* of the note about it.
+    @Test func theWiderRowIsRoomierOnEveryAxisItVaries() {
+        let wide = CadenceTaskRowMetrics.regularWidth
+        let narrow = CadenceTaskRowMetrics.compactWidth
+
+        #expect(wide.horizontalPadding > narrow.horizontalPadding)
+        #expect(wide.verticalPadding > narrow.verticalPadding)
+        #expect(wide.contentSpacing > narrow.contentSpacing)
+        #expect(wide.summarySpacing > narrow.summarySpacing)
+        #expect(wide.badgeSpacing > narrow.badgeSpacing)
+        #expect(wide.completionGlyphSize > narrow.completionGlyphSize)
+        #expect(wide.secondaryFontSize > narrow.secondaryFontSize)
+        #expect(wide.secondaryLineLimit >= narrow.secondaryLineLimit)
+        #expect(wide.notesPreviewLimit > narrow.notesPreviewLimit)
+    }
+
+    /// The completion glyph has to leave room for the 44pt touch target the row expands it to —
+    /// `iOSExpandedHitArea((44 - glyph) / 2)` goes negative if a glyph ever exceeds it.
+    @Test func theCompletionGlyphAlwaysFitsInsideItsTouchTarget() {
+        for metrics in [CadenceTaskRowMetrics.regularWidth, CadenceTaskRowMetrics.compactWidth] {
+            #expect(metrics.completionGlyphSize > 0)
+            #expect(metrics.completionGlyphSize <= 44)
+            #expect(metrics.completionGlyphSize >= CadenceTaskRowMetrics.completionCircleDiameter)
+        }
+    }
+}

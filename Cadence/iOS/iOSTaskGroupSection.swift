@@ -39,9 +39,11 @@ struct iOSTaskGroupSection: View {
     let title: String
     let color: Color
     let tasks: [AppTask]
-    /// The row density the hosting surface uses — Today's compact column packs its rows tighter
-    /// than the full-page lists do.
-    var density: iOSTaskRowDensity = .regular
+    /// Whether these rows name the list each task is in. Off on a surface already scoped to one
+    /// list, where the chip names the page you are standing on — the Inbox drew "Inbox" on every
+    /// row. Ask `CadenceTaskSurfaceOptions.showsContainerChip(on:)` rather than deciding here, so
+    /// the answer cannot come out one way on the phone's Inbox and another on the iPad's.
+    var showsContainer: Bool = true
     /// Completed groups are dimmed as a whole rather than row by row.
     var opacity: Double = 1
 
@@ -51,7 +53,7 @@ struct iOSTaskGroupSection: View {
 
             VStack(spacing: 7) {
                 ForEach(tasks) { task in
-                    iOSTaskRow(task: task, density: density)
+                    iOSTaskRow(task: task, showsContainer: showsContainer)
                         .opacity(opacity)
                 }
             }
