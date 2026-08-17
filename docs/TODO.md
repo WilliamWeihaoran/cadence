@@ -50,21 +50,21 @@ Started 2026-08-17, four agents on disjoint file sets.
 - [T-41] **`iOSMarkdownStylingSupportTests.swift` never runs** — the whole file is inside
   `#if os(iOS)` and the test target builds macOS. Dead coverage that reads as real coverage.
 
-**I — device-targeting cleanup**
-- [T-08] **Device-targeting cleanup.** Scanned 2026-08-17, and **most of what looks like dead
-  device code is not**: the 58pt sidebar **rail** below an 820pt window is reachable by a 2/3 Split
-  View on the 11" Pro (~782–795pt) and by Stage Manager, so it stays. What is genuinely
-  unreachable: `iPadTodayView.sidePanelMinWidth`'s `320` branch (needs a 949–1088pt window —
-  Stage Manager only), three upper clamps that never bind (`inspectorMaxWidth` 430, two `540`s, a
-  `760`), and `tvOS`/`watchOS`/`visionOS` names in one `#if` that compile to nothing. Week's
-  1183pt inspector split is unreachable but is a *parameter* feeding a shared gate Month still
-  uses — flag, don't cut. Test fixtures enumerate iPad mini and 13" widths; one assertion pins the
-  rail at 744 (mini) rather than at a Split View width, which is what makes deleting the rail look
-  safe. **Open question for the user:** the app target declares `TARGETED_DEVICE_FAMILY "1,2,7"`
-  and ships `xros`/`xrsimulator` with an `XROS_DEPLOYMENT_TARGET`, while `CadenceWidgets` does
-  not — so the app claims a visionOS family its own widget extension cannot ship into.
+
 
 ## Open — decided, not started
+
+- [T-53] **Decide what the visionOS build settings should say.** Confirmed in `project.pbxproj`,
+  Debug and Release: the app target declares `TARGETED_DEVICE_FAMILY = "1,2,7"` (7 = visionOS),
+  `SUPPORTED_PLATFORMS` including `xros xrsimulator`, and `XROS_DEPLOYMENT_TARGET = 26.2` — while
+  the embedded `CadenceWidgets` extension declares none of them. **So the app claims a device
+  family its own widget extension cannot ship into.** `CadenceTests`/`CadenceUITests` inherit the
+  same `"1,2,7"`. Either drop visionOS to match the three targeted devices, or add it to the widget
+  extension and actually support it. Not a drive-by edit: it changes what the app can be submitted
+  as, so it wants a deliberate decision. `project.pbxproj` deliberately untouched so far.
+- [T-54] **`CadenceTodayLayoutSupportTests.swift` still names a 13" iPad** at `:31` and `:47`, left
+  behind by the fixture cleanup in `88c05d1` because it was outside that agent's file set. Same
+  treatment: pin the behaviour at widths the three target devices actually produce.
 
 - [T-50] **iOS calendar: sticky headers, infinite horizontal scroll, pinch zoom, and a date button
   that names the day you are looking at.** Requested with three screenshots. Five interlocking
@@ -214,6 +214,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-36] `88c05d1` Today's two panes asked for one point more than the pane had (T-52, T-08).
 
 - [D-35] `a911d5a` The drop preview stops highlighting a task nothing happens to (T-46).
 
