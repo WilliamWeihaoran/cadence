@@ -32,6 +32,9 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 **K — calendar chrome, round two** (requested 2026-08-17 with a screenshot)
 
 **L — iPad sidebar footer**
+- [T-67] **Checklist circles sit too high against their text.** The inline marker canvas is placed
+  with its bottom on the text baseline, which reads as top-aligned next to lowercase text. Centre it
+  on the line fragment instead. `iOSMarkdownBlockCanvasLayoutManager`, the `isBlock == false` branch.
 - [T-66] **Settings and Focus collapse to one row of two ghost icon buttons**, Settings left, Focus
   right. They are currently two full-width labelled rows at the foot of the iPad sidebar.
 
