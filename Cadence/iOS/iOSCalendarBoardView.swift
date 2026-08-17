@@ -33,6 +33,9 @@ struct iOSCalendarBoardPlanner: View {
     /// it to resolve against. Month's agenda paid for the missing half of that rule; see
     /// `CadenceLazyScrollAnchor`.
     @State private var scrolledDayIndex: Int? = CalendarBoardPlannerSupport.plannerLeadingDayCount
+    /// Set by the first report that agrees with the placement. Until then this board believes
+    /// nothing it is told about where it is scrolled — see the switch in `board(columnWidth:)`.
+    @State private var didConfirmInitialColumn = false
     @State private var windowStartDate: Date?
 
     private let calendar = Calendar.current
@@ -46,7 +49,7 @@ struct iOSCalendarBoardPlanner: View {
     /// iPad keeps its fixed multi-column board. iPhone gets one column per screen with the next one
     /// peeking — see `CalendarBoardPlannerSupport.compactColumnWidth`.
     private func columnWidth(containerWidth: CGFloat) -> CGFloat {
-        guard !isRegularWidth else { return 300 }
+        guard !isRegularWidth else { return iOSBoardColumnWidth }
         return CalendarBoardPlannerSupport.compactColumnWidth(
             containerWidth: containerWidth,
             leadingInset: horizontalPadding,
@@ -136,7 +139,27 @@ struct iOSCalendarBoardPlanner: View {
         }
         .onChange(of: scrolledDayIndex) { _, dayIndex in
             guard let dayIndex else { return }
-            adoptVisibleDay(dayIndex)
+            // `cadenceLazyScrollAnchor` above is only the *assertion* half of the rule; this is the
+            // other half, and this board was taking one without the other. An unresolved report
+            // reads as column 0 — `plannerLeadingDayCount` days behind the anchor — and
+            // `adoptVisibleDay` writes `anchorDate`, which the Calendar page persists. So a report
+            // still in flight from before the placement could save a day the user never chose and
+            // have it survive relaunch. That is `ecaf80f` exactly, and worse for being written down.
+            //
+            // Not a fourth hand-rolled gate: `CadenceLazyScrollAnchor.report` is generic over the
+            // position, and an `Int` column index is the shape the timed grid already passes it.
+            switch CadenceLazyScrollAnchor.report(
+                dayIndex,
+                target: anchorDayIndex,
+                hasConfirmedPlacement: didConfirmInitialColumn
+            ) {
+            case .ignore:
+                return
+            case .confirmsPlacement:
+                didConfirmInitialColumn = true
+            case .adopt:
+                adoptVisibleDay(dayIndex)
+            }
         }
     }
 
@@ -378,7 +401,7 @@ private struct iOSCalendarBoardDayColumn: View {
                         ForEach(completedTasks.sorted { lhs, rhs in
                             CalendarBoardPlannerSupport.boardTaskSort(lhs, rhs)
                         }) { task in
-                            iOSCalendarBoardTaskCard(task: task)
+                            iOSBoardTaskCard(task: task)
                                 .draggable(TaskDragPayload.string(for: task.id))
                         }
                     }
@@ -406,7 +429,7 @@ private struct iOSCalendarBoardDayColumn: View {
                 }
             )
         case .task(let task):
-            iOSCalendarBoardTaskCard(task: task)
+            iOSBoardTaskCard(task: task)
                 .draggable(TaskDragPayload.string(for: task.id))
         }
     }

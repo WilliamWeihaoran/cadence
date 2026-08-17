@@ -433,7 +433,8 @@ struct iOSListCompletedPanel: View {
 /// The list's kanban board, in the vocabulary the three macOS boards share
 /// (`BoardColumnHeader` / `KanbanColumnScroll` / `KanbanCard`): a containerless column — no fill,
 /// no stroke — opened by a section-coloured dot, an uppercase name, a count and a closing
-/// hairline, with flat `Theme.surface` cards under it.
+/// hairline, with `iOSBoardTaskCard`s under it — the same card the Calendar Board's day columns
+/// use, at the same width.
 ///
 /// Each column used to be a plate tinted with the **list's** colour, so a six-column board was
 /// six identical washes and the per-column colour the list editor stores had nowhere to show. The
@@ -490,8 +491,6 @@ struct iOSListKanbanPanel: View {
     }
 }
 
-private let iOSKanbanColumnWidth: CGFloat = 272
-
 private struct iOSListKanbanColumn: View {
     let title: String
     let dotColor: Color
@@ -507,7 +506,9 @@ private struct iOSListKanbanColumn: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(tasks) { task in
-                        iOSListKanbanCard(task: task)
+                        // Scoped to one list already — the same reason `iOSTaskListRow` drops its
+                        // container, and the same knob macOS's `KanbanCard` uses.
+                        iOSBoardTaskCard(task: task, showsContainerChip: false)
                     }
                 }
                 .padding(.horizontal, 4)
@@ -517,112 +518,7 @@ private struct iOSListKanbanColumn: View {
             }
             .scrollIndicators(.hidden)
         }
-        .frame(width: iOSKanbanColumnWidth, alignment: .topLeading)
-    }
-}
-
-private struct iOSListKanbanCard: View {
-    @Bindable var task: AppTask
-    @Environment(\.modelContext) private var modelContext
-    @State private var showDetail = false
-
-    private var cardShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
-                completionButton
-
-                Text(task.title.isEmpty ? "Untitled" : task.title)
-                    .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
-                    .strikethrough(task.isDone, color: Theme.dim)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            if hasMetadata {
-                HStack(spacing: 10) {
-                    metadata
-                    Spacer(minLength: 0)
-                }
-                .padding(.leading, 28)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardShape.fill(Theme.surface))
-        .overlay { cardShape.strokeBorder(Theme.borderSubtle, lineWidth: 1) }
-        .contentShape(cardShape)
-        .onTapGesture {
-            showDetail = true
-        }
-        .accessibilityAddTraits(.isButton)
-        .accessibilityHint("Opens task details")
-        .sheet(isPresented: $showDetail) {
-            iOSTaskDetailSheet(task: task)
-        }
-    }
-
-    /// Same construction `iOSTaskRow` documents: a 44pt touch target inside a glyph-sized layout
-    /// frame, so a compliant target does not push the title 20pt into the card.
-    private var completionButton: some View {
-        Button {
-            CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
-        } label: {
-            iOSTaskCompletionCircle(
-                isDone: task.isDone,
-                tint: Theme.priorityColor(task.priority),
-                diameter: 15
-            )
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-        // `.cadencePlain` is macOS's hover wash: it paints a blue fill and stroke at radius 10
-        // around the 44pt label, which then overflows this 20pt layout slot and spills across the
-        // card's leading edge and title. `.iosPressable` is the touch equivalent, and is what the
-        // rest of the iOS surface uses.
-        .buttonStyle(.iosPressable)
-        .frame(width: 20, height: 20)
-        .padding(.top, 1)
-        .accessibilityLabel(task.isDone ? "Mark task todo" : "Complete task")
-    }
-
-    private var hasMetadata: Bool {
-        !task.scheduledDate.isEmpty || dueUrgency != nil
-    }
-
-    /// Neutral unless the date is genuinely late, icon and text together — the same rule
-    /// `iOSTaskRow` documents, so a card and a row rank the same deadline the same way.
-    @ViewBuilder
-    private var metadata: some View {
-        if !task.scheduledDate.isEmpty {
-            iOSTaskMetaLabel(
-                systemImage: task.scheduledStartMin >= 0 ? "clock.fill" : "sun.max.fill",
-                text: CadenceTaskPresentationSupport.scheduledDateLabel(for: task),
-                tint: isOverdo ? Theme.red : Theme.dim
-            )
-        }
-
-        if let dueUrgency {
-            iOSTaskMetaLabel(
-                systemImage: "flag.fill",
-                text: CadenceTaskPresentationSupport.dueDateLabel(for: task),
-                tint: dueUrgency == .overdue ? Theme.red : Theme.dim
-            )
-        }
-    }
-
-    private var dueUrgency: CadenceDueUrgency? {
-        CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)
-    }
-
-    private var isOverdo: Bool {
-        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
-        return (DateFormatters.dayOffset(from: task.scheduledDate) ?? 0) < 0
+        .frame(width: iOSBoardColumnWidth, alignment: .topLeading)
     }
 }
 

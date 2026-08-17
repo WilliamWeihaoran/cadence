@@ -110,6 +110,9 @@ struct iOSCalendarMonthAgendaList: View {
     /// first frame right where it can be; `cadenceLazyScrollAnchor` is what makes it right where it
     /// cannot. See `CadenceLazyScrollAnchor`.
     @State private var scrolledDayKey: String?
+    /// Set by the first report that agrees with the placement. Until then this agenda believes
+    /// nothing it is told about where it is scrolled — see the switch in `agenda`.
+    @State private var didConfirmInitialDay = false
     @State private var selectedBundle: TaskBundle?
     @State private var selectedEvent: iOSCalendarEventSelection?
 
@@ -184,7 +187,23 @@ struct iOSCalendarMonthAgendaList: View {
             scrollAgenda(toSelected: DateFormatters.dateKey(from: newValue))
         }
         .onChange(of: scrolledDayKey) { _, newValue in
-            adoptScrolledDay(newValue)
+            // The same gate the month grid above this agenda already applies, and for the same
+            // reason: `cadenceLazyScrollAnchor` asserts the opening section, and a report older
+            // than that assertion names the section the layout happened to start at. Adopting it
+            // moves the selection — and therefore the lit grid cell — to a day the user never
+            // touched. Only the reading that confirms the assertion switches this on.
+            switch CadenceLazyScrollAnchor.report(
+                newValue,
+                target: initialScrollTarget,
+                hasConfirmedPlacement: didConfirmInitialDay
+            ) {
+            case .ignore:
+                return
+            case .confirmsPlacement:
+                didConfirmInitialDay = true
+            case .adopt:
+                adoptScrolledDay(newValue)
+            }
         }
         .onChange(of: monthDate) { _, _ in
             realignAgendaWithMonth()
@@ -245,7 +264,7 @@ struct iOSCalendarMonthAgendaList: View {
             .buttonStyle(.iosPressable)
 
         case .task(let task):
-            iOSTaskRow(task: task, density: .compact)
+            iOSTaskRow(task: task)
         }
     }
 

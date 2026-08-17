@@ -329,6 +329,8 @@ private struct iOSScheduleHourRow: View {
     let selectedStartMin: Int?
     let onSelectStart: (Int) -> Void
 
+    @Environment(\.modelContext) private var modelContext
+
     private var hasItems: Bool {
         !tasks.isEmpty || !bundles.isEmpty
     }
@@ -357,16 +359,25 @@ private struct iOSScheduleHourRow: View {
 
                 if hasItems {
                     VStack(alignment: .leading, spacing: 5) {
+                        // The same two blocks the Calendar screen's day columns draw. `false` because
+                        // an hour row sizes to its content rather than handing each block an exact
+                        // height — see `iOSTimelineTaskBlock.fillsAvailableHeight`.
                         ForEach(bundles) { bundle in
-                            iOSScheduleBlock(
-                                title: bundle.displayTitle,
-                                subtitle: TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin),
-                                tint: Theme.purple
-                            )
+                            iOSTimelineBundleBlock(bundle: bundle, fillsAvailableHeight: false)
                         }
 
                         ForEach(tasks) { task in
-                            iOSScheduleTaskBlock(task: task)
+                            iOSTimelineTaskBlock(
+                                task: task,
+                                startMin: task.scheduledStartMin,
+                                endMin: task.scheduledEndMin,
+                                fillsAvailableHeight: false,
+                                // Only this pane offers it: the "Ready to Schedule" stack a cleared
+                                // task falls back into is directly above the grid here.
+                                onClearTime: {
+                                    CadenceTaskMutationSupport.clearScheduledTime(task, modelContext: modelContext)
+                                }
+                            )
                         }
                     }
                     .padding(.top, 5)
@@ -424,103 +435,6 @@ private struct iOSScheduleHourRow: View {
 
     private var hourLabel: String {
         TimeFormatters.timeString(from: hour * 60)
-    }
-}
-
-private struct iOSScheduleBlock: View {
-    let title: String
-    let subtitle: String
-    let tint: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-            Text(subtitle)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(Theme.dim)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 999, style: .continuous)
-                .fill(tint.opacity(0.9))
-                .frame(width: 3)
-        }
-        .cadenceCard(background: tint.opacity(0.18), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
-    }
-}
-
-private struct iOSScheduleTaskBlock: View {
-    @Bindable var task: AppTask
-    @Environment(\.modelContext) private var modelContext
-    @State private var showDetail = false
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Button {
-                showDetail = true
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(task.title.isEmpty ? "Untitled Task" : task.title)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-
-                    Text(timeRangeLabel)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                clearTime()
-            } label: {
-                Image(systemName: "arrow.uturn.left.circle")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(tint.opacity(0.92))
-                    .frame(width: 22, height: 22)
-                    .background(tint.opacity(0.12))
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Move \(task.title.isEmpty ? "task" : task.title) back to ready to schedule")
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 999, style: .continuous)
-                .fill(tint.opacity(0.9))
-                .frame(width: 3)
-        }
-        .cadenceCard(background: tint.opacity(0.18), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
-        .sheet(isPresented: $showDetail) {
-            iOSTaskDetailSheet(task: task)
-        }
-    }
-
-    private var tint: Color {
-        Color(hex: task.containerColor)
-    }
-
-    private var timeRangeLabel: String {
-        TimeFormatters.timeRange(
-            startMin: task.scheduledStartMin,
-            endMin: task.scheduledEndMin
-        )
-    }
-
-    private func clearTime() {
-        CadenceTaskMutationSupport.clearScheduledTime(task, modelContext: modelContext)
     }
 }
 

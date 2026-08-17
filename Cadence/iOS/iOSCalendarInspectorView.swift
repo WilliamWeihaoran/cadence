@@ -86,7 +86,7 @@ struct iOSCalendarDayInspector: View {
                         if !timedTasks.isEmpty {
                             iOSCalendarInspectorSection(title: "Timed", color: Theme.blue) {
                                 ForEach(timedTasks) { task in
-                                    iOSTaskRow(task: task, density: .compact)
+                                    iOSTaskRow(task: task)
                                 }
                             }
                         }
@@ -94,7 +94,7 @@ struct iOSCalendarDayInspector: View {
                         if !unscheduledTasks.isEmpty {
                             iOSCalendarInspectorSection(title: "Do Date", color: Theme.purple) {
                                 ForEach(unscheduledTasks) { task in
-                                    iOSTaskRow(task: task, density: .compact)
+                                    iOSTaskRow(task: task)
                                 }
                             }
                         }
@@ -102,7 +102,7 @@ struct iOSCalendarDayInspector: View {
                         if !dueOnlyTasks.isEmpty {
                             iOSCalendarInspectorSection(title: "Due", color: Theme.red) {
                                 ForEach(dueOnlyTasks) { task in
-                                    iOSTaskRow(task: task, density: .compact)
+                                    iOSTaskRow(task: task)
                                 }
                             }
                         }

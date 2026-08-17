@@ -658,7 +658,7 @@ private struct iOSCalendarTimelineDayColumn: View {
             dayWash
 
             ForEach(bundles) { bundle in
-                iOSCalendarBundleBlock(bundle: bundle)
+                iOSTimelineBundleBlock(bundle: bundle)
                     .frame(width: colWidth - 14, height: blockHeight(start: bundle.startMin, end: bundle.endMin))
                     .offset(x: 7, y: yOffset(for: bundle.startMin))
             }
@@ -679,7 +679,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                     startMinute: task.scheduledStartMin,
                     fallbackDuration: task.estimatedMinutes
                 )
-                iOSCalendarTaskBlock(task: task, startMin: range.start, endMin: range.end)
+                iOSTimelineTaskBlock(task: task, startMin: range.start, endMin: range.end)
                     .frame(width: colWidth - 18, height: blockHeight(start: range.start, end: range.end))
                     .offset(x: 9, y: yOffset(for: range.start))
             }
@@ -817,10 +817,25 @@ private struct iOSCalendarEventBlock: View {
     }
 }
 
-private struct iOSCalendarTaskBlock: View {
+/// The **one** task block on a timed grid: the Calendar screen's day columns and Today's schedule
+/// pane. Neutral plate, a wash of the list's colour, and a square-edged strip of that colour on the
+/// leading edge — the same vocabulary `iOSBoardTaskCard` speaks on the boards.
+///
+/// It replaced a second block in `iPadTodayScheduleViews` that was a tint-washed, fully-rounded,
+/// shadowed card with a pill strip and no completion circle, so the same scheduled task changed
+/// species between two screens that both exist to show its schedule.
+struct iOSTimelineTaskBlock: View {
     @Bindable var task: AppTask
     let startMin: Int
     let endMin: Int
+    /// The Calendar grid positions every block and hands it an exact height, so the block must fill
+    /// what it is given. Today's pane stacks blocks inside an hour row that sizes to its content,
+    /// where an infinite max height lets one block swallow the row.
+    var fillsAvailableHeight: Bool = true
+    /// Today's pane keeps a "back to Ready to Schedule" control on the block, because the stack it
+    /// would go back to is a few points above it on the same pane. The Calendar grid has no such
+    /// stack, so it passes `nil` — an absent control, not a disabled one.
+    var onClearTime: (() -> Void)? = nil
     @State private var showDetail = false
 
     private var listColor: Color {
@@ -865,7 +880,9 @@ private struct iOSCalendarTaskBlock: View {
             }
             .padding(.horizontal, 7)
             .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // Clears the trailing control when there is one, so a two-line title cannot run under it.
+            .padding(.trailing, onClearTime == nil ? 0 : 26)
+            .frame(maxWidth: .infinity, maxHeight: fillsAvailableHeight ? .infinity : nil, alignment: .topLeading)
             .background {
                 ZStack {
                     blockShape.fill(Theme.surfaceElevated.opacity(0.82))
@@ -883,14 +900,42 @@ private struct iOSCalendarTaskBlock: View {
             }
         }
         .buttonStyle(.iosPressable)
+        .overlay(alignment: .topTrailing) { clearTimeControl }
         .sheet(isPresented: $showDetail) {
             iOSTaskDetailSheet(task: task)
         }
     }
+
+    /// A sibling of the block's own button rather than a child of it: nesting a `Button` inside
+    /// another `Button`'s label gives the inner one no reliable hit test on iOS.
+    @ViewBuilder
+    private var clearTimeControl: some View {
+        if let onClearTime {
+            Button(action: onClearTime) {
+                Image(systemName: "arrow.uturn.left.circle")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(listColor.opacity(0.92))
+                    .frame(width: 22, height: 22)
+                    .background(listColor.opacity(0.12))
+                    .clipShape(Circle())
+                    .iOSExpandedHitArea(8)
+            }
+            .buttonStyle(.iosPressable)
+            .padding(.top, 4)
+            .padding(.trailing, 5)
+            .accessibilityLabel("Move \(task.title.isEmpty ? "task" : task.title) back to ready to schedule")
+        }
+    }
 }
 
-private struct iOSCalendarBundleBlock: View {
+/// The **one** bundle block on a timed grid, shared by the Calendar screen's day columns and
+/// Today's schedule pane, for the reason `iOSTimelineTaskBlock` documents. Today's pane used to
+/// draw a generic title/subtitle card that named the bundle and its hours but never said what was
+/// in it.
+struct iOSTimelineBundleBlock: View {
     let bundle: TaskBundle
+    /// See `iOSTimelineTaskBlock.fillsAvailableHeight`.
+    var fillsAvailableHeight: Bool = true
     @State private var showDetail = false
 
     private var tasks: [AppTask] {
@@ -944,7 +989,7 @@ private struct iOSCalendarBundleBlock: View {
             }
             .padding(.horizontal, 7)
             .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: fillsAvailableHeight ? .infinity : nil, alignment: .topLeading)
             .background(allDone ? Theme.doneFill.opacity(0.12) : Theme.amber.opacity(0.10))
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             .overlay {

@@ -169,8 +169,29 @@ struct iOSCalendarBoardEventCard: View {
     }
 }
 
-struct iOSCalendarBoardTaskCard: View {
+/// The width of a fixed-width board column, shared by the list kanban board and the Calendar
+/// Board's regular-width day columns. It was two literals — 272 for the kanban board, 300 for the
+/// Calendar Board — with nothing behind the 28pt gap; both hold `iOSBoardTaskCard` at the same
+/// density, so both want the same width. Compact-width Calendar Board columns are the one genuine
+/// exception and compute their own: see `CalendarBoardPlannerSupport.compactColumnWidth`, which
+/// sizes a column to one screen with the next one peeking.
+let iOSBoardColumnWidth: CGFloat = 300
+
+/// The **one** task card used by every board surface: the list/section kanban board and the
+/// Calendar Board's day columns. Density is fixed and identical on both — completion circle,
+/// title, and a two-column grid of time / due / list chips — so the boards cannot drift apart
+/// again, which is the rule `KanbanCard` already enforces on macOS.
+///
+/// The only per-board knob is `showsContainerChip`, and it is macOS's knob for macOS's reason: a
+/// section column already sits inside one list, so repeating the list name on every card there is
+/// noise. The Calendar Board is cross-list, so it shows it.
+///
+/// This replaced a second card in `iOSListSupportViews` — a flat `Theme.surface` rectangle with a
+/// 13.5pt title and plain icon-and-text metadata — that made the same task read as a different
+/// kind of object depending on which board you opened.
+struct iOSBoardTaskCard: View {
     @Bindable var task: AppTask
+    var showsContainerChip: Bool = true
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -215,9 +236,14 @@ struct iOSCalendarBoardTaskCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
-                ForEach(metadataChips, id: \.id) { chip in
-                    iOSCalendarBoardMetadataChip(item: chip)
+            // Guarded, because the grid is no longer guaranteed non-empty: a kanban card suppresses
+            // its list chip, so an undated task on the list board has nothing to show, and an
+            // unguarded `LazyVGrid` would still charge the `VStack` its 10pt of spacing.
+            if !metadataChips.isEmpty {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                    ForEach(metadataChips, id: \.id) { chip in
+                        iOSCalendarBoardMetadataChip(item: chip)
+                    }
                 }
             }
         }
@@ -276,14 +302,16 @@ struct iOSCalendarBoardTaskCard: View {
             )
         }
 
-        chips.append(
-            .init(
-                id: "list",
-                icon: task.project?.icon ?? task.area?.icon ?? "tray.fill",
-                title: task.containerName.isEmpty ? "Inbox" : task.containerName,
-                color: Color(hex: task.containerColor)
+        if showsContainerChip {
+            chips.append(
+                .init(
+                    id: "list",
+                    icon: task.project?.icon ?? task.area?.icon ?? "tray.fill",
+                    title: task.containerName.isEmpty ? "Inbox" : task.containerName,
+                    color: Color(hex: task.containerColor)
+                )
             )
-        )
+        }
 
         return chips
     }
