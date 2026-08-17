@@ -29,7 +29,11 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**M — task row rework** ([T-68], plus [T-74] status picker deletion)
+**N — task creation sheet** ([T-49])
+
+**P — one estimate picker** ([T-75], [T-76])
+
+**Q — one date title, and the stale calendar anchor** ([T-59], [T-70])
 
 ## Open — decided, not started
 
@@ -53,27 +57,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   iPhone↔iPad *implementation* sharing. Known starting points: `iOSNotesPanel` vs
   `iOSCompactNotesView` (two hosts of the same header, already partly shared),
   `iPadTodayView` vs `iOSCompactTodayView`, and the compact/regular branches inside `iOSTaskRow`.
-
-- [T-68] **iOS task row rework.** Requested with a screenshot of Today.
-  1. **Drop the trailing chevron** — it says nothing a row's tappability does not.
-  2. **Tapping a chip opens that chip's own picker** (list chip → list picker, date chip → date
-     picker, and so on); tapping anywhere else opens the task inspector. Note the row currently has
-     one tap target; this splits it, and chips become touch targets that must clear 44pt without
-     making the row taller.
-  3. **The estimate moves to the trailing edge**, where the chevron was.
-  4. **Subtasks render as rows beneath the task**, not as an `0/3` chip.
-  5. **The scheduled-time chip goes entirely** ("9:30 – 10 AM"). Decided 2026-08-17 against my
-     recommendation to keep it — noting the cost so it is not rediscovered as a bug: on a phone the
-     row is the only place the day's plan is visible, since no timeline sits beside the list there.
-     The Today page's timeline pane and the task inspector still carry it.
-  6. **Subtasks: unfinished only, tappable, no cap.** Finished ones stay hidden — they say nothing
-     new — and there is deliberately no "+N more" cut-off. Watch the consequence on device: one task
-     with a long checklist can push the rest of Today off screen, and if that reads badly the answer
-     is a cap, not bringing the `0/3` chip back.
-
-- [T-54] **`CadenceTodayLayoutSupportTests.swift` still names a 13" iPad** at `:31` and `:47`, left
-  behind by the fixture cleanup in `88c05d1` because it was outside that agent's file set. Same
-  treatment: pin the behaviour at widths the three target devices actually produce.
 
 - [T-49] **Rework the iOS task creation sheet: fields belong in the page, not pinned to the floor.**
   Requested with a screenshot. Today `iOSCreateTaskSheet` is title + notes at the top, then ~700pt
@@ -102,6 +85,20 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — known, unscheduled
 
+- [T-77] **Inbox rows show a redundant "Inbox" chip.** `0f7b756` made the list chip render for
+  tasks with no container — otherwise the tasks most in need of filing were the only ones that could
+  not be filed from the row — so on the Inbox *page* every row now names Inbox. The fix is
+  `showsContainer: false` from the Inbox surfaces, which needs a knob on `iOSTaskGroupSection`
+  (new in `b8b329e`).
+- [T-78] **iPhone Today rows are `.compact` while iPhone Inbox and All Tasks are `.regular`.** An
+  intra-phone difference, so not what the iPhone/iPad rule covers, but the only visible effect of
+  the density axis on a phone is title truncation — one line on Today, two elsewhere. Either pick
+  one or reduce the axis to an explicit `titleLineLimit`.
+- [T-79] **Moving a task embed needs a product decision, not a fix.** `29735a6` established that
+  macOS cannot reorder an embed inside a note either — its drag is a source that carries the *task*
+  out to a board, and no iOS shell puts a note editor and a board on screen together. Delivering
+  this means intra-note reordering (a new feature macOS lacks) or cross-screen drag.
+
 - [T-70] **Calendar Week opens months away from today.** Reproduced on the user's machine as well as
   a fresh simulator build, so it is app behaviour, not stale simulator state — Week opened on Jan 18
   against a real date of Aug 17. **The user has seen this and said it does not matter**, so it is
@@ -119,12 +116,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   for a fixed month grid or a weekly-stepped board. Worth confirming that is what the user wants,
   since the request named the control rather than the surface.
 
-- [T-58] **The read-only markdown preview still ignores table alignment.**
-  `MarkdownPreviewTable.alignments` is populated by `4f00e55` and honoured by the iOS editor canvas,
-  but `iOSMarkdownPreview.swift` and `CadenceMarkdownPresentationSupport.swift` do not read it — so
-  a right-aligned column renders left there. Roughly two lines each; it closes the last
-  canvas/preview divergence. Left out only because those files were outside that agent's set.
-
 - [T-55] **Two things from `64218d1` need a real phone, not a simulator.**
   1. **Can a phone still dismiss the keyboard in the Notes tab?** The Done bar was the dedicated
      affordance and it is gone. `keyboardDismissMode = .interactive` remains, so dragging the note
@@ -137,18 +128,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   2. **Double tap on plain text, and on a code block or table.** The `shouldBegin` gate makes the
      prose case true by construction, but neither case was observed: the simulator tooling has no
      double-tap action and two scripted taps fall outside UIKit's ~350ms window.
-- [T-56] **`iOSMarkdownStatusBar` is orphaned.** Its only call site went with the word-count bar in
-  `64218d1`. It lives in `iOSMarkdownAccessoryViews.swift` and references only `Theme` and SwiftUI,
-  both heavily used elsewhere in that file, so deleting it leaves nothing dangling.
-- [T-57] **Tapping a task-embed card in a note places the caret instead of opening the task**
-  (seen on iPad). Reported by the gesture agent, which had no pre-change baseline for it and did not
-  own the files — the hit-testing is in `iOSMarkdownStylingSupport`/block-canvas territory.
-  Establish whether it predates `64218d1` before assuming it caused it.
-
-- [T-43] **Renaming a task embed after it is created.** `aca2787` made the embed take its title at
-  creation, which covers the common case. There is still no way to rename one afterwards on iOS:
-  macOS opens a text field over the card (`beginInlineTaskTitleEdit` → `onRenameEmbeddedMarkdownTask`)
-  and iOS has no rename callback at all. A parity gap, and an instance of T-32.
 - [T-44] **No way to move a task embed on iOS.** macOS has drag via `draggingTaskEmbedID`; iOS has
   nothing. Raised as part of T-26 but it is a missing feature rather than a defect, so it was not
   built on the way past.
@@ -228,6 +207,11 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-47] `29735a6` A task-embed card was tappable only along its leading 8 points (T-57, T-43).
+- [D-46] `b8b329e` iPhone and iPad stop disagreeing about seven things (T-73 visible half).
+- [D-45] `0f7b756` The task row stops pointing at itself and starts being editable (T-68, T-74).
+- [D-44] `a240a74` Notes is one view for all three hosts (T-73 largest, T-56, T-58, T-54).
 
 - [D-43] `ecfc9a3` Month scrolls, every surface names one date, and nothing steps by button
   (T-61…T-65, T-69, T-71, T-72).
