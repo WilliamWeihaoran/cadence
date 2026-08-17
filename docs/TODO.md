@@ -31,6 +31,10 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 **K — calendar chrome, round two** (requested 2026-08-17 with a screenshot)
 
+**L — iPad sidebar footer**
+- [T-66] **Settings and Focus collapse to one row of two ghost icon buttons**, Settings left, Focus
+  right. They are currently two full-width labelled rows at the foot of the iPad sidebar.
+
 - [T-61] **Month scrolls vertically**, continuously, and loses its `‹ ➤ ›` cluster — the same trade
   Week made in `40259b0`. Deleting the cluster is only safe once scrolling replaces it, and the date
   title must carry jump-to-today.
