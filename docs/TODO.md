@@ -32,16 +32,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 Started 2026-08-17, four agents on disjoint file sets.
 
 
-**G — note editor chrome and gestures** (`iOSMarkdownTextView`, `iOSMarkdownEditor`)
-- [T-47] **Remove the "Done" bar under the iOS note editor.** A full-width bar whose only control
-  drops focus and takes the caret away. The caret staying in the note is fine.
-- [T-51] **Remove the word-count bar from the iOS note editor.** The thin "39 words" strip at the
-  foot of the editor. `iOSMarkdownStatusBar`, used at `iOSMarkdownEditingSurface.swift:47`; the
-  struct lives in `iOSMarkdownAccessoryViews.swift`, outside the agent's file set, so the *use*
-  comes out and the struct is reported if it is left orphaned.
-- [T-42] **Double-tap on plain text does nothing.** `renderedBlockTap` cancels the touch then
-  returns early when the hit is not a code/table block, so a double tap neither places the caret
-  nor selects a word.
 
 **H — harden special-block rendering** (`iOSMarkdownStylingSupport`, block canvases, Services parsing)
 - [T-48] **Harden the iOS markdown editor's rendering of special blocks.** Requested directly.
@@ -131,6 +121,26 @@ Started 2026-08-17, four agents on disjoint file sets.
 
 ## Open — known, unscheduled
 
+- [T-55] **Two things from `64218d1` need a real phone, not a simulator.**
+  1. **Can a phone still dismiss the keyboard in the Notes tab?** The Done bar was the dedicated
+     affordance and it is gone. `keyboardDismissMode = .interactive` remains, so dragging the note
+     down should carry the keyboard off — Apple Notes behaves this way — but it was never seen to
+     happen: both simulators suppress the software keyboard while the Mac's hardware keyboard is
+     attached, and that toggle lives in Simulator.app, which is off limits. The Notes tab is the
+     exposed case because it hides its navigation bar; every sheet-hosted editor has its own
+     Done/Cancel above the keyboard. If it sticks, the answer is a nav-bar Done or tap-outside, not
+     the bar returning.
+  2. **Double tap on plain text, and on a code block or table.** The `shouldBegin` gate makes the
+     prose case true by construction, but neither case was observed: the simulator tooling has no
+     double-tap action and two scripted taps fall outside UIKit's ~350ms window.
+- [T-56] **`iOSMarkdownStatusBar` is orphaned.** Its only call site went with the word-count bar in
+  `64218d1`. It lives in `iOSMarkdownAccessoryViews.swift` and references only `Theme` and SwiftUI,
+  both heavily used elsewhere in that file, so deleting it leaves nothing dangling.
+- [T-57] **Tapping a task-embed card in a note places the caret instead of opening the task**
+  (seen on iPad). Reported by the gesture agent, which had no pre-change baseline for it and did not
+  own the files — the hit-testing is in `iOSMarkdownStylingSupport`/block-canvas territory.
+  Establish whether it predates `64218d1` before assuming it caused it.
+
 - [T-43] **Renaming a task embed after it is created.** `aca2787` made the embed take its title at
   creation, which covers the common case. There is still no way to rename one afterwards on iOS:
   macOS opens a text field over the card (`beginInlineTaskTitleEdit` → `onRenameEmbeddedMarkdownTask`)
@@ -214,6 +224,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-37] `64218d1` The note editor loses two bars and stops eating double taps (T-47, T-51, T-42).
 
 - [D-36] `88c05d1` Today's two panes asked for one point more than the pane had (T-52, T-08).
 
