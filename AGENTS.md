@@ -101,6 +101,12 @@ code, and every one of them has been violated by a shipped change at least once.
   `SourcePackages`, which read as a broken checkout and briefly made a correct agent report look
   wrong. Rule: a build failure you cannot explain is a private-`derivedDataPath` re-run before it is
   a finding. Note `-derivedDataPath` requires `-scheme`; it is rejected with `-target` alone.
+- **Check the log says which tree it built.** The scratchpad is shared, so an isolated tree can be
+  deleted out from under a running build; the failed `cd` then falls through to the live repo and
+  the run reports **exit 0 against the wrong sources**. This happened on 2026-08-18 and was caught
+  only by grepping the log for the path xcodebuild echoes. Use a PID-unique directory, and confirm
+  the isolated path appears in the log before trusting the result. `build.db is locked` and `unable
+  to spawn swift-frontend` on a fresh private path are the same contention and clear on re-run.
 - **Commit with `git commit --only <paths>` when agents share a working tree.** `git add <paths>`
   adds your paths *to whatever is already staged*, so another agent's `git mv` or `git rm` sitting in
   the index rides along into your commit. This has happened three times. The third was the expensive
