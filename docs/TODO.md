@@ -29,14 +29,22 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
+_Nothing._
+
 ## Open — decided, not started
 
-- [T-88] **macOS: renaming a task leaves the embedding note's reference stale.** The same bug `D-56`
-  fixed on iOS. macOS rewrites the reference only from its *inline* card rename; renaming from the
-  task inspector sets `task.title` alone. The fix is the same call —
-  `MarkdownTaskEmbedParser.reconcilingReferenceTitles` — from wherever the Mac's inspector commits a
-  title. Invisible until a note is exported or searched, or the task is deleted and the card renders
-  from its own stale text.
+- [T-92] **Stop storing the embed title twice — resolve it from the live task instead.** The real fix
+  behind `ca62056` and `D-59`, both of which only reconcile a note that happens to be open. Every
+  other rename path still leaves `[[task:UUID|Title]]` stale: any `TaskDetailPopover` opened from a
+  task row, timeline block, kanban card or the month grid, plus MCP writes and cross-device merges.
+  On macOS that is an ordinary case — `TodayView` shows the notepad beside the task column.
+  **The sweep is the obvious fix and probably the wrong one:** it means unindexed `contains` scans
+  over every `Note` and every `AppTask.notes` on each title commit, and the inspector title is a
+  direct binding with no commit boundary, so it would fire per keystroke. The alternative is to make
+  the stored title a *cache*: have `NoteExportService`, note-content search and the card renderer
+  resolve from the live task, keeping the stored string only as the fallback for a deleted task —
+  which is already what `MarkdownTaskEmbedRenderInfo.missing(reference:)` uses it for. Then drift
+  cannot escape and no sweep is needed. Decide between the two before building either.
 
 - [T-87] **Mark the shared value types `nonisolated`, and unblock Swift 6.** The root cause behind
   T-82's 1195 test warnings: `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` gives every value type
@@ -162,6 +170,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-59] `49a273e` macOS rewrites an embed's reference when its inspector closes (T-88).
 
 - [D-58] `3097749` The creation sheet is a grid of value tiles, measured to fit (T-85).
 
