@@ -29,25 +29,21 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**K — calendar chrome, round two** (requested 2026-08-17 with a screenshot)
-
-- [T-61] **Month scrolls vertically**, continuously, and loses its `‹ ➤ ›` cluster — the same trade
-  Week made in `40259b0`. Deleting the cluster is only safe once scrolling replaces it, and the date
-  title must carry jump-to-today.
-- [T-62] **Board loses its `‹ ➤ ›` cluster too**, now its day columns scroll infinitely.
-- [T-63] **Board shows one chip, not two.** It currently has a span chip (`Aug 7-13`) *and* a day
-  chip (`FRI 7 / Friday, August 7`) — the second restates the first column and costs a whole row.
-  Delete the day chip; make the top chip a single date, the leftmost visible column, with the
-  chevron and jump-to-date of `iOSCalendarDateTitle`.
-- [T-64] **Month's `Day` reading loses the same second-line chip.**
-- [T-69] **Week loses the same second-line day chip**, now the header names the leftmost column.
-- [T-71] **Week: remove the day selection highlight.** Check what still consumes `selectedDate`
-  there first — if nothing does, the tap handler goes too rather than silently mutating unused state.
-- [T-72] **Month: render today's date specially**, matching `MonthCalendarPanel`'s existing house
-  style (blue at 0.15 fill, blue text) rather than inventing a fourth spelling of "today".
-- [T-65] **Month: swap the Week/Month/Board picker with the Agenda/Day toggle.**
+**M — task row rework** ([T-68], plus [T-74] status picker deletion)
 
 ## Open — decided, not started
+
+- [T-75] **One estimate picker, not two.** macOS has a two-column roller
+  (`TaskInspectorEstimateRollerPopover` / `EstimateRollerColumn`, `TaskInspectorFieldSupportViews.swift:445`);
+  iOS has preset chips plus two number fields (`EstimatePickerPopoverContent`,
+  `Shared/Components/EstimatePickerControl.swift:58`). The user asked for the roller on iPad and
+  iPhone. Note `CLAUDE.md` records these two as *deliberately* separate — that note needs rewriting
+  when this lands, because the deliberate split is what is being undone. Pick one implementation and
+  parameterise it; do not leave a third.
+- [T-76] **The macOS status picker at `TaskEmbedFieldEditorPopover.swift:62`** iterates
+  `TaskStatus.allCases` for the same job as the iOS picker being deleted in T-74. Decide whether it
+  goes too — a control deleted on one platform and alive on the other is the split the new rule
+  exists to prevent.
 
 - [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
   `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
@@ -232,6 +228,9 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-43] `ecfc9a3` Month scrolls, every surface names one date, and nothing steps by button
+  (T-61…T-65, T-69, T-71, T-72).
 
 - [D-42] `8f2fd9f` Settings and Focus share one row of glyphs at the sidebar's foot (T-66).
 - [D-41] `ae3ac48` Checklist circles sat on the baseline, which reads as floating (T-67).
