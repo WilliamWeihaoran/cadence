@@ -29,9 +29,12 @@ enum CadenceTodayLayoutSupport {
     static let taskPaneMinWidth: CGFloat = 440
     static let paneDividerWidth: CGFloat = 1
 
-    /// `iPadTodayView.sidePanelMinWidth(for:)`'s narrow value — the least the notes/timeline
-    /// inspector will accept before its own content starts clipping.
+    /// The least the notes/timeline inspector will accept before its own content starts clipping.
     static let inspectorPaneMinWidth: CGFloat = 320
+    /// What that floor becomes once the pane can afford it.
+    static let inspectorPaneWideMinWidth: CGFloat = 370
+    /// Where the floor steps up.
+    static let inspectorWidePaneThreshold: CGFloat = 900
 
     /// 761pt of pane. Two panes had **no** floor: `layout(...)` returned `.twoPane` for every
     /// regular-width device however little room there was, and only the (now deleted) three-pane
@@ -54,5 +57,56 @@ enum CadenceTodayLayoutSupport {
     static func layout(isRegularWidth: Bool, paneWidth: CGFloat) -> CadenceTodayLayout {
         guard isRegularWidth else { return .compact }
         return supportsTwoPane(paneWidth: paneWidth) ? .twoPane : .compact
+    }
+
+    // MARK: - Two-pane widths
+    //
+    // These three lived on `iPadTodayView` as `private` methods, which put them behind
+    // `#if os(iOS)` where the macOS test target cannot see them — so `iPadTodayPaneWidthTests`
+    // re-implemented them instead of calling them. A test that owns a *copy* of the rule cannot
+    // fail when the rule changes, and this one did not: the copy carried the same divider bug the
+    // view did, and asserted `task + floor <= pane` because the code it mirrored also forgot the
+    // 1pt `Divider()` between them. They live here now, beside the floor they have to agree with.
+
+    /// The inspector's floor at a given pane width.
+    ///
+    /// **Both branches are live**, and the shell's fold is what makes the narrow one so. With the
+    /// sidebar out, the target iPad is 646pt of pane in portrait — one column, so this is never
+    /// asked — and 1022 in landscape, which takes the wide floor. But a folded sidebar hands the
+    /// detail the whole window: **834pt in portrait**, over `twoPaneMinimumWidth` and under 900.
+    /// That is the narrow branch, on the target device, full screen, with no multitasking at all.
+    /// A folded 2/3 Split View (~795pt) lands in the same band.
+    static func inspectorPaneFloor(forPaneWidth paneWidth: CGFloat) -> CGFloat {
+        paneWidth < inspectorWidePaneThreshold ? inspectorPaneMinWidth : inspectorPaneWideMinWidth
+    }
+
+    /// The task column's width. It is the fixed side of the two-pane `HStack`; the inspector is the
+    /// side that flexes, so everything the inspector needs has to come out of this number first.
+    ///
+    /// **`available` counts the divider, and it did not.** `twoPaneMinimumWidth` sums
+    /// `taskPaneMinWidth + inspectorPaneMinWidth + paneDividerWidth`, so this file already knew the
+    /// divider existed; the width arithmetic did not, and the two disagreed. Wherever `available`
+    /// was the binding clamp the row asked for `task + 1 + floor == pane + 1`, and an `HStack` does
+    /// not shrink a fixed `.frame(width:)` — the shell hard-sizes the pane and `.clipped()`s it, so
+    /// the point came off the trailing edge. Two bands did it: **[761, 841)**, reachable on a
+    /// full-screen portrait iPad with the sidebar folded (834), and **[900, 928)**, which only a
+    /// resized window reaches. Subtracting the divider closes both, and at exactly
+    /// `twoPaneMinimumWidth` the task column now lands on `taskPaneMinWidth` to the point.
+    ///
+    /// The floors are preferences; `available` is the guarantee. There is no upper cap on
+    /// `preferred` — the `min(…, 760)` that used to close it needed a 1267pt pane, and the widest
+    /// pane a target device produces is 1210: an 11" Pro in landscape with the sidebar folded.
+    static func taskPaneWidth(forPaneWidth paneWidth: CGFloat) -> CGFloat {
+        let available = max(0, paneWidth - inspectorPaneFloor(forPaneWidth: paneWidth) - paneDividerWidth)
+        guard available > 0 else { return paneWidth }
+
+        let preferred = max(paneWidth * 0.60, 520)
+        return min(preferred, available)
+    }
+
+    /// The inspector's ideal, uncapped for the same reason: 40% of the widest reachable pane is 484,
+    /// where the `min(…, 540)` this used to end with needed 1350.
+    static func inspectorPaneIdealWidth(forPaneWidth paneWidth: CGFloat) -> CGFloat {
+        max(paneWidth * 0.40, inspectorPaneFloor(forPaneWidth: paneWidth))
     }
 }

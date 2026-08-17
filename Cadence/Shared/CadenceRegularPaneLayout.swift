@@ -101,11 +101,11 @@ enum CadenceCalendarWeekGridLayout {
     /// `preferredDayColumnWidth`. 842pt at regular width.
     ///
     /// This is what the grid claims before an inspector may take anything, so it is the number that
-    /// decides where Week splits: 842 + 340 + 1 = 1183pt of pane, reached only by a 13" iPad in
-    /// landscape. An 11" Pro in landscape is 1022 and gives the week its whole pane, at 137.7pt a
-    /// column. That is the trade this makes on the primary target — no day inspector in Week, and a
-    /// week you can actually read — and it is deliberate. The same day, in the same sections, is
-    /// still one tap away in Month's `Day` reading.
+    /// decides where Week splits: 842 + 340 + 1 = 1183pt of pane. On the target iPad in landscape
+    /// that is reached with the shell sidebar **folded** (1210pt of pane — seven 112.6pt columns
+    /// *and* an inspector) and not with it out (1022pt, which gives the week the whole pane at
+    /// 137.7pt a column). Either way the week is legible, which is the trade this makes and the
+    /// reason the gate is stated as "the inspector may only have space the week does not need".
     static func fullSizeWidth(isRegularWidth: Bool) -> CGFloat {
         timeRailWidth(isRegularWidth: isRegularWidth)
             + preferredDayColumnWidth(isRegularWidth: isRegularWidth) * CGFloat(daysInWeek)
@@ -133,7 +133,8 @@ enum CadenceCalendarWeekGridLayout {
 /// How the Calendar pane divides between the calendar itself and the day inspector.
 ///
 /// `iOSCalendarView.regularInspectorWidth(for:)` was `min(max(width * 0.30, 340), 430)` — a floor
-/// treated as a guarantee, and the same mistake `iPadTodayView.taskPaneWidth(for:)` was carrying.
+/// treated as a guarantee, and the same mistake `CadenceTodayLayoutSupport.taskPaneWidth` (then
+/// spelled on `iPadTodayView`) was carrying.
 /// On an 11" iPad in portrait the pane is 632pt: 30% of it is 190, the `max` raised that to 340, and
 /// the inspector took **54% of the pane** away from the surface it annotates. What was left ran the
 /// week grid at its 112pt minimum column width behind a horizontal scroller, so a week view showed
@@ -147,7 +148,11 @@ enum CadenceCalendarPaneLayout {
     /// The least the day inspector will accept before its own rows start clipping. This was already
     /// the `max(...)` floor in `regularInspectorWidth(for:)`; it is a gate now instead of a promise.
     static let inspectorMinWidth: CGFloat = 340
-    static let inspectorMaxWidth: CGFloat = 430
+    /// There is no maximum. `min(…, 430)` used to close this expression, and it needed 1434pt of
+    /// pane to bind — 430 is 30% of 1433 — where the widest pane a target device produces is 1210:
+    /// an 11" Pro in landscape with the shell sidebar folded. What actually bounds the inspector at
+    /// every reachable width is the second clamp in `inspectorWidth`, which is what the calendar
+    /// beside it needs.
     static let inspectorFraction: CGFloat = 0.30
     static let paneDividerWidth: CGFloat = 1
 
@@ -176,7 +181,7 @@ enum CadenceCalendarPaneLayout {
         forPaneWidth paneWidth: CGFloat,
         calendarMinimumWidth: CGFloat = inspectorMinWidth
     ) -> CGFloat {
-        let preferred = min(max(paneWidth * inspectorFraction, inspectorMinWidth), inspectorMaxWidth)
+        let preferred = max(paneWidth * inspectorFraction, inspectorMinWidth)
         return min(preferred, paneWidth - paneDividerWidth - calendarMinimumWidth)
     }
 
@@ -207,9 +212,9 @@ enum CadenceCalendarPaneLayout {
     /// the days it exists to show. The Board takes the whole pane.
     ///
     /// **Month is not routed through here.** It has two readings and two placements of its own and
-    /// asks `CadenceCalendarMonthLayout` instead, which is what makes `Day` the inspector's one
-    /// remaining home on an iPad: Week supplies a `calendarMinimumWidth` that puts its split at
-    /// 1183pt, wider than either orientation of the target device.
+    /// asks `CadenceCalendarMonthLayout` instead. Week supplies a `calendarMinimumWidth` that puts
+    /// its split at 1183pt, which the target iPad reaches only in landscape with the shell sidebar
+    /// folded — so `Day` is where the inspector usually lives.
     static func showsDayInspector(
         isCompact: Bool,
         presentation: CadenceCalendarPresentation,

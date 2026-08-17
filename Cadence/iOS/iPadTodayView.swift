@@ -106,10 +106,14 @@ struct iPadTodayView: View {
         }
     }
 
+    /// Every width here comes from `CadenceTodayLayoutSupport`, which also owns the floor that
+    /// decides whether this layout renders at all. It used to own the floor while this view owned
+    /// the widths, and the two disagreed about whether the `Divider()` below existed — see
+    /// `taskPaneWidth(forPaneWidth:)`.
     private func twoPaneTodayLayout(width: CGFloat) -> some View {
         HStack(spacing: 0) {
             todayTaskColumn
-                .frame(width: taskPaneWidth(for: width))
+                .frame(width: CadenceTodayLayoutSupport.taskPaneWidth(forPaneWidth: width))
                 .layoutPriority(0.58)
 
             Divider().background(Theme.borderSubtle)
@@ -123,40 +127,15 @@ struct iPadTodayView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // No maximum. The 540 that used to sit here needed a 1350pt pane; the widest this view
+            // can be handed on a target device is 1210 — an 11" Pro in landscape with the shell
+            // sidebar folded — where the ideal is 484.
             .frame(
-                minWidth: sidePanelMinWidth(for: width),
-                idealWidth: sidePanelIdealWidth(for: width),
-                maxWidth: 540
+                minWidth: CadenceTodayLayoutSupport.inspectorPaneFloor(forPaneWidth: width),
+                idealWidth: CadenceTodayLayoutSupport.inspectorPaneIdealWidth(forPaneWidth: width)
             )
             .layoutPriority(0.42)
         }
-    }
-
-    /// The task column's width, which must **never** exceed what is left after the inspector's
-    /// floor.
-    ///
-    /// The previous spelling could return more space than existed. On an 11" iPad in portrait the
-    /// pane is 632pt: the task floor (520) and the inspector floor (320) sum to 840, and the guard
-    /// meant to catch that — `max(420, width - inspectorFloor)` — has a 420 floor of its own, so it
-    /// returned 420 against 312pt of actual room. An `HStack` does not shrink a fixed
-    /// `.frame(width:)`; it overflows and clips, which is why the capture field read "l a task for
-    /// today…" with its leading edge off the left of the column.
-    ///
-    /// The floors are preferences, not guarantees. `available` is the guarantee.
-    private func taskPaneWidth(for width: CGFloat) -> CGFloat {
-        let available = max(0, width - sidePanelMinWidth(for: width))
-        guard available > 0 else { return width }
-
-        let preferred = min(max(width * 0.60, 520), 760)
-        return min(preferred, available)
-    }
-
-    private func sidePanelMinWidth(for width: CGFloat) -> CGFloat {
-        width < 900 ? 320 : 370
-    }
-
-    private func sidePanelIdealWidth(for width: CGFloat) -> CGFloat {
-        min(max(width * 0.40, sidePanelMinWidth(for: width)), 540)
     }
 
     /// The two-pane inspector's body. Neither panel draws its own page title here: the switcher row

@@ -121,11 +121,20 @@ enum CadenceStoreSupport {
             .filter { fileManager.fileExists(atPath: $0.path) }
     }
 
+    /// macOS is the one platform where the process home and the *user's* home differ: under the App
+    /// Sandbox `NSHomeDirectory()` is the container, and only `homeDirectoryForCurrentUser` reaches
+    /// `~`. Everywhere else the container **is** the home.
+    ///
+    /// Spelled as macOS-or-not rather than by listing platforms. It used to read
+    /// `#if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)`, and this app builds two of those
+    /// six names — so three of the four listed compiled to nothing, while implying targets that do
+    /// not exist. This way a platform added later is right by default rather than by remembering
+    /// to name it here.
     private nonisolated static var userHomeDirectory: URL {
-        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
-        URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-        #else
+        #if os(macOS)
         FileManager.default.homeDirectoryForCurrentUser
+        #else
+        URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
         #endif
     }
 }

@@ -18,8 +18,15 @@ import CoreGraphics
 /// pane is handed exactly `windowWidth - sidebarWidth` and clips its own content, so no pane it
 /// hosts can move the navigation column. `detailWidth` + `sidebarWidth` is always the window.
 enum CadenceRootShellLayout {
-    /// The icon-only column, used where a labelled one would not leave the detail enough room —
-    /// iPad mini portrait, Slide Over, and narrow Split View.
+    /// The icon-only column, used where a labelled one would not leave the detail enough room.
+    ///
+    /// **Multitasking is the only thing that reaches it, and it does reach it.** No target device
+    /// produces a window under 820pt at regular width *full screen*: an iPhone is compact and runs
+    /// the tab shell instead, and an 11" Pro is 834 in portrait and 1210 in landscape. It takes a
+    /// window that is simultaneously horizontally-regular and narrow, which is exactly what
+    /// **a 2/3 Split View on the 11" Pro in landscape is — ~782–795pt depending on generation** —
+    /// and what Stage Manager produces at any size the user drags to. Delete this and that
+    /// configuration gets a 188pt labelled column out of a 780pt window, or no navigation at all.
     static let railWidth: CGFloat = 58
     /// The labelled column.
     static let expandedWidth: CGFloat = 188
@@ -29,9 +36,9 @@ enum CadenceRootShellLayout {
     /// part of what the fold is for, so the expand affordance floats over the detail instead of
     /// living in a column of its own.
     static let collapsedWidth: CGFloat = 0
-    /// Full window width (not the column's own). iPad portrait widths run from ~744pt (mini) to
-    /// ~1032pt (13"); landscape is comfortably wider on every model. 820pt activates the labelled
-    /// column for portrait on 10.9"+ iPads and for both orientations on 11"/13" iPads.
+    /// Full window width (not the column's own). Both orientations of the target iPad clear it —
+    /// 834 portrait, 1210 landscape — so the labelled column is what the app shows full screen and
+    /// `railWidth` is what a split or a resized window falls back to.
     static let expandedMinWindowWidth: CGFloat = 820
 
     static func usesExpandedSidebar(windowWidth: CGFloat) -> Bool {
