@@ -40,6 +40,7 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   Delete the day chip; make the top chip a single date, the leftmost visible column, with the
   chevron and jump-to-date of `iOSCalendarDateTitle`.
 - [T-64] **Month's `Day` reading loses the same second-line chip.**
+- [T-69] **Week loses the same second-line day chip**, now the header names the leftmost column.
 - [T-65] **Month: swap the Week/Month/Board picker with the Agenda/Day toggle.**
 
 ## Open — decided, not started
@@ -91,6 +92,13 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 
 ## Open — known, unscheduled
+
+- [T-70] **Calendar Week opens months away from today.** Reproduced on the user's machine as well as
+  a fresh simulator build, so it is app behaviour, not stale simulator state — Week opened on Jan 18
+  against a real date of Aug 17. **The user has seen this and said it does not matter**, so it is
+  recorded rather than scheduled. Worth knowing if it is ever picked up: this is the sixth sighting
+  of the family that produced `ecaf80f`, `8a316c4`, `68d78ec` and the bug `40259b0` hit mid-flight,
+  and the persisted anchor is the likely culprit rather than the scroll placement itself.
 
 - [T-59] **`iOSCalendarDateTitle` is a near-copy of `iOSNotesDateTitle`.** Two date-jump titles with
   the same chevron, the same away-from-now blue and the same Today shortcut. The Notes one is
