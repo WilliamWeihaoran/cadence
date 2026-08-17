@@ -35,6 +35,13 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-88] **macOS: renaming a task leaves the embedding note's reference stale.** The same bug `D-56`
+  fixed on iOS. macOS rewrites the reference only from its *inline* card rename; renaming from the
+  task inspector sets `task.title` alone. The fix is the same call —
+  `MarkdownTaskEmbedParser.reconcilingReferenceTitles` — from wherever the Mac's inspector commits a
+  title. Invisible until a note is exported or searched, or the task is deleted and the card renders
+  from its own stale text.
+
 - [T-87] **Mark the shared value types `nonisolated`, and unblock Swift 6.** The root cause behind
   T-82's 1195 test warnings: `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` gives every value type
   without an explicit `nonisolated` a main-actor-isolated synthesized `Equatable`. `D-55` fixed the
@@ -51,11 +58,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   neither scrolls in the axis the arrows moved, so after this the *only* way to change period on
   those two is the date dropdown. Confirm that dropdown can actually reach an arbitrary month before
   deleting the arrows, and that its Today shortcut is present.
-- [T-84] **Task embeds: rename from the task sheet only.** Decided 2026-08-17. The inline title
-  field added in `29735a6` comes out, along with the `.title` hit target and the `onRenameEmbeddedTask`
-  callback if nothing else uses it. Tapping anywhere on the card opens the task — one predictable
-  action. Note the macOS side keeps its own inline rename (it has a hover cue); the shared
-  `MarkdownTaskEmbedParser` title-rewriting rules from `29735a6` stay, since macOS still calls them.
 - [T-85] **Redesign the iOS task creation sheet so the fold problem is *gone*, not managed.** Decided
   2026-08-17: the user rejected all three mitigations for the ~53pt overflow and asked for a
   redesign with mocks. The binding constraint, measured: with a software keyboard up a 390pt phone
@@ -172,6 +174,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-56] `fcb2168` Renaming a task never updated the note that embeds it (T-84).
 
 - [D-55] `7d39af2` 1195 test warnings were hiding five real ones (T-82).
 
