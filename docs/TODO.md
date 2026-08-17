@@ -33,36 +33,34 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
-- [T-92] **Stop storing the embed title twice — resolve it from the live task instead.** The real fix
-  behind `ca62056` and `D-59`, both of which only reconcile a note that happens to be open. Every
-  other rename path still leaves `[[task:UUID|Title]]` stale: any `TaskDetailPopover` opened from a
-  task row, timeline block, kanban card or the month grid, plus MCP writes and cross-device merges.
-  On macOS that is an ordinary case — `TodayView` shows the notepad beside the task column.
-  **The sweep is the obvious fix and probably the wrong one:** it means unindexed `contains` scans
-  over every `Note` and every `AppTask.notes` on each title commit, and the inspector title is a
-  direct binding with no commit boundary, so it would fire per keystroke. The alternative is to make
-  the stored title a *cache*: have `NoteExportService`, note-content search and the card renderer
-  resolve from the live task, keeping the stored string only as the fallback for a deleted task —
-  which is already what `MarkdownTaskEmbedRenderInfo.missing(reference:)` uses it for. Then drift
-  cannot escape and no sweep is needed.
-
-  **Decided 2026-08-18: the cache reading.** Export, content search and the card renderer resolve
-  the title from the live task; the stored string stays only as the fallback for a task that no
-  longer exists. No sweep, no scanning on write, and cross-device renames are covered for free
-  because nothing has to be rewritten. **Queued behind [T-87]** — it needs
-  `Services/MarkdownTaskEmbedSupport.swift`, which that agent currently owns.
-
 - [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
   `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
   header or picker looks or behaves. This item is the sweep to make the code match that — find the
   places where a phone view and an iPad view are near-copies and collapse them into one view
   parameterised by size class. Distinct from [T-32], which is macOS↔iOS *feature* parity; this is
-  iPhone↔iPad *implementation* sharing. Known starting points: `iOSNotesPanel` vs
-  `iOSCompactNotesView` (two hosts of the same header, already partly shared),
-  `iPadTodayView` vs `iOSCompactTodayView`, and the compact/regular branches inside `iOSTaskRow`.
+  iPhone↔iPad *implementation* sharing. The Notes starting point is closed (`D-44`, one view for all
+  three hosts) and so is the page-header family (`D-62`). What is left of the original list —
+  `iPadTodayView` vs the compact Today, and the compact/regular branches inside the task row — is
+  in flight now.
 
 
 ## Open — known, unscheduled
+
+- [T-95] **Three embed-title readers still trust the cache** — the paths `D-65` deliberately left.
+  Each shows a stale name after a rename, so none is fixed by the cache reading alone:
+  1. **iOS note-list row previews** (`iOSNotesView`, `iOSMarkdownAccessoryViews`) excerpt raw
+     `note.content` through `plainPreviewText`, whose `.taskEmbed` branch reads `reference.title`.
+     Needs `taskTitles` threaded into the row structs across several files.
+  2. **Inline, non-standalone `[[task:UUID|Title]]`** rendered as links take their display text from
+     `MarkdownReferenceDisplaySupport` — a different path from the card renderer, untouched.
+  3. **`ListNotesView` passes list-scoped `relatedTasks`**, so an embed of a task from *another*
+     list falls through to `.missing` and shows the cached title with missing-card styling. This one
+     is a judgement call, not a port: fixing it means either widening the `[[task:` suggestion scope
+     or splitting suggestion tasks from embed tasks in `MarkdownEditorView`.
+
+  Also unconverted on purpose: `iOSMarkdownEditingSurface`'s `[[` autocomplete filters notes by
+  content, but that is completion rather than user-facing search, and resolving there costs a pass
+  per note per keystroke inside the editor.
 
 - [T-89] **Drag-and-drop cannot be driven from the simulator harness.** Neither `touch_path` nor
   `swipe` lifts a `UIDragInteraction`, so no drop ever fires — verified against the row target from
@@ -164,11 +162,13 @@ whoever picks these up, not a plan.
 
 Newest first. The commit message carries the reasoning; this is the index.
 
-- [D-64] `isCustomDoDate` outlived its only caller (T-93).
+- [D-65] `646ff9e` The task is the record; the embedded title is a cache (T-92).
 
-- [D-63] The MCP server target compiled a file it never used (T-94).
+- [D-64] `dfae0d3` `isCustomDoDate` outlived its only caller (T-93).
 
-- [D-62] Six page headers had drifted into six title sizes (T-73 group B remainder).
+- [D-63] `62dc384` The MCP server target compiled a file it never used (T-94).
+
+- [D-62] `c5a4ea5` Six page headers had drifted into six title sizes (T-73 group B remainder).
 
 - [D-61] `f94361a` 215 value types were main-actor isolated, including ones widgets use (T-87).
 
