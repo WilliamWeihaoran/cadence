@@ -350,6 +350,20 @@ struct iOSSegmentedPill: View {
     let isSelected: Bool
     var tint: Color = Theme.blue
     var minWidth: CGFloat = 58
+    /// Equal-width segments that between them fill the row, with a label that **wraps and shrinks
+    /// before it truncates**.
+    ///
+    /// This is what `iOSSegmentedChoice` sets, and it exists because a chooser laid across a form
+    /// row is the one place truncation is fatal: with `lineLimit(1)` and nothing else, four options
+    /// across an iPhone left roughly 80pt each and silently cut "Days of Week" and "Times per Week"
+    /// down to "Days of W…" and "Times per…" — two options unreadable and indistinguishable from
+    /// one another. A toolbar pill instead sizes to its own label and scrolls if the row runs out,
+    /// so it neither needs nor wants this.
+    ///
+    /// 44pt rather than 38 here for the same reason: these carry two lines of text, and a form
+    /// control that is the only thing tappable in its row should be a full touch target on its own
+    /// rather than borrowing the track's 3pt padding to reach the floor.
+    var fillsWidth = false
     /// For a segment that genuinely cannot be chosen at the current size — Today's three-pane "Mac"
     /// layout below the width its three columns fit in. It reads as unavailable instead of
     /// accepting a tap and leaving the screen exactly as it was.
@@ -368,14 +382,20 @@ struct iOSSegmentedPill: View {
                 }
                 Text(title)
                     .font(.system(size: 12, weight: isSelected ? .bold : .semibold))
-                    .lineLimit(1)
+                    .lineLimit(fillsWidth ? 2 : 1)
+                    .minimumScaleFactor(fillsWidth ? 0.75 : 1)
+                    .multilineTextAlignment(.center)
             }
             // `Theme.muted`, not `Theme.dim`: an unselected segment is a label you are meant to
             // read and tap. `dim` (#71717a) on `Theme.bg` lands at roughly 4.1:1 at 12pt, under
             // the 4.5:1 floor for normal text — `dim` is for genuinely de-emphasised content.
             .foregroundStyle(isEnabled ? (isSelected ? tint : Theme.muted) : Theme.dim.opacity(0.45))
             .padding(.horizontal, 10)
-            .frame(minWidth: minWidth, minHeight: 38)
+            .frame(
+                minWidth: fillsWidth ? nil : minWidth,
+                maxWidth: fillsWidth ? .infinity : nil,
+                minHeight: fillsWidth ? 44 : 38
+            )
             .background(shape.fill(isSelected && isEnabled ? tint.opacity(0.14) : Color.clear))
             .overlay(shape.strokeBorder(isSelected && isEnabled ? tint.opacity(0.26) : Color.clear, lineWidth: 1))
             .contentShape(shape)
@@ -385,6 +405,39 @@ struct iOSSegmentedPill: View {
         .accessibilityLabel(title)
         .accessibilityHint(accessibilityHint ?? "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// The value-bound spelling of the same control: hand it the options and a binding, get an
+/// `iOSSegmentedPillGroup` of equal-width pills.
+///
+/// There used to be a second segmented control here — its own track at `Theme.surfaceElevated`, its
+/// own hardcoded radius 8 and 10, and a solid tint fill behind the selected label — so a form's
+/// chooser and a toolbar's chooser were the same control wearing two looks, and one of them was off
+/// the radius scale entirely. This is now a layout over `iOSSegmentedPill`: nothing about the
+/// appearance is decided here, so the two cannot drift again.
+///
+/// The `ViewBuilder` spelling stays for the segments this one cannot express — a group mixing a
+/// `ForEach` with a standalone pill (the calendar's Board), per-segment icons, disabled segments,
+/// accessibility hints.
+struct iOSSegmentedChoice<T: Hashable>: View {
+    let options: [(value: T, label: String)]
+    @Binding var selection: T
+    var color: Color = Theme.blue
+
+    var body: some View {
+        iOSSegmentedPillGroup {
+            ForEach(options, id: \.value) { option in
+                iOSSegmentedPill(
+                    title: option.label,
+                    isSelected: selection == option.value,
+                    tint: color,
+                    fillsWidth: true
+                ) {
+                    selection = option.value
+                }
+            }
+        }
     }
 }
 

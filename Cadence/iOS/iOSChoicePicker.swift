@@ -160,50 +160,8 @@ struct iOSChoiceValueButton: View {
     }
 }
 
-/// Custom segmented control replacing `.pickerStyle(.segmented)`.
-///
-/// **A segment wraps and shrinks before it truncates.** With `lineLimit(1)` and nothing else, four
-/// options across an iPhone left roughly 80pt each and silently cut "Days of Week" and "Times per
-/// Week" down to "Days of W…" and "Times per…" — two of the four options unreadable and, worse,
-/// indistinguishable from one another. Truncation is the one failure a chooser cannot afford, and
-/// it was invisible from the call site, so every call site that wanted long labels had to discover
-/// the limit for itself. The label now gets a second line and 75% scale before anything is dropped.
-///
-/// Every segment reserves the 44pt touch minimum regardless, which is also what keeps the row
-/// uniform: a control where one option wrapped and its neighbours did not would otherwise render
-/// pills of two different heights. Two lines of 13pt fit inside 44pt, so wrapping costs no height.
-struct iOSSegmentedChoice<T: Hashable>: View {
-    let options: [(value: T, label: String)]
-    @Binding var selection: T
-    var color: Color = Theme.blue
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(options, id: \.value) { option in
-                Button {
-                    selection = option.value
-                } label: {
-                    Text(option.label)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(selection == option.value ? Theme.onColor : Theme.dim)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.75)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 6)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(selection == option.value ? color : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(3)
-        .background(Theme.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-}
+// `iOSSegmentedChoice` used to live here as a second segmented control with its own look. It is now
+// a thin layout over `iOSSegmentedPill` in `iOSDesignSystem.swift`, next to the pill group it draws.
 
 /// Container (Inbox / Area / Project) choice, grouped like macOS's `ContainerPickerBadge`.
 struct iOSContainerChoicePopover: View {

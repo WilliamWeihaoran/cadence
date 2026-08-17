@@ -104,11 +104,11 @@ struct iOSGoalsView: View {
     }
 
     private var horizontalLayout: some View {
-        iOSFeatureSplitLayout(list: { listPane }, detail: { detailPane })
+        iOSFeatureSplitLayout(list: { listPane(pushes: false) }, detail: { detailPane })
     }
 
     private var compactLayout: some View {
-        compactListPane
+        listPane(pushes: true)
     }
 
     /// The eyebrow says what the title cannot. "PROGRESS / Goals" was a label over a label; this
@@ -121,42 +121,10 @@ struct iOSGoalsView: View {
         return "\(directions) · \(nested)"
     }
 
-    private var listPane: some View {
-        iOSFeatureListPane(
-            eyebrow: shapeEyebrow,
-            title: "Goals",
-            count: activeGoals.count,
-            emptyTitle: "No goals yet",
-            emptySubtitle: "Create a direction, then nest milestones and habits underneath it.",
-            emptyIcon: "sparkles",
-            actionTitle: "New Goal",
-            actionSystemImage: "plus",
-            action: { editorMode = .new(nil) }
-        ) {
-            ForEach(topLevelGoals) { goal in
-                Button {
-                    selectedID = goal.id
-                } label: {
-                    goalRow(goal, isSelected: selected?.id == goal.id)
-                }
-                .buttonStyle(.iosPressable)
-                .contextMenu { deleteMenuItem(for: goal) }
-
-                ForEach(milestones(of: goal)) { milestone in
-                    Button {
-                        selectedID = milestone.id
-                    } label: {
-                        goalRow(milestone, isSelected: selected?.id == milestone.id)
-                    }
-                    .buttonStyle(.iosPressable)
-                    .contextMenu { deleteMenuItem(for: milestone) }
-                    .padding(.leading, 16)
-                }
-            }
-        }
-    }
-
-    private var compactListPane: some View {
+    /// One pane, both shells. `pushes` is the whole of the difference between them: the phone's
+    /// rows push a detail onto the tab's stack and carry the back control the hidden navigation bar
+    /// would have held, the iPad's select into the detail beside them. See `iOSFeatureRowLink`.
+    private func listPane(pushes: Bool) -> some View {
         iOSFeatureListPane(
             eyebrow: shapeEyebrow,
             title: "Goals",
@@ -167,29 +135,30 @@ struct iOSGoalsView: View {
             actionTitle: "New Goal",
             actionSystemImage: "plus",
             action: { editorMode = .new(nil) },
-            onBack: { dismiss() }
+            onBack: pushes ? { dismiss() } : nil
         ) {
             ForEach(topLevelGoals) { goal in
-                NavigationLink {
-                    pushedDetailView(for: goal)
-                } label: {
-                    goalRow(goal, isSelected: false)
-                }
-                .buttonStyle(.iosPressable)
-                .contextMenu { deleteMenuItem(for: goal) }
+                goalLink(goal, pushes: pushes)
 
                 ForEach(milestones(of: goal)) { milestone in
-                    NavigationLink {
-                        pushedDetailView(for: milestone)
-                    } label: {
-                        goalRow(milestone, isSelected: false)
-                    }
-                    .buttonStyle(.iosPressable)
-                    .contextMenu { deleteMenuItem(for: milestone) }
-                    .padding(.leading, 16)
+                    goalLink(milestone, pushes: pushes)
+                        .padding(.leading, 16)
                 }
             }
         }
+    }
+
+    private func goalLink(_ goal: Goal, pushes: Bool) -> some View {
+        iOSFeatureRowLink(
+            pushes: pushes,
+            select: { selectedID = goal.id },
+            destination: { pushedDetailView(for: goal) },
+            label: { showsSelection in
+                goalRow(goal, isSelected: showsSelection && selected?.id == goal.id)
+            }
+        )
+        .buttonStyle(.iosPressable)
+        .contextMenu { deleteMenuItem(for: goal) }
     }
 
     /// Long-press on the row rather than a button on the detail: in the compact push stack the
@@ -329,11 +298,11 @@ struct iOSHabitsView: View {
     }
 
     private var horizontalLayout: some View {
-        iOSFeatureSplitLayout(list: { listPane }, detail: { detailPane })
+        iOSFeatureSplitLayout(list: { listPane(pushes: false) }, detail: { detailPane })
     }
 
     private var compactLayout: some View {
-        compactListPane
+        listPane(pushes: true)
     }
 
     /// The header eyebrow says what the title cannot — how today is actually going. "HABITS /
@@ -344,32 +313,8 @@ struct iOSHabitsView: View {
         return "\(done) of \(dueToday.count) done today"
     }
 
-    private var listPane: some View {
-        iOSFeatureListPane(
-            eyebrow: todayEyebrow,
-            title: "Habits",
-            count: habits.count,
-            emptyTitle: "No habits yet",
-            emptySubtitle: "Create repeating commitments and track today.",
-            emptyIcon: "flame.fill",
-            actionTitle: "New Habit",
-            actionSystemImage: "plus",
-            action: { editorMode = .new(nil) }
-        ) {
-            ForEach(habits) { habit in
-                habitRow(habit, isSelected: selected?.id == habit.id) {
-                    Button {
-                        selectedID = habit.id
-                    } label: {
-                        iOSHabitSummaryRow(habit: habit, todayKey: todayKey, isSelected: selected?.id == habit.id)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
-    private var compactListPane: some View {
+    /// One pane, both shells — see `iOSGoalsView.listPane(pushes:)`, which this mirrors exactly.
+    private func listPane(pushes: Bool) -> some View {
         iOSFeatureListPane(
             eyebrow: todayEyebrow,
             title: "Habits",
@@ -380,17 +325,10 @@ struct iOSHabitsView: View {
             actionTitle: "New Habit",
             actionSystemImage: "plus",
             action: { editorMode = .new(nil) },
-            onBack: { dismiss() }
+            onBack: pushes ? { dismiss() } : nil
         ) {
             ForEach(habits) { habit in
-                habitRow(habit, isSelected: false) {
-                    NavigationLink {
-                        detailView(for: habit, showsBackControl: true)
-                    } label: {
-                        iOSHabitSummaryRow(habit: habit, todayKey: todayKey, isSelected: false)
-                    }
-                    .buttonStyle(.plain)
-                }
+                habitRow(habit, pushes: pushes)
             }
         }
     }
@@ -399,13 +337,24 @@ struct iOSHabitsView: View {
     /// nested inside its label — a nested button never sees the tap on iOS, so checking a habit
     /// off from the list used to do nothing but open the detail. The row reserves exactly
     /// `iOSHabitCheckInSize` at its trailing edge for it.
-    private func habitRow<Row: View>(
-        _ habit: Habit,
-        isSelected: Bool,
-        @ViewBuilder row: () -> Row
-    ) -> some View {
+    ///
+    /// `.plain`, not `.iosPressable`: the press transform would scale and dim the row *underneath*
+    /// the check-in button while leaving the button itself where it was.
+    private func habitRow(_ habit: Habit, pushes: Bool) -> some View {
         ZStack(alignment: .trailing) {
-            row()
+            iOSFeatureRowLink(
+                pushes: pushes,
+                select: { selectedID = habit.id },
+                destination: { detailView(for: habit, showsBackControl: true) },
+                label: { showsSelection in
+                    iOSHabitSummaryRow(
+                        habit: habit,
+                        todayKey: todayKey,
+                        isSelected: showsSelection && selected?.id == habit.id
+                    )
+                }
+            )
+            .buttonStyle(.plain)
 
             iOSHabitCheckInButton(habit: habit, todayKey: todayKey) {
                 toggle(habit)

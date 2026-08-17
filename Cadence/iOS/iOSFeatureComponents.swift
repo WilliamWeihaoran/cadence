@@ -111,6 +111,46 @@ struct iOSFeatureSplitLayout<List: View, Detail: View>: View {
     }
 }
 
+/// One chooser row, either spelling of "activate me".
+///
+/// A chooser pane behaves differently on the two shells and in exactly one respect: at regular
+/// width the row **selects** and the detail pane beside it changes, and on the phone the row
+/// **pushes** the detail onto the tab's stack. Goals and Habits each carried that difference as a
+/// second, byte-for-byte copy of their whole list pane — four functions for two panes — which is
+/// the shape every drift in this app has started from. The difference is real; its scope is one
+/// control, so that is what is parameterised.
+///
+/// `isSelected` is not a parameter because it is not an independent fact: a pushed row has no
+/// persistent selection to show, so the label builder is handed `false` whenever `pushes` is set
+/// and cannot disagree with the layout it is in.
+///
+/// No button style is applied here. Call sites differ — a plain row takes `.iosPressable`, a row
+/// with a control layered over it takes `.plain` so the press transform does not drag the overlay
+/// with it — and both spellings propagate through this wrapper to the button or link inside.
+struct iOSFeatureRowLink<Label: View, Destination: View>: View {
+    /// `true` on the compact push stack, `false` in a regular-width split.
+    let pushes: Bool
+    let select: () -> Void
+    @ViewBuilder let destination: () -> Destination
+    /// Handed the resolved selection state, so the caller cannot pass a highlight into a pane that
+    /// has no selection.
+    @ViewBuilder let label: (Bool) -> Label
+
+    var body: some View {
+        if pushes {
+            NavigationLink {
+                destination()
+            } label: {
+                label(false)
+            }
+        } else {
+            Button(action: select) {
+                label(true)
+            }
+        }
+    }
+}
+
 struct iOSCompactPageHeader: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 

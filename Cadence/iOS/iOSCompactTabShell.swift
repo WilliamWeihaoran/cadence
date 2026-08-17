@@ -243,28 +243,24 @@ private struct iOSCompactTabBarItem: View {
 /// `FloatingNewTaskButton`'s vocabulary on macOS, and the vocabulary the old Home screen's floating
 /// `+` used before the bar absorbed it. Capture used to exist on Home alone, so from every other
 /// screen you had to navigate away to write a task down.
+///
+/// It **is** `iOSCircularAddButton`, the same affordance the iPad pins to a page corner, at the one
+/// diameter this placement can hold: 56pt does not fit in a 46pt bar row beside four tab items. It
+/// was a hand-rolled copy that had drifted to a bolder glyph and a tighter shadow — see that type
+/// for why the glyph and shadow are derived from the diameter now.
 private struct iOSCompactCaptureButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: "plus")
-                .font(.system(size: 19, weight: .bold))
-                .foregroundStyle(Theme.onColor)
-                .frame(width: 44, height: 44)
-                .background(Theme.blue)
-                .clipShape(Circle())
-                .shadow(color: Theme.blue.opacity(0.30), radius: 10, x: 0, y: 4)
-                .frame(minHeight: 46)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.iosPressable)
-        .accessibilityLabel("New Task")
-        // Draggable as well as tappable, and the two do not compete: `.onDrag` is a
-        // `UIDragInteraction` whose long-press recognizer fails as soon as the finger lifts, so a
-        // tap still presents unscoped capture instantly. Dropped on a task row it opens the same
-        // sheet seeded with that row's placement instead. See `iOSNewTaskDragSourceModifier`.
-        .iOSNewTaskDragSource()
+        iOSCircularAddButton(action: action, diameter: 44)
+            // Matches the tab items' row height so the bar's baseline is set by one number.
+            .frame(minHeight: 46)
+            // Draggable as well as tappable, and the two do not compete: `.onDrag` is a
+            // `UIDragInteraction` whose long-press recognizer fails as soon as the finger lifts, so
+            // a tap still presents unscoped capture instantly. Dropped on a task row it opens the
+            // same sheet seeded with that row's placement instead. See
+            // `iOSNewTaskDragSourceModifier`.
+            .iOSNewTaskDragSource()
     }
 }
 #endif

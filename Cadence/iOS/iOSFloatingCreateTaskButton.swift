@@ -7,37 +7,47 @@ import UniformTypeIdentifiers
 ///
 /// It is deliberately split from the page-level wiring below. The button takes a bare `action`
 /// closure and knows nothing about seeds, sheets or which screen it is on, so the drag behaviour
-/// planned for it (drag the button onto a section, a list or a date and the created task picks that
-/// destination up) attaches *here*, once, rather than to four inlined `Button`s that would each need
-/// the same gestures bolted on and would drift apart the moment one of them did.
+/// (drag the button onto a section, a list or a date and the created task picks that destination up)
+/// attaches *outside* it, rather than to inlined `Button`s that would each need the same gestures
+/// bolted on and would drift apart the moment one of them did.
+///
+/// **Both capture buttons in the app are this one.** The iPad's corner `+` and the iPhone tab bar's
+/// centre `+` are the same action in deliberately different *places*, which is a layout difference
+/// the rules allow; they had also drifted into different *looks* — 56pt/22pt semibold/shadow r16 y7
+/// against 44pt/19pt **bold**/shadow r10 y4 — which is not a placement consequence of anything. The
+/// size is: a 56pt circle does not fit inside a 46pt tab-bar row between four tab items, while a
+/// button floating over a page has nothing to fit inside. So `diameter` is the one parameter, and
+/// the glyph and the shadow are **derived** from it rather than passed, at the ratios the 56pt
+/// button already used — which is what stops the next size from becoming the next look.
 ///
 /// The macOS counterpart is `FloatingNewTaskButton`; same shape, same job, same reasoning about why
 /// a page — unlike a board column — opens the full composer rather than an inline row.
-struct iOSFloatingAddButton: View {
+struct iOSCircularAddButton: View {
     let action: () -> Void
+    /// Defaults to the floating size; the tab bar passes its own. See `floatingDiameter`.
+    var diameter: CGFloat = iOSCircularAddButton.floatingDiameter
     var accessibilityLabel: String = "New Task"
 
-    /// 56pt, comfortably over the 44pt floor, and the diameter the trailing/bottom padding below is
-    /// measured against.
-    static let diameter: CGFloat = 56
+    /// 56pt, comfortably over the 44pt floor, and the diameter the trailing/bottom padding of the
+    /// floating placement is measured against.
+    static let floatingDiameter: CGFloat = 56
     /// Clearance from the page's trailing and bottom edges.
     static let edgeInset: CGFloat = 22
     /// What a scroll view under the button has to keep free so its last row is never buried.
-    static var scrollClearance: CGFloat { diameter + edgeInset * 2 }
+    static var scrollClearance: CGFloat { floatingDiameter + edgeInset * 2 }
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "plus")
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(size: diameter * 0.39, weight: .semibold))
                 .foregroundStyle(Theme.onColor)
-                .frame(width: Self.diameter, height: Self.diameter)
+                .frame(width: diameter, height: diameter)
                 .background(Theme.blue)
                 .clipShape(Circle())
-                .shadow(color: Theme.blue.opacity(0.3), radius: 16, x: 0, y: 7)
+                .shadow(color: Theme.blue.opacity(0.3), radius: diameter * 0.29, x: 0, y: diameter * 0.125)
+                .contentShape(Circle())
         }
         .buttonStyle(.iosPressable)
-        .padding(.trailing, Self.edgeInset)
-        .padding(.bottom, Self.edgeInset)
         .accessibilityLabel(accessibilityLabel)
     }
 }
@@ -73,11 +83,15 @@ private struct iOSFloatingCreateTaskLayer: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .contentMargins(.bottom, isRegularWidth ? iOSFloatingAddButton.scrollClearance : 0, for: .scrollContent)
+            .contentMargins(.bottom, isRegularWidth ? iOSCircularAddButton.scrollClearance : 0, for: .scrollContent)
             .overlay(alignment: .bottomTrailing) {
                 if isRegularWidth {
-                    iOSFloatingAddButton { isPresented = true }
+                    iOSCircularAddButton { isPresented = true }
                         .iOSNewTaskDragSource(onCreated: onCreated)
+                        // The corner inset belongs to the placement, not to the button: the tab
+                        // bar's copy is centred in a row and must not carry it.
+                        .padding(.trailing, iOSCircularAddButton.edgeInset)
+                        .padding(.bottom, iOSCircularAddButton.edgeInset)
                 }
             }
             .sheet(isPresented: $isPresented) {
