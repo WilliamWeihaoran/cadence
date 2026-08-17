@@ -29,7 +29,11 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-_Nothing._
+**AB — nonisolated value types, Swift 6 blocker** ([T-87])
+
+**AC — one page header, one stat row** (T-73 group B remainder)
+
+**AD — two small cleanups** ([T-90], [T-91], and re-check [T-11])
 
 ## Open — decided, not started
 
