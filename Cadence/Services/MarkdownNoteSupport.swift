@@ -314,33 +314,79 @@ extension NoteKind {
     }
 }
 
+/// How a table column's cells are aligned, as declared by the colons in its delimiter cell.
+///
+/// Spelled `leading`/`trailing` rather than left/right because every renderer downstream is
+/// SwiftUI or UIKit, and these values are handed straight to one.
+enum MarkdownTableAlignment: String, Hashable {
+    case leading
+    case center
+    case trailing
+}
+
 struct MarkdownTableRowStyle: Hashable {
     let lineIndex: Int
     let columnCount: Int
     let isHeader: Bool
     let isDelimiter: Bool
+    /// One entry per column, always `columnCount` long. Columns the delimiter row did not reach
+    /// are `.leading`.
+    let alignments: [MarkdownTableAlignment]
 }
 
 enum MarkdownTableParser {
     nonisolated static func rowStyles(in content: String) -> [Int: MarkdownTableRowStyle] {
-        let lines = content.components(separatedBy: "\n")
+        let lines = MarkdownSourceLines.texts(in: content)
         guard lines.count >= 2 else { return [:] }
 
         var result: [Int: MarkdownTableRowStyle] = [:]
         var index = 0
         while index < lines.count - 1 {
             guard isTableContentLine(lines[index]),
-                  let columnCount = delimiterColumnCount(lines[index + 1]) else {
+                  let delimiter = delimiterInfo(lines[index + 1]) else {
                 index += 1
                 continue
             }
 
-            result[index] = MarkdownTableRowStyle(lineIndex: index, columnCount: columnCount, isHeader: true, isDelimiter: false)
-            result[index + 1] = MarkdownTableRowStyle(lineIndex: index + 1, columnCount: columnCount, isHeader: false, isDelimiter: true)
+            // **Column count is the wider of the header row and the delimiter row, not the
+            // delimiter row alone.**
+            //
+            // GFM's answer to a mismatch is that the block is not a table at all; Cadence's used to
+            // be that the header is truncated to the delimiter's width, which silently deletes a
+            // named column from a note the user can see the source of. Neither is right for a live
+            // editor — the first makes a table vanish while you are still typing its delimiter row,
+            // the second lies about the note's contents. Widening keeps every header cell on screen
+            // and shows the missing delimiter as a column with no alignment, which is visible and
+            // recoverable.
+            let headerCellCount = MarkdownBlockSupport.tableRowCells(in: lines[index]).count
+            let columnCount = max(delimiter.columnCount, headerCellCount)
+            let alignments = delimiter.alignments
+                + Array(repeating: .leading, count: max(0, columnCount - delimiter.alignments.count))
+
+            result[index] = MarkdownTableRowStyle(
+                lineIndex: index,
+                columnCount: columnCount,
+                isHeader: true,
+                isDelimiter: false,
+                alignments: alignments
+            )
+            result[index + 1] = MarkdownTableRowStyle(
+                lineIndex: index + 1,
+                columnCount: columnCount,
+                isHeader: false,
+                isDelimiter: true,
+                alignments: alignments
+            )
 
             var rowIndex = index + 2
             while rowIndex < lines.count, isTableContentLine(lines[rowIndex]) {
-                result[rowIndex] = MarkdownTableRowStyle(lineIndex: rowIndex, columnCount: columnCount, isHeader: false, isDelimiter: false)
+                result[rowIndex] = MarkdownTableRowStyle(
+                    lineIndex: rowIndex,
+                    columnCount: columnCount,
+                    isHeader: false,
+                    isDelimiter: false,
+                    alignments: alignments
+                )
                 rowIndex += 1
             }
             index = rowIndex
@@ -349,25 +395,51 @@ enum MarkdownTableParser {
         return result
     }
 
+    /// A row is table content when it holds at least two unescaped `|` and something other than
+    /// whitespace between them.
+    ///
+    /// Two pipes rather than GFM's one, deliberately. This predicate also decides where a table
+    /// *ends*, with no second gate behind it — accepting a single pipe would let the first line of
+    /// ordinary prose after a table ("Ship it | maybe") be swallowed as a row. The cost is that
+    /// the delimiter-less `a | b` spelling of a table is not recognised; the pipe-bounded spelling
+    /// is what every Cadence affordance writes.
     nonisolated private static func isTableContentLine(_ line: String) -> Bool {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard trimmed.contains("|") else { return false }
-        let cells = trimmed.split(separator: "|", omittingEmptySubsequences: false)
+        let trimmed = MarkdownSourceLines.classificationText(of: line)
+        let cells = MarkdownBlockSupport.splitTableRow(trimmed)
         return cells.count >= 3 && cells.contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
     }
 
-    nonisolated private static func delimiterColumnCount(_ line: String) -> Int? {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard trimmed.contains("|") else { return nil }
-        let cells = trimmed.split(separator: "|", omittingEmptySubsequences: false)
-        let contentCells = cells.dropFirst(trimmed.hasPrefix("|") ? 1 : 0).dropLast(trimmed.hasSuffix("|") ? 1 : 0)
-        guard !contentCells.isEmpty else { return nil }
-        let isDelimiter = contentCells.allSatisfy { cell in
-            let compact = cell.trimmingCharacters(in: .whitespaces)
-            guard compact.count >= 3 else { return false }
-            return compact.allSatisfy { $0 == "-" || $0 == ":" }
+    nonisolated private static func delimiterInfo(_ line: String) -> (columnCount: Int, alignments: [MarkdownTableAlignment])? {
+        let cells = MarkdownBlockSupport.tableRowCells(in: line)
+        guard !cells.isEmpty else { return nil }
+
+        var alignments: [MarkdownTableAlignment] = []
+        for cell in cells {
+            guard let alignment = alignment(ofDelimiterCell: cell) else { return nil }
+            alignments.append(alignment)
         }
-        return isDelimiter ? contentCells.count : nil
+        return (cells.count, alignments)
+    }
+
+    /// `---` / `:---` / `---:` / `:---:`, and the one- and two-dash spellings of each.
+    ///
+    /// The old rule demanded three or more characters, which rejects `|-|-|` and `|:-|` — both
+    /// legal GFM, and both what a hand-typed or generator-written table often looks like. The rule
+    /// now is GFM's: at least one `-`, nothing but `-` and `:`, and colons only at the ends.
+    nonisolated private static func alignment(ofDelimiterCell cell: String) -> MarkdownTableAlignment? {
+        let compact = cell.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !compact.isEmpty, compact.contains("-") else { return nil }
+
+        let leading = compact.hasPrefix(":")
+        let trailing = compact.hasSuffix(":")
+        let dashes = compact.dropFirst(leading ? 1 : 0).dropLast(trailing && compact.count > 1 ? 1 : 0)
+        guard !dashes.isEmpty, dashes.allSatisfy({ $0 == "-" }) else { return nil }
+
+        switch (leading, trailing) {
+        case (true, true): return .center
+        case (false, true): return .trailing
+        default: return .leading
+        }
     }
 }
 

@@ -168,27 +168,20 @@ enum MarkdownRenderedBlockDeletionSupport {
         return output
     }
 
+    /// Line numbering has to be `MarkdownSourceLines`', not `NSString.lineRange(for:)`'.
+    ///
+    /// The indexes these records are looked up by come from `fencedCodeBlocks` and
+    /// `MarkdownTableParser.rowStyles`, which split on `"\n"`. `NSString.lineRange(for:)` also
+    /// breaks on U+2028, U+2029 and U+0085, so a note carrying any of those numbered its lines
+    /// differently here than in the parsers feeding it — and a rendered block would then be given
+    /// the deletion range of some other line.
     private static func lineRecords(in markdown: String) -> [RenderedMarkdownLineRecord] {
         let nsMarkdown = markdown as NSString
         guard nsMarkdown.length > 0 else { return [] }
 
-        var records: [RenderedMarkdownLineRecord] = []
-        var lineStart = 0
-        var lineIndex = 0
-        while lineStart < nsMarkdown.length {
-            let lineRange = nsMarkdown.lineRange(for: NSRange(location: lineStart, length: 0))
-            var contentsEnd = 0
-            nsMarkdown.getLineStart(nil, end: nil, contentsEnd: &contentsEnd, for: lineRange)
-            let contentRange = NSRange(location: lineRange.location, length: max(0, contentsEnd - lineRange.location))
-            records.append(RenderedMarkdownLineRecord(index: lineIndex, lineRange: lineRange, contentRange: contentRange))
-
-            let nextLineStart = NSMaxRange(lineRange)
-            guard nextLineStart > lineStart else { break }
-            lineStart = nextLineStart
-            lineIndex += 1
+        return MarkdownSourceLines.lines(in: markdown).map {
+            RenderedMarkdownLineRecord(index: $0.index, contentRange: $0.range)
         }
-
-        return records
     }
 
     private static func contentRange(
@@ -240,6 +233,5 @@ enum MarkdownRenderedBlockDeletionSupport {
 
 private struct RenderedMarkdownLineRecord {
     let index: Int
-    let lineRange: NSRange
     let contentRange: NSRange
 }

@@ -17,6 +17,12 @@ enum MarkdownPreviewBlock: Equatable {
 struct MarkdownPreviewTable: Equatable {
     let headers: [String]
     let rows: [[String]]
+    /// One entry per column, from the delimiter row's colons.
+    ///
+    /// Carried here rather than re-derived by each preview surface: the alignment is a property of
+    /// the parse, and a second parse in a view is how the live canvas and the preview came to
+    /// disagree about tables in the first place.
+    let alignments: [MarkdownTableAlignment]
 }
 
 enum MarkdownPreviewParser {
@@ -27,7 +33,11 @@ enum MarkdownPreviewParser {
         var codeLanguage: String?
         var isInCodeFence = false
         let tableRows = MarkdownTableParser.rowStyles(in: markdown)
-        let lines = markdown.components(separatedBy: .newlines)
+        // The same `"\n"` split `rowStyles` above and `frontmatterLineCount` below both use. This
+        // read `.newlines`, which yields a phantom empty line per `\r\n` — so on markdown pasted
+        // from a browser the `lineIndex` a checklist block carries pointed at the wrong line of the
+        // note, and tapping the box toggled a different one.
+        let lines = MarkdownSourceLines.texts(in: markdown)
 
         func flushParagraph() {
             let text = paragraphLines
@@ -183,7 +193,7 @@ enum MarkdownPreviewParser {
             cursor += 1
         }
 
-        return (MarkdownPreviewTable(headers: headers, rows: rows), cursor)
+        return (MarkdownPreviewTable(headers: headers, rows: rows, alignments: headerStyle.alignments), cursor)
     }
 
 }

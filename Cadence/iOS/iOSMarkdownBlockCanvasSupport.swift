@@ -115,13 +115,20 @@ struct iOSMarkdownLiveCodeBlockLayoutInfo {
         }
     }
 
+    private var sourceLines: [String] {
+        text.isEmpty ? [""] : MarkdownSourceLines.texts(in: text)
+    }
+
+    private var truncation: MarkdownRenderedBlockTruncation {
+        MarkdownRenderedBlockLimits.codeLineTruncation(ofTotal: sourceLines.count)
+    }
+
     private var visibleLines: [String] {
-        let rawLines = text.isEmpty ? [""] : text.components(separatedBy: "\n")
-        return Array(rawLines.prefix(12))
+        Array(sourceLines.prefix(truncation.visibleCount))
     }
 
     private var overflowCount: Int {
-        max(0, (text.isEmpty ? 1 : text.components(separatedBy: "\n").count) - visibleLines.count)
+        truncation.overflowCount
     }
 
     private func drawHeader(in rect: CGRect) {
@@ -151,7 +158,7 @@ struct iOSMarkdownLiveCodeBlockLayoutInfo {
     }
 
     private func drawOverflow(in rect: CGRect) {
-        let text = "+ \(overflowCount) more line\(overflowCount == 1 ? "" : "s")"
+        guard let text = truncation.overflowLabel(unit: "line") else { return }
         let attributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 11, weight: .semibold),
             .foregroundColor: UIColor(Theme.dim)
@@ -170,13 +177,17 @@ struct iOSMarkdownLiveCodeBlockLayoutInfo {
 struct iOSMarkdownLiveTableLayoutInfo {
     let headers: [String]
     let rows: [[String]]
+    /// One entry per column, from the parse. Defaulted so the only thing a caller can get wrong is
+    /// omitting it, which reads as the left-aligned table this drew unconditionally before.
+    var alignments: [MarkdownTableAlignment] = []
 
     func renderedBlock(maxWidth: CGFloat) -> UIImage {
         let columnCount = max(1, headers.count)
         let availableWidth = max(260, min(maxWidth - 22, 760))
         let width = min(max(CGFloat(columnCount) * 132, 280), availableWidth)
-        let visibleRows = Array(rows.prefix(8))
-        let overflowCount = max(0, rows.count - visibleRows.count)
+        let truncation = MarkdownRenderedBlockLimits.tableRowTruncation(ofTotal: rows.count)
+        let visibleRows = Array(rows.prefix(truncation.visibleCount))
+        let overflowCount = truncation.overflowCount
         let headerHeight: CGFloat = 38
         let rowHeight: CGFloat = 35
         let footerHeight: CGFloat = overflowCount > 0 ? 30 : 0
@@ -232,7 +243,28 @@ struct iOSMarkdownLiveTableLayoutInfo {
                 width: columnWidth,
                 height: 32
             ).insetBy(dx: 9, dy: 7)
-            drawText(headers[column], in: cellRect, color: UIColor(Theme.blueLight), weight: .semibold)
+            drawText(
+                headers[column],
+                in: cellRect,
+                color: UIColor(Theme.blueLight),
+                weight: .semibold,
+                alignment: alignment(forColumn: column)
+            )
+        }
+    }
+
+    /// `:---:` and `---:` were parsed and then thrown away — every cell drew left.
+    ///
+    /// Alignment is the one piece of table syntax with no other way to express it, so a note
+    /// written elsewhere and opened here silently lost the shape of its numeric columns. Columns
+    /// past the end of `alignments` fall back to leading, which is markdown's own default for a
+    /// delimiter cell with no colons.
+    private func alignment(forColumn column: Int) -> NSTextAlignment {
+        guard alignments.indices.contains(column) else { return .left }
+        switch alignments[column] {
+        case .leading: return .left
+        case .center: return .center
+        case .trailing: return .right
         }
     }
 
@@ -259,12 +291,19 @@ struct iOSMarkdownLiveTableLayoutInfo {
                 width: columnWidth,
                 height: rect.height
             ).insetBy(dx: 9, dy: 8)
-            drawText(text, in: cellRect, color: UIColor(Theme.text), weight: .regular)
+            drawText(
+                text,
+                in: cellRect,
+                color: UIColor(Theme.text),
+                weight: .regular,
+                alignment: alignment(forColumn: column)
+            )
         }
     }
 
     private func drawOverflow(_ count: Int, rect: CGRect) {
-        let text = "+ \(count) more row\(count == 1 ? "" : "s")"
+        let truncation = MarkdownRenderedBlockTruncation(visibleCount: rows.count - count, overflowCount: count)
+        guard let text = truncation.overflowLabel(unit: "row") else { return }
         drawText(text, in: rect.insetBy(dx: 8, dy: 2), color: UIColor(Theme.dim), weight: .medium, size: 11)
     }
 
@@ -273,10 +312,12 @@ struct iOSMarkdownLiveTableLayoutInfo {
         in rect: CGRect,
         color: UIColor,
         weight: UIFont.Weight,
-        size: CGFloat = 12
+        size: CGFloat = 12,
+        alignment: NSTextAlignment = .left
     ) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.alignment = alignment
         let attributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: size, weight: weight),
             .foregroundColor: color,

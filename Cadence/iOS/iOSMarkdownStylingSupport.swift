@@ -39,8 +39,8 @@ enum iOSMarkdownStyler {
             MarkdownImageAssetService.renderAsset(for: asset.id, in: imageAssets).map { (asset.id, $0) }
         })
 
-        let lines = markdown.components(separatedBy: "\n")
-        let lineRecords = lineRecords(in: lines)
+        let lines = MarkdownSourceLines.texts(in: markdown)
+        let lineRecords = MarkdownSourceLines.lines(in: markdown)
         let tableRows = MarkdownTableParser.rowStyles(in: markdown)
         let codeBlocks = MarkdownBlockSupport.fencedCodeBlocks(in: markdown)
         let codeLineIndexes = Set(codeBlocks.flatMap { Array($0.lineIndexes) })
@@ -139,17 +139,6 @@ enum iOSMarkdownStyler {
         collapsed.minimumLineHeight = 0.1
         collapsed.maximumLineHeight = 0.1
         storage.addAttribute(.paragraphStyle, value: collapsed, range: range)
-    }
-
-    private static func lineRecords(in lines: [String]) -> [iOSMarkdownLineRecord] {
-        var records: [iOSMarkdownLineRecord] = []
-        var location = 0
-        for (index, line) in lines.enumerated() {
-            let length = (line as NSString).length
-            records.append(iOSMarkdownLineRecord(index: index, text: line, range: NSRange(location: location, length: length)))
-            location += length + 1
-        }
-        return records
     }
 
     private static func styleLine(
@@ -348,7 +337,7 @@ enum iOSMarkdownStyler {
     private static func applyLiveCodeBlocks(
         _ storage: NSMutableAttributedString,
         codeBlocks: [MarkdownFencedCodeBlock],
-        lineRecords: [iOSMarkdownLineRecord],
+        lineRecords: [MarkdownSourceLine],
         contentWidth: CGFloat,
         revealedBlockRange: NSRange?
     ) {
@@ -410,7 +399,7 @@ enum iOSMarkdownStyler {
     private static func applyLiveTableBlocks(
         _ storage: NSMutableAttributedString,
         lines: [String],
-        lineRecords: [iOSMarkdownLineRecord],
+        lineRecords: [MarkdownSourceLine],
         tableRows: [Int: MarkdownTableRowStyle],
         contentWidth: CGFloat,
         revealedBlockRange: NSRange?
@@ -454,7 +443,7 @@ enum iOSMarkdownStyler {
                 continue
             }
 
-            let table = iOSMarkdownLiveTableLayoutInfo(headers: headers, rows: rows)
+            let table = iOSMarkdownLiveTableLayoutInfo(headers: headers, rows: rows, alignments: style.alignments)
             applyTableBlock(storage, lineRange: firstRecord.range, table: table, contentWidth: contentWidth)
 
             for lineIndex in tableLineIndexes.dropFirst() {
@@ -505,17 +494,31 @@ enum iOSMarkdownStyler {
         drawCanvas(storage, canvas, over: lineRange, isBlock: true, yOffset: 0)
     }
 
+    /// Collapses one source line of a block whose canvas is drawn on the block's *first* line.
+    ///
+    /// **The range has to include the line's terminating newline.** A paragraph style governs the
+    /// paragraph its characters sit in, and the newline is the last character of that paragraph —
+    /// so a collapse applied to the content alone leaves the `\n` carrying the base 17pt style. For
+    /// a line that has content, the first character's collapsed style still wins and the mistake is
+    /// invisible. For a **blank** line it is the only character there is, and the blank line stays
+    /// at full height: a fenced code block with a blank line in the middle drew its canvas and then
+    /// a stack of empty rows underneath it, one per blank line, which is exactly what a rendered
+    /// code block is supposed to have replaced.
     private static func collapseLine(_ storage: NSMutableAttributedString, lineRange: NSRange) {
+        let withTerminator = NSIntersectionRange(
+            NSRange(location: lineRange.location, length: lineRange.length + 1),
+            NSRange(location: 0, length: storage.length)
+        )
+        guard withTerminator.length > 0 else { return }
+
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = 0.1
         paragraph.maximumLineHeight = 0.1
         paragraph.lineSpacing = 0
         paragraph.paragraphSpacingBefore = 0
         paragraph.paragraphSpacing = 0
-        if lineRange.length > 0 {
-            hide(storage, lineRange)
-            storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
-        }
+        hide(storage, withTerminator)
+        storage.addAttribute(.paragraphStyle, value: paragraph, range: withTerminator)
     }
 
     private static func standaloneImage(
@@ -590,7 +593,7 @@ enum iOSMarkdownStyler {
     }
 
     private static func inlineStyleExclusionRanges(
-        lineRecords: [iOSMarkdownLineRecord],
+        lineRecords: [MarkdownSourceLine],
         tableRows: [Int: MarkdownTableRowStyle],
         codeBlocks: [MarkdownFencedCodeBlock]
     ) -> [NSRange] {
@@ -616,7 +619,7 @@ enum iOSMarkdownStyler {
 
     private static func combinedLineRange(
         for lineIndexes: ClosedRange<Int>,
-        recordsByIndex: [Int: iOSMarkdownLineRecord]
+        recordsByIndex: [Int: MarkdownSourceLine]
     ) -> NSRange? {
         let records = lineIndexes.compactMap { recordsByIndex[$0] }
         guard let first = records.first, let last = records.last else { return nil }
@@ -628,129 +631,56 @@ enum iOSMarkdownStyler {
         markdown: String,
         excludedRanges: [NSRange]
     ) {
-        let inlineCodeRanges = regexRanges(#"`([^`\n]+?)`"#, in: markdown)
+        let inlineCodeRanges = MarkdownInlineSpanSupport.codeRanges(in: markdown)
 
-        styleBoldItalic(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
-        styleBold(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
-        styleItalic(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
-        styleStrikethrough(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
-        styleInlineCode(storage, markdown: markdown, excludedRanges: excludedRanges)
-        styleHighlight(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
+        // Which runs get styled, in what order, and which markers disappear is
+        // `MarkdownInlineSpanSupport`'s decision — a platform-free one the macOS test target can
+        // actually run. This method is only the drawing half of it.
+        for span in MarkdownInlineSpanSupport.spans(in: markdown, excluding: excludedRanges) {
+            apply(span, to: storage)
+        }
+
         styleImageLink(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
         styleMarkdownLinks(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
         styleWikiReferences(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
         styleHashtags(storage, markdown: markdown, excludedRanges: excludedRanges, inlineCodeRanges: inlineCodeRanges)
     }
 
-    /// Handles both `***bold italic***` and `___bold italic___`.
-    private static func styleBoldItalic(
-        _ storage: NSMutableAttributedString,
-        markdown: String,
-        excludedRanges: [NSRange],
-        inlineCodeRanges: [NSRange]
-    ) {
-        for pattern in [#"\*\*\*(.+?)\*\*\*"#, #"___(.+?)___"#] {
-            applyRegex(pattern, in: markdown) { match in
-                guard shouldStyleInline(match.range(at: 0), excluding: excludedRanges, protecting: inlineCodeRanges) else { return }
-                guard match.numberOfRanges >= 2 else { return }
-                let content = match.range(at: 1)
-                storage.addAttribute(.font, value: italicFont(from: boldFont(at: content.location, in: storage)), range: content)
-                hideMarkers(around: content, in: match, storage: storage)
-            }
-        }
-    }
+    private static func apply(_ span: MarkdownInlineSpan, to storage: NSMutableAttributedString) {
+        let content = span.contentRange
+        switch span.kind {
+        case .boldItalic:
+            storage.addAttribute(.font, value: italicFont(from: boldFont(at: content.location, in: storage)), range: content)
 
-    /// Handles both `**bold**` and `__bold__`.
-    private static func styleBold(
-        _ storage: NSMutableAttributedString,
-        markdown: String,
-        excludedRanges: [NSRange],
-        inlineCodeRanges: [NSRange]
-    ) {
-        for pattern in [#"\*\*(.+?)\*\*"#, #"(?<!_)__(?!_)(.+?)(?<!_)__(?!_)"#] {
-            applyRegex(pattern, in: markdown) { match in
-                guard shouldStyleInline(match.range(at: 0), excluding: excludedRanges, protecting: inlineCodeRanges) else { return }
-                guard match.numberOfRanges >= 2 else { return }
-                let content = match.range(at: 1)
-                storage.addAttribute(.font, value: boldFont(at: content.location, in: storage), range: content)
-                hideMarkers(around: content, in: match, storage: storage)
-            }
-        }
-    }
+        case .bold:
+            storage.addAttribute(.font, value: boldFont(at: content.location, in: storage), range: content)
 
-    /// Handles both `*italic*` and `_italic_`.
-    private static func styleItalic(
-        _ storage: NSMutableAttributedString,
-        markdown: String,
-        excludedRanges: [NSRange],
-        inlineCodeRanges: [NSRange]
-    ) {
-        for pattern in [
-            #"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"#,
-            #"(?<![\p{L}\p{N}_])_(?!_)(.+?)(?<!_)_(?![\p{L}\p{N}_])"#
-        ] {
-            applyRegex(pattern, in: markdown) { match in
-                guard shouldStyleInline(match.range(at: 0), excluding: excludedRanges, protecting: inlineCodeRanges) else { return }
-                guard match.numberOfRanges >= 2 else { return }
-                let content = match.range(at: 1)
-                storage.addAttribute(.font, value: italicFont(from: font(at: content.location, in: storage)), range: content)
-                hideMarkers(around: content, in: match, storage: storage)
-            }
-        }
-    }
+        case .italic:
+            storage.addAttribute(.font, value: italicFont(from: font(at: content.location, in: storage)), range: content)
 
-    private static func styleStrikethrough(
-        _ storage: NSMutableAttributedString,
-        markdown: String,
-        excludedRanges: [NSRange],
-        inlineCodeRanges: [NSRange]
-    ) {
-        applyRegex(#"~~(.+?)~~"#, in: markdown) { match in
-            guard shouldStyleInline(match.range(at: 0), excluding: excludedRanges, protecting: inlineCodeRanges) else { return }
-            guard match.numberOfRanges >= 2 else { return }
-            let content = match.range(at: 1)
+        case .strikethrough:
             storage.addAttributes([
                 .foregroundColor: UIColor(Theme.dim),
                 .strikethroughStyle: NSUnderlineStyle.single.rawValue
             ], range: content)
-            hideMarkers(around: content, in: match, storage: storage)
-        }
-    }
 
-    private static func styleInlineCode(
-        _ storage: NSMutableAttributedString,
-        markdown: String,
-        excludedRanges: [NSRange]
-    ) {
-        applyRegex(#"`([^`\n]+?)`"#, in: markdown) { match in
-            guard shouldStyleInline(match.range(at: 0), excluding: excludedRanges) else { return }
-            guard match.numberOfRanges >= 2 else { return }
-            let content = match.range(at: 1)
+        case .code:
             storage.addAttributes([
                 .font: monoFont,
                 .foregroundColor: UIColor(Theme.amberLight),
                 .backgroundColor: UIColor(Theme.surfaceElevated).withAlphaComponent(0.65),
                 .cadenceMarkdownInlineCode: true
             ], range: content)
-            hideMarkers(around: content, in: match, storage: storage)
-        }
-    }
 
-    private static func styleHighlight(
-        _ storage: NSMutableAttributedString,
-        markdown: String,
-        excludedRanges: [NSRange],
-        inlineCodeRanges: [NSRange]
-    ) {
-        applyRegex(#"==(.+?)=="#, in: markdown) { match in
-            guard shouldStyleInline(match.range(at: 0), excluding: excludedRanges, protecting: inlineCodeRanges) else { return }
-            guard match.numberOfRanges >= 2 else { return }
-            let content = match.range(at: 1)
+        case .highlight:
             storage.addAttributes([
                 .foregroundColor: UIColor(Theme.amberLight),
                 .backgroundColor: UIColor(Theme.amber).withAlphaComponent(0.18)
             ], range: content)
-            hideMarkers(around: content, in: match, storage: storage)
+        }
+
+        for markerRange in span.markerRanges {
+            hide(storage, markerRange)
         }
     }
 
@@ -879,19 +809,7 @@ enum iOSMarkdownStyler {
         excluding excludedRanges: [NSRange],
         protecting protectedRanges: [NSRange] = []
     ) -> Bool {
-        guard range.location != NSNotFound, range.length > 0 else { return false }
-        guard !excludedRanges.contains(where: { NSIntersectionRange($0, range).length > 0 }) else {
-            return false
-        }
-        return !protectedRanges.contains { protected in
-            range.location >= protected.location && NSMaxRange(range) <= NSMaxRange(protected)
-        }
-    }
-
-    private static func regexRanges(_ pattern: String, in text: String) -> [NSRange] {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-        let range = NSRange(location: 0, length: (text as NSString).length)
-        return regex.matches(in: text, range: range).map(\.range)
+        MarkdownInlineSpanSupport.shouldStyle(range, excluding: excludedRanges, protecting: protectedRanges)
     }
 
     private static func applyRegex(
@@ -1004,16 +922,6 @@ enum iOSMarkdownStyler {
         return UIFont(descriptor: descriptor, size: font.pointSize)
     }
 
-    private static func hideMarkers(
-        around contentRange: NSRange,
-        in match: NSTextCheckingResult,
-        storage: NSMutableAttributedString
-    ) {
-        for range in match.markerRanges(contentRange: contentRange) {
-            hide(storage, range)
-        }
-    }
-
     /// Hides a run and hangs a pre-rendered canvas over it for the layout manager to paint.
     ///
     /// This replaced seven near-identical blocks that each built an `NSTextAttachment`, set its
@@ -1106,12 +1014,6 @@ struct iOSMarkdownStyleSignature: Equatable {
     }
 }
 
-private struct iOSMarkdownLineRecord {
-    let index: Int
-    let text: String
-    let range: NSRange
-}
-
 private struct iOSMarkdownQuoteMatch {
     let prefixRange: NSRange
     let depth: Int
@@ -1151,15 +1053,6 @@ extension UITextView {
 private extension NSRange {
     func shifted(by offset: Int) -> NSRange {
         NSRange(location: location + offset, length: length)
-    }
-}
-
-private extension NSTextCheckingResult {
-    func markerRanges(contentRange: NSRange) -> [NSRange] {
-        let opening = NSRange(location: range.location, length: max(0, contentRange.location - range.location))
-        let closingStart = contentRange.location + contentRange.length
-        let closing = NSRange(location: closingStart, length: max(0, range.location + range.length - closingStart))
-        return [opening, closing].filter { $0.length > 0 }
     }
 }
 #endif
