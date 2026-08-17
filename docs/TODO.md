@@ -48,12 +48,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   *error* in Swift 6 mode, and `CadenceMCPServer` is already `SWIFT_VERSION = 6.0` while the app and
   tests are 5.0, so this is a migration blocker rather than tidying.
 
-- [T-83] **Remove the `‹ ›` nav arrows from Month and Board too.** Decided 2026-08-17, reversing the
-  scoping in `D-40`/`ecfc9a3`: consistency across all four calendar surfaces wins over the one-tap
-  step. **Consequence to handle, not just accept** — Month steps a whole month and Board a week, and
-  neither scrolls in the axis the arrows moved, so after this the *only* way to change period on
-  those two is the date dropdown. Confirm that dropdown can actually reach an arbitrary month before
-  deleting the arrows, and that its Today shortcut is present.
 - [T-85] **Redesign the iOS task creation sheet so the fold problem is *gone*, not managed.** Decided
   2026-08-17: the user rejected all three mitigations for the ~53pt overflow and asked for a
   redesign with mocks. The binding constraint, measured: with a software keyboard up a 390pt phone
@@ -79,6 +73,11 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 
 ## Open — known, unscheduled
+
+- [T-90] **Month's date dropdown seeds its selection on the middle day of the displayed window** —
+  Aug 16 under a grid reading "August" — rather than the 1st or today. Cosmetic, and a consequence
+  of Month reading its title from the window's middle row (which is correct, since an August-aligned
+  window starts in July). Worth a look when someone is next in that file.
 
 - [T-89] **Drag-and-drop cannot be driven from the simulator harness.** Neither `touch_path` nor
   `swipe` lifts a `UIDragInteraction`, so no drop ever fires — verified against the row target from
@@ -273,6 +272,13 @@ Newest first. The commit message carries the reasoning; this is the index.
   they were hiding.
 
 ## Cancelled
+
+- [X-03] **[T-83] Remove the nav arrows from Month and Board** — filed and decided on a false
+  premise, then found already delivered. `cf785a8` scoped the removal to the timed grids; `ecfc9a3`
+  superseded it two hours later and removed the cluster from **all four** surfaces, saying so in its
+  own message. My summary to the user reported the earlier scoping as the shipped state, so the user
+  was asked to decide something already done. Nothing was changed. The lesson is cheap and worth
+  keeping: **report the shipped state from the code, not from the decision you remember briefing.**
 
 - [X-01] **Home screen redesign** — three rounds of mocks (quiet grid, today-first, informative
   cards) were all rejected before the real problem surfaced: there was no tab bar, so Home was
