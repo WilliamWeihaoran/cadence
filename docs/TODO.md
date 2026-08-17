@@ -67,6 +67,15 @@ Started 2026-08-17, four agents on disjoint file sets.
 
 ## Open — decided, not started
 
+- [T-49] **Rework the iOS task creation sheet: fields belong in the page, not pinned to the floor.**
+  Requested with a screenshot. Today `iOSCreateTaskSheet` is title + notes at the top, then ~700pt
+  of dead space, then a horizontally-scrolling chip strip on the bottom edge — and the strip
+  scrolls, so the tag chip is clipped off the right on a 390pt phone. The user wants list, do date,
+  due date and the rest **in the middle of the page**. Mocks presented 2026-08-17; awaiting a
+  choice. Note the sheet is shared with the tab bar `+`, the iPad corner `+` and now the
+  drag-to-create seed path (`47328af`), so whatever shape is chosen has to read well both empty and
+  pre-seeded — a seeded value must be visible without scrolling or the assumption is hidden again.
+
 
 ## Open — known, unscheduled
 
