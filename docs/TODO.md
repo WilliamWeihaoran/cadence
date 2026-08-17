@@ -29,9 +29,29 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-_Nothing._
+**W — group headers as drop targets** ([T-39])
+
+**X — test-target warning noise** ([T-82])
 
 ## Open — decided, not started
+
+- [T-83] **Remove the `‹ ›` nav arrows from Month and Board too.** Decided 2026-08-17, reversing the
+  scoping in `D-40`/`ecfc9a3`: consistency across all four calendar surfaces wins over the one-tap
+  step. **Consequence to handle, not just accept** — Month steps a whole month and Board a week, and
+  neither scrolls in the axis the arrows moved, so after this the *only* way to change period on
+  those two is the date dropdown. Confirm that dropdown can actually reach an arbitrary month before
+  deleting the arrows, and that its Today shortcut is present.
+- [T-84] **Task embeds: rename from the task sheet only.** Decided 2026-08-17. The inline title
+  field added in `29735a6` comes out, along with the `.title` hit target and the `onRenameEmbeddedTask`
+  callback if nothing else uses it. Tapping anywhere on the card opens the task — one predictable
+  action. Note the macOS side keeps its own inline rename (it has a hover cue); the shared
+  `MarkdownTaskEmbedParser` title-rewriting rules from `29735a6` stay, since macOS still calls them.
+- [T-85] **Redesign the iOS task creation sheet so the fold problem is *gone*, not managed.** Decided
+  2026-08-17: the user rejected all three mitigations for the ~53pt overflow and asked for a
+  redesign with mocks. The binding constraint, measured: with a software keyboard up a 390pt phone
+  leaves ~508pt of sheet, ~452pt of it usable below the header. The current shape spends that on a
+  52pt title, a 70pt notes box, a 76pt do-date button block and four ~68pt rows. Supersedes the
+  height note on [D-50].
 
 - [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
   `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
@@ -45,26 +65,11 @@ _Nothing._
 
 ## Open — known, unscheduled
 
-- [T-81] **The iPad simulator renders rotated inside a portrait buffer**, so taps do not map and its
-  regular-width screens cannot be driven. Two agents hit this independently; both fell back to unit
-  tests plus a single static screenshot. Until it is reset, treat "verified on iPad" claims as
-  weaker than the iPhone equivalents. One side effect already: that simulator's calendar view mode
-  was changed to Month by a stray calibration tap.
 - [T-82] **~1195 macro-generated `#expect` warnings in the test target** surface on a full recompile,
   from pre-existing files (`iPadTodayPaneWidthTests`, `MarkdownChecklistSupportTests`,
   `NotificationSchedulingTests`, and others). Not app-source, so the baseline of 3 is unaffected,
   but it is enough noise to hide a real new warning. The fix that worked for `CadenceTaskRowMetrics`
   was `nonisolated struct`, the same reason `TaskOrdering` is nonisolated.
-
-- [T-79] **Moving a task embed needs a product decision, not a fix.** `29735a6` established that
-  macOS cannot reorder an embed inside a note either — its drag is a source that carries the *task*
-  out to a board, and no iOS shell puts a note editor and a board on screen together. Delivering
-  this means intra-note reordering (a new feature macOS lacks) or cross-screen drag.
-
-- [T-60] **Does the nav cluster belong on Month and Board?** `D-40` deleted it from the timed grids
-  only, on the reasoning the user gave — "we can just scroll left and right" — which does not hold
-  for a fixed month grid or a weekly-stepped board. Worth confirming that is what the user wants,
-  since the request named the control rather than the surface.
 
 - [T-55] **Two things from `64218d1` need a real phone, not a simulator.**
   1. **Can a phone still dismiss the keyboard in the Notes tab?** The Done bar was the dedicated
@@ -78,17 +83,6 @@ _Nothing._
   2. **Double tap on plain text, and on a code block or table.** The `shouldBegin` gate makes the
      prose case true by construction, but neither case was observed: the simulator tooling has no
      double-tap action and two scripted taps fall outside UIKit's ~350ms window.
-- [T-44] **No way to move a task embed on iOS.** macOS has drag via `draggingTaskEmbedID`; iOS has
-  nothing. Raised as part of T-26 but it is a missing feature rather than a defect, so it was not
-  built on the way past.
-- [T-45] **Sample data on the two simulators is dirty.** Three agents driving the same simulators
-  left artefacts while verifying: a `[Sample Note] Today review` title line reading
-  `**## [Sample Note] Today review`, stray `Buy bread` / `Buy milk` task embeds and tasks, a
-  `( ) Call mum` fragment on the iPhone scratch note, and the `Dropped from tab bar plus` task from
-  T-40. **All of it is DEBUG-only seeded data (`iOSSampleDataSupport`) on simulators — nothing in
-  the repo, nothing on a real device, nothing synced.** Reset it by wiping the simulators' app data
-  next time neither is in use; not worth doing while agents are running.
-
 - [T-39] **Group headers should be drop targets too.** `47328af` made task *rows* accept a dropped
   `+`, which covers every grouping by construction but cannot reach an **empty** group — the one
   case where seeding a new task from the group is most useful. `CadenceTaskDropSupport`'s resolver
