@@ -310,21 +310,6 @@ struct QuickCreateSlotSummary: View {
     }
 }
 
-struct QuickCreateSlotMetadataRows: View {
-    let dateKey: String
-    let startMin: Int
-    let endMin: Int
-
-    var body: some View {
-        QuickCreateDetailRow(title: "When", icon: "clock") {
-            HStack(spacing: 8) {
-                QuickCreateInspectorValue(text: DateFormatters.relativeDate(from: dateKey), icon: "calendar")
-                QuickCreateInspectorValue(text: TimeFormatters.timeRange(startMin: startMin, endMin: endMin), icon: "clock")
-            }
-        }
-    }
-}
-
 struct QuickCreateInspectorValue: View {
     let text: String
     let icon: String

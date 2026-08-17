@@ -66,7 +66,6 @@ protocol AIProvider {
 
 enum AIProviderError: LocalizedError, Equatable {
     case missingAPIKey
-    case invalidURL
     case emptyResponse
     case invalidResponse
     case apiError(statusCode: Int, message: String)
@@ -76,8 +75,6 @@ enum AIProviderError: LocalizedError, Equatable {
         switch self {
         case .missingAPIKey:
             return "Add an OpenAI API key in Settings → AI first."
-        case .invalidURL:
-            return "The OpenAI endpoint URL is invalid."
         case .emptyResponse:
             return "The model returned an empty response."
         case .invalidResponse:

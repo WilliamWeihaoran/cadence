@@ -152,10 +152,6 @@ struct TasksPanelFlatSectionView: View {
     let onDropOnSectionPayload: ((String) -> Bool)?
     let onDropOnTaskPayload: (String, AppTask) -> Bool
 
-    private var groupID: String {
-        "flat-\(label.lowercased().replacingOccurrences(of: " ", with: "-"))"
-    }
-
     var body: some View {
         Section {
             CollapsibleTaskGroupHeader(

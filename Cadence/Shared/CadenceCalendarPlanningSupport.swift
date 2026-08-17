@@ -583,12 +583,6 @@ enum CadenceScheduleSupport {
         }
     }
 
-    static func itemCount(on dateKey: String, tasks: [AppTask], bundles: [TaskBundle]) -> Int {
-        let taskCount = tasks.filter { !$0.isCancelled && ($0.scheduledDate == dateKey || $0.dueDate == dateKey) }.count
-        let bundleCount = bundles.filter { $0.dateKey == dateKey }.count
-        return taskCount + bundleCount
-    }
-
     /// The hour a freshly opened day timeline should be scrolled to.
     ///
     /// A timeline draws from `calendarStartHour` and a scroll view opens at its top, so a canvas

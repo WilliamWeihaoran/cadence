@@ -99,10 +99,6 @@ enum CadenceTaskPresentationSupport {
         CadenceMarkdownPresentationSupport.plainPreviewText(from: markdown, limit: limit)
     }
 
-    static func hasNotes(_ task: AppTask) -> Bool {
-        !plainPreviewText(from: task.notes).isEmpty
-    }
-
     static func subtaskProgress(for task: AppTask) -> CadenceSubtaskProgress? {
         let subtasks = task.subtasks ?? []
         guard !subtasks.isEmpty else { return nil }

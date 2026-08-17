@@ -25,7 +25,6 @@ struct NotePanel: View {
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
     @State private var editorContent = ""
     @State private var loadedNoteID: UUID?
-    @State private var isEditorFocused = false
     @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
 
     var body: some View {
@@ -229,7 +228,6 @@ struct NotePanel: View {
     }
 
     private func handleEditorFocusChange(_ isFocused: Bool) {
-        isEditorFocused = isFocused
         guard !isFocused else { return }
         flushPendingEditorContent()
     }

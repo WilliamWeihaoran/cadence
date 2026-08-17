@@ -112,35 +112,6 @@ enum GoalMissionGrouping {
     }
 }
 
-struct GoalHeaderMetric: View {
-    let title: String
-    let value: String
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 9) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(color)
-                .frame(width: 26, height: 26)
-                .background(color.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(value)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .cadenceCard(background: Theme.surfaceElevated.opacity(0.7), cornerRadius: Theme.radiusControl, shadowRadius: 8, shadowY: 3)
-    }
-}
-
 struct GoalMissionGroupView: View {
     let group: GoalMissionGroup
     let selectedGoalID: UUID?
@@ -332,28 +303,6 @@ struct GoalMissionCard: View {
             )
         }
         .buttonStyle(.cadencePlain)
-    }
-}
-
-struct GoalProgressOrb: View {
-    let goal: Goal
-    let summary: GoalContributionSummary
-    var size: CGFloat = 48
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color(hex: goal.colorHex).opacity(0.13))
-            Circle()
-                .trim(from: 0, to: max(0.025, summary.progress))
-                .stroke(Color(hex: goal.colorHex), style: StrokeStyle(lineWidth: size > 50 ? 5 : 4, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .padding(4)
-            Text(summary.percentLabel)
-                .font(.system(size: size > 50 ? 13 : 11, weight: .bold))
-                .foregroundStyle(Theme.text)
-        }
-        .frame(width: size, height: size)
     }
 }
 

@@ -27,7 +27,6 @@ struct TaskNoteEditorPane: View {
     @State private var editorContent = ""
     @State private var loadedTaskID: UUID?
     @State private var derivedState = TaskNoteDerivedState()
-    @State private var isEditorFocused = false
     @State private var pendingDerivedStateTask: Task<Void, Never>?
     @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
 
@@ -226,7 +225,6 @@ struct TaskNoteEditorPane: View {
     }
 
     private func handleEditorFocusChange(_ isFocused: Bool) {
-        isEditorFocused = isFocused
         guard !isFocused else { return }
         flushPendingEditorContent()
     }

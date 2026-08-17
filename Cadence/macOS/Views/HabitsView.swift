@@ -36,32 +36,6 @@ struct HabitsView: View {
         }
     }
 
-    private var dueHabitsToday: [Habit] {
-        habits.filter(\.isDueToday)
-    }
-
-    private var openHabitsToday: [Habit] {
-        dueHabitsToday.filter { !$0.isDone(on: todayKey) }
-    }
-
-    private var goalLinkedHabitCount: Int {
-        habits.filter { $0.goal != nil }.count
-    }
-
-    private var goalCoverageLabel: String {
-        guard !habits.isEmpty else { return "No habits yet" }
-        return "\(goalLinkedHabitCount)/\(habits.count) linked to goals"
-    }
-
-    private var nextOpenHabit: Habit? {
-        openHabitsToday.sorted { lhs, rhs in
-            if lhs.goal != nil && rhs.goal == nil { return true }
-            if lhs.goal == nil && rhs.goal != nil { return false }
-            if lhs.currentStreak != rhs.currentStreak { return lhs.currentStreak > rhs.currentStreak }
-            return lhs.order < rhs.order
-        }.first
-    }
-
     /// Habits group under the goal they support; anything unlinked falls into a review bucket.
     private var habitGroups: [HabitGoalGroup] {
         var groups: [HabitGoalGroup] = goals.compactMap { goal in
@@ -93,25 +67,6 @@ struct HabitsView: View {
         }
 
         return groups
-    }
-
-    private var doneTodayCount: Int {
-        habits.filter { $0.isDone(on: todayKey) }.count
-    }
-
-    private var dueTodayCount: Int {
-        habits.filter(\.isDueToday).count
-    }
-
-    private var activeStreakCount: Int {
-        habits.filter { $0.currentStreak > 0 }.count
-    }
-
-    private var averageLast30Completion: Int {
-        guard !habits.isEmpty else { return 0 }
-        let avg = habits.reduce(0.0) { $0 + Double($1.last30DayCompletionRate) }
-            / Double(habits.count)
-        return Int(avg.rounded())
     }
 
     var body: some View {

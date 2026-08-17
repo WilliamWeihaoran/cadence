@@ -238,37 +238,6 @@ struct MacTaskRow: View {
         .popover(isPresented: $showDoDatePicker) { doDatePickerPopover }
     }
 
-    private var doDateBadge: some View {
-        Button {
-            openDoDatePicker()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "sun.max.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(task.scheduledDate.isEmpty ? Theme.dim : Theme.amber)
-                    .frame(width: 12, alignment: .leading)
-
-                ZStack {
-                    Text("Tomorrow")
-                        .font(.system(size: 13))
-                        .opacity(0)
-
-                    Text(task.scheduledDate.isEmpty ? "Do" : DateFormatters.relativeDate(from: task.scheduledDate))
-                        .font(.system(size: 13))
-                        .foregroundStyle(
-                            isOverdo
-                                ? Theme.red
-                                : (isDoToday ? Theme.amber : (task.scheduledDate.isEmpty ? Theme.dim : Theme.muted))
-                        )
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
-            }
-            .fixedSize(horizontal: true, vertical: false)
-        }
-        .buttonStyle(.cadencePlain)
-        .popover(isPresented: $showDoDatePicker) { doDatePickerPopover }
-    }
-
     private var dueDateBadgeList: some View {
         Button {
             openDueDatePicker()
@@ -391,10 +360,6 @@ struct MacTaskRow: View {
         )
     }
 
-    private var metaDivider: some View {
-        Rectangle().fill(Theme.borderSubtle).frame(width: 0.5, height: 12)
-    }
-
     // These three were byte-identical re-implementations of the kanban card's copies, which is how
     // the row and the card were free to answer "is this overdue" differently. One definition each.
     private var isOverdue: Bool {
@@ -407,10 +372,6 @@ struct MacTaskRow: View {
 
     private var isDoToday: Bool {
         KanbanCardComputedSupport.isDoToday(task: task)
-    }
-
-    private var showsDoDateOnFirstRow: Bool {
-        style != .todayGrouped
     }
 
     private var showsListContextChip: Bool {
