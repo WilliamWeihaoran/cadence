@@ -12,7 +12,7 @@ import SwiftUI
 /// below is the one thing in the tab shell that can silently strand a whole feature — a
 /// destination that answers "no tab owns me" is a screen nothing can reach — so it has to be
 /// testable.
-enum CadenceCompactTab: String, CaseIterable, Identifiable, Hashable {
+nonisolated enum CadenceCompactTab: String, CaseIterable, Identifiable, Hashable {
     case tasks
     case calendar
     case notes
@@ -58,7 +58,7 @@ enum CadenceCompactTab: String, CaseIterable, Identifiable, Hashable {
 /// The three slices of work the Tasks tab switches between, selected by a segmented control in its
 /// header — deliberately the same control the Calendar tab uses for Week/Month/Board, so the two
 /// are learned once.
-enum CadenceTasksSection: String, CaseIterable, Identifiable, Hashable {
+nonisolated enum CadenceTasksSection: String, CaseIterable, Identifiable, Hashable {
     case today
     case all
     case inbox
@@ -96,13 +96,13 @@ enum CadenceTasksSection: String, CaseIterable, Identifiable, Hashable {
 /// `pushedDestination == nil` means the destination *is* the tab's root — selecting the tab shows
 /// it, and the stack should be emptied rather than pushed onto. That distinction is what keeps a
 /// widget tap from stacking a second Calendar on top of the Calendar you were already looking at.
-struct CadenceCompactRoute: Equatable {
+nonisolated struct CadenceCompactRoute: Equatable {
     var tab: CadenceCompactTab
     var tasksSection: CadenceTasksSection?
     var pushedDestination: CadenceFeatureDestination?
 }
 
-extension CadenceFeatureDestination {
+nonisolated extension CadenceFeatureDestination {
     /// Which tab owns this destination. Exhaustive by construction — adding a case to
     /// `CadenceFeatureDestination` without answering this question will not compile.
     var compactTab: CadenceCompactTab {
@@ -145,7 +145,7 @@ extension CadenceFeatureDestination {
     }
 }
 
-extension CadenceDeepLink {
+nonisolated extension CadenceDeepLink {
     /// The feature a link opens. `.task` resolves to Today rather than to a screen of its own:
     /// the task itself is surfaced by `CadenceDeepLinkManager.pendingTaskID`, which the task rows
     /// watch and turn into a detail sheet.
@@ -163,7 +163,7 @@ extension CadenceDeepLink {
     }
 }
 
-extension CadenceFeatureDestination {
+nonisolated extension CadenceFeatureDestination {
     /// The More tab's contents, under quiet eyebrows. Search sits under Workspace next to
     /// Settings rather than beside the task surfaces, because from here it searches everything.
     static let compactMoreSections: [CadenceFeatureSection] = [

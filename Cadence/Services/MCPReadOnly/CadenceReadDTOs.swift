@@ -1,6 +1,6 @@
 import Foundation
 
-struct CadenceContextRef: Codable, Sendable {
+nonisolated struct CadenceContextRef: Codable, Sendable {
     let id: String
     let name: String
     let colorHex: String
@@ -14,7 +14,7 @@ struct CadenceContextRef: Codable, Sendable {
     let habitCount: Int
 }
 
-struct CadenceContainerRef: Codable, Sendable {
+nonisolated struct CadenceContainerRef: Codable, Sendable {
     let kind: String
     let id: String
     let name: String
@@ -25,21 +25,21 @@ struct CadenceContainerRef: Codable, Sendable {
     let icon: String
 }
 
-struct CadenceGoalRef: Codable, Sendable {
+nonisolated struct CadenceGoalRef: Codable, Sendable {
     let id: String
     let title: String
     let status: String
     let progress: Double
 }
 
-struct CadenceSubtaskSummary: Codable, Sendable {
+nonisolated struct CadenceSubtaskSummary: Codable, Sendable {
     let id: String
     let title: String
     let isDone: Bool
     let order: Int
 }
 
-struct CadenceTagSummary: Codable, Sendable {
+nonisolated struct CadenceTagSummary: Codable, Sendable {
     let id: String
     let slug: String
     let name: String
@@ -48,7 +48,7 @@ struct CadenceTagSummary: Codable, Sendable {
     let isArchived: Bool
 }
 
-struct CadenceTaskSummary: Codable, Sendable {
+nonisolated struct CadenceTaskSummary: Codable, Sendable {
     let id: String
     let title: String
     let status: String
@@ -65,7 +65,7 @@ struct CadenceTaskSummary: Codable, Sendable {
     let isCancelled: Bool
 }
 
-struct CadenceTaskBundleSummary: Codable, Sendable {
+nonisolated struct CadenceTaskBundleSummary: Codable, Sendable {
     let id: String
     let title: String
     let dateKey: String
@@ -78,12 +78,12 @@ struct CadenceTaskBundleSummary: Codable, Sendable {
     let createdAt: String
 }
 
-struct CadenceTaskBundleDetail: Codable, Sendable {
+nonisolated struct CadenceTaskBundleDetail: Codable, Sendable {
     let summary: CadenceTaskBundleSummary
     let tasks: [CadenceTaskSummary]
 }
 
-struct CadenceTaskDetail: Codable, Sendable {
+nonisolated struct CadenceTaskDetail: Codable, Sendable {
     let summary: CadenceTaskSummary
     let notes: String
     let actualMinutes: Int
@@ -92,7 +92,7 @@ struct CadenceTaskDetail: Codable, Sendable {
     let completedAt: String?
 }
 
-struct CadenceDocumentSummary: Codable, Sendable {
+nonisolated struct CadenceDocumentSummary: Codable, Sendable {
     let id: String
     let title: String
     let container: CadenceContainerRef?
@@ -101,7 +101,7 @@ struct CadenceDocumentSummary: Codable, Sendable {
     let tags: [CadenceTagSummary]
 }
 
-struct CadenceTagDetail: Codable, Sendable {
+nonisolated struct CadenceTagDetail: Codable, Sendable {
     let summary: CadenceTagSummary
     let taskCount: Int
     let noteCount: Int
@@ -109,7 +109,7 @@ struct CadenceTagDetail: Codable, Sendable {
     let updatedAt: String
 }
 
-struct CadenceNoteSummary: Codable, Sendable {
+nonisolated struct CadenceNoteSummary: Codable, Sendable {
     let id: String
     let kind: String
     let title: String
@@ -120,7 +120,7 @@ struct CadenceNoteSummary: Codable, Sendable {
     let tags: [CadenceTagSummary]
 }
 
-struct CadenceNoteDetail: Codable, Sendable {
+nonisolated struct CadenceNoteDetail: Codable, Sendable {
     let summary: CadenceNoteSummary
     let content: String
     let order: Int
@@ -131,7 +131,7 @@ struct CadenceNoteDetail: Codable, Sendable {
     let linkedTasks: [CadenceTaskSummary]
 }
 
-struct CadenceNotePayload: Codable, Sendable {
+nonisolated struct CadenceNotePayload: Codable, Sendable {
     let id: String
     let kind: String
     let key: String?
@@ -141,7 +141,7 @@ struct CadenceNotePayload: Codable, Sendable {
     let tags: [CadenceTagSummary]
 }
 
-struct CadenceCoreNotesSnapshot: Codable, Sendable {
+nonisolated struct CadenceCoreNotesSnapshot: Codable, Sendable {
     let dateKey: String
     let weekKey: String
     let dailyNote: CadenceNotePayload?
@@ -149,7 +149,7 @@ struct CadenceCoreNotesSnapshot: Codable, Sendable {
     let permanentNote: CadenceNotePayload?
 }
 
-struct CadenceSearchHit: Codable, Sendable {
+nonisolated struct CadenceSearchHit: Codable, Sendable {
     let entityType: String
     let entityId: String
     let title: String
@@ -158,7 +158,7 @@ struct CadenceSearchHit: Codable, Sendable {
     let score: Int
 }
 
-struct CadenceTodayBrief: Codable, Sendable {
+nonisolated struct CadenceTodayBrief: Codable, Sendable {
     let dateKey: String
     let scheduledTasks: [CadenceTaskSummary]
     let dueToday: [CadenceTaskSummary]
@@ -167,7 +167,7 @@ struct CadenceTodayBrief: Codable, Sendable {
     let noteSnippets: [CadenceNotePayload]
 }
 
-struct CadenceSectionSummary: Codable, Sendable {
+nonisolated struct CadenceSectionSummary: Codable, Sendable {
     let name: String
     let colorHex: String
     let dueDate: String
@@ -178,7 +178,7 @@ struct CadenceSectionSummary: Codable, Sendable {
     let completedTaskCount: Int
 }
 
-struct CadenceContainerSummary: Codable, Sendable {
+nonisolated struct CadenceContainerSummary: Codable, Sendable {
     let container: CadenceContainerRef
     let activeTaskCount: Int
     let completedTaskCount: Int
@@ -188,7 +188,7 @@ struct CadenceContainerSummary: Codable, Sendable {
     let links: [CadenceSavedLinkSummary]
 }
 
-struct CadenceContextSummary: Codable, Sendable {
+nonisolated struct CadenceContextSummary: Codable, Sendable {
     let context: CadenceContextRef
     let inboxTaskCount: Int
     let activeTaskCount: Int
@@ -202,7 +202,7 @@ struct CadenceContextSummary: Codable, Sendable {
     let projects: [CadenceContainerRef]
 }
 
-struct CadenceDocumentDetail: Codable, Sendable {
+nonisolated struct CadenceDocumentDetail: Codable, Sendable {
     let id: String
     let title: String
     let container: CadenceContainerRef?
@@ -213,7 +213,7 @@ struct CadenceDocumentDetail: Codable, Sendable {
     let tags: [CadenceTagSummary]
 }
 
-struct CadenceGoalContributionSnapshot: Codable, Sendable {
+nonisolated struct CadenceGoalContributionSnapshot: Codable, Sendable {
     let totalTasks: Int
     let completedTasks: Int
     let directTaskCount: Int
@@ -225,7 +225,7 @@ struct CadenceGoalContributionSnapshot: Codable, Sendable {
     let progress: Double
 }
 
-struct CadenceGoalHabitMomentumSnapshot: Codable, Sendable {
+nonisolated struct CadenceGoalHabitMomentumSnapshot: Codable, Sendable {
     let linkedHabitCount: Int
     let dueTodayCount: Int
     let doneTodayCount: Int
@@ -233,7 +233,7 @@ struct CadenceGoalHabitMomentumSnapshot: Codable, Sendable {
     let last7DayCount: Int
 }
 
-struct CadenceGoalSummary: Codable, Sendable {
+nonisolated struct CadenceGoalSummary: Codable, Sendable {
     let id: String
     let title: String
     let description: String
@@ -260,7 +260,7 @@ struct CadenceGoalSummary: Codable, Sendable {
     let createdAt: String
 }
 
-struct CadenceGoalDetail: Codable, Sendable {
+nonisolated struct CadenceGoalDetail: Codable, Sendable {
     let summary: CadenceGoalSummary
     let contribution: CadenceGoalContributionSnapshot
     let habitMomentum: CadenceGoalHabitMomentumSnapshot
@@ -270,7 +270,7 @@ struct CadenceGoalDetail: Codable, Sendable {
     let habits: [CadenceHabitSummary]
 }
 
-struct CadenceHabitSummary: Codable, Sendable {
+nonisolated struct CadenceHabitSummary: Codable, Sendable {
     let id: String
     let title: String
     let icon: String
@@ -288,7 +288,7 @@ struct CadenceHabitSummary: Codable, Sendable {
     let createdAt: String
 }
 
-struct CadenceSavedLinkSummary: Codable, Sendable {
+nonisolated struct CadenceSavedLinkSummary: Codable, Sendable {
     let id: String
     let title: String
     let url: String
@@ -297,11 +297,11 @@ struct CadenceSavedLinkSummary: Codable, Sendable {
     let createdAt: String
 }
 
-struct CadenceCompleteTaskResult: Codable, Sendable {
+nonisolated struct CadenceCompleteTaskResult: Codable, Sendable {
     let task: CadenceTaskDetail
     let spawnedRecurringTask: CadenceTaskDetail?
 }
 
-struct CadenceBulkCancelResult: Codable, Sendable {
+nonisolated struct CadenceBulkCancelResult: Codable, Sendable {
     let cancelledTasks: [CadenceTaskSummary]
 }

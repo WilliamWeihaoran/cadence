@@ -1,6 +1,6 @@
 import Foundation
 
-struct GoalContributionSummary {
+nonisolated struct GoalContributionSummary {
     let progressType: GoalProgressType
     let targetHours: Double
     let totalTasks: Int
@@ -48,7 +48,7 @@ struct GoalContributionSummary {
     }
 }
 
-struct GoalHabitMomentumSummary {
+nonisolated struct GoalHabitMomentumSummary {
     let linkedHabitCount: Int
     let dueTodayCount: Int
     let doneTodayCount: Int
@@ -65,7 +65,7 @@ struct GoalHabitMomentumSummary {
     }
 }
 
-enum GoalContributionResolver {
+nonisolated enum GoalContributionResolver {
     static func contributingTasks(for goal: Goal) -> [AppTask] {
         contributingTasks(for: goal, visitedGoalIDs: [])
     }
@@ -195,7 +195,7 @@ enum GoalContributionResolver {
     private static func priorityRank(_ priority: TaskPriority) -> Int { priority.rank }
 }
 
-enum GoalHabitMomentumResolver {
+nonisolated enum GoalHabitMomentumResolver {
     /// Habits attached to this goal *and* to its sub-goals.
     ///
     /// This used to read `goal.habits` flat while `GoalContributionResolver` recursed sub-goals,

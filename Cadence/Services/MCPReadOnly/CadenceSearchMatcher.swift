@@ -1,6 +1,6 @@
 import Foundation
 
-enum CadenceSearchMatcher {
+nonisolated enum CadenceSearchMatcher {
     nonisolated static func rank(_ hits: [CadenceSearchHit], query: String) -> [CadenceSearchHit] {
         hits.sorted { lhs, rhs in
             if lhs.score != rhs.score { return lhs.score > rhs.score }

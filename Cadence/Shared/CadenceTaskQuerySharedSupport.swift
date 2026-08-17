@@ -1,6 +1,6 @@
 import Foundation
 
-extension CadenceTaskQuerySupport {
+nonisolated extension CadenceTaskQuerySupport {
     static func openTasks(from tasks: [AppTask]) -> [AppTask] {
         tasks.filter { !$0.isDone && !$0.isCancelled }
     }

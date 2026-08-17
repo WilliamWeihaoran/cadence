@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum CadenceModelContainerFactory {
+nonisolated enum CadenceModelContainerFactory {
     static let storeURLEnvironmentKey = "CADENCE_MCP_STORE_URL"
     static let createStoreIfMissingEnvironmentKey = "CADENCE_MCP_CREATE_STORE_IF_MISSING"
     static let enableWritesEnvironmentKey = "CADENCE_MCP_ENABLE_WRITES"

@@ -1,6 +1,6 @@
 import Foundation
 
-struct MarkdownLinkRange: Equatable {
+nonisolated struct MarkdownLinkRange: Equatable {
     let fullRange: NSRange
     let labelRange: NSRange
     let urlRange: NSRange
@@ -12,7 +12,7 @@ struct MarkdownLinkRange: Equatable {
     }
 }
 
-enum MarkdownLinkSupport {
+nonisolated enum MarkdownLinkSupport {
     private static let linkRegex = try! NSRegularExpression(pattern: #"(?<!\!)\[([^\]]+)\]\(([^)]+)\)"#)
 
     nonisolated static func linkRanges(in markdown: String) -> [MarkdownLinkRange] {

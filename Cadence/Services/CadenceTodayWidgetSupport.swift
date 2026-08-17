@@ -1,13 +1,13 @@
 import Foundation
 import SwiftData
 
-enum CadenceTodayWidgetSnapshotState: String, Hashable {
+nonisolated enum CadenceTodayWidgetSnapshotState: String, Hashable {
     case ready
     case empty
     case unavailable
 }
 
-struct CadenceTodayWidgetTask: Identifiable, Hashable {
+nonisolated struct CadenceTodayWidgetTask: Identifiable, Hashable {
     let id: UUID
     let title: String
     let priorityRaw: String
@@ -20,7 +20,7 @@ struct CadenceTodayWidgetTask: Identifiable, Hashable {
     }
 }
 
-struct CadenceTodayWidgetSnapshot: Hashable {
+nonisolated struct CadenceTodayWidgetSnapshot: Hashable {
     let date: Date
     let dateKey: String
     let state: CadenceTodayWidgetSnapshotState
@@ -40,7 +40,7 @@ struct CadenceTodayWidgetSnapshot: Hashable {
     }
 }
 
-enum CadenceTodayWidgetSupport {
+nonisolated enum CadenceTodayWidgetSupport {
     nonisolated static func snapshot(
         modelContext: ModelContext,
         limit: Int = 3
@@ -211,7 +211,7 @@ enum CadenceTodayWidgetSupport {
     }
 }
 
-enum CadenceWidgetDateSupport {
+nonisolated enum CadenceWidgetDateSupport {
     /// Gregorian regardless of `Calendar.current`'s identifier, matching `DateFormatters.ymd`,
     /// which is what every stored key was written with. Formatting by hand here is a deliberate
     /// main-actor workaround (see `parsedDate` below) — but reading the components off

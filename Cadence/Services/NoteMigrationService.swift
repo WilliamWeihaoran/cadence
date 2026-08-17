@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 import SwiftData
 
-struct NoteMigrationReport: Codable, Equatable {
+nonisolated struct NoteMigrationReport: Codable, Equatable {
     var source: String
     var startedAt: Date
     var finishedAt: Date
@@ -32,7 +32,7 @@ struct NoteMigrationReport: Codable, Equatable {
     }
 }
 
-struct NoteMigrationHealthReport: Codable, Equatable {
+nonisolated struct NoteMigrationHealthReport: Codable, Equatable {
     var noteCount: Int = 0
     var canonicalDuplicateCount: Int = 0
     var legacyWithoutCanonicalCount: Int = 0
@@ -56,7 +56,7 @@ struct NoteMigrationHealthReport: Codable, Equatable {
     }
 }
 
-enum NoteMigrationService {
+nonisolated enum NoteMigrationService {
     enum LegacyKind: String {
         case daily
         case weekly

@@ -1,12 +1,12 @@
 import Foundation
 
-struct MarkdownLineBreakMutation: Equatable {
+nonisolated struct MarkdownLineBreakMutation: Equatable {
     let replacementRange: NSRange
     let replacement: String
     let selection: NSRange
 }
 
-enum MarkdownLineBreakSupport {
+nonisolated enum MarkdownLineBreakSupport {
     static func mutation(in text: String, selection: NSRange) -> MarkdownLineBreakMutation? {
         let nsText = text as NSString
         let safeSelection = clamped(selection, length: nsText.length)

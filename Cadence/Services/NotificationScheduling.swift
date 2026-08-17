@@ -5,7 +5,7 @@ import Foundation
 // `NotificationManager.swift` is the thin adapter that turns a `NotificationPlan` into real
 // `UNNotificationRequest`s and reconciles them against `UNUserNotificationCenter`.
 
-enum NotificationKind: String, Codable {
+nonisolated enum NotificationKind: String, Codable {
     case taskStart
     case taskDue
     case habitReminder
@@ -33,7 +33,7 @@ enum NotificationKind: String, Codable {
     }
 }
 
-struct CadenceNotificationRequest: Equatable {
+nonisolated struct CadenceNotificationRequest: Equatable {
     let identifier: String
     let kind: NotificationKind
     let title: String
@@ -54,7 +54,7 @@ struct CadenceNotificationRequest: Equatable {
 
 /// Centralizes deterministic notification identifier formats so the scheduler (add) and the
 /// canceller (remove) can never drift apart on ID format.
-enum NotificationIdentifiers {
+nonisolated enum NotificationIdentifiers {
     static func taskStart(taskID: UUID) -> String {
         "task-start-\(taskID.uuidString)"
     }
@@ -77,7 +77,7 @@ enum NotificationIdentifiers {
 /// The add/remove work a single reconcile pass must perform. Split out of `NotificationManager`
 /// so the diffing rules are a pure, testable function — the manager's own `reconcile` early-returns
 /// under test, so anything left inside it is effectively unverifiable.
-struct NotificationReconcileDiff: Equatable {
+nonisolated struct NotificationReconcileDiff: Equatable {
     let identifiersToRemove: [String]
     let requestsToAdd: [CadenceNotificationRequest]
 
@@ -117,7 +117,7 @@ struct NotificationReconcileDiff: Equatable {
     }
 }
 
-enum TaskNotificationPlanner {
+nonisolated enum TaskNotificationPlanner {
     /// Returns the "starting now" notification for a task's scheduled start time, or nil if the
     /// task isn't scheduled, is done/cancelled, or its fire time has already passed.
     static func startNotification(for task: AppTask, now: Date) -> CadenceNotificationRequest? {
@@ -167,7 +167,7 @@ enum TaskNotificationPlanner {
     }
 }
 
-enum HabitNotificationPlanner {
+nonisolated enum HabitNotificationPlanner {
     /// Returns the next daily reminder occurrence for a habit, or nil if no reminder time is set.
     ///
     /// The returned `fireDate` names the next occurrence, but the reminder is a *standing* daily
@@ -209,7 +209,7 @@ enum HabitNotificationPlanner {
     }
 }
 
-struct NotificationPlan {
+nonisolated struct NotificationPlan {
     let taskStarts: [CadenceNotificationRequest]
     let taskDues: [CadenceNotificationRequest]
     let habitReminders: [CadenceNotificationRequest]

@@ -1,13 +1,13 @@
 import Foundation
 
-struct MarkdownQuoteLine: Equatable {
+nonisolated struct MarkdownQuoteLine: Equatable {
     let prefixRange: NSRange
     let contentRange: NSRange
     let depth: Int
     let content: String
 }
 
-enum MarkdownQuoteSupport {
+nonisolated enum MarkdownQuoteSupport {
     private static let quoteRegex = try! NSRegularExpression(pattern: #"^([ \t]*)(>\s*)+"#)
 
     static func lineInfo(in line: String) -> MarkdownQuoteLine? {

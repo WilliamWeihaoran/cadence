@@ -1,13 +1,13 @@
 import Foundation
 import SwiftData
 
-enum CadenceCalendarWidgetSnapshotState: String, Hashable {
+nonisolated enum CadenceCalendarWidgetSnapshotState: String, Hashable {
     case ready
     case empty
     case unavailable
 }
 
-struct CadenceCalendarWidgetDay: Identifiable, Hashable {
+nonisolated struct CadenceCalendarWidgetDay: Identifiable, Hashable {
     let dateKey: String
     let weekdayLabel: String
     let dayNumberLabel: String
@@ -19,7 +19,7 @@ struct CadenceCalendarWidgetDay: Identifiable, Hashable {
     var id: String { dateKey }
 }
 
-struct CadenceCalendarWidgetSnapshot: Hashable {
+nonisolated struct CadenceCalendarWidgetSnapshot: Hashable {
     let date: Date
     let state: CadenceCalendarWidgetSnapshotState
     let statusMessage: String?
@@ -39,7 +39,7 @@ struct CadenceCalendarWidgetSnapshot: Hashable {
     }
 }
 
-enum CadenceCalendarWidgetSupport {
+nonisolated enum CadenceCalendarWidgetSupport {
     nonisolated static func snapshot(
         modelContext: ModelContext,
         dayCount: Int

@@ -1,18 +1,18 @@
 import Foundation
 
-enum MarkdownReferenceKind: Hashable {
+nonisolated enum MarkdownReferenceKind: Hashable {
     case note
     case task
 }
 
-struct MarkdownReferenceCompletionContext {
+nonisolated struct MarkdownReferenceCompletionContext {
     let range: NSRange
     let kind: MarkdownReferenceKind
     let query: String
     let cursorLocation: Int
 }
 
-enum MarkdownReferenceCompletionSupport {
+nonisolated enum MarkdownReferenceCompletionSupport {
     nonisolated static func context(in text: String, selection: NSRange) -> MarkdownReferenceCompletionContext? {
         guard selection.length == 0 else { return nil }
 

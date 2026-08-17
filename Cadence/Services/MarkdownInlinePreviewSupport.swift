@@ -1,6 +1,6 @@
 import Foundation
 
-struct MarkdownInlinePreviewSegment: Equatable {
+nonisolated struct MarkdownInlinePreviewSegment: Equatable {
     let text: String
     let target: MarkdownReferenceDisplayTarget?
 
@@ -9,7 +9,7 @@ struct MarkdownInlinePreviewSegment: Equatable {
     }
 }
 
-struct MarkdownInlinePreviewRun: Equatable {
+nonisolated struct MarkdownInlinePreviewRun: Equatable {
     let text: String
     let target: MarkdownReferenceDisplayTarget?
     let linkURL: String?
@@ -28,7 +28,7 @@ struct MarkdownInlinePreviewRun: Equatable {
     }
 }
 
-struct MarkdownInlinePreviewTraits: OptionSet, Hashable {
+nonisolated struct MarkdownInlinePreviewTraits: OptionSet, Hashable {
     let rawValue: Int
 
     static let bold = MarkdownInlinePreviewTraits(rawValue: 1 << 0)
@@ -40,7 +40,7 @@ struct MarkdownInlinePreviewTraits: OptionSet, Hashable {
     static let image = MarkdownInlinePreviewTraits(rawValue: 1 << 6)
 }
 
-enum MarkdownInlinePreviewSupport {
+nonisolated enum MarkdownInlinePreviewSupport {
     static func segments(in markdown: String) -> [MarkdownInlinePreviewSegment] {
         MarkdownReferenceDisplaySupport.inlineSegments(in: markdown)
             .map { segment in

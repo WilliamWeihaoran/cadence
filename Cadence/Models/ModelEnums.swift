@@ -1,8 +1,15 @@
 import Foundation
 
+// Every enum in this file is `nonisolated`, for the reason `TaskOrdering` already is: the project
+// sets `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which hands a bare value type a main-actor
+// *synthesized* `Equatable` — and `Models/` compiles straight into `CadenceWidgets`, whose timeline
+// providers run off the main actor, and into `CadenceMCPServer`, which is already on Swift 6 where
+// that isolation is an error rather than a warning. A status enum is data; it has no business
+// belonging to an actor. `CadenceTests/NonisolatedValueTypeTests` is the guard.
+
 // MARK: - Task enums
 
-enum TaskPriority: String, Codable, CaseIterable, Hashable {
+nonisolated enum TaskPriority: String, Codable, CaseIterable, Hashable {
     case none     = "none"
     case low      = "low"
     case medium   = "medium"
@@ -46,7 +53,7 @@ enum TaskPriority: String, Codable, CaseIterable, Hashable {
     }
 }
 
-enum TaskStatus: String, Codable, CaseIterable, Hashable {
+nonisolated enum TaskStatus: String, Codable, CaseIterable, Hashable {
     case todo        = "todo"
     case inProgress  = "inprogress"
     case done        = "done"
@@ -71,7 +78,7 @@ enum TaskStatus: String, Codable, CaseIterable, Hashable {
     }
 }
 
-enum TaskRecurrenceRule: String, Codable, CaseIterable, Hashable {
+nonisolated enum TaskRecurrenceRule: String, Codable, CaseIterable, Hashable {
     case none    = "none"
     case daily   = "daily"
     case weekly  = "weekly"
@@ -112,7 +119,7 @@ enum TaskRecurrenceRule: String, Codable, CaseIterable, Hashable {
 /// How a recurring series stops. `.never` is the default and preserves the historical
 /// behavior (a series that repeats forever). The other two cases are paired with
 /// `AppTask.recurrenceEndDate` ("yyyy-MM-dd") and `AppTask.recurrenceEndCount` respectively.
-enum TaskRecurrenceEndMode: String, Codable, CaseIterable, Hashable {
+nonisolated enum TaskRecurrenceEndMode: String, Codable, CaseIterable, Hashable {
     case never      = "never"
     case onDate     = "onDate"
     case afterCount = "afterCount"
@@ -144,7 +151,7 @@ enum TaskRecurrenceEndMode: String, Codable, CaseIterable, Hashable {
 
 // MARK: - Project enums
 
-enum ProjectStatus: String, Codable, CaseIterable, Hashable {
+nonisolated enum ProjectStatus: String, Codable, CaseIterable, Hashable {
     case active    = "active"
     case done      = "done"
     case archived  = "archived"
@@ -152,7 +159,7 @@ enum ProjectStatus: String, Codable, CaseIterable, Hashable {
     case cancelled = "cancelled"
 }
 
-enum AreaStatus: String, Codable, CaseIterable, Hashable {
+nonisolated enum AreaStatus: String, Codable, CaseIterable, Hashable {
     case active   = "active"
     case done     = "done"
     case archived = "archived"
@@ -160,7 +167,7 @@ enum AreaStatus: String, Codable, CaseIterable, Hashable {
 
 // MARK: - Goal enums
 
-enum GoalStatus: String, Codable, CaseIterable, Hashable {
+nonisolated enum GoalStatus: String, Codable, CaseIterable, Hashable {
     case active = "active"
     case done   = "done"
     case paused = "paused"
@@ -177,7 +184,7 @@ enum GoalStatus: String, Codable, CaseIterable, Hashable {
 /// Shape of a goal. Top-level goals are typically `.ongoing` — a long-running direction,
 /// which is what the retired `Pursuit` model used to represent — while nested goals are
 /// typically `.completable`, a milestone with a finish line.
-enum GoalKind: String, Codable, CaseIterable, Hashable {
+nonisolated enum GoalKind: String, Codable, CaseIterable, Hashable {
     case ongoing = "ongoing"
     case completable = "completable"
     case maintenance = "maintenance"
@@ -207,7 +214,7 @@ enum GoalKind: String, Codable, CaseIterable, Hashable {
     }
 }
 
-enum GoalProgressType: String, Codable, CaseIterable, Hashable {
+nonisolated enum GoalProgressType: String, Codable, CaseIterable, Hashable {
     case subtasks = "subtasks"
     case hours    = "hours"
 
@@ -224,7 +231,7 @@ enum GoalProgressType: String, Codable, CaseIterable, Hashable {
 
 // MARK: - Habit enums
 
-enum HabitFrequency: String, Codable, CaseIterable, Hashable {
+nonisolated enum HabitFrequency: String, Codable, CaseIterable, Hashable {
     case daily         = "daily"
     case daysOfWeek    = "daysOfWeek"
     case timesPerWeek  = "timesPerWeek"

@@ -6,7 +6,7 @@ import SwiftData
 // app target, letting both share the exact same recurring-task completion/cancellation logic
 // instead of maintaining separate copies that can silently drift apart.
 
-enum CadenceTaskRecurrenceEditScope: String, CaseIterable, Hashable {
+nonisolated enum CadenceTaskRecurrenceEditScope: String, CaseIterable, Hashable {
     case thisTask
     case thisAndFuture
 
@@ -18,7 +18,7 @@ enum CadenceTaskRecurrenceEditScope: String, CaseIterable, Hashable {
     }
 }
 
-enum CadenceTaskRecurrenceWorkflowSupport {
+nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
     static func markDone(_ task: AppTask, in context: ModelContext, now: Date = Date()) {
         task.completedAt = now
         task.status = .done

@@ -1,6 +1,6 @@
 import Foundation
 
-enum MarkdownListPrefixKind {
+nonisolated enum MarkdownListPrefixKind {
     case bullet
     case dash
     case plus
@@ -9,14 +9,14 @@ enum MarkdownListPrefixKind {
     case ordered
 }
 
-struct MarkdownListPrefixMatch {
+nonisolated struct MarkdownListPrefixMatch {
     let kind: MarkdownListPrefixKind
     let indentation: String
     let marker: String
     let prefix: String
 }
 
-struct MarkdownListLineInfo: Equatable {
+nonisolated struct MarkdownListLineInfo: Equatable {
     let kind: MarkdownListPrefixKind
     let indentation: String
     let marker: String
@@ -38,19 +38,19 @@ struct MarkdownListLineInfo: Equatable {
     }
 }
 
-struct MarkdownListNormalizationResult: Equatable {
+nonisolated struct MarkdownListNormalizationResult: Equatable {
     let text: String
     let selection: NSRange
 }
 
-struct MarkdownListIndentationResult: Equatable {
+nonisolated struct MarkdownListIndentationResult: Equatable {
     let text: String
     let selection: NSRange
     let replacementRange: NSRange
     let replacement: String
 }
 
-enum MarkdownListSupport {
+nonisolated enum MarkdownListSupport {
     /// Lettered markers are a *single* letter ("a.", "b."); anything longer has to spell a roman
     /// numeral. Allowing any run of letters turned every "Mr. ", "Fig. " and "Note. " at the left
     /// margin into a list item.

@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 import SwiftData
 
-struct DataIntegrityRepairReport: Codable, Equatable {
+nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     var source: String
     var startedAt: Date
     var finishedAt: Date
@@ -39,7 +39,7 @@ struct DataIntegrityRepairReport: Codable, Equatable {
     }
 }
 
-enum DataIntegrityRepairService {
+nonisolated enum DataIntegrityRepairService {
     private struct RepairState {
         var deletedAreas = Set<ObjectIdentifier>()
         var deletedProjects = Set<ObjectIdentifier>()

@@ -1,6 +1,6 @@
 import SwiftData
 
-enum CadenceSchema {
+nonisolated enum CadenceSchema {
     nonisolated static let schema = Schema([
         Context.self,
         Area.self,

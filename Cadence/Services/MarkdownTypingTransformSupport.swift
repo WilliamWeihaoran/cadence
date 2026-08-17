@@ -1,6 +1,6 @@
 import Foundation
 
-enum MarkdownTypingTransformSupport {
+nonisolated enum MarkdownTypingTransformSupport {
     private static let typedOrderedPrefixRegex = try! NSRegularExpression(
         pattern: #"^([ \t]*)("# + MarkdownListSupport.orderedMarkerPattern + #") $"#
     )

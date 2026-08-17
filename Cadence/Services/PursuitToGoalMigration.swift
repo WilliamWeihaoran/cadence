@@ -22,7 +22,7 @@ import SwiftData
 /// 3. Remove `Pursuit.self` from `CadenceSchema.schema`
 /// 4. Remove `Pursuit.self` from `PrivacyDataResetService` and `ListDeleteHelpers`
 /// 5. Delete this file and its call site in `PersistenceController`
-enum PursuitToGoalMigration {
+nonisolated enum PursuitToGoalMigration {
     /// Bumped if the migration ever needs to run again for a corrected pass.
     private static let completionKey = "pursuitToGoalMigration.v1.completed"
 

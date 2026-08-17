@@ -1,12 +1,12 @@
 import Foundation
 
-struct MarkdownBackspaceMutation: Equatable {
+nonisolated struct MarkdownBackspaceMutation: Equatable {
     let replacementRange: NSRange
     let replacement: String
     let selection: NSRange
 }
 
-enum MarkdownBackspaceSupport {
+nonisolated enum MarkdownBackspaceSupport {
     static func listPrefixMutation(in text: String, selection: NSRange) -> MarkdownBackspaceMutation? {
         let nsText = text as NSString
         guard selection.length == 0, nsText.length > 0 else { return nil }

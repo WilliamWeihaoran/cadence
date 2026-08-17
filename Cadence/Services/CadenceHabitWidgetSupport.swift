@@ -1,13 +1,13 @@
 import Foundation
 import SwiftData
 
-enum CadenceHabitWidgetSnapshotState: String, Hashable {
+nonisolated enum CadenceHabitWidgetSnapshotState: String, Hashable {
     case ready
     case empty
     case unavailable
 }
 
-struct CadenceHabitWidgetHabit: Identifiable, Hashable {
+nonisolated struct CadenceHabitWidgetHabit: Identifiable, Hashable {
     let id: UUID
     let title: String
     let icon: String
@@ -25,7 +25,7 @@ struct CadenceHabitWidgetHabit: Identifiable, Hashable {
     let isDoneToday: Bool
 }
 
-struct CadenceHabitWidgetSnapshot: Hashable {
+nonisolated struct CadenceHabitWidgetSnapshot: Hashable {
     let date: Date
     let dateKey: String
     let state: CadenceHabitWidgetSnapshotState
@@ -52,7 +52,7 @@ struct CadenceHabitWidgetSnapshot: Hashable {
     }
 }
 
-enum CadenceHabitWidgetSupport {
+nonisolated enum CadenceHabitWidgetSupport {
     nonisolated static func snapshot(
         modelContext: ModelContext,
         limit: Int

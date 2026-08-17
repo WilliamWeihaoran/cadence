@@ -1,11 +1,11 @@
 import Foundation
 
-enum MarkdownReferenceDisplayKind: String, Equatable {
+nonisolated enum MarkdownReferenceDisplayKind: String, Equatable {
     case note
     case task
 }
 
-struct MarkdownReferenceDisplayTarget: Hashable, Identifiable {
+nonisolated struct MarkdownReferenceDisplayTarget: Hashable, Identifiable {
     let kind: MarkdownReferenceDisplayKind
     let referenceID: UUID?
     let title: String
@@ -17,19 +17,19 @@ struct MarkdownReferenceDisplayTarget: Hashable, Identifiable {
     var id: String { identity }
 }
 
-struct MarkdownReferenceDisplay: Equatable {
+nonisolated struct MarkdownReferenceDisplay: Equatable {
     let kind: MarkdownReferenceDisplayKind
     let displayText: String
     let hiddenPrefixUTF16Length: Int
     let target: MarkdownReferenceDisplayTarget
 }
 
-struct MarkdownReferenceInlineSegment: Equatable {
+nonisolated struct MarkdownReferenceInlineSegment: Equatable {
     let text: String
     let target: MarkdownReferenceDisplayTarget?
 }
 
-struct MarkdownReferenceDisplayRange: Equatable {
+nonisolated struct MarkdownReferenceDisplayRange: Equatable {
     let fullRange: NSRange
     let displayRange: NSRange
     let display: MarkdownReferenceDisplay
@@ -39,7 +39,7 @@ struct MarkdownReferenceDisplayRange: Equatable {
     }
 }
 
-enum MarkdownReferenceDisplaySupport {
+nonisolated enum MarkdownReferenceDisplaySupport {
     nonisolated static func referenceRanges(in markdown: String) -> [MarkdownReferenceDisplayRange] {
         guard let regex = try? NSRegularExpression(pattern: #"\[\[([^\[\]]+?)\]\]"#) else {
             return []

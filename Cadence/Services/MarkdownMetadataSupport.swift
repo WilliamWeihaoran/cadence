@@ -1,13 +1,13 @@
 import Foundation
 
-struct MarkdownOutlineItem: Identifiable, Hashable {
+nonisolated struct MarkdownOutlineItem: Identifiable, Hashable {
     let id: Int
     let level: Int
     let title: String
     let location: Int
 }
 
-enum MarkdownOutlineParser {
+nonisolated enum MarkdownOutlineParser {
     nonisolated static func items(in content: String) -> [MarkdownOutlineItem] {
         let nsContent = content as NSString
         var items: [MarkdownOutlineItem] = []
@@ -38,17 +38,17 @@ enum MarkdownOutlineParser {
     }
 }
 
-struct MarkdownFrontmatter: Equatable {
+nonisolated struct MarkdownFrontmatter: Equatable {
     let properties: [String: String]
     let range: NSRange?
 }
 
-struct MarkdownNoteMetadata: Equatable {
+nonisolated struct MarkdownNoteMetadata: Equatable {
     let frontmatter: MarkdownFrontmatter
     let tags: [String]
 }
 
-enum MarkdownMetadataParser {
+nonisolated enum MarkdownMetadataParser {
     nonisolated static func metadata(in content: String) -> MarkdownNoteMetadata {
         let frontmatter = parseFrontmatter(in: content)
         let tags = orderedUnique(frontmatterTags(from: frontmatter.properties) + inlineTags(in: content, excluding: frontmatter.range))

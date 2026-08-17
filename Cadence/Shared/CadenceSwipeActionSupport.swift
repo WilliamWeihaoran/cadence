@@ -16,7 +16,7 @@ import SwiftUI
 
 /// Which side of the row is being revealed. Positive offsets reveal the leading edge (the row
 /// moves right), negative offsets reveal the trailing edge.
-enum CadenceSwipeEdge: Equatable, Hashable {
+nonisolated enum CadenceSwipeEdge: Equatable, Hashable {
     case leading
     case trailing
 
@@ -28,7 +28,7 @@ enum CadenceSwipeEdge: Equatable, Hashable {
 
 /// What releasing the finger means. Kept separate from "which edge is open" because a full swipe
 /// is a one-shot commit, not a resting state.
-enum CadenceSwipeRelease: Equatable {
+nonisolated enum CadenceSwipeRelease: Equatable {
     case closed
     case open(CadenceSwipeEdge)
     case fullSwipe(CadenceSwipeEdge)
@@ -68,7 +68,7 @@ struct CadenceSwipeAction: Identifiable {
 
 /// Tunable geometry. Defaults are `.standard`; the type exists so tests can pin behaviour against
 /// numbers they name rather than against whatever the container happens to use today.
-struct CadenceSwipeActionMetrics: Equatable {
+nonisolated struct CadenceSwipeActionMetrics: Equatable {
     /// Wide enough that a single action is well past the 44pt touch minimum even when two of them
     /// share a partially-revealed tray.
     var actionWidth: CGFloat = 76
@@ -92,7 +92,7 @@ struct CadenceSwipeActionMetrics: Equatable {
     static let standard = CadenceSwipeActionMetrics()
 }
 
-enum CadenceSwipeActionSupport {
+nonisolated enum CadenceSwipeActionSupport {
     // MARK: - Geometry
 
     /// Width of the tray when an edge is fully open. Zero actions means the edge does not open at

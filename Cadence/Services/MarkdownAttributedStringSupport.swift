@@ -1,6 +1,6 @@
 import Foundation
 
-extension NSAttributedString.Key {
+nonisolated extension NSAttributedString.Key {
     static let cadenceMarkdownHidden = NSAttributedString.Key("CadenceMarkdownHidden")
     static let cadenceMarkdownDivider = NSAttributedString.Key("CadenceMarkdownDivider")
     static let cadenceMarkdownQuoteDepth = NSAttributedString.Key("CadenceMarkdownQuoteDepth")
@@ -29,7 +29,7 @@ extension NSAttributedString.Key {
     static let cadenceMarkdownFrontmatter = NSAttributedString.Key("CadenceMarkdownFrontmatter")
 }
 
-enum MarkdownHiddenRangeSupport {
+nonisolated enum MarkdownHiddenRangeSupport {
     /// The hidden frontmatter block at the head of `storage`, if one is styled.
     ///
     /// Always anchored at 0 — a `---` fence anywhere else in the document is not frontmatter — so

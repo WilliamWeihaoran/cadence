@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum CadenceStoreSupport {
+nonisolated enum CadenceStoreSupport {
     nonisolated static let appContainerIdentifier = "com.haoranwei.Cadence"
     nonisolated static let appGroupIdentifier = "group.com.haoranwei.Cadence"
     nonisolated static let storeDirectoryName = "Cadence"

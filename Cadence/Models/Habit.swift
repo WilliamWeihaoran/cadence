@@ -412,7 +412,7 @@ import Foundation
 
 /// What a habit streak is counted in. Lives in `Habit.swift` rather than `HabitInsights.swift`
 /// because the MCP server target compiles the former and not the latter.
-enum HabitStreakUnit {
+nonisolated enum HabitStreakUnit {
     case days
     case weeks
 

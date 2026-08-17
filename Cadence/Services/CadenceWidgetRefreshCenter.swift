@@ -4,18 +4,18 @@ import Foundation
 import WidgetKit
 #endif
 
-enum CadenceWidgetRefreshCenter {
-    nonisolated static let todayWidgetKind = "CadenceTodayTasksWidget"
-    nonisolated static let habitWidgetKind = "CadenceHabitCheckInWidget"
-    nonisolated static let milestoneWidgetKind = "CadenceMilestoneMomentumWidget"
-    nonisolated static let calendarWidgetKind = "CadenceCalendarSnapshotWidget"
-    private nonisolated static let reloadTimestampDefaultsKey = "cadence.widgets.lastReloadAt"
-    private nonisolated static let recentlyCompletedTasksDefaultsKey = "cadence.widgets.today.recentlyCompletedTasks"
-    private nonisolated static let recentlyChangedHabitsDefaultsKey = "cadence.widgets.habits.recentlyChangedHabits"
-    private nonisolated static let completionSuppressionInterval: TimeInterval = 90
-    private nonisolated static let defaultReloadInterval: TimeInterval = 15
+nonisolated enum CadenceWidgetRefreshCenter {
+    static let todayWidgetKind = "CadenceTodayTasksWidget"
+    static let habitWidgetKind = "CadenceHabitCheckInWidget"
+    static let milestoneWidgetKind = "CadenceMilestoneMomentumWidget"
+    static let calendarWidgetKind = "CadenceCalendarSnapshotWidget"
+    private static let reloadTimestampDefaultsKey = "cadence.widgets.lastReloadAt"
+    private static let recentlyCompletedTasksDefaultsKey = "cadence.widgets.today.recentlyCompletedTasks"
+    private static let recentlyChangedHabitsDefaultsKey = "cadence.widgets.habits.recentlyChangedHabits"
+    private static let completionSuppressionInterval: TimeInterval = 90
+    private static let defaultReloadInterval: TimeInterval = 15
 
-    nonisolated static func reloadAllWidgets(
+    static func reloadAllWidgets(
         minimumInterval: TimeInterval = defaultReloadInterval,
         force: Bool = false,
         now: Date = Date(),
@@ -38,7 +38,7 @@ enum CadenceWidgetRefreshCenter {
     // no production caller, which advertised a per-widget-kind reload this type does not have:
     // every reload path goes through `reloadAllWidgets`.
 
-    nonisolated static func markTaskCompleted(
+    static func markTaskCompleted(
         _ taskID: UUID,
         now: Date = Date(),
         userDefaults: UserDefaults? = nil
@@ -48,7 +48,7 @@ enum CadenceWidgetRefreshCenter {
         storeRecentlyCompletedTaskTimestamps(timestamps, userDefaults: userDefaults)
     }
 
-    nonisolated static func suppressedTaskIDs(
+    static func suppressedTaskIDs(
         now: Date = Date(),
         userDefaults: UserDefaults? = nil
     ) -> Set<UUID> {
@@ -63,7 +63,7 @@ enum CadenceWidgetRefreshCenter {
         return Set(filtered.keys.compactMap(UUID.init(uuidString:)))
     }
 
-    nonisolated static func markHabitCompletion(
+    static func markHabitCompletion(
         _ habitID: UUID,
         isDoneToday: Bool,
         now: Date = Date(),
@@ -77,7 +77,7 @@ enum CadenceWidgetRefreshCenter {
         storeRecentlyChangedHabitStates(states, userDefaults: userDefaults)
     }
 
-    nonisolated static func recentHabitCompletionStates(
+    static func recentHabitCompletionStates(
         now: Date = Date(),
         userDefaults: UserDefaults? = nil
     ) -> [UUID: Bool] {
@@ -97,14 +97,14 @@ enum CadenceWidgetRefreshCenter {
         )
     }
 
-    nonisolated static func clearStoredState(userDefaults: UserDefaults? = nil) {
+    static func clearStoredState(userDefaults: UserDefaults? = nil) {
         let defaults = sharedDefaults(userDefaults)
         defaults.removeObject(forKey: reloadTimestampDefaultsKey)
         defaults.removeObject(forKey: recentlyCompletedTasksDefaultsKey)
         defaults.removeObject(forKey: recentlyChangedHabitsDefaultsKey)
     }
 
-    private nonisolated static func sharedDefaults(_ defaults: UserDefaults?) -> UserDefaults {
+    private static func sharedDefaults(_ defaults: UserDefaults?) -> UserDefaults {
         if let defaults {
             return defaults
         }
@@ -114,7 +114,7 @@ enum CadenceWidgetRefreshCenter {
         return .standard
     }
 
-    private nonisolated static func loadRecentlyCompletedTaskTimestamps(userDefaults: UserDefaults?) -> [String: TimeInterval] {
+    private static func loadRecentlyCompletedTaskTimestamps(userDefaults: UserDefaults?) -> [String: TimeInterval] {
         let defaults = sharedDefaults(userDefaults)
         guard let raw = defaults.dictionary(forKey: recentlyCompletedTasksDefaultsKey) else { return [:] }
 
@@ -129,7 +129,7 @@ enum CadenceWidgetRefreshCenter {
         return timestamps
     }
 
-    private nonisolated static func storeRecentlyCompletedTaskTimestamps(
+    private static func storeRecentlyCompletedTaskTimestamps(
         _ timestamps: [String: TimeInterval],
         userDefaults: UserDefaults?
     ) {
@@ -146,7 +146,7 @@ enum CadenceWidgetRefreshCenter {
         let isDoneToday: Bool
     }
 
-    private nonisolated static func loadRecentlyChangedHabitStates(userDefaults: UserDefaults?) -> [String: HabitCompletionState] {
+    private static func loadRecentlyChangedHabitStates(userDefaults: UserDefaults?) -> [String: HabitCompletionState] {
         let defaults = sharedDefaults(userDefaults)
         guard let raw = defaults.dictionary(forKey: recentlyChangedHabitsDefaultsKey) else { return [:] }
 
@@ -169,7 +169,7 @@ enum CadenceWidgetRefreshCenter {
         return states
     }
 
-    private nonisolated static func storeRecentlyChangedHabitStates(
+    private static func storeRecentlyChangedHabitStates(
         _ states: [String: HabitCompletionState],
         userDefaults: UserDefaults?
     ) {

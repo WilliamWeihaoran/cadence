@@ -1,14 +1,14 @@
 import CoreGraphics
 import Foundation
 
-struct MarkdownTaskEmbedSubtaskRenderInfo: Hashable {
+nonisolated struct MarkdownTaskEmbedSubtaskRenderInfo: Hashable {
     let id: UUID
     let title: String
     let isDone: Bool
     let order: Int
 }
 
-struct MarkdownTaskEmbedRenderInfo: Hashable {
+nonisolated struct MarkdownTaskEmbedRenderInfo: Hashable {
     static let untitledTaskTitle = TaskTitleSupport.defaultDisplayTitle
     static let compactCardHeight: CGFloat = 68
     static let subtaskCardHeight: CGFloat = 96
@@ -123,11 +123,11 @@ struct MarkdownTaskEmbedRenderInfo: Hashable {
     }
 }
 
-struct MarkdownTaskEmbedLayoutInfo: Hashable {
+nonisolated struct MarkdownTaskEmbedLayoutInfo: Hashable {
     let task: MarkdownTaskEmbedRenderInfo
 }
 
-enum MarkdownTaskEmbedField: Hashable {
+nonisolated enum MarkdownTaskEmbedField: Hashable {
     case title
     case status
     case priority
@@ -139,13 +139,13 @@ enum MarkdownTaskEmbedField: Hashable {
     case recurrence
 }
 
-struct MarkdownTaskEmbedReference: Hashable {
+nonisolated struct MarkdownTaskEmbedReference: Hashable {
     let id: UUID
     let title: String
     let range: NSRange
 }
 
-enum MarkdownTaskEmbedParser {
+nonisolated enum MarkdownTaskEmbedParser {
     nonisolated static func draftTitle(in line: String) -> String? {
         let nsLine = line as NSString
         let fullRange = NSRange(location: 0, length: nsLine.length)

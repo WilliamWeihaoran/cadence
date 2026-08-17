@@ -1,6 +1,6 @@
 import Foundation
 
-enum MarkdownPreviewBlock: Equatable {
+nonisolated enum MarkdownPreviewBlock: Equatable {
     case heading(level: Int, text: String)
     case paragraph(String)
     case bullet(depth: Int, text: String)
@@ -14,7 +14,7 @@ enum MarkdownPreviewBlock: Equatable {
     case divider
 }
 
-struct MarkdownPreviewTable: Equatable {
+nonisolated struct MarkdownPreviewTable: Equatable {
     let headers: [String]
     let rows: [[String]]
     /// One entry per column, from the delimiter row's colons.
@@ -25,7 +25,7 @@ struct MarkdownPreviewTable: Equatable {
     let alignments: [MarkdownTableAlignment]
 }
 
-enum MarkdownPreviewParser {
+nonisolated enum MarkdownPreviewParser {
     static func blocks(in markdown: String) -> [MarkdownPreviewBlock] {
         var blocks: [MarkdownPreviewBlock] = []
         var paragraphLines: [String] = []

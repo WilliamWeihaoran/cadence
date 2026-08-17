@@ -1,7 +1,7 @@
 import CoreGraphics
 
 /// Which Today layout a pane of a given width can actually render.
-enum CadenceTodayLayout: Equatable {
+nonisolated enum CadenceTodayLayout: Equatable {
     /// One scrolling column. Compact width, and any regular width too narrow for two.
     case compact
     /// Task column plus one switchable inspector (notes *or* timeline).
@@ -23,7 +23,7 @@ enum CadenceTodayLayout: Equatable {
 /// preference at all, so there is no path by which one can select a layout that does not exist.
 /// `CadenceTodayLayoutSupportTests` pins that — the function's whole range is `.compact` and
 /// `.twoPane`.
-enum CadenceTodayLayoutSupport {
+nonisolated enum CadenceTodayLayoutSupport {
     /// The task column's declared `minWidth`. It is the column the inspector exists to serve, so it
     /// is the one that must not be starved.
     static let taskPaneMinWidth: CGFloat = 440

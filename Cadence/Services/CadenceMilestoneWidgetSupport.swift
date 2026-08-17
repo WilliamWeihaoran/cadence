@@ -1,13 +1,13 @@
 import Foundation
 import SwiftData
 
-enum CadenceMilestoneWidgetSnapshotState: String, Hashable {
+nonisolated enum CadenceMilestoneWidgetSnapshotState: String, Hashable {
     case ready
     case empty
     case unavailable
 }
 
-struct CadenceMilestoneWidgetGoal: Identifiable, Hashable {
+nonisolated struct CadenceMilestoneWidgetGoal: Identifiable, Hashable {
     let id: UUID
     let title: String
     let colorHex: String
@@ -22,7 +22,7 @@ struct CadenceMilestoneWidgetGoal: Identifiable, Hashable {
     var nextActionDueDate: String = ""
 }
 
-struct CadenceMilestoneWidgetSnapshot: Hashable {
+nonisolated struct CadenceMilestoneWidgetSnapshot: Hashable {
     let date: Date
     let state: CadenceMilestoneWidgetSnapshotState
     let statusMessage: String?
@@ -39,7 +39,7 @@ struct CadenceMilestoneWidgetSnapshot: Hashable {
     }
 }
 
-enum CadenceMilestoneWidgetSupport {
+nonisolated enum CadenceMilestoneWidgetSupport {
     static func snapshot(
         modelContext: ModelContext,
         limit: Int

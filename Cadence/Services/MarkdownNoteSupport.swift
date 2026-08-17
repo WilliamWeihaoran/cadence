@@ -1,19 +1,19 @@
 import Foundation
 
-struct NoteTemplate: Identifiable, Hashable {
+nonisolated struct NoteTemplate: Identifiable, Hashable {
     let id: String
     let title: String
     let subtitle: String
     let body: String
 }
 
-struct NoteTemplateOverride: Codable, Equatable {
+nonisolated struct NoteTemplateOverride: Codable, Equatable {
     var title: String
     var subtitle: String
     var body: String
 }
 
-enum NoteTemplateLibrary {
+nonisolated enum NoteTemplateLibrary {
     static let storageKey = "noteTemplateOverrides"
 
     static func templates(for kind: NoteKind, overridesRaw: String? = nil) -> [NoteTemplate] {
@@ -318,13 +318,13 @@ extension NoteKind {
 ///
 /// Spelled `leading`/`trailing` rather than left/right because every renderer downstream is
 /// SwiftUI or UIKit, and these values are handed straight to one.
-enum MarkdownTableAlignment: String, Hashable {
+nonisolated enum MarkdownTableAlignment: String, Hashable {
     case leading
     case center
     case trailing
 }
 
-struct MarkdownTableRowStyle: Hashable {
+nonisolated struct MarkdownTableRowStyle: Hashable {
     let lineIndex: Int
     let columnCount: Int
     let isHeader: Bool
@@ -334,7 +334,7 @@ struct MarkdownTableRowStyle: Hashable {
     let alignments: [MarkdownTableAlignment]
 }
 
-enum MarkdownTableParser {
+nonisolated enum MarkdownTableParser {
     nonisolated static func rowStyles(in content: String) -> [Int: MarkdownTableRowStyle] {
         let lines = MarkdownSourceLines.texts(in: content)
         guard lines.count >= 2 else { return [:] }
@@ -443,7 +443,7 @@ enum MarkdownTableParser {
     }
 }
 
-enum NoteUnlinkedMentionResolver {
+nonisolated enum NoteUnlinkedMentionResolver {
     static func unlinkedMentions(for note: Note, in notes: [Note]) -> [Note] {
         unlinkedMentions(noteID: note.id, content: note.content, in: notes)
     }

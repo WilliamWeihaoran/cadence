@@ -1,7 +1,7 @@
 import Foundation
 
 /// What a rendered block shows, and what it admits it is not showing.
-struct MarkdownRenderedBlockTruncation: Equatable {
+nonisolated struct MarkdownRenderedBlockTruncation: Equatable {
     let visibleCount: Int
     let overflowCount: Int
 
@@ -27,7 +27,7 @@ struct MarkdownRenderedBlockTruncation: Equatable {
 /// canvas capped rows and ellipsised cells, the preview did neither, and the same table therefore
 /// looked like two different tables depending on which surface you were on. A shared constant is
 /// what stops that recurring; a shared *number* is the only part of it a test can pin.
-enum MarkdownRenderedBlockLimits {
+nonisolated enum MarkdownRenderedBlockLimits {
     /// Raised from 8. Eight rows cut ordinary notes — a fortnight of dailies, a team roster — for
     /// no reason a reader could see.
     static let tableRowLimit = 16

@@ -1,13 +1,13 @@
 import Foundation
 import SwiftData
 
-struct TagSeedDefinition {
+nonisolated struct TagSeedDefinition {
     let name: String
     let desc: String
     let colorHex: String
 }
 
-enum TagSupport {
+nonisolated enum TagSupport {
     static let colorOptions = [
         "#ff6b6b", "#ff8a4c", "#ffb84d", "#4ecb71",
         "#5aa2ff", "#9e8cff", "#e671b8", "#7b8492",

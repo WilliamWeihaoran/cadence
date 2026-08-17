@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-enum CadenceDeepLink: Equatable {
+nonisolated enum CadenceDeepLink: Equatable {
     case today
     case task(UUID)
     case habits

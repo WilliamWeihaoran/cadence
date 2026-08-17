@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum CadenceFeatureSectionKind: String, Identifiable, Hashable {
+nonisolated enum CadenceFeatureSectionKind: String, Identifiable, Hashable {
     case progress
     case organize
     case workspace
@@ -16,7 +16,7 @@ enum CadenceFeatureSectionKind: String, Identifiable, Hashable {
     }
 }
 
-struct CadenceFeatureSection: Identifiable, Hashable {
+nonisolated struct CadenceFeatureSection: Identifiable, Hashable {
     let kind: CadenceFeatureSectionKind
     let destinations: [CadenceFeatureDestination]
 
@@ -24,7 +24,7 @@ struct CadenceFeatureSection: Identifiable, Hashable {
     var title: String { kind.title }
 }
 
-enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
+nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
     case today
     case allTasks
     case focus
@@ -205,7 +205,7 @@ enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-enum CadenceFeatureBadgeSupport {
+nonisolated enum CadenceFeatureBadgeSupport {
     struct Snapshot {
         let todayCount: Int
         let allTaskCount: Int

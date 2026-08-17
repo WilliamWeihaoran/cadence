@@ -3,7 +3,28 @@ import Foundation
 // MARK: - Date Formatters
 // All DateFormatter instances live here as statics. Never create DateFormatter() inline elsewhere.
 
-enum DateFormatters {
+/// `nonisolated`, and this one is worth spelling out because it is the only mark in the T-87 sweep
+/// that puts shared state within reach of another thread.
+///
+/// The project builds with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so this enum used to be
+/// main-actor isolated — which meant every date-shaped helper that wanted to be `nonisolated` for
+/// the widget target had to route around it. `CadenceWidgetDateSupport` exists precisely because
+/// of that (see the note on `CadenceFocusPlanningSupport.dueLabel`), and a second copy of the
+/// due-date vocabulary drifted while it did.
+///
+/// Three things make it safe rather than merely convenient:
+/// - `DateFormatter` is documented thread-safe on macOS 10.9+ / iOS 7+ **as long as it is not
+///   mutated**, and every formatter below is configured inside its initializer closure and never
+///   touched again. Swift's lazy static initialization is itself thread-safe.
+/// - This file already compiles into `CadenceMCPServer`, which sets no default actor isolation and
+///   is on `SWIFT_VERSION = 6.0` — so these statics have been nonisolated in a shipping target all
+///   along. This aligns the app with what that target already does.
+/// - The calendar-based half (`storageCalendar`, `dateKey(from:calendar:)`, `date(from:in:)`,
+///   `weekKey(from:)`, `weekStartDate(forWeekKey:calendar:)`) touches no shared instance at all.
+///
+/// If a formatter here ever needs to be *reconfigured* at runtime, that is the point at which this
+/// stops being true — make it a computed property rather than re-isolating the enum.
+nonisolated enum DateFormatters {
     /// `yyyy-MM-dd` — storage format used in all SwiftData model date strings
     static let ymd: DateFormatter = {
         let f = DateFormatter()
@@ -216,7 +237,7 @@ enum DateFormatters {
 
 // MARK: - Time Formatters
 
-enum TimeFormatters {
+nonisolated enum TimeFormatters {
     /// Formats minutes-from-midnight as 12-hour time: 75 → "1:15 AM", 720 → "12 PM"
     static func timeString(from minutes: Int) -> String {
         let normalized = ((minutes % (24 * 60)) + (24 * 60)) % (24 * 60)

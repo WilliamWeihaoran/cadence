@@ -1,6 +1,6 @@
 import Foundation
 
-struct CadenceMCPAuditEntry: Codable, Sendable {
+nonisolated struct CadenceMCPAuditEntry: Codable, Sendable {
     let timestamp: String
     let tool: String
     let entityType: String
@@ -8,7 +8,7 @@ struct CadenceMCPAuditEntry: Codable, Sendable {
     let summary: String
 }
 
-struct CadenceMCPAuditLogger: Sendable {
+nonisolated struct CadenceMCPAuditLogger: Sendable {
     let logURL: URL
     private let clock: @Sendable () -> Date
 

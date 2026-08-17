@@ -1,13 +1,13 @@
 import Foundation
 
-struct MarkdownHeadingLine: Equatable {
+nonisolated struct MarkdownHeadingLine: Equatable {
     let level: Int
     let markerRange: NSRange
     let contentRange: NSRange
     let content: String
 }
 
-struct MarkdownFencedCodeBlock: Equatable {
+nonisolated struct MarkdownFencedCodeBlock: Equatable {
     let startLineIndex: Int
     let endLineIndex: Int
     let language: String?
@@ -19,7 +19,7 @@ struct MarkdownFencedCodeBlock: Equatable {
     }
 }
 
-enum MarkdownBlockSupport {
+nonisolated enum MarkdownBlockSupport {
     static func headingLineInfo(in line: String) -> MarkdownHeadingLine? {
         let nsLine = line as NSString
         let fullRange = NSRange(location: 0, length: nsLine.length)

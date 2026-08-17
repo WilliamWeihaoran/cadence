@@ -27,9 +27,10 @@ An unscoped `test` run also pulls in `CadenceUITests`, which cannot launch headl
 the whole run. The failure reads like a broken suite rather than a harness problem — do not
 conclude "tests can't run here" from it.
 
-**Warning baseline is 3**: `MarkdownLinkSupport`, `SchedulingService`,
-`SettingsNotificationsSection`. Treat any increase as a regression introduced by the change in
-hand.
+**Warning baseline: 2 on macOS, 0 on iOS.** The two are `SchedulingService` and
+`SettingsNotificationsSection`. It was three until `651694b` — `MarkdownLinkSupport` was itself a
+main-actor isolation warning and went with the `nonisolated` pass. Treat any increase as a
+regression introduced by the change in hand.
 
 ## Where Things Live
 

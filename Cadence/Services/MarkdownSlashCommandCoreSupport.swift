@@ -1,6 +1,6 @@
 import Foundation
 
-struct MarkdownSlashCommand: Identifiable {
+nonisolated struct MarkdownSlashCommand: Identifiable {
     enum Action {
         case insertText(indentation: String, text: String, caretOffset: Int)
         case chooseImage
@@ -77,14 +77,14 @@ struct MarkdownSlashCommand: Identifiable {
     }
 }
 
-struct MarkdownSlashCommandContext {
+nonisolated struct MarkdownSlashCommandContext {
     let range: NSRange
     let indentation: String
     let query: String
     let cursorLocation: Int
 }
 
-struct MarkdownSlashCommandMutation: Equatable {
+nonisolated struct MarkdownSlashCommandMutation: Equatable {
     enum FollowUp: Equatable {
         case none
         case chooseImage
@@ -96,7 +96,7 @@ struct MarkdownSlashCommandMutation: Equatable {
     let followUp: FollowUp
 }
 
-enum MarkdownSlashCommandMutationSupport {
+nonisolated enum MarkdownSlashCommandMutationSupport {
     static func mutation(
         for command: MarkdownSlashCommand,
         context: MarkdownSlashCommandContext
@@ -150,7 +150,7 @@ enum MarkdownSlashCommandMutationSupport {
     }
 }
 
-enum MarkdownSlashCommandTokenSupport {
+nonisolated enum MarkdownSlashCommandTokenSupport {
     static func context(in text: String, selection: NSRange, requiresTrailingSpace: Bool = false) -> MarkdownSlashCommandContext? {
         guard selection.length == 0 else { return nil }
         let nsText = text as NSString

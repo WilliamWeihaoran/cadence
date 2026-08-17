@@ -1,6 +1,6 @@
 import Foundation
 
-enum CadenceMCPServiceSupport {
+nonisolated enum CadenceMCPServiceSupport {
     static func normalizedRequiredText(_ value: String, emptyError: Error) throws -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw emptyError }
@@ -106,7 +106,7 @@ enum CadenceMCPServiceSupport {
     }
 }
 
-enum CadenceResolvedContainer {
+nonisolated enum CadenceResolvedContainer {
     case area(Area)
     case project(Project)
 

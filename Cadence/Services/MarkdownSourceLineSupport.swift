@@ -5,7 +5,7 @@ import Foundation
 /// `range` covers `text` only — never the terminator — because every consumer uses it to address
 /// an `NSTextStorage` run, and a run that swallowed the newline would paint a block's styling onto
 /// the line after it.
-struct MarkdownSourceLine: Equatable {
+nonisolated struct MarkdownSourceLine: Equatable {
     let index: Int
     let text: String
     let range: NSRange
@@ -37,7 +37,7 @@ struct MarkdownSourceLine: Equatable {
 /// The cost is that a CRLF line keeps its `\r` as the last character of `text`. Line *predicates*
 /// therefore trim `.whitespacesAndNewlines` rather than `.whitespaces`; a line by construction
 /// holds no interior newline, so that only ever strips a stray terminator at the edges.
-enum MarkdownSourceLines {
+nonisolated enum MarkdownSourceLines {
     nonisolated static func texts(in markdown: String) -> [String] {
         markdown.components(separatedBy: "\n")
     }

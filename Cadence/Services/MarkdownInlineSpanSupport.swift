@@ -1,6 +1,6 @@
 import Foundation
 
-enum MarkdownInlineSpanKind: Equatable {
+nonisolated enum MarkdownInlineSpanKind: Equatable {
     case boldItalic
     case bold
     case italic
@@ -11,7 +11,7 @@ enum MarkdownInlineSpanKind: Equatable {
 
 /// One inline run a styler has to act on: the whole match, the content inside the markers, and the
 /// marker runs to hide.
-struct MarkdownInlineSpan: Equatable {
+nonisolated struct MarkdownInlineSpan: Equatable {
     let kind: MarkdownInlineSpanKind
     let fullRange: NSRange
     let contentRange: NSRange
@@ -33,7 +33,7 @@ struct MarkdownInlineSpan: Equatable {
 /// before bold before italic, so `***x***` is not consumed as `**` + a stray `*`; code after the
 /// emphasis passes, so `**Review `API` today**` styles the emphasis *and* keeps the code markers
 /// intact. A caller must apply them in the order given.
-enum MarkdownInlineSpanSupport {
+nonisolated enum MarkdownInlineSpanSupport {
     /// Full ranges of `` `inline code` ``, backticks included.
     ///
     /// Callers use these two ways: as the *protected* set that stops emphasis, links, tags and

@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum NoteKind: String, CaseIterable {
+nonisolated enum NoteKind: String, CaseIterable {
     case daily
     case weekly
     case permanent

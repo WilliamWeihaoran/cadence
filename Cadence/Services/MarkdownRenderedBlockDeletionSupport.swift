@@ -1,6 +1,6 @@
 import Foundation
 
-enum MarkdownRenderedBlockKind: Equatable {
+nonisolated enum MarkdownRenderedBlockKind: Equatable {
     case image
     case task
     case code
@@ -8,13 +8,13 @@ enum MarkdownRenderedBlockKind: Equatable {
     case divider
 }
 
-struct MarkdownRenderedBlock: Equatable {
+nonisolated struct MarkdownRenderedBlock: Equatable {
     let kind: MarkdownRenderedBlockKind
     let storageRange: NSRange
     let deletionRange: NSRange
 }
 
-enum MarkdownRenderedBlockDeletionSupport {
+nonisolated enum MarkdownRenderedBlockDeletionSupport {
     static func expandedDeletionRange(
         in markdown: String,
         selection: NSRange

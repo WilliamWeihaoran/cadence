@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum CadenceReadError: Error, LocalizedError, Sendable {
+nonisolated enum CadenceReadError: Error, LocalizedError, Sendable {
     case storeNotFound([String])
     case invalidDate(String)
     case invalidIdentifier(String)
@@ -54,7 +54,7 @@ enum CadenceReadError: Error, LocalizedError, Sendable {
     }
 }
 
-struct CadenceTaskListOptions: Sendable {
+nonisolated struct CadenceTaskListOptions: Sendable {
     var statuses: [String]? = nil
     var includeCompleted: Bool = false
     var dueDateFrom: String? = nil
@@ -67,7 +67,7 @@ struct CadenceTaskListOptions: Sendable {
     var limit: Int = 50
 }
 
-struct CadenceNoteListOptions: Sendable {
+nonisolated struct CadenceNoteListOptions: Sendable {
     var kind: String? = nil
     var containerKind: String? = nil
     var containerId: String? = nil
@@ -76,28 +76,28 @@ struct CadenceNoteListOptions: Sendable {
     var limit: Int = 50
 }
 
-struct CadenceGoalListOptions: Sendable {
+nonisolated struct CadenceGoalListOptions: Sendable {
     var status: String? = nil
     var contextId: String? = nil
     var query: String? = nil
     var limit: Int = 50
 }
 
-struct CadenceHabitListOptions: Sendable {
+nonisolated struct CadenceHabitListOptions: Sendable {
     var contextId: String? = nil
     var goalId: String? = nil
     var query: String? = nil
     var limit: Int = 50
 }
 
-struct CadenceSavedLinkListOptions: Sendable {
+nonisolated struct CadenceSavedLinkListOptions: Sendable {
     var containerKind: String? = nil
     var containerId: String? = nil
     var query: String? = nil
     var limit: Int = 50
 }
 
-struct CadenceTaskBundleListOptions: Sendable {
+nonisolated struct CadenceTaskBundleListOptions: Sendable {
     var dateKey: String? = nil
     var limit: Int = 50
 }

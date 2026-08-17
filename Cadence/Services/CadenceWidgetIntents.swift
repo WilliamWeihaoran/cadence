@@ -2,13 +2,13 @@ import AppIntents
 import SwiftData
 
 struct CadenceTodayWidgetConfigurationIntent: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource = "Today Tasks"
-    static var description = IntentDescription("See and complete today's Cadence tasks.")
+    static var title: LocalizedStringResource { "Today Tasks" }
+    static var description: IntentDescription { IntentDescription("See and complete today's Cadence tasks.") }
 }
 
 struct CompleteTaskIntent: AppIntent {
-    static var title: LocalizedStringResource = "Complete Task"
-    static var description = IntentDescription("Marks a Cadence task as done.")
+    static var title: LocalizedStringResource { "Complete Task" }
+    static var description: IntentDescription { IntentDescription("Marks a Cadence task as done.") }
     static var supportedModes: IntentModes { .background }
 
     @Parameter(title: "Task ID")
@@ -59,8 +59,8 @@ struct CompleteTaskIntent: AppIntent {
 }
 
 struct CaptureTaskIntent: AppIntent {
-    static var title: LocalizedStringResource = "Capture Task"
-    static var description = IntentDescription("Adds a quick task to Cadence.")
+    static var title: LocalizedStringResource { "Capture Task" }
+    static var description: IntentDescription { IntentDescription("Adds a quick task to Cadence.") }
     static var supportedModes: IntentModes { .background }
 
     @Parameter(title: "Title")
@@ -119,8 +119,8 @@ struct CaptureTaskIntent: AppIntent {
 }
 
 struct ToggleHabitCompletionIntent: AppIntent {
-    static var title: LocalizedStringResource = "Toggle Habit Check-In"
-    static var description = IntentDescription("Logs or removes today's check-in for a Cadence habit.")
+    static var title: LocalizedStringResource { "Toggle Habit Check-In" }
+    static var description: IntentDescription { IntentDescription("Logs or removes today's check-in for a Cadence habit.") }
     static var supportedModes: IntentModes { .background }
 
     @Parameter(title: "Habit ID")
@@ -204,8 +204,8 @@ struct ToggleHabitCompletionIntent: AppIntent {
 }
 
 struct OpenCadenceTodayIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open Today"
-    static var description = IntentDescription("Opens Cadence to Today.")
+    static var title: LocalizedStringResource { "Open Today" }
+    static var description: IntentDescription { IntentDescription("Opens Cadence to Today.") }
     static var openAppWhenRun: Bool { true }
 
     func perform() async throws -> some IntentResult {

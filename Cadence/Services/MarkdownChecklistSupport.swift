@@ -10,12 +10,12 @@ import Foundation
 ///
 /// The `github` case is a little wider than GitHub's: the bullet may be any of
 /// `MarkdownListSupport.unorderedMarkerCharacters`, not just `-`/`*`/`+`. See the regex below.
-enum MarkdownChecklistSyntax: Equatable {
+nonisolated enum MarkdownChecklistSyntax: Equatable {
     case github
     case legacy
 }
 
-struct MarkdownChecklistLine: Equatable {
+nonisolated struct MarkdownChecklistLine: Equatable {
     let syntax: MarkdownChecklistSyntax
     let markerRange: NSRange
     let stateRange: NSRange
@@ -26,12 +26,12 @@ struct MarkdownChecklistLine: Equatable {
 
 /// The single-character edit that flips a checklist line: where its state marker is, and what it
 /// becomes.
-struct MarkdownChecklistToggle: Equatable {
+nonisolated struct MarkdownChecklistToggle: Equatable {
     let stateRange: NSRange
     let replacement: String
 }
 
-enum MarkdownChecklistSupport {
+nonisolated enum MarkdownChecklistSupport {
     /// The bullet class is every unordered marker Cadence recognises, not markdown's `[-*+]`.
     ///
     /// `- ` is rewritten to `• ` by `MarkdownTypingTransformSupport` on the keystroke after it is

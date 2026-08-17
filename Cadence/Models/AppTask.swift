@@ -1,12 +1,12 @@
 import SwiftData
 import Foundation
 
-enum TaskSectionDefaults {
+nonisolated enum TaskSectionDefaults {
     static let defaultName = "Default"
     static let defaultColorHex = "#6b7a99"
 }
 
-struct TaskSectionConfig: Codable, Hashable, Identifiable {
+nonisolated struct TaskSectionConfig: Codable, Hashable, Identifiable {
     var uuid: UUID = UUID()
     var name: String
     var colorHex: String = TaskSectionDefaults.defaultColorHex

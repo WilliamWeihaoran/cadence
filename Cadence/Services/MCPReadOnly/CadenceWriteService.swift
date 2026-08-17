@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum CadenceWriteError: Error, LocalizedError, Sendable {
+nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     case emptyTitle
     case emptyContent
     case invalidPriority(String)
@@ -36,7 +36,7 @@ enum CadenceWriteError: Error, LocalizedError, Sendable {
     }
 }
 
-struct CadenceCreateTaskOptions: Sendable {
+nonisolated struct CadenceCreateTaskOptions: Sendable {
     var title: String
     var notes: String? = nil
     var priority: String? = nil
@@ -51,7 +51,7 @@ struct CadenceCreateTaskOptions: Sendable {
     var tagNames: [String]? = nil
 }
 
-struct CadenceUpdateTaskOptions: Sendable {
+nonisolated struct CadenceUpdateTaskOptions: Sendable {
     var taskId: String
     var title: String? = nil
     var notes: String? = nil
@@ -66,7 +66,7 @@ struct CadenceUpdateTaskOptions: Sendable {
     var tagNames: [String]? = nil
 }
 
-struct CadenceScheduleTaskOptions: Sendable {
+nonisolated struct CadenceScheduleTaskOptions: Sendable {
     var taskId: String
     var scheduledDate: String? = nil
     var scheduledStartMin: Int? = nil
@@ -74,7 +74,7 @@ struct CadenceScheduleTaskOptions: Sendable {
     var clearScheduledDate: Bool = false
 }
 
-struct CadenceBulkCancelTaskOptions: Sendable {
+nonisolated struct CadenceBulkCancelTaskOptions: Sendable {
     var taskIds: [String]? = nil
     var titlePrefix: String? = nil
 }

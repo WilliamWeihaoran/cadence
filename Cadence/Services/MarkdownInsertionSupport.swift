@@ -1,6 +1,6 @@
 import Foundation
 
-enum MarkdownInsertionSupport {
+nonisolated enum MarkdownInsertionSupport {
     static func paddedBlockInsertion(
         _ markdown: String,
         in text: String,

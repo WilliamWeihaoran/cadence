@@ -7,21 +7,21 @@ import AppKit
 import UIKit
 #endif
 
-struct MarkdownImageReference: Equatable {
+nonisolated struct MarkdownImageReference: Equatable {
     let id: UUID
     let altText: String
     let range: NSRange
 }
 
 #if os(macOS)
-struct MarkdownImageRenderAsset {
+nonisolated struct MarkdownImageRenderAsset {
     let id: UUID
     let image: NSImage
     let displayWidth: CGFloat
     let pixelSize: CGSize
 }
 #elseif os(iOS)
-struct MarkdownImageRenderAsset {
+nonisolated struct MarkdownImageRenderAsset {
     let id: UUID
     let image: UIImage
     let displayWidth: CGFloat
@@ -29,7 +29,7 @@ struct MarkdownImageRenderAsset {
 }
 #endif
 
-enum MarkdownImageAssetService {
+nonisolated enum MarkdownImageAssetService {
     /// Alt text is escaped on write, so the reader has to accept `\]` and `\\` inside the label.
     /// A pattern that stops at the first `]` cannot match a reference whose alt text contains one
     /// — and an unmatched reference reads as an orphaned asset, which is what deletes the image.

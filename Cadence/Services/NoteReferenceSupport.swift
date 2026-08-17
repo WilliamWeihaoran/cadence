@@ -1,6 +1,6 @@
 import Foundation
 
-struct NoteLinkReference: Hashable {
+nonisolated struct NoteLinkReference: Hashable {
     let rawValue: String
     let noteID: UUID?
     let title: String
@@ -12,7 +12,7 @@ struct NoteLinkReference: Hashable {
     }
 }
 
-struct NoteTaskReference: Hashable {
+nonisolated struct NoteTaskReference: Hashable {
     let rawValue: String
     let taskID: UUID?
     let title: String
@@ -24,7 +24,7 @@ struct NoteTaskReference: Hashable {
     }
 }
 
-enum NoteReferenceParser {
+nonisolated enum NoteReferenceParser {
     // There is no `noteLinks(in:)`. It was `noteReferences(...).map(\.fallbackTitle)` with no
     // production caller: linked notes and backlinks need the parsed `NoteLinkReference` — the
     // stable `noteID` above all — not a bare title, which is what made the title-only form the
@@ -121,7 +121,7 @@ enum NoteReferenceParser {
     }
 }
 
-enum NoteReferenceResolver {
+nonisolated enum NoteReferenceResolver {
     static func linkedNotes(for note: Note, in notes: [Note]) -> [Note] {
         linkedNotes(noteID: note.id, content: note.content, in: notes)
     }

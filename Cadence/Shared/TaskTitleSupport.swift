@@ -1,6 +1,6 @@
 import Foundation
 
-enum TaskTitleSupport {
+nonisolated enum TaskTitleSupport {
     static let defaultDisplayTitle = "Untitled Task"
     static let defaultCompactDisplayTitle = "Untitled"
 
@@ -121,12 +121,12 @@ enum TaskTitleSupport {
     }
 }
 
-struct TaskTitlePriorityShortcut: Equatable {
+nonisolated struct TaskTitlePriorityShortcut: Equatable {
     let title: String
     let priority: TaskPriority
 }
 
-struct TaskTitlePriorityShortcutSegments: Equatable {
+nonisolated struct TaskTitlePriorityShortcutSegments: Equatable {
     enum Placement: Equatable {
         case leading
         case trailing
@@ -138,7 +138,7 @@ struct TaskTitlePriorityShortcutSegments: Equatable {
     let placement: Placement
 }
 
-struct TaskTitleInlineShortcut: Equatable {
+nonisolated struct TaskTitleInlineShortcut: Equatable {
     let prefix: String
     let query: String
 }

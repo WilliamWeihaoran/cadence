@@ -1,6 +1,6 @@
 import Foundation
 
-enum MarkdownFormatCommand: Hashable {
+nonisolated enum MarkdownFormatCommand: Hashable {
     case bold
     case italic
     case inlineCode
@@ -22,14 +22,14 @@ enum MarkdownFormatCommand: Hashable {
     case replaceMarkdownWithCaret(location: Int, length: Int, markdown: String, caretOffset: Int)
 }
 
-struct MarkdownFormatMutation {
+nonisolated struct MarkdownFormatMutation {
     let text: String
     let selection: NSRange
     let replacementRange: NSRange
     let replacement: String
 }
 
-enum MarkdownFormatCommandSupport {
+nonisolated enum MarkdownFormatCommandSupport {
     static func apply(
         _ command: MarkdownFormatCommand,
         text: String,
@@ -454,7 +454,7 @@ enum MarkdownFormatCommandSupport {
     }
 }
 
-private enum MarkdownFormatListKind: Equatable {
+private nonisolated enum MarkdownFormatListKind: Equatable {
     case ordered
     case unordered
     case todo
@@ -479,7 +479,7 @@ private enum MarkdownFormatListKind: Equatable {
     }
 }
 
-private struct MarkdownFormatListPrefix {
+private nonisolated struct MarkdownFormatListPrefix {
     let indentation: String
     let content: String
     let kind: MarkdownFormatListKind
