@@ -19,14 +19,13 @@ import SwiftUI
 struct iOSTaskEditorTitleCard: View {
     @Bindable var task: AppTask
     let onToggleCompletion: () -> Void
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
-    }
-
+    /// Every figure in this row comes from `iOSTaskInspectorMetrics` and none of them from
+    /// `horizontalSizeClass`. The row used to size its circle, its title and the gap above the
+    /// circle by the width of the screen *behind* the sheet — three numbers for one control, none
+    /// of which the sheet's own 640pt column varies by.
     private var glyphSize: CGFloat {
-        isRegularWidth ? 26 : 24
+        iOSTaskInspectorMetrics.completionGlyphSize
     }
 
     /// Done and cancelled are both "settled": the title reads as struck through and stops being
@@ -36,7 +35,7 @@ struct iOSTaskEditorTitleCard: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: iOSTaskInspectorMetrics.titleRowSpacing) {
             Button(action: onToggleCompletion) {
                 iOSTaskCompletionCircle(
                     isDone: task.isDone,
@@ -48,8 +47,10 @@ struct iOSTaskEditorTitleCard: View {
             }
             .buttonStyle(.iosPressable)
             .accessibilityLabel(task.isDone ? "Mark task todo" : "Complete task")
-            // Aligns the circle with the first line of a title that may wrap to three.
-            .padding(.top, isRegularWidth ? 5 : 3)
+            // Aligns the circle with the first line of a title that may wrap to three — derived
+            // from the circle and the title it sits beside, so it cannot fall out of step with
+            // either.
+            .padding(.top, iOSTaskInspectorMetrics.completionTopPadding)
 
             VStack(alignment: .leading, spacing: 3) {
                 // Only the two statuses a checkbox cannot express say anything here. "Todo" over
@@ -63,11 +64,11 @@ struct iOSTaskEditorTitleCard: View {
                 }
 
                 TextField("Untitled task", text: $task.title, axis: .vertical)
-                    .font(.system(size: isRegularWidth ? 24 : 21, weight: .bold))
+                    .font(.system(size: iOSTaskInspectorMetrics.titleSize, weight: .bold))
                     .foregroundStyle(isSettled ? Theme.dim : Theme.text)
                     .strikethrough(isSettled, color: Theme.dim)
                     .textFieldStyle(.plain)
-                    .lineLimit(1...3)
+                    .lineLimit(1...iOSTaskInspectorMetrics.titleLineLimit)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 

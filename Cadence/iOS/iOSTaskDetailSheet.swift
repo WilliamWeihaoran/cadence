@@ -70,12 +70,11 @@ struct iOSTaskDetailSheet: View {
         return projects.first { $0.id == selectedProjectID }
     }
 
+    /// The **only** thing this sheet reads the size class for: the margin between its card and the
+    /// edge of the host. Everything else it draws is `iOSTaskInspectorMetrics`, which takes no
+    /// width — see that file for why a sheet's measurements are its own.
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
-    }
-
-    private var notesEditorMinHeight: CGFloat {
-        isRegularWidth ? 360 : 340
     }
 
     var body: some View {
@@ -137,12 +136,12 @@ struct iOSTaskDetailSheet: View {
     private var editorScrollView: some View {
         ScrollView {
             taskForm
-                .padding(14)
+                .padding(iOSTaskInspectorMetrics.cardPadding)
                 .background(Theme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
-                .frame(maxWidth: 640)
+                .frame(maxWidth: iOSTaskInspectorMetrics.contentMaxWidth)
                 .frame(maxWidth: .infinity)
-                .padding(isRegularWidth ? 20 : 18)
+                .padding(iOSTaskInspectorMetrics.sheetGutter(isRegularWidth: isRegularWidth))
         }
         .background(Theme.bg)
         .navigationTitle("Edit Task")
@@ -155,7 +154,7 @@ struct iOSTaskDetailSheet: View {
     /// where it lives), then when it happens, then the work inside it, then its notes, then the
     /// actions that change its state.
     private var taskForm: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: iOSTaskInspectorMetrics.sectionSpacing) {
             headerBlock
             propertiesSection
             scheduleSection
@@ -182,14 +181,12 @@ struct iOSTaskDetailSheet: View {
                     availableSectionNames: availableSectionNames
                 )
             }
-            .padding(.leading, titleColumnInset)
+            // Completion-circle width plus the title row's spacing, so everything under the title
+            // lines up with the title text rather than with the circle. Derived in
+            // `iOSTaskInspectorMetrics` from the circle itself, rather than restated here where it
+            // could — and did — go on ramping after the circle stopped.
+            .padding(.leading, iOSTaskInspectorMetrics.titleColumnInset)
         }
-    }
-
-    /// Completion-circle width plus the title row's spacing, so everything under the title lines up
-    /// with the title text rather than with the circle.
-    private var titleColumnInset: CGFloat {
-        (isRegularWidth ? 26 : 24) + 12
     }
 
     @ToolbarContentBuilder
@@ -241,7 +238,7 @@ struct iOSTaskDetailSheet: View {
                 }
             ),
             isFocused: $isNotesFocused,
-            minHeight: notesEditorMinHeight,
+            minHeight: iOSTaskInspectorMetrics.notesMinHeight,
             referenceNotes: allNotes,
             referenceTasks: allTasks,
             onOpenReference: openMarkdownReference
