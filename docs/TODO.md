@@ -29,10 +29,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**W — group headers as drop targets** ([T-39])
-
-**X — test-target warning noise** ([T-82])
-
 ## Open — decided, not started
 
 - [T-88] **macOS: renaming a task leaves the embedding note's reference stale.** The same bug `D-56`
@@ -84,6 +80,13 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — known, unscheduled
 
+- [T-89] **Drag-and-drop cannot be driven from the simulator harness.** Neither `touch_path` nor
+  `swipe` lifts a `UIDragInteraction`, so no drop ever fires — verified against the row target from
+  `47328af`, which fails identically, so it predates and is independent of any one change. Every
+  drag-to-create claim in this repo is therefore unit-tested rather than seen. Worse, an abandoned
+  drag attempt leaves the tab bar swallowing taps until relaunch, which can silently poison a later
+  verification in the same session. Until this is solved, treat "drag works" as inference.
+
 - [T-86] **Agents building into the shared DerivedData can crash a running Mac app.** On 2026-08-17
   the user hit "Cadence quit unexpectedly" — `EXC_BREAKPOINT` on the main thread, five seconds after
   launch. **Not app code:** the whole backtrace is `dyld` → `libSystem_initializer` →
@@ -106,11 +109,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   2. **Double tap on plain text, and on a code block or table.** The `shouldBegin` gate makes the
      prose case true by construction, but neither case was observed: the simulator tooling has no
      double-tap action and two scripted taps fall outside UIKit's ~350ms window.
-- [T-39] **Group headers should be drop targets too.** `47328af` made task *rows* accept a dropped
-  `+`, which covers every grouping by construction but cannot reach an **empty** group — the one
-  case where seeding a new task from the group is most useful. `CadenceTaskDropSupport`'s resolver
-  already accepts group keys, so this is wiring `iOSTaskSectionHeader`'s 14 call sites, not new
-  logic. Left out only because those files were held by another agent at the time.
 - [T-32] **Feature-consistency scan across platforms.** Added 2026-08-17 at the user's direction;
   **do not run it yet.** The goal state is that no platform has a feature another lacks — macOS,
   iPadOS and iOS offer the same set, differing only in how it is laid out. This directly reverses
@@ -174,6 +172,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-57] `69bf02d` A group header takes a dropped + only when it can say where it lands (T-39).
 
 - [D-56] `fcb2168` Renaming a task never updated the note that embeds it (T-84).
 
