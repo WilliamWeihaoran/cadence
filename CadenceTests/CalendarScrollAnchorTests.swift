@@ -69,6 +69,59 @@ struct CalendarScrollAnchorTests {
         )
     }
 
+    // MARK: - Which reports may be believed
+
+    /// The stale report is the *whole* of T-70. The timed grid asserted its opening column and then
+    /// adopted the next thing the scroll view said, which was still the offset the layout started at
+    /// — column 0, `plannerLeadingDayCount` days behind the anchor. Week opened on Jan 18 against a
+    /// real date of Aug 17.
+    @Test
+    func aReportThatDisagreesWithTheAssertionIsNotBelieved() {
+        #expect(
+            CadenceLazyScrollAnchor.report(0, target: 210, hasConfirmedPlacement: false) == .ignore
+        )
+        #expect(
+            CadenceLazyScrollAnchor.report(37, target: 210, hasConfirmedPlacement: false) == .ignore
+        )
+    }
+
+    /// A confirmation, not a delay. `ecaf80f` tried the delay — a 0.08s guard meant to ignore the
+    /// initial settle expired before the settle arrived — so the signal has to be the assertion
+    /// itself coming back, and there is exactly one reading that is.
+    @Test
+    func theFirstReportMatchingTheTargetIsTheAssertionArriving() {
+        #expect(
+            CadenceLazyScrollAnchor.report(210, target: 210, hasConfirmedPlacement: false) == .confirmsPlacement
+        )
+    }
+
+    /// After the confirmation the position belongs to the finger, and *every* reading is real —
+    /// including one that happens to land back on the opening column. Treating a match as a second
+    /// confirmation would be harmless; treating a mismatch as stale would freeze the header on the
+    /// day the surface opened at.
+    @Test
+    func everyReportAfterTheConfirmationIsARealScroll() {
+        for reported in [0, 209, 210, 211, 400] {
+            #expect(
+                CadenceLazyScrollAnchor.report(reported, target: 210, hasConfirmedPlacement: true) == .adopt
+            )
+        }
+    }
+
+    /// Generic over the position because the two callers hold different ones: Month's target is a
+    /// lazy-stack row id, the timed grid's is a column index derived from a content offset.
+    @Test
+    func theGateDoesNotCareWhatKindOfPositionItIs() {
+        #expect(
+            CadenceLazyScrollAnchor.report("2026-08-17", target: "2026-08-17", hasConfirmedPlacement: false)
+                == .confirmsPlacement
+        )
+        #expect(
+            CadenceLazyScrollAnchor.report("2026-01-18", target: "2026-08-17", hasConfirmedPlacement: false)
+                == .ignore
+        )
+    }
+
     // MARK: - What the agenda opens on
 
     private var calendar: Calendar {

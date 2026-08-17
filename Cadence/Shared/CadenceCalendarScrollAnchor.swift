@@ -44,6 +44,43 @@ enum CadenceLazyScrollAnchor {
         guard !hasAsserted, hasTarget else { return false }
         return contentExtent > 0
     }
+
+    /// What a scroll view's *reported* position is worth.
+    ///
+    /// Asserting a position is only half the rule; the other half is not believing the readings that
+    /// arrive before the assertion lands. A surface that scrolls itself and then adopts whatever
+    /// position comes back has a race with two outcomes, and the losing one is silent: the report
+    /// still in flight says the offset the layout started at, the surface takes it for a scroll the
+    /// user performed, and writes a day the user never chose into persisted state. `ecaf80f` is that
+    /// bug on the Board; `68d78ec`, `8a316c4` and the two the calendar rework hit mid-flight are the
+    /// same shape; **T-70** — Week opening on Jan 18 against a real date of Aug 17 — is it again on
+    /// the timed grid, which had the assertion and not this.
+    ///
+    /// The gate is a *confirmation*, not a delay: the first report that equals the target **is** the
+    /// assertion arriving back, and everything before it is older than the assertion by definition.
+    /// `ecaf80f` had already tried the delay — a 0.08s guard expired before the settle arrived.
+    ///
+    /// The two callers hold the target differently (Month's is a lazy-stack row id, the timed grid's
+    /// is a column index derived from an offset), which is why this takes the comparison rather than
+    /// doing the bookkeeping: it is generic over the position, and the flag stays `@State` where it
+    /// belongs.
+    enum PositionReport: Equatable {
+        /// Older than the assertion. Drop it — it names where the layout happened to start.
+        case ignore
+        /// The assertion, arriving back. Believe every report from here on.
+        case confirmsPlacement
+        /// A real scroll. Read the date off it.
+        case adopt
+    }
+
+    static func report<Position: Equatable>(
+        _ reported: Position,
+        target: Position,
+        hasConfirmedPlacement: Bool
+    ) -> PositionReport {
+        if hasConfirmedPlacement { return .adopt }
+        return reported == target ? .confirmsPlacement : .ignore
+    }
 }
 
 extension View {

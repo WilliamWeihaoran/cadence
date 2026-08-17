@@ -440,7 +440,8 @@ struct iOSCalendarView: View {
 
     // `moveAnchor(by:)` and `jumpToToday()` are gone with the `‹ ➤ ›` cluster that called them.
     // Every calendar surface scrolls in the axis those chevrons moved, and jump-to-today is the
-    // `Today` row in `iOSCalendarDateTitle`'s popover — see `CadenceCalendarDateTitleSupport`.
+    // `Today` row in the toolbar title's popover (`iOSDateJumpTitle`) — see
+    // `CadenceCalendarDateTitleSupport`.
 
     private func restorePersistedCalendarDates() {
         guard !didRestorePersistedDates else { return }

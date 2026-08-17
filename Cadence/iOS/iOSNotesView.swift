@@ -530,31 +530,25 @@ private struct iOSNotesHeader<Title: View, Trailing: View>: View {
 /// That is deliberate and matches macOS: an empty note for a browsed day is invisible everywhere it
 /// would matter, since the note lists filter to notes with content
 /// (`NotesListVisibilitySupport`).
+///
+/// The control itself is `iOSDateJumpTitle`, shared with all four calendar surfaces. What is left
+/// here is the Notes-specific half: which tabs have a date at all, what that date reads as, and the
+/// constant word the other two fall back to.
 struct iOSNotesDateTitle: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let tab: CadenceMobileNotesTab
     /// The constant word to fall back to on a tab with no date.
     var fallback: String = "Notes"
     @Binding var dayKey: String
 
-    @State private var isOpen = false
-    @State private var viewMonth = Date()
-
-    /// 15 on the phone, where the widest label this can hold is a week range — `Aug 10–16`, about
-    /// 88pt at 17pt bold against roughly 84pt of room once the tabs and the template button have
-    /// taken theirs. At 17 it truncated to "Aug 1…", which names no week at all. The constant-word
-    /// fallback keeps 17: "Notes" fits either way, and the two never appear together.
-    private var fontSize: CGFloat {
-        horizontalSizeClass == .regular ? 17 : 15
-    }
-
     private var label: String? {
         CadenceNoteDateNavigation.title(for: tab, dayKey: dayKey)
     }
 
-    /// The picker's selection, as a `Date`. `MonthCalendarPanel` speaks `Date`; storage speaks
-    /// `"yyyy-MM-dd"`. Converting in the binding rather than holding a second `@State` date is what
-    /// keeps them from drifting apart — there is one source of truth and it is the key.
+    /// The picker's selection, as a `Date`. `iOSDateJumpTitle` and `MonthCalendarPanel` speak
+    /// `Date`; storage speaks `"yyyy-MM-dd"`. Converting in the binding rather than holding a second
+    /// `@State` date is what keeps them from drifting apart — there is one source of truth and it is
+    /// the key. The calendar's title binds a `Date` outright, which is why the shared control speaks
+    /// that and this call site does the conversion.
     private var selection: Binding<Date> {
         Binding(
             get: { DateFormatters.date(from: dayKey) ?? Date() },
@@ -564,106 +558,28 @@ struct iOSNotesDateTitle: View {
 
     var body: some View {
         if let label {
-            Button {
-                syncViewMonth()
-                isOpen = true
-            } label: {
-                HStack(spacing: 4) {
-                    Text(label)
-                        .font(.system(size: fontSize, weight: .bold))
-                        // Blue when you are looking at some other day, so the header itself says
-                        // you have navigated away — otherwise a past note is indistinguishable
-                        // from today's at a glance, and you can write into the wrong day.
-                        .foregroundStyle(isCurrent ? Theme.text : Theme.blue)
-
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(isCurrent ? Theme.dim : Theme.blue)
-                }
-                // Deliberately **not** `.fixedSize()`, unlike the constant-word fallback below: the
-                // tab strip has the higher layout priority, so if the row runs out of room the
-                // date is what gives ground. `fixedSize` here would make it refuse, and an `HStack`
-                // does not shrink a view that refuses — it overflows and clips.
-                .lineLimit(1)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.cadencePlain)
-            .accessibilityLabel(tab == .week ? "Week of \(label). Choose a week" : "\(label). Choose a date")
-            // `.top`, not the `.bottom` every other `CadenceDatePicker` call site uses. The arrow
-            // edge names the popover's own edge, so `.bottom` puts the panel *above* its anchor —
-            // fine for a control in the middle of a form, wrong for one in the top chrome, where
-            // it opened off the top of the screen with only its arrow visible.
-            .popover(isPresented: $isOpen, arrowEdge: .top) {
-                iOSNotesDatePopover(tab: tab, dayKey: $dayKey, selection: selection, viewMonth: $viewMonth, isOpen: $isOpen)
-                    // Same reason `CadenceDatePicker` sets it: compact width would otherwise
-                    // promote a 256×294 calendar to a full-height sheet.
-                    .presentationCompactAdaptation(.popover)
-            }
+            iOSDateJumpTitle(
+                date: selection,
+                label: label,
+                isAtNow: CadenceNoteDateNavigation.isCurrentPeriod(tab: tab, dayKey: dayKey),
+                // `.inline`, not the calendar's `.page`: this title shares a 390pt row with four
+                // tabs and sometimes a back control. See `iOSDateJumpTitleMetrics`.
+                metrics: .inline,
+                // The thing you are returning to on Weekly is a week, not a day.
+                nowTitle: tab == .week ? "This week" : "Today",
+                accessibilityLabel: tab == .week
+                    ? "Week of \(label). Choose a week"
+                    : "\(label). Choose a date"
+            )
         } else {
+            // 17 either way, unlike the date: "Notes" fits at any width, and the two never appear
+            // together. `fixedSize` because a constant word has no slack to give the tab strip.
             Text(fallback)
                 .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
                 .fixedSize()
         }
-    }
-
-    private var isCurrent: Bool {
-        CadenceNoteDateNavigation.isCurrentPeriod(tab: tab, dayKey: dayKey)
-    }
-
-    private func syncViewMonth() {
-        var comps = Calendar.current.dateComponents([.year, .month], from: selection.wrappedValue)
-        comps.day = 1
-        viewMonth = Calendar.current.date(from: comps) ?? Date()
-    }
-}
-
-/// The calendar behind the header date, plus the one shortcut that matters here.
-///
-/// Deliberately *not* `CadenceQuickDatePopover`, whose pills are Today / Tomorrow / This Weekend —
-/// a tomorrow's daily note is a thing you can reach but rarely want, and "this weekend" means
-/// nothing to a weekly note at all. The single way back to now is what a date picker on a phone
-/// needs and what a bare calendar makes you hunt for after scrolling a few months away.
-private struct iOSNotesDatePopover: View {
-    let tab: CadenceMobileNotesTab
-    @Binding var dayKey: String
-    @Binding var selection: Date
-    @Binding var viewMonth: Date
-    @Binding var isOpen: Bool
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if !CadenceNoteDateNavigation.isCurrentPeriod(tab: tab, dayKey: dayKey) {
-                Button {
-                    dayKey = DateFormatters.todayKey()
-                    isOpen = false
-                } label: {
-                    Text(tab == .week ? "This week" : "Today")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.blue)
-                        .frame(maxWidth: .infinity, minHeight: 34)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.cadencePlain)
-                .padding(.horizontal, 10)
-                .padding(.top, 8)
-                .padding(.bottom, 6)
-
-                Divider().background(Theme.borderSubtle)
-            }
-
-            // `inlineStyle` because this popover already owns its width and its background.
-            // Without it the panel pins itself to 256pt and paints its own `surfaceElevated`
-            // inside a container the popover had sized differently — the weekday row drew above
-            // the panel's rounded top and the next month's heading spilled past its bottom corner.
-            MonthCalendarPanel(selection: $selection, viewMonth: $viewMonth, isOpen: $isOpen, inlineStyle: true)
-                // The panel leads with its weekday row and no inset of its own, which sat flush
-                // against the popover's rounded top edge.
-                .padding(.top, 10)
-        }
-        .frame(width: 280)
-        .background(Theme.surfaceElevated)
     }
 }
 

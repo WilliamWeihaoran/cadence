@@ -45,13 +45,15 @@ struct iOSCalendarToolbar: View {
     /// The leading edge of whatever is on screen — the leftmost day column on a timed grid or the
     /// Board, the top week row on Month. Every surface has one now, so the title *is* the date
     /// control on all four: it names where you are and it is the way to go somewhere else. See
-    /// `iOSCalendarDateTitle`.
+    /// `dateTitle` below and `iOSDateJumpTitle`.
     @Binding var leadingDate: Date
     /// Which unit that date is read in. See `CadenceCalendarDateTitleFormat`.
     var titleFormat: CadenceCalendarDateTitleFormat = .day
     @Binding var monthDetail: CadenceCalendarMonthDetail
     var showsMonthDetailControl = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private let calendar = Calendar.current
 
     var body: some View {
         Group {
@@ -156,9 +158,47 @@ struct iOSCalendarToolbar: View {
                 )
             }
 
-            iOSCalendarDateTitle(date: $leadingDate, format: titleFormat)
+            dateTitle
         }
         .frame(minWidth: horizontalSizeClass == .regular ? 208 : 116, idealWidth: 246, maxWidth: 312, alignment: .leading)
+    }
+
+    /// The calendar's date title: the date at the **leading edge of what is on screen**, and the
+    /// control that jumps to another one.
+    ///
+    /// It used to read `Aug 19-25` on a timed grid, `Aug 7-13` on the Board and `August 2026` on
+    /// Month — spans of the fixed windows those surfaces rendered. All four scroll continuously now,
+    /// so there is no such window: what is on screen straddles whatever the finger left it on, and a
+    /// range printed over it would be describing something the surface no longer has. One live
+    /// reading is the honest one — and it is the one that can also be a button, which is what made
+    /// deleting `‹ ➤ ›` safe.
+    ///
+    /// `titleFormat` is the unit that reading is in: a day for the timed grids and the Board, a
+    /// month for the month grid, whose bound value is a week row rather than a day. Everything the
+    /// two differ by is in `CadenceCalendarDateTitleSupport`, which is in `Shared/` and tested — and
+    /// it is exactly the four answers `iOSDateJumpTitle` asks a caller for, which is why this is now
+    /// an argument list rather than a second copy of the Notes header's title.
+    private var dateTitle: some View {
+        iOSDateJumpTitle(
+            date: $leadingDate,
+            label: CadenceCalendarDateTitleSupport.label(
+                for: leadingDate,
+                format: titleFormat,
+                calendar: calendar
+            ),
+            isAtNow: CadenceCalendarDateTitleSupport.isAtNow(
+                leadingDate,
+                format: titleFormat,
+                calendar: calendar
+            ),
+            metrics: .page,
+            pickerDate: { date in
+                CadenceCalendarDateTitleSupport.pickerDate(for: date, format: titleFormat, calendar: calendar)
+            },
+            anchor: { picked in
+                CadenceCalendarDateTitleSupport.anchor(forPicked: picked, format: titleFormat, calendar: calendar)
+            }
+        )
     }
 
     private var modeControl: some View {
@@ -216,157 +256,7 @@ struct iOSCalendarToolbar: View {
     //
     // The middle control was the one that had to be *replaced* rather than dropped — `location.fill`
     // is jump-to-today, not a direction, and a surface that scrolls arbitrarily far needs a way
-    // home. `iOSCalendarDateTitle` carries it on all four now.
+    // home. `dateTitle` carries it on all four now.
 }
 
-/// The calendar's title: the date at the **leading edge of what is on screen**, and the control that
-/// jumps to another one.
-///
-/// It used to read `Aug 19-25` on a timed grid, `Aug 7-13` on the Board and `August 2026` on Month —
-/// spans of the fixed windows those surfaces rendered. All four scroll continuously now, so there is
-/// no such window: what is on screen straddles whatever the finger left it on, and a range printed
-/// over it would be describing something the surface no longer has. One live reading is the honest
-/// one — and it is the one that can also be a button, which is what made deleting `‹ ➤ ›` safe.
-///
-/// `format` is the unit that reading is in: a day for the timed grids and the Board, a month for the
-/// month grid, whose bound value is a week row rather than a day. Everything the two differ by is in
-/// `CadenceCalendarDateTitleSupport`, which is in `Shared/` and tested.
-///
-/// This is deliberately the same shape as `iOSNotesDateTitle` (`2929867`): a bold label, a
-/// `chevron.down`, blue when you are away from now, and a popover whose first row is a way back.
-/// It is **not** that view reused, and the reason is a file boundary rather than a design one —
-/// `iOSNotesDateTitle` is written against `CadenceMobileNotesTab` and a `"yyyy-MM-dd"` string
-/// binding, and generalising it means editing `iOSNotesView.swift`. When the two are next open at
-/// the same time they should become one view taking a `Date` binding, a label closure and a
-/// "back to now" title; everything below this line is that view with the notes-specific half
-/// removed.
-struct iOSCalendarDateTitle: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Binding var date: Date
-    var format: CadenceCalendarDateTitleFormat = .day
-
-    @State private var isOpen = false
-    @State private var viewMonth = Date()
-    /// The day the popover's calendar is on. Not `date` itself: on Month the bound value is a week
-    /// row start, so binding the picker straight to it would light up July 27 under a grid reading
-    /// "August" and would take a picked day as a week rather than as a month.
-    @State private var pickerDate = Date()
-
-    private let calendar = Calendar.current
-
-    private var isAtNow: Bool {
-        CadenceCalendarDateTitleSupport.isAtNow(date, format: format, calendar: calendar)
-    }
-
-    private var label: String {
-        CadenceCalendarDateTitleSupport.label(for: date, format: format, calendar: calendar)
-    }
-
-    var body: some View {
-        Button {
-            syncPickerDate()
-            isOpen = true
-        } label: {
-            HStack(spacing: 4) {
-                Text(label)
-                    .font(.system(size: horizontalSizeClass == .regular ? 21 : 18, weight: .bold))
-                    // Blue when the surface is showing some other day or month, so the header itself
-                    // says you have scrolled away. Without it a week in March is indistinguishable
-                    // at a glance from this one.
-                    .foregroundStyle(isAtNow ? Theme.text : Theme.blue)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(isAtNow ? Theme.dim : Theme.blue)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.cadencePlain)
-        .accessibilityLabel("\(label). Choose a date")
-        // `.top`, for the reason `iOSNotesDateTitle` gives: the arrow edge names the popover's own
-        // edge, so `.bottom` would put the panel above an anchor that is already in the top chrome.
-        .popover(isPresented: $isOpen, arrowEdge: .top) {
-            iOSCalendarDatePopover(
-                date: pickedDate,
-                viewMonth: $viewMonth,
-                isOpen: $isOpen,
-                isAtNow: isAtNow,
-                onNow: {
-                    date = CadenceCalendarDateTitleSupport.nowAnchor(format: format, calendar: calendar)
-                }
-            )
-            .presentationCompactAdaptation(.popover)
-        }
-    }
-
-    /// A binding rather than `onChange(of: pickerDate)`, so only a **pick** writes back. Seeding the
-    /// picker when the popover opens would otherwise look like one: on Month the seed round-trips
-    /// through `displayedMonth` → `topRow`, so merely opening the panel mid-month would snap the
-    /// grid to that month's first row without the user touching anything.
-    private var pickedDate: Binding<Date> {
-        Binding(
-            get: { pickerDate },
-            set: { newValue in
-                pickerDate = newValue
-                date = CadenceCalendarDateTitleSupport.anchor(
-                    forPicked: newValue,
-                    format: format,
-                    calendar: calendar
-                )
-            }
-        )
-    }
-
-    private func syncPickerDate() {
-        let seed = CadenceCalendarDateTitleSupport.pickerDate(for: date, format: format, calendar: calendar)
-        pickerDate = seed
-        var components = calendar.dateComponents([.year, .month], from: seed)
-        components.day = 1
-        viewMonth = calendar.date(from: components) ?? Date()
-    }
-}
-
-/// The calendar behind the title, plus the one shortcut that replaced the toolbar's
-/// `location.fill`.
-private struct iOSCalendarDatePopover: View {
-    @Binding var date: Date
-    @Binding var viewMonth: Date
-    @Binding var isOpen: Bool
-    let isAtNow: Bool
-    let onNow: () -> Void
-
-    private let calendar = Calendar.current
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if !isAtNow {
-                Button {
-                    onNow()
-                    isOpen = false
-                } label: {
-                    Text("Today")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.blue)
-                        .frame(maxWidth: .infinity, minHeight: 34)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.cadencePlain)
-                .padding(.horizontal, 10)
-                .padding(.top, 8)
-                .padding(.bottom, 6)
-
-                Divider().background(Theme.borderSubtle)
-            }
-
-            // `inlineStyle` because this popover owns its own width and background; see the same
-            // call in `iOSNotesDatePopover`.
-            MonthCalendarPanel(selection: $date, viewMonth: $viewMonth, isOpen: $isOpen, inlineStyle: true)
-                .padding(.top, 10)
-        }
-        .frame(width: 280)
-        .background(Theme.surfaceElevated)
-    }
-}
 #endif

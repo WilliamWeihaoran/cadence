@@ -77,6 +77,10 @@ struct iOSCalendarTimelineGrid: View {
     @State private var horizontalScrollPosition = ScrollPosition(edge: .leading)
     @State private var didPlaceInitialScroll = false
     @State private var didPlaceInitialColumn = false
+    /// Set by the first report that agrees with the placement — see `adoptLeadingColumn`. Separate
+    /// from `didPlaceInitialColumn`, which says the scroll was *requested*: that one gates the
+    /// programmatic jumps, this one gates believing what comes back.
+    @State private var didConfirmInitialColumn = false
     @State private var scrollState = iOSCalendarTimelineScrollState()
     /// The rendered run of day columns. Rebuilt only when a scroll approaches an end of it.
     @State private var windowStart: Date?
@@ -354,9 +358,30 @@ struct iOSCalendarTimelineGrid: View {
 
     private func adoptLeadingColumn(_ index: Int) {
         // Nothing the scroll view says about its position is trustworthy until this view has
-        // asserted one. Before that the offset is whatever the layout happened to start at, and
-        // adopting it writes a day the user never chose into persisted state.
-        guard didPlaceInitialColumn, index != leadingIndex else { return }
+        // asserted one *and seen that assertion come back*. Before the assertion the offset is
+        // whatever the layout happened to start at; between the assertion and its arrival the
+        // reports still in flight say the same thing, and `didPlaceInitialColumn` alone let those
+        // through. That is T-70: the stale reading is column 0 — the window's first day,
+        // `plannerLeadingDayCount` behind the anchor — so Week opened on Jan 18 against a real date
+        // of Aug 17. Worse than a wrong frame, because `recenterWindowIfNeeded` then rebuilt the
+        // window around the bogus day and scrolled to it, which is how a race became a resting
+        // place. See `CadenceLazyScrollAnchor.report`; Month's grid carries the same gate.
+        guard didPlaceInitialColumn else { return }
+        switch CadenceLazyScrollAnchor.report(
+            index,
+            target: leadingIndex,
+            hasConfirmedPlacement: didConfirmInitialColumn
+        ) {
+        case .ignore:
+            return
+        case .confirmsPlacement:
+            didConfirmInitialColumn = true
+            return
+        case .adopt:
+            break
+        }
+
+        guard index != leadingIndex else { return }
         leadingIndex = index
         let date = date(at: index)
         if !calendar.isDate(date, inSameDayAs: leadingDate) {

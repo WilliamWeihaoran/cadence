@@ -170,17 +170,26 @@ struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
         .cadenceLazyScrollAnchor($scrolledRowIndex, target: targetIndex, axis: .vertical)
         .onChange(of: scrolledRowIndex) { _, index in
             guard let index else { return }
-            guard didPlaceInitialRow else {
-                // The first reading this view believes is the one that **confirms its own
-                // assertion**. Everything before it is the position the layout happened to start at,
-                // and adopting that writes a month the user never chose into persisted state — which
-                // is `ecaf80f`, and is what this surface did twice while being built.
-                // `cadenceLazyScrollAnchor` guarantees the confirmation arrives: it re-drives the
-                // binding once the stack reports it has laid out.
-                if index == targetIndex { didPlaceInitialRow = true }
+            // The first reading this view believes is the one that **confirms its own assertion**;
+            // everything before it is the position the layout happened to start at, and adopting
+            // that writes a month the user never chose into persisted state. This surface did it
+            // twice while being built. `cadenceLazyScrollAnchor` guarantees the confirmation
+            // arrives: it re-drives the binding once the stack reports it has laid out.
+            //
+            // The rule now lives in `CadenceLazyScrollAnchor.report` because the timed grid needed
+            // it too — see T-70.
+            switch CadenceLazyScrollAnchor.report(
+                index,
+                target: targetIndex,
+                hasConfirmedPlacement: didPlaceInitialRow
+            ) {
+            case .ignore:
                 return
+            case .confirmsPlacement:
+                didPlaceInitialRow = true
+            case .adopt:
+                adoptTopRow(index)
             }
-            adoptTopRow(index)
         }
     }
 
