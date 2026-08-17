@@ -41,6 +41,10 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   chevron and jump-to-date of `iOSCalendarDateTitle`.
 - [T-64] **Month's `Day` reading loses the same second-line chip.**
 - [T-69] **Week loses the same second-line day chip**, now the header names the leftmost column.
+- [T-71] **Week: remove the day selection highlight.** Check what still consumes `selectedDate`
+  there first — if nothing does, the tap handler goes too rather than silently mutating unused state.
+- [T-72] **Month: render today's date specially**, matching `MonthCalendarPanel`'s existing house
+  style (blue at 0.15 fill, blue text) rather than inventing a fourth spelling of "today".
 - [T-65] **Month: swap the Week/Month/Board picker with the Agenda/Day toggle.**
 
 ## Open — decided, not started
