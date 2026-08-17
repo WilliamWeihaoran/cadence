@@ -33,6 +33,20 @@ _Nothing._
 
 ## Open — decided, not started
 
+- [T-46] **The drag-to-create drop preview highlights an existing task, which is a lie.** `47328af`
+  lights up the row you are hovering, but nothing is going to happen *to* that task — it is only
+  being read for its placement. The affordance should say "a new task lands here": a ghost/shadow
+  block opening **between** rows, with the neighbouring rows parting to make room, rather than a
+  selection-style highlight on a row that is not the subject. Note the row is currently both the
+  drop target and the thing highlighted; separating "what I am reading placement from" and "where
+  the new task will sit" is the actual change. Related: [T-39].
+- [T-47] **Remove the "Done" bar under the iOS note editor.** A full-width bar pinned below the tab
+  bar whose only control is `Done`, which drops focus and takes the caret away. Not wanted — the
+  caret staying in the note is fine. It is the text view's input accessory (`onDone` / `barHeight`
+  in `Cadence/iOS/iOSMarkdownTextView.swift`). Check what else, if anything, presents it before
+  deleting, and confirm dismissing the keyboard is still possible some other way on a phone where
+  the note fills the screen.
+
 - [T-08] **Device-targeting cleanup** — remove handling that exists only for hardware outside the
   three targets above.
 
