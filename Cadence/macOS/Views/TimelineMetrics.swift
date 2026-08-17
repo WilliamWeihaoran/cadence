@@ -109,8 +109,52 @@ enum TimelineResizeEdge {
 /// block's resize *reconstruction* read its private copy, so enlarging the shared handle would
 /// have left event resizing off by the difference with nothing to catch it.
 enum TimelineBlockGeometry {
-    /// Height of the drag-to-resize strip pinned to each end of a block.
-    static let resizeHandleHeight: CGFloat = 8
+    /// Tallest a resize strip is ever drawn. Every block with room for it gets exactly this.
+    static let maximumResizeHandleHeight: CGFloat = 8
+
+    /// Thinnest strip still worth drawing. A strip below this is not a reliable pointer target —
+    /// it cannot be grabbed on purpose, it can only be hit by accident — so the handles are
+    /// dropped entirely rather than shrunk past it.
+    static let minimumResizeHandleHeight: CGFloat = 5
+
+    /// Interior height the block keeps for its own tap target, never surrendered to the handles.
+    ///
+    /// The handles used to be a flat 8 pt each regardless of how tall the block was drawn, and
+    /// `height(for:minHeight:)` floors a block at 22 pt (`.calendar`) or 24 pt (`.schedule`) — so
+    /// 16 of those points were resize strip and a 6–8 pt sliver was left to open the task. Because
+    /// the strips carry a `minimumDistance: 0` drag that outranks the tap underneath, a click that
+    /// missed the sliver did not merely fail to open the inspector, it dismissed it.
+    static let minimumTapCoreHeight: CGFloat = 16
+
+    /// Height of each of the two resize strips on a block drawn `blockHeight` points tall.
+    ///
+    /// `0` means the block is too short to carry them and draws none: the whole block is then tap
+    /// target, and its length is edited from the inspector the tap now reliably opens. Because
+    /// this reads the *drawn* height, zooming in on a short block brings the handles back.
+    static func resizeHandleHeight(blockHeight: CGFloat) -> CGFloat {
+        let available = (blockHeight - minimumTapCoreHeight) / 2
+        guard available >= minimumResizeHandleHeight else { return 0 }
+        return min(maximumResizeHandleHeight, available)
+    }
+
+    /// Interior of a block that no resize strip covers. Never below `minimumTapCoreHeight` for a
+    /// block that draws handles, and the block's whole height for one that does not.
+    static func tapCoreHeight(blockHeight: CGFloat) -> CGFloat {
+        max(0, blockHeight - 2 * resizeHandleHeight(blockHeight: blockHeight))
+    }
+
+    /// Vertical slop before a press on a resize strip counts as a resize rather than a click.
+    static let resizeActivationDistance: CGFloat = 3
+
+    /// Whether a press on a resize strip has moved far enough to be a resize.
+    ///
+    /// The strips carry `DragGesture(minimumDistance: 0)`, which fires on mouse-**down**. Starting
+    /// the resize there meant a press that never moved had already cleared the selection and, on
+    /// an event, already queued an EventKit write. Resize is a vertical operation, so only
+    /// vertical travel arms it.
+    static func isResizeDrag(translation: CGSize) -> Bool {
+        abs(translation.height) >= resizeActivationDistance
+    }
 
     /// Width of the grab capsule drawn inside a resize strip on a block of the given width.
     static func handleCapsuleWidth(blockWidth: CGFloat) -> CGFloat {
@@ -178,7 +222,12 @@ extension TimelineMetrics {
         case .start:
             handleTopOffset = 0
         case .end:
-            handleTopOffset = max(0, blockDrawnHeight - TimelineBlockGeometry.resizeHandleHeight)
+            // Reads the *same* height function the strip is drawn with. This was the shared
+            // constant, which was correct only while the strip's height was constant.
+            handleTopOffset = max(
+                0,
+                blockDrawnHeight - TimelineBlockGeometry.resizeHandleHeight(blockHeight: blockDrawnHeight)
+            )
         }
         return snappedMinute(fromY: blockTopY + handleTopOffset + localY)
     }

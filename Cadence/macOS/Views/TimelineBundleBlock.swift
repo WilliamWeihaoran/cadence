@@ -72,9 +72,7 @@ struct TimelineBundleBlock: View {
                 }
             }
             .onTapGesture {
-                onSelect()
-                activeDragBundleID = nil
-                selectedBundleID = bundle.id
+                handleBlockTap()
             }
             .onDrag {
                 selectedBundleID = nil
@@ -301,28 +299,43 @@ struct TimelineBundleBlock: View {
         .opacity(isBundleComplete ? 0.7 : 1.0)
     }
 
+    @ViewBuilder
     private func resizeHandle(edge: TimelineResizeEdge) -> some View {
-        Rectangle()
-            .fill(Color.clear)
-            .frame(height: TimelineBlockGeometry.resizeHandleHeight)
-            .contentShape(Rectangle())
-            .overlay {
-                let emphasized = resizeSession?.edge == edge || isHovered || selectedBundleID == bundle.id
-                Capsule()
-                    .fill(emphasized ? Theme.onColorHandleActive : Theme.onColorHandle)
-                    .frame(width: TimelineBlockGeometry.handleCapsuleWidth(blockWidth: frame.width), height: 2)
-            }
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                    .onChanged { value in
-                        beginResizeIfNeeded(edge: edge, localY: value.location.y)
-                        updateResize(localY: value.location.y)
-                    }
-                    .onEnded { value in
-                        updateResize(localY: value.location.y)
-                        resizeSession = nil
-                    }
-            )
+        let handleHeight = TimelineBlockGeometry.resizeHandleHeight(blockHeight: frame.height)
+        if handleHeight > 0 {
+            Rectangle()
+                .fill(Color.clear)
+                .frame(height: handleHeight)
+                .contentShape(Rectangle())
+                .overlay {
+                    let emphasized = resizeSession?.edge == edge || isHovered || selectedBundleID == bundle.id
+                    Capsule()
+                        .fill(emphasized ? Theme.onColorHandleActive : Theme.onColorHandle)
+                        .frame(width: TimelineBlockGeometry.handleCapsuleWidth(blockWidth: frame.width), height: 2)
+                }
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        .onChanged { value in
+                            guard TimelineBlockGeometry.isResizeDrag(translation: value.translation) else { return }
+                            beginResizeIfNeeded(edge: edge, localY: value.startLocation.y)
+                            updateResize(localY: value.location.y)
+                        }
+                        .onEnded { value in
+                            guard resizeSession != nil else {
+                                handleBlockTap()
+                                return
+                            }
+                            updateResize(localY: value.location.y)
+                            resizeSession = nil
+                        }
+                )
+        }
+    }
+
+    private func handleBlockTap() {
+        onSelect()
+        activeDragBundleID = nil
+        selectedBundleID = bundle.id
     }
 
     private func beginResizeIfNeeded(edge: TimelineResizeEdge, localY: CGFloat) {

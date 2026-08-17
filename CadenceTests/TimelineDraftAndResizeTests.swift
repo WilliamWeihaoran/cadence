@@ -265,6 +265,98 @@ struct TimelineDraftAndResizeTests {
         #expect(TimelineZoom.hourHeight(viewportHeight: 600, level: 1) == 50)
     }
 
+    // MARK: - Resize handle height vs. the block's own tap target
+
+    @Test func aBlockDrawnAtItsMinimumHeightIsTapTargetEndToEndAndCarriesNoHandles() {
+        // The bug this exists for: the handles were a flat 8 pt each, and `height(for:minHeight:)`
+        // floors a block at 22 pt (`.calendar`) / 24 pt (`.schedule`). 16 of those points were
+        // resize strip, leaving a 6–8 pt sliver that could open the inspector — and because the
+        // strips outrank the tap gesture under them, a click that missed the sliver *dismissed*
+        // the inspector rather than merely failing to open it.
+        for minHeight in [TimelineBlockStyle.calendar.minHeight, TimelineBlockStyle.schedule.minHeight] {
+            #expect(TimelineBlockGeometry.resizeHandleHeight(blockHeight: minHeight) == 0)
+            #expect(TimelineBlockGeometry.tapCoreHeight(blockHeight: minHeight) == minHeight)
+        }
+    }
+
+    @Test func aBlockNeverGivesTheHandlesTheTapCoreItIsPromised() {
+        // The invariant, swept rather than sampled: whatever height a block is drawn at, what is
+        // left uncovered is either the guaranteed core or the whole block.
+        for step in 0...600 {
+            let height = CGFloat(step) / 2
+            let core = TimelineBlockGeometry.tapCoreHeight(blockHeight: height)
+            #expect(core >= min(height, TimelineBlockGeometry.minimumTapCoreHeight))
+            let handle = TimelineBlockGeometry.resizeHandleHeight(blockHeight: height)
+            // A strip is either absent or thick enough to aim at — never a 1 pt click trap.
+            #expect(handle == 0 || handle >= TimelineBlockGeometry.minimumResizeHandleHeight)
+            #expect(handle <= TimelineBlockGeometry.maximumResizeHandleHeight)
+        }
+    }
+
+    @Test func anOrdinarySizedBlockStillGetsTheFullHandlesItAlwaysHad() {
+        // Resize must not regress at the sizes it actually gets used at. An hour at hourHeight 60
+        // is 60 pt; the handles there are the same 8 pt they were before this fix.
+        let hourTall = metrics.height(for: 60, minHeight: TimelineBlockStyle.schedule.minHeight)
+        #expect(hourTall == 60)
+        #expect(TimelineBlockGeometry.resizeHandleHeight(blockHeight: hourTall)
+                == TimelineBlockGeometry.maximumResizeHandleHeight)
+        #expect(TimelineBlockGeometry.tapCoreHeight(blockHeight: hourTall) == 44)
+
+        // Full-height handles begin as soon as core + two maximum strips fit, and the ramp below
+        // that is continuous rather than a cliff.
+        let fullAt = TimelineBlockGeometry.minimumTapCoreHeight + 2 * TimelineBlockGeometry.maximumResizeHandleHeight
+        #expect(TimelineBlockGeometry.resizeHandleHeight(blockHeight: fullAt)
+                == TimelineBlockGeometry.maximumResizeHandleHeight)
+        let firstWithHandles = TimelineBlockGeometry.minimumTapCoreHeight + 2 * TimelineBlockGeometry.minimumResizeHandleHeight
+        #expect(TimelineBlockGeometry.resizeHandleHeight(blockHeight: firstWithHandles)
+                == TimelineBlockGeometry.minimumResizeHandleHeight)
+        #expect(TimelineBlockGeometry.resizeHandleHeight(blockHeight: firstWithHandles - 0.5) == 0)
+    }
+
+    @Test func aVeryTallBlockCapsItsHandlesAndSpendsEverythingElseOnTheTapCore() {
+        // The other extreme. Handles are a fixed grab strip, not a fraction, so a 4-hour block
+        // does not get a 60 pt resize zone at each end.
+        let tall = metrics.height(for: 240, minHeight: TimelineBlockStyle.schedule.minHeight)
+        #expect(tall == 240)
+        #expect(TimelineBlockGeometry.resizeHandleHeight(blockHeight: tall)
+                == TimelineBlockGeometry.maximumResizeHandleHeight)
+        #expect(TimelineBlockGeometry.tapCoreHeight(blockHeight: tall) == 224)
+    }
+
+    @Test func theEndHandlesPointerMathReadsTheSameHeightTheStripIsDrawnWith() {
+        // `resizePointerMinute` locates the end strip by subtracting its height from the drawn
+        // block height. That was the old shared constant, which was only correct while the height
+        // was constant; a block short enough to drop its handles would have had its pointer read
+        // 8 pt above where the strip actually is.
+        let short = TimelineBlockStyle.schedule.minHeight            // draws no handles
+        let tall = metrics.height(for: 120, minHeight: TimelineBlockStyle.schedule.minHeight)
+        for drawnHeight in [short, tall] {
+            let expectedTop = drawnHeight - TimelineBlockGeometry.resizeHandleHeight(blockHeight: drawnHeight)
+            #expect(metrics.resizePointerMinute(
+                edge: .end,
+                localY: 0,
+                blockTopY: 0,
+                blockDrawnHeight: drawnHeight
+            ) == metrics.snappedMinute(fromY: expectedTop))
+        }
+    }
+
+    // MARK: - A press on a handle is not yet a resize
+
+    @Test func aPressOnAResizeStripIsNotAResizeUntilItTravelsVertically() {
+        // The strips carry `DragGesture(minimumDistance: 0)`, which fires on mouse-*down*. Arming
+        // the resize there is what made a click on a strip clear `selectedTaskID` — the binding
+        // the inspector popover is presented from — and, on a calendar event, queue an EventKit
+        // write before the pointer had moved at all.
+        #expect(!TimelineBlockGeometry.isResizeDrag(translation: .zero))
+        #expect(!TimelineBlockGeometry.isResizeDrag(translation: CGSize(width: 0, height: 2)))
+        #expect(!TimelineBlockGeometry.isResizeDrag(translation: CGSize(width: 40, height: 1)))
+        #expect(TimelineBlockGeometry.isResizeDrag(
+            translation: CGSize(width: 0, height: TimelineBlockGeometry.resizeActivationDistance)
+        ))
+        #expect(TimelineBlockGeometry.isResizeDrag(translation: CGSize(width: 0, height: -12)))
+    }
+
     // MARK: - Edge resize
 
     @Test func grabbingTheEndHandleWithoutMovingLeavesTheBlockLengthAlone() {

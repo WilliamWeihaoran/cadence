@@ -96,12 +96,7 @@ struct TimelineTaskBlock: View {
             }
         }
         .onTapGesture {
-            TimelineTaskBlockStateSupport.handleTap(
-                taskID: task.id,
-                selectedTaskID: $selectedTaskID,
-                activeDragTaskID: $activeDragTaskID,
-                onSelect: onSelect
-            )
+            handleBlockTap()
         }
         .overlay {
             RightClickActionTrigger {
@@ -157,27 +152,51 @@ struct TimelineTaskBlock: View {
 
     @ViewBuilder
     private func resizeHandle(edge: TimelineResizeEdge) -> some View {
-        Rectangle()
-            .fill(Color.clear)
-            .frame(height: TimelineBlockGeometry.resizeHandleHeight)
-            .contentShape(Rectangle())
-            .overlay {
-                let isEmphasized = resizeSession?.edge == edge || isHovered || selectedTaskID == task.id
-                Capsule()
-                    .fill(isEmphasized ? Theme.onColorHandleActive : Theme.onColorHandle)
-                    .frame(width: TimelineBlockGeometry.handleCapsuleWidth(blockWidth: frame.width), height: 2)
-            }
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                    .onChanged { value in
-                        beginResizeIfNeeded(edge: edge, localY: value.location.y)
-                        updateResize(localY: value.location.y)
-                    }
-                    .onEnded { value in
-                        updateResize(localY: value.location.y)
-                        endResize()
-                    }
-            )
+        let handleHeight = TimelineBlockGeometry.resizeHandleHeight(blockHeight: frame.height)
+        if handleHeight > 0 {
+            Rectangle()
+                .fill(Color.clear)
+                .frame(height: handleHeight)
+                .contentShape(Rectangle())
+                .overlay {
+                    let isEmphasized = resizeSession?.edge == edge || isHovered || selectedTaskID == task.id
+                    Capsule()
+                        .fill(isEmphasized ? Theme.onColorHandleActive : Theme.onColorHandle)
+                        .frame(width: TimelineBlockGeometry.handleCapsuleWidth(blockWidth: frame.width), height: 2)
+                }
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        .onChanged { value in
+                            // Mouse-down alone is not a resize. The strip outranks the tap gesture
+                            // under it, so arming on the first `onChanged` meant every press here
+                            // cleared `selectedTaskID` — the very binding the inspector popover is
+                            // presented from — before the pointer had moved at all.
+                            guard TimelineBlockGeometry.isResizeDrag(translation: value.translation) else { return }
+                            beginResizeIfNeeded(edge: edge, localY: value.startLocation.y)
+                            updateResize(localY: value.location.y)
+                        }
+                        .onEnded { value in
+                            guard resizeSession != nil else {
+                                // Never became a drag: hand the press back to the block as the
+                                // click it was, so the strips are transparent to clicks instead of
+                                // swallowing them.
+                                handleBlockTap()
+                                return
+                            }
+                            updateResize(localY: value.location.y)
+                            endResize()
+                        }
+                )
+        }
+    }
+
+    private func handleBlockTap() {
+        TimelineTaskBlockStateSupport.handleTap(
+            taskID: task.id,
+            selectedTaskID: $selectedTaskID,
+            activeDragTaskID: $activeDragTaskID,
+            onSelect: onSelect
+        )
     }
 
     private func beginResizeIfNeeded(edge: TimelineResizeEdge, localY: CGFloat) {

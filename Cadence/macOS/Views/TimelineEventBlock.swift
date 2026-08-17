@@ -74,9 +74,7 @@ struct TimelineEventBlock: View {
                 }
             }
             .onTapGesture {
-                guard liveStartMin == nil else { return }   // ignore tap during drag
-                selectedTaskID = nil
-                selectedEventID = isSelected ? nil : item.id
+                handleBlockTap()
             }
             // MARK: Move gesture — uses named canvas coordinate space so drag speed
             // is 1:1 with cursor even as the block repositions during the gesture.
@@ -185,27 +183,46 @@ struct TimelineEventBlock: View {
 
     @ViewBuilder
     private func resizeHandle(edge: TimelineResizeEdge) -> some View {
-        Rectangle()
-            .fill(Color.clear)
-            .frame(height: TimelineBlockGeometry.resizeHandleHeight)
-            .contentShape(Rectangle())
-            .overlay {
-                let isEmphasized = resizeSession?.edge == edge || isHovered || isSelected
-                Capsule()
-                    .fill(isEmphasized ? Theme.onColorHandleActive : Theme.onColorHandle)
-                    .frame(width: TimelineBlockGeometry.handleCapsuleWidth(blockWidth: frame.width), height: 2)
-            }
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                    .onChanged { value in
-                        beginResizeIfNeeded(edge: edge, localY: value.location.y)
-                        updateResize(localY: value.location.y)
-                    }
-                    .onEnded { value in
-                        updateResize(localY: value.location.y)
-                        endResize()
-                    }
-            )
+        let handleHeight = TimelineBlockGeometry.resizeHandleHeight(blockHeight: frame.height)
+        if handleHeight > 0 {
+            Rectangle()
+                .fill(Color.clear)
+                .frame(height: handleHeight)
+                .contentShape(Rectangle())
+                .overlay {
+                    let isEmphasized = resizeSession?.edge == edge || isHovered || isSelected
+                    Capsule()
+                        .fill(isEmphasized ? Theme.onColorHandleActive : Theme.onColorHandle)
+                        .frame(width: TimelineBlockGeometry.handleCapsuleWidth(blockWidth: frame.width), height: 2)
+                }
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        .onChanged { value in
+                            guard TimelineBlockGeometry.isResizeDrag(translation: value.translation) else { return }
+                            beginResizeIfNeeded(edge: edge, localY: value.startLocation.y)
+                            updateResize(localY: value.location.y)
+                        }
+                        .onEnded { value in
+                            // `endResize` writes back to EventKit unconditionally, and on a
+                            // recurring event that raises the "Change recurring event?" dialog. It
+                            // used to run for a press that never moved, because `minimumDistance: 0`
+                            // guarantees an `onChanged` on mouse-down and that always opened a
+                            // session. A click is now a click.
+                            guard resizeSession != nil else {
+                                handleBlockTap()
+                                return
+                            }
+                            updateResize(localY: value.location.y)
+                            endResize()
+                        }
+                )
+        }
+    }
+
+    private func handleBlockTap() {
+        guard liveStartMin == nil else { return }   // ignore tap during drag
+        selectedTaskID = nil
+        selectedEventID = isSelected ? nil : item.id
     }
 
     private func beginResizeIfNeeded(edge: TimelineResizeEdge, localY: CGFloat) {

@@ -82,6 +82,11 @@ enum TimelineTaskBlockInteractionSupport {
     ) {
         guard resizeSession == nil else { return }
         onSelect()
+        // Dismissing the inspector is right for a resize — the popover is anchored to a block that
+        // is about to change length underneath it — and wrong for a press that never moved. The
+        // caller is what decides which this is: the strip's drag gesture has `minimumDistance: 0`
+        // and so fires on mouse-down, and it now waits for `isResizeDrag` before calling in here.
+        // While it did not, clicking a strip closed the inspector instead of opening it.
         selectedTaskID.wrappedValue = nil
         activeDragTaskID.wrappedValue = nil
         resizeSession = TimelineResizeSession.begin(
