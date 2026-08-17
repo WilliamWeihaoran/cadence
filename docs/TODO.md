@@ -29,70 +29,7 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**J — iOS calendar rework**
-
-- [T-50] **iOS calendar: sticky headers, infinite horizontal scroll, pinch zoom, and a date button
-  that names the day you are looking at.** Requested with three screenshots. Five interlocking
-  changes to the timed grids (`iOSCalendarTimelineViews`, `iOSCalendarChromeViews`,
-  `iOSCalendarView`):
-
-  1. **The day headers must stick.** `SUN 9 / MON 10 / TUE 11` scrolls away vertically today; it
-     should pin while the hour grid scrolls under it.
-  2. **Infinite horizontal scrolling — no clamping to a range.** Whatever window the grid builds
-     has to extend as you scroll rather than stopping. Read `CadenceLazyScrollAnchor` (`68d78ec`)
-     first: it is the rule for asserting a position in a lazy stack, and it exists because this
-     repo has now had *four* scroll-position bugs of the same shape.
-  3. **Delete the `‹ ➤ ›` cluster.** Scrolling replaces left/right. **But the middle control is
-     "jump to today", not a direction** — deleting the cluster removes the only way back to today
-     unless the new date button provides it. The Notes date picker solves exactly this: its popover
-     grows a `Today` button when you are away from now (`2929867`). Do the same here, and do not
-     ship the deletion before the replacement works.
-  4. **Delete the `− 1x +` control; pinch with two fingers instead**, continuous between 1× and 3×.
-     What it scales is `hourHeight` — the time axis — via
-     `iOSCalendarTimelineViews.swift:29`. Two things to settle:
-     - `zoomLevel` is an `Int` in `@AppStorage("ios.calendar.zoomLevel")` and must become
-       continuous. Reading an Int-backed key as a Double returns the number, so an upgrading user
-       lands on 1.0/2.0/3.0 rather than a default — check that, do not assume it.
-     - **The current "3x" is not 3×.** The formula is `base + (zoom−1)·16` against a base of 58
-       (compact) or 64 (regular), so "3x" is 90/96pt — about 1.5×. Continuous pinch will make the
-       discrepancy obvious. Decide whether 1–3 means a real multiplier of the base or the existing
-       range relabelled, and make the code and the number agree.
-     - Pinch must not fight the horizontal scroller, the vertical scroller, or the drag-to-create
-       gesture already on this canvas. That is four recognisers on one surface, and gesture
-       conflicts are a repeat offender here (`.draggable` delaying taps app-wide; `renderedBlockTap`
-       swallowing double taps — [T-42]).
-  5. **The date button shows the leftmost visible column's date, not a range.** `Aug 19-25` becomes
-     `Aug 19 ⌄`, with the chevron and jump-to-date behaviour of the Notes header title. It has to
-     update live as you scroll, which means the horizontal scroll position has to be readable —
-     the same plumbing item 2 needs.
-
-  Sequencing note: 3 and 5 both depend on 2, and 5 is what makes 3 safe to do. Do not start until
-  the device-targeting agent has released `Cadence/Shared/CadenceRegularPaneLayout.swift`.
-
-  **Decisions made 2026-08-17 before starting, so the agent is not guessing:**
-  - *Zoom range is a real multiplier.* The user wrote "zoom between 1 and 3 times zoom", which is a
-    multiplier statement, so `hourHeight` runs from `base` to `3 × base` (58→174 compact,
-    64→192 regular). That is a wider range than the old `− 1x +` control actually delivered — its
-    "3x" was `base + 32`, about 1.55×.
-  - *View mode sets how many columns are **visible**, not how many days exist.* With infinite
-    scrolling, Week means seven columns on screen and scroll for more. This preserves the
-    seven-column guarantee from `545f429` — which was a real bug, Week showing four and a half days
-    — restated as "seven visible" rather than "seven in existence".
-  - *The date dropdown ships before the nav cluster is deleted.* The middle control is jump-to-today
-    (`location.fill`, `iOSCalendarChromeViews.swift:438`), not a direction.
-
-  **Structural findings from reading the code, which are what make this more than a chrome change:**
-  - The day header row sits **inside both scroll views** (`iOSCalendarTimelineViews.swift:57-73`) —
-    inside the horizontal one, which is right, and inside the vertical one, which is why it scrolls
-    away. Pinning it means restructuring the two scrollers and keeping the time rail vertically in
-    sync with the grid while staying put horizontally.
-  - Columns are **fitted to the pane**, not fixed:
-    `CadenceCalendarWeekGridLayout.dayColumnWidth(availableWidth:dayCount:)` divides the width by
-    the day count, so a week never scrolls horizontally today. Infinite scroll requires a fixed
-    column width and an extensible date range — the fitted width becomes the *visible column count*
-    input instead.
-  - `visibleDates` is `CadenceScheduleSupport.dates(containing: anchorDate, mode:)` — a bounded
-    window. That is the clamp to remove.
+_Nothing._
 
 ## Open — decided, not started
 
@@ -126,6 +63,16 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 
 ## Open — known, unscheduled
+
+- [T-59] **`iOSCalendarDateTitle` is a near-copy of `iOSNotesDateTitle`.** Two date-jump titles with
+  the same chevron, the same away-from-now blue and the same Today shortcut. The Notes one is
+  written against `CadenceMobileNotesTab` and a `"yyyy-MM-dd"` binding; generalising it means
+  editing `iOSNotesPanel.swift`, which was outside the calendar agent's file set. Standing rule in
+  `CLAUDE.md`: one shared component over near-copies.
+- [T-60] **Does the nav cluster belong on Month and Board?** `D-40` deleted it from the timed grids
+  only, on the reasoning the user gave — "we can just scroll left and right" — which does not hold
+  for a fixed month grid or a weekly-stepped board. Worth confirming that is what the user wants,
+  since the request named the control rather than the surface.
 
 - [T-58] **The read-only markdown preview still ignores table alignment.**
   `MarkdownPreviewTable.alignments` is populated by `4f00e55` and honoured by the iOS editor canvas,
@@ -236,6 +183,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-40] `cf785a8` The calendar scrolls instead of stepping, and its headers stay put (T-50).
 
 - [D-39] `7d93f7f` Drop visionOS from the build settings (T-53).
 
