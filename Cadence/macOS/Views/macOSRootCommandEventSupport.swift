@@ -3,35 +3,87 @@ import SwiftUI
 import SwiftData
 import AppKit
 
+/// What a modal overlay wants done with a key, when one is up.
+///
+/// This exists because the answer has three cases and the code had two. `handleModalConfirmations`
+/// used to return `NSEvent?`, where `nil` meant *both* "the modal consumed this" and "no modal is
+/// open" — and the caller's `if let` could only read `nil` as "not handled, keep going". So every
+/// consume-path fell through into the app's global shortcut table. Concretely: with the delete
+/// confirmation up, **Cmd+Return confirmed the delete and then toggled completion on the hovered
+/// task** — two irreversible actions, on two different tasks, from one keystroke.
+enum RootModalKeyAction: Equatable {
+    case confirmDelete
+    case cancelDelete
+    case confirmDatePicker
+    case cancelDatePicker
+}
+
+enum RootModalKeyDisposition: Equatable {
+    /// A modal handled this key. Swallow the event; nothing else may see it.
+    case act(RootModalKeyAction)
+    /// A modal is up but does not handle this key. Hand it to the responder chain so the overlay's
+    /// own `.defaultAction` / `.cancelAction` buttons can take it — but keep it away from the app's
+    /// global shortcuts, which must not fire behind an open modal.
+    case passToOverlay
+    /// Nothing is up. Carry on with normal shortcut handling.
+    case noModal
+}
+
 enum RootCommandEventSupport {
-    static func handleModalConfirmations(_ event: NSEvent, context: RootCommandContext) -> NSEvent? {
-        if context.deleteConfirmationManager.request != nil {
-            switch event.keyCode {
-            case 36, 76:
-                context.deleteConfirmationManager.confirm()
-                return nil
-            case 53:
-                context.deleteConfirmationManager.cancel()
-                return nil
-            default:
-                return event
+    /// Return (36), keypad Enter (76) and Escape (53) are the only keys a confirmation overlay
+    /// claims.
+    ///
+    /// Pure and `NSEvent`-free so `CadenceTests` can enumerate it — the previous shape could only
+    /// have been caught by pressing Cmd+Return over a task with the delete dialog open, which is
+    /// exactly the kind of thing nobody does on purpose.
+    static func modalKeyDisposition(
+        keyCode: UInt16,
+        hasDeleteRequest: Bool,
+        hasDatePickerRequest: Bool
+    ) -> RootModalKeyDisposition {
+        if hasDeleteRequest {
+            switch keyCode {
+            case 36, 76: return .act(.confirmDelete)
+            case 53: return .act(.cancelDelete)
+            default: return .passToOverlay
             }
         }
 
-        if context.hoveredTaskDatePickerManager.request != nil {
-            switch event.keyCode {
-            case 36, 76:
-                context.hoveredTaskDatePickerManager.confirm()
-                return nil
-            case 53:
-                context.hoveredTaskDatePickerManager.cancel()
-                return nil
-            default:
-                return event
+        if hasDatePickerRequest {
+            switch keyCode {
+            case 36, 76: return .act(.confirmDatePicker)
+            case 53: return .act(.cancelDatePicker)
+            default: return .passToOverlay
             }
         }
 
-        return nil
+        return .noModal
+    }
+
+    static func handleModalConfirmations(
+        _ event: NSEvent,
+        context: RootCommandContext
+    ) -> RootModalKeyDisposition {
+        let disposition = modalKeyDisposition(
+            keyCode: event.keyCode,
+            hasDeleteRequest: context.deleteConfirmationManager.request != nil,
+            hasDatePickerRequest: context.hoveredTaskDatePickerManager.request != nil
+        )
+
+        switch disposition {
+        case .act(.confirmDelete):
+            context.deleteConfirmationManager.confirm()
+        case .act(.cancelDelete):
+            context.deleteConfirmationManager.cancel()
+        case .act(.confirmDatePicker):
+            context.hoveredTaskDatePickerManager.confirm()
+        case .act(.cancelDatePicker):
+            context.hoveredTaskDatePickerManager.cancel()
+        case .passToOverlay, .noModal:
+            break
+        }
+
+        return disposition
     }
 
     static func handlePresentedGlobalSearch(_ event: NSEvent, context: RootCommandContext) -> NSEvent? {

@@ -38,8 +38,13 @@ struct RootSearchSelectionContext {
 
 enum RootCommandHandler {
     static func handle(_ event: NSEvent, context: RootCommandContext) -> NSEvent? {
-        if let modalResult = RootCommandEventSupport.handleModalConfirmations(event, context: context) {
-            return modalResult
+        switch RootCommandEventSupport.handleModalConfirmations(event, context: context) {
+        case .act:
+            return nil
+        case .passToOverlay:
+            return event
+        case .noModal:
+            break
         }
 
         if context.globalSearchManager.isPresented {
