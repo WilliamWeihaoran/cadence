@@ -703,6 +703,46 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         didChangeText()
     }
 
+    /// Brings every `[[task:UUID|Title]]` in this note back in line with the task it points at.
+    ///
+    /// The many-tasks spelling of `replaceEmbeddedTaskReferenceTitle`, and the one the app needs.
+    /// A task embed's title is stored twice — on the task, which is what the card is drawn from,
+    /// and inside the note's own reference text. Only the inline rename over the card wrote both;
+    /// renaming the same task from the inspector wrote the task and left the note behind, and the
+    /// card kept looking right because it is drawn from the live task. The drift only surfaces
+    /// where the reference text is the only title left: an exported note, a content search, or a
+    /// deleted task, whose card is rendered by `MarkdownTaskEmbedRenderInfo.missing(reference:)`.
+    ///
+    /// `titles` is the whole embed table, which on this surface is every task the editor was handed
+    /// — so which references to rewrite is decided by `MarkdownTaskEmbedParser`, from the
+    /// references actually present in the text, and costs one regex per *embedded* task rather than
+    /// one per candidate. Same call iOS makes when its task sheet dismisses.
+    ///
+    /// Applied as the one minimal edit that turns the current text into the reconciled text, so a
+    /// note the user is sitting in keeps its caret, its scroll position and one undo step, instead
+    /// of being replaced wholesale.
+    func reconcileEmbeddedTaskReferenceTitles(titles: [UUID: String]) {
+        guard let textStorage,
+              let reconciled = MarkdownTaskEmbedParser.reconcilingReferenceTitles(
+                in: string,
+                titles: titles,
+                fallback: MarkdownTaskEmbedRenderInfo.untitledTaskTitle
+              ) else { return }
+
+        let current = string as NSString
+        let updated = reconciled as NSString
+        let edit = MarkdownTextEditDiff.minimalEdit(from: current, to: updated)
+        let replacement = updated.substring(with: edit.replacementRange)
+        guard shouldChangeText(in: edit.range, replacementString: replacement) else { return }
+
+        let selection = selectedRange()
+        textStorage.replaceCharacters(in: edit.range, with: replacement)
+        didChangeText()
+        setSelectedRange(
+            MarkdownTextEditDiff.selection(selection, after: edit, in: textStorage.length)
+        )
+    }
+
     func deleteMarkdownImageForCommand(backward: Bool) -> Bool {
         if let selectedMarkdownImageID,
            let range = markdownImageRange(for: selectedMarkdownImageID) {
@@ -1211,6 +1251,69 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         }
 
         return (needsLeadingSpace ? " " : "") + markdown + (needsTrailingSpace ? " " : "")
+    }
+}
+
+/// Turning a rewritten *document* back into a single `NSTextStorage` edit.
+///
+/// `MarkdownTaskEmbedParser.reconcilingReferenceTitles` answers in whole strings, because that is
+/// the only spelling both platforms share — iOS pushes the result straight through its SwiftUI
+/// draft binding. A `CadenceTextView` cannot: assigning `string` wholesale drops the caret to the
+/// top, throws away the scroll position and registers no undo, and a note being edited is exactly
+/// where a reference can go stale. So the reconciled text is applied as the one run of characters
+/// that actually differs, which for a title rewrite is the title itself.
+enum MarkdownTextEditDiff {
+    struct Edit {
+        /// The run to replace, in the current text.
+        let range: NSRange
+        /// The run to replace it with, in the reconciled text.
+        let replacementRange: NSRange
+    }
+
+    /// The shortest single replacement that turns `current` into `updated`.
+    ///
+    /// Common prefix and suffix are peeled off by UTF-16 unit. A boundary can in principle land
+    /// inside a surrogate pair; the composed result is still exactly `updated`, because prefix +
+    /// replacement + suffix is `updated` by construction.
+    static func minimalEdit(from current: NSString, to updated: NSString) -> Edit {
+        var prefix = 0
+        while prefix < current.length,
+              prefix < updated.length,
+              current.character(at: prefix) == updated.character(at: prefix) {
+            prefix += 1
+        }
+
+        var suffix = 0
+        while suffix < current.length - prefix,
+              suffix < updated.length - prefix,
+              current.character(at: current.length - 1 - suffix) == updated.character(at: updated.length - 1 - suffix) {
+            suffix += 1
+        }
+
+        return Edit(
+            range: NSRange(location: prefix, length: current.length - prefix - suffix),
+            replacementRange: NSRange(location: prefix, length: updated.length - prefix - suffix)
+        )
+    }
+
+    /// Where a selection sits once `edit` has been applied.
+    ///
+    /// Ahead of the edit it does not move; behind it, it shifts by the length the edit added or
+    /// removed. A selection *inside* the edited run has had the ground taken out from under it, so
+    /// it collapses to the run's start — a reference title is hidden text under a drawn card, so in
+    /// practice nothing ever selects one.
+    static func selection(_ selection: NSRange, after edit: Edit, in length: Int) -> NSRange {
+        let delta = edit.replacementRange.length - edit.range.length
+        let location: Int
+        if selection.location >= NSMaxRange(edit.range) {
+            location = selection.location + delta
+        } else if selection.location > edit.range.location {
+            location = edit.range.location
+        } else {
+            location = selection.location
+        }
+        let clamped = min(max(location, 0), length)
+        return NSRange(location: clamped, length: min(selection.length, length - clamped))
     }
 }
 

@@ -132,6 +132,10 @@ struct NotePanel: View {
             TaskDetailPopover(task: task)
                 .frame(width: 380)
         }
+        .onChange(of: linkedTaskForPopover?.id) { previous, current in
+            guard previous != nil, current == nil else { return }
+            reconcileEmbeddedTaskReferenceTitles()
+        }
         .popover(item: $embeddedTaskEditRequest) { request in
             if let task = embeddedTask(id: request.taskID) {
                 TaskEmbedFieldEditorPopover(task: task, initialField: request.field) {
@@ -315,6 +319,26 @@ struct NotePanel: View {
 
     private func embeddedTaskHoverID(_ id: UUID) -> String {
         "note-embed-task-\(id.uuidString)"
+    }
+
+    /// Bring the open note's `[[task:UUID|Title]]` source back in line with the tasks it embeds.
+    ///
+    /// Run when the inspector this pane opens on a card closes, which is the one moment where a
+    /// rename has demonstrably just happened and this note is the note on screen. The inline rename
+    /// over the card already writes both halves; the inspector writes `task.title` alone, and the
+    /// card goes on looking right because it is drawn from the live task rather than from the text
+    /// under it. `MarkdownTaskEmbedParser` decides which references move — the same call iOS makes
+    /// when its task sheet dismisses.
+    ///
+    /// This closes the renames made *through this note*. A rename made anywhere else while the note
+    /// is open — Today's task column beside this very pane, a list, the timeline — still leaves the
+    /// reference stale until the pointer next crosses the card (`hoverEmbeddedTask`) or the note is
+    /// reopened after a rename here.
+    private func reconcileEmbeddedTaskReferenceTitles() {
+        guard let activeTextView else { return }
+        activeTextView.reconcileEmbeddedTaskReferenceTitles(
+            titles: activeTextView.markdownTaskEmbeds.mapValues(\.title)
+        )
     }
 
     private func refreshEmbeddedTask(_ task: AppTask) {

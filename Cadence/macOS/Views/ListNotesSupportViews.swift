@@ -139,6 +139,10 @@ struct TaskNoteEditorPane: View {
                 TaskDetailPopover(task: linkedTask)
                     .frame(width: 380)
             }
+            .onChange(of: linkedTaskForPopover?.id) { previous, current in
+                guard previous != nil, current == nil else { return }
+                reconcileEmbeddedTaskReferenceTitles()
+            }
             .popover(item: $embeddedTaskEditRequest) { request in
                 if let embeddedTask = embeddedTask(id: request.taskID) {
                     TaskEmbedFieldEditorPopover(task: embeddedTask, initialField: request.field) {
@@ -388,6 +392,17 @@ struct TaskNoteEditorPane: View {
 
     private func embeddedTaskHoverID(_ id: UUID) -> String {
         "task-note-embed-task-\(id.uuidString)"
+    }
+
+    /// Bring this task's note text back in line with the tasks it embeds.
+    ///
+    /// See `NotePanel.reconcileEmbeddedTaskReferenceTitles` for why this hangs off the inspector
+    /// closing rather than off the rename itself, and for what it deliberately does not reach.
+    private func reconcileEmbeddedTaskReferenceTitles() {
+        guard let editorTextView else { return }
+        editorTextView.reconcileEmbeddedTaskReferenceTitles(
+            titles: editorTextView.markdownTaskEmbeds.mapValues(\.title)
+        )
     }
 
     private func refreshEmbeddedTask(_ embeddedTask: AppTask) {
