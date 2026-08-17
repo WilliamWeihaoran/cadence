@@ -49,6 +49,15 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
+  `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
+  header or picker looks or behaves. This item is the sweep to make the code match that — find the
+  places where a phone view and an iPad view are near-copies and collapse them into one view
+  parameterised by size class. Distinct from [T-32], which is macOS↔iOS *feature* parity; this is
+  iPhone↔iPad *implementation* sharing. Known starting points: `iOSNotesPanel` vs
+  `iOSCompactNotesView` (two hosts of the same header, already partly shared),
+  `iPadTodayView` vs `iOSCompactTodayView`, and the compact/regular branches inside `iOSTaskRow`.
+
 - [T-68] **iOS task row rework.** Requested with a screenshot of Today.
   1. **Drop the trailing chevron** — it says nothing a row's tappability does not.
   2. **Tapping a chip opens that chip's own picker** (list chip → list picker, date chip → date

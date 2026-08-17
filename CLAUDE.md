@@ -312,6 +312,10 @@ Color(hex: "#4a9eff")  // initializer exists for USER colorHex values — not fo
   add a second `.background()` on another layer at a different corner radius.
 - **Prefer one shared component over near-copies.** The three kanban boards and the two estimate
   pickers each drifted apart before being unified.
+- **iPhone and iPad share one style.** They differ in *layout* — tab bar vs sidebar, one pane vs
+  two — and must not differ in how a row, chip, header or picker looks or behaves. A change
+  requested on one platform applies to both unless it is genuinely shape-specific, and the default
+  implementation is a single view parameterised by size class rather than a per-platform copy.
 
 ## Shared Utilities (Shared/DateFormatters.swift)
 ```swift

@@ -87,6 +87,12 @@ code, and every one of them has been violated by a shipped change at least once.
   estimate pickers each drifted apart before being unified. `KanbanCard`, `BoardColumnHeader`
   and `KanbanColumnScroll` are now shared by the list board, the All Tasks board, and the
   Calendar Board — parameterize them, never fork them.
+- **iPhone and iPad are one style, not two.** They differ in *layout* — a tab bar against a
+  sidebar, one pane against two — and should not differ in how a row, a chip, a header or a
+  picker looks or behaves. So: a change asked for on one is a change to both unless it is
+  genuinely shape-specific, and the default implementation is one view parameterised by size
+  class rather than an `iPhoneFoo` beside an `iPadFoo`. When a request names only one of them,
+  say which of the two it is and act accordingly rather than silently doing half.
 
 - All persisted dates are `yyyy-MM-dd` strings unless an existing model says otherwise.
 - Use `DateFormatters` and `TimeFormatters`; do not create ad hoc `DateFormatter()` instances in views.
