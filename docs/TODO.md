@@ -33,14 +33,6 @@ _Nothing._
 
 ## Open — decided, not started
 
-- [T-53] **Decide what the visionOS build settings should say.** Confirmed in `project.pbxproj`,
-  Debug and Release: the app target declares `TARGETED_DEVICE_FAMILY = "1,2,7"` (7 = visionOS),
-  `SUPPORTED_PLATFORMS` including `xros xrsimulator`, and `XROS_DEPLOYMENT_TARGET = 26.2` — while
-  the embedded `CadenceWidgets` extension declares none of them. **So the app claims a device
-  family its own widget extension cannot ship into.** `CadenceTests`/`CadenceUITests` inherit the
-  same `"1,2,7"`. Either drop visionOS to match the three targeted devices, or add it to the widget
-  extension and actually support it. Not a drive-by edit: it changes what the app can be submitted
-  as, so it wants a deliberate decision. `project.pbxproj` deliberately untouched so far.
 - [T-54] **`CadenceTodayLayoutSupportTests.swift` still names a 13" iPad** at `:31` and `:47`, left
   behind by the fixture cleanup in `88c05d1` because it was outside that agent's file set. Same
   treatment: pin the behaviour at widths the three target devices actually produce.
@@ -219,6 +211,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-39] `7d93f7f` Drop visionOS from the build settings (T-53).
 
 - [D-38] `4f00e55` Three line-numbering conventions were feeding each other's indexes (T-48, T-41).
 
