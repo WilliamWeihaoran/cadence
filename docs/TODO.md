@@ -29,15 +29,7 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**AL — dead wiring, macOS half** ([T-104])
-
-**AM — dead wiring, iOS half** ([T-104])
-
-**AN — `CadenceEmptyStateCopy` isolation, and the cleanup it unblocks** ([T-106])
-
-**AO — the last Swift 6 blocker in the editor** ([T-105]). Briefed to land a *plan* rather than an
-unverifiable refactor: the editor's correctness is largely visual and macOS UI cannot be
-screenshot-verified from the agent shell ([T-14]).
+_Nothing in flight._
 
 ## Open — decided, not started
 
@@ -58,40 +50,44 @@ screenshot-verified from the agent shell ([T-14]).
   instantly re-expanding it — so this is a real trade, not a bug: responsiveness on every click
   against correctness on the rare one. Worth deciding deliberately rather than inheriting.
 
-- [T-105] **`drawBackground` still blocks Swift 6, and the block is structural.** `D-73` resolved
-  three of the editor's four errors; the fourth cannot be annotated away. Swift 6 region isolation
-  rejects capturing task-isolated, non-`Sendable` `self` in a main-actor closure, and the decoration
-  pass reads *and writes* `CadenceTextView`'s hit-rect and hover caches — `CadenceTextView` being
-  main-actor isolated by AppKit, since `NSTextView` is. The real fix is moving the decoration pass
-  onto `CadenceTextView`, a refactor of a documented risk hotspot that needs visual verification.
-  Note also that "four errors" was an undercount: xcodebuild aborts after the first failing batch,
-  so a whole-module probe is the only honest count, and it shows blockers outside that file too.
+- [T-105] **The macOS Swift 6 migration has exactly two blockers left**, and both are decisions
+  rather than annotations. `D-77` established the honest count with a whole-module probe (a batched
+  build stops at the first failing batch; a type error stops the compiler before SIL diagnostics
+  run, so both undercount):
 
-- [T-106] **`CadenceEmptyStateCopy` is main-actor isolated**, missed by `f94361a`'s `nonisolated`
-  pass. Reading it from a deliberately-`nonisolated` metrics file emits isolation warnings, which is
-  why `D-72` had to keep `emptyTitle`/`emptySubtitle` in a private extension rather than on the enum
-  where they belong. One-word fix plus the cleanup it unblocks.
+  1. **`MarkdownEditorInteractionSupport.swift` — `CadenceLayoutManager.drawBackground`.** The
+     refactor exists and compiles: six of the eight decoration passes go `nonisolated` untouched
+     **once `Theme` is `nonisolated`** (every `MarkdownStylist` colour is `= Theme.ns*`, and a
+     nonisolated constant cannot initialise from a main-actor one — note `Theme.swift` also compiles
+     into `CadenceWidgets`, so that wants its own pass); the other two genuinely touch
+     `CadenceTextView` state and must move onto the view. It is unlanded because AppKit offers no
+     main-actor hook between the background and glyph passes, so moving them changes z-order, and
+     the three residual questions are visual only — a multi-line selection would no longer tint an
+     embed card, the insertion point would fall under it, and the glyph range must be derived from
+     `dirtyRect` rather than received. **Blocked on [T-14]**, not on effort.
+     *Rejected on purpose, because it will tempt the next person:* moving the hit-rect and hover
+     caches into a nonisolated holder compiles, changes no z-order, and is not spelled
+     `nonisolated(unsafe)` — but it removes the diagnostic without removing the hazard.
+  2. **`HabitNotificationReconcileSupport.swift:10` — "sending 'context' risks causing data races."**
+     `scheduleReconcile(in:)` is nonisolated and captures a non-`Sendable` `ModelContext` into a
+     `Task { @MainActor in … }`. The enum is already `nonisolated`; the fix is deciding which actor
+     owns the context.
 
-- [T-104] **The dead wiring the T-97 audit turned up.** None of these misbehaves; each is a control
-  or parameter that reads as live and is not, i.e. the raw material for the next real bug. Grouped
-  because they are one afternoon, not one task:
-  - The iOS markdown editor's command-injection path (`iOSMarkdownEditor`) — its only construction
-    site omits `pendingCommand`, so it is permanently `.constant(nil)`; formatting runs through
-    `applyCommandToDraft` instead.
-  - `iOSIconButton` has three parameters no call site passes (`foreground`, `isEnabled`,
-    `showsPlate`). `foreground`'s own doc comment claims it fixed a calendar tint bug — there is no
-    calendar caller at all, so it fixed nothing.
-  - `iOSSegmentedPill.isEnabled` is never passed `false`; the three-pane "Mac" layout it was written
-    for is deleted.
-  - `CadenceTextView.onCreateMarkdownTag` is assigned and never invoked — the only one of that
-    type's fourteen closure properties in that state.
-  - Three identical write-only `@State var isEditorFocused` (`NoteEditorPane`, `NotePanel`,
-    `ListNotesSupportViews`): written on every focus change, read nowhere, so each focus gain and
-    loss invalidates the pane for nothing.
-  - Four `set { }` blocks nothing can call, and a list of never-called helpers and three
-    never-instantiated `View` structs. Full inventory in the audit.
+  With both stubbed, the whole-module Swift 6 build is clean. **iOS has 3 more errors**, all in
+  `Cadence/iOS/iOSMarkdownBlockCanvasRendering.swift` — the same `NSLayoutManager` shape, and the
+  *easy* half: plain `nonisolated` annotations of the kind `D-73` already applied on macOS. That is
+  the cheapest remaining step and is [T-109].
 
-## Open — known, unscheduled
+- [T-109] **Annotate the iOS layout-manager overrides `nonisolated`.** Three Swift 6 errors in
+  `iOSMarkdownBlockCanvasRendering.swift` (`init()`, `init(coder:)`, `drawGlyphs` on
+  `iOSMarkdownBlockCanvasLayoutManager`), identical to what `D-73` fixed on macOS. Unlike [T-105]
+  these need no refactor and no visual check.
+
+- [T-110] **The MCP scheme was never part of the warning baseline.** `AGENTS.md` says 0 macOS / 0
+  iOS, and that is measured on the `Cadence` scheme. `CadenceMCPServer` reportedly emits a
+  pre-existing `no calls to throwing functions occur within 'try'` at `main.swift:17` — **unverified**:
+  the confirming build timed out under repo contention and was not re-run. Either fix it and fold
+  the scheme into the baseline, or state in `AGENTS.md` which scheme the baseline covers.
 
 - [T-95] **Part 3 only: `ListNotesView` shows out-of-list embeds as missing.** Parts 1 and 2 shipped in `D-67`.
   `ListNotesView` passes list-scoped `relatedTasks` to its editor, so an embed of a task from
@@ -211,6 +207,16 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-79] `b346fe3` Two more types the nonisolated pass missed, and the workaround one forced (T-106).
+
+- [D-78] `fd669d8` Wiring that read as live and was not — iOS (T-104).
+
+- [D-77] `a679f94` The editor's Swift 6 blocker is one error, and the fix is not landable yet
+  (T-105). The refactor was **built and proven to compile**; it is not landed because three residual
+  questions are visual only and macOS UI cannot be checked from the agent shell. See [T-108].
+
+- [D-76] `fcf0a6e` 173 lines that read as wiring and were not — macOS (T-104).
 
 - [D-75] `1dc7d33` Cmd+N did nothing over a Calendar Board column, and a double-click mystery
   (T-102). The third item was suspected dead and turned out to be neither hypothesis — measured, not
