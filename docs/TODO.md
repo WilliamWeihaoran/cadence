@@ -29,7 +29,18 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-_Nothing._
+**K — calendar chrome, round two** (requested 2026-08-17 with a screenshot)
+
+- [T-61] **Month scrolls vertically**, continuously, and loses its `‹ ➤ ›` cluster — the same trade
+  Week made in `40259b0`. Deleting the cluster is only safe once scrolling replaces it, and the date
+  title must carry jump-to-today.
+- [T-62] **Board loses its `‹ ➤ ›` cluster too**, now its day columns scroll infinitely.
+- [T-63] **Board shows one chip, not two.** It currently has a span chip (`Aug 7-13`) *and* a day
+  chip (`FRI 7 / Friday, August 7`) — the second restates the first column and costs a whole row.
+  Delete the day chip; make the top chip a single date, the leftmost visible column, with the
+  chevron and jump-to-date of `iOSCalendarDateTitle`.
+- [T-64] **Month's `Day` reading loses the same second-line chip.**
+- [T-65] **Month: swap the Week/Month/Board picker with the Agenda/Day toggle.**
 
 ## Open — decided, not started
 
