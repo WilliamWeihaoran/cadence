@@ -29,13 +29,7 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**R — task row density and the Inbox chip** ([T-78], [T-77])
-
-**S — duplicated controls** (T-73 group B: feature panes, segmented controls, capture buttons)
-
-**T — duplicated cards and timeline blocks** (T-73 group B: kanban cards, timeline task/event blocks)
-
-**V — verifier** (read-only, confirming `0e8db6c` / `3ecfeaf` / `11883bb` against the code)
+_Nothing._
 
 ## Open — decided, not started
 
@@ -51,15 +45,17 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — known, unscheduled
 
-- [T-77] **Inbox rows show a redundant "Inbox" chip.** `0f7b756` made the list chip render for
-  tasks with no container — otherwise the tasks most in need of filing were the only ones that could
-  not be filed from the row — so on the Inbox *page* every row now names Inbox. The fix is
-  `showsContainer: false` from the Inbox surfaces, which needs a knob on `iOSTaskGroupSection`
-  (new in `b8b329e`).
-- [T-78] **iPhone Today rows are `.compact` while iPhone Inbox and All Tasks are `.regular`.** An
-  intra-phone difference, so not what the iPhone/iPad rule covers, but the only visible effect of
-  the density axis on a phone is title truncation — one line on Today, two elsewhere. Either pick
-  one or reduce the axis to an explicit `titleLineLimit`.
+- [T-81] **The iPad simulator renders rotated inside a portrait buffer**, so taps do not map and its
+  regular-width screens cannot be driven. Two agents hit this independently; both fell back to unit
+  tests plus a single static screenshot. Until it is reset, treat "verified on iPad" claims as
+  weaker than the iPhone equivalents. One side effect already: that simulator's calendar view mode
+  was changed to Month by a stray calibration tap.
+- [T-82] **~1195 macro-generated `#expect` warnings in the test target** surface on a full recompile,
+  from pre-existing files (`iPadTodayPaneWidthTests`, `MarkdownChecklistSupportTests`,
+  `NotificationSchedulingTests`, and others). Not app-source, so the baseline of 3 is unaffected,
+  but it is enough noise to hide a real new warning. The fix that worked for `CadenceTaskRowMetrics`
+  was `nonisolated struct`, the same reason `TaskOrdering` is nonisolated.
+
 - [T-79] **Moving a task embed needs a product decision, not a fix.** `29735a6` established that
   macOS cannot reorder an embed inside a note either — its drag is a source that carries the *task*
   out to a board, and no iOS shell puts a note editor and a board on screen together. Delivering
@@ -161,6 +157,13 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-54] `7f21fab` One board card, one timeline block, and two more ungated scroll reports (T-73
+  group B, T-80).
+- [D-53] `661a602` A task row is one row, and the Inbox stops naming itself (T-78, T-77).
+- [D-52] `2a30319` Three near-copies collapse into the components they were copies of (T-73 group B).
+- [D-51] `457ca47` The estimate picker was still three, and CLAUDE.md still said two — two false
+  claims in `3ecfeaf` caught by a read-only verifier.
 
 - [D-50] `0e8db6c` The creation sheet puts its fields in the page, not on the floor (T-49). Height
   risk only partly closed — the Tags row sits ~53pt below the fold with a keyboard up; awaiting the
