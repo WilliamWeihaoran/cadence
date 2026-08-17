@@ -183,6 +183,15 @@ struct iOSTaskAttributeChip: View {
     var isSet: Bool = false
     /// Glyph colour once the field is set. `nil` keeps the neutral treatment.
     var tint: Color? = nil
+    /// Type ramp and plate height. `.row` exists because a task row's chips sit under a 13pt title
+    /// and there may be five of them, so the sheet's 13pt-semibold plate would compete with the
+    /// title for the row's loudest text. Only the ramp changes — every size keeps the same 44pt
+    /// touch target, because a finger is the same size on both surfaces.
+    var size: iOSTaskAttributeChipSize = .standard
+    /// Foreground for a *set* chip's text. Defaults to `Theme.text`; the task row passes `Theme.dim`
+    /// because there a chip is metadata that happens to be tappable rather than a field being
+    /// filled in, and its text at full contrast read louder than the title above it.
+    var textColor: Color? = nil
     let action: () -> Void
 
     private var glyphColor: Color {
@@ -190,29 +199,90 @@ struct iOSTaskAttributeChip: View {
         return tint
     }
 
+    private var titleColor: Color {
+        guard isSet else { return Theme.dim }
+        return textColor ?? Theme.text
+    }
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: size.iconSpacing) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: size.iconSize, weight: .semibold))
                         .foregroundStyle(glyphColor)
                 }
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isSet ? Theme.text : Theme.dim)
+                    .font(.system(size: size.fontSize, weight: .semibold))
+                    .foregroundStyle(titleColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .padding(.horizontal, 9)
-            .frame(height: 30)
+            .padding(.horizontal, size.horizontalPadding)
+            .frame(height: size.height)
             .background(Theme.surfaceElevated.opacity(0.62))
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             .contentShape(Rectangle())
-            .iOSExpandedHitArea(7)
+            // Same 44pt target at every size — see `iOSTaskAttributeChipSize.hitInset`. Callers
+            // that stack these in a wrapping strip must keep the strip's `lineSpacing` at or above
+            // twice this inset, or the expanded regions of two lines overlap and the lower chip,
+            // being drawn last, silently answers taps meant for the upper one.
+            .iOSExpandedHitArea(size.hitInset)
         }
         .buttonStyle(.iosPressable)
         .accessibilityHint("Opens a picker")
+    }
+}
+
+/// The two scales `iOSTaskAttributeChip` is drawn at, and the geometry each implies.
+///
+/// `hitInset` is derived rather than chosen: it is whatever brings the plate up to the 44pt touch
+/// minimum, so a smaller plate expands further and the target never shrinks with the type.
+enum iOSTaskAttributeChipSize {
+    /// The create sheet's strip and the inspector's placement breadcrumb.
+    case standard
+    /// A task row's metadata strip, under a 13pt title.
+    case row
+
+    /// Both plates are 30pt, so the two sizes differ **only** in type ramp.
+    ///
+    /// `.row` was 26pt first, which cost more height than it saved: the strip's line gap has to be
+    /// twice the hit inset (see `hitInset`), so a shorter plate bought 4pt of plate and spent 4pt of
+    /// gap — and a 26pt pill with an 18pt gap under it read as two disconnected strips rather than
+    /// one wrapped one.
+    var height: CGFloat { 30 }
+
+    var fontSize: CGFloat {
+        switch self {
+        case .standard: return 13
+        case .row: return 11
+        }
+    }
+
+    var iconSize: CGFloat {
+        switch self {
+        case .standard: return 10
+        case .row: return 9.5
+        }
+    }
+
+    var iconSpacing: CGFloat {
+        switch self {
+        case .standard: return 5
+        case .row: return 4
+        }
+    }
+
+    var horizontalPadding: CGFloat {
+        switch self {
+        case .standard: return 9
+        case .row: return 7
+        }
+    }
+
+    /// Whatever it takes to reach 44pt.
+    var hitInset: CGFloat {
+        max(0, (44 - height) / 2)
     }
 }
 

@@ -1,5 +1,95 @@
+import Foundation
 import Testing
 @testable import Cadence
+
+/// What the iOS task row reads out of a task, now that the row shows a day instead of a timeline
+/// slot and lists its unfinished subtasks instead of counting all of them.
+///
+/// Both live in `Shared/` rather than beside the row: everything under `Cadence/iOS/` is inside
+/// `#if os(iOS)` and invisible to this macOS-built target.
+@MainActor
+struct CadenceTaskRowPresentationTests {
+    private func task(scheduled: String, startMin: Int) -> AppTask {
+        let task = AppTask(title: "T")
+        task.scheduledDate = scheduled
+        task.scheduledStartMin = startMin
+        return task
+    }
+
+    private func subtask(_ title: String, order: Int, isDone: Bool = false) -> Subtask {
+        let subtask = Subtask(title: title)
+        subtask.order = order
+        subtask.isDone = isDone
+        return subtask
+    }
+
+    /// The row's do-date chip says the **day** and never the slot. `scheduledDateLabel` — which the
+    /// list-detail summary and the markdown accessory still read — folds the slot in, and the two
+    /// must not converge: a chip reading "3 days ago at 9:30 AM – 10 AM" was three times the width
+    /// of its neighbours and pushed the row's metadata onto a second line.
+    @Test func theRowsDoDateLabelIsADayEvenWhenTheTaskHasATimelineSlot() {
+        let todayKey = DateFormatters.todayKey()
+        let scheduled = task(scheduled: todayKey, startMin: 570)
+
+        #expect(CadenceTaskPresentationSupport.scheduledDayLabel(for: scheduled) == "Today")
+
+        // The slot is still readable — just not from the row.
+        let withSlot = CadenceTaskPresentationSupport.scheduledDateLabel(for: scheduled)
+        #expect(withSlot != CadenceTaskPresentationSupport.scheduledDayLabel(for: scheduled))
+        #expect(withSlot.contains("9:30"))
+    }
+
+    @Test func theRowsDoDateLabelIsTheSameDayWithOrWithoutASlot() {
+        let todayKey = DateFormatters.todayKey()
+
+        #expect(
+            CadenceTaskPresentationSupport.scheduledDayLabel(for: task(scheduled: todayKey, startMin: 570))
+                == CadenceTaskPresentationSupport.scheduledDayLabel(for: task(scheduled: todayKey, startMin: -1))
+        )
+    }
+
+    /// Unfinished only, in `order`. A finished subtask says nothing a row needs to carry, and the
+    /// tally that used to report one ("1/3") is gone.
+    @Test func rowSubtasksAreUnfinishedOnlyAndInOrder() {
+        let task = AppTask(title: "T")
+        task.subtasks = [
+            subtask("Third", order: 2),
+            subtask("Done", order: 1, isDone: true),
+            subtask("First", order: 0)
+        ]
+
+        #expect(CadenceTaskPresentationSupport.unfinishedSubtasks(for: task).map(\.title) == ["First", "Third"])
+    }
+
+    @Test func rowSubtasksAreEmptyWhenThereAreNoneAndWhenTheyAreAllDone() {
+        let none = AppTask(title: "T")
+        #expect(CadenceTaskPresentationSupport.unfinishedSubtasks(for: none).isEmpty)
+
+        let allDone = AppTask(title: "T")
+        allDone.subtasks = [subtask("A", order: 0, isDone: true), subtask("B", order: 1, isDone: true)]
+        #expect(CadenceTaskPresentationSupport.unfinishedSubtasks(for: allDone).isEmpty)
+
+        // The tally the rows replaced still reports the finished ones, because the inspector's
+        // "Subtasks" heading reads it.
+        #expect(CadenceTaskPresentationSupport.subtaskProgress(for: allDone)?.compactLabel == "2/2")
+    }
+
+    /// **Capped, and this test used to assert the opposite.** Uncapped was the first decision and it
+    /// was reversed after being seen on a phone: one row with four unfinished subtasks stood ~290pt
+    /// and iPhone Today fell from about five visible tasks to two and a half, so a checklist on one
+    /// task hid the rest of the day. The row still *names* what is left rather than counting it —
+    /// which is what the old `0/3` chip got wrong — it just stops naming at the limit and says how
+    /// many remain. See `CadenceRowSubtaskCapTests` for the boundary cases.
+    @Test func rowSubtasksStopAtTheLimitAndCountTheRest() {
+        let task = AppTask(title: "T")
+        task.subtasks = (0..<12).map { subtask("S\($0)", order: $0) }
+
+        let rows = CadenceTaskPresentationSupport.unfinishedSubtasks(for: task)
+        #expect(rows.count == CadenceTaskPresentationSupport.rowSubtaskLimit)
+        #expect(rows.first?.title == "S0")
+        #expect(CadenceTaskPresentationSupport.hiddenSubtaskCount(for: task) == 12 - CadenceTaskPresentationSupport.rowSubtaskLimit)
+    }
+}
 
 struct CadenceTaskPresentationSupportTests {
     @Test func plainPreviewUsesDisplayTextForCadenceReferences() {
@@ -99,5 +189,68 @@ struct CadenceTaskPresentationSupportTests {
         let preview = CadenceMarkdownPresentationSupport.plainPreviewText(from: markdown)
 
         #expect(preview == #"Before let cadence = "iOS" After"#)
+    }
+}
+
+/// The row's subtask cap.
+///
+/// Uncapped shipped first and was measured on a phone: one row with four unfinished subtasks stood
+/// ~290pt and iPhone Today fell from about five visible tasks to two and a half. These pin the
+/// number as a decision rather than a literal, and pin that the list and the overflow count are
+/// derived from the same source so they cannot disagree about what "more" means.
+@MainActor
+struct CadenceRowSubtaskCapTests {
+    private func task(unfinished: Int, finished: Int = 0) -> AppTask {
+        let task = AppTask(title: "Parent")
+        var subtasks: [Subtask] = []
+        for index in 0..<unfinished {
+            let subtask = Subtask(title: "open \(index)")
+            subtask.order = index
+            subtask.isDone = false
+            subtasks.append(subtask)
+        }
+        for index in 0..<finished {
+            let subtask = Subtask(title: "done \(index)")
+            subtask.order = unfinished + index
+            subtask.isDone = true
+            subtasks.append(subtask)
+        }
+        task.subtasks = subtasks
+        return task
+    }
+
+    @Test func aShortChecklistIsShownWholeAndClaimsNoOverflow() {
+        let short = task(unfinished: 2)
+        #expect(CadenceTaskPresentationSupport.unfinishedSubtasks(for: short).count == 2)
+        #expect(CadenceTaskPresentationSupport.hiddenSubtaskCount(for: short) == nil)
+    }
+
+    /// Exactly at the limit must not claim "+0 more" — the row draws nothing rather than a line
+    /// announcing that nothing is hidden.
+    @Test func exactlyTheLimitHidesNothing() {
+        let atLimit = task(unfinished: CadenceTaskPresentationSupport.rowSubtaskLimit)
+        #expect(CadenceTaskPresentationSupport.unfinishedSubtasks(for: atLimit).count == CadenceTaskPresentationSupport.rowSubtaskLimit)
+        #expect(CadenceTaskPresentationSupport.hiddenSubtaskCount(for: atLimit) == nil)
+    }
+
+    @Test func aLongChecklistIsCappedAndCountsTheRest() {
+        let long = task(unfinished: 7)
+        #expect(CadenceTaskPresentationSupport.unfinishedSubtasks(for: long).count == CadenceTaskPresentationSupport.rowSubtaskLimit)
+        #expect(CadenceTaskPresentationSupport.hiddenSubtaskCount(for: long) == 7 - CadenceTaskPresentationSupport.rowSubtaskLimit)
+    }
+
+    /// The shown rows and the overflow count come from one filtered, sorted source, so finished
+    /// subtasks cannot inflate the "+N more" beyond what opening the task would reveal.
+    @Test func finishedSubtasksCountTowardsNeitherTheListNorTheOverflow() {
+        let mixed = task(unfinished: 5, finished: 4)
+        #expect(CadenceTaskPresentationSupport.allUnfinishedSubtasks(for: mixed).count == 5)
+        #expect(CadenceTaskPresentationSupport.unfinishedSubtasks(for: mixed).allSatisfy { !$0.isDone })
+        #expect(CadenceTaskPresentationSupport.hiddenSubtaskCount(for: mixed) == 5 - CadenceTaskPresentationSupport.rowSubtaskLimit)
+    }
+
+    @Test func theCappedRowsAreTheFirstOnesInOrder() {
+        let long = task(unfinished: 6)
+        let shown = CadenceTaskPresentationSupport.unfinishedSubtasks(for: long)
+        #expect(shown.map(\.order) == Array(0..<CadenceTaskPresentationSupport.rowSubtaskLimit))
     }
 }

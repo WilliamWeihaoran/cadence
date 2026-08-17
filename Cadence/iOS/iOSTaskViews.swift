@@ -113,19 +113,21 @@ struct iOSTaskRow: View {
             }
     }
 
+    /// Completion circle, the task, and the estimate — in that order, with nothing at the trailing
+    /// edge but the estimate.
+    ///
+    /// There is **no disclosure chevron**. It said nothing the row's own tappability does not, and
+    /// it occupied the one piece of the row a finger reaches for last. The estimate took its place:
+    /// an estimate is a property of the task like its priority, and it has no business in the middle
+    /// of the date chips.
     private var rowContent: some View {
         HStack(alignment: .top, spacing: isCompact ? 9 : (isRegularWidth ? 12 : 9)) {
             completionButton
             taskSummary
 
-            // Neutral, like every other piece of row chrome. It used to be tinted by priority —
-            // or, for an unprioritised task, by the container colour — which made a plain
-            // disclosure arrow the loudest colour in the row and duplicated what the completion
-            // circle already says. macOS removed the same container-colour bleed from its row.
-            Image(systemName: "chevron.right")
-                .font(.system(size: isCompact ? 10 : (isRegularWidth ? 12 : 10), weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .padding(.top, 4)
+            if task.estimatedMinutes > 0 {
+                iOSTaskRowEstimateChip(task: task)
+            }
         }
     }
 
@@ -185,8 +187,49 @@ struct iOSTaskRow: View {
 
             taskBadges
 
-            if !isCompact {
-                tagScroller
+            // Both densities carry the same *elements*; only spacing and type scale change. Tags
+            // used to be dropped at compact density, which meant an iPhone's Today row and an
+            // iPad's Today row disagreed about what a task has on it rather than about how much
+            // room it gets to say it.
+            tagScroller
+
+            subtaskRows
+        }
+    }
+
+    /// The unfinished subtasks, as rows beneath the task, capped with a "+N more" line.
+    ///
+    /// This replaces a `0/3` chip that named a count of things to do without naming one of them, so
+    /// a checklist was only readable by opening the task. The cap exists because uncapped was tried
+    /// and measured: see `CadenceTaskPresentationSupport.rowSubtaskLimit`. The overflow line opens
+    /// the inspector rather than toggling anything — it is "see the rest", not a fourth checkbox.
+    ///
+    /// Nothing is listed under a finished task: a completed row's leftover checklist items are not
+    /// work any more, and the Completed sections these rows appear in would otherwise fill with
+    /// tappable items belonging to tasks that are over.
+    @ViewBuilder
+    private var subtaskRows: some View {
+        let subtasks = task.isDone ? [] : CadenceTaskPresentationSupport.unfinishedSubtasks(for: task)
+        if !subtasks.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(subtasks) { subtask in
+                    iOSTaskRowSubtaskRow(subtask: subtask, compact: isCompact)
+                }
+
+                if !task.isDone, let hidden = CadenceTaskPresentationSupport.hiddenSubtaskCount(for: task) {
+                    Button {
+                        showDetail = true
+                    } label: {
+                        Text("+\(hidden) more")
+                            .font(.system(size: isCompact ? 11 : 12, weight: .medium))
+                            .foregroundStyle(Theme.dim)
+                            .frame(minHeight: 30)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.iosPressable)
+                    .accessibilityLabel("Show \(hidden) more subtasks")
+                }
             }
         }
     }
@@ -202,10 +245,16 @@ struct iOSTaskRow: View {
     /// chip past the right edge was unreachable rather than merely off-screen. Wrapping is
     /// affordable because the colour pass left a typical row carrying two to four chips; a fully
     /// annotated task costs one extra line, which is cheaper than hiding what it says.
+    ///
+    /// `lineSpacing` is **derived, not chosen**. Every chip in here expands its hit area by
+    /// `iOSTaskAttributeChipSize.row.hitInset` on each edge to reach 44pt without taking 44pt of
+    /// layout, and those expanded regions are invisible: with a decorative 3-4pt line gap, a chip on
+    /// the second line overlapped the chip above it and — being drawn later — answered taps aimed at
+    /// it. Twice the inset is the smallest gap at which every chip owns its own target.
     private var taskBadges: some View {
         CadenceWrappingHStack(
             spacing: isCompact ? 4 : (isRegularWidth ? 6 : 5),
-            lineSpacing: isCompact ? 3 : 4
+            lineSpacing: iOSTaskAttributeChipSize.row.hitInset * 2
         ) {
             taskBadgeContent
         }
@@ -223,8 +272,9 @@ struct iOSTaskRow: View {
     /// Row metadata. **Colour is reserved for the exceptional**: every item is `Theme.dim`, icon
     /// and text alike, so a red thing in a row means something is actually wrong. Only three
     /// things earn a hue — an overdue deadline, a do date already in the past, and a task that is
-    /// actively In Progress. Everything else (the list, the goal, the repeat marker, the subtask
-    /// tally, the estimate, a do date that is merely *today*) is ordinary and reads as chrome.
+    /// actively In Progress. Everything else (the list, the goal, the repeat marker, a do date that
+    /// is merely *today*) is ordinary and reads as chrome, and that stays true now the chips are
+    /// controls: a plate says "tappable", not "urgent".
     ///
     /// Before this, a task with four attributes rendered four tinted icons — amber sun, purple
     /// repeat, green checklist, the goal's own colour — and a genuinely late deadline had to
@@ -233,69 +283,85 @@ struct iOSTaskRow: View {
     ///
     /// Priority is deliberately absent: it is the completion circle's job here exactly as it is on
     /// macOS, and a chip repeating it was a second affordance for one field.
+    ///
+    /// **Every chip opens the picker for the field it names** — the list chip the list picker, a date
+    /// chip its month grid, and so on. They used to be read-only labels, so changing the list a task
+    /// was in from a list *of* tasks meant opening the row and coming back. Tapping anywhere that is
+    /// not a chip still opens the task inspector.
+    ///
+    /// Two chips were dropped rather than wired up. The **subtask tally** is now a set of rows under
+    /// the task, and the **notes** chip only ever appeared when the secondary line did not — which no
+    /// density does — so in a strip that is now entirely controls it would have read as one more
+    /// control that did nothing.
     @ViewBuilder
     private var taskBadgeContent: some View {
         if showsListContextChip {
-            iOSTaskContainerChip(
-                icon: task.project?.icon ?? task.area?.icon ?? "tray.fill",
-                name: task.containerName,
+            iOSTaskRowContainerChip(task: task)
+        }
+
+        // **Read-only, and deliberately not a chip.** The four-option status picker this used to
+        // open is deleted (T-74): `todo` and `done` are what the completion circle already does,
+        // `cancelled` has its own control, and a picker offering all four was a third affordance
+        // for a field with two. What remains is a *reader* — rows written by an earlier build (and
+        // the sample data) still hold `.inprogress`, and they must keep saying so.
+        //
+        // So it renders as a bare `iOSTaskMetaLabel` rather than a plated chip: in this strip a
+        // plate now means "tappable", and a plate that opened nothing would be exactly the dead
+        // control the plates exist to rule out. Starting and stopping work stays in the task
+        // inspector, where `iOSTaskStatusActionsSection`'s Start/Stop button owns the value.
+        if task.status == .inProgress {
+            iOSTaskMetaLabel(
+                systemImage: task.status.systemImage,
+                text: task.status.label,
+                tint: Theme.blue,
                 compact: isCompact
             )
         }
 
-        if task.status == .inProgress {
-            taskMeta(systemImage: "play.fill", text: "In Progress", tint: Theme.blue)
-        }
-
+        // The day, never the slot: "9:30 – 10 AM" is gone from this row. See
+        // `CadenceTaskPresentationSupport.scheduledDayLabel(for:)` — and note the cost, which was
+        // accepted deliberately: on a phone there is no timeline beside the list, so the day's plan
+        // now reads only on the Today timeline pane and in the task inspector.
         if !task.scheduledDate.isEmpty {
-            taskMeta(
-                systemImage: task.scheduledStartMin >= 0 ? "clock.fill" : "sun.max.fill",
-                text: scheduledDateLabel,
+            iOSTaskRowDateChip(
+                task: task,
+                field: .doDate,
+                title: CadenceTaskPresentationSupport.scheduledDayLabel(for: task),
                 tint: isOverdo ? Theme.red : Theme.dim
             )
         }
 
         if let dueUrgency {
-            taskMeta(
-                systemImage: "flag.fill",
-                text: CadenceTaskPresentationSupport.dueDateLabel(for: task),
+            iOSTaskRowDateChip(
+                task: task,
+                field: .dueDate,
+                title: CadenceTaskPresentationSupport.dueDateLabel(for: task),
                 tint: dueUrgency == .overdue ? Theme.red : Theme.dim
             )
         }
 
         if task.recurrenceRule != .none {
-            taskMeta(systemImage: task.recurrenceRule.systemImage, text: task.recurrenceRule.shortLabel)
-        }
-
-        if let subtaskProgress = CadenceTaskPresentationSupport.subtaskProgress(for: task) {
-            taskMeta(
-                systemImage: "checklist",
-                text: isCompact ? subtaskProgress.compactLabel : subtaskProgress.label
-            )
-        }
-
-        if task.estimatedMinutes > 0 {
-            taskMeta(systemImage: "clock", text: estimateLabel)
-        }
-
-        // The chip and the secondary line are the same `task.notes` string said twice — the line
-        // already shows the words, so a chip announcing that words exist is pure noise. Every
-        // density renders the secondary line today, so in practice this chip no longer appears;
-        // the guard is what keeps the two in agreement if a denser variant ever drops the line.
-        if secondaryLine == nil, CadenceTaskPresentationSupport.hasNotes(task) {
-            taskMeta(systemImage: "doc.text", text: "Notes")
+            iOSTaskRowRepeatChip(task: task, pendingRecurrenceRule: $pendingRecurrenceRule)
         }
 
         if let goal = task.goal {
-            taskMeta(
-                systemImage: goal.icon,
-                text: goal.title.isEmpty ? "Goal" : goal.title
-            )
+            iOSTaskRowGoalChip(task: task, goal: goal)
         }
     }
 
+    /// Every row that names its list gets the chip — **including an Inbox task**, which reads
+    /// `Inbox`.
+    ///
+    /// It used to be hidden when `containerName` was empty, which was right for a read-only label:
+    /// a chip saying "Inbox" told you nothing the absence of one did not. Now the chip *is* the list
+    /// picker, and hiding it left the tasks most in need of filing — the ones in the Inbox — as the
+    /// only ones that could not be filed from the row. Same reasoning as macOS's
+    /// `ContainerPickerBadge`, which shows the real name `Inbox` rather than reading as unset.
+    ///
+    /// `showsContainer` is still honoured: on a surface already scoped to one list, naming it on
+    /// every row is noise, and there is nothing to choose.
     private var showsListContextChip: Bool {
-        showsContainer && !task.containerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        showsContainer
     }
 
     /// Same semantics as `KanbanCardComputedSupport.isOverdo`, which macOS's row and card both
@@ -345,30 +411,7 @@ struct iOSTaskRow: View {
         CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)
     }
 
-    private var estimateLabel: String {
-        CadenceTaskPresentationSupport.estimateLabel(minutes: task.estimatedMinutes)
-    }
-
-    private var scheduledDateLabel: String {
-        CadenceTaskPresentationSupport.scheduledDateLabel(for: task)
-    }
-
     private var visibleTagLimit: Int { 3 }
-
-    /// `tint` defaults to neutral because a meta item is ordinary until proven otherwise; the two
-    /// call sites that pass anything are the ones that have something to report.
-    private func taskMeta(
-        systemImage: String,
-        text: String,
-        tint: Color = Theme.dim
-    ) -> some View {
-        iOSTaskMetaLabel(
-            systemImage: systemImage,
-            text: text,
-            tint: tint,
-            compact: isCompact
-        )
-    }
 
     private func toggleCompletion() {
         CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
@@ -412,34 +455,10 @@ struct iOSTaskMetaLabel: View {
     }
 }
 
-/// The list chip: a neutral raised surface carrying the list's icon and name.
-///
-/// The icon used to be painted the list's own `colorHex`, which put a saturated glyph on every row
-/// of every task surface — the chip already says which list this is, in words. Colour in a row is
-/// now spent only on things that are wrong (an overdue deadline, a do date gone past) and on tag
-/// chips, where the colour is the user's own label rather than chrome.
-struct iOSTaskContainerChip: View {
-    let icon: String
-    let name: String
-    var compact = false
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: compact ? 8.5 : 9.5, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-            Text(name.isEmpty ? "Inbox" : name)
-                .font(.system(size: compact ? 10 : 11, weight: .medium))
-                .foregroundStyle(Theme.dim)
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-        .padding(.horizontal, compact ? 6 : 7)
-        .padding(.vertical, compact ? 3 : 4)
-        .background(Theme.surfaceElevated.opacity(0.75))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-    }
-}
+// `iOSTaskContainerChip` — the row's read-only list pill — is gone. The row's list chip is
+// `iOSTaskRowContainerChip`, which is the shared `iOSTaskAttributeChip` plus the list picker, so a
+// list can be changed from the row it is named on. The pill it replaced was a near-copy of that
+// component's plate with its own paddings and no action.
 
 struct iOSTaskListRow: View {
     @Bindable var task: AppTask

@@ -61,6 +61,420 @@ enum iOSTaskRowSwipeActions {
     }
 }
 
+// MARK: - Row chips
+
+// A task row's metadata used to be seven read-only labels: to change the list a task was in, or
+// nudge its do date, you opened the row's detail sheet and came back. Each chip now opens the
+// picker for the field it names, which is the whole point of showing the field on the row.
+//
+// Every chip here follows the same three rules:
+//
+// - **One shared plate.** `iOSTaskAttributeChip(size: .row)` — the same component the create sheet's
+//   strip and the inspector's breadcrumb use, at the row's type ramp. The chips are not near-copies
+//   of it with their own paddings.
+// - **44pt, without a taller row.** The plate is 30pt; `iOSTaskAttributeChip` expands the hit area
+//   to 44 without taking 44 of layout. The strip hosting these must therefore keep `lineSpacing` at
+//   or above `iOSTaskAttributeChipSize.row.hitInset * 2`, or two lines' expanded regions overlap.
+// - **Its own state, its own popover.** A chip owns the `@State` for its panel and anchors the
+//   popover to itself, so the panel opens at the chip rather than at the row's origin, and
+//   `iOSTaskRow` does not carry seven booleans. Any `@Query` a picker needs lives in the popover's
+//   *content* view, which SwiftUI only instantiates once the panel is presented — the trick
+//   `iOSTaskRowContextMenu` documents below, and the reason twenty visible rows do not mean twenty
+//   live fetches of every area and project in the store.
+
+/// The list chip. Neutral, because which list a task is in is ordinary information.
+struct iOSTaskRowContainerChip: View {
+    let task: AppTask
+    @State private var showPicker = false
+
+    var body: some View {
+        iOSTaskAttributeChip(
+            title: task.containerName.isEmpty ? CadenceTaskInspectorSupport.inboxSegmentTitle : task.containerName,
+            systemImage: task.project?.icon ?? task.area?.icon ?? "tray.fill",
+            isSet: true,
+            size: .row,
+            textColor: Theme.dim
+        ) {
+            showPicker = true
+        }
+        .popover(isPresented: $showPicker) {
+            iOSTaskRowContainerPickerContent(task: task, isPresented: $showPicker)
+        }
+    }
+}
+
+private struct iOSTaskRowContainerPickerContent: View {
+    let task: AppTask
+    @Binding var isPresented: Bool
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+
+    var body: some View {
+        iOSContainerChoicePopover(
+            activeAreas: areas.filter(\.isActive),
+            activeProjects: projects.filter(\.isActive),
+            selection: Binding(get: { currentToken }, set: apply),
+            isPresented: $isPresented
+        )
+    }
+
+    private var currentToken: String {
+        if let area = task.area {
+            return CadenceTaskComposerSupport.token(for: .area(area.id))
+        }
+        if let project = task.project {
+            return CadenceTaskComposerSupport.token(for: .project(project.id))
+        }
+        return CadenceTaskComposerSupport.token(for: .inbox)
+    }
+
+    /// A token naming a list that is not in the store moves nothing. `selection(fromToken:)` reads
+    /// anything unrecognised as Inbox, which is the right answer for a *seed* and the wrong one
+    /// here: it would silently take a task out of the list it is in.
+    private func apply(_ token: String) {
+        switch CadenceTaskComposerSupport.selection(fromToken: token) {
+        case .inbox:
+            move(area: nil, project: nil)
+        case .area(let id):
+            guard let area = areas.first(where: { $0.id == id }) else { return }
+            move(area: area, project: nil)
+        case .project(let id):
+            guard let project = projects.first(where: { $0.id == id }) else { return }
+            move(area: nil, project: project)
+        }
+    }
+
+    private func move(area: Area?, project: Project?) {
+        CadenceTaskMutationSupport.moveToContainer(
+            task,
+            area: area,
+            project: project,
+            sectionName: task.resolvedSectionName,
+            allTasks: allTasks,
+            modelContext: modelContext
+        )
+    }
+}
+
+/// Which date a row's date chip edits. The two are one view because they differ only in which
+/// field they read and what they are called — a `doChip` beside a near-identical `dueChip` is how
+/// the two stopped agreeing about clearing on macOS.
+enum iOSTaskRowDateField {
+    case doDate
+    case dueDate
+
+    var systemImage: String {
+        switch self {
+        case .doDate: return "sun.max.fill"
+        case .dueDate: return "flag.fill"
+        }
+    }
+}
+
+/// A do/due chip over `CadenceQuickDatePopover` — the same Today / Tomorrow / This Weekend pills,
+/// month grid and Clear row the task inspector and the create sheet's chips open.
+struct iOSTaskRowDateChip: View {
+    let task: AppTask
+    let field: iOSTaskRowDateField
+    let title: String
+    /// Only ever non-neutral for the two exceptional cases: a deadline gone past, a do date gone
+    /// past. A do date of *today* is the common case on the Today screen and stays `Theme.dim`.
+    var tint: Color = Theme.dim
+    @Environment(\.modelContext) private var modelContext
+    @State private var isOpen = false
+    @State private var viewMonth = Date()
+
+    private var dateKey: String {
+        switch field {
+        case .doDate: return task.scheduledDate
+        case .dueDate: return task.dueDate
+        }
+    }
+
+    var body: some View {
+        iOSTaskAttributeChip(
+            title: title,
+            systemImage: field.systemImage,
+            isSet: true,
+            tint: tint,
+            size: .row,
+            // The chip's *text* takes the exceptional colour too, not just its glyph: an item is
+            // either ordinary and entirely dim, or exceptional and entirely the colour that says so.
+            textColor: tint
+        ) {
+            viewMonth = monthStart(of: DateFormatters.date(from: dateKey) ?? Date())
+            isOpen = true
+        }
+        .popover(isPresented: $isOpen) {
+            CadenceQuickDatePopover(
+                selection: Binding(
+                    get: { DateFormatters.date(from: dateKey) ?? Date() },
+                    set: { setDate(DateFormatters.dateKey(from: $0)) }
+                ),
+                viewMonth: $viewMonth,
+                isOpen: $isOpen,
+                showsClear: !dateKey.isEmpty,
+                onClear: clearDate
+            )
+            .background(Theme.surfaceElevated)
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    private func setDate(_ key: String) {
+        switch field {
+        case .doDate: CadenceTaskMutationSupport.setScheduledDate(key, for: task, modelContext: modelContext)
+        case .dueDate: CadenceTaskMutationSupport.setDueDate(key, for: task, modelContext: modelContext)
+        }
+    }
+
+    /// Clearing a do date also drops its timeline slot — a slot on no day is not a slot, which is
+    /// why this goes through `clearScheduledDate` rather than writing `""` here.
+    private func clearDate() {
+        switch field {
+        case .doDate: CadenceTaskMutationSupport.clearScheduledDate(task, modelContext: modelContext)
+        case .dueDate: CadenceTaskMutationSupport.clearDueDate(task, modelContext: modelContext)
+        }
+    }
+
+    private func monthStart(of date: Date) -> Date {
+        var components = Calendar.current.dateComponents([.year, .month], from: date)
+        components.day = 1
+        return Calendar.current.date(from: components) ?? date
+    }
+}
+
+// There is **no status chip and no status menu** (T-74). A `TaskStatus` picker offering Todo / In
+// Progress / Done / Cancelled was a four-option control for a field the row already has two
+// dedicated affordances for — the completion circle owns `done`/`todo`, the swipe tray and context
+// menu own `cancelled` — and `.inProgress` has exactly one writer worth keeping, the task
+// inspector's Start/Stop button (`iOSTaskStatusActionsSection`).
+//
+// `AppTask.statusRaw` and `TaskStatus` stay: the property is persisted with no
+// `SchemaMigrationPlan` behind it, `isDone`/`isCancelled` derive from it, and rows already holding
+// `.inprogress` must keep rendering — the row still *reads* the value, it just cannot pick one.
+// Start/Stop is also deliberately kept rather than deleted with the pickers: without it a task
+// already In Progress could never leave that state.
+
+/// The repeat chip. Changing the rule on a task that belongs to a series raises the same
+/// `thisTask` / `thisAndFuture` dialog the context menu does — the row owns that dialog, so the
+/// choice is handed back up through `pendingRecurrenceRule`.
+struct iOSTaskRowRepeatChip: View {
+    let task: AppTask
+    @Binding var pendingRecurrenceRule: TaskRecurrenceRule?
+    @State private var showPicker = false
+
+    var body: some View {
+        iOSTaskAttributeChip(
+            title: task.recurrenceRule.shortLabel,
+            systemImage: task.recurrenceRule.systemImage,
+            isSet: true,
+            size: .row,
+            textColor: Theme.dim
+        ) {
+            showPicker = true
+        }
+        .popover(isPresented: $showPicker) {
+            iOSTaskRowRepeatPickerContent(
+                task: task,
+                pendingRecurrenceRule: $pendingRecurrenceRule,
+                isPresented: $showPicker
+            )
+        }
+    }
+}
+
+private struct iOSTaskRowRepeatPickerContent: View {
+    let task: AppTask
+    @Binding var pendingRecurrenceRule: TaskRecurrenceRule?
+    @Binding var isPresented: Bool
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+
+    var body: some View {
+        iOSChoicePopoverList(
+            rows: TaskRecurrenceRule.allCases.map { rule in
+                iOSChoiceRow(value: rule, title: rule.label, systemImage: rule.systemImage, color: Theme.dim)
+            },
+            selection: Binding(
+                get: { task.recurrenceRule },
+                set: { rule in
+                    iOSTaskRecurrenceSelection.select(
+                        rule,
+                        for: task,
+                        allTasks: allTasks,
+                        modelContext: modelContext,
+                        pendingRecurrenceRule: $pendingRecurrenceRule
+                    )
+                }
+            ),
+            isPresented: $isPresented
+        )
+    }
+}
+
+/// Picking a recurrence rule, shared by the row's repeat chip and the context menu's repeat submenu.
+///
+/// The branch that matters is the second one: a task that is part of a series must not have its rule
+/// rewritten until the user has said whether they mean this occurrence or the rest of them, so the
+/// rule is parked in `pendingRecurrenceRule` and `iOSTaskRowRecurrenceScopeDialog` asks.
+enum iOSTaskRecurrenceSelection {
+    static func select(
+        _ rule: TaskRecurrenceRule,
+        for task: AppTask,
+        allTasks: [AppTask],
+        modelContext: ModelContext,
+        pendingRecurrenceRule: Binding<TaskRecurrenceRule?>
+    ) {
+        guard task.recurrenceRule != rule else { return }
+        if task.isRecurrenceSeriesMember {
+            pendingRecurrenceRule.wrappedValue = rule
+        } else {
+            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
+                rule,
+                to: task,
+                allTasks: allTasks,
+                scope: .thisTask
+            )
+            try? modelContext.save()
+        }
+    }
+}
+
+/// The milestone chip. The glyph keeps the goal's own `colorHex` — a goal's colour is the user's
+/// own, and it is what tells two milestones apart — while the text stays row-neutral.
+struct iOSTaskRowGoalChip: View {
+    let task: AppTask
+    let goal: Goal
+    @State private var showPicker = false
+
+    var body: some View {
+        iOSTaskAttributeChip(
+            title: goal.title.isEmpty ? "Goal" : goal.title,
+            systemImage: goal.icon,
+            isSet: true,
+            size: .row,
+            textColor: Theme.dim
+        ) {
+            showPicker = true
+        }
+        .popover(isPresented: $showPicker) {
+            iOSTaskRowGoalPickerContent(task: task, isPresented: $showPicker)
+        }
+    }
+}
+
+private struct iOSTaskRowGoalPickerContent: View {
+    let task: AppTask
+    @Binding var isPresented: Bool
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Goal.order) private var goals: [Goal]
+
+    /// Finished goals are not offered — but the task's own goal is always in the list even if it is
+    /// finished, or the picker would open with no row matching the chip that opened it.
+    private var availableGoals: [Goal] {
+        let openGoals = goals.filter { $0.status != .done }
+        guard let currentGoal = task.goal,
+              !openGoals.contains(where: { $0.id == currentGoal.id })
+        else { return openGoals }
+        return openGoals + [currentGoal]
+    }
+
+    var body: some View {
+        iOSChoicePopoverList(
+            rows: [iOSChoiceRow<UUID?>(value: nil, title: "None", systemImage: "circle.dashed", color: Theme.dim)]
+                + availableGoals.map { goal in
+                    iOSChoiceRow(
+                        value: Optional(goal.id),
+                        title: goal.title.isEmpty ? "Untitled Milestone" : goal.title,
+                        systemImage: goal.icon,
+                        color: Color(hex: goal.colorHex)
+                    )
+                },
+            selection: Binding(
+                get: { task.goal?.id },
+                set: { goalID in
+                    task.goal = goalID.flatMap { id in availableGoals.first { $0.id == id } }
+                    try? modelContext.save()
+                }
+            ),
+            isPresented: $isPresented
+        )
+    }
+}
+
+/// The estimate, at the row's trailing edge — where the disclosure chevron used to be.
+///
+/// An estimate is a property of the task like its priority, not a date, which is the same reasoning
+/// that moved macOS's estimate out of the inspector's SCHEDULE well and onto its title row. It is
+/// drawn only when there is one: a placeholder on every row would put a permanent control at the
+/// edge of every task in the app for a field most tasks never use.
+struct iOSTaskRowEstimateChip: View {
+    let task: AppTask
+    @Environment(\.modelContext) private var modelContext
+    @State private var showPicker = false
+
+    var body: some View {
+        iOSTaskAttributeChip(
+            title: CadenceTaskPresentationSupport.estimateLabel(minutes: task.estimatedMinutes),
+            systemImage: "clock",
+            isSet: true,
+            size: .row,
+            textColor: Theme.dim
+        ) {
+            showPicker = true
+        }
+        .popover(isPresented: $showPicker, arrowEdge: .top) {
+            EstimatePickerPopoverContent(
+                value: Binding(
+                    get: { task.estimatedMinutes },
+                    set: { CadenceTaskMutationSupport.setEstimatedMinutes($0, for: task, modelContext: modelContext) }
+                )
+            ) {
+                showPicker = false
+            }
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+}
+
+/// One unfinished subtask, listed beneath its task.
+///
+/// The **whole row** is the button, not just the circle: the only thing to do with a subtask from
+/// here is finish it, and a 12pt glyph as the sole target in a list of them is the kind of control
+/// that gets missed. It is a `Button` rather than a tap gesture so it outranks the task row's own
+/// tap — which would otherwise open the detail sheet instead — and `minHeight` keeps the target
+/// honest without an expanded hit area that would overlap its neighbours.
+struct iOSTaskRowSubtaskRow: View {
+    let subtask: Subtask
+    var compact = false
+    @Environment(\.modelContext) private var modelContext
+
+    var body: some View {
+        Button {
+            subtask.isDone = true
+            try? modelContext.save()
+        } label: {
+            HStack(spacing: compact ? 7 : 8) {
+                iOSTaskCompletionCircle(isDone: false, tint: Theme.dim, diameter: compact ? 11 : 12)
+                Text(subtask.title.isEmpty ? "Untitled" : subtask.title)
+                    .font(.system(size: compact ? 11 : 12, weight: .medium))
+                    .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: 32)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel("Complete subtask \(subtask.title)")
+    }
+}
+
 /// The queries live here rather than on `iOSTaskRow`: this view is the context menu's *content*,
 /// so it is only instantiated when the menu is actually presented, whereas the row that hosts it
 /// exists once per visible task.
@@ -98,7 +512,6 @@ struct iOSTaskRowContextMenu: View {
             Label("Edit", systemImage: "square.and.pencil")
         }
 
-        statusMenu
         priorityMenu
         recurrenceMenu
         doDateMenu
@@ -119,19 +532,9 @@ struct iOSTaskRowContextMenu: View {
         }
     }
 
-    private var statusMenu: some View {
-        Menu {
-            ForEach(TaskStatus.allCases, id: \.self) { status in
-                Button {
-                    CadenceTaskMutationSupport.setStatus(status, for: task, modelContext: modelContext)
-                } label: {
-                    Label(status.label, systemImage: status.systemImage)
-                }
-            }
-        } label: {
-            Label(task.status.label, systemImage: task.status.systemImage)
-        }
-    }
+    // The status submenu is gone with the status chip (T-74) — it was the same four-option picker
+    // in a second shape, on the same row, and every value in it is either what the completion
+    // circle does or what the swipe tray's own action does.
 
     private var priorityMenu: some View {
         Menu {
@@ -283,18 +686,13 @@ struct iOSTaskRowContextMenu: View {
     }
 
     private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) {
-        guard task.recurrenceRule != rule else { return }
-        if task.isRecurrenceSeriesMember {
-            pendingRecurrenceRule = rule
-        } else {
-            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
-                rule,
-                to: task,
-                allTasks: allTasks,
-                scope: .thisTask
-            )
-            try? modelContext.save()
-        }
+        iOSTaskRecurrenceSelection.select(
+            rule,
+            for: task,
+            allTasks: allTasks,
+            modelContext: modelContext,
+            pendingRecurrenceRule: $pendingRecurrenceRule
+        )
     }
 
     private func moveToContainer(area: Area?, project: Project?) {

@@ -91,6 +91,18 @@ enum CadenceTaskMutationSupport {
         try? modelContext.save()
     }
 
+    static func setDueDate(_ dateKey: String, for task: AppTask, modelContext: ModelContext) {
+        task.dueDate = dateKey
+        try? modelContext.save()
+    }
+
+    /// Clamped to the same 0…24h range every other duration field in the app accepts, so a chip
+    /// that edits an estimate in place cannot write a value the pickers could not have produced.
+    static func setEstimatedMinutes(_ minutes: Int, for task: AppTask, modelContext: ModelContext) {
+        task.estimatedMinutes = min(max(0, minutes), 24 * 60)
+        try? modelContext.save()
+    }
+
     static func dueToday(_ task: AppTask, modelContext: ModelContext) {
         task.dueDate = DateFormatters.todayKey()
         try? modelContext.save()
