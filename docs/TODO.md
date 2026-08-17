@@ -29,18 +29,7 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-Started 2026-08-17, four agents on disjoint file sets.
-
-
-
-**H — harden special-block rendering** (`iOSMarkdownStylingSupport`, block canvases, Services parsing)
-- [T-48] **Harden the iOS markdown editor's rendering of special blocks.** Requested directly.
-  `f1c55ea` made them draw at all and `a43b8fd` fixed two consequences; the layer has never had a
-  systematic pass. Tables, fenced code, dividers, images, task embeds, quote bars, checkboxes.
-- [T-41] **`iOSMarkdownStylingSupportTests.swift` never runs** — the whole file is inside
-  `#if os(iOS)` and the test target builds macOS. Dead coverage that reads as real coverage.
-
-
+_Nothing._
 
 ## Open — decided, not started
 
@@ -120,6 +109,12 @@ Started 2026-08-17, four agents on disjoint file sets.
 
 
 ## Open — known, unscheduled
+
+- [T-58] **The read-only markdown preview still ignores table alignment.**
+  `MarkdownPreviewTable.alignments` is populated by `4f00e55` and honoured by the iOS editor canvas,
+  but `iOSMarkdownPreview.swift` and `CadenceMarkdownPresentationSupport.swift` do not read it — so
+  a right-aligned column renders left there. Roughly two lines each; it closes the last
+  canvas/preview divergence. Left out only because those files were outside that agent's set.
 
 - [T-55] **Two things from `64218d1` need a real phone, not a simulator.**
   1. **Can a phone still dismiss the keyboard in the Notes tab?** The Done bar was the dedicated
@@ -224,6 +219,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-38] `4f00e55` Three line-numbering conventions were feeding each other's indexes (T-48, T-41).
 
 - [D-37] `64218d1` The note editor loses two bars and stops eating double taps (T-47, T-51, T-42).
 
