@@ -35,6 +35,16 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-87] **Mark the shared value types `nonisolated`, and unblock Swift 6.** The root cause behind
+  T-82's 1195 test warnings: `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` gives every value type
+  without an explicit `nonisolated` a main-actor-isolated synthesized `Equatable`. `D-55` fixed the
+  *symptom* in the test target; the fix is on the app side, exactly as `TaskOrdering` and
+  `CadenceTaskRowMetrics` already do it. **Not cosmetic:** `HabitStreakUnit` lives in `Models/`,
+  which compiles into `CadenceWidgets` and `CadenceMCPServer`, and widget timeline providers run off
+  the main actor — the same reason `TaskOrdering` is `nonisolated`. The compiler says this is an
+  *error* in Swift 6 mode, and `CadenceMCPServer` is already `SWIFT_VERSION = 6.0` while the app and
+  tests are 5.0, so this is a migration blocker rather than tidying.
+
 - [T-83] **Remove the `‹ ›` nav arrows from Month and Board too.** Decided 2026-08-17, reversing the
   scoping in `D-40`/`ecfc9a3`: consistency across all four calendar surfaces wins over the one-tap
   step. **Consequence to handle, not just accept** — Month steps a whole month and Board a week, and
@@ -81,12 +91,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   launched and stayed up. Two agents had already reported `build.db is locked` from the same
   contention. **Mitigation:** every agent brief should require a private `-derivedDataPath`, which
   most already do ad hoc; worth making standing in `AGENTS.md`. Nothing to fix in the app.
-
-- [T-82] **~1195 macro-generated `#expect` warnings in the test target** surface on a full recompile,
-  from pre-existing files (`iPadTodayPaneWidthTests`, `MarkdownChecklistSupportTests`,
-  `NotificationSchedulingTests`, and others). Not app-source, so the baseline of 3 is unaffected,
-  but it is enough noise to hide a real new warning. The fix that worked for `CadenceTaskRowMetrics`
-  was `nonisolated struct`, the same reason `TaskOrdering` is nonisolated.
 
 - [T-55] **Two things from `64218d1` need a real phone, not a simulator.**
   1. **Can a phone still dismiss the keyboard in the Notes tab?** The Done bar was the dedicated
@@ -168,6 +172,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-55] `7d39af2` 1195 test warnings were hiding five real ones (T-82).
 
 - [D-54] `7f21fab` One board card, one timeline block, and two more ungated scroll reports (T-73
   group B, T-80).
