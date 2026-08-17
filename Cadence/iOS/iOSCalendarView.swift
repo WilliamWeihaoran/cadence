@@ -13,7 +13,9 @@ struct iOSCalendarView: View {
     @Query private var allBundles: [TaskBundle]
     @AppStorage("ios.calendar.viewMode") private var viewModeRaw = CadenceCalendarViewMode.week.rawValue
     @AppStorage("ios.calendar.presentation") private var presentationRaw = CadenceCalendarPresentation.timeline.rawValue
-    @AppStorage("ios.calendar.zoomLevel") private var zoomLevel = 1
+    /// Continuous now, and a real multiplier of the base hour height. The key is unchanged because
+    /// a value the old `− 1x +` control stored is still a legal one — see `CadenceCalendarZoom`.
+    @AppStorage(CadenceCalendarZoom.storageKey) private var zoomLevel = CadenceCalendarZoom.defaultZoom
     /// Month's Agenda/Day toggle. Written from a tap on that control and from nowhere else — never
     /// from `paneWidth`, the size class, or anything else the window decides. See
     /// `CadenceCalendarMonthLayout`.
@@ -26,6 +28,9 @@ struct iOSCalendarView: View {
     @State private var anchorDate = Calendar.current.startOfDay(for: Date())
     @State private var quickCreateSeed: iOSCalendarQuickCreateSeed?
     @State private var didRestorePersistedDates = false
+    /// The fetched events, cached against `eventWindowKey`. See that property for why this is not
+    /// computed on demand any more.
+    @State private var visibleEventsByDate: [String: [EKEvent]] = [:]
     /// The width of this page, which on iPad is the window less the shell sidebar. See
     /// `hasInspector`.
     @State private var paneWidth: CGFloat = 0
@@ -66,8 +71,19 @@ struct iOSCalendarView: View {
         CadenceScheduleSupport.bundlesByDate(allBundles, includeCompleted: false)
     }
 
-    private var visibleDates: [Date] {
-        CadenceScheduleSupport.dates(containing: anchorDate, mode: viewMode, calendar: calendar)
+    /// The days the timed grid holds *event data* for.
+    ///
+    /// This used to be the grid's contents — `CadenceScheduleSupport.dates(containing:mode:)`, a
+    /// week or a fortnight, rebuilt by the toolbar chevrons. The grid builds its own columns now
+    /// and scrolls through hundreds of them, so what is left here is only the fetch window: a
+    /// week-aligned four-week span around the leading column, which changes identity once a week
+    /// rather than once a column. See `CadenceCalendarTimelineWindow.eventWindowDates`.
+    private var timelineEventDates: [Date] {
+        CadenceCalendarTimelineWindow.eventWindowDates(leadingDate: anchorDate, calendar: calendar)
+    }
+
+    private var visibleDayCount: Int {
+        CadenceCalendarWeekGridLayout.visibleDayCount(for: viewMode)
     }
 
     private var selectedTasks: [AppTask] {
@@ -82,10 +98,6 @@ struct iOSCalendarView: View {
         calendarManager.fetchEvents(for: selectedDate)
     }
 
-    private var visibleEventsByDate: [String: [EKEvent]] {
-        eventsByDate(for: calendarEventDates)
-    }
-
     private var calendarEventDates: [Date] {
         if presentation == .board {
             return boardEventDates
@@ -93,7 +105,26 @@ struct iOSCalendarView: View {
         if viewMode == .month {
             return CadenceScheduleSupport.monthGridDays(for: anchorDate, calendar: calendar)
         }
-        return visibleDates
+        return timelineEventDates
+    }
+
+    /// The identity of the fetch window, for deciding when to re-run it.
+    ///
+    /// `visibleEventsByDate` used to be a computed property, so every body evaluation of this view
+    /// ran one EventKit query per visible day. That was seven queries and survivable while the only
+    /// thing that moved the window was a chevron. The timed grid now writes `anchorDate` back on
+    /// every column the user scrolls past, so the same computed property would have run its whole
+    /// fetch several times a second, on the main thread, mid-gesture. Keying the fetch on a *coarse*
+    /// window and caching the result is what makes scrolling free: on the grids the key only changes
+    /// when the leading column crosses into another week.
+    private var eventWindowKey: String {
+        if presentation == .board {
+            return "board:\(DateFormatters.dateKey(from: anchorDate))"
+        }
+        if viewMode == .month {
+            return "month:\(DateFormatters.monthYear.string(from: anchorDate))"
+        }
+        return "timeline:\(DateFormatters.dateKey(from: CadenceCalendarTimelineWindow.eventWindowStart(leadingDate: anchorDate, calendar: calendar)))"
     }
 
     private var boardEventDates: [Date] {
@@ -177,6 +208,13 @@ struct iOSCalendarView: View {
         presentation == .timeline && viewMode == .month
     }
 
+    /// Week or 2 Weeks — the two surfaces `iOSCalendarTimelineGrid` draws, and the two that scroll
+    /// their own days. What the toolbar shows and what the event window is keyed on both hinge on
+    /// this, so it is named once.
+    private var isTimedGrid: Bool {
+        presentation == .timeline && viewMode != .month
+    }
+
     /// What Month shows beside or under its grid. This used to be `!hasInspector` — the window
     /// deciding which of the two mechanisms you were using, so rotating an 11" iPad swapped the
     /// agenda for the day inspector and back. It is a stored choice now; the width only decides
@@ -209,13 +247,14 @@ struct iOSCalendarView: View {
                 onBack: isCompact && !isCompactTabRoot ? { dismiss() } : nil,
                 viewMode: Binding(get: { viewMode }, set: setViewMode),
                 presentation: Binding(get: { presentation }, set: setPresentation),
-                zoomLevel: $zoomLevel,
+                leadingDate: isTimedGrid ? $anchorDate : nil,
                 monthDetail: Binding(get: { monthDetail }, set: setMonthDetail),
                 showsMonthDetailControl: CadenceCalendarMonthLayout.showsDetailControl(
                     isCompact: isCompact,
                     presentation: presentation,
                     viewMode: viewMode
                 ),
+                showsNavigationControls: !isTimedGrid,
                 previous: { moveAnchor(by: -1) },
                 next: { moveAnchor(by: 1) },
                 today: jumpToToday
@@ -273,11 +312,18 @@ struct iOSCalendarView: View {
         .background(Theme.bg.ignoresSafeArea())
         .iOSHidesCompactNavigationBar()
         .onAppear(perform: restorePersistedCalendarDates)
+        .onChange(of: eventWindowKey, initial: true) { _, _ in
+            refreshVisibleEvents()
+        }
+        .onChange(of: calendarManager.storeVersion) { _, _ in
+            refreshVisibleEvents()
+        }
         .onChange(of: selectedDate) { _, newDate in
             persistSelectedDate(newDate)
         }
         .onChange(of: anchorDate) { _, newDate in
             persistAnchorDate(newDate)
+            keepSelectedDateInView()
         }
         .sheet(item: $quickCreateSeed) { seed in
             iOSCalendarQuickCreateSheet(dateKey: seed.dateKey, initialStartMinute: seed.startMinute)
@@ -298,13 +344,14 @@ struct iOSCalendarView: View {
             )
         } else {
             iOSCalendarTimelineGrid(
-                dates: visibleDates,
+                leadingDate: $anchorDate,
                 selectedDate: $selectedDate,
+                visibleDayCount: visibleDayCount,
                 scheduledTasksByDate: scheduledTasksByDate,
                 unscheduledTasksByDate: unscheduledTasksByDate,
                 bundlesByDate: bundlesByDate,
                 eventsByDate: visibleEventsByDate,
-                zoomLevel: zoomLevel,
+                zoom: $zoomLevel,
                 onCreateAt: openQuickCreate
             )
         }
@@ -379,15 +426,32 @@ struct iOSCalendarView: View {
         }
     }
 
-    private func eventsByDate(for dates: [Date]) -> [String: [EKEvent]] {
-        _ = calendarManager.storeVersion
-        guard calendarManager.isAuthorized else { return [:] }
-        var grouped: [String: [EKEvent]] = [:]
-        for date in dates {
-            let key = DateFormatters.dateKey(from: date)
-            grouped[key] = calendarManager.fetchEvents(for: date)
+    private func refreshVisibleEvents() {
+        guard calendarManager.isAuthorized else {
+            if !visibleEventsByDate.isEmpty { visibleEventsByDate = [:] }
+            return
         }
-        return grouped
+        var grouped: [String: [EKEvent]] = [:]
+        for date in calendarEventDates {
+            grouped[DateFormatters.dateKey(from: date)] = calendarManager.fetchEvents(for: date)
+        }
+        visibleEventsByDate = grouped
+    }
+
+    /// Keeps the day the inspector and the summary band are describing on screen.
+    ///
+    /// The grid reports its leading column back into `anchorDate` as it scrolls, and the selected
+    /// day is a separate thing — it is what a tap on a day header sets. Scrolling a fortnight away
+    /// from the selected day used to be impossible, because the chevrons moved both; now it is a
+    /// flick, and an inspector describing a column nowhere near the screen is worse than one that
+    /// follows. So the selection only moves when it has actually left the visible span.
+    private func keepSelectedDateInView() {
+        guard isTimedGrid else { return }
+        let leading = calendar.startOfDay(for: anchorDate)
+        guard let last = calendar.date(byAdding: .day, value: visibleDayCount - 1, to: leading) else { return }
+        let selected = calendar.startOfDay(for: selectedDate)
+        guard selected < leading || selected > last else { return }
+        selectedDate = leading
     }
 
     private func openQuickCreate(on dateKey: String) {
@@ -404,10 +468,14 @@ struct iOSCalendarView: View {
     private func setViewMode(_ newMode: CadenceCalendarViewMode) {
         presentationRaw = CadenceCalendarPresentation.timeline.rawValue
         viewModeRaw = newMode.rawValue
+        // Switching into a timed grid puts the selected day at the leading edge, snapped back to
+        // the start of its week so Week opens on a week rather than mid-one. It used to check
+        // whether the selected day was inside the fixed window and leave the anchor alone if it
+        // was; there is no fixed window to be inside any more.
         if newMode == .month {
             anchorDate = selectedDate
-        } else if !visibleDates.contains(where: { calendar.isDate($0, inSameDayAs: selectedDate) }) {
-            anchorDate = selectedDate
+        } else {
+            anchorDate = CadenceScheduleSupport.startOfWeek(containing: selectedDate, calendar: calendar)
         }
     }
 

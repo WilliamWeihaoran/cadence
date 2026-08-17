@@ -78,7 +78,7 @@ enum CadenceCalendarWeekGridLayout {
     }
 
     /// A timeline block is inset this far from each edge of its column — `colWidth - 18` in
-    /// `iOSCalendarTimelineDayBlocks`, at `x: 9`.
+    /// `iOSCalendarTimelineDayColumn`, at `x: 9`.
     static let blockHorizontalInset: CGFloat = 9
     /// The floor any control has to clear to stay usable.
     static let minimumTouchTarget: CGFloat = 44
@@ -117,6 +117,16 @@ enum CadenceCalendarWeekGridLayout {
     /// narrower where there is not, down to `minimumDayColumnWidth`. Under that there is nothing to
     /// be gained by shrinking further, so the grid falls back to the preferred width and scrolls,
     /// which is what a phone does and has always done: 393pt of iPhone leaves 49pt a column.
+    ///
+    /// **`dayCount` is how many columns are meant to be *visible*, not how many exist.** It used to
+    /// be `dates.count`, which was the same number only because the grid rendered exactly one week
+    /// and stopped. The grid now scrolls through hundreds of columns
+    /// (`CadenceCalendarTimelineWindow`), so a column width divided by the number of columns in
+    /// existence would come out at a fraction of a point. Dividing by the *visible* count is what
+    /// makes the width fixed — the pane decides how many columns fit, not how many there are — and
+    /// it is also what keeps `545f429`'s guarantee true: at `visibleDayCount(for: .week)` the
+    /// arithmetic is "seven columns fill the pane exactly", so seven is what is on screen at every
+    /// width, with the rest a scroll away.
     static func dayColumnWidth(
         availableWidth: CGFloat,
         dayCount: Int,
@@ -127,6 +137,34 @@ enum CadenceCalendarWeekGridLayout {
         guard dayCount <= daysInWeek else { return max(multiWeekDayColumnWidth, preferred) }
         let fitted = availableWidth / CGFloat(dayCount)
         return fitted >= minimumDayColumnWidth ? fitted : preferred
+    }
+
+    /// How many day columns a view mode wants on screen at once.
+    ///
+    /// This is the whole of what a timed view mode means now. It used to also decide which days
+    /// existed — Week built seven `Date`s and the chevrons rebuilt them a week at a time — and with
+    /// the grid scrolling through a wide window that half of the job is gone.
+    static func visibleDayCount(for viewMode: CadenceCalendarViewMode) -> Int {
+        switch viewMode {
+        case .week:     return daysInWeek
+        case .twoWeeks: return daysInWeek * 2
+        // Month does not use the timed grid at all; it has its own. Answering with a week keeps
+        // this total rather than trapping, and nothing reaches it.
+        case .month:    return daysInWeek
+        }
+    }
+
+    /// How many whole columns of `columnWidth` fit in `availableWidth`.
+    ///
+    /// The restated form of the seven-column guarantee: `545f429` fixed a Week that put four and a
+    /// half of its seven days behind a scroller, and with an infinitely scrolling grid the way to
+    /// state that is no longer "the content is not wider than the pane" — the content is always
+    /// wider than the pane now — but "at least this many columns are on screen".
+    static func visibleColumnCount(availableWidth: CGFloat, columnWidth: CGFloat) -> Int {
+        guard columnWidth > 0, availableWidth > 0 else { return 0 }
+        // A hair of tolerance, because the fitted width is `available / 7` and floating point can
+        // land the seventh column a ten-thousandth of a point over the edge.
+        return Int(((availableWidth + 0.01) / columnWidth).rounded(.down))
     }
 }
 

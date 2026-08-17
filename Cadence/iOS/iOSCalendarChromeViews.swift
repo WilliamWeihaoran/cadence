@@ -207,11 +207,15 @@ struct iOSCalendarToolbar: View {
     var onBack: (() -> Void)? = nil
     @Binding var viewMode: CadenceCalendarViewMode
     @Binding var presentation: CadenceCalendarPresentation
-    @Binding var zoomLevel: Int
-    /// Month's Agenda/Day switch. It shares the row with `zoomControls` because the two are never
-    /// both there: zoom belongs to the timed grids, this belongs to Month.
+    /// Set on the timed grids, where the title *is* the date control — the day at the leading edge
+    /// of the grid, and the way to jump to another one. `nil` on Month and Board, whose titles name
+    /// a whole span that no single date could stand for. See `iOSCalendarDateTitle`.
+    var leadingDate: Binding<Date>? = nil
     @Binding var monthDetail: CadenceCalendarMonthDetail
     var showsMonthDetailControl = false
+    /// Month and Board still step a window at a time and have nothing that scrolls in its place, so
+    /// they keep the chevrons. The timed grids do not — see `navigationControls`.
+    var showsNavigationControls = true
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let previous: () -> Void
     let next: () -> Void
@@ -242,7 +246,6 @@ struct iOSCalendarToolbar: View {
                 HStack(spacing: 8) {
                     modeControl
                     monthDetailControl
-                    zoomControls
                 }
                 .padding(.trailing, 1)
             }
@@ -258,17 +261,11 @@ struct iOSCalendarToolbar: View {
     /// phone's own two-row shape rather than an unreadable single row.
     private var regularToolbar: some View {
         ViewThatFits(in: .horizontal) {
+            // One single-row option, not two. There used to be a wider one that also carried the
+            // `− 1x +` zoom cluster and a narrower fallback without it; with zoom moved onto the
+            // canvas as a pinch, the two collapsed into the same row.
             singleRowToolbar {
-                HStack(spacing: 12) {
-                    zoomControls
-                    modeControl
-                    monthDetailControl
-                    navigationControls
-                }
-            }
-
-            singleRowToolbar {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     modeControl
                     monthDetailControl
                     navigationControls
@@ -286,7 +283,6 @@ struct iOSCalendarToolbar: View {
                 HStack(spacing: 8) {
                     modeControl
                     monthDetailControl
-                    zoomControls
                     Spacer(minLength: 0)
                 }
             }
@@ -332,11 +328,15 @@ struct iOSCalendarToolbar: View {
                 )
             }
 
-            Text(title)
-                .font(.system(size: horizontalSizeClass == .regular ? 21 : 18, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
+            if let leadingDate {
+                iOSCalendarDateTitle(date: leadingDate)
+            } else {
+                Text(title)
+                    .font(.system(size: horizontalSizeClass == .regular ? 21 : 18, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
         }
         .frame(minWidth: horizontalSizeClass == .regular ? 208 : 116, idealWidth: 246, maxWidth: 312, alignment: .leading)
     }
@@ -389,69 +389,161 @@ struct iOSCalendarToolbar: View {
         }
     }
 
+    /// `‹ ➤ ›` — but only where something else does not already do its job.
+    ///
+    /// The timed grids scroll now, in both directions and without end, so the two chevrons say
+    /// nothing a finger does not. The middle control is the one that had to be replaced rather than
+    /// simply dropped: it is `location.fill`, **jump to today**, not a direction, and deleting the
+    /// cluster without a replacement would have left no way back to now from a grid that can be
+    /// scrolled arbitrarily far. `iOSCalendarDateTitle` carries it — the same shape the Notes
+    /// header uses, where the date popover grows a `Today` button once you are away from now.
+    ///
+    /// Month and Board keep the cluster. Neither of them scrolls in the axis their chevrons move:
+    /// Month is a fixed grid stepped a month at a time, and the Board steps its window a week at a
+    /// time and floors it at today. Deleting the control there would have removed navigation
+    /// nothing replaced — which is exactly the mistake being avoided on the grids.
     @ViewBuilder
-    private var zoomControls: some View {
-        if presentation == .timeline && viewMode != .month {
+    private var navigationControls: some View {
+        if showsNavigationControls {
             iOSSegmentedPillGroup {
                 iOSIconButton(
-                    systemImage: "minus",
-                    accessibilityLabel: "Zoom out",
-                    isEnabled: zoomLevel > 1,
+                    systemImage: "chevron.left",
+                    accessibilityLabel: "Previous",
                     plateSize: 38,
                     iconSize: 13,
-                    showsPlate: false
-                ) {
-                    zoomLevel = max(1, zoomLevel - 1)
-                }
-
-                Text("\(zoomLevel)x")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .monospacedDigit()
-                    .frame(minWidth: 26, minHeight: 38)
-
+                    showsPlate: false,
+                    action: previous
+                )
                 iOSIconButton(
-                    systemImage: "plus",
-                    accessibilityLabel: "Zoom in",
-                    isEnabled: zoomLevel < 3,
+                    systemImage: "location.fill",
+                    accessibilityLabel: "Today",
+                    foreground: Theme.blue,
                     plateSize: 38,
                     iconSize: 13,
-                    showsPlate: false
-                ) {
-                    zoomLevel = min(3, zoomLevel + 1)
-                }
+                    showsPlate: false,
+                    action: today
+                )
+                iOSIconButton(
+                    systemImage: "chevron.right",
+                    accessibilityLabel: "Next",
+                    plateSize: 38,
+                    iconSize: 13,
+                    showsPlate: false,
+                    action: next
+                )
             }
         }
     }
+}
 
-    private var navigationControls: some View {
-        iOSSegmentedPillGroup {
-            iOSIconButton(
-                systemImage: "chevron.left",
-                accessibilityLabel: "Previous",
-                plateSize: 38,
-                iconSize: 13,
-                showsPlate: false,
-                action: previous
-            )
-            iOSIconButton(
-                systemImage: "location.fill",
-                accessibilityLabel: "Today",
-                foreground: Theme.blue,
-                plateSize: 38,
-                iconSize: 13,
-                showsPlate: false,
-                action: today
-            )
-            iOSIconButton(
-                systemImage: "chevron.right",
-                accessibilityLabel: "Next",
-                plateSize: 38,
-                iconSize: 13,
-                showsPlate: false,
-                action: next
-            )
+/// The timed grid's title: the date of the **leftmost column on screen**, and the control that
+/// jumps to another one.
+///
+/// It used to read `Aug 19-25` — the span of the fixed week the grid rendered. With the grid
+/// scrolling continuously there is no such week: the columns on screen straddle whatever the finger
+/// left them on, and a range printed over them would be describing a window the grid no longer has.
+/// One date, live, is the honest reading — and it is the one that can also be a button.
+///
+/// This is deliberately the same shape as `iOSNotesDateTitle` (`2929867`): a bold label, a
+/// `chevron.down`, blue when you are away from now, and a popover whose first row is a way back.
+/// It is **not** that view reused, and the reason is a file boundary rather than a design one —
+/// `iOSNotesDateTitle` is written against `CadenceMobileNotesTab` and a `"yyyy-MM-dd"` string
+/// binding, and generalising it means editing `iOSNotesPanel.swift`. When the two are next open at
+/// the same time they should become one view taking a `Date` binding, a label closure and a
+/// "back to now" title; everything below this line is that view with the notes-specific half
+/// removed.
+struct iOSCalendarDateTitle: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Binding var date: Date
+
+    @State private var isOpen = false
+    @State private var viewMonth = Date()
+
+    private let calendar = Calendar.current
+
+    private var isToday: Bool {
+        calendar.isDateInToday(date)
+    }
+
+    private var label: String {
+        DateFormatters.shortDate.string(from: date)
+    }
+
+    var body: some View {
+        Button {
+            syncViewMonth()
+            isOpen = true
+        } label: {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.system(size: horizontalSizeClass == .regular ? 21 : 18, weight: .bold))
+                    // Blue when the grid is showing some other day, so the header itself says you
+                    // have scrolled away. Without it a week in March is indistinguishable at a
+                    // glance from this one.
+                    .foregroundStyle(isToday ? Theme.text : Theme.blue)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(isToday ? Theme.dim : Theme.blue)
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.cadencePlain)
+        .accessibilityLabel("\(label). Choose a date")
+        // `.top`, for the reason `iOSNotesDateTitle` gives: the arrow edge names the popover's own
+        // edge, so `.bottom` would put the panel above an anchor that is already in the top chrome.
+        .popover(isPresented: $isOpen, arrowEdge: .top) {
+            iOSCalendarDatePopover(date: $date, viewMonth: $viewMonth, isOpen: $isOpen)
+                .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    private func syncViewMonth() {
+        var components = calendar.dateComponents([.year, .month], from: date)
+        components.day = 1
+        viewMonth = calendar.date(from: components) ?? Date()
+    }
+}
+
+/// The calendar behind the grid's date title, plus the one shortcut that replaced the toolbar's
+/// `location.fill`.
+private struct iOSCalendarDatePopover: View {
+    @Binding var date: Date
+    @Binding var viewMonth: Date
+    @Binding var isOpen: Bool
+
+    private let calendar = Calendar.current
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if !calendar.isDateInToday(date) {
+                Button {
+                    date = calendar.startOfDay(for: Date())
+                    isOpen = false
+                } label: {
+                    Text("Today")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.blue)
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.cadencePlain)
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
+                .padding(.bottom, 6)
+
+                Divider().background(Theme.borderSubtle)
+            }
+
+            // `inlineStyle` because this popover owns its own width and background; see the same
+            // call in `iOSNotesDatePopover`.
+            MonthCalendarPanel(selection: $date, viewMonth: $viewMonth, isOpen: $isOpen, inlineStyle: true)
+                .padding(.top, 10)
+        }
+        .frame(width: 280)
+        .background(Theme.surfaceElevated)
     }
 }
 #endif

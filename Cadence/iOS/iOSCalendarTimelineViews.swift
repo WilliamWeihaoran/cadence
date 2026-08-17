@@ -3,14 +3,66 @@ import EventKit
 import SwiftData
 import SwiftUI
 
+/// The live vertical scroll offset of the hour canvas, so the time rail can follow it.
+///
+/// A reference type rather than `@State` on the grid, and read by nothing except the rail. The
+/// offset changes on every frame of a vertical scroll; if the grid's own body read it, every one of
+/// those frames would re-evaluate the whole column window. Here only `iOSCalendarTimeRail`
+/// observes it, so only the rail redraws.
+@Observable
+final class iOSCalendarTimelineScrollState {
+    var verticalOffset: CGFloat = 0
+}
+
+/// The timed calendar grid: an hour rail down the left, a pinned row of day headers across the top,
+/// and a day canvas that scrolls in both directions under both of them.
+///
+/// ## Why the day headers are not `pinnedViews`
+///
+/// Two things have to stay put on **opposite** axes. The header row must track the columns
+/// horizontally and ignore the vertical scroll; the hour rail must track the canvas vertically and
+/// ignore the horizontal scroll. `LazyVStack(pinnedViews: .sectionHeaders)` pins along the scroll
+/// axis of one scroll view, which answers neither half.
+///
+/// Nesting two scroll views cannot express it either, and it is worth writing down why, because
+/// "just put the header outside the vertical one" is the obvious first move and it is only half a
+/// fix. Whichever way round the nesting goes, the inner scroll view's content is *also* inside the
+/// outer one:
+///
+/// - vertical outside, horizontal inside (what this file used to be): the rail is naturally in
+///   vertical sync, and the header row scrolls away vertically — the bug.
+/// - horizontal outside, vertical inside: the header row is pinned vertically and tracks its
+///   columns exactly, and now the rail is stuck inside the horizontal scroller with them.
+///
+/// There is no arrangement where both are in the scroll view they need and out of the one they do
+/// not, so **one of the two has to be a follower**. This takes the second nesting and makes the
+/// rail the follower, because the relationship that has to be pixel-exact is a day header sitting
+/// over its own column — a header one column out is the wrong date — and that one is exact by
+/// construction here: the headers and the canvas are in the same horizontal scroll view. The rail
+/// only has to agree about *hours*, it is a fixed 24-row ladder, and it follows a single number.
+///
+/// The rail is a plain `.offset(y:)` inside a clip rather than a scroll-disabled `ScrollView`,
+/// which matters for more than tidiness: this canvas already carries a horizontal scroller, a
+/// vertical scroller, a per-column tap and now a pinch, and gesture collisions are this app's most
+/// repeated bug. A follower that is not a scroll view adds no fifth recognizer.
 struct iOSCalendarTimelineGrid: View {
-    let dates: [Date]
+    /// The column at the leading edge — read as "which day am I looking at", written to jump.
+    ///
+    /// Both directions, like the Board's `scrolledDayIndex`: scrolling reports the leading day back
+    /// up so the toolbar's date button can name it, and setting it scrolls that day to the leading
+    /// edge.
+    @Binding var leadingDate: Date
     @Binding var selectedDate: Date
+    /// How many columns should be on screen — `CadenceCalendarWeekGridLayout.visibleDayCount(for:)`.
+    /// It no longer decides how many days *exist*; see `CadenceCalendarTimelineWindow`.
+    let visibleDayCount: Int
     let scheduledTasksByDate: [String: [AppTask]]
     let unscheduledTasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
     let eventsByDate: [String: [EKEvent]]
-    let zoomLevel: Int
+    /// A multiplier on the base hour height, 1…3. Written once per pinch, not per frame — see
+    /// `pinchZoom`.
+    @Binding var zoom: Double
     let onCreateAt: (String, Int) -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -22,92 +74,332 @@ struct iOSCalendarTimelineGrid: View {
     private var workHoursEndMinute = CalendarWorkHoursPreferences.defaultEndMinute
     /// Vertical placement of the day canvas. See `placeInitialScroll(contentHeight:)`.
     @State private var verticalScrollPosition = ScrollPosition(edge: .top)
+    @State private var horizontalScrollPosition = ScrollPosition(edge: .leading)
     @State private var didPlaceInitialScroll = false
+    @State private var didPlaceInitialColumn = false
+    @State private var scrollState = iOSCalendarTimelineScrollState()
+    /// The rendered run of day columns. Rebuilt only when a scroll approaches an end of it.
+    @State private var windowStart: Date?
+    @State private var leadingIndex = 0
+    /// Latches a `leadingDate` write this view made itself, so the change coming back does not
+    /// re-scroll the grid under the finger that caused it. The Board carries the same latch.
+    @State private var isReportingLeadingDate = false
+    /// The zoom *during* a pinch. `zoom` is `@AppStorage`-backed two views up, and writing a
+    /// defaults key sixty times a second is not a thing to do to a gesture — so the live value
+    /// lives here and is committed once, on `onEnded`.
+    @State private var pinchZoom: Double?
+    @State private var pinchStartZoom: Double = CadenceCalendarZoom.defaultZoom
+    @State private var pinchStartOffset: CGFloat = 0
 
     private let calendar = Calendar.current
-    private var baseHourHeight: CGFloat { horizontalSizeClass == .regular ? 64 : 58 }
-    private var hourHeight: CGFloat { baseHourHeight + CGFloat((zoomLevel - 1) * 16) }
+    private var isRegularWidth: Bool { horizontalSizeClass == .regular }
+    private var baseHourHeight: CGFloat { isRegularWidth ? 64 : 58 }
+    private var effectiveZoom: Double { CadenceCalendarZoom.clamp(pinchZoom ?? zoom) }
+    private var hourHeight: CGFloat {
+        CadenceCalendarZoom.hourHeight(base: baseHourHeight, zoom: effectiveZoom)
+    }
     private var dayHeaderHeight: CGFloat {
-        iOSCalendarTimelineDayHeaderHeight(isRegularWidth: horizontalSizeClass == .regular)
+        iOSCalendarTimelineDayHeaderHeight(isRegularWidth: isRegularWidth)
     }
     private var timelineHeight: CGFloat {
         CGFloat(CadenceScheduleSupport.calendarHourCount) * hourHeight
+    }
+    private var activeWindowStart: Date {
+        windowStart ?? CadenceCalendarTimelineWindow.windowStart(for: leadingDate, calendar: calendar)
+    }
+    /// The index `leadingDate` sits at in the window as it currently stands. Re-read every pass, so
+    /// the one-shot placement below uses the date at first layout rather than one from `init`.
+    private var targetIndex: Int {
+        CadenceCalendarTimelineWindow.index(for: leadingDate, windowStart: activeWindowStart, calendar: calendar)
     }
 
     var body: some View {
         GeometryReader { geo in
             // Seven columns on screen is the guarantee; 112pt is the wish. See
             // `CadenceCalendarWeekGridLayout` — this used to be a `max(…, 112)` that made the wish
-            // the guarantee and put the last day or two behind a horizontal scroller.
-            let isRegularWidth = horizontalSizeClass == .regular
+            // the guarantee and put the last day or two behind a horizontal scroller. The count
+            // divided into is the *visible* one now, which is what makes the width fixed and the
+            // grid scrollable past it.
             let railWidth = CadenceCalendarWeekGridLayout.timeRailWidth(isRegularWidth: isRegularWidth)
             let availableWidth = max(geo.size.width - railWidth, 1)
             let colWidth = CadenceCalendarWeekGridLayout.dayColumnWidth(
                 availableWidth: availableWidth,
-                dayCount: dates.count,
+                dayCount: visibleDayCount,
                 isRegularWidth: isRegularWidth
             )
-            let contentWidth = colWidth * CGFloat(dates.count)
+            let contentWidth = colWidth * CGFloat(CadenceCalendarTimelineWindow.renderDayCount)
+            let canvasHeight = max(geo.size.height - dayHeaderHeight, 1)
 
-            ScrollView(.vertical) {
-                HStack(alignment: .top, spacing: 0) {
-                    iOSCalendarTimeRail(hourHeight: hourHeight, headerHeight: dayHeaderHeight)
-                        .frame(width: railWidth)
+            HStack(alignment: .top, spacing: 0) {
+                iOSCalendarTimeRail(
+                    hourHeight: hourHeight,
+                    headerHeight: dayHeaderHeight,
+                    viewportHeight: canvasHeight,
+                    scrollState: scrollState
+                )
+                .frame(width: railWidth)
 
-                    ScrollView(.horizontal) {
-                        VStack(spacing: 0) {
-                            HStack(spacing: 0) {
-                                ForEach(dates, id: \.self) { date in
-                                    iOSCalendarTimelineDayHeader(
-                                        date: date,
-                                        isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
-                                        unscheduledTasks: unscheduledTasks(for: date),
-                                        eventCount: events(for: date).count,
-                                        bundleCount: bundles(for: date).count,
-                                        taskCount: scheduledTasks(for: date).count
-                                    ) {
-                                        selectedDate = date
-                                    }
-                                    .frame(width: colWidth)
-                                }
-                            }
-                            .background(Theme.surface)
-
-                            ZStack(alignment: .topLeading) {
-                                iOSCalendarTimelineGridLines(dates: dates, colWidth: colWidth, hourHeight: hourHeight)
-
-                                ForEach(Array(dates.enumerated()), id: \.element) { index, date in
-                                    let key = DateFormatters.dateKey(from: date)
-                                    iOSCalendarTimelineDayBlocks(
-                                        date: date,
-                                        isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
-                                        tasks: CadenceScheduleSupport.items(on: key, in: scheduledTasksByDate),
-                                        bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
-                                        events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
-                                        colWidth: colWidth,
-                                        hourHeight: hourHeight,
-                                        workHoursStartMinute: workHoursStartMinute,
-                                        workHoursEndMinute: workHoursEndMinute,
-                                        onCreateAt: onCreateAt
-                                    )
-                                    .offset(x: CGFloat(index) * colWidth)
-                                }
-                            }
-                            .frame(width: contentWidth, height: timelineHeight)
-                        }
-                    }
-                    .scrollIndicators(.hidden)
-                }
+                gridScroller(colWidth: colWidth, contentWidth: contentWidth, canvasHeight: canvasHeight)
             }
-            .scrollIndicators(.hidden)
-            .scrollPosition($verticalScrollPosition)
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentSize.height
-            } action: { _, contentHeight in
-                placeInitialScroll(contentHeight: contentHeight)
+            // On the container, not on the scroll views, and `simultaneousGesture` rather than
+            // `highPriorityGesture`. A magnification gesture needs two fingers, so it can never
+            // claim a one-finger pan or a tap; attaching it here means it also never has to be
+            // handed *through* a scroll view, which is where the app's previous gesture bugs came
+            // from — a recognizer that begins where it has nothing to do
+            // (`renderedBlockTap`, 64218d1) or delays the touches of everything under it
+            // (`.draggable` on the sidebar).
+            .simultaneousGesture(
+                pinch(viewportHeight: canvasHeight, headerHeight: dayHeaderHeight)
+            )
+            .onChange(of: colWidth) { _, newWidth in
+                // A rotation or a sidebar fold changes the column width under a scroll offset that
+                // was measured in the old one. Without this the leading column silently becomes a
+                // different day.
+                horizontalScrollPosition.scrollTo(
+                    x: CadenceCalendarTimelineWindow.scrollOffsetX(forIndex: leadingIndex, columnWidth: newWidth)
+                )
             }
         }
         .background(Theme.bg)
+        .onAppear { alignWindow(to: leadingDate) }
+        .onChange(of: leadingDate) { _, newDate in
+            if isReportingLeadingDate {
+                isReportingLeadingDate = false
+                return
+            }
+            alignWindow(to: newDate, animated: true)
+        }
+    }
+
+    private func gridScroller(colWidth: CGFloat, contentWidth: CGFloat, canvasHeight: CGFloat) -> some View {
+        let range = CadenceCalendarTimelineWindow.renderedIndexRange(
+            leadingIndex: leadingIndex,
+            visibleDayCount: visibleDayCount
+        )
+
+        return ScrollView(.horizontal) {
+            VStack(spacing: 0) {
+                // The pinned row. It is inside this scroll view — which is what makes it track its
+                // columns exactly — and outside the vertical one below, which is what makes it stay.
+                ZStack(alignment: .topLeading) {
+                    ForEach(range, id: \.self) { index in
+                        let date = date(at: index)
+                        iOSCalendarTimelineDayHeader(
+                            date: date,
+                            isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
+                            unscheduledTasks: items(unscheduledTasksByDate, on: date),
+                            eventCount: items(eventsByDate, on: date).count,
+                            bundleCount: items(bundlesByDate, on: date).count,
+                            taskCount: items(scheduledTasksByDate, on: date).count
+                        ) {
+                            selectedDate = date
+                        }
+                        .frame(width: colWidth)
+                        .offset(x: CGFloat(index) * colWidth)
+                    }
+                }
+                // No background on this row and none on the canvas below: the frame is
+                // `contentWidth` wide — 47,000pt at a week's column width — and a filled view that
+                // wide is one CALayer past every sane texture bound. Each day header paints its
+                // own `Theme.surface`, and the window always covers the viewport with margin to
+                // spare, so nothing unpainted is ever on screen.
+                .frame(width: contentWidth, height: dayHeaderHeight, alignment: .topLeading)
+
+                ScrollView(.vertical) {
+                    ZStack(alignment: .topLeading) {
+                        ForEach(range, id: \.self) { index in
+                            let date = date(at: index)
+                            let key = DateFormatters.dateKey(from: date)
+                            iOSCalendarTimelineDayColumn(
+                                date: date,
+                                isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
+                                tasks: CadenceScheduleSupport.items(on: key, in: scheduledTasksByDate),
+                                bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
+                                events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
+                                colWidth: colWidth,
+                                hourHeight: hourHeight,
+                                workHoursStartMinute: workHoursStartMinute,
+                                workHoursEndMinute: workHoursEndMinute,
+                                onCreateAt: onCreateAt
+                            )
+                            .offset(x: CGFloat(index) * colWidth)
+                        }
+                    }
+                    .frame(width: contentWidth, height: timelineHeight, alignment: .topLeading)
+                }
+                .frame(height: canvasHeight)
+                .scrollIndicators(.hidden)
+                .scrollPosition($verticalScrollPosition)
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentOffset.y
+                } action: { _, offset in
+                    scrollState.verticalOffset = offset
+                }
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentSize.height
+                } action: { _, contentHeight in
+                    placeInitialScroll(contentHeight: contentHeight)
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+        .scrollPosition($horizontalScrollPosition)
+        // `Int`, deliberately, not the raw offset: `onScrollGeometryChange` only runs its action
+        // when the transformed value *changes*, so reducing the offset to a column index here means
+        // the state below is written once per column crossed rather than once per frame.
+        .onScrollGeometryChange(for: Int.self) { geometry in
+            CadenceCalendarTimelineWindow.leadingIndex(
+                scrollOffsetX: geometry.contentOffset.x,
+                columnWidth: colWidth
+            )
+        } action: { _, index in
+            adoptLeadingColumn(index)
+        }
+        // The same rule `CadenceLazyScrollAnchor` states for lazy stacks, applied to an offset
+        // rather than an id: a scroll asserted before the content has a width lands nowhere, and
+        // nothing reports it, because nothing failed. `ecaf80f` is what that costs.
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentSize.width
+        } action: { _, extent in
+            placeInitialColumn(contentWidth: extent, colWidth: colWidth)
+        }
+    }
+
+    // MARK: - Pinch
+
+    /// Continuous 1×–3× on the time axis.
+    ///
+    /// Anchored to the fingers: `startAnchor` is a unit point in this container, so the content
+    /// point held at the start of the gesture is put back under the same place on screen after the
+    /// scale — otherwise pinching near the bottom of a 24-hour canvas walks the visible hour away
+    /// from the one being pinched. The arithmetic is `CadenceCalendarZoom.anchoredVerticalOffset`,
+    /// and it is computed from the state captured at gesture start rather than from the previous
+    /// frame, so a slow pinch cannot accumulate rounding into a drift.
+    private func pinch(viewportHeight: CGFloat, headerHeight: CGFloat) -> some Gesture {
+        MagnifyGesture(minimumScaleDelta: 0.01)
+            .onChanged { value in
+                if pinchZoom == nil {
+                    pinchStartZoom = CadenceCalendarZoom.clamp(zoom)
+                    pinchStartOffset = scrollState.verticalOffset
+                }
+                let startHeight = CadenceCalendarZoom.hourHeight(base: baseHourHeight, zoom: pinchStartZoom)
+                let newZoom = CadenceCalendarZoom.zoom(startingFrom: pinchStartZoom, magnification: value.magnification)
+                let newHeight = CadenceCalendarZoom.hourHeight(base: baseHourHeight, zoom: newZoom)
+                pinchZoom = newZoom
+
+                let focusY = max(0, value.startAnchor.y * (viewportHeight + headerHeight) - headerHeight)
+                verticalScrollPosition.scrollTo(
+                    y: CadenceCalendarZoom.anchoredVerticalOffset(
+                        currentOffset: pinchStartOffset,
+                        focusY: focusY,
+                        scale: newHeight / max(startHeight, 1),
+                        contentHeight: CGFloat(CadenceScheduleSupport.calendarHourCount) * newHeight,
+                        viewportHeight: viewportHeight
+                    )
+                )
+            }
+            .onEnded { _ in
+                if let pinchZoom { zoom = pinchZoom }
+                pinchZoom = nil
+            }
+    }
+
+    // MARK: - Window and scroll placement
+
+    private func date(at index: Int) -> Date {
+        CadenceCalendarTimelineWindow.date(at: index, windowStart: activeWindowStart, calendar: calendar)
+    }
+
+    private func items<Item>(_ source: [String: [Item]], on date: Date) -> [Item] {
+        CadenceScheduleSupport.items(on: DateFormatters.dateKey(from: date), in: source)
+    }
+
+    /// Rebuilds the rendered run around `date` and puts that day at the leading edge.
+    ///
+    /// It does **not** scroll before `placeInitialColumn` has run, and that is the whole of what
+    /// keeps this surface out of `ecaf80f`. The column width is only known inside `GeometryReader`,
+    /// so before first layout `lastColumnWidth` is a placeholder; a jump computed from it lands at
+    /// an arbitrary offset, the geometry reader reports *that* offset as a leading column, and the
+    /// reading gets written back into `leadingDate` as though the user had scrolled there. It did
+    /// exactly that on the first build of this change: Week opened on the window's first day —
+    /// seven months behind the anchor, the same distance and the same cause as the Board's bug.
+    private func alignWindow(to date: Date, animated: Bool = false) {
+        let start = CadenceCalendarTimelineWindow.windowStart(for: date, calendar: calendar)
+        let target = CadenceCalendarTimelineWindow.index(for: date, windowStart: start, calendar: calendar)
+        windowStart = start
+        leadingIndex = target
+        guard didPlaceInitialColumn else { return }
+        scrollToLeadingIndex(animated: animated)
+    }
+
+    private func scrollToLeadingIndex(animated: Bool) {
+        // The jump is an offset rather than an id: there is no lazy stack to resolve an id against
+        // — the columns are windowed by hand — so index × width *is* the position.
+        let apply = {
+            horizontalScrollPosition.scrollTo(
+                x: CadenceCalendarTimelineWindow.scrollOffsetX(
+                    forIndex: leadingIndex,
+                    columnWidth: lastColumnWidth
+                )
+            )
+        }
+        if animated {
+            withAnimation(.snappy(duration: 0.22), apply)
+        } else {
+            apply()
+        }
+    }
+
+    /// The most recent column width, captured so a programmatic jump outside `GeometryReader` can
+    /// convert an index into an offset. Written from the geometry pass below.
+    @State private var lastColumnWidth: CGFloat = 1
+
+    private func adoptLeadingColumn(_ index: Int) {
+        // Nothing the scroll view says about its position is trustworthy until this view has
+        // asserted one. Before that the offset is whatever the layout happened to start at, and
+        // adopting it writes a day the user never chose into persisted state.
+        guard didPlaceInitialColumn, index != leadingIndex else { return }
+        leadingIndex = index
+        let date = date(at: index)
+        if !calendar.isDate(date, inSameDayAs: leadingDate) {
+            isReportingLeadingDate = true
+            leadingDate = date
+        }
+        recenterWindowIfNeeded(leadingIndex: index, leadingDate: date)
+    }
+
+    /// Slides the rendered run along when a scroll approaches either end of it, which is what makes
+    /// "infinite" true rather than merely large. Same threshold and no-op guard as the Board.
+    private func recenterWindowIfNeeded(leadingIndex index: Int, leadingDate date: Date) {
+        guard let start = CadenceCalendarTimelineWindow.recenteredWindowStart(
+            leadingIndex: index,
+            leadingDate: date,
+            currentWindowStart: activeWindowStart,
+            calendar: calendar
+        ) else { return }
+
+        let recenteredIndex = CadenceCalendarTimelineWindow.index(
+            for: date,
+            windowStart: start,
+            calendar: calendar
+        )
+        windowStart = start
+        leadingIndex = recenteredIndex
+        scrollToLeadingIndex(animated: false)
+    }
+
+    private func placeInitialColumn(contentWidth: CGFloat, colWidth: CGFloat) {
+        lastColumnWidth = colWidth
+        guard CadenceLazyScrollAnchor.shouldAssert(
+            hasAsserted: didPlaceInitialColumn,
+            hasTarget: true,
+            contentExtent: contentWidth
+        ) else { return }
+        didPlaceInitialColumn = true
+        leadingIndex = targetIndex
+        horizontalScrollPosition.scrollTo(
+            x: CadenceCalendarTimelineWindow.scrollOffsetX(forIndex: targetIndex, columnWidth: colWidth)
+        )
     }
 
     /// Opens the timeline near the hour that matters instead of at the top of the canvas — which is
@@ -119,38 +411,25 @@ struct iOSCalendarTimelineGrid: View {
     /// zero-height content silently clamps back to the top — which is exactly the placement this
     /// removes. Nothing here is written anywhere: the hour is recomputed on every open, so a bad
     /// placement can only ever be one screen, never a saved anchor that compounds.
+    ///
+    /// The header no longer scrolls past, so there is no `topInset` to skip either.
     private func placeInitialScroll(contentHeight: CGFloat) {
         guard !didPlaceInitialScroll, contentHeight >= timelineHeight else { return }
         didPlaceInitialScroll = true
 
+        let showsToday = CadenceCalendarTimelineWindow.eventWindowDates(
+            leadingDate: leadingDate,
+            calendar: calendar
+        ).contains { calendar.isDateInToday($0) }
+
         let hour = CadenceScheduleSupport.initialTimelineHour(
-            showsToday: dates.contains { calendar.isDateInToday($0) },
+            showsToday: showsToday,
             workHoursStartMinute: workHoursStartMinute,
             calendar: calendar
         )
         verticalScrollPosition.scrollTo(
-            y: CadenceScheduleSupport.timelineScrollOffset(
-                forHour: hour,
-                hourHeight: hourHeight,
-                topInset: dayHeaderHeight
-            )
+            y: CadenceScheduleSupport.timelineScrollOffset(forHour: hour, hourHeight: hourHeight)
         )
-    }
-
-    private func scheduledTasks(for date: Date) -> [AppTask] {
-        CadenceScheduleSupport.items(on: DateFormatters.dateKey(from: date), in: scheduledTasksByDate)
-    }
-
-    private func unscheduledTasks(for date: Date) -> [AppTask] {
-        CadenceScheduleSupport.items(on: DateFormatters.dateKey(from: date), in: unscheduledTasksByDate)
-    }
-
-    private func bundles(for date: Date) -> [TaskBundle] {
-        CadenceScheduleSupport.items(on: DateFormatters.dateKey(from: date), in: bundlesByDate)
-    }
-
-    private func events(for date: Date) -> [EKEvent] {
-        CadenceScheduleSupport.items(on: DateFormatters.dateKey(from: date), in: eventsByDate)
     }
 }
 
@@ -242,22 +521,37 @@ private struct iOSCalendarTimelineDayHeader: View {
     }
 }
 
+/// The hour ladder down the left: horizontally pinned by living outside the horizontal scroller,
+/// vertically a follower of the hour canvas.
+///
+/// The `.offset(y:)` is driven by `iOSCalendarTimelineScrollState`, which only this view reads —
+/// so a vertical scroll redraws the rail and nothing else. See the note on `iOSCalendarTimelineGrid`
+/// for why one of the two pinned things has to be a follower and why it is this one.
 private struct iOSCalendarTimeRail: View {
     let hourHeight: CGFloat
     let headerHeight: CGFloat
+    let viewportHeight: CGFloat
+    let scrollState: iOSCalendarTimelineScrollState
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         VStack(spacing: 0) {
             Color.clear.frame(height: headerHeight)
-            ForEach(CadenceScheduleSupport.calendarHours, id: \.self) { hour in
-                Text(hourLabel(hour))
-                    .font(.system(size: horizontalSizeClass == .regular ? 11 : 10, weight: .medium))
-                    .foregroundStyle(Theme.dim.opacity(hour % 3 == 0 ? 0.9 : 0.45))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .frame(height: hourHeight, alignment: .top)
-                    .padding(.trailing, horizontalSizeClass == .regular ? 10 : 8)
+
+            VStack(spacing: 0) {
+                ForEach(CadenceScheduleSupport.calendarHours, id: \.self) { hour in
+                    Text(hourLabel(hour))
+                        .font(.system(size: horizontalSizeClass == .regular ? 11 : 10, weight: .medium))
+                        .foregroundStyle(Theme.dim.opacity(hour % 3 == 0 ? 0.9 : 0.45))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .frame(height: hourHeight, alignment: .top)
+                        .padding(.trailing, horizontalSizeClass == .regular ? 10 : 8)
+                }
             }
+            .frame(height: CGFloat(CadenceScheduleSupport.calendarHourCount) * hourHeight, alignment: .top)
+            .offset(y: -scrollState.verticalOffset)
+            .frame(height: viewportHeight, alignment: .top)
+            .clipped()
         }
         .background(Theme.bg)
         .overlay(alignment: .trailing) {
@@ -275,31 +569,37 @@ private struct iOSCalendarTimeRail: View {
     }
 }
 
-struct iOSCalendarTimelineGridLines: View {
-    let dates: [Date]
+/// One day column's own hour lines and trailing rule.
+///
+/// These used to be drawn once across the whole canvas — one rectangle per hour, spanning every
+/// column. That was fine for a seven-day canvas and is not for a scrolling one: at a week's column
+/// width the content is over 47,000pt wide, and a single rectangle that wide is a layer past any
+/// texture bound. Each column drawing its own lines also means the lines are windowed with the
+/// column, so nothing is built for a day that is nowhere near the screen.
+private struct iOSCalendarTimelineColumnGridLines: View {
     let colWidth: CGFloat
     let hourHeight: CGFloat
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            ForEach(0...dates.count, id: \.self) { index in
-                Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.34))
-                    .frame(width: 0.5)
-                    .offset(x: CGFloat(index) * colWidth)
-            }
-
             ForEach(0...CadenceScheduleSupport.calendarHourCount, id: \.self) { index in
                 Rectangle()
                     .fill(Theme.borderSubtle.opacity(index % 3 == 0 ? 0.46 : 0.20))
-                    .frame(height: 0.5)
+                    .frame(width: colWidth, height: 0.5)
                     .offset(y: CGFloat(index) * hourHeight)
             }
         }
+        .frame(width: colWidth, alignment: .topLeading)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(0.34))
+                .frame(width: 0.5)
+        }
+        .allowsHitTesting(false)
     }
 }
 
-private struct iOSCalendarTimelineDayBlocks: View {
+private struct iOSCalendarTimelineDayColumn: View {
     let date: Date
     let isSelected: Bool
     let tasks: [AppTask]
@@ -322,6 +622,8 @@ private struct iOSCalendarTimelineDayBlocks: View {
                             onCreateAt(DateFormatters.dateKey(from: date), minute(for: value.location.y))
                         }
                 )
+
+            iOSCalendarTimelineColumnGridLines(colWidth: colWidth, hourHeight: hourHeight)
 
             workHoursBand
 
