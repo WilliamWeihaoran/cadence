@@ -29,9 +29,7 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**AB — nonisolated value types, Swift 6 blocker** ([T-87])
-
-**AC — one page header, one stat row** (T-73 group B remainder)
+_Nothing in flight._
 
 ## Open — decided, not started
 
@@ -171,6 +169,12 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-63] The MCP server target compiled a file it never used (T-94).
+
+- [D-62] Six page headers had drifted into six title sizes (T-73 group B remainder).
+
+- [D-61] `f94361a` 215 value types were main-actor isolated, including ones widgets use (T-87).
 
 - [D-60] `b554824` Month's date picker opened on a layout constant (T-90, T-91; T-11 closed as
   already fixed).

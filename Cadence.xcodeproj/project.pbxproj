@@ -629,7 +629,6 @@
 				A10000002FCE000000000224 /* Cadence/Services/TagSupport.swift in Sources */,
 				A10000002FCE000000000229 /* Cadence/Services/MarkdownMetadataSupport.swift in Sources */,
 				A10000002FCE00000000022A /* Cadence/Services/CadenceStoreSupport.swift in Sources */,
-				A10000002FCE000000000225 /* Cadence/Services/MarkdownNoteSupport.swift in Sources */,
 				A10000002FCE000000000226 /* Cadence/Services/NoteReferenceSupport.swift in Sources */,
 				A10000002FCE000000000227 /* Cadence/Services/DataIntegrityRepairService.swift in Sources */,
 				A10000002FCE000000000214 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift in Sources */,
