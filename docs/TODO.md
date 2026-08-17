@@ -29,25 +29,15 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**N — task creation sheet** ([T-49])
+**R — task row density and the Inbox chip** ([T-78], [T-77])
 
-**P — one estimate picker** ([T-75], [T-76])
+**S — duplicated controls** (T-73 group B: feature panes, segmented controls, capture buttons)
 
-**Q — one date title, and the stale calendar anchor** ([T-59], [T-70])
+**T — duplicated cards and timeline blocks** (T-73 group B: kanban cards, timeline task/event blocks)
+
+**V — verifier** (read-only, confirming `0e8db6c` / `3ecfeaf` / `11883bb` against the code)
 
 ## Open — decided, not started
-
-- [T-75] **One estimate picker, not two.** macOS has a two-column roller
-  (`TaskInspectorEstimateRollerPopover` / `EstimateRollerColumn`, `TaskInspectorFieldSupportViews.swift:445`);
-  iOS has preset chips plus two number fields (`EstimatePickerPopoverContent`,
-  `Shared/Components/EstimatePickerControl.swift:58`). The user asked for the roller on iPad and
-  iPhone. Note `CLAUDE.md` records these two as *deliberately* separate — that note needs rewriting
-  when this lands, because the deliberate split is what is being undone. Pick one implementation and
-  parameterise it; do not leave a third.
-- [T-76] **The macOS status picker at `TaskEmbedFieldEditorPopover.swift:62`** iterates
-  `TaskStatus.allCases` for the same job as the iOS picker being deleted in T-74. Decide whether it
-  goes too — a control deleted on one platform and alive on the other is the split the new rule
-  exists to prevent.
 
 - [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
   `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
@@ -57,30 +47,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   iPhone↔iPad *implementation* sharing. Known starting points: `iOSNotesPanel` vs
   `iOSCompactNotesView` (two hosts of the same header, already partly shared),
   `iPadTodayView` vs `iOSCompactTodayView`, and the compact/regular branches inside `iOSTaskRow`.
-
-- [T-49] **Rework the iOS task creation sheet: fields belong in the page, not pinned to the floor.**
-  Requested with a screenshot. Today `iOSCreateTaskSheet` is title + notes at the top, then ~700pt
-  of dead space, then a horizontally-scrolling chip strip on the bottom edge — and the strip
-  scrolls, so the tag chip is clipped off the right on a 390pt phone. The user wants list, do date,
-  due date and the rest **in the middle of the page**. Mocks presented 2026-08-17; awaiting a
-  choice. Note the sheet is shared with the tab bar `+`, the iPad corner `+` and now the
-  drag-to-create seed path (`47328af`), so whatever shape is chosen has to read well both empty and
-  pre-seeded — a seeded value must be visible without scrolling or the assumption is hidden again.
-
-  **Decided 2026-08-17.** *Layout:* value rows for List / Due date / Priority / Tags, each showing
-  its current value on the right, **plus** the do-date expanded into three one-tap buttons
-  (Today / Tomorrow / Pick…) rather than a row. Chosen over rows-only and over chips-only: the rows
-  make a pre-filled sheet readable at a glance, which is what the four entry points need, and the
-  date buttons cover the decision that is actually made every time. *Estimate:* stays off the sheet
-  — it is a judgement made once the task is real, and macOS's create sheet has no estimate control
-  either. *Chips:* the bottom strip goes; nothing is pinned to the sheet's floor.
-
-  **The risk this choice creates, to settle while building:** rows + a date button row + title +
-  notes is taller than either option alone, and on a 390pt phone with the keyboard up the visible
-  area is roughly 390 × 380pt. Measure it before committing to a shape. If it does not fit, the
-  order of retreat is: notes collapses to a single line that grows on focus, *then* Tags moves into
-  the title field's existing `#` inline picker, *then* the sheet scrolls. Do **not** solve it by
-  pushing anything back to a pinned bottom bar — that is the thing being removed.
 
 
 ## Open — known, unscheduled
@@ -99,18 +65,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   out to a board, and no iOS shell puts a note editor and a board on screen together. Delivering
   this means intra-note reordering (a new feature macOS lacks) or cross-screen drag.
 
-- [T-70] **Calendar Week opens months away from today.** Reproduced on the user's machine as well as
-  a fresh simulator build, so it is app behaviour, not stale simulator state — Week opened on Jan 18
-  against a real date of Aug 17. **The user has seen this and said it does not matter**, so it is
-  recorded rather than scheduled. Worth knowing if it is ever picked up: this is the sixth sighting
-  of the family that produced `ecaf80f`, `8a316c4`, `68d78ec` and the bug `40259b0` hit mid-flight,
-  and the persisted anchor is the likely culprit rather than the scroll placement itself.
-
-- [T-59] **`iOSCalendarDateTitle` is a near-copy of `iOSNotesDateTitle`.** Two date-jump titles with
-  the same chevron, the same away-from-now blue and the same Today shortcut. The Notes one is
-  written against `CadenceMobileNotesTab` and a `"yyyy-MM-dd"` binding; generalising it means
-  editing `iOSNotesPanel.swift`, which was outside the calendar agent's file set. Standing rule in
-  `CLAUDE.md`: one shared component over near-copies.
 - [T-60] **Does the nav cluster belong on Month and Board?** `D-40` deleted it from the timed grids
   only, on the reasoning the user gave — "we can just scroll left and right" — which does not hold
   for a fixed month grid or a weekly-stepped board. Worth confirming that is what the user wants,
@@ -207,6 +161,12 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-50] `0e8db6c` The creation sheet puts its fields in the page, not on the floor (T-49). Height
+  risk only partly closed — the Tags row sits ~53pt below the fold with a keyboard up; awaiting the
+  user's call on whether to retreat further.
+- [D-49] `11883bb` One date-jump title, and the scroll gate stops being copied (T-59, T-70).
+- [D-48] `3ecfeaf` One estimate picker, and macOS loses its status list too (T-75, T-76).
 
 - [D-47] `29735a6` A task-embed card was tappable only along its leading 8 points (T-57, T-43).
 - [D-46] `b8b329e` iPhone and iPad stop disagreeing about seven things (T-73 visible half).
