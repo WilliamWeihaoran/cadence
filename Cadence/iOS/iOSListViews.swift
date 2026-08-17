@@ -171,9 +171,6 @@ struct iOSListsView: View {
             )
         }
         .iOSListRowChrome()
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            archiveAreaButton(area)
-        }
         .contextMenu {
             Button {
                 editorMode = .editArea(area)
@@ -183,6 +180,9 @@ struct iOSListsView: View {
 
             archiveAreaButton(area, title: "Archive Area")
         }
+        // Not `.swipeActions`: the iPad pane draws the same row in a `ScrollView`, where SwiftUI
+        // drops that modifier. See `iOSListRowSwipeActions`.
+        .iOSSwipeActions(trailing: iOSListRowSwipeActions.archive { archive(area) })
     }
 
     @ViewBuilder
@@ -209,9 +209,6 @@ struct iOSListsView: View {
             )
         }
         .iOSListRowChrome()
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            archiveProjectButton(project)
-        }
         .contextMenu {
             Button {
                 editorMode = .editProject(project)
@@ -221,6 +218,7 @@ struct iOSListsView: View {
 
             archiveProjectButton(project, title: "Archive Project")
         }
+        .iOSSwipeActions(trailing: iOSListRowSwipeActions.archive { archive(project) })
     }
 
     @ViewBuilder

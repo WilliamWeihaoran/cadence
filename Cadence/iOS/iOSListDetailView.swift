@@ -236,7 +236,7 @@ struct iOSListDetailView: View {
 
                     if showCompleted && !completedTasks.isEmpty {
                         Section {
-                            ForEach(completedTasks.prefix(12)) { task in
+                            ForEach(CadenceTaskSurfaceOptions.completedRows(from: completedTasks)) { task in
                                 iOSTaskListRow(task: task, opacity: 0.62, showsContainer: false)
                             }
                         } header: {

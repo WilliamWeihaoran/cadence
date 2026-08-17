@@ -66,6 +66,15 @@ struct iPadTodayView: View {
         )
     }
 
+    /// One binding, handed to whichever layout is on screen. Both widths carry the same sort and
+    /// completed controls — see `CadenceTaskSurfaceOptions`.
+    private var sortModeBinding: Binding<CadenceTaskSortMode> {
+        Binding(
+            get: { sortMode },
+            set: { sortModeRaw = $0.rawValue }
+        )
+    }
+
     private var sidePanel: iPadTodaySidePanel {
         iPadTodaySidePanel(rawValue: sidePanelRaw) ?? .notes
     }
@@ -145,7 +154,7 @@ struct iPadTodayView: View {
     private var inspectorPanelContent: some View {
         switch sidePanel {
         case .notes:
-            iOSNotesPanel(showsTitle: false)
+            iOSNotesView(showsTitle: false)
         case .timeline:
             iOSSchedulePanel()
         }
@@ -159,6 +168,7 @@ struct iPadTodayView: View {
             todayTasks: todayTasks,
             completedTodayTasks: completedTodayTasks,
             todayTaskGroups: todayTaskGroups,
+            sortMode: sortModeBinding,
             showCompleted: $showCompleted,
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
@@ -169,6 +179,7 @@ struct iPadTodayView: View {
             todayTasks: todayTasks,
             completedTodayTasks: completedTodayTasks,
             todayTaskGroups: todayTaskGroups,
+            sortMode: sortModeBinding,
             showCompleted: $showCompleted
         )
         #endif
@@ -185,10 +196,7 @@ struct iPadTodayView: View {
                 eyebrow: DateFormatters.longDate.string(from: Date()),
                 title: "Today",
                 summary: todaySummary,
-                sortMode: Binding(
-                    get: { sortMode },
-                    set: { sortModeRaw = $0.rawValue }
-                ),
+                sortMode: sortModeBinding,
                 showCompleted: $showCompleted
             )
 
@@ -208,8 +216,9 @@ struct iPadTodayView: View {
             // drawn on. An empty day looks empty and says so once.
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    // The card is the component's own now: this call site and the phone's disagreed
+                    // about its fill, which made one component look like two.
                     iOSCompactTodayEmptyState()
-                        .cadenceCard(background: Theme.surfaceElevated.opacity(0.36), cornerRadius: Theme.radiusCard)
 
                     #if DEBUG
                     iOSCompactSampleDataCard(
@@ -228,29 +237,26 @@ struct iPadTodayView: View {
             .background(Theme.surface)
         } else {
             ScrollView {
+                // The same counted group the phone draws — this column used to head each group
+                // with a bare eyebrow, so "3 Overdue" was information the tablet did not give.
                 LazyVStack(alignment: .leading, spacing: 15) {
                     ForEach(todayTaskGroups, id: \.title) { group in
-                        VStack(alignment: .leading, spacing: 8) {
-                            iOSTaskSectionHeader(
-                                title: group.title,
-                                color: CadenceTodayPresentationSupport.accent(for: group.kind)
-                            )
-
-                            ForEach(group.tasks) { task in
-                                iOSTaskRow(task: task, density: todayRowDensity)
-                            }
-                        }
+                        iOSTaskGroupSection(
+                            title: group.title,
+                            color: CadenceTodayPresentationSupport.accent(for: group.kind),
+                            tasks: group.tasks,
+                            density: todayRowDensity
+                        )
                     }
 
                     if showCompleted && !completedTodayTasks.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            iOSTaskSectionHeader(title: "Completed Today", color: Theme.green)
-
-                            ForEach(completedTodayTasks.prefix(12)) { task in
-                                iOSTaskRow(task: task, density: todayRowDensity)
-                                    .opacity(0.62)
-                            }
-                        }
+                        iOSTaskGroupSection(
+                            title: "Completed Today",
+                            color: Theme.green,
+                            tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTodayTasks),
+                            density: todayRowDensity,
+                            opacity: 0.62
+                        )
                     }
                 }
                 .frame(maxWidth: 720, alignment: .leading)

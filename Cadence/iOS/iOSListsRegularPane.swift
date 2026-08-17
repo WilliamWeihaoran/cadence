@@ -75,6 +75,9 @@ struct iOSListsRegularPane: View {
                             Label("Archive Area", systemImage: "archivebox")
                         }
                     }
+                    // The same tray the compact rows have. These rows are in a `ScrollView`, which
+                    // is why `.swipeActions` was never an option here — see `iOSListRowSwipeActions`.
+                    .iOSSwipeActions(trailing: iOSListRowSwipeActions.archive { archiveArea(area) })
                 }
             }
         }
@@ -108,6 +111,7 @@ struct iOSListsRegularPane: View {
                             Label("Archive Project", systemImage: "archivebox")
                         }
                     }
+                    .iOSSwipeActions(trailing: iOSListRowSwipeActions.archive { archiveProject(project) })
                 }
             }
         }

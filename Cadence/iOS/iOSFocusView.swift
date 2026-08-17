@@ -85,8 +85,8 @@ struct iOSFocusView: View {
                     // of each other (task list pane + focus detail pane).
                     iOSEmptyPanel(
                         systemImage: "timer",
-                        title: "No focus tasks",
-                        subtitle: "Schedule a task for today and it will appear here, ready to focus on."
+                        title: CadenceEmptyStateCopy.focusTitle,
+                        subtitle: CadenceEmptyStateCopy.focusSubtitle
                     )
                     .frame(minHeight: 360)
                     .background(Theme.surface)
@@ -117,8 +117,8 @@ struct iOSFocusView: View {
             if readyTasks.isEmpty {
                 iOSEmptyPanel(
                     systemImage: "timer",
-                    title: "No focus tasks",
-                    subtitle: "Schedule a task for today to focus it here."
+                    title: CadenceEmptyStateCopy.focusTitle,
+                    subtitle: CadenceEmptyStateCopy.focusSubtitle
                 )
             } else {
                 ScrollView {

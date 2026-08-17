@@ -71,8 +71,8 @@ struct iOSAllTasksView: View {
             if activeTasks.isEmpty && (!showCompleted || completedTasks.isEmpty) {
                 iOSEmptyPanel(
                     systemImage: "checklist",
-                    title: "No active tasks",
-                    subtitle: "Tasks you create on iPad or Mac will collect here."
+                    title: CadenceEmptyStateCopy.allTasksTitle,
+                    subtitle: CadenceEmptyStateCopy.allTasksSubtitle
                 )
             } else {
                 List {
@@ -82,17 +82,21 @@ struct iOSAllTasksView: View {
                                 iOSTaskListRow(task: task)
                             }
                         } header: {
-                            iOSTaskSectionHeader(title: "Active", color: Theme.blue)
+                            iOSTaskGroupHeader(title: "Active", color: Theme.blue, count: activeTasks.count)
                         }
                     }
 
                     if showCompleted && !completedTasks.isEmpty {
                         Section {
-                            ForEach(completedTasks.prefix(24)) { task in
+                            ForEach(CadenceTaskSurfaceOptions.completedRows(from: completedTasks)) { task in
                                 iOSTaskListRow(task: task, opacity: 0.62)
                             }
                         } header: {
-                            iOSTaskSectionHeader(title: "Completed", color: Theme.green)
+                            iOSTaskGroupHeader(
+                                title: "Completed",
+                                color: Theme.green,
+                                count: CadenceTaskSurfaceOptions.completedRows(from: completedTasks).count
+                            )
                         }
                     }
                 }

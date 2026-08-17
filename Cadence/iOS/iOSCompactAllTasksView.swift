@@ -9,10 +9,6 @@ struct iOSCompactAllTasksView: View {
     @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
 
-    private var timedCount: Int {
-        activeTasks.filter { !$0.scheduledDate.isEmpty || !$0.dueDate.isEmpty }.count
-    }
-
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
@@ -20,18 +16,25 @@ struct iOSCompactAllTasksView: View {
                 // describes the page you are already looking at. Same rule that deleted
                 // `subtitle` from `DesktopPageHeader` on macOS.
                 //
-                // No `count:` either — the Active stat directly below already reports it.
+                // The active count rides in the header, as it does on the iPad panel and on Inbox
+                // at both widths. It used to be the first of three tiles in a metric strip here;
+                // it used to be the first of three tiles in a metric strip — Active / Dated /
+                // Done — which the iPad panel has never had. Done is the options bar's
+                // "Completed N" chip at both widths, so only "Dated" was unique to the phone, and
+                // it is not carried anywhere now: a count of tasks holding *a* date lumps overdue
+                // in with next year, and All Tasks already groups by date, which answers the same
+                // question usefully — which dates, and which tasks.
                 if showsHeader {
                     iOSCompactPageHeader(
                         eyebrow: "Tasks",
                         title: "All Tasks",
                         systemImage: "checklist",
                         color: Theme.blue,
+                        count: activeTasks.count,
                         onBack: { dismiss() }
                     )
                 }
 
-                stats
                 optionsBar
                 taskSections
             }
@@ -44,41 +47,13 @@ struct iOSCompactAllTasksView: View {
         .background(Theme.bg.ignoresSafeArea())
     }
 
-    private var stats: some View {
-        HStack(spacing: 10) {
-            iOSCompactTaskCollectionStat(
-                value: "\(activeTasks.count)",
-                label: "Active",
-                systemImage: "checklist",
-                tint: Theme.blue
-            )
-            iOSCompactTaskCollectionStat(
-                value: "\(timedCount)",
-                label: "Dated",
-                systemImage: "calendar.badge.clock",
-                tint: Theme.purple
-            )
-            iOSCompactTaskCollectionStat(
-                value: "\(completedTasks.count)",
-                label: "Done",
-                systemImage: "checkmark.circle.fill",
-                tint: Theme.green
-            )
-        }
-        .padding(4)
-        .cadenceCard(background: Theme.surface.opacity(0.68), shadowRadius: 10, shadowY: 4)
-    }
-
-    /// Sort and completed-visibility only — see the note on `iOSCompactInboxView.optionsBar` for why
-    /// the "Add a task…" field above these two controls is gone.
     private var optionsBar: some View {
         iOSTaskViewOptionsBar(
             sortMode: $sortMode,
             showCompleted: $showCompleted,
             completedCount: completedTasks.count
         )
-        .padding(12)
-        .cadenceCard()
+        .padding(.vertical, 2)
     }
 
     @ViewBuilder
@@ -86,27 +61,26 @@ struct iOSCompactAllTasksView: View {
         if activeTasks.isEmpty && (!showCompleted || completedTasks.isEmpty) {
             iOSEmptyPanel(
                 systemImage: "checklist",
-                title: "No active tasks",
-                subtitle: "Tasks you create on iPhone, iPad, or Mac will collect here."
+                title: CadenceEmptyStateCopy.allTasksTitle,
+                subtitle: CadenceEmptyStateCopy.allTasksSubtitle
             )
             .frame(minHeight: 220)
             .cadenceCard()
         } else {
             VStack(alignment: .leading, spacing: 14) {
                 if !activeTasks.isEmpty {
-                    iOSCompactTaskCollectionGroup(
+                    iOSTaskGroupSection(
                         title: "Active",
                         color: Theme.blue,
-                        tasks: activeTasks,
-                        opacity: 1
+                        tasks: activeTasks
                     )
                 }
 
                 if showCompleted && !completedTasks.isEmpty {
-                    iOSCompactTaskCollectionGroup(
+                    iOSTaskGroupSection(
                         title: "Completed",
                         color: Theme.green,
-                        tasks: Array(completedTasks.prefix(24)),
+                        tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks),
                         opacity: 0.62
                     )
                 }
@@ -115,70 +89,5 @@ struct iOSCompactAllTasksView: View {
     }
 }
 
-private struct iOSCompactTaskCollectionStat: View {
-    let value: String
-    let label: String
-    let systemImage: String
-    let tint: Color
 
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 26, height: 26)
-                .background(tint.opacity(0.13))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(value)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                Text(label)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surfaceElevated.opacity(0.36))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-    }
-}
-
-private struct iOSCompactTaskCollectionGroup: View {
-    let title: String
-    let color: Color
-    let tasks: [AppTask]
-    let opacity: Double
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                iOSTaskSectionHeader(title: title, color: color)
-                Spacer()
-                Text("\(tasks.count)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(color)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(color.opacity(0.11))
-                    .clipShape(Capsule())
-            }
-
-            VStack(spacing: 8) {
-                ForEach(tasks) { task in
-                    iOSTaskRow(task: task)
-                        .opacity(opacity)
-                }
-            }
-        }
-    }
-}
 #endif

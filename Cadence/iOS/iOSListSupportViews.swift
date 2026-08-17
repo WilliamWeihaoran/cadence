@@ -46,6 +46,32 @@ extension View {
     }
 }
 
+/// The Lists row swipe tray, as values — the same shape `iOSTaskRowSwipeActions` takes, drawn by
+/// the same `iOSSwipeActionsModifier`.
+///
+/// It exists because a list row swiped on iPhone and did nothing on iPad: the compact rows carried
+/// `.swipeActions`, which is a `List`-row modifier, and the iPad pane renders its rows in a
+/// `ScrollView`, where SwiftUI discards it without a word. That is the same defect, and the same
+/// fix, the task rows already went through — see the note above `iOSTaskRow`'s `.iOSSwipeActions`.
+enum iOSListRowSwipeActions {
+    /// `isDestructive` is not a claim that archiving destroys anything — an archived list is one
+    /// tap from Restore in the Archived section. It is what withholds the action from a *full*
+    /// swipe, which is what `allowsFullSwipe: false` did on the compact rows: filing a list away
+    /// should take the deliberate tap, not a flick.
+    static func archive(_ perform: @escaping () -> Void) -> [CadenceSwipeAction] {
+        [
+            CadenceSwipeAction(
+                id: "archive-list",
+                title: "Archive",
+                systemImage: "archivebox",
+                tint: Theme.red,
+                isDestructive: true,
+                perform: perform
+            )
+        ]
+    }
+}
+
 /// Trailing count on a list row, in `SidebarNavCountBadge`'s vocabulary: neutral capsule, neutral
 /// digits, fixed size so three digits are never squeezed by a long list name. It is deliberately
 /// *not* tinted — the row's identity colour is the icon badge, and a second coloured element per

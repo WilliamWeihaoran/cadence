@@ -88,8 +88,8 @@ struct iPadInboxView: View {
             if inboxTasks.isEmpty && (!showCompleted || completedInboxTasks.isEmpty) {
                 iOSEmptyPanel(
                     systemImage: "tray",
-                    title: "Inbox is clear",
-                    subtitle: "Fast capture lives here before you decide where things belong."
+                    title: CadenceEmptyStateCopy.inboxTitle,
+                    subtitle: CadenceEmptyStateCopy.inboxSubtitle
                 )
             } else {
                 List {
@@ -99,17 +99,24 @@ struct iPadInboxView: View {
                                 iOSTaskListRow(task: task)
                             }
                         } header: {
-                            iOSTaskSectionHeader(title: "Active", color: Theme.dim)
+                            // Blue, and counted, exactly as on the phone and on All Tasks at both
+                            // widths. This one header was grey, so "Active" meant something
+                            // different here than three taps away.
+                            iOSTaskGroupHeader(title: "Active", color: Theme.blue, count: inboxTasks.count)
                         }
                     }
 
                     if showCompleted && !completedInboxTasks.isEmpty {
                         Section {
-                            ForEach(completedInboxTasks.prefix(12)) { task in
+                            ForEach(CadenceTaskSurfaceOptions.completedRows(from: completedInboxTasks)) { task in
                                 iOSTaskListRow(task: task, opacity: 0.62)
                             }
                         } header: {
-                            iOSTaskSectionHeader(title: "Completed", color: Theme.green)
+                            iOSTaskGroupHeader(
+                                title: "Completed",
+                                color: Theme.green,
+                                count: CadenceTaskSurfaceOptions.completedRows(from: completedInboxTasks).count
+                            )
                         }
                     }
                 }

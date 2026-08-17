@@ -9,6 +9,7 @@ struct iOSCompactTodayView: View {
     let todayTasks: [AppTask]
     let completedTodayTasks: [AppTask]
     let todayTaskGroups: [CadenceTodayTaskGroup]
+    @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
     #if DEBUG
     let sampleDataStatus: String?
@@ -21,6 +22,7 @@ struct iOSCompactTodayView: View {
                 if showsHeader {
                     header
                 }
+                optionsBar
                 // Tasks and nothing else. The day's note card and the schedule preview used to sit
                 // under this list; both are one tab away and better there — the Notes tab opens the
                 // same daily note, and Calendar shows the same schedule at full height. Today's job
@@ -64,11 +66,28 @@ struct iOSCompactTodayView: View {
         .padding(.bottom, 1)
     }
 
+    /// The same shared bar Inbox and All Tasks draw, and the same one iPad Today carries on its
+    /// header row. Today had neither control on the phone — while still reading `showCompleted`,
+    /// which nothing could then write — so completed work was unreachable here by construction.
+    /// See `CadenceTaskSurfaceOptions`, where "which controls a surface offers" is stated once
+    /// with no size class in sight.
+    @ViewBuilder
+    private var optionsBar: some View {
+        let options = CadenceTaskSurfaceOptions.options(for: .today)
+        if options.showsSort || options.showsCompletedToggle {
+            iOSTaskViewOptionsBar(
+                sortMode: $sortMode,
+                showCompleted: $showCompleted,
+                completedCount: completedTodayTasks.count
+            )
+            .padding(.vertical, 2)
+        }
+    }
+
     @ViewBuilder
     private var taskSections: some View {
         if todayTasks.isEmpty && (!showCompleted || completedTodayTasks.isEmpty) {
             iOSCompactTodayEmptyState()
-                .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
 
             #if DEBUG
             iOSCompactSampleDataCard(
@@ -79,14 +98,22 @@ struct iOSCompactTodayView: View {
         } else {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(todayTaskGroups, id: \.title) { group in
-                    iOSCompactTodayTaskGroup(
-                        group: group,
-                        color: CadenceTodayPresentationSupport.accent(for: group.kind)
+                    iOSTaskGroupSection(
+                        title: group.title,
+                        color: CadenceTodayPresentationSupport.accent(for: group.kind),
+                        tasks: group.tasks,
+                        density: .compact
                     )
                 }
 
                 if showCompleted && !completedTodayTasks.isEmpty {
-                    iOSCompactCompletedTasks(tasks: Array(completedTodayTasks.prefix(12)))
+                    iOSTaskGroupSection(
+                        title: "Completed Today",
+                        color: Theme.green,
+                        tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTodayTasks),
+                        density: .compact,
+                        opacity: 0.62
+                    )
                 }
             }
             .padding(12)
@@ -103,8 +130,19 @@ struct iOSCompactTodayView: View {
 /// standing in for content, one of which ("Plan — Use the inspector to switch notes and timeline")
 /// described the page it was drawn on. That is the mistake the deleted `iOSCompactHomeView` grid
 /// made. An empty day looks empty and says so once, in `Theme.dim`.
+///
+/// **It draws its own card.** The two callers each wrapped it in one of their own and disagreed
+/// about the fill — `Theme.surface` on the phone, `Theme.surfaceElevated.opacity(0.36)` on the
+/// iPad — so one component had two looks. `Theme.surfaceElevated` is the one value that reads as a
+/// card against both hosts: the phone's page is `Theme.bg`, and the iPad's task column is itself
+/// `Theme.surface`, which a `Theme.surface` card disappears into.
 struct iOSCompactTodayEmptyState: View {
     var body: some View {
+        emptyRow
+            .cadenceCard(background: Theme.surfaceElevated, cornerRadius: Theme.radiusCard)
+    }
+
+    private var emptyRow: some View {
         HStack(alignment: .center, spacing: 13) {
             Image(systemName: "checkmark.circle")
                 .font(.system(size: 20, weight: .semibold))
@@ -171,64 +209,11 @@ struct iOSCompactSampleDataCard: View {
             .accessibilityLabel("Seed sample tasks")
         }
         .padding(12)
-        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
+        // Same fill as the empty-state card it sits under, for the same reason: on iPad both are
+        // drawn on a `Theme.surface` task column, where a `Theme.surface` card is invisible.
+        .cadenceCard(background: Theme.surfaceElevated, cornerRadius: Theme.radiusCard)
     }
 }
 #endif
-
-private struct iOSCompactTodayTaskGroup: View {
-    let group: CadenceTodayTaskGroup
-    let color: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                iOSTaskSectionHeader(title: group.title, color: color)
-                Spacer()
-                Text("\(group.tasks.count)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(color)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(color.opacity(0.11))
-                    .clipShape(Capsule())
-            }
-
-            VStack(spacing: 7) {
-                ForEach(group.tasks) { task in
-                    iOSTaskRow(task: task, density: .compact)
-                }
-            }
-        }
-    }
-}
-
-private struct iOSCompactCompletedTasks: View {
-    let tasks: [AppTask]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                iOSTaskSectionHeader(title: "Completed Today", color: Theme.green)
-                Spacer()
-                Text("\(tasks.count)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Theme.green)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Theme.green.opacity(0.11))
-                    .clipShape(Capsule())
-            }
-
-            VStack(spacing: 7) {
-                ForEach(tasks) { task in
-                    iOSTaskRow(task: task, density: .compact)
-                        .opacity(0.62)
-                }
-            }
-        }
-    }
-}
-
 
 #endif
