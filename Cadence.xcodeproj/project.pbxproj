@@ -43,7 +43,6 @@
 		A10000002FCE000000000222 /* Cadence/Models/GoalContributionSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000121 /* Cadence/Models/GoalContributionSummary.swift */; };
 		A10000002FCE000000000223 /* Cadence/Models/Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000123 /* Cadence/Models/Tag.swift */; };
 		A10000002FCE000000000224 /* Cadence/Services/TagSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000124 /* Cadence/Services/TagSupport.swift */; };
-		A10000002FCE000000000225 /* Cadence/Services/MarkdownNoteSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000125 /* Cadence/Services/MarkdownNoteSupport.swift */; };
 		A10000002FCE000000000226 /* Cadence/Services/NoteReferenceSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000126 /* Cadence/Services/NoteReferenceSupport.swift */; };
 		A10000002FCE000000000227 /* Cadence/Services/DataIntegrityRepairService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000127 /* Cadence/Services/DataIntegrityRepairService.swift */; };
 		A10000002FCE000000000228 /* Cadence/Models/Pursuit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000128 /* Cadence/Models/Pursuit.swift */; };
