@@ -12,7 +12,6 @@ import SwiftUI
 /// editor now just renders live-styled text you can type into. `CadenceNotesEditorPreferences`
 /// clears the stored selection at launch.
 struct iOSMarkdownEditingSurface: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
     @Binding var text: String
@@ -38,18 +37,11 @@ struct iOSMarkdownEditingSurface: View {
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
     @State private var selectedEmbeddedTask: AppTask?
 
+    // No word/line count bar under the editor. It was a permanent strip across the foot of every
+    // note reporting a number nobody was writing towards — the editor's last piece of chrome that
+    // described the note instead of holding it.
     var body: some View {
-        return VStack(spacing: 0) {
-            editorSurface
-
-            Divider().background(Theme.borderSubtle)
-
-            iOSMarkdownStatusBar(
-                wordCount: wordCount,
-                lineCount: lineCount,
-                isRegularWidth: horizontalSizeClass == .regular
-            )
-        }
+        editorSurface
         .background(Theme.surface)
         .onAppear(perform: loadDraftIfNeeded)
         .onDisappear(perform: commitDraftImmediately)
@@ -162,16 +154,6 @@ struct iOSMarkdownEditingSurface: View {
             }
         }
         .background(Theme.surface)
-    }
-
-    private var wordCount: Int {
-        draftText
-            .split { $0.isWhitespace || $0.isNewline }
-            .count
-    }
-
-    private var lineCount: Int {
-        max(1, draftText.components(separatedBy: .newlines).count)
     }
 
     private var taskEmbedInfos: [UUID: MarkdownTaskEmbedRenderInfo] {

@@ -80,6 +80,21 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             action: #selector(Coordinator.handleRenderedBlockEditTap(_:))
         )
         renderedBlockTap.numberOfTapsRequired = 2
+        // Gated by `gestureRecognizerShouldBegin`, so on ordinary prose this recognizer never
+        // begins at all.
+        //
+        // It used to begin on *every* double tap and act only on the ones landing in a rendered
+        // code fence or table — while `cancelsTouchesInView` swallowed the touch for all of them.
+        // So a double tap on plain text selected no word and placed no caret: the recognizer had
+        // already eaten it before deciding it had nothing to do.
+        //
+        // Flipping `cancelsTouchesInView` to false would also have unblocked prose, but by relying
+        // on cancellation semantics for a recognizer that still begins everywhere — and it would
+        // have stopped suppressing the system's own selection *inside* a block, where this handler
+        // sets `selectedRange` itself and the two would then race. Not beginning is the stronger
+        // guarantee and needs no reasoning about ordering: where the gate says no, the recognizer
+        // is inert and the text view behaves exactly as it does with no recognizer attached.
+        renderedBlockTap.name = Coordinator.renderedBlockTapName
         renderedBlockTap.cancelsTouchesInView = true
         renderedBlockTap.delaysTouchesBegan = false
         renderedBlockTap.delegate = context.coordinator
@@ -87,11 +102,15 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         textView.addGestureRecognizer(renderedBlockTap)
         textView.addGestureRecognizer(referenceTap)
         textView.backgroundColor = .clear
-        // Resigning is enough on its own: `textViewDidEndEditing` publishes the current text and
-        // clears `isFocused`, which is exactly what the old (never-rendered) toolbar buttons did.
-        textView.inputAccessoryView = iOSMarkdownKeyboardAccessoryView { [weak textView] in
-            textView?.resignFirstResponder()
-        }
+        // No `inputAccessoryView`. A "Done" bar used to sit above the keyboard here, and its only
+        // job was to resign first responder — a permanent 44pt strip of chrome across every editor
+        // surface, spending screen the note wants, for one action. What is left to put the keyboard
+        // away is `keyboardDismissMode` below — the editor *is* the scroll view, so dragging the
+        // text down should drag the keyboard with it. That is the only remaining dismissal on the
+        // phone's Notes tab, which hides its navigation bar; every sheet-hosted editor still has
+        // its own Done/Cancel above the keyboard. It has **not** been confirmed on a device with a
+        // software keyboard up: the simulator suppresses it while a hardware keyboard is attached.
+        // If a user reports a stuck keyboard, this line is the first thing to check.
         textView.keyboardDismissMode = .interactive
         textView.alwaysBounceVertical = true
         textView.isScrollEnabled = true
@@ -563,12 +582,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         @objc func handleRenderedBlockEditTap(_ recognizer: UITapGestureRecognizer) {
             guard recognizer.state == .ended,
                   let textView = recognizer.view as? UITextView,
-                  let hit = characterHit(at: recognizer.location(in: textView), in: textView, hitPadding: 18),
-                  let block = MarkdownRenderedBlockDeletionSupport.renderedBlock(
-                    atUTF16Location: hit.characterIndex,
-                    in: textView.text ?? ""
-                  ),
-                  block.kind == .code || block.kind == .table else {
+                  let block = revealableBlock(at: recognizer.location(in: textView), in: textView) else {
                 return
             }
 
@@ -614,6 +628,37 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
             true
+        }
+
+        static let renderedBlockTapName = "cadence.markdown.renderedBlockTap"
+
+        /// Keeps the rendered-block double tap from beginning anywhere it has nothing to do.
+        ///
+        /// The same test `handleRenderedBlockEditTap` runs, moved one step earlier. Running it in
+        /// the handler was too late: by then the recognizer had begun and taken the touch, so the
+        /// text view never saw the double tap that was meant for it.
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard gestureRecognizer.name == Self.renderedBlockTapName,
+                  let textView = gestureRecognizer.view as? UITextView else { return true }
+            return revealableBlock(at: gestureRecognizer.location(in: textView), in: textView) != nil
+        }
+
+        /// The one definition of "a double tap here reveals source": a rendered code fence or
+        /// table. Read by the gate above and by the handler, so the two cannot disagree about
+        /// which taps this recognizer owns.
+        private func revealableBlock(
+            at point: CGPoint,
+            in textView: UITextView
+        ) -> MarkdownRenderedBlock? {
+            guard let hit = characterHit(at: point, in: textView, hitPadding: 18),
+                  let block = MarkdownRenderedBlockDeletionSupport.renderedBlock(
+                    atUTF16Location: hit.characterIndex,
+                    in: textView.text ?? ""
+                  ),
+                  block.kind == .code || block.kind == .table else {
+                return nil
+            }
+            return block
         }
 
         private func referenceTarget(
