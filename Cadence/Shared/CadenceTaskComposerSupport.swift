@@ -221,33 +221,10 @@ enum CadenceTaskComposerSupport {
         return DateFormatters.dayOffset(from: doDateKey) == choice.dayOffset
     }
 
-    /// What tapping a named day leaves the date as: that day, or nothing if it was already that day.
-    ///
-    /// The behaviour `Cmd+T` has had on macOS since long before this sheet. No control on the sheet
-    /// calls it since the do-date buttons became a tile — the tile's picker has its own Clear — but
-    /// it is the one piece of the old block that describes a *rule* rather than a layout, so it is
-    /// kept for the next surface that offers a one-tap day.
-    static func toggledDoDateKey(
-        current: String,
-        tapping choice: DoDateChoice,
-        from reference: Date = Date()
-    ) -> String {
-        isSelected(choice, doDateKey: current) ? "" : dateKey(for: choice, from: reference)
-    }
-
     /// Whether the date is a day neither named day can say.
     static func isCustomDoDate(_ doDateKey: String) -> Bool {
         guard !doDateKey.isEmpty else { return false }
         return !isSelected(.today, doDateKey: doDateKey) && !isSelected(.tomorrow, doDateKey: doDateKey)
-    }
-
-    /// What the old third do-date button said: its own name while the date was unset or was one of
-    /// the other two buttons' days, and the day itself once it held one.
-    ///
-    /// Superseded by `dateValueLabel`, which answers the same question for a tile and has no "Pick…"
-    /// state to fall back to because a tile always states a value.
-    static func doDatePickLabel(_ doDateKey: String) -> String {
-        isCustomDoDate(doDateKey) ? DateFormatters.shortDateString(from: doDateKey) : "Pick…"
     }
 
     // MARK: - Tile values

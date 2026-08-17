@@ -250,39 +250,22 @@ struct CadenceTaskComposerSupportTests {
         #expect(CadenceTaskComposerSupport.isSelected(.tomorrow, doDateKey: "") == false)
     }
 
-    /// The three buttons are the whole do-date control — nothing beside them holds a Clear — so a
-    /// mis-tapped "Today" has to be undoable with the button that caused it.
+    /// `toggledDoDateKey` and `doDatePickLabel` were tested here until the do-date block became a
+    /// tile. Both were unreachable from any surface by then — the tile's picker carries its own
+    /// Clear, and the tile states a value rather than a `Pick…` prompt — so they and these
+    /// assertions went together rather than the tests keeping dead code alive.
+    ///
+    /// What is left of that block is the pair `dateValueLabel` reads, covered above, and the
+    /// question below.
     @Test
-    func tappingTheDayTheDraftAlreadyHasClearsIt() {
-        let reference = Date()
-        let today = CadenceTaskComposerSupport.dateKey(for: .today, from: reference)
-        let tomorrow = CadenceTaskComposerSupport.dateKey(for: .tomorrow, from: reference)
-
-        #expect(CadenceTaskComposerSupport.toggledDoDateKey(current: "", tapping: .today, from: reference) == today)
-        #expect(CadenceTaskComposerSupport.toggledDoDateKey(current: today, tapping: .today, from: reference).isEmpty)
-        #expect(CadenceTaskComposerSupport.toggledDoDateKey(current: tomorrow, tapping: .tomorrow, from: reference).isEmpty)
-        // Tapping the *other* button moves the date rather than clearing it.
-        #expect(CadenceTaskComposerSupport.toggledDoDateKey(current: today, tapping: .tomorrow, from: reference) == tomorrow)
-        #expect(CadenceTaskComposerSupport.toggledDoDateKey(current: tomorrow, tapping: .today, from: reference) == today)
-    }
-
-    /// A seeded day the two fixed buttons cannot say has to be legible without opening the picker —
-    /// this sheet's whole reason for existing in this shape is that a seeded value is visible.
-    @Test
-    func theThirdButtonCarriesADayTheOtherTwoCannotSay() {
+    func aDayNeitherNamedDayCanSayIsCustom() {
         let today = DateFormatters.todayKey()
         let tomorrow = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
         let farOff = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: 40, to: Date())!)
-        let yesterday = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: -1, to: Date())!)
-
-        #expect(CadenceTaskComposerSupport.doDatePickLabel("") == "Pick…")
-        #expect(CadenceTaskComposerSupport.doDatePickLabel(today) == "Pick…")
-        #expect(CadenceTaskComposerSupport.doDatePickLabel(tomorrow) == "Pick…")
-        #expect(CadenceTaskComposerSupport.doDatePickLabel(farOff) == DateFormatters.shortDateString(from: farOff))
-        #expect(CadenceTaskComposerSupport.doDatePickLabel(yesterday) == DateFormatters.shortDateString(from: yesterday))
 
         #expect(CadenceTaskComposerSupport.isCustomDoDate("") == false)
         #expect(CadenceTaskComposerSupport.isCustomDoDate(today) == false)
+        #expect(CadenceTaskComposerSupport.isCustomDoDate(tomorrow) == false)
         #expect(CadenceTaskComposerSupport.isCustomDoDate(farOff))
     }
 

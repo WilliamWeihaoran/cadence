@@ -1083,16 +1083,35 @@ enum CadenceCalendarDateTitleSupport {
     /// The day the title's popover should open on. For Month the bound value is a **week row start**,
     /// which is a layout position rather than a date the user ever chose — opening the picker on it
     /// would highlight July 27 under a grid reading "August".
+    ///
+    /// `displayedMonth` is the right answer for the *title*, and the wrong one for the *seed*: it
+    /// resolves the window to its middle day, so an August-aligned window seeded the picker on
+    /// August 16 — a day nobody chose and nothing on screen points at, arrived at because six rows
+    /// of seven halve to twenty-one. The month is a real reading of the window; the day inside it is
+    /// a layout artefact, and the seed is the one place the day is visible.
+    ///
+    /// So Month names the day itself: **today when the displayed month contains today, otherwise
+    /// the first**. Today is the only day of a month the user has a standing relationship with, and
+    /// it agrees with `isAtNow` and with the popover's own `Today` row, so the current month opens
+    /// with the highlight already where that row would put it. Any other month has no such day, and
+    /// the 1st is what "August" means read as a date — stable, and never a number the reader has to
+    /// work out. `anchor(forPicked:)` discards the day component either way, so this decides what is
+    /// highlighted and nothing about where a pick lands.
     static func pickerDate(
         for date: Date,
         format: CadenceCalendarDateTitleFormat,
+        now: Date = Date(),
         calendar: Calendar = .current
     ) -> Date {
         switch format {
         case .day:
             return calendar.startOfDay(for: date)
         case .month:
-            return CadenceCalendarMonthWindow.displayedMonth(topRowStart: date, calendar: calendar)
+            let displayed = CadenceCalendarMonthWindow.displayedMonth(topRowStart: date, calendar: calendar)
+            if calendar.isDate(displayed, equalTo: now, toGranularity: .month) {
+                return calendar.startOfDay(for: now)
+            }
+            return calendar.dateInterval(of: .month, for: displayed)?.start ?? displayed
         }
     }
 
