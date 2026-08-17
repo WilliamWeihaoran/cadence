@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// What an entry point hands the task composer.
@@ -8,9 +9,10 @@ import Foundation
 /// invisible to `CadenceTests`, which builds for macOS.
 ///
 /// A seed is a **starting point, not a constraint**: every field it carries is also reachable from
-/// a row on the sheet, so a list-scoped entry point can seed its list and still be overruled
-/// without leaving the sheet. That is also why the seeded fields are *rows* and not chips — a
-/// pre-filled row states its value in the page, where a strip of chips only implied one.
+/// a tile on the sheet, so a list-scoped entry point can seed its list and still be overruled
+/// without leaving the sheet. That is also why the seeded fields are *tiles* and not chips — a
+/// pre-filled tile states its value under the field's own name, where a strip of chips only implied
+/// one, and unlike a row it does so without spending a whole line per field.
 struct CadenceTaskComposerSeed: Equatable {
     var title: String = ""
     var notes: String = ""
@@ -50,9 +52,9 @@ struct CadenceTaskComposerSeed: Equatable {
 
 /// The composer's editable state, minus the title, notes and tags.
 ///
-/// These five are exactly what the sheet's do-date buttons and value rows edit, which is why they
-/// travel together: the rows bind to one of these rather than to five separate `@State` properties
-/// that could be reordered or half-passed.
+/// These five are exactly what the sheet's value tiles edit, which is why they travel together: the
+/// tiles bind to one of these rather than to five separate `@State` properties that could be
+/// reordered or half-passed.
 struct CadenceTaskComposerFields: Equatable {
     var container: TaskContainerSelection
     var sectionName: String
@@ -63,9 +65,8 @@ struct CadenceTaskComposerFields: Equatable {
     var priority: TaskPriority
 }
 
-/// The arithmetic behind the iOS create-task sheet: what a seed resolves to, which rows a draft
-/// earns, what each row and do-date button says, and what the whole thing hands
-/// `TaskCreationService`.
+/// The arithmetic behind the iOS create-task sheet: what a seed resolves to, which tiles a draft
+/// earns, what each tile says, and what the whole thing hands `TaskCreationService`.
 ///
 /// Nothing here draws anything, and nothing here builds an `AppTask` by hand — creation goes through
 /// `TaskCreationService` exactly as macOS's `CreateTaskSheet` and `InlineTaskComposer` do.
@@ -87,15 +88,18 @@ enum CadenceTaskComposerSupport {
         )
     }
 
-    // MARK: - Row visibility
+    // MARK: - Tile visibility
 
-    /// Whether the section row is worth a line on the sheet.
+    /// Whether the section tile is worth drawing.
     ///
     /// Inbox is the *absence* of a list, and a list is what owns sections, so there is nothing to
     /// choose between there. Beyond that the rule is the inspector breadcrumb's: a lone `Default`
-    /// section is a control with one option, which is not a control. It matters more now than it
-    /// did as a chip — every row costs 57pt of a sheet that has to stay readable with the keyboard
-    /// up, so a row that can only say one thing does not get one.
+    /// section is a control with one option, which is not a control.
+    ///
+    /// The name still says `Row` because the sheet's other callers and its tests do; what it gates
+    /// is now a tile in the last row's spare half. See
+    /// `CadenceTaskComposerLayout.tileCount(showsSectionTile:)` for why that is where a field that
+    /// comes and goes belongs.
     static func showsSectionRow(
         container: TaskContainerSelection,
         availableSections: [String]
@@ -179,9 +183,15 @@ enum CadenceTaskComposerSupport {
         return name.lowercased().hasPrefix(trimmedQuery.lowercased())
     }
 
-    // MARK: - Do date buttons
+    // MARK: - Named days
 
-    /// The two fixed days the do-date buttons offer. The third button is a picker, not a day.
+    /// The two days a date field is most often set to, and which a tile can therefore name instead
+    /// of dating.
+    ///
+    /// These were the two fixed buttons of the do-date's old three-button block. That block is gone
+    /// — the do date is a tile like every other field now, and Today / Tomorrow are the first two
+    /// pills inside the picker it opens (`CadenceQuickDatePopover`) — but the *naming* is what
+    /// `dateValueLabel` still needs: a tile reading `Today` says more than one reading `Aug 17`.
     enum DoDateChoice: Hashable {
         case today
         case tomorrow
@@ -211,12 +221,12 @@ enum CadenceTaskComposerSupport {
         return DateFormatters.dayOffset(from: doDateKey) == choice.dayOffset
     }
 
-    /// What tapping Today or Tomorrow leaves the do date as.
+    /// What tapping a named day leaves the date as: that day, or nothing if it was already that day.
     ///
-    /// **Tapping the day the task already has clears it.** These three buttons are the whole
-    /// do-date control now — there is no row beside them holding a Clear — so if the only way to
-    /// undo a mis-tapped "Today" were to open the picker, one tap could not be taken back by one
-    /// tap. It is also the behaviour `Cmd+T` has had on macOS since long before this sheet.
+    /// The behaviour `Cmd+T` has had on macOS since long before this sheet. No control on the sheet
+    /// calls it since the do-date buttons became a tile — the tile's picker has its own Clear — but
+    /// it is the one piece of the old block that describes a *rule* rather than a layout, so it is
+    /// kept for the next surface that offers a one-tap day.
     static func toggledDoDateKey(
         current: String,
         tapping choice: DoDateChoice,
@@ -225,42 +235,56 @@ enum CadenceTaskComposerSupport {
         isSelected(choice, doDateKey: current) ? "" : dateKey(for: choice, from: reference)
     }
 
-    /// Whether the do date is a day the two fixed buttons cannot say, and so is being carried by
-    /// the picker button itself.
+    /// Whether the date is a day neither named day can say.
     static func isCustomDoDate(_ doDateKey: String) -> Bool {
         guard !doDateKey.isEmpty else { return false }
         return !isSelected(.today, doDateKey: doDateKey) && !isSelected(.tomorrow, doDateKey: doDateKey)
     }
 
-    /// What the third button says: its own name while the date is unset or is one of the other two
-    /// buttons' days, and the day itself once it is holding one — so a seeded "next Thursday" is
-    /// legible without opening anything.
+    /// What the old third do-date button said: its own name while the date was unset or was one of
+    /// the other two buttons' days, and the day itself once it held one.
+    ///
+    /// Superseded by `dateValueLabel`, which answers the same question for a tile and has no "Pick…"
+    /// state to fall back to because a tile always states a value.
     static func doDatePickLabel(_ doDateKey: String) -> String {
         isCustomDoDate(doDateKey) ? DateFormatters.shortDateString(from: doDateKey) : "Pick…"
     }
 
-    // MARK: - Row values
+    // MARK: - Tile values
 
-    /// What the priority row says. `None` is a value here, not a prompt: the row is already
-    /// labelled "Priority", so the trailing control's job is to answer it — the same wording the
-    /// task inspector's priority row uses, rather than the `!!` mark the chip used to show.
+    /// What a Do or Due tile says.
+    ///
+    /// `None` when unset — a value, not a prompt, because the caption above it already asks the
+    /// question. Today and tomorrow are **named** rather than dated: those two are most of the do
+    /// dates anyone sets, and `Today` is read without arithmetic where `Aug 17` is not. Anything
+    /// else is the date itself, so a seeded "next Thursday" is legible without opening the picker.
+    static func dateValueLabel(_ dateKey: String) -> String {
+        guard !dateKey.isEmpty else { return "None" }
+        if isSelected(.today, doDateKey: dateKey) { return "Today" }
+        if isSelected(.tomorrow, doDateKey: dateKey) { return "Tomorrow" }
+        return DateFormatters.shortDateString(from: dateKey)
+    }
+
+    /// What the priority tile says. `None` is a value here, not a prompt: the tile is already
+    /// captioned "Priority", so the line under it answers — the same wording the task inspector's
+    /// priority row uses, rather than the `!!` mark the chip used to show.
     static func priorityValueLabel(_ priority: TaskPriority) -> String {
         priority.label
     }
 
-    /// What the tags row says: the tag while there is one, the count once there are several.
+    /// What the tags tile says: the names while they fit, the count once they do not.
     ///
-    /// Listing every name is what the chips inside the picker are for; this one has to fit on the
-    /// trailing edge of a 44pt row beside its label.
-    static func tagsValueLabel(names: [String]) -> String {
+    /// `limit` is how many names the tile has room to spell before counting is the more useful
+    /// answer. It defaults to 1 — one line on a half-width tile — and the sheet's tags tile, which
+    /// runs the full width, passes 2. Listing every name is what the chips inside the picker are
+    /// for.
+    static func tagsValueLabel(names: [String], limit: Int = 1) -> String {
         let usable = names
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        switch usable.count {
-        case 0: return "None"
-        case 1: return usable[0]
-        default: return "\(usable.count) tags"
-        }
+        if usable.isEmpty { return "None" }
+        if usable.count <= max(1, limit) { return usable.joined(separator: ", ") }
+        return "\(usable.count) tags"
     }
 
     // MARK: - Container tokens
@@ -290,5 +314,109 @@ enum CadenceTaskComposerSupport {
             return .project(id)
         }
         return .inbox
+    }
+}
+
+/// The create-task sheet's vertical layout, as numbers rather than as literals scattered through the
+/// view.
+///
+/// **This exists because height is the thing that went wrong.** The sheet's previous shape — a
+/// do-date button block over five 57pt value rows — needed about 462pt of content against the
+/// ~390pt a 390×844pt phone leaves once a software keyboard is up. The Tags row therefore sat below
+/// the fold, which is exactly the failure rows had been chosen to prevent: a seeded value you cannot
+/// see is no better stated than a seeded chip you cannot tell apart.
+///
+/// The tile grid is the answer. Six fields that cost six lines as rows cost three as 2-up tiles, and
+/// `contentHeight(showsSectionTile:)` is what says so — composed from the same constants the sheet
+/// lays itself out with and from `CadenceValueTileMetrics`, so it cannot quietly disagree with what
+/// is drawn. `CadenceTaskComposerLayoutTests` holds it against the fold.
+///
+/// **The two device figures are measured on iPhone 17e, not assumed**, and they correct the estimate
+/// this redesign was specified against. That estimate put the usable area at 452pt by taking 508pt
+/// of screen above the keyboard and subtracting a navigation bar; it left out the ~50pt a sheet is
+/// inset from the top of the screen, and undercounted the bar. The real scroll viewport starts about
+/// 118pt down. The 508pt figure itself holds: the keyboard's top edge is there, and the previous
+/// shape's Tags row landing ~70pt below it is what an actual keyboard-up screenshot showed.
+nonisolated enum CadenceTaskComposerLayout {
+    // MARK: - What the sheet draws
+
+    /// `titleField`'s `minHeight`.
+    static let titleHeight: CGFloat = 52
+    /// `notesField` at rest: one 18pt line inside 14pt of padding. It grows on focus and opens
+    /// grown when the seed carried notes, but the resting height is what has to clear the keyboard.
+    static let notesRestingHeight: CGFloat = 46
+    /// Gap between the sheet's stacked blocks — title, notes, grid.
+    static let fieldSpacing: CGFloat = 12
+    /// Gap between two tiles, in both axes.
+    static let tileSpacing: CGFloat = 10
+    static let tileHeight: CGFloat = CadenceValueTileMetrics.minHeight
+    static let contentTopPadding: CGFloat = 12
+    static let contentBottomPadding: CGFloat = 20
+
+    /// **Do · Due**, then **List · Priority**, then **Section · Tags** — or Tags alone across the
+    /// last row when the picked list has no sections to choose between.
+    static let gridRowCount = 3
+
+    /// Where the conditional field goes, and why it is the *last* row that flexes.
+    ///
+    /// The section tile is the one field that comes and goes, so the arrangement is chosen so that
+    /// its arrival disturbs as little as possible and — crucially — **costs no height at all**. It
+    /// takes the empty half of the last row, which Tags would otherwise have spread across. The two
+    /// fixed rows above never move, the sheet is the same height either way, and the fold has one
+    /// number to clear rather than two.
+    ///
+    /// It also lands directly *under* List, in the same column, which is the adjacency that matters:
+    /// a section is a property of the list, and a section without its list means nothing.
+    static func tileCount(showsSectionTile: Bool) -> Int {
+        // Do, Due, List, Priority, Tags — plus Section when the picked list has any.
+        showsSectionTile ? 6 : 5
+    }
+
+    /// The content height of the sheet's scroll view at rest: title, notes and the three tile rows,
+    /// with their spacing and the scroll view's padding.
+    ///
+    /// "At rest" is the case that matters — the keyboard is up because the title field has focus, so
+    /// notes is collapsed and the `~`/`#` suggestion strip is not showing.
+    ///
+    /// The parameter is deliberately ignored. It is kept because callers and tests want to *ask* the
+    /// question, and the answer being "it makes no difference" is the property worth pinning rather
+    /// than hiding behind a signature that could not express it.
+    static func contentHeight(showsSectionTile: Bool = false) -> CGFloat {
+        _ = showsSectionTile
+        let grid = CGFloat(gridRowCount) * tileHeight + CGFloat(gridRowCount - 1) * tileSpacing
+
+        return contentTopPadding
+            + titleHeight
+            + fieldSpacing
+            + notesRestingHeight
+            + fieldSpacing
+            + grid
+            + contentBottomPadding
+    }
+
+    // MARK: - What the device leaves
+
+    /// Where the software keyboard's top edge sits on a 390×844pt phone: 844 less a ~336pt
+    /// keyboard. **Measured** — an iPhone 17e screenshot with the keyboard raised puts it here, and
+    /// puts the previous shape's Tags row about 70pt below it, which is what that shape was reported
+    /// to do.
+    static let keyboardTopFromScreenTop: CGFloat = 508
+
+    /// Where the sheet's scroll viewport starts: the sheet is inset roughly 50pt from the top of the
+    /// screen and its inline navigation bar takes another ~68. This is the term the original 452pt
+    /// estimate left out.
+    static let scrollViewportTop: CGFloat = 118
+
+    /// The space the scroll view actually gets with the keyboard up.
+    static let keyboardVisibleContentHeight: CGFloat = keyboardTopFromScreenTop - scrollViewportTop
+
+    /// The previous shape's content height, measured off the same screenshot: a do-date button block
+    /// over five value rows. Kept as a number rather than a memory so the improvement stays checkable.
+    static let supersededRowLayoutHeight: CGFloat = 462
+
+    /// How much of the visible area is still empty below the last tile. Negative means a field is
+    /// under the fold, which is the condition this whole shape exists to avoid.
+    static func slackBelowFold(showsSectionTile: Bool = false) -> CGFloat {
+        keyboardVisibleContentHeight - contentHeight(showsSectionTile: showsSectionTile)
     }
 }

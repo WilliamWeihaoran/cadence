@@ -11,16 +11,19 @@ import SwiftUI
 /// **Keyboard-first, but nothing is pinned to the floor.** The title field takes focus on open and
 /// the keyboard comes straight up: capture is the app's highest-frequency action and sits on the
 /// tab bar of every screen, so speed is the point. Everything the task can be given is then stated
-/// **in the page** — a Do row of three one-tap buttons, then labelled rows for List, Section, Due,
-/// Priority and Tags, each showing its current value.
+/// **in the page** as a grid of value tiles — Do and Due, then List and Priority, two to a line,
+/// each captioned with the field's name and answering it underneath; Section when the picked list
+/// has any, and Tags, at full width below them.
 ///
-/// It used to be a horizontally-scrolling chip strip above the keyboard with ~700pt of empty sheet
-/// over it. The strip scrolled, so the sixth chip was off the right edge of a 390pt phone and
-/// unreachable without dragging a control most people never knew moved. The stronger reason for
-/// rows is what this sheet is *for*: it is opened from four places — the tab bar `+`, the iPad
-/// corner `+`, quick capture, and a `+` dragged onto a row — and three of them **seed** fields. A
-/// seeded chip is indistinguishable from an unseeded one until the whole strip has been read; a
-/// seeded row says `List   Errands` at a glance, which is the entire argument.
+/// **Why tiles, in two steps.** It used to be a horizontally-scrolling chip strip above the
+/// keyboard: six chips do not fit across a 390pt phone, and a chip that is set looks like a chip
+/// that is not. That matters here more than on most screens, because this sheet is opened from four
+/// places — the tab bar `+`, the iPad corner `+`, quick capture, and a `+` dragged onto a row — and
+/// three of them **seed** fields. Value rows fixed the legibility and broke the height: at 57pt each
+/// they spent a full line on a field whose caption and value together are half a line wide, and the
+/// Tags row ended up under the software keyboard. A tile says the same two things stacked instead of
+/// side by side, so two fields share a line and all of them clear the fold. The arithmetic is
+/// `CadenceTaskComposerLayout`, and `CadenceTaskComposerLayoutTests` holds it there.
 ///
 /// **No estimate control**, deliberately: how long something takes is a judgement made once the
 /// task is real, and macOS's `CreateTaskSheet` has never had one either.
@@ -106,18 +109,19 @@ struct iOSCreateTaskSheet: View {
         .onChange(of: fields.container) { _, _ in normalizeSection() }
     }
 
+    /// Spacings come from `CadenceTaskComposerLayout` rather than being written here, so the height
+    /// the tests check against the keyboard fold is the height this actually lays out to.
     private var content: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: CadenceTaskComposerLayout.fieldSpacing) {
                 titleField
                 markerSuggestions
                 notesField
-                iOSTaskComposerDoDateButtons(doDateKey: $fields.doDateKey)
-                fieldRows
+                valueTiles
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 20)
+            .padding(.top, CadenceTaskComposerLayout.contentTopPadding)
+            .padding(.bottom, CadenceTaskComposerLayout.contentBottomPadding)
         }
         .scrollDismissesKeyboard(.never)
         .scrollIndicators(.hidden)
@@ -136,7 +140,7 @@ struct iOSCreateTaskSheet: View {
             .submitLabel(.done)
             .onSubmit(create)
             .padding(.horizontal, 14)
-            .frame(minHeight: 52)
+            .frame(minHeight: CadenceTaskComposerLayout.titleHeight)
             .background(Theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
     }
@@ -144,11 +148,10 @@ struct iOSCreateTaskSheet: View {
     /// One line at rest, growing to a three-to-six-line box once you are writing in it.
     ///
     /// It was `lineLimit(2...6)` — a permanently two-line box on a sheet whose height is the
-    /// binding constraint. Measured on a 390pt phone: the rows below reach ~580pt, and with a
-    /// software keyboard up (~336pt) only ~508pt of the sheet is visible, so the Tags row sat about
-    /// 70pt below the fold — and a seeded value you cannot see is the thing the rows were chosen
-    /// over chips to avoid. Collapsing the resting state is the first step of the retreat the task
-    /// recorded, before folding Tags into the title field's `#` picker or letting the sheet scroll.
+    /// binding constraint. The resting height is what `CadenceTaskComposerLayout` counts, and it is
+    /// the honest one to count: the keyboard is up because the *title* has focus, so notes is
+    /// collapsed in exactly the case the fold matters. A seeded sheet takes the `!notes.isEmpty`
+    /// branch, so pre-filled notes open expanded and are never hidden behind a collapsed box.
     private var notesField: some View {
         TextField("Notes", text: $notes, axis: .vertical)
             .textFieldStyle(.plain)
@@ -206,8 +209,8 @@ struct iOSCreateTaskSheet: View {
         }
     }
 
-    private var fieldRows: some View {
-        iOSTaskComposerFieldRows(
+    private var valueTiles: some View {
+        iOSTaskComposerValueTiles(
             fields: $fields,
             selectedTags: $selectedTags,
             newTagName: $newTagName,
