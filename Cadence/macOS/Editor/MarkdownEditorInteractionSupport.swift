@@ -679,27 +679,22 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         return selection.length == 0 && selection.location <= bodyStart
     }
 
+    /// Rewrites the title inside every `[[task:UUID|Title]]` reference to one task.
+    ///
+    /// Which runs to rewrite, and what a title is allowed to look like once it is inside a
+    /// reference, are `MarkdownTaskEmbedParser`'s — a platform-free decision the test target can
+    /// actually run, and the same one iOS's inline rename asks. This method is only the
+    /// `NSTextStorage` mutation half of it.
     func replaceEmbeddedTaskReferenceTitle(id: UUID, title: String) {
         guard let textStorage else { return }
-        let sanitized = title
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\r", with: " ")
-            .replacingOccurrences(of: "|", with: "-")
-            .replacingOccurrences(of: "[", with: "(")
-            .replacingOccurrences(of: "]", with: ")")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let displayTitle = sanitized.isEmpty ? MarkdownTaskEmbedRenderInfo.untitledTaskTitle : sanitized
-        let escapedID = NSRegularExpression.escapedPattern(for: id.uuidString)
-        guard let regex = try? NSRegularExpression(pattern: #"\[\[task:\#(escapedID)\|([^\]\n]+)\]\]"#) else { return }
-
+        let displayTitle = MarkdownTaskEmbedParser.sanitizedReferenceTitle(
+            title,
+            fallback: MarkdownTaskEmbedRenderInfo.untitledTaskTitle
+        )
         let current = string as NSString
-        let matches = regex.matches(in: string, range: NSRange(location: 0, length: current.length))
-        guard !matches.isEmpty else { return }
         var didReplace = false
-        for match in matches.reversed() where match.numberOfRanges > 1 {
-            let titleRange = match.range(at: 1)
-            guard titleRange.location != NSNotFound,
-                  current.substring(with: titleRange) != displayTitle,
+        for titleRange in MarkdownTaskEmbedParser.referenceTitleRanges(of: id, in: string).reversed() {
+            guard current.substring(with: titleRange) != displayTitle,
                   shouldChangeText(in: titleRange, replacementString: displayTitle) else { continue }
             textStorage.replaceCharacters(in: titleRange, with: displayTitle)
             didReplace = true

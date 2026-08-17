@@ -144,6 +144,9 @@ struct iOSMarkdownEditingSurface: View {
                         toggleEmbeddedSubtask(taskID: taskID, subtaskID: subtaskID)
                     },
                     onCreateEmbeddedTask: createEmbeddedTask,
+                    onRenameEmbeddedTask: { taskID, title in
+                        renameEmbeddedTask(id: taskID, title: title)
+                    },
                     onOpenEmbeddedTask: { taskID in
                         openEmbeddedTask(id: taskID)
                     },
@@ -327,6 +330,20 @@ struct iOSMarkdownEditingSurface: View {
         subtask.isDone.toggle()
         try? modelContext.save()
         return MarkdownTaskEmbedRenderInfo.task(task)
+    }
+
+    /// The model half of renaming an embed; the editor rewrites the note's own
+    /// `[[task:UUID|Title]]` source itself.
+    ///
+    /// Same body as the Mac's `renameEmbeddedTask` in `ListNotesSupportViews` — including running
+    /// the title through `TaskTitleSupport.titleApplyingPriorityShortcut`, so typing `!!` while
+    /// renaming a card sets priority exactly as it does everywhere else a task title is typed.
+    private func renameEmbeddedTask(id: UUID, title: String) {
+        guard let task = embeddedTask(id: id) else { return }
+        var priority = task.priority
+        task.title = TaskTitleSupport.titleApplyingPriorityShortcut(title, priority: &priority)
+        task.priority = priority
+        try? modelContext.save()
     }
 
     private func embeddedTask(id: UUID) -> AppTask? {

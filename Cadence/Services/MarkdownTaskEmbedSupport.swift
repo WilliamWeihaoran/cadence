@@ -205,6 +205,68 @@ enum MarkdownTaskEmbedParser {
         )
     }
 
+    /// What a task title may look like once it is written back into `[[task:UUID|Title]]`.
+    ///
+    /// `]`, `|` and a newline each end the reference early, so a task renamed to "Read [ch. 3]"
+    /// would otherwise turn the embed into a broken half-reference the parser no longer recognises
+    /// — the card would vanish and leave raw brackets behind. Substituted rather than stripped, so
+    /// the title still reads as what the user typed.
+    nonisolated static func sanitizedReferenceTitle(_ title: String, fallback: String) -> String {
+        let sanitized = title
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "|", with: "-")
+            .replacingOccurrences(of: "[", with: "(")
+            .replacingOccurrences(of: "]", with: ")")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return sanitized.isEmpty ? fallback : sanitized
+    }
+
+    /// The title runs of every `[[task:UUID|Title]]` reference to one task, in source order.
+    ///
+    /// Ranges rather than a rewritten string because the macOS editor mutates an `NSTextStorage`
+    /// through `shouldChangeText(in:replacementString:)` — it needs the range, not the result — and
+    /// iOS replaces through `UITextView.replace(_:withText:)` for the same undo reason. Apply them
+    /// back to front; each replacement shifts everything after it.
+    nonisolated static func referenceTitleRanges(of id: UUID, in markdown: String) -> [NSRange] {
+        let escapedID = NSRegularExpression.escapedPattern(for: id.uuidString)
+        guard let regex = try? NSRegularExpression(
+            pattern: #"\[\[task:\#(escapedID)\|([^\]\n]+)\]\]"#,
+            options: [.caseInsensitive]
+        ) else { return [] }
+
+        let nsMarkdown = markdown as NSString
+        return regex
+            .matches(in: markdown, range: NSRange(location: 0, length: nsMarkdown.length))
+            .compactMap { match in
+                guard match.numberOfRanges > 1 else { return nil }
+                let range = match.range(at: 1)
+                return range.location == NSNotFound ? nil : range
+            }
+    }
+
+    /// `markdown` with every reference to `id` renamed, or nil when nothing changed.
+    ///
+    /// The whole-string spelling of `referenceTitleRanges`, for callers holding plain text rather
+    /// than a text storage. Nil rather than an unchanged copy so a caller can skip the write.
+    nonisolated static func replacingReferenceTitles(
+        of id: UUID,
+        in markdown: String,
+        with title: String,
+        fallback: String
+    ) -> String? {
+        let displayTitle = sanitizedReferenceTitle(title, fallback: fallback)
+        let nsMarkdown = markdown as NSString
+        let result = NSMutableString(string: markdown)
+        var didReplace = false
+        for range in referenceTitleRanges(of: id, in: markdown).reversed()
+        where nsMarkdown.substring(with: range) != displayTitle {
+            result.replaceCharacters(in: range, with: displayTitle)
+            didReplace = true
+        }
+        return didReplace ? (result as String) : nil
+    }
+
     nonisolated static func referenceTitleRange(in markdown: String, lineStart: Int = 0) -> NSRange? {
         guard let regex = try? NSRegularExpression(pattern: #"^\s*\[\[task:[0-9A-Fa-f-]{36}\|([^\]\n]+)\]\]\s*$"#) else {
             return nil

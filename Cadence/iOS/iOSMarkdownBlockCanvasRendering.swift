@@ -47,6 +47,28 @@ final class iOSMarkdownBlockCanvas: NSObject {
         self.leadingInset = leadingInset
         super.init()
     }
+
+    /// Where a block canvas is painted, in text-container coordinates.
+    ///
+    /// **The one definition of "where the card is".** The layout manager draws from it and
+    /// `iOSMarkdownEditor` hit-tests against it, so the card you tap is the card you see — the same
+    /// arrangement the macOS editor already has, where `drawTaskEmbeds` and `taskEmbedHit` both go
+    /// through `MarkdownTaskEmbedDrawing.cardRect`.
+    ///
+    /// Hit testing used to derive its own rect from `boundingRect(forGlyphRange:in:)` over the
+    /// run's first character. Every character of a rendered block is hidden at 0.1pt, so that rect
+    /// was a tenth of a point wide: a tap anywhere on a task-embed card except its extreme leading
+    /// edge missed the card entirely and fell through to the text view, which placed a caret.
+    static func blockRect(inLineFragment fragment: CGRect, size: CGSize, leadingInset: CGFloat, yOffset: CGFloat) -> CGRect {
+        // Centred in the box the paragraph style reserved, so a canvas that came out a few points
+        // shorter than its reservation does not sit against the top edge.
+        CGRect(
+            x: fragment.minX + leadingInset,
+            y: fragment.minY + max(0, (fragment.height - size.height) / 2) + yOffset,
+            width: size.width,
+            height: size.height
+        )
+    }
 }
 
 /// Paints `cadenceMarkdownBlockCanvas` runs after the glyphs beneath them.
@@ -72,11 +94,13 @@ final class iOSMarkdownBlockCanvasLayoutManager: NSLayoutManager {
             let rect: CGRect
 
             if canvas.isBlock {
-                // Centred in the box the paragraph style reserved, so a canvas that came out a few
-                // points shorter than its reservation does not sit against the top edge.
-                let x = fragment.minX + canvas.leadingInset
-                let y = fragment.minY + max(0, (fragment.height - size.height) / 2) + canvas.yOffset
-                rect = CGRect(x: origin.x + x, y: origin.y + y, width: size.width, height: size.height)
+                rect = iOSMarkdownBlockCanvas.blockRect(
+                    inLineFragment: fragment,
+                    size: size,
+                    leadingInset: canvas.leadingInset,
+                    yOffset: canvas.yOffset
+                )
+                .offsetBy(dx: origin.x, dy: origin.y)
             } else {
                 // The marker's glyph is hidden and therefore ~zero-width, so its location is where
                 // the line's *text* now starts — draw there and the bar or checkbox sits on top of

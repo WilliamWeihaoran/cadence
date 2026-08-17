@@ -5,6 +5,9 @@ import UIKit
 enum iOSMarkdownTaskEmbedHitTarget {
     case checkbox
     case subtaskCheckbox(UUID)
+    /// The title line. Mirrors macOS's `.field(.title)`, which is what opens the inline rename
+    /// editor there; iOS had no equivalent, so a card's title could not be changed once written.
+    case title
     case card
 }
 
@@ -26,7 +29,22 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
             return .subtaskCheckbox(subtaskID)
         }
 
+        if titleRect(width: width).contains(point) {
+            return .title
+        }
+
         return .card
+    }
+
+    /// The rect the title is drawn into — the tap target for renaming, and the frame the inline
+    /// editor takes. One definition, read by `drawTitle` and by `hitTarget`, so the text you tap is
+    /// the text you get to edit.
+    func titleRect(maxWidth: CGFloat) -> CGRect {
+        titleRect(width: renderedWidth(maxWidth: maxWidth))
+    }
+
+    private func titleRect(width: CGFloat) -> CGRect {
+        CGRect(x: 44, y: 12, width: max(60, width - 58), height: 22)
     }
 
     func renderedBlock(maxWidth: CGFloat) -> UIImage {
@@ -45,7 +63,7 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
             path.stroke()
 
             drawStatusMark(in: CGRect(x: 12, y: 16, width: 22, height: 22))
-            drawTitle(in: CGRect(x: 44, y: 12, width: width - 58, height: 22))
+            drawTitle(in: titleRect(width: width))
             drawMetadata(width: width)
             drawSubtasks(width: width)
         }
