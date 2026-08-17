@@ -29,7 +29,16 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-_Nothing in flight._
+**AE — the readers that still trust the cached embed title** ([T-95] parts 1 and 2; part 3 is a
+product decision and is left open)
+
+**AF — finish the Swift 6 migration** ([T-96])
+
+**AG — controls that look wired and do nothing** ([T-97], audit only, fixes triaged after)
+
+**AH — All Tasks and Inbox are one screen rendered two ways** ([T-98], [T-99])
+
+**AI — the task inspector styles itself by screen width** ([T-100])
 
 ## Open — decided, not started
 
@@ -43,6 +52,44 @@ _Nothing in flight._
   `iPadTodayView` vs the compact Today, and the compact/regular branches inside the task row — is
   in flight now.
 
+
+- [T-98] **All Tasks and Inbox are one screen rendered two ways.** `iOSCompactAllTasksView` /
+  `iOSCompactInboxView` render `ScrollView` + `LazyVStack` + `iOSTaskGroupSection`;
+  `iOSTaskCollectionViews.allTasksPanel` / `iPadInboxView` render `List` + `Section` +
+  `iOSTaskGroupHeader` + `iOSTaskListRow`. Two scroll containers, two separator treatments, two sets
+  of row insets, one screen. Flagged by the agent that unified Today (`D-66`) as the same shape of
+  near-copy and *worse* than Today was. The choice is real, not cosmetic: `List` gives swipe actions,
+  separators and keyboard behaviour for free; `LazyVStack` gives control over spacing and background
+  and is what Today now uses. Whichever wins, what the loser provided has to be accounted for
+  rather than quietly dropped.
+
+- [T-99] **`iOSTasksTabHeader` is a seventh page header.** It re-spells the vocabulary by hand — 10pt
+  uppercase kerned eyebrow, 26pt bold title — instead of using `iOSPageHeader`. Survived `c5a4ea5`
+  because it is compact-only, so it is not an iPhone/iPad divergence; it is just the drift that
+  produced six headers in the first place, starting over.
+
+- [T-100] **The iOS task inspector styles itself by screen width.** `iOSTaskDetailSheet` and
+  `iOSTaskDetailComponents` carry ~8 size-class branches — sheet padding, title size, tile size — so
+  the same inspector on the same task looks different depending on the device. A sheet is the
+  clearest case in the app of something whose width is its own rather than the screen's. Some
+  branches may be legitimate (a phone sheet genuinely has less room); the burden is on the branch.
+
+- [T-96] **Finish the Swift 6 migration.** `D-61` marked 215 value types `nonisolated` and took Swift 6
+  probing from 10 errors to 4. All four remaining are in `Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift`,
+  an `NSLayoutManager` subclass whose AppKit overrides are nonisolated while the type is not.
+  `CadenceMCPServer` is already `SWIFT_VERSION = 6.0`; the app and tests are still 5.0, so this is
+  the last step before the whole project can move. Also clears the two remaining macOS warnings
+  (`SchedulingService.swift:69`, `SettingsNotificationsSection.swift:69`), which are the documented
+  baseline only because nobody has spent ten minutes on them.
+
+- [T-97] **Audit for controls that look wired and do nothing.** The single most recurrent bug class
+  in this repo: iPhone Today read a `showCompleted` binding nothing could write; the Board adopted
+  ungated scroll reports into a *persisted* `anchorDate`; a task-embed card was tappable only along
+  its leading 8pt; the entire iOS rendered-block layer was invisible because attachments were hung
+  on characters TextKit does not draw. Each was found by accident. This is the deliberate sweep —
+  every `@Binding` with no writer, every gesture whose target is zero-sized or occluded, every
+  toggle whose state is read but never persisted. **Audit first, report findings, fix nothing
+  without triage**, because the fixes will land across files other work owns.
 
 ## Open — known, unscheduled
 
@@ -161,6 +208,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-66] `9b08364` The phone was not told how much of its day was already timed (T-73 remainder).
 
 - [D-65] `646ff9e` The task is the record; the embedded title is a cache (T-92).
 
