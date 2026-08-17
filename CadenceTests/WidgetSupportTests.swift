@@ -3,6 +3,7 @@ import SwiftData
 import Testing
 @testable import Cadence
 
+@MainActor
 struct WidgetSupportTests {
 
     @Test func legacyStoreCandidateDirectoriesCoverSandboxedAndUnsandboxedLocations() {

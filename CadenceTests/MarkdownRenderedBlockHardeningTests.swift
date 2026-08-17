@@ -6,6 +6,7 @@ import Testing
 /// days before this file with no tests at all, and every bug found in it up to now was found by a
 /// person looking at a screen. These are the edges: foreign line endings, escaped pipes, mismatched
 /// column counts, unterminated blocks, blocks at the first and last line, and emoji.
+@MainActor
 struct MarkdownRenderedBlockHardeningTests {
 
     // MARK: - One line-splitting convention

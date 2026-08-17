@@ -5,6 +5,7 @@ import Testing
 
 /// Two panes had no floor at all: `layout(...)` gated only the (since deleted) three-pane case and
 /// returned `.twoPane` for every regular-width device, however little room there was.
+@MainActor
 struct CadenceTodayTwoPaneFloorTests {
     /// A pane is the window less the shell sidebar — 188pt (`iOSSidebarMetrics.expandedWidth`) when
     /// it is out, **0 when the user folds it**, which hands the detail the whole window. Spelled
@@ -68,6 +69,7 @@ struct CadenceTodayTwoPaneFloorTests {
 /// there is no longer any input to `layout(...)` other than width: a stored preference has no path
 /// into the decision at all. These tests are the guard on that, and on the range of the function
 /// being exactly two cases.
+@MainActor
 struct CadenceTodayLayoutModeRemovalTests {
     @Test func noWidthOnAnyDeviceCanProduceAThirdLayout() {
         for paneWidth in stride(from: CGFloat(0), through: 4_000, by: 17) {

@@ -14,6 +14,7 @@ import EventKit
 #endif
 @testable import Cadence
 
+@MainActor
 struct CadenceTests {
 
 #if os(macOS)
@@ -424,7 +425,6 @@ struct CadenceTests {
 #endif
 
 #if os(macOS)
-    @MainActor
     @Test func markdownImageStyleDoesNotCaptureTrailingNewline() throws {
         let imageID = UUID()
         let imageLine = "![Photo](cadence-image://\(imageID.uuidString))"
@@ -448,7 +448,6 @@ struct CadenceTests {
         #expect(storage.attribute(.cadenceMarkdownHidden, at: afterIndex, effectiveRange: nil) == nil)
     }
 
-    @MainActor
     @Test func eventNoteSupportRecoversWhenCalendarEventIdentifierDrifts() throws {
         let oldID = "old-event-id"
         let newID = "new-event-id"
@@ -477,7 +476,6 @@ struct CadenceTests {
         #expect(reopened.calendarEventID == newID)
     }
 
-    @MainActor
     @Test func recurringEventOccurrenceIdentifiersKeepMeetingNotesSeparate() throws {
         let calendar = Calendar(identifier: .gregorian)
         let baseID = "recurring-event-id"
@@ -523,7 +521,6 @@ struct CadenceTests {
         #expect(firstNote.content == "First occurrence notes")
     }
 
-    @MainActor
     @Test func eventNoteCreationSeedsFromNativeCalendarNotes() throws {
         var insertedNote: Note?
         let created = try #require(EventNoteSupport.noteForEditing(
@@ -542,7 +539,6 @@ struct CadenceTests {
         #expect(created.content == "Agenda\n\n- Review launch blockers")
     }
 
-    @MainActor
     @Test func eventNoteCreationFallsBackToMarkdownTitleWhenNativeNotesAreEmpty() throws {
         var insertedNote: Note?
         let created = try #require(EventNoteSupport.noteForEditing(
@@ -616,7 +612,6 @@ struct CadenceTests {
         #expect(boardItem.sortKey.startMinute == 0)
     }
 
-    @MainActor
     @Test func linkedCalendarMeetingNotesAreSortedAndScoped() throws {
         let older = Note(kind: .meeting, title: "Older", calendarEventID: "a", calendarID: "calendar-1", eventDateKey: "2026-04-28", eventStartMin: 900)
         let newer = Note(kind: .meeting, title: "Newer", calendarEventID: "b", calendarID: "calendar-1", eventDateKey: "2026-04-29", eventStartMin: 600)

@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Cadence
 
+@MainActor
 struct MarkdownPreviewParserTests {
     @Test func parsesRichMarkdownBlocksInDisplayOrder() throws {
         let imageID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))

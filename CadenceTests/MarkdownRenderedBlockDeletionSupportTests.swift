@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Cadence
 
+@MainActor
 struct MarkdownRenderedBlockDeletionSupportTests {
     @Test func expandsPartialImageSelectionToWholeImageBlockAndFollowingNewline() {
         let imageID = "11111111-1111-1111-1111-111111111111"

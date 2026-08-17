@@ -12,6 +12,7 @@ import EventKit
 // locked out of a working integration. None of this touches EventKit or needs a real grant.
 #if os(macOS)
 @Suite
+@MainActor
 struct RemindersConnectionStateTests {
 
     // MARK: - The three states

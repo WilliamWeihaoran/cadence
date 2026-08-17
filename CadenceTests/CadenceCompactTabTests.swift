@@ -9,6 +9,7 @@ import Testing
 /// be right. These tests are the guard: every `CadenceFeatureDestination` must answer which tab owns
 /// it, every deep link must resolve to a tab rather than to a bare push, and a link to a tab's own
 /// root must not ask for a push on top of it.
+@MainActor
 struct CadenceCompactTabTests {
     // MARK: - Coverage
 

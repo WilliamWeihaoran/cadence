@@ -56,28 +56,28 @@ struct NotificationSchedulingTests {
         #expect(TaskNotificationPlanner.startNotification(for: task, now: now) == nil)
     }
 
-    @Test func startNotificationFiresAtCorrectTimeForFutureScheduledTask() {
+    @Test func startNotificationFiresAtCorrectTimeForFutureScheduledTask() throws {
         let task = AppTask(title: "Standup")
         task.scheduledDate = "2026-06-10"
         task.scheduledStartMin = 540 // 9:00 AM
         let now = date("2026-06-09")
 
-        let request = try? #require(TaskNotificationPlanner.startNotification(for: task, now: now))
-        #expect(request?.identifier == NotificationIdentifiers.taskStart(taskID: task.id))
-        #expect(request?.kind == .taskStart)
-        #expect(request?.title == "Standup")
-        #expect(request?.body == "Starting now")
-        #expect(request?.fireDate == date("2026-06-10", hour: 9))
+        let request = try #require(TaskNotificationPlanner.startNotification(for: task, now: now))
+        #expect(request.identifier == NotificationIdentifiers.taskStart(taskID: task.id))
+        #expect(request.kind == .taskStart)
+        #expect(request.title == "Standup")
+        #expect(request.body == "Starting now")
+        #expect(request.fireDate == date("2026-06-10", hour: 9))
     }
 
-    @Test func startNotificationHandlesEndOfDayMinutesWithoutRollingToWrongDay() {
+    @Test func startNotificationHandlesEndOfDayMinutesWithoutRollingToWrongDay() throws {
         let task = AppTask(title: "Late night wrap-up")
         task.scheduledDate = "2026-06-10"
         task.scheduledStartMin = 1435 // 11:55 PM
         let now = date("2026-06-10", hour: 9)
 
-        let request = try? #require(TaskNotificationPlanner.startNotification(for: task, now: now))
-        #expect(request?.fireDate == date("2026-06-10", hour: 23, minute: 55))
+        let request = try #require(TaskNotificationPlanner.startNotification(for: task, now: now))
+        #expect(request.fireDate == date("2026-06-10", hour: 23, minute: 55))
     }
 
     // MARK: - TaskNotificationPlanner.dueNotification
@@ -115,17 +115,17 @@ struct NotificationSchedulingTests {
         #expect(TaskNotificationPlanner.dueNotification(for: task, now: now, reminderHour: 9, reminderMinute: 0) == nil)
     }
 
-    @Test func dueNotificationFiresAtFixedTimeOfDay() {
+    @Test func dueNotificationFiresAtFixedTimeOfDay() throws {
         let task = AppTask(title: "Submit report")
         task.dueDate = "2026-06-10"
         let now = date("2026-06-09")
 
-        let request = try? #require(TaskNotificationPlanner.dueNotification(for: task, now: now, reminderHour: 9, reminderMinute: 0))
-        #expect(request?.identifier == NotificationIdentifiers.taskDue(taskID: task.id))
-        #expect(request?.kind == .taskDue)
-        #expect(request?.title == "Submit report")
-        #expect(request?.body == "Due today")
-        #expect(request?.fireDate == date("2026-06-10", hour: 9))
+        let request = try #require(TaskNotificationPlanner.dueNotification(for: task, now: now, reminderHour: 9, reminderMinute: 0))
+        #expect(request.identifier == NotificationIdentifiers.taskDue(taskID: task.id))
+        #expect(request.kind == .taskDue)
+        #expect(request.title == "Submit report")
+        #expect(request.body == "Due today")
+        #expect(request.fireDate == date("2026-06-10", hour: 9))
     }
 
     // MARK: - HabitNotificationPlanner.reminder
@@ -138,24 +138,24 @@ struct NotificationSchedulingTests {
         #expect(HabitNotificationPlanner.reminder(for: habit, now: now) == nil)
     }
 
-    @Test func habitReminderResolvesLaterTodayWhenStillUpcoming() {
+    @Test func habitReminderResolvesLaterTodayWhenStillUpcoming() throws {
         let habit = Habit(title: "Stretch")
         habit.reminderMinuteOfDay = 20 * 60 // 8:00 PM
         let now = date("2026-06-09", hour: 8) // 8:00 AM — reminder is later today
 
-        let request = try? #require(HabitNotificationPlanner.reminder(for: habit, now: now))
-        #expect(request?.identifier == NotificationIdentifiers.habitReminder(habitID: habit.id))
-        #expect(request?.kind == .habitReminder)
-        #expect(request?.fireDate == date("2026-06-09", hour: 20))
+        let request = try #require(HabitNotificationPlanner.reminder(for: habit, now: now))
+        #expect(request.identifier == NotificationIdentifiers.habitReminder(habitID: habit.id))
+        #expect(request.kind == .habitReminder)
+        #expect(request.fireDate == date("2026-06-09", hour: 20))
     }
 
-    @Test func habitReminderResolvesTomorrowWhenTimeAlreadyPassedToday() {
+    @Test func habitReminderResolvesTomorrowWhenTimeAlreadyPassedToday() throws {
         let habit = Habit(title: "Journal")
         habit.reminderMinuteOfDay = 7 * 60 // 7:00 AM
         let now = date("2026-06-09", hour: 8) // 8:00 AM — 7 AM already passed today
 
-        let request = try? #require(HabitNotificationPlanner.reminder(for: habit, now: now))
-        #expect(request?.fireDate == date("2026-06-10", hour: 7))
+        let request = try #require(HabitNotificationPlanner.reminder(for: habit, now: now))
+        #expect(request.fireDate == date("2026-06-10", hour: 7))
     }
 
     // MARK: - NotificationPlan.build

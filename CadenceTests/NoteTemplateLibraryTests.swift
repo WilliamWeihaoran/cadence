@@ -2,6 +2,7 @@ import Testing
 
 @testable import Cadence
 
+@MainActor
 struct NoteTemplateLibraryTests {
     @Test func overridesReplaceTemplateFieldsForMatchingNoteKinds() {
         let raw = NoteTemplateLibrary.setOverride(

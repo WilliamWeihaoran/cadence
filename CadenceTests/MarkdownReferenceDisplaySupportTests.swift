@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Cadence
 
+@MainActor
 struct MarkdownReferenceDisplaySupportTests {
     @Test func plainWikiLinkDisplaysItsLabelAsANote() {
         let display = MarkdownReferenceDisplaySupport.display(forWikiLabel: "Project Notes")

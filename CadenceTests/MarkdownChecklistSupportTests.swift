@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Cadence
 
+@MainActor
 struct MarkdownChecklistSupportTests {
     @Test func parsesGithubChecklistLines() throws {
         let info = try #require(MarkdownChecklistSupport.lineInfo(in: "  - [x] Ship the editor"))
@@ -80,7 +81,7 @@ struct MarkdownChecklistSupportTests {
     /// the plain-bullet branch and rendered as a bullet glyph with a literal `[x]` beside it — the
     /// reported "checkbox markers never render on iOS", which was a detection failure, not a
     /// drawing one.
-    @MainActor @Test func readsCadencesOwnBulletGlyphsAsCheckboxMarkers() throws {
+    @Test func readsCadencesOwnBulletGlyphsAsCheckboxMarkers() throws {
         for line in ["• [x] ship", "◦ [x] ship", "▪ [x] ship", "– [x] ship", "  • [X] ship"] {
             let info = try #require(MarkdownChecklistSupport.lineInfo(in: line), "\(line) should be a checkbox")
             #expect(info.syntax == .github)
@@ -96,7 +97,7 @@ struct MarkdownChecklistSupportTests {
 
     /// The widening above is to the *bullet* only. A bullet with no box is still a bullet, and a
     /// box with no space after the marker is not a list line at all.
-    @MainActor @Test func stillRequiresABoxAfterTheBullet() {
+    @Test func stillRequiresABoxAfterTheBullet() {
         #expect(MarkdownChecklistSupport.lineInfo(in: "• plain bullet") == nil)
         #expect(MarkdownChecklistSupport.lineInfo(in: "•[x] no space") == nil)
         #expect(MarkdownChecklistSupport.lineInfo(in: "Sales • [x] not at line start") == nil)

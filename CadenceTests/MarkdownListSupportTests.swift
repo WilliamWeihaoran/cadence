@@ -7,6 +7,7 @@ import AppKit
 
 @testable import Cadence
 
+@MainActor
 struct MarkdownListSupportTests {
     @Test func normalizesMarkdownBulletMarkersWithoutMovingEarlierCaret() {
         let text = "caret stays here\n- normalize later"
@@ -141,7 +142,7 @@ struct MarkdownListSupportTests {
     /// `.done`/`.todo`, `checklistSyntax` is `.github`, and `markerRange` covers the whole prefix
     /// so the run can be hidden under the drawn box. `• [x] ` has to answer this the same way
     /// `- [x] ` does — it is the spelling the editor itself produces.
-    @MainActor @Test func lineInfoDescribesCheckboxPrefixesWhicheverBulletTheyUse() throws {
+    @Test func lineInfoDescribesCheckboxPrefixesWhicheverBulletTheyUse() throws {
         for line in ["- [x] ship it", "• [x] ship it", "▪ [x] ship it"] {
             let info = try #require(MarkdownListSupport.lineInfo(in: line), "\(line) should be a checkbox")
             #expect(info.kind == .done)
@@ -351,7 +352,7 @@ struct MarkdownListSupportTests {
     /// it ever asked `MarkdownChecklistSupport`, so a GitHub checkbox styled as a dash bullet with
     /// a literal `[x]` sitting after it. It now routes through the same `lineInfo` the iOS styler
     /// reads: the prefix is hidden and tagged for the layout manager to draw a box over.
-    @MainActor @Test func githubCheckboxLinesHideTheirPrefixAndCarryABoxAttribute() throws {
+    @Test func githubCheckboxLinesHideTheirPrefixAndCarryABoxAttribute() throws {
         let textView = CadenceTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 240))
         textView.string = "- [x] shipped\n  - [ ] todo"
         MarkdownStylist.apply(to: textView)
@@ -378,7 +379,7 @@ struct MarkdownListSupportTests {
 
     /// Existing notes are full of `○` / `✓`, so the legacy spelling keeps rendering as one visible
     /// styled glyph — no hidden prefix, no drawn box.
-    @MainActor @Test func legacyChecklistGlyphsStillRenderAsVisibleMarkers() throws {
+    @Test func legacyChecklistGlyphsStillRenderAsVisibleMarkers() throws {
         let textView = CadenceTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 240))
         textView.string = "✓ shipped\n○ todo"
         MarkdownStylist.apply(to: textView)
@@ -392,7 +393,7 @@ struct MarkdownListSupportTests {
 
     /// The whole hidden prefix is one run, so arrowing across it lands on the content rather than
     /// stepping through five invisible characters.
-    @MainActor @Test func caretTraversalSkipsAHiddenCheckboxPrefix() throws {
+    @Test func caretTraversalSkipsAHiddenCheckboxPrefix() throws {
         let textView = CadenceTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 240))
         textView.string = "- [ ] todo"
         MarkdownStylist.apply(to: textView)
@@ -421,7 +422,7 @@ struct MarkdownListSupportTests {
     /// The renumberer runs from `textDidChange`, after NSTextView has already closed the undo
     /// group for the keystroke. Rewriting the document outside the mutation contract left that
     /// record describing text that had moved, so the rewrite has to register its own undo step.
-    @MainActor @Test func renumberingRegistersItsOwnUndoStep() throws {
+    @Test func renumberingRegistersItsOwnUndoStep() throws {
         let textView = CadenceTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 240))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 240),
@@ -447,7 +448,7 @@ struct MarkdownListSupportTests {
         #expect(textView.string == "1. one\n3. two")
     }
 
-    @MainActor @Test func toolbarTodoListUsesCanonicalTodoMarker() {
+    @Test func toolbarTodoListUsesCanonicalTodoMarker() {
         let textView = NSTextView()
         textView.string = "write this"
         textView.setSelectedRange(NSRange(location: 0, length: (textView.string as NSString).length))
@@ -457,7 +458,7 @@ struct MarkdownListSupportTests {
         #expect(MarkdownListSupport.listPrefixMatch(in: textView.string)?.kind == .todo)
     }
 
-    @MainActor @Test func toolbarTodoListRemovesCanonicalTodoMarker() {
+    @Test func toolbarTodoListRemovesCanonicalTodoMarker() {
         let textView = NSTextView()
         textView.string = "○ write this"
         textView.setSelectedRange(NSRange(location: 0, length: 0))

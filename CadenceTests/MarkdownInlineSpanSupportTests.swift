@@ -6,6 +6,7 @@ import Testing
 /// `UIKit` attributed string from inside `#if os(iOS)` — in a test target that builds for macOS.
 /// Both tests read as coverage and neither had ever executed. The decisions they described now
 /// live in `MarkdownInlineSpanSupport`, which is platform-free, so they run.
+@MainActor
 struct MarkdownInlineSpanSupportTests {
     @Test func inlineCodePreservesLiteralMarkdownInsideIt() throws {
         let markdown = "`**not bold** [raw](https://example.com) #tag`"

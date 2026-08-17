@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Cadence
 
+@MainActor
 struct MarkdownSlashCommandMutationSupportTests {
     @Test func todoCommandUsesCanonicalCadenceChecklistMarker() throws {
         let command = try #require(MarkdownSlashCommand.all.first { $0.id == "todo" })

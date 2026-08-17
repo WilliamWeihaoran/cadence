@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Cadence
 
+@MainActor
 struct MarkdownInlinePreviewSupportTests {
     @Test func segmentsPreservePlainMarkdownAndReferenceTargets() throws {
         let taskID = try #require(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))

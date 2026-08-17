@@ -6,6 +6,7 @@ import Testing
 /// The row swipe gesture replaced `.swipeActions`, which only ever worked in a `List`. These pin
 /// the arithmetic the replacement runs on — the part that used to be untestable because it lived
 /// behind `#if os(iOS)` and this target builds for macOS.
+@MainActor
 struct CadenceSwipeActionSupportTests {
     private let metrics = CadenceSwipeActionMetrics.standard
     /// A plausible iPhone row.

@@ -18,6 +18,7 @@ import Testing
 /// tested a copy, the copy drifted, and the assertion below omitted the same divider the code did.
 /// A test that mirrors the bug cannot catch the bug. Both rules now live on
 /// `CadenceTodayLayoutSupport`, beside the floor they have to agree with.
+@MainActor
 struct iPadTodayPaneWidthTests {
     private func inspectorFloor(for paneWidth: CGFloat) -> CGFloat {
         CadenceTodayLayoutSupport.inspectorPaneFloor(forPaneWidth: paneWidth)
