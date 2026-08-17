@@ -361,7 +361,7 @@ struct iOSSearchView: View {
             case .calendar:
                 iOSCalendarView()
             case .notes:
-                iOSCompactNotesView()
+                iOSNotesView()
             case .lists:
                 iOSListsView()
             case .goals:

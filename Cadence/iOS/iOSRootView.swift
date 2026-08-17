@@ -101,7 +101,7 @@ struct iOSRootView: View {
             iOSHabitsView()
         case .notes:
             NavigationStack {
-                iOSCompactNotesView()
+                iOSNotesView()
                     .toolbar(.hidden, for: .navigationBar)
             }
         case .lists:

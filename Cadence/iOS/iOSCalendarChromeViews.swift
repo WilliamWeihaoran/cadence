@@ -236,7 +236,7 @@ struct iOSCalendarToolbar: View {
 /// `chevron.down`, blue when you are away from now, and a popover whose first row is a way back.
 /// It is **not** that view reused, and the reason is a file boundary rather than a design one —
 /// `iOSNotesDateTitle` is written against `CadenceMobileNotesTab` and a `"yyyy-MM-dd"` string
-/// binding, and generalising it means editing `iOSNotesPanel.swift`. When the two are next open at
+/// binding, and generalising it means editing `iOSNotesView.swift`. When the two are next open at
 /// the same time they should become one view taking a `Date` binding, a label closure and a
 /// "back to now" title; everything below this line is that view with the notes-specific half
 /// removed.

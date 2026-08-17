@@ -181,14 +181,14 @@ private struct iOSMarkdownPreviewTableBlock: View {
             Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
                 GridRow {
                     ForEach(0..<columnCount, id: \.self) { column in
-                        cell(text: value(in: table.headers, at: column), isHeader: true)
+                        cell(text: value(in: table.headers, at: column), column: column, isHeader: true)
                     }
                 }
 
                 ForEach(Array(table.rows.enumerated()), id: \.offset) { rowIndex, row in
                     GridRow {
                         ForEach(0..<columnCount, id: \.self) { column in
-                            cell(text: value(in: row, at: column), isHeader: false)
+                            cell(text: value(in: row, at: column), column: column, isHeader: false)
                                 .background(rowIndex.isMultiple(of: 2) ? Theme.surface.opacity(0.18) : Color.clear)
                         }
                     }
@@ -204,16 +204,24 @@ private struct iOSMarkdownPreviewTableBlock: View {
         row.indices.contains(index) ? row[index] : ""
     }
 
-    private func cell(text: String, isHeader: Bool) -> some View {
+    /// `column` decides the cell's horizontal alignment, from the table's own `:---:` / `---:`
+    /// delimiter row. The preview drew every cell `.topLeading` regardless — see
+    /// `CadenceMarkdownPresentationSupport.tableColumnAlignment`.
+    private func cell(text: String, column: Int, isHeader: Bool) -> some View {
         iOSMarkdownPreviewInlineText(
             text: text.isEmpty ? " " : text,
             fillsWidth: false,
+            textAlignment: CadenceMarkdownPresentationSupport.tableColumnTextAlignment(column, in: table.alignments),
             onOpenReference: onOpenReference
         )
             .font(.system(size: 12, weight: isHeader ? .bold : .medium))
             .foregroundStyle(isHeader ? Theme.text : Theme.muted)
             .lineLimit(3)
-            .frame(minWidth: 112, maxWidth: 220, alignment: .topLeading)
+            .frame(
+                minWidth: 112,
+                maxWidth: 220,
+                alignment: CadenceMarkdownPresentationSupport.tableCellAlignment(column, in: table.alignments)
+            )
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
             .background(isHeader ? Theme.blue.opacity(0.10) : Color.clear)
@@ -551,6 +559,9 @@ private struct iOSMarkdownPreviewChecklistRow: View {
 private struct iOSMarkdownPreviewInlineText: View {
     let text: String
     var fillsWidth = true
+    /// Only a table cell passes anything else: its column's delimiter alignment decides how a cell
+    /// that wraps to a second line lays out inside the slot the grid gave it.
+    var textAlignment: TextAlignment = .leading
     let onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)?
 
     private var rendered: AttributedString {
@@ -613,6 +624,7 @@ private struct iOSMarkdownPreviewInlineText: View {
     var body: some View {
         Text(rendered)
             .textSelection(.enabled)
+            .multilineTextAlignment(textAlignment)
             .frame(maxWidth: fillsWidth ? .infinity : nil, alignment: .leading)
             .environment(\.openURL, OpenURLAction { url in
                 guard let target = MarkdownReferenceDisplaySupport.target(from: url) else {

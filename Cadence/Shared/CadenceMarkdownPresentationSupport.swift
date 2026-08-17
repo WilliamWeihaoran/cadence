@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 enum CadenceMarkdownPresentationSupport {
     static func plainPreviewText(from markdown: String, limit: Int? = nil) -> String {
@@ -39,6 +40,56 @@ enum CadenceMarkdownPresentationSupport {
             return table.headers + table.rows.flatMap { $0 }
         case .divider:
             return []
+        }
+    }
+
+    // MARK: - Table alignment
+
+    /// The alignment a table cell in `column` should be drawn with.
+    ///
+    /// `:---:` and `---:` are parsed into `MarkdownPreviewTable.alignments`, and until now only the
+    /// live editor canvas read them — the read-only preview drew every cell left, so opening a note
+    /// with a right-aligned numeric column in preview silently reshaped it. Alignment is the one
+    /// piece of table syntax with no other way to express it, so the two surfaces disagreeing about
+    /// it is a content difference, not a styling one.
+    ///
+    /// The rule lives here rather than in the view because the view is inside `#if os(iOS)`, where
+    /// the macOS-built test target cannot see it — the same reason `CadenceTodayLayoutSupport`
+    /// exists. Columns past the end of `alignments` fall back to `.leading`, which is markdown's own
+    /// default for a delimiter cell with no colons and what both surfaces drew unconditionally
+    /// before.
+    static func tableColumnAlignment(
+        _ column: Int,
+        in alignments: [MarkdownTableAlignment]
+    ) -> MarkdownTableAlignment {
+        alignments.indices.contains(column) ? alignments[column] : .leading
+    }
+
+    /// How a cell's own text lays out when it wraps to a second line.
+    static func tableColumnTextAlignment(
+        _ column: Int,
+        in alignments: [MarkdownTableAlignment]
+    ) -> TextAlignment {
+        switch tableColumnAlignment(column, in: alignments) {
+        case .leading: return .leading
+        case .center: return .center
+        case .trailing: return .trailing
+        }
+    }
+
+    /// Where a cell sits inside the fixed-width slot the preview grid gives it.
+    ///
+    /// Vertically always `.top`: preview rows are top-aligned so a wrapped cell does not drag the
+    /// single-line cells beside it down to its own centre. Only the horizontal half comes from the
+    /// delimiter row.
+    static func tableCellAlignment(
+        _ column: Int,
+        in alignments: [MarkdownTableAlignment]
+    ) -> Alignment {
+        switch tableColumnAlignment(column, in: alignments) {
+        case .leading: return .topLeading
+        case .center: return .top
+        case .trailing: return .topTrailing
         }
     }
 

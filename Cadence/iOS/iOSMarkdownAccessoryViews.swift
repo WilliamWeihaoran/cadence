@@ -686,36 +686,4 @@ struct iOSMarkdownEmptyPrompt: View {
         .allowsHitTesting(false)
     }
 }
-
-// MARK: - Status bar
-
-/// The one line under the editor: how much you have written.
-///
-/// It used to lead with the editor mode ("Live Markdown" / "Markdown" / "Rendered"), each in its
-/// own accent — purple, blue, green — restating what the mode picker a few points above already
-/// showed as a selected segment. Two affordances for one field, and three accents spent on static
-/// chrome. The picker is gone too now, and live is the only mode; the counts are the part of this
-/// line that nothing else on screen says.
-struct iOSMarkdownStatusBar: View {
-    let wordCount: Int
-    let lineCount: Int
-    let isRegularWidth: Bool
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Spacer(minLength: 0)
-
-            if isRegularWidth {
-                Text("\(lineCount) \(lineCount == 1 ? "line" : "lines")")
-            }
-
-            Text("\(wordCount) \(wordCount == 1 ? "word" : "words")")
-        }
-        .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(Theme.dim)
-        .padding(.horizontal, isRegularWidth ? 14 : 12)
-        .frame(height: isRegularWidth ? 34 : 32)
-        .background(Theme.surface)
-    }
-}
 #endif

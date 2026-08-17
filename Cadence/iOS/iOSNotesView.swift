@@ -3,8 +3,7 @@ import EventKit
 import SwiftData
 import SwiftUI
 
-/// Fixed height for the notes pane's header when it has to line up with the panes beside it on
-/// iPad.
+/// Fixed height for the notes header when it has to line up with the panes beside it on iPad.
 ///
 /// One row: the title, the tab strip and the template control together — 44pt of tab plus 10pt
 /// above and 4pt below, so ~58pt of content.
@@ -13,197 +12,59 @@ import SwiftUI
 /// menu; when the picker went, a ~54pt band was left carrying one 34pt button at its trailing
 /// edge. `.frame(height:)` does not clip, so this must stay at or above the content's own minimum
 /// or the row draws across the divider below it — 64 leaves headroom over the measured ~58.
-let iOSNotesPanelHeaderHeight: CGFloat = 64
+let iOSNotesHeaderStandardHeight: CGFloat = 64
 
-struct iOSNotesPanel: View {
-    @Environment(\.modelContext) private var modelContext
-    @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
-    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @State private var todayNote: Note?
-    @State private var weekNote: Note?
-    @State private var permanentNote: Note?
-    @State private var selectedReferenceNote: Note?
-    @State private var selectedReferenceTask: AppTask?
-    @AppStorage("ios.notes.activeCoreTab") private var activeTabRaw = CadenceCoreNoteTab.today.rawValue
-    // Deliberately `@State`, not `@FocusState`. The editor's first responder is a `UITextView`
-    // inside a `UIViewRepresentable`; nothing here is ever attached with `.focused(...)`, so a
-    // `@FocusState` had no view to move focus to and could not report focus back either. The
-    // editor's own `isFocused` binding is what drives — and observes — the text view.
-    @State private var isEditorFocused = false
-    /// Which day the Daily and Weekly tabs are showing. Deliberately **not** `@AppStorage`: a
-    /// stored day would reopen the app on whatever date you last browsed to, which for a daily
-    /// note is a trap — you would write today's entry into a week-old page. It resets to today
-    /// every launch, and `scenePhase` re-reads from it rather than resetting it, so a session that
-    /// is browsing stays where it is.
-    @State private var selectedDayKey = DateFormatters.todayKey()
+/// **The** iOS Notes surface: the phone's Notes tab, the iPad sidebar's Notes destination, the
+/// Today inspector's Notes pane, and every pushed route that lands on Notes.
+///
+/// It was two views. `iOSNotesPanel` served exactly one host — the iPad Today inspector — and
+/// `iOSCompactNotesView` served everything else on *both* shapes, so the split was never phone
+/// against iPad; it was one pane against the rest. They had already converged on the same header,
+/// tab button and date title, and diverged in the three places shared chrome could not reach:
+///
+/// - **The tab set.** Three against four: Event Notes existed only on the host that was *not* the
+///   pane, so the Today inspector could not reach an event note at all.
+/// - **Tab persistence.** `@AppStorage("ios.notes.activeCoreTab")` against plain `@State` — the
+///   same strip remembered your tab in one host and forgot it in the other.
+/// - **The template-menu gate**, spelled `showsHeaderTemplateMenu` in one and `isCompactWidth` in
+///   the other, for one rule.
+///
+/// The two judgement calls behind the merge, recorded so they are not rediscovered as bugs:
+///
+/// **Event Notes appears in the Today inspector too.** It is a list of notes rather than a standing
+/// note, and the inspector is the narrowest host — but a tab strip that offers different
+/// destinations depending on which surface you opened it from is exactly the divergence this merge
+/// exists to remove, and the inspector is the one host that already suppresses the title
+/// (`showsTitle: false`), which is where the fourth tab's width comes from. The alternative was a
+/// `showsEventsTab` flag: a third knob spelling the same host difference the template gate already
+/// spelled twice.
+///
+/// **The tab does not persist.** `@AppStorage` is gone; the key `ios.notes.activeCoreTab` is left
+/// orphaned in `UserDefaults` rather than migrated, because it named a three-case enum that no
+/// longer describes the strip. Which tab you are on is the same kind of state as `selectedDayKey`
+/// — "which note am I looking at" — and that one deliberately resets every launch, because a stored
+/// value is a trap. Persisting one and not the other gives you a relaunch that reopens on Weekly
+/// with the date snapped back to this week: the header disagreeing with itself. Both reset to
+/// Daily, the note that changes every day and the reason you opened this screen. The cost, stated
+/// rather than discovered: on the Today inspector, switching to Timeline and back now reopens on
+/// Daily instead of the tab you left.
+struct iOSNotesView: View {
+    /// Set when this is the Notes tab's root — see `iOSCalendarView.isCompactTabRoot`. It is what
+    /// tells the header there is nothing to go back to.
+    var isCompactTabRoot = false
+    /// Pins the header block to `iOSNotesHeaderStandardHeight` so it lines up with the panes beside
+    /// it, the way macOS's `NotePanel` / `TasksPanel` / `SchedulePanel` trio does on Today.
+    ///
+    /// No iOS caller sets it today: the iPad Today inspector puts `iPadTodayInspectorSwitcher`
+    /// above both panels, and that row is what aligns them. It survives as a parameter because it
+    /// describes the *host's* layout rather than this view's — the moment a host does place this
+    /// beside another panel, the alignment has to come from here.
     var useStandardHeaderHeight = false
     /// Off in Today's two-pane inspector, where `iPadTodayInspectorSwitcher` is the pane's header
     /// and already has "Notes" lit up in it — the same duplication the title itself was fixed for.
     /// The kind tabs stay either way; they are the only thing in this row that is not a restatement.
     var showsTitle = true
 
-    private var activeTab: CadenceCoreNoteTab {
-        get { CadenceCoreNoteTab(rawValue: activeTabRaw) ?? .today }
-        set { activeTabRaw = newValue.rawValue }
-    }
-
-    /// The template menu sits in the header where there is room for it, and in the editor's format
-    /// row where there is not. The phone's header carries the date, four tabs and a back control on
-    /// one 390pt row; the widest thing the date can say is a week range, and it truncated with the
-    /// button beside it. The format row is a horizontal scroller, and applying a template is an
-    /// insertion like everything else in it.
-    private var showsHeaderTemplateMenu: Bool {
-        horizontalSizeClass == .regular
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            notesHeader
-
-            Divider().background(Theme.borderSubtle)
-
-            if let note = selectedNote {
-                iOSMarkdownEditingSurface(
-                    text: Binding(
-                        get: { note.content },
-                        set: { update(note, content: $0) }
-                    ),
-                    isFocused: $isEditorFocused,
-                    placeholder: "Start writing...",
-                    referenceNotes: allNotes,
-                    referenceTasks: allTasks,
-                    onOpenReference: openMarkdownReference,
-                    templateKind: showsHeaderTemplateMenu ? nil : activeTab.noteKind,
-                    applyTemplate: showsHeaderTemplateMenu ? nil : { apply($0, to: note) }
-                )
-                .id(note.id)
-            } else {
-                ProgressView()
-                    .tint(Theme.blue)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .background(Theme.surface)
-        .onAppear(perform: loadNotes)
-        .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            loadNotes()
-        }
-        .onChange(of: activeTab) { _, _ in
-            isEditorFocused = false
-        }
-        // Dropping focus first is the same rule `apply(_:to:)` spells out: the editing surface
-        // ignores external writes to its text binding while focused, and swapping to another day's
-        // note is exactly such a write. Without this, jumping dates with the caret in the editor
-        // would show the old day's text over the new day's note.
-        .onChange(of: selectedDayKey) { _, _ in
-            isEditorFocused = false
-            loadNotes()
-        }
-        .iOSMarkdownReferenceSheets(
-            selectedNote: $selectedReferenceNote,
-            selectedTask: $selectedReferenceTask,
-            referenceNotes: allNotes,
-            referenceTasks: allTasks
-        )
-    }
-
-    /// One header, both hosts.
-    ///
-    /// It used to be an eyebrow reading NOTES over a large title showing the *selected tab*, with
-    /// the tab strip immediately below — where the same word was highlighted a second time. The
-    /// title described the page you were already on, which is the one thing a page header may not
-    /// do, and it cost a whole row to do it. Title and tabs now share one row: the title is the
-    /// constant word "Notes" and the strip sits at its trailing edge.
-    ///
-    /// `useStandardHeaderHeight` only decides whether the block is pinned to a fixed height so it
-    /// lines up with the panes beside it on iPad.
-    private var notesHeader: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            iOSNotesHeader(
-                showsTitle: showsTitle,
-                tabs: CadenceCoreNoteTab.allCases.map { tab in
-                    iOSNotesHeaderTab(
-                        id: tab.rawValue,
-                        label: tab.shortLabel,
-                        isSelected: activeTab == tab
-                    ) { activeTabRaw = tab.rawValue }
-                },
-                title: {
-                    iOSNotesDateTitle(
-                        tab: CadenceMobileNotesTab(coreTab: activeTab),
-                        dayKey: $selectedDayKey
-                    )
-                }
-            ) {
-                if showsHeaderTemplateMenu, let note = selectedNote {
-                    iOSNoteTemplateMenu(kind: activeTab.noteKind, compact: true) { template in
-                        apply(template, to: note)
-                    }
-                }
-            }
-        }
-        .frame(height: useStandardHeaderHeight ? iOSNotesPanelHeaderHeight : nil, alignment: .top)
-        .background(Theme.surface)
-    }
-
-    private var selectedNote: Note? {
-        notesSnapshot.note(for: activeTab)
-    }
-
-    private var notesSnapshot: CadenceCoreNoteState {
-        CadenceCoreNoteState(today: todayNote, week: weekNote, notepad: permanentNote)
-    }
-
-    private func loadNotes() {
-        let snapshot = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext, dayKey: selectedDayKey)
-        todayNote = snapshot.today
-        weekNote = snapshot.week
-        permanentNote = snapshot.notepad
-    }
-
-    private func update(_ note: Note, content: String) {
-        CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
-    }
-
-    /// Clearing focus first is load-bearing, not tidiness.
-    ///
-    /// `iOSMarkdownEditingSurface` ignores external writes to its `text` binding while the editor
-    /// is focused — it has to, or the debounced commit would fight the keystrokes it just saved.
-    /// A SwiftUI `Menu` does **not** resign the text view's first responder, so picking a template
-    /// with the caret in the editor wrote `note.content` into a binding nobody was reading: the
-    /// template vanished, and the stale draft then committed back over it. Verified on device —
-    /// picking "Daily Plan" with the editor focused produced an empty note and "0 words".
-    ///
-    /// Dropping focus commits the draft and lets the surface accept the write on the next runloop
-    /// turn, so the template lands on top of what the user had actually typed.
-    private func apply(_ template: NoteTemplate, to note: Note) {
-        guard isEditorFocused else {
-            CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
-            return
-        }
-
-        isEditorFocused = false
-        DispatchQueue.main.async {
-            CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
-        }
-    }
-
-    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
-        switch target.kind {
-        case .note:
-            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
-        case .task:
-            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
-        }
-    }
-}
-
-struct iOSCompactNotesView: View {
-    /// Set when this is the Notes tab's root — see `iOSCalendarView.isCompactTabRoot`.
-    var isCompactTabRoot = false
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
@@ -211,48 +72,49 @@ struct iOSCompactNotesView: View {
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @State private var activePage: CadenceMobileNotesTab = .today
+    @State private var activeTab: CadenceMobileNotesTab = .today
     @State private var todayNote: Note?
     @State private var weekNote: Note?
     @State private var permanentNote: Note?
     @State private var selectedMeetingNote: Note?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
-    /// `@State`, not `@FocusState` — see `iOSNotesPanel`.
+    // Deliberately `@State`, not `@FocusState`. The editor's first responder is a `UITextView`
+    // inside a `UIViewRepresentable`; nothing here is ever attached with `.focused(...)`, so a
+    // `@FocusState` had no view to move focus to and could not report focus back either. The
+    // editor's own `isFocused` binding is what drives — and observes — the text view.
     @State private var isEditorFocused = false
-    /// Not persisted, for the reason given in `iOSNotesPanel`.
+    /// Which day the Daily and Weekly tabs are showing. Deliberately **not** persisted: a stored
+    /// day would reopen the app on whatever date you last browsed to, which for a daily note is a
+    /// trap — you would write today's entry into a week-old page. It resets to today every launch,
+    /// and `scenePhase` re-reads from it rather than resetting it, so a session that is browsing
+    /// stays where it is.
     @State private var selectedDayKey = DateFormatters.todayKey()
+
+    private var isCompactWidth: Bool {
+        horizontalSizeClass == .compact
+    }
+
+    /// The template menu sits in the header where there is room for it, and in the editor's format
+    /// row where there is not. The phone's header carries the date, four tabs and a back control on
+    /// one 390pt row; the widest thing the date can say is a week range, and it truncated with the
+    /// button beside it. The format row is a horizontal scroller, and applying a template is an
+    /// insertion like everything else in it.
+    ///
+    /// One spelling, deliberately. The two views carried this rule twice — as
+    /// `horizontalSizeClass == .regular` in one and `!isCompactWidth` in the other — which is how a
+    /// gate drifts without anyone changing it.
+    private var showsHeaderTemplateMenu: Bool {
+        !isCompactWidth
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            // On iPhone this is a pushed screen with its navigation bar hidden, so the header
-            // carries the back control. On iPad the same view is the root of its own stack (the
-            // bar is already hidden there) and there is nothing to go back to.
-            iOSNotesHeader(
-                tabs: CadenceMobileNotesTab.allCases.map { page in
-                    iOSNotesHeaderTab(
-                        id: page.rawValue,
-                        label: page.shortLabel,
-                        isSelected: activePage == page
-                    ) { activePage = page }
-                },
-                onBack: isCompactWidth && !isCompactTabRoot ? { dismiss() } : nil,
-                title: {
-                    iOSNotesDateTitle(tab: activePage, dayKey: $selectedDayKey)
-                }
-            ) {
-                // Regular width only — see `iOSNotesPanel.showsHeaderTemplateMenu`. At compact
-                // width it rides in the editor's format row instead.
-                if !isCompactWidth, let coreTab = activePage.coreTab, let note = selectedCoreNote {
-                    iOSNoteTemplateMenu(kind: coreTab.noteKind, compact: true) { template in
-                        apply(template, to: note)
-                    }
-                }
-            }
+            notesHeader
 
             Divider().background(Theme.borderSubtle)
 
-            if activePage == .events {
+            if activeTab == .events {
                 iOSMeetingNotesList(notes: meetingNotes) { note in
                     selectedMeetingNote = note
                 }
@@ -267,10 +129,13 @@ struct iOSCompactNotesView: View {
             guard phase == .active else { return }
             loadNotes()
         }
-        .onChange(of: activePage) { _, _ in
+        .onChange(of: activeTab) { _, _ in
             isEditorFocused = false
         }
-        // See the same handler in `iOSNotesPanel` for why focus is dropped before the reload.
+        // Dropping focus first is the same rule `apply(_:to:)` spells out: the editing surface
+        // ignores external writes to its text binding while focused, and swapping to another day's
+        // note is exactly such a write. Without this, jumping dates with the caret in the editor
+        // would show the old day's text over the new day's note.
         .onChange(of: selectedDayKey) { _, _ in
             isEditorFocused = false
             loadNotes()
@@ -291,9 +156,39 @@ struct iOSCompactNotesView: View {
         )
     }
 
+    /// One header, every host.
+    ///
+    /// It used to be an eyebrow reading NOTES over a large title showing the *selected tab*, with
+    /// the tab strip immediately below — where the same word was highlighted a second time. The
+    /// title described the page you were already on, which is the one thing a page header may not
+    /// do, and it cost a whole row to do it. Title and tabs share one row now.
+    ///
+    /// On a pushed compact screen the navigation bar is hidden, so the header carries the back
+    /// control. As the Notes tab's root, and anywhere on iPad, there is nothing to go back to.
+    private var notesHeader: some View {
+        iOSNotesHeader(
+            showsTitle: showsTitle,
+            selection: $activeTab,
+            onBack: isCompactWidth && !isCompactTabRoot ? { dismiss() } : nil,
+            title: {
+                iOSNotesDateTitle(tab: activeTab, dayKey: $selectedDayKey)
+            }
+        ) {
+            // Regular width only — see `showsHeaderTemplateMenu`. At compact width it rides in the
+            // editor's format row instead.
+            if showsHeaderTemplateMenu, let coreTab = activeTab.coreTab, let note = selectedNote {
+                iOSNoteTemplateMenu(kind: coreTab.noteKind, compact: true) { template in
+                    apply(template, to: note)
+                }
+            }
+        }
+        .frame(height: useStandardHeaderHeight ? iOSNotesHeaderStandardHeight : nil, alignment: .top)
+        .background(Theme.surface)
+    }
+
     @ViewBuilder
     private var coreEditor: some View {
-        if let note = selectedCoreNote {
+        if let note = selectedNote {
             iOSMarkdownEditingSurface(
                 text: Binding(
                     get: { note.content },
@@ -304,8 +199,8 @@ struct iOSCompactNotesView: View {
                 referenceNotes: allNotes,
                 referenceTasks: allTasks,
                 onOpenReference: openMarkdownReference,
-                templateKind: isCompactWidth ? activePage.coreTab?.noteKind : nil,
-                applyTemplate: isCompactWidth ? { apply($0, to: note) } : nil
+                templateKind: showsHeaderTemplateMenu ? nil : activeTab.coreTab?.noteKind,
+                applyTemplate: showsHeaderTemplateMenu ? nil : { apply($0, to: note) }
             )
             .id(note.id)
         } else {
@@ -315,13 +210,10 @@ struct iOSCompactNotesView: View {
         }
     }
 
-    private var selectedCoreNote: Note? {
-        guard let coreTab = activePage.coreTab else { return nil }
+    /// `nil` on Event Notes, the one tab that is a list rather than a single standing note.
+    private var selectedNote: Note? {
+        guard let coreTab = activeTab.coreTab else { return nil }
         return notesSnapshot.note(for: coreTab)
-    }
-
-    private var isCompactWidth: Bool {
-        horizontalSizeClass == .compact
     }
 
     private var meetingNotes: [Note] {
@@ -535,16 +427,6 @@ struct iOSNoteTemplateMenu: View {
     }
 }
 
-/// One tab in `iOSNotesHeader`. The two hosts offer different sets — the iPad pane has the three
-/// standing notes, the phone adds Event Notes — so the header takes the strip as data rather than
-/// forking per host.
-struct iOSNotesHeaderTab: Identifiable {
-    let id: String
-    let label: String
-    let isSelected: Bool
-    let select: () -> Void
-}
-
 /// The Notes header: back control, the constant word "Notes", and the tab strip, all on one row.
 ///
 /// The title is deliberately *not* the selected tab. It used to be, under an eyebrow that also
@@ -560,7 +442,11 @@ struct iOSNotesHeaderTab: Identifiable {
 private struct iOSNotesHeader<Title: View, Trailing: View>: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     var showsTitle = true
-    let tabs: [iOSNotesHeaderTab]
+    /// The strip took its tabs as an array of value types while two hosts offered two different
+    /// sets. There is one host and one set now, so it takes the selection directly — an
+    /// intermediate model whose only job was to let the sets differ is a fork with the fork
+    /// removed.
+    @Binding var selection: CadenceMobileNotesTab
     /// Set on a pushed compact screen whose navigation bar is hidden. See
     /// `iOSHidesCompactNavigationBar()`.
     var onBack: (() -> Void)? = nil
@@ -595,14 +481,14 @@ private struct iOSNotesHeader<Title: View, Trailing: View>: View {
             }
 
             HStack(spacing: iOSNotesTabMetrics.spacing) {
-                ForEach(tabs) { tab in
+                ForEach(CadenceMobileNotesTab.allCases) { tab in
                     iOSQuietTabButton(
-                        title: tab.label,
-                        isSelected: tab.isSelected,
+                        title: tab.shortLabel,
+                        isSelected: selection == tab,
                         horizontalPadding: isRegularWidth
                             ? iOSNotesTabMetrics.horizontalPadding
                             : iOSNotesTabMetrics.compactHorizontalPadding,
-                        action: tab.select
+                        action: { selection = tab }
                     )
                 }
             }

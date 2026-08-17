@@ -32,12 +32,18 @@ enum CadenceCoreNoteTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// The four tabs the mobile Notes screen offers, in order.
+/// The four tabs the iOS Notes surface offers, in order.
+///
+/// **One set, every host.** `iOSNotesView` is the phone's Notes tab, the iPad sidebar's Notes
+/// destination and the Today inspector's Notes pane, and the strip is the same in all three. It was
+/// not: the Today inspector ran a separate view built on the three `CadenceCoreNoteTab` cases, so
+/// Event Notes was unreachable from it. See `iOSNotesView` for why the fourth tab belongs in a pane
+/// that narrow.
 ///
 /// This exists as a shared type — rather than the private enum the compact notes view used to
-/// carry — because the labels have a width budget that is worth asserting on: the tab strip now
-/// shares one row with the back control and the word "Notes", instead of sitting on a row of its
-/// own under a title that just repeated the selected tab.
+/// carry — because the labels have a width budget that is worth asserting on: the tab strip shares
+/// one row with the back control and the word "Notes", instead of sitting on a row of its own under
+/// a title that just repeated the selected tab.
 ///
 /// `shortLabel` is deliberately *not* the note kind's name. "Event Notes" and "Notepad" are the
 /// two that do not fit beside the title on a 402pt phone, so they read "Events" and "Pad" here.

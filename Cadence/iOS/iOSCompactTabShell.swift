@@ -121,7 +121,7 @@ struct iOSCompactRootShell: View {
         case .calendar:
             iOSCalendarView(isCompactTabRoot: true)
         case .notes:
-            iOSCompactNotesView(isCompactTabRoot: true)
+            iOSNotesView(isCompactTabRoot: true)
         case .more:
             iOSMoreTabView()
         }
@@ -157,7 +157,7 @@ struct iOSCompactFeatureDestinationView: View {
         case .calendar:
             iOSCalendarView()
         case .notes:
-            iOSCompactNotesView()
+            iOSNotesView()
         case .lists:
             iOSListsView()
         case .goals:
