@@ -40,6 +40,10 @@ Started 2026-08-17, four agents on disjoint file sets.
 **G — note editor chrome and gestures** (`iOSMarkdownTextView`, `iOSMarkdownEditor`)
 - [T-47] **Remove the "Done" bar under the iOS note editor.** A full-width bar whose only control
   drops focus and takes the caret away. The caret staying in the note is fine.
+- [T-51] **Remove the word-count bar from the iOS note editor.** The thin "39 words" strip at the
+  foot of the editor. `iOSMarkdownStatusBar`, used at `iOSMarkdownEditingSurface.swift:47`; the
+  struct lives in `iOSMarkdownAccessoryViews.swift`, outside the agent's file set, so the *use*
+  comes out and the struct is reported if it is left orphaned.
 - [T-42] **Double-tap on plain text does nothing.** `renderedBlockTap` cancels the touch then
   returns early when the hit is not a code/table block, so a double tap neither places the caret
   nor selects a word.
