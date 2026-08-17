@@ -29,37 +29,47 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-_Nothing._
+Started 2026-08-17, four agents on disjoint file sets.
+
+**F — drag-to-create drop preview**
+- [T-46] **The drop preview highlights an existing task, which is a lie.** `47328af` lights up the
+  row you hover, but nothing happens *to* that task — it is only read for its placement. Show a
+  ghost block opening **between** rows with the neighbours parting, not a selection on a row that
+  is not the subject.
+
+**G — note editor chrome and gestures** (`iOSMarkdownTextView`, `iOSMarkdownEditor`)
+- [T-47] **Remove the "Done" bar under the iOS note editor.** A full-width bar whose only control
+  drops focus and takes the caret away. The caret staying in the note is fine.
+- [T-42] **Double-tap on plain text does nothing.** `renderedBlockTap` cancels the touch then
+  returns early when the hit is not a code/table block, so a double tap neither places the caret
+  nor selects a word.
+
+**H — harden special-block rendering** (`iOSMarkdownStylingSupport`, block canvases, Services parsing)
+- [T-48] **Harden the iOS markdown editor's rendering of special blocks.** Requested directly.
+  `f1c55ea` made them draw at all and `a43b8fd` fixed two consequences; the layer has never had a
+  systematic pass. Tables, fenced code, dividers, images, task embeds, quote bars, checkboxes.
+- [T-41] **`iOSMarkdownStylingSupportTests.swift` never runs** — the whole file is inside
+  `#if os(iOS)` and the test target builds macOS. Dead coverage that reads as real coverage.
+
+**I — device-targeting cleanup**
+- [T-08] **Device-targeting cleanup.** Scanned 2026-08-17, and **most of what looks like dead
+  device code is not**: the 58pt sidebar **rail** below an 820pt window is reachable by a 2/3 Split
+  View on the 11" Pro (~782–795pt) and by Stage Manager, so it stays. What is genuinely
+  unreachable: `iPadTodayView.sidePanelMinWidth`'s `320` branch (needs a 949–1088pt window —
+  Stage Manager only), three upper clamps that never bind (`inspectorMaxWidth` 430, two `540`s, a
+  `760`), and `tvOS`/`watchOS`/`visionOS` names in one `#if` that compile to nothing. Week's
+  1183pt inspector split is unreachable but is a *parameter* feeding a shared gate Month still
+  uses — flag, don't cut. Test fixtures enumerate iPad mini and 13" widths; one assertion pins the
+  rail at 744 (mini) rather than at a Split View width, which is what makes deleting the rail look
+  safe. **Open question for the user:** the app target declares `TARGETED_DEVICE_FAMILY "1,2,7"`
+  and ships `xros`/`xrsimulator` with an `XROS_DEPLOYMENT_TARGET`, while `CadenceWidgets` does
+  not — so the app claims a visionOS family its own widget extension cannot ship into.
 
 ## Open — decided, not started
 
-- [T-46] **The drag-to-create drop preview highlights an existing task, which is a lie.** `47328af`
-  lights up the row you are hovering, but nothing is going to happen *to* that task — it is only
-  being read for its placement. The affordance should say "a new task lands here": a ghost/shadow
-  block opening **between** rows, with the neighbouring rows parting to make room, rather than a
-  selection-style highlight on a row that is not the subject. Note the row is currently both the
-  drop target and the thing highlighted; separating "what I am reading placement from" and "where
-  the new task will sit" is the actual change. Related: [T-39].
-- [T-47] **Remove the "Done" bar under the iOS note editor.** A full-width bar pinned below the tab
-  bar whose only control is `Done`, which drops focus and takes the caret away. Not wanted — the
-  caret staying in the note is fine. It is the text view's input accessory (`onDone` / `barHeight`
-  in `Cadence/iOS/iOSMarkdownTextView.swift`). Check what else, if anything, presents it before
-  deleting, and confirm dismissing the keyboard is still possible some other way on a phone where
-  the note fills the screen.
-
-- [T-08] **Device-targeting cleanup** — remove handling that exists only for hardware outside the
-  three targets above.
 
 ## Open — known, unscheduled
 
-- [T-42] **Double-tap in the note editor swallows the tap.** `renderedBlockTap` in
-  `iOSMarkdownEditor.makeUIView` has `numberOfTapsRequired = 2` and `cancelsTouchesInView = true`,
-  and fires on *any* double tap — when the hit is not a code or table block the handler returns
-  early having already cancelled the touch, so a double tap on plain text neither places the caret
-  nor selects a word. Hit repeatedly while driving an iPad. The fix is probably
-  `cancelsTouchesInView = false`, but that is an unverified gesture change in the area that has
-  bitten this app before (`.draggable` delaying taps across a whole `ScrollView`), so it wants
-  its own pass with device verification rather than a one-line guess.
 - [T-43] **Renaming a task embed after it is created.** `aca2787` made the embed take its title at
   creation, which covers the common case. There is still no way to rename one afterwards on iOS:
   macOS opens a text field over the card (`beginInlineTaskTitleEdit` → `onRenameEmbeddedMarkdownTask`)
@@ -74,13 +84,6 @@ _Nothing._
   T-40. **All of it is DEBUG-only seeded data (`iOSSampleDataSupport`) on simulators — nothing in
   the repo, nothing on a real device, nothing synced.** Reset it by wiping the simulators' app data
   next time neither is in use; not worth doing while agents are running.
-
-- [T-41] **`CadenceTests/iOSMarkdownStylingSupportTests.swift` never runs.** The whole file is
-  inside `#if os(iOS)`, and the test target builds for macOS — so its two tests have never executed
-  once. Dead coverage that reads as real coverage, which is worse than none. Either move the logic
-  under test into `Shared/`/`Services/` so it can be exercised, or delete the file; leaving it is
-  the one option that misleads. Found while fixing T-37, whose fixes could not be pinned there for
-  exactly this reason.
 
 - [T-39] **Group headers should be drop targets too.** `47328af` made task *rows* accept a dropped
   `+`, which covers every grouping by construction but cannot reach an **empty** group — the one
