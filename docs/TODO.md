@@ -48,20 +48,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   *error* in Swift 6 mode, and `CadenceMCPServer` is already `SWIFT_VERSION = 6.0` while the app and
   tests are 5.0, so this is a migration blocker rather than tidying.
 
-- [T-85] **Redesign the iOS task creation sheet so the fold problem is *gone*, not managed.** Decided
-  2026-08-17: the user rejected all three mitigations for the ~53pt overflow and asked for a
-  redesign with mocks. The binding constraint, measured: with a software keyboard up a 390pt phone
-  leaves ~508pt of sheet, ~452pt of it usable below the header. The current shape spends that on a
-  52pt title, a 70pt notes box, a 76pt do-date button block and four ~68pt rows. Supersedes the
-  height note on [D-50].
-
-  **Decided 2026-08-17: option C, a grid of value tiles.** Do / Due / List / Priority as 2-up tiles
-  with their value under a small caption, Tags full width beneath. ~300pt, so everything clears the
-  keyboard with ~120pt spare. Chosen over tightened rows and over a title-first chip strip. Note the
-  cost being accepted: **a tile grid appears nowhere else in this app**, so it is a new pattern to
-  maintain — build it out of existing tokens rather than inventing a tile style, and if a shared
-  component falls out of it, put it where other surfaces can reach it.
-
 - [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
   `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
   header or picker looks or behaves. This item is the sweep to make the code match that — find the
@@ -73,6 +59,11 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 
 ## Open — known, unscheduled
+
+- [T-91] **`toggledDoDateKey` and `doDatePickLabel` are unused by the sheet** now the do-date button
+  block is gone (`D-58`). Kept because `CadenceTaskComposerSupportTests` still covers them and that
+  file was held by another agent at the time. Remove both, and their tests, unless another caller
+  turns up.
 
 - [T-90] **Month's date dropdown seeds its selection on the middle day of the displayed window** —
   Aug 16 under a grid reading "August" — rather than the 1st or today. Cosmetic, and a consequence
@@ -171,6 +162,8 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-58] `3097749` The creation sheet is a grid of value tiles, measured to fit (T-85).
 
 - [D-57] `69bf02d` A group header takes a dropped + only when it can say where it lands (T-39).
 
