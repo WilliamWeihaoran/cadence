@@ -29,8 +29,36 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
+**Repo tightening + tri-platform UI convergence** ([T-123]) — audit phase. Four read-only agents:
+cross-platform UI sharing, OOD/maintainability, the MCP boundary, and documentation accuracy.
+
 
 ## Open — decided, not started
+
+- [T-123] **Tighten the repo, and converge the three platforms' UI.** Requested 2026-08-18. Scope
+  decided with the user up front, because two readings of "unify the UI" are different projects:
+
+  1. **Share the implementation now; decide feature parity after.** One set of tokens, components
+     and presentation logic behind all three surfaces; each keeps its own *layout* (macOS sidebar +
+     columns, iPad split, iPhone tabs). The user's stated goal is that the end product should be
+     **more similar across all three than it is now, especially closing the macOS↔iOS/iPadOS gap** —
+     so parity is a real target, just sequenced after the sharing sweep with numbers in hand.
+     Distinct from [T-32], which stays not-started.
+  2. **Best spelling wins, either way.** macOS may change visually where iOS has the better answer.
+     This reverses the earlier "macOS is the reference" default and is only safe because macOS
+     screenshot verification now works (`D-89`). Every macOS visual change must be seen, not argued.
+  3. **MCP is in scope, refactored extra carefully** — and the first task there is to work out *why*
+     `AGENTS.md` says not to touch it, since a rule with a forgotten reason is either load-bearing
+     or dead. `CadenceReadService.swift` is now the largest file in the repo at 1,336 lines. After
+     the refactor, the docs must say considerably more about that boundary than they do now.
+
+  Proportions worth keeping in view: macOS 218 files / 51.9k lines, iOS 79 / 30.4k, **Shared only
+  74 / 11.5k**, Services 53 / 12.7k, Models 24 / 2.6k. 82k lines of platform code against 11.5k
+  shared is the number this item exists to move.
+
+  Method: read-only audit agents first, findings triaged and recorded here, then implementation
+  agents, each followed by an **independent verifier agent** that checks the work against the code
+  rather than against the implementer's report.
 
 - [T-122] **Flip `SWIFT_VERSION` to 6.0 — now an open question rather than a blocked one.** `D-95`
   cleared the last macOS error, so nothing in the app's source blocks it. What remains: 10
