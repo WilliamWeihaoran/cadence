@@ -29,10 +29,15 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**AU — land the blocked editor refactor, and split the 1,996-line file** ([T-105] + refactor)
-
 
 ## Open — decided, not started
+
+- [T-122] **Flip `SWIFT_VERSION` to 6.0 — now an open question rather than a blocked one.** `D-95`
+  cleared the last macOS error, so nothing in the app's source blocks it. What remains: 10
+  Swift-6-mode *warnings* elsewhere in the app (byte-identical before and after T-105, none in
+  editor files), and on iOS the toolchain bug in [T-115] — swift-frontend crashes in IRGen once the
+  diagnostics are gone, which is not app code. So macOS could plausibly flip first; iOS cannot until
+  the toolchain moves. `CadenceMCPServer` has been on 6.0 all along.
 
 - [T-121] **`iOSMarkdownStylingSupport.swift` is 1,058 lines in 3 types**, and it is the layer whose
   breakage was invisible: the entire iOS rendered-block system drew nothing for a while because
@@ -82,37 +87,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   `iPadTodayView` vs the compact Today, and the compact/regular branches inside the task row — is
   in flight now.
 
-
-- [T-105] **The macOS Swift 6 migration has one blocker left — and it is no longer blocked.**
-  `D-89` established that macOS screenshot verification works, so the visual questions that stopped
-  `D-77` landing the refactor (a multi-line selection tinting an embed card, the insertion point
-  under a card, `dirtyRect`-derived glyph ranges) can now actually be looked at. Do the CGEvent
-  caveat honestly: screenshots are safe, but driving the pointer is not while the user is at the
-  machine., and it is a decision rather than an
-  annotation. `D-77` established the honest count with a whole-module probe (a batched
-  build stops at the first failing batch; a type error stops the compiler before SIL diagnostics
-  run, so both undercount):
-
-  1. **`MarkdownEditorInteractionSupport.swift` — `CadenceLayoutManager.drawBackground`.** The
-     refactor exists and compiles: six of the eight decoration passes go `nonisolated` untouched
-     **once `Theme` is `nonisolated`** (every `MarkdownStylist` colour is `= Theme.ns*`, and a
-     nonisolated constant cannot initialise from a main-actor one — note `Theme.swift` also compiles
-     into `CadenceWidgets`, so that wants its own pass); the other two genuinely touch
-     `CadenceTextView` state and must move onto the view. It is unlanded because AppKit offers no
-     main-actor hook between the background and glyph passes, so moving them changes z-order, and
-     the three residual questions are visual only — a multi-line selection would no longer tint an
-     embed card, the insertion point would fall under it, and the glyph range must be derived from
-     `dirtyRect` rather than received. **Blocked on [T-14]**, not on effort.
-     *Rejected on purpose, because it will tempt the next person:* moving the hit-rect and hover
-     caches into a nonisolated holder compiles, changes no z-order, and is not spelled
-     `nonisolated(unsafe)` — but it removes the diagnostic without removing the hazard.
-  2. ~~`HabitNotificationReconcileSupport`~~ — fixed in `D-80`. The context never actually crossed
-     actors; the signature just failed to say so.
-
-  With the editor override alone stubbed, the whole-module Swift 6 build is now clean. **iOS has 3 more errors**, all in
-  `Cadence/iOS/iOSMarkdownBlockCanvasRendering.swift` — the same `NSLayoutManager` shape, and the
-  *easy* half: plain `nonisolated` annotations of the kind `D-73` already applied on macOS. That is
-  the cheapest remaining step and is [T-109].
 
 - [T-86] **Agents building into the shared DerivedData can crash a running Mac app.** On 2026-08-17
   the user hit "Cadence quit unexpectedly" — `EXC_BREAKPOINT` on the main thread, five seconds after
@@ -194,6 +168,11 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-95] `810603d` The last macOS Swift 6 error, and the 1,996-line file it lived in (T-105 +
+  refactor). Whole-module probe 1 error → 0. Two of the three visual questions that blocked this for
+  a day turned out to rest on false premises, and the offscreen renders said so — the caret is
+  composited above everything the view draws and cannot be occluded by any hook choice here.
 
 - [D-94] `4fe3411` An empty kanban column could not be a drop target, whatever identity it carried
   (T-118). Wiring the identities alone would not have fixed the documented motivating example —
