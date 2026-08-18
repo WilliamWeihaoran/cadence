@@ -37,6 +37,50 @@ the reset. Nothing on disk changed.
 
 ## Open — decided, not started
 
+- [T-127] **`TaskDragPayload` is bypassed by the two surfaces it was written for, and has no tests.**
+  The type owns the `listTask:`/`taskBundle:` drag wire format across 24 call sites on both
+  platforms, and its own comment says it was unified from two byte-identical copies because a
+  divergence "would have produced a platform whose drags silently stopped matching, with nothing to
+  catch it". Yet `macOS/Views/InboxSupportViews.swift:293,295` and
+  `macOS/Views/ListDetailSupportViews.swift:50,52` still hand-spell both encode and decode —
+  including `dropFirst(9)`, the length of `"listTask:"` as a magic number, so changing the prefix
+  breaks them silently. Verified directly. There is also **no test file for the type at all**, and
+  `taskID(from:)` has three documented branches (prefixed / bundle→nil / bare UUID), none pinned.
+  Fix is a 4-line swap plus ~20 lines of test.
+
+- [T-128] **`activeModelContext ?? modelContext` is re-derived at 7 sites in one file.**
+  `macOS/macOSRootView.swift` holds a `@State ModelContext?` that `refreshAppData()` replaces
+  wholesale; the fallback is spelled at 7 separate places (verified by grep), and `Views/NotePanel.swift`
+  does the same with `notesContext ?? modelContext`. A new call site that forgets the `??` reads or
+  writes through the **discarded** context — SwiftData emits no diagnostic, it just shows stale data
+  or drops a write. Fix: one computed property per view. Both files also independently implement the
+  same "save-if-dirty, then discard and recreate" dance, where saving *before* discarding is the
+  correctness contract.
+
+- [T-129] **Six `AppTask` comparators still end in a partial tie-break**, so equal keys leave order
+  undefined: `iOSMarkdownEditingSurface.swift:212`, `iOSMarkdownAccessoryViews.swift:107` (byte-identical
+  to each other), `CadenceFocusPlanningSupport.swift:47`, `TaskBundlePickerSupportViews.swift:72`, and
+  `CadenceCalendarPlanningSupport.swift:366,446`. The first two feed `.prefix(6)` completion menus and
+  the third feeds Focus's ready list — so an unstable tail changes **which items are offered**, not
+  just their order. That is the argument `GoalContributionSummary.swift:161` already makes in code for
+  its own sort. `TaskOrdering.fallbackPrecedes` exists for exactly this; one line each.
+
+- [T-130] **One markdown list-indent formula, spelled twice, tested zero times.**
+  `MarkdownStylist.listMarkerIndent`/`listContentIndent` (`MarkdownEditorSupport.swift:904`) and
+  `iOSMarkdownStyler.listParagraphStyle` (`iOSMarkdownStylingSupport.swift:885`) both compute
+  `level*12 + 8` and `+ markerWidth*5.5 + 8`. Drift changes list indentation on one platform only —
+  visually subtle, easy to ship unnoticed. Precedent: `MarkdownEditorDecorationGeometry` was
+  extracted from this same subsystem because it is pure, and it is unit tested.
+
+- [T-131] **Two comments tell agents a finished consolidation is still open.** `CLAUDE.md` and the doc
+  comment at `CadenceTaskQuerySupport.swift:236` both say iOS's sort "tie-breaks on `order` alone".
+  It does not — all five branches end in `TaskOrdering.fallbackPrecedes`, and
+  `MobileTaskSortStabilityTests` pins the stability property. What actually remains is two sort
+  *vocabularies* (`CadenceTaskSortMode` with 29 refs across 10 iOS files, vs
+  `TaskSortField`+`TaskSortDirection`), both raw-value-persisted — so merging them is a preferences
+  *migration*, not a refactor. **The audit's recommendation is not to merge, and to fix the two
+  comments instead.** Worth accepting unless there is a reason to want one vocabulary.
+
 - [T-124] **32 orphaned `CadenceMCPServer` processes are holding the live store open**, the oldest
   running **74 days**. Confirmed directly with `ps`. `main.swift` loops forever with no shutdown path
   when a client disconnects, so every Codex session that ever started the server leaked one. Each
