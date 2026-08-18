@@ -31,12 +31,19 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
-- [T-116] **Exercise every drag-and-drop path in Cadence, now that drags can be driven.** Sidebar
-  reorder, task-to-timeline, kanban and Calendar Board columns, all-day event chips, drag-to-create,
-  the tab-bar `+` → task-row path from `47328af`. Not one of these has ever been *observed* working;
-  every claim rests on tracing that a producer and a consumer both exist. Two hit-target bugs this
-  session (an 8pt-wide embed card, a 6pt timeline block interior) were invisible to exactly that
-  kind of reasoning. iOS first, using the `AGENTS.md` recipe.
+- [T-118] **Three of five `CadenceTaskGroupDropIdentity` cases are never constructed.** `.section`,
+  `.list` for a real area/project, and `.priority` are dead; only `.todayDate`, `.completion` and
+  `.list(key: "inbox")` are ever passed. The visible cost, confirmed on device: list-detail **section
+  headers refuse a dropped `+`** — and that is the surface `CadenceTaskDropSupport` explicitly names
+  as the case the show-when-empty rule exists for, an empty kanban column you cannot otherwise add
+  to. Fixing it means moving `iOSListDetailView`'s section grouping onto `iOSTaskGroupSection`, which
+  is a feature change rather than a defect repair, so `D-91` left it.
+
+- [T-119] **A timeline block opens the task editor after a long-press-and-drag.** Pressing a Week-view
+  task block for 700ms and dragging 250pt away releases into the Edit Task sheet rather than doing
+  nothing — the tap is not cancelled by movement. A plain swipe from the same point scrolls the grid
+  correctly, so the grid is not blocked. Low consequence today because iOS has no timeline drag at
+  all; it would become a real problem the moment one is added.
 
 - [T-117] **A project-file lock is a new disguise in the T-86 family — now confirmed twice.** Builds
   deadlock in `NSFileCoordinator` reading `Cadence.xcodeproj`, 20+ minutes at 0% CPU, with an empty
@@ -199,6 +206,12 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-91] `39ca491` A group header accepted a dropped `+` only on its words (T-116). The first drag
+  fixes in this app ever made with a drop observed firing. Also established that **six of the drag
+  paths believed to exist on iOS do not exist at all** — no task-list reordering, no timeline drop or
+  drag-to-create, no all-day chip drag, no kanban card drag, no board rails. Those are macOS
+  features, so "unverified" was concealing "absent" rather than "broken".
 
 - [D-90] `8772628` Tests stranded a UserDefaults plist on every run — 4,629 of them (T-114).
   Bounded at 11 files total, verified by a third independent run showing delta 0.
