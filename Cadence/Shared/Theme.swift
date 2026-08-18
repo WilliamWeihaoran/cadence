@@ -3,7 +3,7 @@ import SwiftUI
 /// Cadence's single fixed dark palette. Previously the app supported 7 selectable themes
 /// (light and dark) via `ThemeManager`; that system has been removed in favor of one fixed,
 /// non-adaptive palette shared by macOS and iOS/iPadOS.
-struct Theme {
+nonisolated struct Theme {
     // Near-black neutral. The previous stops sat around hue 225 at ~19% saturation, so the
     // blue cast compounded on every elevated surface and the chrome ended up carrying more
     // color than the content. These sit at ~4% saturation so the accents do that job instead.
@@ -212,7 +212,7 @@ import AppKit
 // which silently drifted from the palette above whenever the palette changed. These bridges
 // resolve the *same* `Color` constants declared in this file into concrete sRGB `NSColor`s, so a
 // palette value is still defined in exactly one place and the two can never diverge.
-extension Theme {
+nonisolated extension Theme {
     /// Resolves a palette `Color` into a concrete sRGB `NSColor` suitable for AppKit drawing
     /// (`setFill()`, `setStroke()`, `backgroundColor`, `withAlphaComponent(_:)`, PDF rendering).
     private static func nsColor(_ color: Color) -> NSColor {

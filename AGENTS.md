@@ -51,7 +51,7 @@ past a `grep "/Cadence/"` entirely.
 - `Cadence/macOS/` - main product surface. Most active work happens here.
 - `Cadence/macOS/Views/` - macOS feature screens and support views (~165 files).
 - `Cadence/macOS/Services/` - macOS-only managers for focus, calendar, reminders, hotkeys, task creation, hover state, deletion, scheduling, note export, privacy reset, Apple account.
-- `Cadence/macOS/Editor/` - AppKit-backed markdown editor bridge (6 files). High risk; preserve NSTextView behavior carefully.
+- `Cadence/macOS/Editor/` - AppKit-backed markdown editor bridge (11 files since the T-105 split). High risk; preserve NSTextView behavior carefully.
 - `Cadence/iOS/` - large, real iOS/iPadOS surface (68 files: Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings). iPhone runs a four-tab bottom bar (`iOSCompactTabShell`); iPad keeps its sidebar. Do not assume feature parity with macOS.
 - `CadenceWidgets/` - widget extension. Compiles a subset of app sources (models, `Theme.swift`, `Cadence*WidgetSupport.swift`) directly into the extension target.
 - `CadenceMCPServer/` and `plugins/cadence-mcp/` - MCP server/plugin surfaces. Treat as separate integration boundaries.
@@ -175,14 +175,26 @@ code, and every one of them has been violated by a shipped change at least once.
 
 Use extra caution in these areas:
 
-- `Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift` and `MarkdownEditorSupport.swift` - large AppKit/SwiftUI bridge with custom caret, drawing, slash commands, and undo behavior.
-  This file is also what keeps the app target on `SWIFT_VERSION = 5.0`.
-  `CadenceLayoutManager` is main-actor isolated by the project default while `NSLayoutManager` is
-  not, so its overrides disagree with what they override. `init`, `init(coder:)` and `drawGlyphs`
-  are now `nonisolated` and clean; `drawBackground` is not, because its decoration passes need
-  `MarkdownStylist`, `Theme` and `CadenceTextView`, and Swift 6 region isolation refuses the
-  `MainActor.assumeIsolated` hop back (non-`Sendable` `self` cannot be sent). See the comment on
-  the class — the fix is a refactor of where the decoration pass lives, not an annotation.
+- `Cadence/macOS/Editor/` - the AppKit/SwiftUI bridge: custom caret, drawing, slash commands, undo.
+  **Read `Cadence/macOS/Editor/AGENTS.md` first** — it carries the per-file roles, the concurrency
+  rules and the draw-order findings, and it is kept current. In short, T-105 split the 1,996-line
+  `MarkdownEditorInteractionSupport.swift` into six: it now holds only the `CadenceTextView`
+  subclass (843 lines), beside `MarkdownEditorLayoutManager` (`CadenceLayoutManager` and the six
+  colour-and-geometry decoration passes), `MarkdownEditorTextViewDecorations` (the two passes that
+  need view state), `MarkdownEditorDecorationGeometry` (the rect math — pure, and unit tested),
+  `MarkdownEditorCoordinator` (the `NSTextViewDelegate`) and `MarkdownEditorTextEditDiff`.
+  `MarkdownEditorSupport.swift` still holds styling, parsing and list rules.
+  **The Swift 6 blocker here is gone.** `CadenceLayoutManager` is `nonisolated` throughout,
+  `drawBackground(forGlyphRange:at:)` included; `Theme` and `MarkdownStylist`'s palette constants
+  are `nonisolated` too, because a nonisolated `static let` cannot initialise from a main-actor one.
+  A whole-module Swift 6 probe on the macOS app scheme went from exactly 1 error — that method — to
+  **0**. Keep it that way, and do not "fix" a future isolation error here with
+  `nonisolated(unsafe)`, `@preconcurrency import AppKit`, or by moving the view's hit-rect and hover
+  caches into a nonisolated holder: that last one compiles, changes no z-order, and removes the
+  diagnostic without removing the hazard. It is documented as rejected in the scoped guide.
+  **`SWIFT_VERSION = 5.0` is now an open question rather than a constraint.** Nothing in `Editor/`
+  blocks the flip; what remains is 10 Swift-6-mode *warnings* elsewhere in the app, unchanged by
+  T-105 and none of them in editor files. Clearing those is the work a flip now needs.
 - `Cadence/macOS/Views/Timeline*`, `SchedulePanel*`, `CalendarPage*`, `CalendarBoard*` - timeline coordinate math, drag/drop, EventKit, and schedule state.
 - `Cadence/macOS/Views/TasksPanel*`, `ListDetail*`, `Inbox*`, `Kanban*` - shared task surface behavior, grouping, sorting, drag reorder, completion animations.
 - `Cadence/macOS/Services/CalendarManager.swift`, `SchedulingService.swift`, `TaskWorkflowService.swift`, deletion helpers - can affect SwiftData relationships and EventKit side effects.

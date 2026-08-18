@@ -33,7 +33,9 @@ struct NoteEditorPerformanceRegressionTests {
         // every list/heading/quote/divider marker. textDidChange now restyles
         // immediately, matching textDidEndEditing's existing immediate call — no
         // debounce scaffolding should remain.
-        let source = try sourceFile("Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift")
+        // The coordinator moved into its own file when T-105 split the 1,996-line
+        // `MarkdownEditorInteractionSupport.swift`; `textDidChange` went with it.
+        let source = try sourceFile("Cadence/macOS/Editor/MarkdownEditorCoordinator.swift")
 
         #expect(!source.contains("stylingDebounceDelay"))
         #expect(!source.contains("pendingStylingWorkItem"))

@@ -129,7 +129,7 @@ enum MarkdownTaskEmbedSubtaskHitTesting {
 /// Kept out of `CadenceLayoutManager` so the draw pass and the click hit test measure the box the
 /// same way — the box is not a glyph, so nothing else can keep them agreeing. Shaped to match the
 /// circle the iOS styler renders and the `○` / `✓` glyph the legacy syntax still draws as text.
-enum MarkdownChecklistBoxDrawing {
+nonisolated enum MarkdownChecklistBoxDrawing {
     static let boxSize: CGFloat = 14
     /// Gap between the box and the text that follows it.
     static let contentGap: CGFloat = 5
@@ -173,14 +173,14 @@ enum MarkdownChecklistBoxDrawing {
 
 enum MarkdownStylist {
     // Palette values come from `Theme` so the AppKit editor cannot drift from the rest of the app.
-    static let bgColor        = Theme.nsBg
-    static let textColor      = Theme.nsText
-    static let mutedColor     = Theme.nsMuted
-    static let dimColor       = Theme.nsDim
-    static let codeBackground = Theme.nsSurfaceElevated
-    static let blueColor      = Theme.nsBlue
-    static let greenColor     = Theme.nsGreen
-    static let redColor       = Theme.nsRed
+    nonisolated static let bgColor        = Theme.nsBg
+    nonisolated static let textColor      = Theme.nsText
+    nonisolated static let mutedColor     = Theme.nsMuted
+    nonisolated static let dimColor       = Theme.nsDim
+    nonisolated static let codeBackground = Theme.nsSurfaceElevated
+    nonisolated static let blueColor      = Theme.nsBlue
+    nonisolated static let greenColor     = Theme.nsGreen
+    nonisolated static let redColor       = Theme.nsRed
 
     // Extended neutral ramp — see `Theme`'s "Extended neutral ramp" section. These stops sit
     // *between* the four core Theme surfaces (or below `bg`) for jobs the four-stop ramp cannot
@@ -189,22 +189,22 @@ enum MarkdownStylist {
     // here, which let the editor silently drift from the palette; they now resolve from `Theme`
     // like every other color in the app.
     /// Recessed well, one step *below* the page background (unchecked checkbox interiors).
-    static let recessColor    = Theme.nsSurfaceRecessed
+    nonisolated static let recessColor    = Theme.nsSurfaceRecessed
     /// Hover lift for a drawn card whose resting fill is `Theme.surface`.
-    static let surfaceHover   = Theme.nsSurfaceHover
+    nonisolated static let surfaceHover   = Theme.nsSurfaceHover
     /// Hover/selection highlight behind drawn text inside a card.
-    static let highlightSurface = Theme.nsSurfaceHighlight
+    nonisolated static let highlightSurface = Theme.nsSurfaceHighlight
     /// Border one step above `Theme.borderSubtle`, for hairlines drawn at partial alpha.
-    static let borderColor    = Theme.nsBorder
+    nonisolated static let borderColor    = Theme.nsBorder
     /// Emphasized border: hovered cards, table delimiters, code fences.
-    static let codeBorder     = Theme.nsBorderStrong
+    nonisolated static let codeBorder     = Theme.nsBorderStrong
     /// Standalone horizontal rules (`---`), which carry no other affordance.
-    static let ruleColor      = Theme.nsRule
+    nonisolated static let ruleColor      = Theme.nsRule
 
     // Semantic (non-palette) highlight colors — deliberately unchanged by the neutral repaint.
-    static let highlightFillColor = Theme.nsMarkerHighlightFill
-    static let highlightBorderColor = Theme.nsMarkerHighlightBorder
-    static let highlightTextColor = Theme.nsMarkerHighlightText
+    nonisolated static let highlightFillColor = Theme.nsMarkerHighlightFill
+    nonisolated static let highlightBorderColor = Theme.nsMarkerHighlightBorder
+    nonisolated static let highlightTextColor = Theme.nsMarkerHighlightText
 
     static let baseFont   = NSFont.systemFont(ofSize: 14)
     static let monoFont   = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -631,11 +631,18 @@ enum MarkdownStylist {
         textView: NSTextView
     ) {
         guard lineRange.length > 0 else { return }
-        let contentWidth = max(1, textView.bounds.width - (textView.textContainerInset.width * 2) - 24)
+        // Same width the draw pass measures with, from the same helper: the reserved line height
+        // below is derived from it, so if the two ever disagreed the image would overflow the
+        // fragment it was given and a partial redraw could clip it.
+        let contentWidth = MarkdownDecorationGeometry.imageContentWidth(
+            viewWidth: textView.bounds.width,
+            textContainerInsetWidth: textView.textContainerInset.width
+        )
         let imageSize = image.fittedSize(maxWidth: contentWidth)
+        let lineHeight = MarkdownDecorationGeometry.imageLineHeight(for: imageSize)
         let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = imageSize.height + 18
-        paragraph.maximumLineHeight = imageSize.height + 18
+        paragraph.minimumLineHeight = lineHeight
+        paragraph.maximumLineHeight = lineHeight
         paragraph.lineBreakMode = .byClipping
         paragraph.paragraphSpacingBefore = 8
         paragraph.paragraphSpacing = 2
