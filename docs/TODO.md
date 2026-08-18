@@ -37,6 +37,54 @@ Implementation: first wave on [T-127] and [T-129], with an independent verifier 
 
 ## Open — decided, not started
 
+- [T-132] **macOS Cmd+K cannot find an all-day event; iOS search can.** Verified:
+  `CalendarManager.searchEvents` filters `!$0.isAllDay` (`:279`) and `iOSCalendarManager.searchEvents`
+  does not. Same function name, same default arguments (60/365), two behaviours. A user searching for
+  an all-day event on the Mac simply gets nothing.
+
+- [T-133] **Two search matchers, same algorithm, one tested — and the fence is why.**
+  `GlobalSearchMatcher` (macOS) and `CadenceSearchMatcher` share the same scoring with the *same
+  magic numbers* (1000/800/320, `max(260-i*14,180)`, `max(170-i*6,90)`, 85, 35) and the same
+  `normalize`. Only `CadenceSearchMatcher` has tests. It forked **because the shared copy lives in
+  `Services/MCPReadOnly/`, which every guide tells agents not to touch** — so this is [T-125]'s
+  mis-stated rule with a measured cost attached. It is also the reason the two `searchEvents` bodies
+  above diverged: macOS matches with naive `localizedLowercase.contains`, iOS with the real matcher.
+  Fix: move the matcher out of the MCP fence into `Shared/`, fold `GlobalSearchMatcher` into it —
+  5 call sites, pure functions, one side already covered.
+
+- [T-134] **A cancelled task looks identical to a todo one on iOS.** The completion glyph has **two**
+  states on iOS against **five** on macOS. User-visible, and on the most-drawn view in the app —
+  which is also why unifying it is the highest-value and highest-care item on the list: half of it
+  sits inside a perf-gated `TimelineView`.
+
+- [T-135] **`SidebarCountLabel` and `iOSSidebarCountLabel` differ by one line.** Diffed with names and
+  whitespace normalised: 24 lines, character-for-character identical, the sole difference being
+  `SidebarMetrics.countFontSize` vs `iOSSidebarMetrics.countFontSize` (11 vs 12). The obvious first
+  commit to prove the sharing mechanism, at near-zero risk.
+
+- [T-136] **The `iOS` prefix hides forks from review — 30 exact pairs, ~50 near pairs.** Stripping the
+  `iOS`/`iPad` prefix from every top-level type and intersecting with macOS finds an order of
+  magnitude more duplication than the nine files that share a *filename*. The method is itself the
+  finding: a fork named `iOSFoo` reads as "an iOS thing" in a diff, so no reviewer sees it as a copy.
+  Two sidebar rows even carry the same warning comment verbatim, one word changed. Worth running this
+  intersection as a standing check.
+
+- [T-137] **iOS has one page header; macOS still has four.** `iOSPageHeaderMetrics` unified the iOS
+  side (`c5a4ea5`) and the tile-glyph ratio has *already* drifted on macOS (32/15 against the shared
+  `×0.44`) — in exactly the way that type's doc comment says it was created to prevent. Bringing the
+  metrics type across is the natural next convergence after [T-135].
+
+- [T-138] **One tag chip.** macOS draws a muted rounded rect, iOS a coloured capsule, and **iOS
+  silently lacks the width cap, the remove button and archived dimming** — so it is a feature gap
+  wearing the costume of a style difference.
+
+- [T-139] **Record the do-not-flatten list in `AGENTS.md`.** The UI audit measured what is genuinely
+  platform-specific: `.onHover` 94/**0**, `.onKeyPress`+`.keyboardShortcut` 30/**0**, drag APIs
+  157/33, `.contextMenu` **1**/11, swipe actions 0/57. The number that matters most is `.popover` at
+  **49/48** — the presentation primitive is already common, so picker and inspector *content* is
+  portable even where the surrounding rows are not. Writing this down is what stops a future
+  convergence pass flattening an input modality.
+
 - [T-127] **`TaskDragPayload` is bypassed by the two surfaces it was written for, and has no tests.**
   The type owns the `listTask:`/`taskBundle:` drag wire format across 24 call sites on both
   platforms, and its own comment says it was unified from two byte-identical copies because a
