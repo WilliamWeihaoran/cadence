@@ -31,22 +31,8 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 **AU — land the blocked editor refactor, and split the 1,996-line file** ([T-105] + refactor)
 
-**AV — the 16-vs-14 split across all four editor sheets, and EventKit on a simulator**
-([T-112], [T-113])
-
-**AW — the drop-identity cases that are never constructed, and a tap that survives a drag**
-([T-118], [T-119])
-
-**AX — decompose `CadenceCalendarPlanningSupport.swift`, 1,314 lines / 14 types** ([T-120])
 
 ## Open — decided, not started
-
-- [T-120] **`CadenceCalendarPlanningSupport.swift` is 1,314 lines and 14 types** — the largest file in
-  `Shared/` and the second largest in the repo. It carries the Calendar Board's view mode,
-  presentation, rails, drop targets, `CalendarBoardPlannerSupport` and `CadenceScheduleSupport`:
-  several unrelated responsibilities in one file, loaded by both platforms and compiled into
-  `CadenceWidgets`. The repo's own convention is a shell plus companion support files. Its 9 test
-  files passing unchanged is the evidence that a split moved nothing.
 
 - [T-121] **`iOSMarkdownStylingSupport.swift` is 1,058 lines in 3 types**, and it is the layer whose
   breakage was invisible: the entire iOS rendered-block system drew nothing for a while because
@@ -54,20 +40,18 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   and now genuinely verifiable — block rendering can be screenshotted on device. Not started; queued
   behind the current batch to keep concurrent `xcodebuild` runs down (see [T-117]).
 
-- [T-118] **Three of five `CadenceTaskGroupDropIdentity` cases are never constructed.** `.section`,
-  `.list` for a real area/project, and `.priority` are dead; only `.todayDate`, `.completion` and
-  `.list(key: "inbox")` are ever passed. The visible cost, confirmed on device: list-detail **section
-  headers refuse a dropped `+`** — and that is the surface `CadenceTaskDropSupport` explicitly names
-  as the case the show-when-empty rule exists for, an empty kanban column you cannot otherwise add
-  to. Fixing it means moving `iOSListDetailView`'s section grouping onto `iOSTaskGroupSection`, which
-  is a feature change rather than a defect repair, so `D-91` left it.
-
-- [T-119] **A timeline block opens the task editor after a long-press-and-drag.** Pressing a Week-view
-  task block for 700ms and dragging 250pt away releases into the Edit Task sheet rather than doing
-  nothing — the tap is not cancelled by movement. A plain swipe from the same point scrolls the grid
-  correctly, so the grid is not blocked. Low consequence today because iOS has no timeline drag at
-  all; it would become a real problem the moment one is added.
-
+- [T-119] **Not reproduced — and the obvious fix breaks scrolling.** Reported by the drag sweep as a
+  Week-view task block opening the Edit Task sheet after a 700ms press and 250pt of travel. Five
+  gesture variants on HEAD — vertical both ways, horizontal, single-jump, diagonal — all scrolled the
+  grid and opened nothing. That matches the construction: the block is a plain `Button`, which does
+  not fire when released outside its bounds, and the grid's scroll views claim the pan first.
+  The fix was built anyway and **regressed scrolling**: a `simultaneousGesture(DragGesture(minimumDistance: 0))`
+  on scroll content claims the touch, so a plain swipe starting on a block stopped scrolling where
+  HEAD scrolls. Reverted, helper and tests deleted.
+  Most likely the original observation was the grid scrolling 1:1 under the finger — 250pt relative
+  to the screen, none relative to the control. **Left open only as a warning**, not as work: it joins
+  T-89 and T-14 as an observation whose mechanism was misattributed, and it should not be "fixed"
+  without a fresh reproduction.
 - [T-117] **A project-file lock is a new disguise in the T-86 family — now confirmed twice.** Builds
   deadlock in `NSFileCoordinator` reading `Cadence.xcodeproj`, 20+ minutes at 0% CPU, with an empty
   derivedDataPath. A `sample` of a stalled process caught it in `_blockOnAccessClaim` on the project
@@ -87,20 +71,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   reabstraction thunk carrying an `(any Actor)?` parameter. Attributed, not assumed: pristine HEAD
   with those same errors removed a different way crashes identically with zero diagnostics, and
   pristine HEAD under Swift 5 builds clean. Xcode 26.6 / Swift 6.3.3. Recheck on a toolchain bump.
-
-- [T-112] **A fourth editor sheet, and the 16-vs-14 spacing split.** `D-84` shared the markdown
-  well's height, gutter, title size and form breakpoints across three editor sheets, and stopped
-  short of section spacing and card padding: the inspector says 14, the two calendar sheets say 16,
-  and so does `iOSTrackingEditorShell` (`Cadence/iOS/iOSTrackingEditorComponents.swift`), a fourth
-  editor sheet that was outside that change's scope. Three-to-one, so pulling two to 14 would have
-  created a new split. Needs one pass covering all four. While there: the inspector's own notes well
-  still draws its box a fourth way (`cadenceCard` at `radiusCard`) in
-  `Cadence/iOS/iOSTaskDetailSheetSections.swift` — it shares the *height* now, not the border.
-
-- [T-113] **EventKit is unauthorized on both simulators**, so the calendar event edit sheet cannot be
-  reached and was the one surface `D-84` could not screenshot. Any future calendar work has the same
-  blind spot. Granting Cadence calendar access on the iPhone 17e simulator and creating one event
-  would clear it — a shared-device change, so worth doing deliberately rather than mid-task.
 
 - [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
   `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
@@ -224,6 +194,19 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-94] `4fe3411` An empty kanban column could not be a drop target, whatever identity it carried
+  (T-118). Wiring the identities alone would not have fixed the documented motivating example —
+  `sectionGroups` discarded empty sections before the show-when-empty rule could run. `.priority`
+  deliberately left unwired: no iOS surface groups by priority, so constructing it would be
+  speculation.
+
+- [D-93] `025c081` The inspector's notes well had no border, and a fill that never rendered (T-112,
+  T-113). Density is now a rule owned by `iOSEditorSection` rather than a number each sheet picks.
+  EventKit granted on two simulators, clearing a standing verification blind spot.
+
+- [D-92] `24f6774` 1,314 lines and six unrelated jobs in one file (T-120). Byte-identical moves,
+  independently checked by reassembly; no test file needed editing.
 
 - [D-91] `39ca491` A group header accepted a dropped `+` only on its words (T-116). The first drag
   fixes in this app ever made with a drop observed firing. Also established that **six of the drag
