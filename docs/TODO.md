@@ -29,7 +29,30 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
+**AU — land the blocked editor refactor, and split the 1,996-line file** ([T-105] + refactor)
+
+**AV — the 16-vs-14 split across all four editor sheets, and EventKit on a simulator**
+([T-112], [T-113])
+
+**AW — the drop-identity cases that are never constructed, and a tap that survives a drag**
+([T-118], [T-119])
+
+**AX — decompose `CadenceCalendarPlanningSupport.swift`, 1,314 lines / 14 types** ([T-120])
+
 ## Open — decided, not started
+
+- [T-120] **`CadenceCalendarPlanningSupport.swift` is 1,314 lines and 14 types** — the largest file in
+  `Shared/` and the second largest in the repo. It carries the Calendar Board's view mode,
+  presentation, rails, drop targets, `CalendarBoardPlannerSupport` and `CadenceScheduleSupport`:
+  several unrelated responsibilities in one file, loaded by both platforms and compiled into
+  `CadenceWidgets`. The repo's own convention is a shell plus companion support files. Its 9 test
+  files passing unchanged is the evidence that a split moved nothing.
+
+- [T-121] **`iOSMarkdownStylingSupport.swift` is 1,058 lines in 3 types**, and it is the layer whose
+  breakage was invisible: the entire iOS rendered-block system drew nothing for a while because
+  attachments were hung on characters TextKit does not paint. Worth the same treatment as [T-120],
+  and now genuinely verifiable — block rendering can be screenshotted on device. Not started; queued
+  behind the current batch to keep concurrent `xcodebuild` runs down (see [T-117]).
 
 - [T-118] **Three of five `CadenceTaskGroupDropIdentity` cases are never constructed.** `.section`,
   `.list` for a real area/project, and `.priority` are dead; only `.todayDate`, `.completion` and
@@ -120,11 +143,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   `Cadence/iOS/iOSMarkdownBlockCanvasRendering.swift` — the same `NSLayoutManager` shape, and the
   *easy* half: plain `nonisolated` annotations of the kind `D-73` already applied on macOS. That is
   the cheapest remaining step and is [T-109].
-
-- [T-109] **Annotate the iOS layout-manager overrides `nonisolated`.** Three Swift 6 errors in
-  `iOSMarkdownBlockCanvasRendering.swift` (`init()`, `init(coder:)`, `drawGlyphs` on
-  `iOSMarkdownBlockCanvasLayoutManager`), identical to what `D-73` fixed on macOS. Unlike [T-105]
-  these need no refactor and no visual check.
 
 - [T-86] **Agents building into the shared DerivedData can crash a running Mac app.** On 2026-08-17
   the user hit "Cadence quit unexpectedly" — `EXC_BREAKPOINT` on the main thread, five seconds after
