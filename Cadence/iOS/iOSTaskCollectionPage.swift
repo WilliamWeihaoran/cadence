@@ -144,6 +144,17 @@ struct iOSTaskCollectionSections: View {
             )
             .frame(minHeight: metrics.emptyStateMinHeight)
             .cadenceCard()
+            // **An empty collection still accepts a dropped `+` when it has a placement to give.**
+            // `iOSTaskGroupSection.isVisible` already says a group you can add to does not vanish
+            // when it empties — but this branch runs *first* and replaces the groups wholesale, so
+            // a cleared Inbox showed "Inbox is clear" and no drop target at all, which is exactly
+            // the moment the rule was written for. The panel takes the group's identity rather than
+            // the page falling back to an "ACTIVE 0" heading over nothing: the empty state is the
+            // better target anyway, being the whole card instead of one header row.
+            //
+            // All Tasks is unaffected and should be: its active group is `.completion`, which
+            // resolves to no key, so `iOSNewTaskDropTarget(group:)` attaches nothing.
+            .iOSNewTaskDropTarget(group: collection.activeGroupIdentity)
         } else {
             groupStack
         }

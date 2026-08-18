@@ -259,6 +259,15 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
                 .transition(.opacity)
             }
         }
+        // **The target is the whole block, not the glyphs inside it.** Without this a stack only
+        // hit-tests where it actually drew something, and `onDrop` is hit-tested like any other
+        // interaction — so `iOSTaskGroupHeader`, an `HStack` of an eyebrow label, a `Spacer` and a
+        // count badge, accepted a dropped `+` on the two ends of the row and refused the ~250pt of
+        // empty header between them. A task row was unaffected only because it already carries its
+        // own `contentShape(Rectangle())`; the header, having no tap of its own, had nothing to
+        // make it whole. Declared here rather than at each host so the answer cannot differ by
+        // call site — and so the ghost's own strip is part of the target while it is open.
+        .contentShape(Rectangle())
         .onDrop(of: [.cadenceNewTaskDrag], isTargeted: $isTargeted) { providers in
             handleDrop(providers, dropKey: dropKey())
         }
