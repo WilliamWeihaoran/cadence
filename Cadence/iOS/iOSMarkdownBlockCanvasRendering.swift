@@ -4,7 +4,9 @@ import UIKit
 extension NSAttributedString.Key {
     /// A pre-rendered canvas to paint over a hidden run — a table, a fenced code block, a divider,
     /// an image, a task embed, a quote bar, a checkbox.
-    static let cadenceMarkdownBlockCanvas = NSAttributedString.Key("CadenceMarkdownBlockCanvas")
+    /// `nonisolated` because the layout manager reads it from a `nonisolated` drawing override; it
+    /// is an immutable key, so there is nothing here for the main actor to protect.
+    nonisolated static let cadenceMarkdownBlockCanvas = NSAttributedString.Key("CadenceMarkdownBlockCanvas")
 }
 
 /// What `cadenceMarkdownBlockCanvas` carries.
@@ -59,7 +61,10 @@ final class iOSMarkdownBlockCanvas: NSObject {
     /// run's first character. Every character of a rendered block is hidden at 0.1pt, so that rect
     /// was a tenth of a point wide: a tap anywhere on a task-embed card except its extreme leading
     /// edge missed the card entirely and fell through to the text view, which placed a caret.
-    static func blockRect(inLineFragment fragment: CGRect, size: CGSize, leadingInset: CGFloat, yOffset: CGFloat) -> CGRect {
+    ///
+    /// `nonisolated` because it is pure geometry over its arguments, and both callers need it:
+    /// the hit test runs on the main actor, the drawing pass does not (see the layout manager).
+    nonisolated static func blockRect(inLineFragment fragment: CGRect, size: CGSize, leadingInset: CGFloat, yOffset: CGFloat) -> CGRect {
         // Centred in the box the paragraph style reserved, so a canvas that came out a few points
         // shorter than its reservation does not sit against the top edge.
         CGRect(
@@ -74,11 +79,29 @@ final class iOSMarkdownBlockCanvas: NSObject {
 /// Paints `cadenceMarkdownBlockCanvas` runs after the glyphs beneath them.
 ///
 /// Requires TextKit 1 — `iOSMarkdownTextView` builds its stack explicitly for that reason.
+///
+/// `NSLayoutManager` is nonisolated in UIKit, but the project builds with
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so this subclass and every member of it is
+/// main-actor isolated by default — and a main-actor override of a nonisolated declaration is an
+/// error in Swift 6 language mode. All three overrides below are therefore declared `nonisolated`,
+/// matching what they override, and each is trivially safe: the class has no instance stored
+/// properties, and `drawGlyphs` reads only `textStorage`, the layout manager's own geometry, the
+/// immutable `iOSMarkdownBlockCanvas` value it finds in an attribute run, and draws its image into
+/// the context TextKit has already made current. Unlike the macOS `drawBackground` blocked by
+/// [T-105], no pass here reads or writes any text-view state.
 final class iOSMarkdownBlockCanvasLayoutManager: NSLayoutManager {
     /// Breathing room between an inline marker and the text it introduces.
-    private static let inlineMarkerGap: CGFloat = 6
+    nonisolated private static let inlineMarkerGap: CGFloat = 6
 
-    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
+    nonisolated override init() {
+        super.init()
+    }
+
+    nonisolated required init?(coder: NSCoder) {
+        super.init(coder: coder)
+    }
+
+    nonisolated override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
         super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
 
         guard let storage = textStorage else { return }
