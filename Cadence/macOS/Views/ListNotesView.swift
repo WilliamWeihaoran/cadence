@@ -95,6 +95,15 @@ struct ListNotesView: View {
         return allTags.filter { slugs.contains($0.slug) }
     }
 
+    /// This list's tasks. Feeds `taskNotes` — the sidebar's "tasks in this list that have notes" —
+    /// which is genuinely a per-list question and must stay scoped.
+    ///
+    /// It deliberately does **not** feed the editor's `relatedTasks`. `MarkdownEditor` uses that one
+    /// input for two jobs: the `[[task:` suggestion list *and* the map it renders embedded task
+    /// cards from. Scoping it to this list meant an embed of a task from another list found no
+    /// entry in the render map and fell through to `.missing` styling — a live task drawn as if it
+    /// had been deleted. The editor now gets `allTasks`, which is what `NotePanel` has always
+    /// passed, so a task embed renders the same wherever the note is opened.
     private var tasks: [AppTask] {
         CadenceTaskQuerySupport.tasks(for: area, project: project, in: allTasks)
     }
@@ -151,7 +160,7 @@ struct ListNotesView: View {
                 TaskNoteEditorPane(
                     task: task,
                     relatedNotes: relatedNotes,
-                    relatedTasks: tasks,
+                    relatedTasks: allTasks,
                     onOpenNote: openNote
                 )
                 .id(task.id)
@@ -159,7 +168,7 @@ struct ListNotesView: View {
                 NoteEditorPane(
                     note: eventNote,
                     relatedNotes: relatedNotes,
-                    relatedTasks: tasks,
+                    relatedTasks: allTasks,
                     onOpenNote: openNote,
                     headerStyle: .compact
                 )
@@ -170,7 +179,7 @@ struct ListNotesView: View {
                     area: area,
                     project: project,
                     relatedNotes: relatedNotes,
-                    relatedTasks: tasks,
+                    relatedTasks: allTasks,
                     onOpenNote: openNote,
                     onDelete: { deleteNote(note) },
                     headerStyle: .compact
