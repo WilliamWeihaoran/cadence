@@ -29,8 +29,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**AP — one resting height for a markdown well inside a sheet** ([T-111])
-
 **AQ — the iOS layout-manager overrides** ([T-109])
 
 **AR — can drag-and-drop be driven in this harness at all?** ([T-89], investigation)
@@ -40,6 +38,20 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 **AT — what actually creates the empty container directories?** ([T-13], investigation)
 
 ## Open — decided, not started
+
+- [T-112] **A fourth editor sheet, and the 16-vs-14 spacing split.** `D-84` shared the markdown
+  well's height, gutter, title size and form breakpoints across three editor sheets, and stopped
+  short of section spacing and card padding: the inspector says 14, the two calendar sheets say 16,
+  and so does `iOSTrackingEditorShell` (`Cadence/iOS/iOSTrackingEditorComponents.swift`), a fourth
+  editor sheet that was outside that change's scope. Three-to-one, so pulling two to 14 would have
+  created a new split. Needs one pass covering all four. While there: the inspector's own notes well
+  still draws its box a fourth way (`cadenceCard` at `radiusCard`) in
+  `Cadence/iOS/iOSTaskDetailSheetSections.swift` — it shares the *height* now, not the border.
+
+- [T-113] **EventKit is unauthorized on both simulators**, so the calendar event edit sheet cannot be
+  reached and was the one surface `D-84` could not screenshot. Any future calendar work has the same
+  blind spot. Granting Cadence calendar access on the iPhone 17e simulator and creating one event
+  would clear it — a shared-device change, so worth doing deliberately rather than mid-task.
 
 - [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
   `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
@@ -182,6 +194,10 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-84] `2b0b1f7` Four sheets drew one markdown well four different ways (T-111). One height, 340,
+  from the two surfaces that never ramped. Unifying the box surfaced a real rendering bug: a
+  `.stroke` on a clipped path had half its border cut away, at 0.68 alpha, in two sheets.
 
 - [D-83] `2a15f27` Section headers respond to the first click again (T-107). Decided by the user:
   two clicks should be two toggles. The gesture cost ~352ms on *every* click to smooth over an
