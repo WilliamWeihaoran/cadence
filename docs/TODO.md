@@ -29,15 +29,28 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**AQ — the iOS layout-manager overrides** ([T-109])
-
 **AR — can drag-and-drop be driven in this harness at all?** ([T-89], investigation)
 
-**AS — the iOS calendar is the last big iPhone/iPad divergence** ([T-73] calendar slice)
-
-**AT — what actually creates the empty container directories?** ([T-13], investigation)
-
 ## Open — decided, not started
+
+- [T-114] **`CadenceTests` leaks a `UserDefaults` plist per run — 4,629 files, 18.5 MB.** Found while
+  investigating T-13, and unlike T-13 this one *is* ours, and is three times bigger. Five suites
+  (`cadence.widget.tests.`, `CadenceNotesEditorPreferencesTests.`, `CadenceTests.appleAccount.`,
+  `CadenceTests.ai.`, `CadenceTests.calendarZoomMigration.`) build a suite name with a fresh
+  `UUID()` per run. Teardown calls `removePersistentDomain(forName:)`, which empties the domain but
+  **does not delete the file**, so each run strands a 42-byte empty plist in
+  `~/Library/Containers/com.haoranwei.Cadence/Data/Library/Preferences/`, against 4 legitimate files.
+  `CadenceNotesEditorPreferencesTests.swift:11` even comments that it is "torn down afterwards so
+  nothing leaks".
+  **Do not just switch to a fixed suite name without checking**: the per-run UUID is plausibly there
+  to keep parallel tests from colliding, so the fix has to either delete the file in teardown or use
+  a name that is stable *and* unique per test.
+
+- [T-115] **The iOS Swift 6 flip is blocked by a toolchain bug, not app code.** With `D-86`'s three
+  errors fixed the iOS module is diagnostically clean, and swift-frontend then crashes in IRGen on a
+  reabstraction thunk carrying an `(any Actor)?` parameter. Attributed, not assumed: pristine HEAD
+  with those same errors removed a different way crashes identically with zero diagnostics, and
+  pristine HEAD under Swift 5 builds clean. Xcode 26.6 / Swift 6.3.3. Recheck on a toolchain bump.
 
 - [T-112] **A fourth editor sheet, and the 16-vs-14 spacing split.** `D-84` shared the markdown
   well's height, gutter, title size and form breakpoints across three editor sheets, and stopped
@@ -143,9 +156,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   *capability* or the same *control*, and what happens to macOS-only surfaces that have no phone
   shape at all (the MCP bridge, global hot keys, the AppKit markdown editor).
 
-- [T-13] **Empty container directories leak** — every app/test launch leaves an empty
-  `<UUID>-<pid>-<hex>` directory in the macOS app's sandbox container; 1,763 of them, 97 MB.
-  Reproduced (count rises by one per test run). Not our code — framework-level — but it accumulates.
 - [T-14] **Accessibility permission for window capture** — System Events cannot read the Mac app's
   window geometry from the agent shell, so macOS UI cannot be screenshot-verified. Granting
   accessibility to the terminal would remove a real verification gap.
@@ -194,6 +204,25 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-87] `2ff8d39` The calendar's day header reserved less space than its contents need (T-73
+  calendar slice). 33 branches → 5 reads; one of them was arithmetic that was simply wrong.
+
+- [D-86] `813fe0d` The iOS layout manager's overrides now agree with their superclass (T-109).
+
+- [D-85] **T-13 closed as won't-fix, and its headline figure was wrong.** `xcodebuild` creates one
+  directory per launched test process inside the app's sandbox container, hands it to that process
+  as `LLVM_PROFILE_FILE`, then deletes the profile file and not the directory. Caught in the act:
+  the PID in the directory name resolved to a live `xcodebuild test` 5 times out of 5, and the test
+  host's captured environment names that exact directory. The container is the only place a
+  sandboxed test host may write, which is why this happens here and not on the simulators.
+  **The "97 MB" was wrong** — empty directories occupy no data blocks on APFS. All 2,109 of them
+  cost ~0 bytes; the 6 MB measured is 5 stray `.profraw` files. The real cost is directory entries.
+  Ruled out with evidence: SwiftData (the UI-test runner container shows the same pattern and links
+  no Cadence code), CloudKit (tests run `cloudKitDatabase: .none` and still leak; the simulators do
+  run CloudKit and leak nothing), the sandbox machinery (907 containers on the machine, only the
+  three dev-built Cadence ones do this), and app code. Nothing in the repo can prevent it short of
+  dropping the app test host.
 
 - [D-84] `2b0b1f7` Four sheets drew one markdown well four different ways (T-111). One height, 340,
   from the two surfaces that never ramped. Unifying the box surfaced a real rendering bug: a
