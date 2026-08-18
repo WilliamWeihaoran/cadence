@@ -101,12 +101,25 @@ enum CadenceTaskQuerySupport {
         tasks.sorted { sortTasks($0, $1, sortMode: sortMode, sectionNames: sectionNames) }
     }
 
-    static func sectionGroups(from tasks: [AppTask], sectionNames: [String]) -> [CadenceTaskDisplayGroup] {
+    /// A list's tasks, split into its columns.
+    ///
+    /// **`includingEmpty` is what makes an empty column reachable.** Dropping the empty ones is
+    /// right for a surface that only *reads* — a heading over no rows says nothing — and wrong for
+    /// one you can add to: `CadenceTaskDropSupport.showsWhenEmpty(_:)` says a group you can still
+    /// add to does not vanish when it empties, and names an unfilled kanban column as the case it
+    /// exists for. That rule could never fire on the iOS list detail, because this function had
+    /// already discarded the column before the component got to apply it. The flag defaults off so
+    /// the macOS grouping modes, which have no such drop, keep the shape they had.
+    static func sectionGroups(
+        from tasks: [AppTask],
+        sectionNames: [String],
+        includingEmpty: Bool = false
+    ) -> [CadenceTaskDisplayGroup] {
         sectionNames.compactMap { sectionName in
             let sectionTasks = tasks.filter {
                 $0.resolvedSectionName.caseInsensitiveCompare(sectionName) == .orderedSame
             }
-            guard !sectionTasks.isEmpty else { return nil }
+            guard includingEmpty || !sectionTasks.isEmpty else { return nil }
             return CadenceTaskDisplayGroup(
                 id: "section-\(sectionName.lowercased())",
                 title: sectionName,

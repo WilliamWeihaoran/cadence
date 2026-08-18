@@ -226,4 +226,117 @@ struct CadenceTaskGroupDropSupportTests {
             #expect(CadenceTaskDropSupport.placementCaption(forGroup: identity, todayKey: todayKey) == nil)
         }
     }
+
+    // MARK: - Constructing an identity from the surface
+
+    /// **The half that was missing, and the reason three of these five cases were dead.** The
+    /// resolver already knew what a `.section` or a real `.list` header should hand over; nothing
+    /// ever built one, because a header knows its column but only the *page* knows which list it is
+    /// standing in. These two constructors are where the page says so, in the one spelling
+    /// `container(fromListKey:)` reads back.
+    @Test func aContainerSpellsItselfTheWayTheResolverReadsIt() {
+        let areaID = UUID()
+        let projectID = UUID()
+
+        #expect(CadenceTaskDropSupport.containerKey(for: .inbox) == "inbox")
+        #expect(CadenceTaskDropSupport.containerKey(for: .area(areaID)) == "a_\(areaID.uuidString)")
+        #expect(CadenceTaskDropSupport.containerKey(for: .project(projectID)) == "p_\(projectID.uuidString)")
+    }
+
+    /// The round trip that matters: whatever the page spells, the seed has to resolve back to the
+    /// same container. A key the resolver could not parse would fall through to `.inbox` and file
+    /// the task in the wrong place while looking entirely correct.
+    @Test func aConstructedListIdentityResolvesBackToItsOwnContainer() throws {
+        for container in [TaskContainerSelection.inbox, .area(UUID()), .project(UUID())] {
+            let identity = CadenceTaskDropSupport.groupIdentity(container: container, listName: "Home")
+            let seed = CadenceTaskDropSupport.seed(
+                forDropKey: try #require(CadenceTaskDropSupport.dropKey(forGroup: identity)),
+                todayKey: todayKey
+            )
+            #expect(seed.container == container)
+        }
+    }
+
+    /// A list-detail section header: the list *and* the column, because a section belongs to one.
+    @Test func aConstructedSectionIdentityCarriesItsListAndItsColumn() throws {
+        let projectID = UUID()
+        let identity = CadenceTaskDropSupport.groupIdentity(
+            container: .project(projectID),
+            listName: "Website",
+            sectionName: "Backlog"
+        )
+
+        #expect(identity == .section(
+            listKey: "p_\(projectID.uuidString)",
+            listName: "Website",
+            name: "Backlog"
+        ))
+
+        let seed = CadenceTaskDropSupport.seed(
+            forDropKey: try #require(CadenceTaskDropSupport.dropKey(forGroup: identity)),
+            todayKey: todayKey
+        )
+        #expect(seed.container == .project(projectID))
+        #expect(seed.sectionName == "Backlog")
+    }
+
+    /// **The Inbox owns no columns, so it is handed none.** A section belongs to a list and the
+    /// Inbox is the absence of one — the rule `dropKey(for:)` follows when it withholds `section:`
+    /// from an unfiled row, and the one `seed(forDropKey:)` enforces when it collapses a key naming
+    /// both. Stated in the constructor so a caller cannot mint an identity the resolver would then
+    /// quietly contradict.
+    @Test func theInboxNeverProducesASectionIdentity() {
+        let identity = CadenceTaskDropSupport.groupIdentity(
+            container: .inbox,
+            listName: "Inbox",
+            sectionName: "Backlog"
+        )
+
+        #expect(identity == .list(key: "inbox", name: "Inbox"))
+        #expect(CadenceTaskDropSupport.dropKey(forGroup: identity) == "list:inbox")
+    }
+
+    /// The property the list detail's Tasks tab and its board both now lean on: a column you have
+    /// not filled still draws, and still takes a `+`. It is the case
+    /// `CadenceTaskDropSupport.showsWhenEmpty(_:)` names as the reason it exists, and until the
+    /// identity above existed there was no way for that surface to ask.
+    @Test func aConstructedSectionIdentitySurvivesEmptying() {
+        #expect(CadenceTaskDropSupport.showsWhenEmpty(
+            CadenceTaskDropSupport.groupIdentity(
+                container: .area(UUID()),
+                listName: "Home",
+                sectionName: "Someday"
+            )
+        ))
+        #expect(CadenceTaskDropSupport.showsWhenEmpty(
+            CadenceTaskDropSupport.groupIdentity(container: .project(UUID()), listName: "Website")
+        ))
+    }
+
+    // MARK: - The columns the surface offers it
+
+    /// **An empty column has to reach the component for the component's rule to apply.**
+    /// `sectionGroups` dropped every unfilled column, so "a group you can still add to does not
+    /// vanish when it empties" could never fire on a list detail — the column was gone one layer
+    /// earlier. `includingEmpty` is that layer's answer, and it keeps the configured order.
+    @Test func emptyColumnsSurviveOnlyWhenAskedFor() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Draft")
+        task.sectionName = "Doing"
+        context.insert(task)
+
+        let names = ["Backlog", "Doing", "Done"]
+
+        let filledOnly = CadenceTaskQuerySupport.sectionGroups(from: [task], sectionNames: names)
+        #expect(filledOnly.map(\.title) == ["Doing"])
+
+        let all = CadenceTaskQuerySupport.sectionGroups(
+            from: [task],
+            sectionNames: names,
+            includingEmpty: true
+        )
+        #expect(all.map(\.title) == names)
+        #expect(all.map(\.tasks.count) == [0, 1, 0])
+    }
 }

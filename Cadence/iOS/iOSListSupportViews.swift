@@ -438,18 +438,39 @@ struct iOSListKanbanPanel: View {
     /// no longer configures) have no config and fall back to the list's own colour.
     let sectionConfigs: [TaskSectionConfig]
     let accent: Color
+    /// Which list this board belongs to, and what it is called — the two things a column header
+    /// needs to seed a dropped `+`, and neither of which a *column* knows. See
+    /// `CadenceTaskDropSupport.groupIdentity(container:listName:sectionName:)`.
+    let container: TaskContainerSelection
+    let listName: String
 
+    /// **Every configured column, filled or not.** An unfilled column is the case the drop rule
+    /// exists for, and it was the one case that could not happen here: `sectionGroups` discarded
+    /// the column before anything could offer it. The board's own empty state below still stands in
+    /// when the *list* has nothing in it, rather than a row of zeroes.
     private var columns: [CadenceTaskDisplayGroup] {
-        CadenceTaskQuerySupport.sectionGroups(from: tasks, sectionNames: sectionNames)
+        CadenceTaskQuerySupport.sectionGroups(
+            from: tasks,
+            sectionNames: sectionNames,
+            includingEmpty: true
+        )
     }
 
     var body: some View {
         Group {
-            if columns.isEmpty {
+            if tasks.isEmpty {
                 iOSEmptyPanel(
                     systemImage: "square.grid.3x2",
                     title: "No kanban cards",
                     subtitle: "Tasks grouped by section will appear here."
+                )
+                // The list itself, for the same reason the Tasks tab's empty state takes it: with
+                // no columns drawn there is nothing narrower to point at.
+                .iOSNewTaskDropTarget(
+                    group: CadenceTaskDropSupport.groupIdentity(
+                        container: container,
+                        listName: listName
+                    )
                 )
             } else {
                 ScrollView(.horizontal) {
@@ -458,7 +479,12 @@ struct iOSListKanbanPanel: View {
                             iOSListKanbanColumn(
                                 title: column.title,
                                 dotColor: dotColor(for: column.title),
-                                tasks: column.tasks
+                                tasks: column.tasks,
+                                dropIdentity: CadenceTaskDropSupport.groupIdentity(
+                                    container: container,
+                                    listName: listName,
+                                    sectionName: column.title
+                                )
                             )
                         }
                     }
@@ -487,10 +513,14 @@ private struct iOSListKanbanColumn: View {
     let title: String
     let dotColor: Color
     let tasks: [AppTask]
+    /// See `iOSTaskGroupHeader.dropIdentity` — the header is the drop target here for the same
+    /// reason, and reaches the same place a card cannot: a column with nothing in it.
+    var dropIdentity: CadenceTaskGroupDropIdentity?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             iOSBoardColumnHeader(dotColor: dotColor, title: title, count: tasks.count)
+                .iOSNewTaskDropTarget(group: dropIdentity)
 
             // The card stack scrolls inside the column, as `KanbanColumnScroll` does on macOS. The
             // board only scrolled horizontally before, so anything past the bottom of a tall column

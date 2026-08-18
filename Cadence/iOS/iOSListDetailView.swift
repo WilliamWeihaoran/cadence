@@ -190,7 +190,9 @@ struct iOSListDetailView: View {
                 tasks: activeTasks,
                 sectionNames: sectionNames,
                 sectionConfigs: sectionConfigs,
-                accent: accent
+                accent: accent,
+                container: containerSelection,
+                listName: title
             )
         case .documents:
             iOSListNotesPanel(area: area, project: project)
@@ -215,38 +217,23 @@ struct iOSListDetailView: View {
             .padding(.top, 14)
             .padding(.bottom, 12)
 
-            if activeTasks.isEmpty && (!showCompleted || completedTasks.isEmpty) {
+            if isTaskColumnEmpty {
+                // The list itself is the only placement left when the page has neither rows nor
+                // columns drawn to point at — the `.list` half of `groupIdentity`, and the same
+                // move the Inbox's empty panel already makes. See `iOSTaskCollectionSections`.
                 iOSEmptyPanel(
                     systemImage: "checklist",
                     title: "No tasks here yet",
                     subtitle: "Add a task above or move one here from Inbox."
                 )
+                .iOSNewTaskDropTarget(
+                    group: CadenceTaskDropSupport.groupIdentity(
+                        container: containerSelection,
+                        listName: title
+                    )
+                )
             } else {
-                List {
-                    ForEach(sectionGroups, id: \.name) { group in
-                        Section {
-                            ForEach(group.tasks) { task in
-                                iOSTaskListRow(task: task, showsContainer: false)
-                            }
-                        } header: {
-                            // Same colour the board's column dot takes, so a column is the same
-                            // column whichever tab you are looking at it from.
-                            iOSTaskSectionHeader(title: group.name, color: sectionColor(for: group.name))
-                        }
-                    }
-
-                    if showCompleted && !completedTasks.isEmpty {
-                        Section {
-                            ForEach(CadenceTaskSurfaceOptions.completedRows(from: completedTasks)) { task in
-                                iOSTaskListRow(task: task, opacity: 0.62, showsContainer: false)
-                            }
-                        } header: {
-                            iOSTaskSectionHeader(title: "Completed", color: Theme.green)
-                        }
-                    }
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
+                sectionStack
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -262,11 +249,84 @@ struct iOSListDetailView: View {
         return config.isCompleted ? Theme.green : Color(hex: config.colorHex)
     }
 
-    private var sectionGroups: [(name: String, tasks: [AppTask])] {
-        CadenceTaskQuerySupport.sectionGroups(from: activeTasks, sectionNames: sectionNames)
-            .map { ($0.title, $0.tasks) }
+    private var isTaskColumnEmpty: Bool {
+        activeTasks.isEmpty && (!showCompleted || completedTasks.isEmpty)
     }
 
+    /// **Every configured column, including the ones with nothing in them.** `sectionGroups`
+    /// discards an empty section by default, which is right where a heading over no rows would say
+    /// nothing — and wrong here, because this is a surface you can add to. An unfilled kanban
+    /// column is the case `CadenceTaskDropSupport.showsWhenEmpty(_:)` was written for, and the rule
+    /// could never fire on this page: the column was gone before `iOSTaskGroupSection` got to
+    /// decide. The whole-page empty state above still wins over a stack of zeroes.
+    private var sectionGroups: [CadenceTaskDisplayGroup] {
+        CadenceTaskQuerySupport.sectionGroups(
+            from: activeTasks,
+            sectionNames: sectionNames,
+            includingEmpty: true
+        )
+    }
+
+    /// The Tasks tab's rows, on `iOSTaskGroupSection` — the same counted group Today, Inbox and All
+    /// Tasks are built from.
+    ///
+    /// It used to be a `List` of `Section`s headed by a bare `iOSTaskSectionHeader`, which is why
+    /// a section header on this page took no dropped `+`: the header was a label with nothing
+    /// behind it, and the drop identity lives on the component. Moving onto the shared group also
+    /// picks up its count badge, its uniform spacing, and its empty-group rule. What the `List`
+    /// provided was already switched off or replaced app-wide — see `iOSTaskCollectionPage` for
+    /// that accounting; the rows' swipe actions are `iOSSwipeActions`, which works in either host.
+    private var sectionStack: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: iOSTaskCollectionMetrics.groupSpacing) {
+                ForEach(sectionGroups) { group in
+                    iOSTaskGroupSection(
+                        title: group.title,
+                        // Same colour the board's column dot takes, so a column is the same column
+                        // whichever tab you are looking at it from.
+                        color: sectionColor(for: group.title),
+                        tasks: group.tasks,
+                        // Scoped to one list already — the chip would name the page you are on.
+                        showsContainer: false,
+                        dropIdentity: CadenceTaskDropSupport.groupIdentity(
+                            container: containerSelection,
+                            listName: title,
+                            sectionName: group.title
+                        )
+                    )
+                }
+
+                if showCompleted && !completedTasks.isEmpty {
+                    // `.completion` resolves to no key: done-ness is not something a new task can
+                    // be seeded with, so this header neither lights up nor survives emptying.
+                    iOSTaskGroupSection(
+                        title: "Completed",
+                        color: Theme.green,
+                        tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks),
+                        showsContainer: false,
+                        opacity: 0.62,
+                        dropIdentity: .completion
+                    )
+                }
+            }
+            .padding(iOSListDetailTaskMetrics.cardPadding)
+            .cadenceCard()
+            .padding(.horizontal, iOSListDetailTaskMetrics.horizontalPadding)
+            .padding(.bottom, iOSListDetailTaskMetrics.bottomPadding)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+}
+
+/// The Tasks tab's gutters. Its own type rather than `iOSTaskCollectionMetrics`, whose numbers are
+/// read off a page header this tab does not draw — the header and the tab picker are the page's,
+/// above this panel. The card inset and the group spacing are the collection page's, so the rows
+/// sit the same distance apart wherever they are read.
+private enum iOSListDetailTaskMetrics {
+    static let horizontalPadding: CGFloat = 12
+    static let cardPadding: CGFloat = 12
+    static let bottomPadding: CGFloat = 16
 }
 
 /// The one place this page names itself: the back control on iPhone, an identity tile in the list's

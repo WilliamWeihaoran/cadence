@@ -211,9 +211,57 @@ enum CadenceTaskDropSupport {
         // Project before area: a project task's `area` is left nil by `TaskCreationService`, but
         // reading the more specific one first means a row repaired into holding both still lands
         // where the UI shows it.
-        if let project = task.project { return "list:p_\(project.id.uuidString)" }
-        if let area = task.area { return "list:a_\(area.id.uuidString)" }
-        return "list:inbox"
+        if let project = task.project { return "list:\(containerKey(for: .project(project.id)))" }
+        if let area = task.area { return "list:\(containerKey(for: .area(area.id)))" }
+        return "list:\(containerKey(for: .inbox))"
+    }
+
+    // MARK: What a surface knows about itself
+
+    /// The `list:` value for a container a *page* is scoped to, in the `inbox` / `a_<uuid>` /
+    /// `p_<uuid>` spelling `container(fromListKey:)` reads back and `assignTask` already parses.
+    ///
+    /// `dropKey(for:)` reads a row's list off the row. A group *header* has no row to read — a
+    /// list-detail section header knows which list it is in only because the page does — so the
+    /// page hands its own container in. One spelling of that string, produced and consumed in the
+    /// same file, is what stops a surface inventing a fourth encoding of "which list".
+    static func containerKey(for container: TaskContainerSelection) -> String {
+        switch container {
+        case .inbox: return "inbox"
+        case .area(let id): return "a_\(id.uuidString)"
+        case .project(let id): return "p_\(id.uuidString)"
+        }
+    }
+
+    /// What a **section** header inside a list is, for a dropped `+`.
+    ///
+    /// The Inbox answer is not a special case bolted on: a section belongs to a list, and the Inbox
+    /// is the *absence* of one, so there is no column there to name. It is the same rule
+    /// `dropKey(for:)` applies when it withholds `section:` from an unfiled row, and the same one
+    /// `seed(forDropKey:)` enforces when it collapses a key naming both — stated here so a caller
+    /// cannot mint a `.section` identity the resolver would then contradict.
+    static func groupIdentity(
+        container: TaskContainerSelection,
+        listName: String,
+        sectionName: String
+    ) -> CadenceTaskGroupDropIdentity {
+        guard container != .inbox else { return groupIdentity(container: container, listName: listName) }
+        return .section(
+            listKey: containerKey(for: container),
+            listName: listName,
+            name: sectionName
+        )
+    }
+
+    /// What a **whole list** is, for a dropped `+`: the identity a page scoped to one list hands
+    /// its empty state, which is the one destination left when there are no rows and no columns
+    /// drawn to point at. Inbox's own empty panel already uses it; a list detail's is the same
+    /// case with a real list behind it.
+    static func groupIdentity(
+        container: TaskContainerSelection,
+        listName: String
+    ) -> CadenceTaskGroupDropIdentity {
+        .list(key: containerKey(for: container), name: listName)
     }
 
     // MARK: Resolution
