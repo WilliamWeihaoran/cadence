@@ -13,9 +13,13 @@ import SwiftUI
 /// written twice.
 ///
 /// What survives is the sheet **gutter**: the margin between the card and the edge of the host,
-/// which is a fact about the host and not about the card. It is spelled here rather than inline so
-/// it is the only figure a reader has to check, and it keeps the value
-/// `iOSCalendarEventEditSheet` already uses for the same margin.
+/// which is a fact about the host and not about the card.
+///
+/// The gutter, the title size and line limit, and the notes well now come from
+/// `iOSEditorSheetMetrics`, because they were never the *inspector's* decisions — they are what an
+/// editor sheet in this app is, and the calendar sheets had written each of them down again. What is
+/// left here is what only this sheet has: a completion circle at the head of its title, and the two
+/// figures derived from it.
 ///
 /// Deliberately **outside** `#if os(iOS)`, like `iOSPageHeaderMetrics` and for the same reason: a
 /// type ramp is a decision, and the macOS-built test target has to be able to read it. Nothing here
@@ -39,26 +43,23 @@ nonisolated enum iOSTaskInspectorMetrics {
     static let sectionSpacing: CGFloat = 14
 
     /// The margin between the card and the edge of the sheet — **the one figure that varies**, and
-    /// the only one that is about the host rather than about the inspector. Same pair of values as
-    /// `iOSCalendarEventEditSheet`, so the app's sheets share one gutter.
+    /// the only one that is about the host rather than about the inspector. One gutter for every
+    /// sheet in the app, which is why it now lives in `iOSEditorSheetMetrics`.
     static func sheetGutter(isRegularWidth: Bool) -> CGFloat {
-        isRegularWidth ? 20 : 18
+        iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth)
     }
 
     // MARK: - The title row
 
-    /// The task's own name, in the sheet that edits it.
-    ///
-    /// 22, because that is what the app's other two editor sheets — `iOSCalendarEventEditSheet` and
-    /// `iOSCalendarQuickCreateSheet` — already set for exactly this text, bold and wrapping to
-    /// three lines, at every width. The inspector was the only editor title that ramped, and it
-    /// ramped *past* both of them on one device and *under* both on the other; joining the spelling
-    /// two sheets already share beats keeping either end of a ramp nobody chose.
-    static let titleSize: CGFloat = 22
+    /// The task's own name, in the sheet that edits it — the same size as the event title in
+    /// `iOSCalendarEventEditSheet` and the draft title in `iOSCalendarQuickCreateSheet`, because it
+    /// is the same thing: the one field the sheet exists to fill in. That agreement used to be three
+    /// literals that happened to match; it is now one value the three of them read.
+    static var titleSize: CGFloat { iOSEditorSheetMetrics.titleSize }
 
     /// A title wraps to three lines before it truncates. Not a width ramp: a task with a long name
     /// has a long name on both devices, and the card is the same width on both past `sheetGutter`.
-    static let titleLineLimit = 3
+    static var titleLineLimit: Int { iOSEditorSheetMetrics.titleLineLimit }
 
     /// The completion circle at the head of the title row — drawn at this size, not merely framed
     /// at it, because in the sheet the circle *is* the control rather than a glyph inside a target.
@@ -99,11 +100,8 @@ nonisolated enum iOSTaskInspectorMetrics {
 
     // MARK: - Notes
 
-    /// The resting height of the notes well before there is anything in it.
-    ///
-    /// One number. The well grows with its content, so the minimum's only job is to be a canvas
-    /// worth tapping into — and 20pt of extra empty box on the taller device does not make it a
-    /// better one, it just pushes the status actions further below the fold. 340 is also the flat
-    /// height the Settings template editor already gives the same markdown surface.
-    static let notesMinHeight: CGFloat = 340
+    /// The resting height of the notes well before there is anything in it — one number, and now
+    /// the *same* number as every other markdown well on a sheet. See
+    /// `iOSEditorSheetMetrics.notesMinHeight`.
+    static var notesMinHeight: CGFloat { iOSEditorSheetMetrics.notesMinHeight }
 }

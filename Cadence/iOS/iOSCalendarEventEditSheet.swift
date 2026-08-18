@@ -154,6 +154,9 @@ struct iOSCalendarEventEditSheet: View {
         )
     }
 
+    /// Read for two things only: the sheet's gutter, and whether the form splits into two columns.
+    /// Both are facts about the host. Nothing the sheet *draws* consults it — those figures are
+    /// `iOSEditorSheetMetrics`, which takes no width.
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
     }
@@ -175,7 +178,7 @@ struct iOSCalendarEventEditSheet: View {
         NavigationStack {
             ScrollView {
                 formLayout
-                    .padding(isRegularWidth ? 20 : 18)
+                    .padding(iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth))
             }
             .background(Theme.bg)
             .navigationTitle(isEditable ? "Edit Event" : "Event Details")
@@ -269,16 +272,24 @@ struct iOSCalendarEventEditSheet: View {
                 scheduleCard
                 calendarCard
             }
-            .frame(minWidth: 340, maxWidth: 440, alignment: .topLeading)
+            .frame(
+                minWidth: iOSEditorSheetMetrics.primaryColumnMinWidth,
+                maxWidth: iOSEditorSheetMetrics.primaryColumnMaxWidth,
+                alignment: .topLeading
+            )
 
             VStack(alignment: .leading, spacing: 16) {
                 eventNoteCard
                 notesCard
                 deleteCard
             }
-            .frame(minWidth: 360, maxWidth: 520, alignment: .topLeading)
+            .frame(
+                minWidth: iOSEditorSheetMetrics.secondaryColumnMinWidth,
+                maxWidth: iOSEditorSheetMetrics.secondaryColumnMaxWidth,
+                alignment: .topLeading
+            )
         }
-        .frame(maxWidth: 980, alignment: .top)
+        .frame(maxWidth: iOSEditorSheetMetrics.twoColumnMaxWidth, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .top)
     }
 
@@ -319,9 +330,9 @@ struct iOSCalendarEventEditSheet: View {
         iOSEditorSection(title: "Event") {
             TextField("Event title", text: $title, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: iOSEditorSheetMetrics.titleSize, weight: .bold))
                 .foregroundStyle(Theme.text)
-                .lineLimit(1...3)
+                .lineLimit(1...iOSEditorSheetMetrics.titleLineLimit)
         }
         // Every field below is inert on a read-only event: there is no Save to carry an edit
         // anywhere, so letting one be typed would be the same false promise in a quieter form.
@@ -429,7 +440,10 @@ struct iOSCalendarEventEditSheet: View {
     private var eventNoteCard: some View {
         iOSEditorSection(title: "Event Note") {
             HStack(alignment: .center, spacing: 12) {
-                iOSIconTile(systemImage: "doc.text", color: Theme.purple, size: 34, iconSize: 16)
+                // 34/15, the same tile the read-only notice above draws. It was 34/16: one sheet,
+                // two rows, one tile size, two glyph sizes — a tile resized without its glyph, in
+                // the one place a reader can see both at once.
+                iOSIconTile(systemImage: "doc.text", color: Theme.purple, size: 34, iconSize: 15)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(linkedEventNote?.displayTitle ?? "No linked note yet")
@@ -470,12 +484,7 @@ struct iOSCalendarEventEditSheet: View {
                     onOpenReference: openMarkdownReference,
                     allowsEmbeddedTaskCreation: false
                 )
-                .frame(minHeight: isRegularWidth ? 300 : 240)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                        .stroke(Theme.borderSubtle.opacity(0.68), lineWidth: 1)
-                }
+                .iOSMarkdownWell()
             }
         }
         // The Apple Calendar note is written back through EventKit on save, which a read-only

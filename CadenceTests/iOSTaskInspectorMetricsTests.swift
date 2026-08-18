@@ -58,10 +58,11 @@ struct iOSTaskInspectorMetricsTests {
         #expect(iOSTaskInspectorMetrics.completionGlyphSize >= CadenceTaskRowMetrics.compactWidth.completionGlyphSize)
     }
 
-    /// One resting height for the notes well. The well grows with its content, so a taller minimum
-    /// on the taller device buys nothing but a longer scroll to the actions under it.
-    @Test func theNotesWellHasOneRestingHeight() {
-        #expect(iOSTaskInspectorMetrics.notesMinHeight == 340)
+    /// One resting height for the notes well — and, since T-111, not the inspector's own. The same
+    /// markdown surface is a well on four sheets; the height is `iOSEditorSheetMetrics`'s to state,
+    /// and `iOSEditorSheetMetricsTests` is where the choice of 340 is argued.
+    @Test func theNotesWellIsTheSameWellEveryOtherSheetDraws() {
+        #expect(iOSTaskInspectorMetrics.notesMinHeight == iOSEditorSheetMetrics.notesMinHeight)
     }
 
     // MARK: - What is derived, and must stay derived

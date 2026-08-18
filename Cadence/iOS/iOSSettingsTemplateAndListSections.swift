@@ -562,12 +562,7 @@ private struct iOSTemplateBodyEditor: View {
                 placeholder: "Write the reusable note template...",
                 allowsEmbeddedTaskCreation: false
             )
-            .frame(minHeight: 340)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle, lineWidth: 1)
-            }
+            .iOSMarkdownWell()
         }
     }
 }

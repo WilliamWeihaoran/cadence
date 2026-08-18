@@ -111,6 +111,9 @@ struct iOSCalendarQuickCreateSheet: View {
         }
     }
 
+    /// Read for two things only: the sheet's gutter, and whether the form splits into two columns.
+    /// Both are facts about the host. Nothing the sheet *draws* consults it — those figures are
+    /// `iOSEditorSheetMetrics`, which takes no width.
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
     }
@@ -122,7 +125,7 @@ struct iOSCalendarQuickCreateSheet: View {
                     .padding(16)
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
-                    .padding(isRegularWidth ? 20 : 18)
+                    .padding(iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth))
             }
             .background(Theme.bg)
             .toolbar(.hidden, for: .navigationBar)
@@ -169,15 +172,23 @@ struct iOSCalendarQuickCreateSheet: View {
                 titleSection
                 timeSection
             }
-            .frame(minWidth: 340, maxWidth: 440, alignment: .topLeading)
+            .frame(
+                minWidth: iOSEditorSheetMetrics.primaryColumnMinWidth,
+                maxWidth: iOSEditorSheetMetrics.primaryColumnMaxWidth,
+                alignment: .topLeading
+            )
 
             VStack(alignment: .leading, spacing: 16) {
                 formDetails
                 formNotes
             }
-            .frame(minWidth: 360, maxWidth: 520, alignment: .topLeading)
+            .frame(
+                minWidth: iOSEditorSheetMetrics.secondaryColumnMinWidth,
+                maxWidth: iOSEditorSheetMetrics.secondaryColumnMaxWidth,
+                alignment: .topLeading
+            )
         }
-        .frame(maxWidth: 980, alignment: .top)
+        .frame(maxWidth: iOSEditorSheetMetrics.twoColumnMaxWidth, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .top)
     }
 
@@ -292,9 +303,9 @@ struct iOSCalendarQuickCreateSheet: View {
         iOSEditorSection(title: nil, style: .ruled) {
             TextField(kind.placeholder, text: $title, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: iOSEditorSheetMetrics.titleSize, weight: .bold))
                 .foregroundStyle(Theme.text)
-                .lineLimit(1...3)
+                .lineLimit(1...iOSEditorSheetMetrics.titleLineLimit)
                 .submitLabel(.done)
                 .onSubmit {
                     if canCreate { create() }
@@ -471,12 +482,7 @@ struct iOSCalendarQuickCreateSheet: View {
                     onOpenReference: openMarkdownReference,
                     allowsEmbeddedTaskCreation: false
                 )
-                .frame(minHeight: isRegularWidth ? 280 : 230)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                        .stroke(Theme.borderSubtle.opacity(0.68), lineWidth: 1)
-                }
+                .iOSMarkdownWell()
             }
         }
     }
