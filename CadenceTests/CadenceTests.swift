@@ -19,29 +19,25 @@ struct CadenceTests {
 
 #if os(macOS)
     @Test func appleAccountDefaultsStorageRoundTripsProfile() throws {
-        let suiteName = "CadenceTests.appleAccount.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
+        try withTemporaryDefaults("CadenceTests.appleAccount") { defaults in
+            let storage = AppleAccountDefaultsStorage(defaults: defaults)
+            let signedInAt = Date(timeIntervalSince1970: 1_777_777)
+            let profile = AppleAccountProfile(
+                userIdentifier: "apple-user-1",
+                email: "person@example.com",
+                givenName: "Ada",
+                familyName: "Lovelace",
+                signedInAt: signedInAt
+            )
+
+            storage.saveProfile(profile)
+
+            #expect(storage.loadProfile() == profile)
+
+            storage.clearProfile()
+
+            #expect(storage.loadProfile() == nil)
         }
-
-        let storage = AppleAccountDefaultsStorage(defaults: defaults)
-        let signedInAt = Date(timeIntervalSince1970: 1_777_777)
-        let profile = AppleAccountProfile(
-            userIdentifier: "apple-user-1",
-            email: "person@example.com",
-            givenName: "Ada",
-            familyName: "Lovelace",
-            signedInAt: signedInAt
-        )
-
-        storage.saveProfile(profile)
-
-        #expect(storage.loadProfile() == profile)
-
-        storage.clearProfile()
-
-        #expect(storage.loadProfile() == nil)
     }
 
     @Test func appleAccountProfileMergePreservesFirstGrantFields() {

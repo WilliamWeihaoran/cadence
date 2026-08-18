@@ -7,19 +7,8 @@ import Testing
 /// things that have to be true for anyone upgrading with a stored `Edit` or `Preview`: nothing reads
 /// the value any more, and the app stops carrying it around.
 struct CadenceNotesEditorPreferencesTests {
-    /// A throwaway suite per test, torn down afterwards so nothing leaks into the shared domain.
-    private func withTemporaryDefaults(_ body: (UserDefaults) -> Void) {
-        let name = "CadenceNotesEditorPreferencesTests.\(UUID().uuidString)"
-        guard let defaults = UserDefaults(suiteName: name) else {
-            Issue.record("Could not open a temporary UserDefaults suite")
-            return
-        }
-        defer { defaults.removePersistentDomain(forName: name) }
-        body(defaults)
-    }
-
-    @Test func purgesAStoredEditModeSoNothingCanReadItBack() {
-        withTemporaryDefaults { defaults in
+    @Test func purgesAStoredEditModeSoNothingCanReadItBack() throws {
+        try withTemporaryDefaults("CadenceNotesEditorPreferencesTests") { defaults in
             defaults.set("Edit", forKey: CadenceNotesEditorPreferences.retiredModeKey)
             defaults.set(true, forKey: CadenceNotesEditorPreferences.retiredLiveDefaultMigrationKey)
 
@@ -31,8 +20,8 @@ struct CadenceNotesEditorPreferencesTests {
         }
     }
 
-    @Test func purgesAStoredPreviewMode() {
-        withTemporaryDefaults { defaults in
+    @Test func purgesAStoredPreviewMode() throws {
+        try withTemporaryDefaults("CadenceNotesEditorPreferencesTests") { defaults in
             defaults.set("Preview", forKey: CadenceNotesEditorPreferences.retiredModeKey)
 
             let removed = CadenceNotesEditorPreferences.purgeRetiredKeys(in: defaults)
@@ -43,8 +32,8 @@ struct CadenceNotesEditorPreferencesTests {
     }
 
     /// It runs on every cold launch, so the second run must be a no-op rather than a write.
-    @Test func isIdempotentAndReportsNothingOnACleanInstall() {
-        withTemporaryDefaults { defaults in
+    @Test func isIdempotentAndReportsNothingOnACleanInstall() throws {
+        try withTemporaryDefaults("CadenceNotesEditorPreferencesTests") { defaults in
             defaults.set("Live", forKey: CadenceNotesEditorPreferences.retiredModeKey)
 
             _ = CadenceNotesEditorPreferences.purgeRetiredKeys(in: defaults)
@@ -54,8 +43,8 @@ struct CadenceNotesEditorPreferencesTests {
         }
     }
 
-    @Test func leavesUnrelatedPreferencesAlone() {
-        withTemporaryDefaults { defaults in
+    @Test func leavesUnrelatedPreferencesAlone() throws {
+        try withTemporaryDefaults("CadenceNotesEditorPreferencesTests") { defaults in
             defaults.set("Week", forKey: "ios.calendar.viewMode")
             defaults.set("Edit", forKey: CadenceNotesEditorPreferences.retiredModeKey)
 

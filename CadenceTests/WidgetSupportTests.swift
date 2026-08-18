@@ -16,43 +16,33 @@ struct WidgetSupportTests {
         ])
     }
 
-    @Test func widgetRefreshCenterSuppressesRecentlyCompletedTasksTemporarily() {
-        let suiteName = "cadence.widget.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
+    @Test func widgetRefreshCenterSuppressesRecentlyCompletedTasksTemporarily() throws {
+        try withTemporaryDefaults("cadence.widget.tests") { defaults in
+            let taskID = UUID()
+            let now = Date(timeIntervalSince1970: 1_000)
+
+            CadenceWidgetRefreshCenter.markTaskCompleted(taskID, now: now, userDefaults: defaults)
+
+            #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now, userDefaults: defaults).contains(taskID))
+            #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now.addingTimeInterval(120), userDefaults: defaults).isEmpty)
         }
-
-        let taskID = UUID()
-        let now = Date(timeIntervalSince1970: 1_000)
-
-        CadenceWidgetRefreshCenter.markTaskCompleted(taskID, now: now, userDefaults: defaults)
-
-        #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now, userDefaults: defaults).contains(taskID))
-        #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now.addingTimeInterval(120), userDefaults: defaults).isEmpty)
     }
 
-    @Test func widgetRefreshCenterStoresRecentHabitCompletionStateTemporarily() {
-        let suiteName = "cadence.widget.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
+    @Test func widgetRefreshCenterStoresRecentHabitCompletionStateTemporarily() throws {
+        try withTemporaryDefaults("cadence.widget.tests") { defaults in
+            let habitID = UUID()
+            let now = Date(timeIntervalSince1970: 1_000)
+
+            CadenceWidgetRefreshCenter.markHabitCompletion(
+                habitID,
+                isDoneToday: true,
+                now: now,
+                userDefaults: defaults
+            )
+
+            #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults)[habitID] == true)
+            #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now.addingTimeInterval(120), userDefaults: defaults).isEmpty)
         }
-
-        let habitID = UUID()
-        let now = Date(timeIntervalSince1970: 1_000)
-
-        CadenceWidgetRefreshCenter.markHabitCompletion(
-            habitID,
-            isDoneToday: true,
-            now: now,
-            userDefaults: defaults
-        )
-
-        #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults)[habitID] == true)
-        #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now.addingTimeInterval(120), userDefaults: defaults).isEmpty)
     }
 
     @Test func migrateLegacyStoreCopiesManagedItemsIntoAppGroupDirectory() throws {
@@ -86,30 +76,25 @@ struct WidgetSupportTests {
         #expect(fileManager.fileExists(atPath: appGroupDirectory.appendingPathComponent(".default_SUPPORT").path))
     }
 
-    @Test func widgetRefreshCenterClearsStoredStateForAccountDeletion() {
-        let suiteName = "cadence.widget.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
+    @Test func widgetRefreshCenterClearsStoredStateForAccountDeletion() throws {
+        try withTemporaryDefaults("cadence.widget.tests") { defaults in
+            let taskID = UUID()
+            let habitID = UUID()
+            let now = Date(timeIntervalSince1970: 1_000)
+
+            CadenceWidgetRefreshCenter.reloadAllWidgets(force: true, now: now, userDefaults: defaults)
+            CadenceWidgetRefreshCenter.markTaskCompleted(taskID, now: now, userDefaults: defaults)
+            CadenceWidgetRefreshCenter.markHabitCompletion(
+                habitID,
+                isDoneToday: true,
+                now: now,
+                userDefaults: defaults
+            )
+            CadenceWidgetRefreshCenter.clearStoredState(userDefaults: defaults)
+
+            #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now, userDefaults: defaults).isEmpty)
+            #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults).isEmpty)
         }
-
-        let taskID = UUID()
-        let habitID = UUID()
-        let now = Date(timeIntervalSince1970: 1_000)
-
-        CadenceWidgetRefreshCenter.reloadAllWidgets(force: true, now: now, userDefaults: defaults)
-        CadenceWidgetRefreshCenter.markTaskCompleted(taskID, now: now, userDefaults: defaults)
-        CadenceWidgetRefreshCenter.markHabitCompletion(
-            habitID,
-            isDoneToday: true,
-            now: now,
-            userDefaults: defaults
-        )
-        CadenceWidgetRefreshCenter.clearStoredState(userDefaults: defaults)
-
-        #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now, userDefaults: defaults).isEmpty)
-        #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults).isEmpty)
     }
 
     @Test func todayWidgetSupportSortsTasksLikeTodayView() {
@@ -303,57 +288,53 @@ struct WidgetSupportTests {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
 
-        let suiteName = "cadence.widget.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
-        let now = Date(timeIntervalSince1970: 1_000)
+        try withTemporaryDefaults("cadence.widget.tests") { defaults in
+            let now = Date(timeIntervalSince1970: 1_000)
 
-        let habit = Habit(title: "Read")
-        modelContext.insert(habit)
-        try modelContext.save()
+            let habit = Habit(title: "Read")
+            modelContext.insert(habit)
+            try modelContext.save()
 
-        func toggle() throws -> ToggleHabitCompletionIntent.HabitToggleResult {
-            let result = try ToggleHabitCompletionIntent.toggleHabitCompletionResult(
-                habitID: habit.id.uuidString,
+            func toggle() throws -> ToggleHabitCompletionIntent.HabitToggleResult {
+                let result = try ToggleHabitCompletionIntent.toggleHabitCompletionResult(
+                    habitID: habit.id.uuidString,
+                    on: "2026-05-11",
+                    in: modelContext
+                )
+                if result.changed, let habitID = result.habitID {
+                    CadenceWidgetRefreshCenter.markHabitCompletion(
+                        habitID,
+                        isDoneToday: result.isDoneToday,
+                        now: now,
+                        userDefaults: defaults
+                    )
+                }
+                return result
+            }
+
+            let firstToggle = try toggle()
+            #expect(firstToggle.changed)
+            #expect(firstToggle.habitID == habit.id)
+            #expect(firstToggle.isDoneToday)
+            #expect(habit.isDone(on: "2026-05-11"))
+            #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults)[habit.id] == true)
+
+            let secondToggle = try toggle()
+            #expect(secondToggle.changed)
+            #expect(secondToggle.habitID == habit.id)
+            #expect(secondToggle.isDoneToday == false)
+            #expect(habit.isDone(on: "2026-05-11") == false)
+            #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults)[habit.id] == false)
+
+            // An unknown habit id must report "nothing changed" so `perform()` writes no override.
+            let missing = try ToggleHabitCompletionIntent.toggleHabitCompletionResult(
+                habitID: UUID().uuidString,
                 on: "2026-05-11",
                 in: modelContext
             )
-            if result.changed, let habitID = result.habitID {
-                CadenceWidgetRefreshCenter.markHabitCompletion(
-                    habitID,
-                    isDoneToday: result.isDoneToday,
-                    now: now,
-                    userDefaults: defaults
-                )
-            }
-            return result
+            #expect(missing.changed == false)
+            #expect(missing.habitID == nil)
         }
-
-        let firstToggle = try toggle()
-        #expect(firstToggle.changed)
-        #expect(firstToggle.habitID == habit.id)
-        #expect(firstToggle.isDoneToday)
-        #expect(habit.isDone(on: "2026-05-11"))
-        #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults)[habit.id] == true)
-
-        let secondToggle = try toggle()
-        #expect(secondToggle.changed)
-        #expect(secondToggle.habitID == habit.id)
-        #expect(secondToggle.isDoneToday == false)
-        #expect(habit.isDone(on: "2026-05-11") == false)
-        #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults)[habit.id] == false)
-
-        // An unknown habit id must report "nothing changed" so `perform()` writes no override.
-        let missing = try ToggleHabitCompletionIntent.toggleHabitCompletionResult(
-            habitID: UUID().uuidString,
-            on: "2026-05-11",
-            in: modelContext
-        )
-        #expect(missing.changed == false)
-        #expect(missing.habitID == nil)
     }
 
     @Test func habitWidgetSnapshotPrefersOpenHabitsAndComputesCounts() {

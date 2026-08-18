@@ -110,29 +110,27 @@ struct CadenceCalendarZoomTests {
     @MainActor
     @Test
     func zoomStoredByTheOldIntegerControlStillReads() throws {
-        let suiteName = "CadenceTests.calendarZoomMigration.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        try withTemporaryDefaults("CadenceTests.calendarZoomMigration") { defaults in
+            for stored in [1, 2, 3] {
+                defaults.set(stored, forKey: CadenceCalendarZoom.storageKey)
+                let storage = AppStorage(
+                    wrappedValue: CadenceCalendarZoom.defaultZoom,
+                    CadenceCalendarZoom.storageKey,
+                    store: defaults
+                )
+                #expect(storage.wrappedValue == Double(stored), "Int \(stored) did not read back as a Double")
+                #expect(CadenceCalendarZoom.clamp(storage.wrappedValue) == Double(stored))
+            }
 
-        for stored in [1, 2, 3] {
-            defaults.set(stored, forKey: CadenceCalendarZoom.storageKey)
-            let storage = AppStorage(
+            // And an unset key still falls back to the default rather than to zero.
+            defaults.removeObject(forKey: CadenceCalendarZoom.storageKey)
+            let fresh = AppStorage(
                 wrappedValue: CadenceCalendarZoom.defaultZoom,
                 CadenceCalendarZoom.storageKey,
                 store: defaults
             )
-            #expect(storage.wrappedValue == Double(stored), "Int \(stored) did not read back as a Double")
-            #expect(CadenceCalendarZoom.clamp(storage.wrappedValue) == Double(stored))
+            #expect(fresh.wrappedValue == CadenceCalendarZoom.defaultZoom)
         }
-
-        // And an unset key still falls back to the default rather than to zero.
-        defaults.removeObject(forKey: CadenceCalendarZoom.storageKey)
-        let fresh = AppStorage(
-            wrappedValue: CadenceCalendarZoom.defaultZoom,
-            CadenceCalendarZoom.storageKey,
-            store: defaults
-        )
-        #expect(fresh.wrappedValue == CadenceCalendarZoom.defaultZoom)
     }
 }
 

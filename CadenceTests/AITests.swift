@@ -22,26 +22,25 @@ private final class InMemorySecretStore: AISecretStore {
 @MainActor
 struct AISettingsManagerTests {
     @Test func settingsManagerSavesModelInDefaultsAndKeyInSecretStore() throws {
-        let defaultsName = "CadenceTests.ai.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: defaultsName))
-        defer { defaults.removePersistentDomain(forName: defaultsName) }
-        let secretStore = InMemorySecretStore()
-        let manager = AISettingsManager(secretStore: secretStore, defaults: defaults)
+        try withTemporaryDefaults("CadenceTests.ai") { defaults in
+            let secretStore = InMemorySecretStore()
+            let manager = AISettingsManager(secretStore: secretStore, defaults: defaults)
 
-        #expect(manager.model == "gpt-5.4-mini")
-        #expect(manager.hasAPIKey == false)
+            #expect(manager.model == "gpt-5.4-mini")
+            #expect(manager.hasAPIKey == false)
 
-        manager.model = "gpt-test"
-        try manager.saveAPIKey(" sk-test ")
+            manager.model = "gpt-test"
+            try manager.saveAPIKey(" sk-test ")
 
-        #expect(defaults.string(forKey: "ai.openai.model") == "gpt-test")
-        #expect(try manager.loadAPIKey() == "sk-test")
-        #expect(manager.hasAPIKey)
+            #expect(defaults.string(forKey: "ai.openai.model") == "gpt-test")
+            #expect(try manager.loadAPIKey() == "sk-test")
+            #expect(manager.hasAPIKey)
 
-        try manager.removeAPIKey()
+            try manager.removeAPIKey()
 
-        #expect(try manager.loadAPIKey() == nil)
-        #expect(manager.hasAPIKey == false)
+            #expect(try manager.loadAPIKey() == nil)
+            #expect(manager.hasAPIKey == false)
+        }
     }
 }
 
