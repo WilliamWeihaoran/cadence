@@ -29,11 +29,43 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**Repo tightening + tri-platform UI convergence** ([T-123]) — audit phase. Four read-only agents:
-cross-platform UI sharing, OOD/maintainability, the MCP boundary, and documentation accuracy.
+**Repo tightening + tri-platform UI convergence** ([T-123]) — audit phase **stalled on an account
+session limit** (resets 21:20 Asia/Shanghai). The MCP boundary audit completed ([T-124], [T-125]);
+the UI-sharing, maintainability and documentation audits all died mid-run and need re-running after
+the reset. Nothing on disk changed.
 
 
 ## Open — decided, not started
+
+- [T-124] **32 orphaned `CadenceMCPServer` processes are holding the live store open**, the oldest
+  running **74 days**. Confirmed directly with `ps`. `main.swift` loops forever with no shutdown path
+  when a client disconnects, so every Codex session that ever started the server leaked one. Each
+  holds the app-group store (`~/Library/Group Containers/group.com.haoranwei.Cadence/…/default.store`)
+  open. Worse, `plugins/cadence-mcp/scripts/run-cadence-mcp.sh` rebuilds into `.codex-build` with a
+  **hardcoded, non-overridable** `DERIVED_DATA_PATH` — i.e. it replaces the binary underneath running
+  processes, which is exactly [T-86]'s shape. This is a plausible contributor to the build and store
+  weirdness fought all session. Two fixes, separable: a shutdown path on client disconnect, and a
+  private derived-data path for the launcher. Killing the existing 32 is the user's call.
+
+- [T-125] **Write down why MCP is fenced off — the reason is mechanical and was never recorded.**
+  `AGENTS.md` states the prohibition with no mechanism, so it reads as caution. It is not:
+  `CadenceMCPServer` has an **explicit** Sources phase compiling a hand-picked subset of app source
+  (`Models/`, `CadenceSchema`, `Services/MCPReadOnly/`, `MarkdownMetadataSupport`, `DateFormatters`),
+  and it is the **only** target on `SWIFT_VERSION = 6.0` + `SWIFT_STRICT_CONCURRENCY = targeted`
+  **without** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. So the coupling runs app → MCP and is
+  silent: an edit to a shared file that compiles in a view is not evidence it compiles here, and the
+  `Cadence` scheme stays green while the server target breaks. `62dc384` is that failure realized,
+  today. Three further facts worth stating: the write path mutates the **real** app-group store from
+  a second process with no UI and no undo (gated on `CADENCE_MCP_ENABLE_WRITES`, unset today, but
+  `mcp-audit.log` shows it has run against real data); nothing under `CadenceMCPServer/` has any unit
+  coverage, so the smoke test is the only thing exercising the router and argument parsing; and the
+  30 tool names are a contract in three places at once. The audit drafted replacement doc text.
+
+- [T-126] **The MCP smoke test can be run from here, and is data-safe** — it verifies read-only mode
+  then drives a temp fixture store via `CADENCE_MCP_STORE_URL`, never the app-group store. SPM
+  checkouts are already resolved locally, so no network is needed. One gap worth closing before
+  relying on it: it rebuilds into the shared `.codex-build` with no private-path override, so
+  verifying an MCP change disturbs the same DerivedData the live processes and Codex use.
 
 - [T-123] **Tighten the repo, and converge the three platforms' UI.** Requested 2026-08-18. Scope
   decided with the user up front, because two readings of "unify the UI" are different projects:
