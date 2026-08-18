@@ -29,10 +29,10 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**Repo tightening + tri-platform UI convergence** ([T-123]) — audit phase **stalled on an account
-session limit** (resets 21:20 Asia/Shanghai). The MCP boundary audit completed ([T-124], [T-125]);
-the UI-sharing, maintainability and documentation audits all died mid-run and need re-running after
-the reset. Nothing on disk changed.
+**Repo tightening + tri-platform UI convergence** ([T-123]).
+Audits: MCP boundary **done** ([T-124]–[T-126]); maintainability **done** ([T-127]–[T-131]);
+UI sharing and documentation accuracy **running**.
+Implementation: first wave on [T-127] and [T-129], with an independent verifier to follow.
 
 
 ## Open — decided, not started
