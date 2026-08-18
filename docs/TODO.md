@@ -37,6 +37,51 @@ Implementation: first wave on [T-127] and [T-129], with an independent verifier 
 
 ## Open — decided, not started
 
+- [T-140] **The docs describe a `~` "list, then section" flow that does not exist — with invented
+  supporting detail.** Verified: `TildeSectionPickerRow` and `TildeSectionSearchPanel` have **zero**
+  hits repo-wide, and `TaskTitleTildeMode` has exactly two cases, `.none` and `.list`. Selecting a
+  list calls `normalizeSelectedSection()` silently; there is no second step. It is claimed three
+  times in `CLAUDE.md` (:473, :483, :648) and once in `macOS/Views/AGENTS.md:24` — **including a
+  whole paragraph of `NSWindow` / `@FocusState` rationale attached to a type that isn't there.**
+  That is what makes it dangerous: fabricated mechanism reads as hard-won knowledge, so an agent
+  told to "fix the section picker" will hunt for it, or worse, "restore" behaviour that never
+  shipped. Decide whether to delete the claim or build the feature; do not leave it as is.
+
+- [T-141] **The private `-derivedDataPath` rule exists in exactly one file.** Root `AGENTS.md` calls
+  it non-negotiable — and both scoped guides that print a build command print the **unsafe** one.
+  Verified: `derivedDataPath` appears in no other `AGENTS.md`. This is the rule that prevented the
+  crash of the user's running Mac app ([T-86]), and an agent reading only its folder's guide would
+  never see it.
+
+- [T-142] **`Goal.dependsOnGoalIDsJSON` is persisted, has zero readers, and is undocumented.**
+  Exactly the hazard `AppTask.calendarEventID` gets five lines of warning about — a stored SwiftData
+  property with no `SchemaMigrationPlan`, so removing it drops data rather than cleaning up. It needs
+  either the same documented treatment or a decision to migrate it out.
+
+- [T-143] **Scoped guides contradict each other and the root, in the same family as [T-125].**
+  `Services/AGENTS.md:24` ("do not edit `MCPReadOnly/`") directly contradicts `Models/AGENTS.md`
+  ("check any read-only API or export surface that mirrors models") for the *same* edit — five files
+  now carry a variant of that rule. `Shared/AGENTS.md:37` tells agents to match a "desktop-focused"
+  visual language in the **cross-platform** folder, against both the iPhone/iPad-are-one-style rule
+  and [T-123]'s explicit reversal of macOS-as-reference. And `Cadence/AGENTS.md:10` still calls the
+  iPhone shell a "compact `TabView`" — the exact sentence `iOS/AGENTS.md` was rewritten to refute,
+  sitting in the guide that is read *first*.
+
+- [T-144] **The remaining stale doc claims, for one coherent pass.** `CLAUDE.md:389` still presents a
+  *finished* consolidation as outstanding (iOS "tie-breaks on `order` alone" — every branch ends in
+  `TaskOrdering.fallbackPrecedes`, fixed in `6277539`), which is [T-131] seen from the other side.
+  `CLAUDE.md:118` files `TaskDragPayload` under `macOS/Services/`; it is `nonisolated` in `Shared/`.
+  The drag-prefix table (:412) is wrong three ways — missing `taskBundle:`, naming two delegates
+  where one exists, and stating a mechanism the sidebar does not use (its `performDrop` never parses
+  the payload). `macOS/Services/AGENTS.md:10` still lists the two calendar-preferences files that
+  today's fix corrected in `CLAUDE.md` only — and since `CLAUDE.md` says the scoped guide wins on
+  disagreement, the precedence rule now points at the wrong doc. Counts, lowest priority: iOS is 79
+  files (documented 64 and 68), `CadenceTests` is 138 (documented ~60), `Editor/` is 11 in root
+  `AGENTS.md` and still 6 in `CLAUDE.md`.
+  Also missing and worth adding: `Models/AGENTS.md` omits `TaskOrdering.swift` and `ModelEnums.swift`
+  entirely, so neither the total-tie-break rule nor "a status enum must be `nonisolated` or the
+  widget and MCP targets break" reaches that folder's own guide.
+
 - [T-132] **macOS Cmd+K cannot find an all-day event; iOS search can.** Verified:
   `CalendarManager.searchEvents` filters `!$0.isAllDay` (`:279`) and `iOSCalendarManager.searchEvents`
   does not. Same function name, same default arguments (60/365), two behaviours. A user searching for
