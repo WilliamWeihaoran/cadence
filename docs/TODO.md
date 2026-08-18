@@ -29,7 +29,15 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-_Nothing in flight._
+**AP — one resting height for a markdown well inside a sheet** ([T-111])
+
+**AQ — the iOS layout-manager overrides** ([T-109])
+
+**AR — can drag-and-drop be driven in this harness at all?** ([T-89], investigation)
+
+**AS — the iOS calendar is the last big iPhone/iPad divergence** ([T-73] calendar slice)
+
+**AT — what actually creates the empty container directories?** ([T-13], investigation)
 
 ## Open — decided, not started
 
@@ -43,12 +51,6 @@ _Nothing in flight._
   `iPadTodayView` vs the compact Today, and the compact/regular branches inside the task row — is
   in flight now.
 
-
-- [T-107] **Every single click on a section header waits out the double-click interval.** Measured
-  during `D-75`: a header with the double-tap modifier toggles ~352ms after mouseUp, against 0ms
-  without it. The modifier is not dead — it is what stops a double-click collapsing a section and
-  instantly re-expanding it — so this is a real trade, not a bug: responsiveness on every click
-  against correctness on the rare one. Worth deciding deliberately rather than inheriting.
 
 - [T-105] **The macOS Swift 6 migration has one blocker left**, and it is a decision rather than an
   annotation. `D-77` established the honest count with a whole-module probe (a batched
@@ -80,31 +82,6 @@ _Nothing in flight._
   `iOSMarkdownBlockCanvasRendering.swift` (`init()`, `init(coder:)`, `drawGlyphs` on
   `iOSMarkdownBlockCanvasLayoutManager`), identical to what `D-73` fixed on macOS. Unlike [T-105]
   these need no refactor and no visual check.
-
-- [T-110] **The MCP scheme was never part of the warning baseline.** `AGENTS.md` says 0 macOS / 0
-  iOS, and that is measured on the `Cadence` scheme. `CadenceMCPServer` reportedly emits a
-  pre-existing `no calls to throwing functions occur within 'try'` at `main.swift:17` — **unverified**:
-  the confirming build timed out under repo contention and was not re-run. Either fix it and fold
-  the scheme into the baseline, or state in `AGENTS.md` which scheme the baseline covers.
-
-- [T-95] **Part 3 only: `ListNotesView` shows out-of-list embeds as missing.** Parts 1 and 2 shipped in `D-67`.
-  `ListNotesView` passes list-scoped `relatedTasks` to its editor, so an embed of a task from
-  *another* list falls through to `.missing` and shows the cached title with missing-card styling —
-  i.e. a live task rendered as if it were deleted. Fixing it means either widening the `[[task:`
-  suggestion scope or splitting suggestion tasks from embed tasks in `MarkdownEditorView`, and those
-  are different products: the first makes any task embeddable from any list, the second keeps
-  suggestions list-scoped while rendering whatever is already embedded. **Needs a decision before
-  the work, not during it.**
-
-  Two more readers left deliberately, both cheap to fix and both wrong to fix here:
-  `iOSMarkdownPreview`'s inline runs (its *cards* are already correct — the one-line remedy is a
-  `resolving(...)` call where `markdown:` enters the view, at `iOSFocusView`), and the reference
-  picker's note *filter*, which searches raw content so a note is not findable under a renamed
-  task's new name.
-
-  Also unconverted on purpose: `iOSMarkdownEditingSurface`'s `[[` autocomplete filters notes by
-  content, but that is completion rather than user-facing search, and resolving there costs a pass
-  per note per keystroke inside the editor.
 
 - [T-89] **Drag-and-drop cannot be driven from the simulator harness.** Neither `touch_path` nor
   `swipe` lifts a `UIDragInteraction`, so no drop ever fires — verified against the row target from
@@ -205,6 +182,17 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-83] `2a15f27` Section headers respond to the first click again (T-107). Decided by the user:
+  two clicks should be two toggles. The gesture cost ~352ms on *every* click to smooth over an
+  accidental double-click that nobody performs on purpose.
+
+- [D-82] `11d8891` A note in one list drew another list's task as if it were deleted (T-95 part 3).
+  User chose the wider reading: any task is embeddable from anywhere. One array fed three things, so
+  it also fixed reference resolution and click-to-open.
+
+- [D-81] `0b2f976` The MCP scheme had two warnings sitting under a baseline that never looked at it
+  (T-110). The baseline now covers all three schemes, verified rather than assumed.
 
 - [D-80] `92ad0af` The notification reconcile carried a ModelContext across actors (T-105 item 2).
   With it fixed, the editor override is the only remaining macOS Swift 6 blocker.
