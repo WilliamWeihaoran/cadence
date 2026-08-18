@@ -50,8 +50,8 @@ _Nothing in flight._
   instantly re-expanding it — so this is a real trade, not a bug: responsiveness on every click
   against correctness on the rare one. Worth deciding deliberately rather than inheriting.
 
-- [T-105] **The macOS Swift 6 migration has exactly two blockers left**, and both are decisions
-  rather than annotations. `D-77` established the honest count with a whole-module probe (a batched
+- [T-105] **The macOS Swift 6 migration has one blocker left**, and it is a decision rather than an
+  annotation. `D-77` established the honest count with a whole-module probe (a batched
   build stops at the first failing batch; a type error stops the compiler before SIL diagnostics
   run, so both undercount):
 
@@ -68,12 +68,10 @@ _Nothing in flight._
      *Rejected on purpose, because it will tempt the next person:* moving the hit-rect and hover
      caches into a nonisolated holder compiles, changes no z-order, and is not spelled
      `nonisolated(unsafe)` — but it removes the diagnostic without removing the hazard.
-  2. **`HabitNotificationReconcileSupport.swift:10` — "sending 'context' risks causing data races."**
-     `scheduleReconcile(in:)` is nonisolated and captures a non-`Sendable` `ModelContext` into a
-     `Task { @MainActor in … }`. The enum is already `nonisolated`; the fix is deciding which actor
-     owns the context.
+  2. ~~`HabitNotificationReconcileSupport`~~ — fixed in `D-80`. The context never actually crossed
+     actors; the signature just failed to say so.
 
-  With both stubbed, the whole-module Swift 6 build is clean. **iOS has 3 more errors**, all in
+  With the editor override alone stubbed, the whole-module Swift 6 build is now clean. **iOS has 3 more errors**, all in
   `Cadence/iOS/iOSMarkdownBlockCanvasRendering.swift` — the same `NSLayoutManager` shape, and the
   *easy* half: plain `nonisolated` annotations of the kind `D-73` already applied on macOS. That is
   the cheapest remaining step and is [T-109].
@@ -207,6 +205,9 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-80] `92ad0af` The notification reconcile carried a ModelContext across actors (T-105 item 2).
+  With it fixed, the editor override is the only remaining macOS Swift 6 blocker.
 
 - [D-79] `b346fe3` Two more types the nonisolated pass missed, and the workaround one forced (T-106).
 
