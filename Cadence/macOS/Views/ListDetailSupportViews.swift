@@ -216,7 +216,6 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.cadencePlain)
-        .sectionToggleDoubleClick(isEnabled: isToggleEnabled, perform: onToggle)
     }
 }
 
