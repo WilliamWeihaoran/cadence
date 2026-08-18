@@ -60,6 +60,60 @@ struct iOSEditorSheetMetricsTests {
         }
     }
 
+    // MARK: - The gap between two groups, and the frame around them
+
+    /// The split T-112 closed. Three surfaces said 16 — `iOSCalendarEventEditSheet`,
+    /// `iOSCalendarQuickCreateSheet` and `iOSTrackingEditorShell` — and two said 14: the task
+    /// inspector and the Settings template editor.
+    ///
+    /// 16 is not a vote. It is that the two structural families here do not line up with the split:
+    /// quick-create is the inspector's twin (ruled sections inside one sheet card, six groups each)
+    /// and says 16, and the two free-standing-card sheets say 16 as well. Whichever way the five are
+    /// grouped, 14 is the odd one out.
+    @Test func twoGroupsOfFieldsAreOneDistanceApart() {
+        #expect(iOSEditorSheetMetrics.groupSpacing == 16)
+        #expect(iOSTaskInspectorMetrics.sectionSpacing == iOSEditorSheetMetrics.groupSpacing)
+    }
+
+    /// **The rule, not just the number: a sheet does not buy density with this figure.**
+    ///
+    /// The inspector's 14 read like a density allowance — it carries more groups than the template
+    /// editor and was the densest-looking of the five — and it was not one. What a sheet writes here
+    /// is not the gap the eye sees: `iOSEditorSection(style: .ruled)` adds 12pt of its own above
+    /// every group's hairline, so the inspector's visible gap was 26 against quick-create's 28,
+    /// while the two card-section sheets sat at a flat 16. The families that *do* differ differ by
+    /// 12, which is the shared section's doing; the sheets' own figures differed by 2, which is
+    /// nobody's.
+    ///
+    /// So density is `iOSEditorSection`'s decision — it is the thing that knows whether a group is
+    /// separated by a hairline or by a card edge — and a sheet only says how far apart two groups
+    /// are. The sheet with the strongest claim to an exception takes none: one figure for its group
+    /// gap and for the card framing them, and it is every other sheet's figure.
+    @Test func noSheetKeepsADensityAllowanceOfItsOwn() {
+        #expect(iOSTaskInspectorMetrics.sectionSpacing == iOSEditorSheetMetrics.groupSpacing)
+        #expect(iOSTaskInspectorMetrics.cardPadding == iOSEditorSheetMetrics.groupSpacing)
+    }
+
+    /// The card is the frame around the form, so it leaves the same gap on the outside that the form
+    /// leaves between its own groups. Both sheets that draw such a card had already set these two
+    /// equal, independently — the inspector at 14/14 and quick-create at 16/16 — which is what makes
+    /// it one figure rather than two that happen to match.
+    @Test func theCardsFrameIsOneMoreGapOfTheSameSize() {
+        #expect(iOSEditorSheetMetrics.cardPadding == iOSEditorSheetMetrics.groupSpacing)
+        #expect(iOSTaskInspectorMetrics.cardPadding == iOSEditorSheetMetrics.cardPadding)
+    }
+
+    /// The gutter is outside the card and the padding is inside it, so a gutter that dropped below
+    /// the padding would make the sheet look glued to the edge of a screen it is floating above.
+    @Test func theCardSitsFurtherFromTheScreenThanItsFormSitsFromTheCard() {
+        for isRegular in [true, false] {
+            #expect(
+                iOSEditorSheetMetrics.gutter(isRegularWidth: isRegular) >= iOSEditorSheetMetrics.cardPadding,
+                "regular=\(isRegular)"
+            )
+        }
+    }
+
     // MARK: - The name of the thing being edited
 
     /// A task title, an event title and a quick-create title are the same thing — the one field the
@@ -126,6 +180,8 @@ struct iOSEditorSheetMetricsTests {
     /// A zero anywhere in here draws as a collapsed sheet rather than as an error.
     @Test func everyMeasurementIsPositive() {
         #expect(iOSEditorSheetMetrics.notesMinHeight > 0)
+        #expect(iOSEditorSheetMetrics.groupSpacing > 0)
+        #expect(iOSEditorSheetMetrics.cardPadding > 0)
         #expect(iOSEditorSheetMetrics.titleSize > 0)
         #expect(iOSEditorSheetMetrics.titleLineLimit > 0)
         #expect(iOSEditorSheetMetrics.primaryColumnMinWidth > 0)

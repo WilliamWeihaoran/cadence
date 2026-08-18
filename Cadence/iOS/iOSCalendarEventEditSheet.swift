@@ -252,7 +252,7 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var compactFormLayout: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
             readOnlyNotice
             actionErrorNotice
             titleCard
@@ -265,8 +265,8 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var regularFormLayout: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 16) {
+        HStack(alignment: .top, spacing: iOSEditorSheetMetrics.groupSpacing) {
+            VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
                 readOnlyNotice
                 titleCard
                 scheduleCard
@@ -278,7 +278,7 @@ struct iOSCalendarEventEditSheet: View {
                 alignment: .topLeading
             )
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
                 eventNoteCard
                 notesCard
                 deleteCard
@@ -293,16 +293,22 @@ struct iOSCalendarEventEditSheet: View {
         .frame(maxWidth: .infinity, alignment: .top)
     }
 
+    /// An untitled `iOSEditorSection`, not a hand-rolled card. Both notices used to build the card
+    /// themselves — `.padding(16).cadenceCard(background: Theme.surface, cornerRadius:
+    /// Theme.radiusCard)` — which is `iOSEditorSection(title: nil)` with two numbers changed: 16pt
+    /// of padding where every card beside them on this sheet uses 14, and the default 14/6 shadow
+    /// where they use 12/5. Two near-copies of a shared component, drifting in exactly the places
+    /// a copy drifts.
     @ViewBuilder
     private var actionErrorNotice: some View {
         if let actionError {
-            Text(actionError)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.red)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
+            iOSEditorSection(title: nil) {
+                Text(actionError)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -311,18 +317,17 @@ struct iOSCalendarEventEditSheet: View {
     @ViewBuilder
     private var readOnlyNotice: some View {
         if !isEditable {
-            HStack(alignment: .top, spacing: 12) {
-                iOSIconTile(systemImage: "lock.fill", color: Theme.amber, size: 34, iconSize: 15)
+            iOSEditorSection(title: nil) {
+                HStack(alignment: .top, spacing: 12) {
+                    iOSIconTile(systemImage: "lock.fill", color: Theme.amber, size: 34, iconSize: 15)
 
-                Text(CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: eventCalendarName))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: eventCalendarName))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard)
         }
     }
 

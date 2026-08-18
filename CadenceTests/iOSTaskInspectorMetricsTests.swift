@@ -58,6 +58,16 @@ struct iOSTaskInspectorMetricsTests {
         #expect(iOSTaskInspectorMetrics.completionGlyphSize >= CadenceTaskRowMetrics.compactWidth.completionGlyphSize)
     }
 
+    /// The gap between the inspector's groups, and the padding of the card around them, are one
+    /// figure and it is not the inspector's. It said 14 for both while `iOSCalendarQuickCreateSheet`
+    /// — the same shape of sheet, ruled sections inside one card, six groups apiece — said 16 for
+    /// both. `iOSEditorSheetMetricsTests` is where the choice of 16 is argued, and where the rule
+    /// that a sheet does not set its own density is stated.
+    @Test func theGroupGapAndTheCardAroundThemAreTheAppsFiguresNotTheInspectors() {
+        #expect(iOSTaskInspectorMetrics.sectionSpacing == iOSEditorSheetMetrics.groupSpacing)
+        #expect(iOSTaskInspectorMetrics.cardPadding == iOSEditorSheetMetrics.cardPadding)
+    }
+
     /// One resting height for the notes well — and, since T-111, not the inspector's own. The same
     /// markdown surface is a well on four sheets; the height is `iOSEditorSheetMetrics`'s to state,
     /// and `iOSEditorSheetMetricsTests` is where the choice of 340 is argued.

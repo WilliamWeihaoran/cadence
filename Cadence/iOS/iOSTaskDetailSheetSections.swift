@@ -325,7 +325,6 @@ struct iOSTaskSubtasksSection: View {
 struct iOSTaskNotesSection: View {
     let notesText: Binding<String>
     let isFocused: Binding<Bool>
-    let minHeight: CGFloat
     let referenceNotes: [Note]
     let referenceTasks: [AppTask]
     let onOpenReference: (MarkdownReferenceDisplayTarget) -> Void
@@ -340,8 +339,7 @@ struct iOSTaskNotesSection: View {
                 referenceTasks: referenceTasks,
                 onOpenReference: onOpenReference
             )
-            .frame(minHeight: minHeight)
-            .cadenceCard(background: Theme.surfaceElevated.opacity(0.35), cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
+            .iOSMarkdownWell()
         }
     }
 }

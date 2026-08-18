@@ -13,6 +13,11 @@ import SwiftUI
 /// the two columns they split into at regular width. Each of those is one decision spelled two or
 /// three times, which is how `titleSize` came to be 22 in two files and a `24 : 21` ramp in a third.
 ///
+/// A fifth surface, `iOSTrackingEditorShell`, hosts no well but is the same kind of sheet, and had
+/// its own copies of the gutter ramp, the two-column cap and the gap between groups. It reads them
+/// from here now. "Editor sheet" is the unit these figures belong to, not "sheet with a markdown
+/// well in it".
+///
 /// Deliberately **outside** `#if os(iOS)`, like `iOSTaskInspectorMetrics` and `iOSPageHeaderMetrics`
 /// and for the same reason: these are decisions, and the macOS-built test target has to be able to
 /// read them. Nothing in the enum draws.
@@ -52,11 +57,45 @@ nonisolated enum iOSEditorSheetMetrics {
     /// varies**, and the only one that is about the device rather than about the sheet. It is what
     /// is left over once a content column has stopped growing, so it is a real host fact.
     ///
-    /// Shared by the task inspector and both calendar sheets, which is why it is stated once
-    /// instead of being a `isRegularWidth ? 20 : 18` in each of them.
+    /// Shared by the task inspector, both calendar sheets and `iOSTrackingEditorShell`, which is why
+    /// it is stated once instead of being a `isRegularWidth ? 20 : 18` in each of them.
     static func gutter(isRegularWidth: Bool) -> CGFloat {
         isRegularWidth ? 20 : 18
     }
+
+    /// Inside a sheet's own card, around the whole form. The task inspector said 14 and
+    /// `iOSCalendarQuickCreateSheet` said 16 for the same box — one card, at `Theme.radiusPanel`,
+    /// holding one form.
+    ///
+    /// It is `groupSpacing`, deliberately and not by coincidence: both sheets had already set their
+    /// card's padding equal to the gap between the groups inside it, independently, so the frame
+    /// around the form reads as one more gap of the same size rather than as a second margin.
+    static var cardPadding: CGFloat { groupSpacing }
+
+    // MARK: - The gap between two groups of fields
+
+    /// Between the top-level groups of an editor form — the inspector's identity/schedule/subtasks
+    /// stack, the two calendar sheets' cards, and the tracking editors' sections, in one column or
+    /// two.
+    ///
+    /// **16.** Three of the five surfaces already said 16 and two said 14, but the count is not the
+    /// argument — the argument is that the two families this splits along do not line up with it.
+    /// `iOSCalendarQuickCreateSheet` is the inspector's structural twin (ruled sections inside one
+    /// sheet card, six groups apiece) and it says 16; `iOSCalendarEventEditSheet` and
+    /// `iOSTrackingEditorShell` are the other shape (free-standing `.card` sections on `Theme.bg`)
+    /// and they also say 16. Whichever way the surfaces are grouped, 14 is the odd one out.
+    ///
+    /// The density theory does not survive being checked, either. The inspector is not denser than
+    /// the sheets that say 16 — it draws six groups and quick-create draws six — and the number it
+    /// sets is not the gap the eye sees: `iOSEditorSection(style: .ruled)` adds 12pt of its own
+    /// above every group's hairline, so the inspector's visible gap was 26 against quick-create's
+    /// 28. Two points on a 26-point gap is drift, not a decision.
+    ///
+    /// The two families still land on different gaps after this — 28 between ruled groups, 16
+    /// between cards — because the rule needs air around it and a card edge does not. That
+    /// difference belongs to `iOSEditorSection`, which is the thing that knows which style it is.
+    /// The sheet's job is only to say how far apart two groups are, and there is one answer to that.
+    static let groupSpacing: CGFloat = 16
 
     // MARK: - The name of the thing being edited
 
@@ -93,10 +132,20 @@ nonisolated enum iOSEditorSheetMetrics {
 extension View {
     /// The resting shape of a markdown well on an editor sheet: one height, one radius, one border.
     ///
-    /// Three surfaces drew this box themselves and drifted in all three respects — two heights, and
-    /// a `.stroke` at 0.68 alpha against a `.strokeBorder` at full. `.stroke` centres the line on the
-    /// clip path, so half of it was being clipped away: the two calendar sheets' wells had a border
-    /// both thinner *and* fainter than the template editor's, for no reason either of them recorded.
+    /// All four surfaces drew this box themselves and drifted in every respect. Three of them
+    /// differed over the border — a `.stroke` at 0.68 alpha against a `.strokeBorder` at full, and
+    /// `.stroke` centres the line on the clip path, so half of it was being clipped away: the two
+    /// calendar sheets' wells had a border both thinner *and* fainter than the template editor's,
+    /// for no reason either of them recorded.
+    ///
+    /// The task inspector's was a fourth spelling with a defect of its own:
+    /// `.cadenceCard(background: Theme.surfaceElevated.opacity(0.35), cornerRadius:
+    /// Theme.radiusCard, shadowRadius: 10, shadowY: 4)`. That box had **no border at all** — it was
+    /// meant to be told apart by its fill — and the fill never rendered, because
+    /// `iOSMarkdownEditingSurface` paints an opaque `Theme.surface` of its own and `cadenceCard`
+    /// puts its background *behind* that. So the one thing distinguishing the well from the sheet
+    /// around it was a drop shadow, at a radius (18) no other well used, and a wash that had been
+    /// carefully chosen and was never once drawn.
     ///
     /// One layer at one radius, per the standing rule — the border is the only thing drawn over the
     /// surface, and it shares the radius the surface is clipped to.

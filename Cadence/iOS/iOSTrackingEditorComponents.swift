@@ -18,7 +18,7 @@ struct iOSTrackingEditorShell<Content: View>: View {
         NavigationStack {
             ScrollView {
                 editorContent
-                    .padding(isRegularWidth ? 20 : 18)
+                    .padding(iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth))
             }
             .scrollIndicators(.hidden)
             .background(Theme.bg.ignoresSafeArea())
@@ -47,23 +47,27 @@ struct iOSTrackingEditorShell<Content: View>: View {
         }
     }
 
+    /// The fourth editor sheet, and the last to be speaking its own dialect: it had written down the
+    /// gutter ramp, the two-column cap and the gap between groups again, in its own literals, so
+    /// three decisions the other three sheets share were four copies each. Nothing here is a new
+    /// layout — it is the same layout, stated once.
     @ViewBuilder
     private var editorContent: some View {
         if isRegularWidth {
             LazyVGrid(
                 columns: [
-                    GridItem(.flexible(), spacing: 16, alignment: .top),
-                    GridItem(.flexible(), spacing: 16, alignment: .top)
+                    GridItem(.flexible(), spacing: iOSEditorSheetMetrics.groupSpacing, alignment: .top),
+                    GridItem(.flexible(), spacing: iOSEditorSheetMetrics.groupSpacing, alignment: .top)
                 ],
                 alignment: .leading,
-                spacing: 16
+                spacing: iOSEditorSheetMetrics.groupSpacing
             ) {
                 content
             }
-            .frame(maxWidth: 980, alignment: .top)
+            .frame(maxWidth: iOSEditorSheetMetrics.twoColumnMaxWidth, alignment: .top)
             .frame(maxWidth: .infinity, alignment: .top)
         } else {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
                 content
             }
         }

@@ -60,8 +60,19 @@ Cadence/
 │   ├── Theme.swift     # The ONLY source of colour. See "Design System" below
 │   ├── DateFormatters.swift, CadenceHoverStyles.swift, CadenceCardStyle.swift, CadenceDueUrgency.swift
 │   ├── Cadence*Support.swift    # Task/note/calendar/focus/settings/tracking presentation + query + mutation helpers
-│   │                   # incl. CadenceCalendarPlanningSupport: view mode, presentation, board rails,
-│   │                   # drop targets, CalendarBoardPlannerSupport, CadenceScheduleSupport
+│   │                   # The calendar half was one 1,314-line file until T-120 split it, whole types
+│   │                   # moved byte-identically, into six:
+│   │                   #   CadenceCalendarPlanningSupport — the Board only: CalendarBoardRail,
+│   │                   #     CalendarBoardDropTarget/DropAction/AddAction, CalendarBoardPlannerSupport,
+│   │                   #     CalendarBoardSortKey
+│   │                   #   CadenceCalendarModeSupport — CadenceCalendarViewMode, CadenceCalendarPresentation
+│   │                   #   CadenceScheduleSupport — day-canvas hours, date bucketing, schedulable slots
+│   │                   #   CadenceCalendarDayBadge — month-grid day badge (state → style)
+│   │                   #   CadenceCalendarDateTitleSupport — CadenceCalendarDateTitleFormat + Support
+│   │                   #   CadenceCalendarTimedGridSupport — CadenceCalendarZoom, CadenceCalendarTimelineWindow
+│   ├── CalendarVisibilityPreferences (in CadenceCalendarVisibilityPreferences.swift) and
+│   │                   # CalendarWorkHoursPreferences — both shared, NOT macOS-only. The file name
+│   │                   # carries the Cadence prefix; the type does not.
 │   └── Components/     # CadenceDatePicker, CadenceButtons, CadenceContextPicker, EmptyStateView,
 │                       # SectionEyebrowLabel, CommitmentSharedViews,
 │                       # EstimatePickerControl (iOS chip; its popover is shared), CadenceScrollElasticity
@@ -92,7 +103,10 @@ Cadence/
     │                   # MarkdownSlashCommandSupport, MarkdownTaskEmbedDrawingSupport, MarkdownKeyboardShortcutSupport
     └── Services/       # macOS-only managers:
                         #   CalendarManager (EventKit events), RemindersManager (EventKit reminders)
-                        #   CalendarVisibilityPreferences, CalendarWorkHoursPreferences
+                        #   (CalendarVisibilityPreferences and CalendarWorkHoursPreferences are NOT
+                        #    here — both live in Shared/; see above. macOS/Services still holds a
+                        #    2-line CalendarVisibilityPreferences.swift that is only a tombstone
+                        #    comment recording the move, and could be deleted.)
                         #   FocusManager, SchedulingService, TaskWorkflowService, TaskCreationManager
                         #   GlobalHotKeyManager, QuickTaskPanelController, GlobalSearchManager
                         #   Hovered{Task,Editable,TaskDatePicker,KanbanColumn,Section}Manager

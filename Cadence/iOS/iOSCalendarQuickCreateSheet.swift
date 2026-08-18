@@ -122,7 +122,7 @@ struct iOSCalendarQuickCreateSheet: View {
         NavigationStack {
             ScrollView {
                 formLayout
-                    .padding(16)
+                    .padding(iOSEditorSheetMetrics.cardPadding)
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
                     .padding(iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth))
@@ -154,7 +154,7 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private var compactFormLayout: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
             header
             kindPicker
             titleSection
@@ -165,8 +165,8 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private var regularFormLayout: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 16) {
+        HStack(alignment: .top, spacing: iOSEditorSheetMetrics.groupSpacing) {
+            VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
                 header
                 kindPicker
                 titleSection
@@ -178,7 +178,7 @@ struct iOSCalendarQuickCreateSheet: View {
                 alignment: .topLeading
             )
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
                 formDetails
                 formNotes
             }

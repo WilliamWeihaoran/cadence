@@ -27,7 +27,7 @@ struct iOSTemplatesSettingsSection: View {
 
             iOSSettingsCard {
                 if horizontalSizeClass == .regular {
-                    HStack(alignment: .top, spacing: 14) {
+                    HStack(alignment: .top, spacing: iOSEditorSheetMetrics.groupSpacing) {
                         templateList
                             .frame(width: 260)
 
@@ -39,7 +39,7 @@ struct iOSTemplatesSettingsSection: View {
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                 } else {
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
                         templatePicker
                         templateEditor
                     }
@@ -99,7 +99,7 @@ struct iOSTemplatesSettingsSection: View {
     @ViewBuilder
     private var templateEditor: some View {
         if let selectedTemplate {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(selectedTemplate.title)

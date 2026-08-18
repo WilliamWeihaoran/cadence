@@ -15,11 +15,11 @@ import SwiftUI
 /// What survives is the sheet **gutter**: the margin between the card and the edge of the host,
 /// which is a fact about the host and not about the card.
 ///
-/// The gutter, the title size and line limit, and the notes well now come from
-/// `iOSEditorSheetMetrics`, because they were never the *inspector's* decisions — they are what an
-/// editor sheet in this app is, and the calendar sheets had written each of them down again. What is
-/// left here is what only this sheet has: a completion circle at the head of its title, and the two
-/// figures derived from it.
+/// The gutter, the card padding, the gap between groups, the title size and line limit, and the
+/// notes well now come from `iOSEditorSheetMetrics`, because none of them was ever the *inspector's*
+/// decision — they are what an editor sheet in this app is, and the calendar sheets had written each
+/// of them down again. What is left here is what only this sheet has: the width its form stops
+/// growing at, a completion circle at the head of its title, and the figures derived from it.
 ///
 /// Deliberately **outside** `#if os(iOS)`, like `iOSPageHeaderMetrics` and for the same reason: a
 /// type ramp is a decision, and the macOS-built test target has to be able to read it. Nothing here
@@ -32,15 +32,18 @@ nonisolated enum iOSTaskInspectorMetrics {
 
     // MARK: - The card
 
-    /// Inside the card, around the whole form.
-    static let cardPadding: CGFloat = 14
+    /// Inside the card, around the whole form — one figure for every editor sheet's card, so see
+    /// `iOSEditorSheetMetrics.cardPadding`. It was 14 here against quick-create's 16.
+    static var cardPadding: CGFloat { iOSEditorSheetMetrics.cardPadding }
 
     /// The widest the form is ever drawn, at any width. This cap is why nothing below it needs to
     /// consult the screen: past ~640pt the sheet stops growing and the layout is identical.
     static let contentMaxWidth: CGFloat = 640
 
-    /// Between the identity block, the wells, and the action row.
-    static let sectionSpacing: CGFloat = 14
+    /// Between the identity block, the wells, and the action row. The same gap every other editor
+    /// sheet leaves between two groups; `iOSEditorSheetMetrics.groupSpacing` argues the 16, and why
+    /// the 14 that used to be here was not the density decision it looked like.
+    static var sectionSpacing: CGFloat { iOSEditorSheetMetrics.groupSpacing }
 
     /// The margin between the card and the edge of the sheet — **the one figure that varies**, and
     /// the only one that is about the host rather than about the inspector. One gutter for every

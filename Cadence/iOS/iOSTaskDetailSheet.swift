@@ -238,7 +238,6 @@ struct iOSTaskDetailSheet: View {
                 }
             ),
             isFocused: $isNotesFocused,
-            minHeight: iOSTaskInspectorMetrics.notesMinHeight,
             referenceNotes: allNotes,
             referenceTasks: allTasks,
             onOpenReference: openMarkdownReference
