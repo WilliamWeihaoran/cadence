@@ -38,24 +38,19 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   session (an 8pt-wide embed card, a 6pt timeline block interior) were invisible to exactly that
   kind of reasoning. iOS first, using the `AGENTS.md` recipe.
 
-- [T-117] **A project-file lock is a new disguise in the T-86 family.** Two HEAD builds deadlocked
-  in `NSFileCoordinator coordinateReadingItemAtURL:` on `Cadence.xcodeproj` — 20+ minutes at 0% CPU
-  with an empty derivedDataPath — because the user's Xcode, open six days, holds a coordinated
-  claim on the project file. Not DerivedData contention, and it presents as a hang rather than an
-  error. Add to the T-86 note once confirmed a second time.
-
-- [T-114] **`CadenceTests` leaks a `UserDefaults` plist per run — 4,629 files, 18.5 MB.** Found while
-  investigating T-13, and unlike T-13 this one *is* ours, and is three times bigger. Five suites
-  (`cadence.widget.tests.`, `CadenceNotesEditorPreferencesTests.`, `CadenceTests.appleAccount.`,
-  `CadenceTests.ai.`, `CadenceTests.calendarZoomMigration.`) build a suite name with a fresh
-  `UUID()` per run. Teardown calls `removePersistentDomain(forName:)`, which empties the domain but
-  **does not delete the file**, so each run strands a 42-byte empty plist in
-  `~/Library/Containers/com.haoranwei.Cadence/Data/Library/Preferences/`, against 4 legitimate files.
-  `CadenceNotesEditorPreferencesTests.swift:11` even comments that it is "torn down afterwards so
-  nothing leaks".
-  **Do not just switch to a fixed suite name without checking**: the per-run UUID is plausibly there
-  to keep parallel tests from colliding, so the fix has to either delete the file in teardown or use
-  a name that is stable *and* unique per test.
+- [T-117] **A project-file lock is a new disguise in the T-86 family — now confirmed twice.** Builds
+  deadlock in `NSFileCoordinator` reading `Cadence.xcodeproj`, 20+ minutes at 0% CPU, with an empty
+  derivedDataPath. A `sample` of a stalled process caught it in `_blockOnAccessClaim` on the project
+  file, with a concurrent agent's `xcodebuild` holding it and the user's Xcode — open six days —
+  also claiming it. **It produces no diagnostic at all**: the run simply sits at the "Command line
+  invocation" line, which reads as a broken checkout. Distinct from DerivedData contention.
+  Mitigations: quit Xcode when a batch of agents is running, and treat total silence as this rather
+  than as a failure to be debugged.
+  Related but *not* universal: one agent found a fresh private DerivedData could not start because
+  package resolution is sandbox-blocked, and worked around it with
+  `-clonedSourcePackagesDirPath` + `-disableAutomaticPackageResolution`. Recorded as situational
+  rather than as a rule — my own fresh-DD runs this session resolved packages fine, so do not add
+  those flags by default.
 
 - [T-115] **The iOS Swift 6 flip is blocked by a toolchain bug, not app code.** With `D-86`'s three
   errors fixed the iOS module is diagnostically clean, and swift-frontend then crashes in IRGen on a
@@ -204,6 +199,9 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-90] `8772628` Tests stranded a UserDefaults plist on every run — 4,629 of them (T-114).
+  Bounded at 11 files total, verified by a third independent run showing delta 0.
 
 - [D-89] **T-89 and T-14 were both false, and both had been shaping decisions for days.**
   *Drag-and-drop can be driven on the iOS simulator.* `UIDragInteraction`'s lift recognizer needs
