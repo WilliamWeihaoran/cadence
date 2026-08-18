@@ -61,6 +61,24 @@ the reset. Nothing on disk changed.
   coverage, so the smoke test is the only thing exercising the router and argument parsing; and the
   30 tool names are a contract in three places at once. The audit drafted replacement doc text.
 
+  **And the rule is mis-stated, not just under-explained.** Provenance is now definitive: `5790cc5`
+  (2026-05-06) created 13 `AGENTS.md` files in one sweep, eight days after the MCP surface appeared.
+  No incident prompted it — the rule was written by *anticipation*, which is why it carries no
+  reason. Every failure that now justifies it arrived afterwards (Aug 4, Aug 7 ×2, Aug 17, Aug 18
+  ×3) and none was written back.
+  Meanwhile **23 commits touch these paths, and roughly half are not MCP work at all** — they are
+  app-side changes that *had* to reach in: `842c82d` (read service onto the unified `Note` model),
+  `89db417` (tags), `acea9ce` (the Pursuit→Goal merge), `1363e7e` (the Notes rework), `0ff391d`
+  (data-integrity repair), `f94361a` (the `nonisolated` sweep). So "do not touch MCP" **cannot** mean
+  what it says: a model change that skips this surface produces either a broken target (`670e299`,
+  `62dc384`) or a *silently stale response schema* — the `Pursuit` relationships were missing from
+  summaries until `0040f24` caught it.
+  What the evidence supports is a **procedure, not a prohibition**: when model or shared-service code
+  changes, the MCP boundary is reviewed deliberately — built on its own scheme with a private
+  `-derivedDataPath`, its log grepped for warnings, and its response DTOs changed on purpose or not
+  at all. Rewrite the guides that way. A prohibition agents must routinely violate teaches them to
+  ignore the guide; a procedure they can follow does not.
+
 - [T-126] **The MCP smoke test can be run from here, and is data-safe** — it verifies read-only mode
   then drives a temp fixture store via `CADENCE_MCP_STORE_URL`, never the app-group store. SPM
   checkouts are already resolved locally, so no network is needed. One gap worth closing before
