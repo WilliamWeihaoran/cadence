@@ -35,6 +35,13 @@ assignments moved into `TaskCreationDraft`, the second an `await MainActor.run` 
 already on the main actor and discarded `NSWorkspace.open`'s `Bool`. The baseline is now zero, so
 **any** warning is a regression introduced by the change in hand.
 
+**The baseline covers all three schemes** — `Cadence`, `CadenceWidgets` and `CadenceMCPServer`.
+It used to be measured only on `Cadence`, and `CadenceMCPServer` sat at two warnings underneath it
+unnoticed, because the run that checked that scheme read its *exit status* and never grepped its
+output. Exit 0 says nothing about warnings. Grep the log, and grep it with **no path filter**: a
+main-actor isolation regression this session surfaced under synthesized macro paths and slipped
+past a `grep "/Cadence/"` entirely.
+
 ## Where Things Live
 
 - `Cadence/CadenceApp.swift` - app entry, model container, CloudKit setup, recovery.

@@ -14,7 +14,9 @@ do {
     let readService = CadenceReadService(context: context, performsMigrations: writesEnabled)
     let writeService: CadenceWriteService?
     if writesEnabled {
-        writeService = try CadenceWriteService(
+        // No `try` on the initializer itself: `CadenceWriteService.init(context:…)` is not
+        // throwing. The only throwing call here is `defaultLogger()`, which carries its own.
+        writeService = CadenceWriteService(
             context: context,
             notifiesExternalWrites: true,
             auditLogger: try CadenceMCPAuditLogger.defaultLogger()
