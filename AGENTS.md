@@ -114,6 +114,38 @@ code, and every one of them has been violated by a shipped change at least once.
   only by grepping the log for the path xcodebuild echoes. Use a PID-unique directory, and confirm
   the isolated path appears in the log before trusting the result. `build.db is locked` and `unable
   to spawn swift-frontend` on a fresh private path are the same contention and clear on re-run.
+- **Drag-and-drop CAN be driven on the iOS simulator.** This was recorded as impossible for a long
+  time and the record was wrong; every "drag is verified by inference" caveat in this repo's history
+  predates the recipe below. `UIDragInteraction`'s lift recognizer needs the touch **stationary for
+  ~350ms before any movement** — measured, `itemsForBeginning` fires 326–349ms after `touchesBegan`.
+  A `swipe`, or a `touch_path` that starts moving immediately, never lifts. 300ms also fails: the
+  first move lands just before the threshold and breaks the recognizer's slop. Use:
+
+  ```
+  touch_path points:
+    {x: srcX, y: srcY, dt_ms: 0}       // down
+    {x: srcX, y: srcY, dt_ms: 600}     // stationary dwell — this is the lift
+    ...steps of 10–30pt, dt_ms: 50...  // travel
+    {x: dstX, y: dstY, dt_ms: 400}     // settle on the target
+  ```
+
+  `dt_ms` on point *N* is the dwell **before** moving to *N*. Coordinates are **points** (the
+  `launch` reply states the device's, e.g. 420×912), **not screenshot pixels** — mixing them up is
+  what produced the "tab bar swallows taps" folklore: a touch beginning within 4pt of an edge is
+  synthesised as the OS home/app-switcher gesture, and an *incomplete* one leaves the app's window
+  ~35pt short, so every bottom-anchored control moves up and taps aimed from an old screenshot miss.
+  Nothing is swallowed. Only a relaunch clears it, so keep every point ≥8pt from all four edges.
+  Proven end-to-end against real Cadence: a Calendar Board card dragged between day columns, with
+  the resulting SwiftData change surviving a relaunch.
+- **macOS UI *can* be screenshot- and event-verified from the agent shell.** Also long recorded as
+  blocked on an ungranted accessibility permission, also wrong: `AXIsProcessTrusted`,
+  `CGPreflightPostEventAccess`, `CGPreflightListenEventAccess` and `CGPreflightScreenCaptureAccess`
+  all return true, System Events reads window geometry, and `screencapture -x` works. The symptom
+  behind the old note is real but misdiagnosed — `count of windows` on an app with no open window
+  returns 0 and indexing it errors `-1719 Invalid index`, which reads like a permission denial.
+  **One genuine constraint remains:** posting `CGEvent`s drives the user's *physical* cursor, so a
+  scripted macOS drag fights them for the pointer and can drop something somewhere unintended. Safe
+  only when the machine is known idle; screenshots and reads are safe any time.
 - **Commit with `git commit --only <paths>` when agents share a working tree.** `git add <paths>`
   adds your paths *to whatever is already staged*, so another agent's `git mv` or `git rm` sitting in
   the index rides along into your commit. This has happened three times. The third was the expensive

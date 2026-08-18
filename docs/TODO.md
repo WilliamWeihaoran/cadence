@@ -29,9 +29,20 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**AR — can drag-and-drop be driven in this harness at all?** ([T-89], investigation)
-
 ## Open — decided, not started
+
+- [T-116] **Exercise every drag-and-drop path in Cadence, now that drags can be driven.** Sidebar
+  reorder, task-to-timeline, kanban and Calendar Board columns, all-day event chips, drag-to-create,
+  the tab-bar `+` → task-row path from `47328af`. Not one of these has ever been *observed* working;
+  every claim rests on tracing that a producer and a consumer both exist. Two hit-target bugs this
+  session (an 8pt-wide embed card, a 6pt timeline block interior) were invisible to exactly that
+  kind of reasoning. iOS first, using the `AGENTS.md` recipe.
+
+- [T-117] **A project-file lock is a new disguise in the T-86 family.** Two HEAD builds deadlocked
+  in `NSFileCoordinator coordinateReadingItemAtURL:` on `Cadence.xcodeproj` — 20+ minutes at 0% CPU
+  with an empty derivedDataPath — because the user's Xcode, open six days, holds a coordinated
+  claim on the project file. Not DerivedData contention, and it presents as a hang rather than an
+  error. Add to the T-86 note once confirmed a second time.
 
 - [T-114] **`CadenceTests` leaks a `UserDefaults` plist per run — 4,629 files, 18.5 MB.** Found while
   investigating T-13, and unlike T-13 this one *is* ours, and is three times bigger. Five suites
@@ -77,7 +88,12 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   in flight now.
 
 
-- [T-105] **The macOS Swift 6 migration has one blocker left**, and it is a decision rather than an
+- [T-105] **The macOS Swift 6 migration has one blocker left — and it is no longer blocked.**
+  `D-89` established that macOS screenshot verification works, so the visual questions that stopped
+  `D-77` landing the refactor (a multi-line selection tinting an embed card, the insertion point
+  under a card, `dirtyRect`-derived glyph ranges) can now actually be looked at. Do the CGEvent
+  caveat honestly: screenshots are safe, but driving the pointer is not while the user is at the
+  machine., and it is a decision rather than an
   annotation. `D-77` established the honest count with a whole-module probe (a batched
   build stops at the first failing batch; a type error stops the compiler before SIL diagnostics
   run, so both undercount):
@@ -107,13 +123,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   `iOSMarkdownBlockCanvasRendering.swift` (`init()`, `init(coder:)`, `drawGlyphs` on
   `iOSMarkdownBlockCanvasLayoutManager`), identical to what `D-73` fixed on macOS. Unlike [T-105]
   these need no refactor and no visual check.
-
-- [T-89] **Drag-and-drop cannot be driven from the simulator harness.** Neither `touch_path` nor
-  `swipe` lifts a `UIDragInteraction`, so no drop ever fires — verified against the row target from
-  `47328af`, which fails identically, so it predates and is independent of any one change. Every
-  drag-to-create claim in this repo is therefore unit-tested rather than seen. Worse, an abandoned
-  drag attempt leaves the tab bar swallowing taps until relaunch, which can silently poison a later
-  verification in the same session. Until this is solved, treat "drag works" as inference.
 
 - [T-86] **Agents building into the shared DerivedData can crash a running Mac app.** On 2026-08-17
   the user hit "Cadence quit unexpectedly" — `EXC_BREAKPOINT` on the main thread, five seconds after
@@ -156,15 +165,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   *capability* or the same *control*, and what happens to macOS-only surfaces that have no phone
   shape at all (the MCP bridge, global hot keys, the AppKit markdown editor).
 
-- [T-14] **Accessibility permission for window capture** — System Events cannot read the Mac app's
-  window geometry from the agent shell, so macOS UI cannot be screenshot-verified. Granting
-  accessibility to the terminal would remove a real verification gap.
-
-## Backlog — not scheduled
-
-Added 2026-08-16 at the user's direction. **Not to be worked on now.** Notes are context for
-whoever picks these up, not a plan.
-
 - [T-15] **More colour themes.** Note what this reverses: the seven-theme `ThemeManager` was
   deliberately deleted in favour of one fixed near-black dark palette, and `Theme.swift` is now the
   single source of colour on every target including `CadenceWidgets`. Re-introducing themes means
@@ -204,6 +204,26 @@ whoever picks these up, not a plan.
 ## Done
 
 Newest first. The commit message carries the reasoning; this is the index.
+
+- [D-89] **T-89 and T-14 were both false, and both had been shaping decisions for days.**
+  *Drag-and-drop can be driven on the iOS simulator.* `UIDragInteraction`'s lift recognizer needs
+  the touch stationary ~350ms before any movement — measured, `itemsForBeginning` fires at 326–349ms
+  — so a `swipe`, or any path that moves immediately, never lifts. 300ms fails too. The working
+  recipe is in `AGENTS.md`, proven end-to-end on real Cadence: a Calendar Board card dragged between
+  day columns, with the SwiftData change surviving a relaunch.
+  *The "tab bar swallows taps" folklore is also wrong.* A touch beginning within 4pt of an edge is
+  synthesised as the OS home gesture; an incomplete one leaves the window ~35pt short, so
+  bottom-anchored controls move up and taps aimed from an old screenshot miss. Nothing is swallowed.
+  Almost certainly caused by aiming with screenshot **pixels** where the API takes **points**.
+  *macOS UI can be screenshot- and event-verified.* All four preflights return true; I confirmed
+  this independently. T-14's symptom is real but misdiagnosed — `count of windows` on an app with no
+  window returns 0 and indexing errors `-1719`, which reads like a permission denial.
+  **One real constraint survives:** posting CGEvents drives the user's *physical* cursor, so a
+  scripted macOS drag fights them for it. Screenshots and reads are safe any time.
+
+- [D-88] **Every "verified by inference" caveat in this repo's history predates the recipe above.**
+  Recorded separately because it is the expensive part: two limitations nobody had retested were
+  used to justify not verifying whole features, and one of them ([T-14]) also blocked [T-105].
 
 - [D-87] `2ff8d39` The calendar's day header reserved less space than its contents need (T-73
   calendar slice). 33 branches → 5 reads; one of them was arithmetic that was simply wrong.
