@@ -55,67 +55,72 @@ struct iOSCalendarToolbar: View {
 
     private let calendar = Calendar.current
 
-    var body: some View {
-        Group {
-            if horizontalSizeClass == .compact {
-                compactToolbar
-            } else {
-                regularToolbar
-            }
-        }
-        .padding(.horizontal, horizontalSizeClass == .regular ? 18 : 16)
-        .padding(.vertical, horizontalSizeClass == .regular ? 10 : 12)
-        .background(Theme.surface)
+    private var headerMetrics: iOSPageHeaderMetrics {
+        iOSPageHeaderMetrics.metrics(role: .page, isRegularWidth: horizontalSizeClass == .regular)
     }
 
-    private var compactToolbar: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack(spacing: 10) {
+    var body: some View {
+        toolbar
+            .padding(
+                .horizontal,
+                iOSCalendarPageMetrics.horizontalPadding(isRegularWidth: horizontalSizeClass == .regular)
+            )
+            .padding(.vertical, iOSCalendarToolbarMetrics.verticalPadding)
+            .background(Theme.surface)
+    }
+
+    /// One layout for both widths, chosen by whether the single row **fits** rather than by which
+    /// device is holding it.
+    ///
+    /// It used to be two: an `if horizontalSizeClass == .compact` that always wrapped, beside a
+    /// `ViewThatFits` whose fallback was — in its own words — "the phone's own two-row shape". So
+    /// the phone's layout was already good enough for the iPad, and the iPad's was withheld from the
+    /// phone at widths where it fits perfectly well: an iPhone in landscape has 820pt of row and was
+    /// spending two rows on 500pt of content. Asking the question once answers it correctly at every
+    /// width, which is what a size-class branch is standing in for whenever it is not about shape.
+    ///
+    /// `ViewThatFits` falls back to its **last** child when none of them fit, and then squeezes it.
+    /// With only single-row options an 11" iPad in portrait — 632pt of pane after the 188pt sidebar —
+    /// had no fitting layout, so the mode group was compressed to `iOSSegmentedPill`'s 58pt
+    /// `minWidth` and "Week", "Month" and "Board" all rendered as a bare "…". A chooser whose options
+    /// are indistinguishable is worse than one that has wrapped, so the fallback wraps.
+    private var toolbar: some View {
+        ViewThatFits(in: .horizontal) {
+            // One single-row option, not two. There used to be a wider one that also carried the
+            // `− 1x +` zoom cluster and a narrower fallback without it; with zoom moved onto the
+            // canvas as a pinch, the two collapsed into the same row.
+            singleRowToolbar {
+                HStack(spacing: iOSCalendarToolbarMetrics.controlSpacing) {
+                    monthDetailControl
+                    modeControl
+                }
+            }
+
+            wrappedToolbar
+        }
+    }
+
+    /// The fallback: title on its own row, controls under it.
+    ///
+    /// The control run scrolls horizontally at **both** widths. That was the phone's safety valve —
+    /// on Month the two pill groups come to roughly 385pt against 361pt of iPhone row — and there is
+    /// no width at which a control run silently clipped is the better failure, so the iPad gets the
+    /// same valve rather than a different one.
+    private var wrappedToolbar: some View {
+        VStack(alignment: .leading, spacing: iOSCalendarToolbarMetrics.stackSpacing) {
+            HStack(spacing: iOSCalendarToolbarMetrics.controlSpacing) {
                 titleBlock
-                Spacer(minLength: 10)
+                Spacer(minLength: iOSCalendarToolbarMetrics.controlSpacing)
             }
 
             ScrollView(.horizontal) {
-                HStack(spacing: 8) {
+                HStack(spacing: iOSCalendarToolbarMetrics.controlSpacing) {
                     monthDetailControl
                     modeControl
                 }
                 .padding(.trailing, 1)
             }
             .scrollIndicators(.hidden)
-        }
-    }
-
-    /// `ViewThatFits` falls back to its **last** child when none of them fit, and then squeezes it.
-    /// With only the two single-row options here, an 11" iPad in portrait — 632pt of pane after the
-    /// 188pt sidebar — had no fitting layout, so the mode group was compressed to `iOSSegmentedPill`'s
-    /// 58pt `minWidth` and "Week", "Month" and "Board" all rendered as a bare "…". A chooser whose
-    /// options are indistinguishable is worse than one that has wrapped, so the fallback is now the
-    /// phone's own two-row shape rather than an unreadable single row.
-    private var regularToolbar: some View {
-        ViewThatFits(in: .horizontal) {
-            // One single-row option, not two. There used to be a wider one that also carried the
-            // `− 1x +` zoom cluster and a narrower fallback without it; with zoom moved onto the
-            // canvas as a pinch, the two collapsed into the same row.
-            singleRowToolbar {
-                HStack(spacing: 10) {
-                    monthDetailControl
-                    modeControl
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 11) {
-                HStack(spacing: 12) {
-                    titleBlock
-                    Spacer(minLength: 8)
-                }
-
-                HStack(spacing: 8) {
-                    monthDetailControl
-                    modeControl
-                    Spacer(minLength: 0)
-                }
-            }
         }
     }
 
@@ -128,39 +133,51 @@ struct iOSCalendarToolbar: View {
     /// controls are the part that cannot shrink without becoming unreadable; the title is the part
     /// with slack in it, and `minWidth` still stops it going under 208.
     private func singleRowToolbar<Controls: View>(@ViewBuilder controls: () -> Controls) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: iOSCalendarToolbarMetrics.controlSpacing) {
             titleBlock
 
-            Spacer(minLength: 8)
+            Spacer(minLength: iOSCalendarToolbarMetrics.controlSpacing)
 
             controls()
                 .layoutPriority(1)
         }
-        .frame(minHeight: 48)
+        .frame(minHeight: iOSCalendarToolbarMetrics.singleRowMinHeight)
     }
 
     /// Title only. This used to carry a "CALENDAR" eyebrow above the date — a page header naming
     /// the page you are already looking at, which the tab bar and sidebar both already say.
+    ///
+    /// The run of it — optional back control, identity tile, title — **is** `iOSPageHeader`'s, so it
+    /// is drawn at `iOSPageHeaderMetrics`' figures rather than at a private copy of them. It had a
+    /// private copy: a 34/15 tile, which is a third spelling of the tile
+    /// `iOSPageHeaderMetrics.iconSize` exists to keep singular, drawn at regular width only. A page
+    /// whose header carries the feature's glyph on one device and not the other is the divergence
+    /// this slice is about, in its plainest form — there is no width at which a 32pt tile does not
+    /// fit a row that already holds a 30pt back chevron and a 208pt title.
     private var titleBlock: some View {
-        HStack(spacing: horizontalSizeClass == .regular ? 11 : 0) {
+        let metrics = headerMetrics
+
+        return HStack(spacing: metrics.rowSpacing) {
             if let onBack {
                 iOSHeaderBackButton(action: onBack)
                     .padding(.leading, -8)
-                    .padding(.trailing, 2)
             }
 
-            if horizontalSizeClass == .regular {
-                iOSIconTile(
-                    systemImage: CadenceFeatureDestination.calendar.systemImage,
-                    color: CadenceFeatureDestination.calendar.tint,
-                    size: 34,
-                    iconSize: 15
-                )
-            }
+            iOSIconTile(
+                systemImage: CadenceFeatureDestination.calendar.systemImage,
+                color: CadenceFeatureDestination.calendar.tint,
+                size: metrics.tileSize,
+                iconSize: metrics.iconSize
+            )
 
             dateTitle
         }
-        .frame(minWidth: horizontalSizeClass == .regular ? 208 : 116, idealWidth: 246, maxWidth: 312, alignment: .leading)
+        .frame(
+            minWidth: iOSCalendarToolbarMetrics.titleMinWidth,
+            idealWidth: iOSCalendarToolbarMetrics.titleIdealWidth,
+            maxWidth: iOSCalendarToolbarMetrics.titleMaxWidth,
+            alignment: .leading
+        )
     }
 
     /// The calendar's date title: the date at the **leading edge of what is on screen**, and the

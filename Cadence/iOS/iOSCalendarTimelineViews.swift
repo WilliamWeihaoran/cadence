@@ -96,14 +96,17 @@ struct iOSCalendarTimelineGrid: View {
     @State private var pinchStartOffset: CGFloat = 0
 
     private let calendar = Calendar.current
+    /// Read for the two figures that are still about the pane — the hour rail's width and how wide a
+    /// day column would like to be — and for nothing the grid draws itself. Everything else comes
+    /// from `iOSCalendarTimelineMetrics`, which takes no width.
     private var isRegularWidth: Bool { horizontalSizeClass == .regular }
-    private var baseHourHeight: CGFloat { isRegularWidth ? 64 : 58 }
+    private var baseHourHeight: CGFloat { iOSCalendarTimelineMetrics.hourHeight }
     private var effectiveZoom: Double { CadenceCalendarZoom.clamp(pinchZoom ?? zoom) }
     private var hourHeight: CGFloat {
         CadenceCalendarZoom.hourHeight(base: baseHourHeight, zoom: effectiveZoom)
     }
     private var dayHeaderHeight: CGFloat {
-        iOSCalendarTimelineDayHeaderHeight(isRegularWidth: isRegularWidth)
+        iOSCalendarTimelineMetrics.dayHeaderHeight
     }
     private var timelineHeight: CGFloat {
         CGFloat(CadenceScheduleSupport.calendarHourCount) * hourHeight
@@ -456,16 +459,6 @@ struct iOSCalendarTimelineGrid: View {
     }
 }
 
-/// The height of a timeline day header — the band above the hour canvas carrying the day number and
-/// its chips.
-///
-/// One value rather than three literals: the rail reserves it, the header fills it, and the initial
-/// scroll placement has to skip past it. When those drifted apart the timeline opened an hour off
-/// the hour it had computed, which reads as the rule being wrong rather than the geometry.
-private func iOSCalendarTimelineDayHeaderHeight(isRegularWidth: Bool) -> CGFloat {
-    isRegularWidth ? 112 : 101
-}
-
 /// The band over one day column.
 ///
 /// It carries **no selection state**. Tapping a header still sets the calendar's selected day — the
@@ -483,27 +476,25 @@ private struct iOSCalendarTimelineDayHeader: View {
 
     private let calendar = Calendar.current
     private var isToday: Bool { calendar.isDateInToday(date) }
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
-    private var headerHeight: CGFloat {
-        iOSCalendarTimelineDayHeaderHeight(isRegularWidth: horizontalSizeClass == .regular)
-    }
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 0) {
-                VStack(spacing: 3) {
+                VStack(spacing: iOSCalendarTimelineMetrics.dayLabelSpacing) {
                     Text(DateFormatters.dayOfWeek.string(from: date).uppercased())
-                        .font(.system(size: horizontalSizeClass == .regular ? 11 : 10, weight: .semibold))
+                        .font(.system(size: iOSCalendarTimelineMetrics.weekdaySize, weight: .semibold))
                         .foregroundStyle(isToday ? Theme.blue : Theme.dim)
                     Text(DateFormatters.dayNumber.string(from: date))
-                        .font(.system(size: horizontalSizeClass == .regular ? 20 : 18, weight: isToday ? .bold : .regular))
+                        .font(.system(size: iOSCalendarTimelineMetrics.dayNumberSize, weight: isToday ? .bold : .regular))
                         .foregroundStyle(isToday ? Theme.onColor : Theme.text)
-                        .frame(width: horizontalSizeClass == .regular ? 36 : 32, height: horizontalSizeClass == .regular ? 36 : 32)
+                        .frame(
+                            width: iOSCalendarTimelineMetrics.dayCircleSize,
+                            height: iOSCalendarTimelineMetrics.dayCircleSize
+                        )
                         .background(isToday ? Theme.blue : Color.clear)
                         .clipShape(Circle())
                 }
-                .frame(height: horizontalSizeClass == .regular ? 66 : 58)
+                .frame(height: iOSCalendarTimelineMetrics.dateBlockHeight)
 
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach(unscheduledTasks.prefix(2)) { task in
@@ -528,11 +519,15 @@ private struct iOSCalendarTimelineDayHeader: View {
                             .foregroundStyle(Theme.subdued)
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: 42, alignment: .topLeading)
-                .padding(.horizontal, horizontalSizeClass == .regular ? 7 : 5)
-                .padding(.bottom, horizontalSizeClass == .regular ? 7 : 5)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: iOSCalendarTimelineMetrics.previewMinHeight,
+                    alignment: .topLeading
+                )
+                .padding(.horizontal, iOSCalendarTimelineMetrics.previewInset)
+                .padding(.bottom, iOSCalendarTimelineMetrics.previewInset)
             }
-            .frame(height: headerHeight)
+            .frame(height: iOSCalendarTimelineMetrics.dayHeaderHeight)
             .background(isToday ? Theme.blue.opacity(0.035) : Theme.surface)
             .overlay(alignment: .trailing) {
                 Rectangle()
@@ -561,7 +556,6 @@ private struct iOSCalendarTimeRail: View {
     let headerHeight: CGFloat
     let viewportHeight: CGFloat
     let scrollState: iOSCalendarTimelineScrollState
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         VStack(spacing: 0) {
@@ -570,11 +564,11 @@ private struct iOSCalendarTimeRail: View {
             VStack(spacing: 0) {
                 ForEach(CadenceScheduleSupport.calendarHours, id: \.self) { hour in
                     Text(hourLabel(hour))
-                        .font(.system(size: horizontalSizeClass == .regular ? 11 : 10, weight: .medium))
+                        .font(.system(size: iOSCalendarTimelineMetrics.hourLabelSize, weight: .medium))
                         .foregroundStyle(Theme.dim.opacity(hour % 3 == 0 ? 0.9 : 0.45))
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .frame(height: hourHeight, alignment: .top)
-                        .padding(.trailing, horizontalSizeClass == .regular ? 10 : 8)
+                        .padding(.trailing, iOSCalendarTimelineMetrics.hourLabelTrailingInset)
                 }
             }
             .frame(height: CGFloat(CadenceScheduleSupport.calendarHourCount) * hourHeight, alignment: .top)

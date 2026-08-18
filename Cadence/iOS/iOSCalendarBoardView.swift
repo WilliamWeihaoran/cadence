@@ -40,14 +40,18 @@ struct iOSCalendarBoardPlanner: View {
 
     private let calendar = Calendar.current
     private let renderDays = CalendarBoardPlannerSupport.plannerRenderDayCount
-    private let columnSpacing: CGFloat = 10
+    private let columnSpacing = iOSCalendarBoardMetrics.columnSpacing
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
     }
 
-    /// iPad keeps its fixed multi-column board. iPhone gets one column per screen with the next one
-    /// peeking — see `CalendarBoardPlannerSupport.compactColumnWidth`.
+    /// **A kept branch, and one of two on this surface.** A board that fits several columns and a
+    /// board that fits one are different shapes, not the same shape at two sizes: the compact column
+    /// is sized to the container so exactly one fills the screen with the next peeking in, which is
+    /// the only thing on a phone that says there is another day to drag a card onto. iPad keeps the
+    /// fixed `iOSBoardColumnWidth` its other two boards use. See
+    /// `CalendarBoardPlannerSupport.compactColumnWidth`.
     private func columnWidth(containerWidth: CGFloat) -> CGFloat {
         guard !isRegularWidth else { return iOSBoardColumnWidth }
         return CalendarBoardPlannerSupport.compactColumnWidth(
@@ -57,8 +61,10 @@ struct iOSCalendarBoardPlanner: View {
         )
     }
 
+    /// The calendar page's gutter, which is `iOSPageHeaderMetrics`'. It was `20 : 14` here against
+    /// the toolbar's `18 : 16` directly above, so one screen had two left edges at both widths.
     private var horizontalPadding: CGFloat {
-        isRegularWidth ? 20 : 14
+        iOSCalendarBoardMetrics.horizontalPadding(isRegularWidth: isRegularWidth)
     }
 
     /// No `notBefore`: this board has no Overdue rail, so it keeps its full leading buffer and
@@ -121,8 +127,10 @@ struct iOSCalendarBoardPlanner: View {
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.always, axes: .horizontal)
-        // Compact pages a whole column at a time, so a day is never left half on screen with its
-        // cards clipped mid-word. iPad scrolls freely across its multi-column board.
+        // **The second kept branch.** Compact pages a whole column at a time, so a day is never left
+        // half on screen with its cards clipped mid-word. That is the other half of the one-column
+        // shape above — paging a multi-column board would snap away days that are fully readable
+        // where they are — and not a difference in how anything is drawn.
         .modifier(iOSBoardColumnPaging(isEnabled: !isRegularWidth))
         .scrollPosition(id: $scrolledDayIndex, anchor: .leading)
         .cadenceLazyScrollAnchor($scrolledDayIndex, target: anchorDayIndex, axis: .horizontal)
@@ -258,7 +266,8 @@ private struct iOSCalendarBoardDayColumn: View {
     let onDropBundleOnDay: (TaskBundle) -> Void
     let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
 
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    // No `horizontalSizeClass`. It was declared here and read by nothing: the column draws one way
+    // at every width, and has since its "today" treatment collapsed into `iOSBoardColumnHeader`.
     @State private var isDropTargeted = false
     @State private var targetedBundleID: UUID?
     @State private var recentlyBundledTaskID: UUID?
