@@ -20,10 +20,9 @@ struct iOSCalendarView: View {
     /// from `paneWidth`, the size class, or anything else the window decides. See
     /// `CadenceCalendarMonthLayout`.
     @AppStorage("ios.calendar.monthDetail") private var monthDetailRaw = CadenceCalendarMonthLayout.defaultDetail.rawValue
-    @AppStorage("ios.calendar.selectedDateKey") private var selectedDateKeyRaw = ""
-    @AppStorage("ios.calendar.anchorDateKey") private var anchorDateKeyRaw = ""
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var anchorDate = Calendar.current.startOfDay(for: Date())
     @State private var quickCreateSeed: iOSCalendarQuickCreateSeed?
@@ -34,8 +33,14 @@ struct iOSCalendarView: View {
     /// The width of this page, which on iPad is the window less the shell sidebar. See
     /// `hasInspector`.
     @State private var paneWidth: CGFloat = 0
+    /// Holds the pending position write. `@State` so it survives a body pass, a plain class so
+    /// scheduling a write is not itself a reason to re-render this page.
+    @State private var positionWriter = CadenceCalendarDateMemoryWriter()
 
     private let calendar = Calendar.current
+    /// Where the calendar left off. Read once on appear; written once the scroll settles rather
+    /// than once per column — see `CadenceCalendarDateMemory` for what the per-column write cost.
+    private let dateMemory = CadenceCalendarDateMemory()
 
     // Read-only, like `monthDetail` below. Both of these used to carry a setter writing the raw
     // value back, and nothing could call it: a `View`'s `body` cannot mutate `self`, and every
@@ -262,12 +267,17 @@ struct iOSCalendarView: View {
         .onChange(of: calendarManager.storeVersion) { _, _ in
             refreshVisibleEvents()
         }
-        .onChange(of: selectedDate) { _, newDate in
-            persistSelectedDate(newDate)
+        .onChange(of: selectedDate) { _, _ in
+            rememberCalendarPosition()
         }
-        .onChange(of: anchorDate) { _, newDate in
-            persistAnchorDate(newDate)
+        .onChange(of: anchorDate) { _, _ in
             keepSelectedDateInView()
+            rememberCalendarPosition()
+        }
+        // The two ways the settle never arrives: the page goes away, or the app does.
+        .onDisappear(perform: flushCalendarPosition)
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { flushCalendarPosition() }
         }
         .sheet(item: $quickCreateSeed) { seed in
             iOSCalendarQuickCreateSheet(dateKey: seed.dateKey, initialStartMinute: seed.startMinute)
@@ -449,23 +459,23 @@ struct iOSCalendarView: View {
         guard !didRestorePersistedDates else { return }
         didRestorePersistedDates = true
 
-        if let restoredSelectedDate = DateFormatters.date(from: selectedDateKeyRaw) {
-            selectedDate = calendar.startOfDay(for: restoredSelectedDate)
+        if let restoredSelectedDate = dateMemory.selectedDate(calendar: calendar) {
+            selectedDate = restoredSelectedDate
         }
 
-        if let restoredAnchorDate = DateFormatters.date(from: anchorDateKeyRaw) {
-            anchorDate = calendar.startOfDay(for: restoredAnchorDate)
+        if let restoredAnchorDate = dateMemory.anchorDate(calendar: calendar) {
+            anchorDate = restoredAnchorDate
         } else {
             anchorDate = selectedDate
         }
     }
 
-    private func persistSelectedDate(_ date: Date) {
-        selectedDateKeyRaw = DateFormatters.dateKey(from: calendar.startOfDay(for: date))
+    private func rememberCalendarPosition() {
+        positionWriter.remember(anchor: anchorDate, selection: selectedDate, calendar: calendar)
     }
 
-    private func persistAnchorDate(_ date: Date) {
-        anchorDateKeyRaw = DateFormatters.dateKey(from: calendar.startOfDay(for: date))
+    private func flushCalendarPosition() {
+        positionWriter.flush(anchor: anchorDate, selection: selectedDate, calendar: calendar)
     }
 }
 
