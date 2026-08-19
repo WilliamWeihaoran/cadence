@@ -11,17 +11,27 @@ Primary target:
 - scheme: `Cadence`
 - platform: macOS
 
-Useful build command:
+Useful build command (run from the repo root; the private `-derivedDataPath` is the
+non-negotiable below, not a suggestion):
 
 ```sh
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' build
+/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
+  -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' \
+  -derivedDataPath /tmp/cadence-build-$$ build
 ```
 
 Tests **must** be scoped to `CadenceTests`:
 
 ```sh
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' -only-testing:CadenceTests
+/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test \
+  -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' \
+  -derivedDataPath /tmp/cadence-test-$$ -only-testing:CadenceTests
 ```
+
+Both flags are repeated in `Cadence/AGENTS.md` and `Cadence/macOS/AGENTS.md`, which are the guides
+an agent actually reaches for. They printed the bare command for a long time while this file called
+the private path non-negotiable — a rule that lives only in the guide nobody is standing in is a
+rule that gets copied around.
 
 An unscoped `test` run also pulls in `CadenceUITests`, which cannot launch headless and aborts
 the whole run. The failure reads like a broken suite rather than a harness problem — do not
@@ -46,16 +56,16 @@ past a `grep "/Cadence/"` entirely.
 
 - `Cadence/CadenceApp.swift` - app entry, model container, CloudKit setup, recovery.
 - `Cadence/Models/` - shared SwiftData models. Read this before changing persistence or relationships.
-- `Cadence/Services/` - ~41 shared services: schema, migrations, notifications, widget support, the ~21 `Markdown*Support` parsing/mutation files, plus `AI/` and `MCPReadOnly/`. Note the markdown *logic* lives here, not in `macOS/Editor/`.
+- `Cadence/Services/` - 43 shared services: schema, migrations, notifications, widget support, the 22 `Markdown*Support` parsing/mutation files, plus `AI/` and `MCPReadOnly/`. Note the markdown *logic* lives here, not in `macOS/Editor/`.
 - `Cadence/Shared/` - design tokens (`Theme.swift`), shared components, date/time utilities, hover styling, and cross-platform presentation/query support (`Cadence*Support.swift`).
 - `Cadence/macOS/` - main product surface. Most active work happens here.
-- `Cadence/macOS/Views/` - macOS feature screens and support views (~165 files).
+- `Cadence/macOS/Views/` - macOS feature screens and support views (~168 files).
 - `Cadence/macOS/Services/` - macOS-only managers for focus, calendar, reminders, hotkeys, task creation, hover state, deletion, scheduling, note export, privacy reset, Apple account.
 - `Cadence/macOS/Editor/` - AppKit-backed markdown editor bridge (11 files since the T-105 split). High risk; preserve NSTextView behavior carefully.
-- `Cadence/iOS/` - large, real iOS/iPadOS surface (68 files: Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings). iPhone runs a four-tab bottom bar (`iOSCompactTabShell`); iPad keeps its sidebar. Do not assume feature parity with macOS.
+- `Cadence/iOS/` - large, real iOS/iPadOS surface (79 files: Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings). iPhone runs a four-tab bottom bar (`iOSCompactTabShell`); iPad keeps its sidebar. Do not assume feature parity with macOS.
 - `CadenceWidgets/` - widget extension. Compiles a subset of app sources (models, `Theme.swift`, `Cadence*WidgetSupport.swift`) directly into the extension target.
-- `CadenceMCPServer/` and `plugins/cadence-mcp/` - MCP server/plugin surfaces. Treat as separate integration boundaries.
-- `CadenceTests/`, `CadenceUITests/` - test targets.
+- `CadenceMCPServer/` and `plugins/cadence-mcp/` - MCP server/plugin surfaces. Separate integration boundaries with their own build and verification procedure — read `CadenceMCPServer/AGENTS.md` before changing shared models or services that they compile.
+- `CadenceTests/`, `CadenceUITests/` - test targets. `CadenceTests/` is ~140 flat `.swift` files; look for an existing file before adding one.
 - `docs/` - support, privacy, and App Review notes (the public site + submission material).
 
 ## Scoped Guides
@@ -71,7 +81,8 @@ Read the nearest scoped `AGENTS.md` before editing under that tree:
 - `Cadence/macOS/Services/AGENTS.md` - macOS manager/service boundaries.
 - `Cadence/macOS/Editor/AGENTS.md` - AppKit-backed markdown editor cautions.
 - `Cadence/macOS/Views/AGENTS.md` - view splitting and current feature map.
-- `CadenceMCPServer/AGENTS.md` and `plugins/cadence-mcp/AGENTS.md` - MCP boundaries.
+- `CadenceMCPServer/AGENTS.md` - **the** MCP boundary account: what the target compiles, why app→MCP coupling is silent, what the write path can do, and how to verify. The other guides point here.
+- `plugins/cadence-mcp/AGENTS.md` - the plugin wrapper and the smoke test that is the MCP router's only coverage.
 
 Do not add an agent guide to every folder by default. Add one when a subtree has unique rules, high churn, or a boundary that agents repeatedly misunderstand.
 
@@ -168,7 +179,14 @@ code, and every one of them has been violated by a shipped change at least once.
 - Keep SwiftUI view roots thin. Prefer dedicated subview structs and support files over long computed `some View` fragments.
 - Preserve shared hover behavior. Do not turn task/event/bundle hover states gray; preserve original color and use brightness/lift style treatments from shared hover helpers.
 - Avoid broad refactors in markdown editor files unless you are intentionally working on editor behavior.
-- Do not touch MCP server/plugin code unless the task explicitly asks for MCP work.
+- **Review the MCP boundary when model or shared-service code changes** — build
+  `CadenceMCPServer` on its own scheme into a private `-derivedDataPath`, grep the log, and change
+  response DTOs on purpose or not at all. This line used to read "do not touch MCP server/plugin
+  code unless the task explicitly asks for MCP work", which was wrong: that target compiles a
+  hand-picked subset of app source under different concurrency settings, so about half the commits
+  touching it are app-side model changes that had to reach in, and skipping it yields a broken
+  target or a silently stale response schema. Full account in `CadenceMCPServer/AGENTS.md`; do not
+  restate it elsewhere.
 - Do not revert unrelated user changes.
 
 ## Risk Hotspots

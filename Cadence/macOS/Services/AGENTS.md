@@ -7,11 +7,24 @@ panels, note export, Sign in with Apple, and the privacy data reset.
 Beyond the long-standing managers, note:
 
 - `RemindersManager.swift` - EventKit **reminders** (separate authorization from calendar), surfaced through Settings -> Reminders.
-- `CalendarVisibilityPreferences.swift` / `CalendarWorkHoursPreferences.swift` - which calendars render, and the work-hours window the timeline emphasizes.
+- **`CalendarVisibilityPreferences` and `CalendarWorkHoursPreferences` are not here.** Both are
+  cross-platform and live in `Cadence/Shared/` (`CadenceCalendarVisibilityPreferences.swift` — the
+  *file* carries the `Cadence` prefix, the *type* does not — and `CalendarWorkHoursPreferences.swift`),
+  so iOS and macOS share one hidden-calendar store and one work-hours window. This guide listed
+  them as macOS services, and `CLAUDE.md` was corrected while this file was not — which left the
+  doc system's own precedence rule ("the scoped guide is closer to the code") pointing at the
+  wrong doc. What remains in this folder is a 2-line `CalendarVisibilityPreferences.swift`
+  containing only a tombstone comment recording the move.
+- `TaskDragPayload` is not here either — same shape, `Cadence/Shared/TaskDragPayload.swift`,
+  `nonisolated` because the drop delegates that parse it run in `@Sendable` closures.
 - `NoteExportService.swift` - markdown + rendered-PDF export. Presents the save panel off the blocking `runModal()` path; keep it that way.
 - `AppleAccountManager.swift` - optional Sign in with Apple identity, entitlement-gated.
 - `PrivacyDataResetService.swift` - wipes every model including the legacy note types and `Pursuit`. Add new `@Model` types here when you add them to the schema, or a reset will leave orphans.
-- `CadenceMCPRefreshCoordinator.swift` - bridges app state to the MCP surface.
+- `CadenceMCPRefreshCoordinator.swift` - watches a `.cadence-mcp-refresh` marker file beside the
+  store so the app reloads after the MCP server writes to it from another process. See
+  `CadenceMCPServer/AGENTS.md`.
+- Also here and previously unlisted: `NoteExportService.swift`, `PrivacyDataResetService.swift`,
+  `AppleAccountManager.swift`, `GlobalSearchManager.swift`.
 
 ## Working Rules
 

@@ -29,78 +29,47 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**Repo tightening + tri-platform UI convergence** ([T-123]).
-Audits: MCP boundary **done** ([T-124]–[T-126]); maintainability **done** ([T-127]–[T-131]);
-UI sharing and documentation accuracy **running**.
-Implementation: first wave on [T-127] and [T-129], with an independent verifier to follow.
-
+_Nothing in flight._
 
 ## Open — decided, not started
 
-- [T-140] **The docs describe a `~` "list, then section" flow that does not exist — with invented
-  supporting detail.** Verified: `TildeSectionPickerRow` and `TildeSectionSearchPanel` have **zero**
-  hits repo-wide, and `TaskTitleTildeMode` has exactly two cases, `.none` and `.list`. Selecting a
-  list calls `normalizeSelectedSection()` silently; there is no second step. It is claimed three
-  times in `CLAUDE.md` (:473, :483, :648) and once in `macOS/Views/AGENTS.md:24` — **including a
-  whole paragraph of `NSWindow` / `@FocusState` rationale attached to a type that isn't there.**
-  That is what makes it dangerous: fabricated mechanism reads as hard-won knowledge, so an agent
-  told to "fix the section picker" will hunt for it, or worse, "restore" behaviour that never
-  shipped. Decide whether to delete the claim or build the feature; do not leave it as is.
+- [T-147] **A cancelled task is unreachable on iOS.** Bigger than the glyph bug that surfaced it
+  (`D-105`): every list query filters cancelled out (`CadenceTaskQuerySupport` ×6,
+  `CadenceCalendarPlanningSupport`, `iOSSearchView` ×2, the note `[[task:` picker), and the inspector
+  auto-dismisses when you press Cancel. Verified by hand — after cancelling, the task vanished from
+  Active, Completed, search and the reference picker with no way back. So on iOS, cancelling is
+  effectively deleting without saying so. Decide whether cancelled work should be reachable (a filter,
+  a section, or the Completed list) — this is a product question, not a defect to patch.
 
-- [T-141] **The private `-derivedDataPath` rule exists in exactly one file.** Root `AGENTS.md` calls
-  it non-negotiable — and both scoped guides that print a build command print the **unsafe** one.
-  Verified: `derivedDataPath` appears in no other `AGENTS.md`. This is the rule that prevented the
-  crash of the user's running Mac app ([T-86]), and an agent reading only its folder's guide would
-  never see it.
+- [T-148] **The strip-level toolbar fix is unverified on the area/project Notes tab.** `D-104` moved
+  the reset onto the strips so no host needs it, which should fix `iOSListDetailView` → Notes as a
+  side effect — but that surface was never screenshotted, and Today's pane now depends on the new
+  mechanism rather than the host-level reset it used to carry. Both need a look on iPad before this
+  is called done.
+
+- [T-149] **Four more search and status divergences, found in passing.** None fixed: macOS Cmd+K
+  cannot open a *past* event (the resolve path keeps only `endDate >= now` while search reaches 60
+  days back); `GlobalSearchIndexSupport.eventResults` takes `.prefix(12)` *before* ranking, so it
+  ranks the twelve chronologically-earliest rather than the twelve best; iOS drops EventKit write
+  failures that macOS surfaces via `CalendarWriteFailure`, which `CalendarManagerScenarioTests`
+  explicitly pins as "none of them may fail in silence"; and iOS rows check only `isDone` for
+  strikethrough and dimming where `MacTaskRow` treats cancelled as settled too.
+
+- [T-150] **macOS's own `[[` picker is non-total and orders differently from iOS.** Found by the
+  T-127 verifier: `MarkdownEditorView` sorts candidates by title alone and feeds a `.prefix(8)`, so
+  duplicate titles make *which eight are offered* undefined — the same defect `D-104` fixed on iOS.
+  It also means the same picker is alphabetical on macOS and recency/priority-ordered on iOS.
+
+- [T-151] **The stale tie-break comment survives in Swift.** `CadenceTaskQuerySupport.swift:236` still
+  says iOS "spelled its own comparator and never got that … the remaining half of that consolidation",
+  directly above code where all five branches end in `TaskOrdering.fallbackPrecedes`. `D-106` fixed
+  the `CLAUDE.md` half; this one is a code change and was left deliberately.
+
 
 - [T-142] **`Goal.dependsOnGoalIDsJSON` is persisted, has zero readers, and is undocumented.**
   Exactly the hazard `AppTask.calendarEventID` gets five lines of warning about — a stored SwiftData
   property with no `SchemaMigrationPlan`, so removing it drops data rather than cleaning up. It needs
   either the same documented treatment or a decision to migrate it out.
-
-- [T-143] **Scoped guides contradict each other and the root, in the same family as [T-125].**
-  `Services/AGENTS.md:24` ("do not edit `MCPReadOnly/`") directly contradicts `Models/AGENTS.md`
-  ("check any read-only API or export surface that mirrors models") for the *same* edit — five files
-  now carry a variant of that rule. `Shared/AGENTS.md:37` tells agents to match a "desktop-focused"
-  visual language in the **cross-platform** folder, against both the iPhone/iPad-are-one-style rule
-  and [T-123]'s explicit reversal of macOS-as-reference. And `Cadence/AGENTS.md:10` still calls the
-  iPhone shell a "compact `TabView`" — the exact sentence `iOS/AGENTS.md` was rewritten to refute,
-  sitting in the guide that is read *first*.
-
-- [T-144] **The remaining stale doc claims, for one coherent pass.** `CLAUDE.md:389` still presents a
-  *finished* consolidation as outstanding (iOS "tie-breaks on `order` alone" — every branch ends in
-  `TaskOrdering.fallbackPrecedes`, fixed in `6277539`), which is [T-131] seen from the other side.
-  `CLAUDE.md:118` files `TaskDragPayload` under `macOS/Services/`; it is `nonisolated` in `Shared/`.
-  The drag-prefix table (:412) is wrong three ways — missing `taskBundle:`, naming two delegates
-  where one exists, and stating a mechanism the sidebar does not use (its `performDrop` never parses
-  the payload). `macOS/Services/AGENTS.md:10` still lists the two calendar-preferences files that
-  today's fix corrected in `CLAUDE.md` only — and since `CLAUDE.md` says the scoped guide wins on
-  disagreement, the precedence rule now points at the wrong doc. Counts, lowest priority: iOS is 79
-  files (documented 64 and 68), `CadenceTests` is 138 (documented ~60), `Editor/` is 11 in root
-  `AGENTS.md` and still 6 in `CLAUDE.md`.
-  Also missing and worth adding: `Models/AGENTS.md` omits `TaskOrdering.swift` and `ModelEnums.swift`
-  entirely, so neither the total-tie-break rule nor "a status enum must be `nonisolated` or the
-  widget and MCP targets break" reaches that folder's own guide.
-
-- [T-132] **macOS Cmd+K cannot find an all-day event; iOS search can.** Verified:
-  `CalendarManager.searchEvents` filters `!$0.isAllDay` (`:279`) and `iOSCalendarManager.searchEvents`
-  does not. Same function name, same default arguments (60/365), two behaviours. A user searching for
-  an all-day event on the Mac simply gets nothing.
-
-- [T-133] **Two search matchers, same algorithm, one tested — and the fence is why.**
-  `GlobalSearchMatcher` (macOS) and `CadenceSearchMatcher` share the same scoring with the *same
-  magic numbers* (1000/800/320, `max(260-i*14,180)`, `max(170-i*6,90)`, 85, 35) and the same
-  `normalize`. Only `CadenceSearchMatcher` has tests. It forked **because the shared copy lives in
-  `Services/MCPReadOnly/`, which every guide tells agents not to touch** — so this is [T-125]'s
-  mis-stated rule with a measured cost attached. It is also the reason the two `searchEvents` bodies
-  above diverged: macOS matches with naive `localizedLowercase.contains`, iOS with the real matcher.
-  Fix: move the matcher out of the MCP fence into `Shared/`, fold `GlobalSearchMatcher` into it —
-  5 call sites, pure functions, one side already covered.
-
-- [T-134] **A cancelled task looks identical to a todo one on iOS.** The completion glyph has **two**
-  states on iOS against **five** on macOS. User-visible, and on the most-drawn view in the app —
-  which is also why unifying it is the highest-value and highest-care item on the list: half of it
-  sits inside a perf-gated `TimelineView`.
 
 - [T-135] **`SidebarCountLabel` and `iOSSidebarCountLabel` differ by one line.** Diffed with names and
   whitespace normalised: 24 lines, character-for-character identical, the sole difference being
@@ -123,24 +92,6 @@ Implementation: first wave on [T-127] and [T-129], with an independent verifier 
   silently lacks the width cap, the remove button and archived dimming** — so it is a feature gap
   wearing the costume of a style difference.
 
-- [T-139] **Record the do-not-flatten list in `AGENTS.md`.** The UI audit measured what is genuinely
-  platform-specific: `.onHover` 94/**0**, `.onKeyPress`+`.keyboardShortcut` 30/**0**, drag APIs
-  157/33, `.contextMenu` **1**/11, swipe actions 0/57. The number that matters most is `.popover` at
-  **49/48** — the presentation primitive is already common, so picker and inspector *content* is
-  portable even where the surrounding rows are not. Writing this down is what stops a future
-  convergence pass flattening an input modality.
-
-- [T-127] **`TaskDragPayload` is bypassed by the two surfaces it was written for, and has no tests.**
-  The type owns the `listTask:`/`taskBundle:` drag wire format across 24 call sites on both
-  platforms, and its own comment says it was unified from two byte-identical copies because a
-  divergence "would have produced a platform whose drags silently stopped matching, with nothing to
-  catch it". Yet `macOS/Views/InboxSupportViews.swift:293,295` and
-  `macOS/Views/ListDetailSupportViews.swift:50,52` still hand-spell both encode and decode —
-  including `dropFirst(9)`, the length of `"listTask:"` as a magic number, so changing the prefix
-  breaks them silently. Verified directly. There is also **no test file for the type at all**, and
-  `taskID(from:)` has three documented branches (prefixed / bundle→nil / bare UUID), none pinned.
-  Fix is a 4-line swap plus ~20 lines of test.
-
 - [T-128] **`activeModelContext ?? modelContext` is re-derived at 7 sites in one file.**
   `macOS/macOSRootView.swift` holds a `@State ModelContext?` that `refreshAppData()` replaces
   wholesale; the fallback is spelled at 7 separate places (verified by grep), and `Views/NotePanel.swift`
@@ -150,29 +101,12 @@ Implementation: first wave on [T-127] and [T-129], with an independent verifier 
   same "save-if-dirty, then discard and recreate" dance, where saving *before* discarding is the
   correctness contract.
 
-- [T-129] **Six `AppTask` comparators still end in a partial tie-break**, so equal keys leave order
-  undefined: `iOSMarkdownEditingSurface.swift:212`, `iOSMarkdownAccessoryViews.swift:107` (byte-identical
-  to each other), `CadenceFocusPlanningSupport.swift:47`, `TaskBundlePickerSupportViews.swift:72`, and
-  `CadenceCalendarPlanningSupport.swift:366,446`. The first two feed `.prefix(6)` completion menus and
-  the third feeds Focus's ready list — so an unstable tail changes **which items are offered**, not
-  just their order. That is the argument `GoalContributionSummary.swift:161` already makes in code for
-  its own sort. `TaskOrdering.fallbackPrecedes` exists for exactly this; one line each.
-
 - [T-130] **One markdown list-indent formula, spelled twice, tested zero times.**
   `MarkdownStylist.listMarkerIndent`/`listContentIndent` (`MarkdownEditorSupport.swift:904`) and
   `iOSMarkdownStyler.listParagraphStyle` (`iOSMarkdownStylingSupport.swift:885`) both compute
   `level*12 + 8` and `+ markerWidth*5.5 + 8`. Drift changes list indentation on one platform only —
   visually subtle, easy to ship unnoticed. Precedent: `MarkdownEditorDecorationGeometry` was
   extracted from this same subsystem because it is pure, and it is unit tested.
-
-- [T-131] **Two comments tell agents a finished consolidation is still open.** `CLAUDE.md` and the doc
-  comment at `CadenceTaskQuerySupport.swift:236` both say iOS's sort "tie-breaks on `order` alone".
-  It does not — all five branches end in `TaskOrdering.fallbackPrecedes`, and
-  `MobileTaskSortStabilityTests` pins the stability property. What actually remains is two sort
-  *vocabularies* (`CadenceTaskSortMode` with 29 refs across 10 iOS files, vs
-  `TaskSortField`+`TaskSortDirection`), both raw-value-persisted — so merging them is a preferences
-  *migration*, not a refactor. **The audit's recommendation is not to merge, and to fix the two
-  comments instead.** Worth accepting unless there is a reason to want one vocabulary.
 
 - [T-124] **32 orphaned `CadenceMCPServer` processes are holding the live store open**, the oldest
   running **74 days**. Confirmed directly with `ps`. `main.swift` loops forever with no shutdown path
@@ -183,38 +117,6 @@ Implementation: first wave on [T-127] and [T-129], with an independent verifier 
   processes, which is exactly [T-86]'s shape. This is a plausible contributor to the build and store
   weirdness fought all session. Two fixes, separable: a shutdown path on client disconnect, and a
   private derived-data path for the launcher. Killing the existing 32 is the user's call.
-
-- [T-125] **Write down why MCP is fenced off — the reason is mechanical and was never recorded.**
-  `AGENTS.md` states the prohibition with no mechanism, so it reads as caution. It is not:
-  `CadenceMCPServer` has an **explicit** Sources phase compiling a hand-picked subset of app source
-  (`Models/`, `CadenceSchema`, `Services/MCPReadOnly/`, `MarkdownMetadataSupport`, `DateFormatters`),
-  and it is the **only** target on `SWIFT_VERSION = 6.0` + `SWIFT_STRICT_CONCURRENCY = targeted`
-  **without** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. So the coupling runs app → MCP and is
-  silent: an edit to a shared file that compiles in a view is not evidence it compiles here, and the
-  `Cadence` scheme stays green while the server target breaks. `62dc384` is that failure realized,
-  today. Three further facts worth stating: the write path mutates the **real** app-group store from
-  a second process with no UI and no undo (gated on `CADENCE_MCP_ENABLE_WRITES`, unset today, but
-  `mcp-audit.log` shows it has run against real data); nothing under `CadenceMCPServer/` has any unit
-  coverage, so the smoke test is the only thing exercising the router and argument parsing; and the
-  30 tool names are a contract in three places at once. The audit drafted replacement doc text.
-
-  **And the rule is mis-stated, not just under-explained.** Provenance is now definitive: `5790cc5`
-  (2026-05-06) created 13 `AGENTS.md` files in one sweep, eight days after the MCP surface appeared.
-  No incident prompted it — the rule was written by *anticipation*, which is why it carries no
-  reason. Every failure that now justifies it arrived afterwards (Aug 4, Aug 7 ×2, Aug 17, Aug 18
-  ×3) and none was written back.
-  Meanwhile **23 commits touch these paths, and roughly half are not MCP work at all** — they are
-  app-side changes that *had* to reach in: `842c82d` (read service onto the unified `Note` model),
-  `89db417` (tags), `acea9ce` (the Pursuit→Goal merge), `1363e7e` (the Notes rework), `0ff391d`
-  (data-integrity repair), `f94361a` (the `nonisolated` sweep). So "do not touch MCP" **cannot** mean
-  what it says: a model change that skips this surface produces either a broken target (`670e299`,
-  `62dc384`) or a *silently stale response schema* — the `Pursuit` relationships were missing from
-  summaries until `0040f24` caught it.
-  What the evidence supports is a **procedure, not a prohibition**: when model or shared-service code
-  changes, the MCP boundary is reviewed deliberately — built on its own scheme with a private
-  `-derivedDataPath`, its log grepped for warnings, and its response DTOs changed on purpose or not
-  at all. Rewrite the guides that way. A prohibition agents must routinely violate teaches them to
-  ignore the guide; a procedure they can follow does not.
 
 - [T-126] **The MCP smoke test can be run from here, and is data-safe** — it verifies read-only mode
   then drives a temp fixture store via `CADENCE_MCP_STORE_URL`, never the app-group store. SPM
@@ -381,6 +283,26 @@ Implementation: first wave on [T-127] and [T-129], with an independent verifier 
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-104] `41b25f8` A wire format bypassed by the surfaces it protects, and a toolbar drawn 50pt
+  too high (T-127, T-129, T-145/T-146). The verifier refuted the first justification for the new
+  strict decode — `TasksPanel` is prefixed; the bare-UUID sources are the kanban card and month
+  chip — and the wrong claim had been copied out of `CLAUDE.md`'s stale drag-prefix table. T-129 was
+  five sites, not the six briefed.
+
+- [D-105] `6ac3b49` Cmd+K could not find an all-day event, and a cancelled task looked open
+  (T-132, T-133, T-134). The all-day filter also blocked *opening* such an event, since resolution
+  goes through the same function. macOS was not clean on the glyph either — a cancelled *scheduled*
+  task drew a plain open circle. The matcher move required editing `CadenceMCPServer`'s explicit
+  Sources phase; that scheme was built deliberately and is clean.
+
+- [D-106] The documentation correction pass (T-125, T-131, T-139, T-140, T-141, T-143, T-144).
+  Corrections are written in the style the two exemplary guides use — naming the previous wrong
+  description and why it was wrong — rather than silently replacing it, because agents have already
+  acted on some of these. The `~` "list, then section" flow and its invented `NSWindow`/`@FocusState`
+  rationale are gone; the private `-derivedDataPath` rule now appears in four guides instead of one;
+  the MCP rule is a procedure with its mechanism attached instead of an unexplained prohibition.
+
 
 Newest first. The commit message carries the reasoning; this is the index.
 

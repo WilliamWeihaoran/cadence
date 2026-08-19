@@ -29,9 +29,10 @@ usually belong in `Services/`; only NSTextView lifecycle, drawing, and event han
 - `MarkdownTaskEmbedDrawingSupport.swift` - embedded task rendering/drawing support.
 - `MarkdownKeyboardShortcutSupport.swift` - editor-specific shortcuts.
 
-These seven Swift files were four until T-105; `MarkdownEditorInteractionSupport.swift` was 1,996
-lines and the largest file in the repo. Split by responsibility (layout manager / text view /
-decorations / coordinator / geometry / diff), not by line count.
+These eleven Swift files were six until T-105; `MarkdownEditorInteractionSupport.swift` was 1,996
+lines and the largest file in the repo, and is now 843. Split by responsibility (layout manager /
+text view / decorations / coordinator / geometry / diff), not by line count. (This paragraph said
+"seven ... were four" while the list directly above it named eleven — the count is the list.)
 
 ## Concurrency
 

@@ -28,8 +28,24 @@ This is the main product surface. Most implemented functionality lives here.
 
 ## Build Check
 
-From repo root:
+Run from the **repo root** — agent shells reset their working directory between calls, so a
+relative `-project ../Cadence.xcodeproj` will not resolve.
 
 ```sh
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' build
+/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
+  -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' \
+  -derivedDataPath /tmp/cadence-build-$$ build
 ```
+
+```sh
+/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test \
+  -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' \
+  -derivedDataPath /tmp/cadence-test-$$ -only-testing:CadenceTests
+```
+
+Both flags are load-bearing and both are non-negotiables in the root `AGENTS.md`, which explains
+them: `-only-testing:CadenceTests` keeps `CadenceUITests` out of the run (it cannot launch headless
+and aborts everything, in a way that reads as a broken suite), and the private `-derivedDataPath`
+keeps a build from deleting the shared `Build/Products/` out from under a running app — every
+failure mode that causes is misattributed by default. Confirm the private path appears in the log
+before trusting a green run.

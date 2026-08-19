@@ -20,7 +20,15 @@ subfolders). It is cross-platform: macOS-only managers live in `Cadence/macOS/Se
 - `PersistenceController.swift` is legacy/compatibility support; SwiftData is the primary persistence path.
 - Migration and repair services should be deterministic, idempotent, and conservative.
 - Markdown/note services should avoid blocking UI flows and should prefer structured parsing/helpers over ad hoc string edits when possible.
-- `MCPReadOnly/` is integration-facing. Do not edit it unless the task explicitly asks for MCP/read-only API work.
+- `MCPReadOnly/` is integration-facing **and compiles into two targets** — the app and
+  `CadenceMCPServer`, the latter on Swift 6 without `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`.
+  This line used to say "do not edit it unless the task explicitly asks for MCP/read-only API
+  work", which contradicted `Models/AGENTS.md`'s correct instruction to *check any read-only API
+  or export surface that mirrors models* for the same edit — and the model changes that skipped it
+  shipped stale response schemas. When a model or a shared service you touch is mirrored here,
+  update it and verify it: build the `CadenceMCPServer` scheme into a private `-derivedDataPath`
+  and grep the log. What still holds is the narrower rule: do not *redesign* the tool surface or
+  the response DTOs as a side effect of app work. See `CadenceMCPServer/AGENTS.md`.
 
 ## Risk Notes
 

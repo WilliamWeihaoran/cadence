@@ -21,7 +21,7 @@ The user does not write code. Claude handles all implementation. When something 
 
 ## Platform Strategy
 - **macOS**: purpose-built sidebar + multi-column layout (`macOS/`). Fully featured, the primary product surface.
-- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, 68 files), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a **four-tab bottom bar** on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
+- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, 79 files), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a **four-tab bottom bar** on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
 - **watchOS**: not started
 - Use `#if os(macOS)` / `#if os(iOS)` for platform-specific branches
 
@@ -35,12 +35,12 @@ Cadence.xcodeproj       # single project; targets: Cadence, CadenceWidgets, Cade
 CadenceWidgets/         # widget extension — compiles Models/, Theme.swift, and Cadence*WidgetSupport.swift straight in
 CadenceMCPServer/       # native MCP server target (tool definitions, router, argument parsing)
 plugins/cadence-mcp/    # Codex MCP plugin wrapper + smoke-test scripts
-CadenceTests/           # unit tests (~60 files). Always -only-testing:CadenceTests
+CadenceTests/           # unit tests (~140 files, flat). Always -only-testing:CadenceTests
 CadenceUITests/         # UI tests; cannot launch headless — never let an unscoped test run pull these in
 docs/                   # privacy/support site + App Review + release-readiness notes
 ```
 
-App source. **This names families, not every file** — `macOS/Views/` alone is ~165 files.
+App source. **This names families, not every file** — `macOS/Views/` alone is ~168 files.
 Use the scoped `AGENTS.md` in each folder as the working map.
 
 ```
@@ -59,6 +59,7 @@ Cadence/
 ├── Shared/             # Cross-platform tokens, components, and presentation/query/mutation support
 │   ├── Theme.swift     # The ONLY source of colour. See "Design System" below
 │   ├── DateFormatters.swift, CadenceHoverStyles.swift, CadenceCardStyle.swift, CadenceDueUrgency.swift
+│   ├── TaskDragPayload.swift  # the drag/drop wire format for tasks and bundles, both platforms
 │   ├── Cadence*Support.swift    # Task/note/calendar/focus/settings/tracking presentation + query + mutation helpers
 │   │                   # The calendar half was one 1,314-line file until T-120 split it, whole types
 │   │                   # moved byte-identically, into six:
@@ -73,10 +74,14 @@ Cadence/
 │   ├── CalendarVisibilityPreferences (in CadenceCalendarVisibilityPreferences.swift) and
 │   │                   # CalendarWorkHoursPreferences — both shared, NOT macOS-only. The file name
 │   │                   # carries the Cadence prefix; the type does not.
-│   └── Components/     # CadenceDatePicker, CadenceButtons, CadenceContextPicker, EmptyStateView,
-│                       # SectionEyebrowLabel, CommitmentSharedViews,
-│                       # EstimatePickerControl (iOS chip; its popover is shared), CadenceScrollElasticity
-├── iOS/                # Large adaptive iOS/iPadOS surface (68 files) — see "What's Built (iOS)"
+│   └── Components/     # 12 files: CadenceDatePicker, CadenceButtons, CadenceContextPicker,
+│                       # EmptyStateView, SectionEyebrowLabel, CommitmentSharedViews,
+│                       # EstimatePickerControl (iOS chip; its popover is shared),
+│                       # CadenceScrollElasticity, CadenceValueTile, CadenceWrappingHStack,
+│                       # GoalProgressBar, HabitProgressViews (holds the 52-week HabitHeatmap).
+│                       # Check this list before writing a new shared view — the no-near-copies
+│                       # rule is only as good as the inventory an agent can see.
+├── iOS/                # Large adaptive iOS/iPadOS surface (79 files) — see "What's Built (iOS)"
 │   ├── iOSRootView.swift        # Adaptive root shell: iPad sidebar / iPhone tab bar; deep links, widget refresh
 │   ├── iOSCompactTabShell.swift # iPhone bottom bar, per-tab paths, centre capture button
 │   ├── iOSTasksTabView.swift    # Tasks tab: date + greeting header, Today/All/Inbox switcher
@@ -98,9 +103,15 @@ Cadence/
     │                   #   TaskSurfaceFreeze* — hover-freeze coordination for task lists
     │                   #   Goal*, Habits*, Focus*, GlobalSearch*, Sidebar*, Settings*
     │                   #   Notes*, NoteEditor*, NoteReference*, NoteActionReviewSheets, AIActionsSupportViews
-    ├── Sheets/         # CreateContextSheet, CreateListSheet, CreateGoalSheet, CreateTaskSheet(+SupportViews), EditListSheet
-    ├── Editor/         # AppKit bridge ONLY (6 files): MarkdownEditorView / Support / InteractionSupport,
-    │                   # MarkdownSlashCommandSupport, MarkdownTaskEmbedDrawingSupport, MarkdownKeyboardShortcutSupport
+    ├── Sheets/         # CreateContextSheet, CreateListSheet, CreateGoalSheet,
+    │                   # CreateTaskSheet(+SupportViews — holds TildeContainerPickerRow),
+    │                   # EditListSheet (declares BOTH EditAreaSheet and EditProjectSheet;
+    │                   # there is no file of either name), ListEditorSupportViews
+    ├── Editor/         # AppKit bridge ONLY (11 files since the T-105 split): MarkdownEditorView /
+    │                   # Support / InteractionSupport / Coordinator / LayoutManager /
+    │                   # TextViewDecorations / DecorationGeometry / TextEditDiff, plus
+    │                   # MarkdownSlashCommandSupport, MarkdownTaskEmbedDrawingSupport,
+    │                   # MarkdownKeyboardShortcutSupport. See Editor/AGENTS.md for the roles.
     └── Services/       # macOS-only managers:
                         #   CalendarManager (EventKit events), RemindersManager (EventKit reminders)
                         #   (CalendarVisibilityPreferences and CalendarWorkHoursPreferences are NOT
@@ -111,7 +122,10 @@ Cadence/
                         #   GlobalHotKeyManager, QuickTaskPanelController, GlobalSearchManager
                         #   Hovered{Task,Editable,TaskDatePicker,KanbanColumn,Section}Manager
                         #   {Task,Section}CompletionAnimationManager, DeleteConfirmationManager
-                        #   {Task,List}DeleteHelpers, TaskDragPayload, TaskSubtaskEntryManager
+                        #   {Task,List}DeleteHelpers, TaskSubtaskEntryManager
+                        #   (TaskDragPayload is NOT here either — it is nonisolated and
+                        #    cross-platform in Shared/TaskDragPayload.swift, and was one file
+                        #    per platform declaring the same type until they were merged.)
                         #   {List,Calendar}NavigationManager, TodayTimelineFocusManager, AppFocus
                         #   NoteExportService, PrivacyDataResetService, AppleAccountManager
                         #   CadenceAppDelegate, CadenceMCPRefreshCoordinator
@@ -177,7 +191,8 @@ Tag:       id, slug, name, desc, colorHex, order, isArchived, createdAt, updated
 Goal:      id, title, desc, startDate(yyyy-MM-dd), endDate(yyyy-MM-dd),
            progressType("subtasks"|"hours"), targetHours, loggedHours,
            colorHex, icon, kind("ongoing"|"completable"|"maintenance"),
-           status("active"|"done"|"paused"), order, createdAt
+           status("active"|"done"|"paused"), order, createdAt,
+           dependsOnGoalIDsJSON (persisted, ZERO readers — see the warning below)
            → context:Context?, parentGoal:Goal?, subGoals:[Goal]?, tasks:[AppTask]?,
              listLinks:[GoalListLink]?, habits:[Habit]?
            computed: progress (0.0–1.0), isTopLevel (parentGoal == nil)
@@ -185,6 +200,16 @@ Goal:      id, title, desc, startDate(yyyy-MM-dd), endDate(yyyy-MM-dd),
             usually kind .ongoing, what used to be a Pursuit — and its subGoals read
             as milestones. `kind` defaults to .completable so pre-merge goals keep
             reading as milestones.)
+
+> **`Goal.dependsOnGoalIDsJSON` is a live persisted field with no readers, and must not be
+> deleted.** It stores finish-to-start dependency IDs as a JSON array of UUID strings; the only
+> other mention of it in the repo is a tombstone comment at `macOS/Views/GoalsSupportViews.swift`
+> recording that its JSON get/set accessor was removed for having zero readers and zero writers.
+> This is the same hazard as `AppTask.calendarEventID` (see "Calendar / Events"), minus the
+> readers: it is a stored SwiftData property and there is no `SchemaMigrationPlan`, so removing it
+> **drops data** rather than cleaning anything up. A dead-code pass will find no references, no
+> UI and no tests, and that is not evidence it is safe to remove. Either build the dependency
+> feature or leave the column alone.
 
 AppTask:   id, title, notes, priority("none"|"low"|"medium"|"high"),
            status("todo"|"inprogress"|"done"|"cancelled"),
@@ -373,7 +398,9 @@ TimeFormatters.durationLabel(actual: Int, estimated: Int)  // "45/60m"
 
 **One comparator: `TaskOrdering` (`Cadence/Models/TaskOrdering.swift`).** `nonisolated` throughout, because widget timeline providers run off the main actor. It owns `precedes(_:_:field:direction:)`, `completionPrecedes` (the completed/logbook ordering), `fallbackPrecedes` (the **total** tie-break: `order` → `createdAt` → `title` → `id`), and `noDateSortKey` — the one "sorts after every real date" sentinel. The tie-break must stay total: `order` is assigned per container, so cross-list surfaces routinely compare tasks with equal `order`, and a partial order there is an unstable sort that reshuffles rows between renders. `macOS/Views/TaskSortHelpers.swift` is now only the free-function spelling (`taskSortPrecedes`, `taskPriorityRank`) macOS call sites read better with.
 
-iOS still has its own vocabulary — `CadenceTaskSortMode` + `CadenceTaskQuerySupport.sortTasks` in `Shared/` — which has no direction (priority is always high-first) and tie-breaks on `order` alone. That is the remaining half of the consolidation, not a deliberate difference.
+iOS still has its own vocabulary — `CadenceTaskSortMode` + `CadenceTaskQuerySupport.sortTasks` in `Shared/` — with no sort **direction** (priority is always high-first) and a different case set (`.listOrder` / `.priority` / `.doDate` / `.dueDate` / `.newest`). That much is still unconsolidated.
+
+**The tie-break is not.** This file used to add "and tie-breaks on `order` alone … the remaining half of the consolidation"; that was fixed in `6277539` and every one of `sortTasks`' five branches now ends in `TaskOrdering.fallbackPrecedes`. Do not pick this up as outstanding work and do not "fix" a comparator that `TaskOrderingTests` already pins. (The doc comment above `CadenceTaskQuerySupport.sortTasks` still closes with the stale sentence, directly under a first line saying the opposite — a code fix, not a docs one.)
 
 **Where controls appear:** Today’s task column (`TasksPanel`), Inbox, All Tasks **list** mode, Area/Project **Tasks** tab, and All Tasks / list-detail **Kanban** (sort only — Kanban **does not** offer grouping; columns stay section-based). UI uses custom “picker badge” controls (not `Menu`), consistent with All Tasks. There is **no** global task **filter** UI (do date / list / priority filters were removed).
 
@@ -390,7 +417,7 @@ as a description of a difference.
 
 **Performance:** `MacTaskRow` does NOT read `TaskCompletionAnimationManager` directly. The completion button and animated background are extracted into `TaskCompletionButton` and `TaskRowBackground` sub-view structs, each with their own `@Environment(TaskCompletionAnimationManager.self)`. This scopes SwiftUI observation so only those small sub-views re-render on animation ticks — not every visible row.
 
-**`ContainerPickerBadge` / `TaskSectionPickerBadge` (TasksPanelSupportViews.swift):** Both popovers open with a search bar auto-focused. Search filters by `hasPrefix` (case-insensitive). Navigation: ↑↓ arrows or `Enter` to select the highlighted item. The highlighted item is tracked by `highlightIdx` (index into `flatFiltered` / `filteredSections`), resets to 0 on query change or close. List name capped at 80pt (60 compact), section name at 70pt — both truncate with `…`. Rows use dedicated `ContainerPickerRow` / `SectionPickerRow` View structs (not `@ViewBuilder` functions) with `let isHighlighted: Bool` for reliable in-place updates. Checkmark follows `isHighlighted`, so the rows deliberately carry **no** `isSelected` property. Hover + highlight share a single `rowBackground` computed property.
+**`ContainerPickerBadge` / `TaskSectionPickerBadge` (TasksPanelSupportViews.swift):** Both popovers open with a search bar auto-focused. Search filters by `hasPrefix` (case-insensitive). Navigation: ↑↓ arrows or `Enter` to select the highlighted item. The highlighted item is tracked by `highlightIdx` (index into `flatFiltered` / `filteredSections`), resets to 0 on query change or close. List name capped at 80pt (60 compact), section name at 70pt — both truncate with `…`. Rows use dedicated `ContainerPickerRow` (in `ContainerPickerSupportViews.swift`, not in this file) / `SectionPickerRow` View structs (not `@ViewBuilder` functions) with `let isHighlighted: Bool` for reliable in-place updates. Checkmark follows `isHighlighted`, so the rows deliberately carry **no** `isSelected` property. Hover + highlight share a single `rowBackground` computed property.
 
 Both badges also take `breadcrumbSegment: Bool`. When set, the trigger renders as one segment of the task inspector's `List › Section` breadcrumb — icon + name (list) or bare name (section), no pill, no chevron, sized to its text — instead of a chip; the popover is identical either way. A breadcrumb segment takes the inspector's own hover layer (`InspectorPickerHover`, radius 5) rather than `cadencePlain`, whose radius-10 fill would draw a chip around text that is deliberately not one. The value always shows the **real** name (`Inbox` / `Default`) — dimmer styling is what conveys "unset", so the segment and its picker never disagree.
 
@@ -409,12 +436,22 @@ Today’s by-list organization is now explicitly grouped by **context** rather t
 **Layout:** `TodayView` uses an `HSplitView` with tuned `minWidth` / `idealWidth` / `layoutPriority` so notepad and schedule get more default space than the task column (user-adjustable dividers).
 
 ## Drag-to-Reorder Payload Prefixes
-Each drag context uses a unique prefix to prevent cross-context drops:
-- `"area:\(id)"` — sidebar area rows (`.onDrag`/`.onDrop` + `SidebarAreaDropDelegate`)
-- `"project:\(id)"` — sidebar project rows (`.onDrag`/`.onDrop` + `SidebarProjectDropDelegate`)
+`Cadence/Shared/TaskDragPayload.swift` (`nonisolated`, cross-platform) owns the task and bundle
+spellings and is the only place that parses them. The full set:
 - `"listTask:\(id)"` — task rows in InboxView and ListDetailView (`.draggable`/`.dropDestination`)
-- `"\(id)"` (plain UUID) — tasks dragged from TasksPanel onto the timeline
+- `"taskBundle:\(id)"` — `TaskBundle` blocks. `TaskDragPayload.taskID(from:)` deliberately returns `nil` for one rather than handing back a bundle id to a caller that asked for a task
+- `"\(id)"` (plain UUID) — tasks dragged from TasksPanel onto the timeline; accepted by `taskID(from:)` as the unprefixed legacy form
 - `"allDayEvent:\(eventIdentifier)"` — all-day event chips dragged from the calendar header onto a day column timeline
+- `"area:\(id)"` / `"project:\(id)"` — sidebar rows, produced by `SidebarListDragItem.providerText` (`macOS/Views/SidebarComponents.swift`)
+
+**The prefix is an enforcement mechanism for the first four and not for the sidebar.** This section
+used to open "each drag context uses a unique prefix **to prevent cross-context drops**" and name a
+`SidebarAreaDropDelegate` and a `SidebarProjectDropDelegate`. There is one delegate,
+`SidebarListDropDelegate`, shared by both row kinds — and its `validateDrop` returns `true`
+unconditionally while `performDrop` reads `SidebarDragContext.shared.draggedListItem`. It never
+looks at the payload string at all; the provider text is carried and ignored. So a new sidebar drag
+source cannot rely on its prefix to reject a foreign drop. Real prefix isolation is what
+`TaskDragPayload`'s consumers get.
 
 ## Task Creation
 There are exactly **three** creation affordances on macOS, and which one a surface gets is decided
@@ -470,7 +507,7 @@ task inspector header (`SchedulePanelPopoverSupportViews.TaskDetailHeaderSection
 behavior changes land on both. The marker parsing lives in `Shared/TaskTitleSupport.swift`.
 
 Three triggers:
-- **`~` — list, then section.** Typing `~` at the start of the title or right after a space opens a list-search popover anchored at the `~` badge. After a list is selected, the section picker opens immediately at the same spot with "Default" pre-highlighted.
+- **`~` — list.** Typing `~` at the start of the title or right after a space opens a list-search popover anchored at the `~` badge. Selecting a list sets the container, normalizes the section to one the new container actually has (`normalizeSelectedSection()` — silent, no UI), clears the query and returns focus to the title. **There is no second step.** This file previously described `~` as "list, **then** section", with the section picker opening at the same spot with "Default" pre-highlighted, and named `TildeSectionPickerRow` and `TildeSectionSearchPanel` as the types behind it. Neither type has ever existed (zero hits repo-wide) and `TaskTitleTildeMode` has exactly two cases, `.none` and `.list`. Section is chosen from the chip strip's `TaskSectionPickerBadge`, not from the title field.
 - **`#` — tags.** Same trailing-marker mechanic, backed by `TaskTitleInlineTagPicker`; can create a tag inline.
 - **`!` / `!!` / `!!!` — priority** (low / medium / high), leading or trailing. Rendered as a preview marker and stripped from the saved title.
 
@@ -479,13 +516,22 @@ Shared behavior for the popovers:
 - Navigate with ↑↓ arrows or `Cmd+Shift+=/−`; `Enter` selects the highlighted item
 - `Tab` closes the panel and puts the marker back in the title, returning focus there
 - **Title ZStack pattern:** The `TextField` is always in the hierarchy (never removed) — hidden with `opacity(0)` + `allowsHitTesting(false)` when a shortcut panel is active. Removing and re-inserting an `NSTextField` causes macOS to select-all on re-focus. A ZStack overlay shows the title text plus the marker badge, with `.popover` attached to the badge.
-- **Picker row structs:** `TildeContainerPickerRow` and `TildeSectionPickerRow` are dedicated `View` structs with `let isHighlighted: Bool` props (not `@ViewBuilder` functions). The checkmark follows `isHighlighted`, not `isSelected`. Hover and highlight backgrounds are consolidated into a single `rowBackground` computed property inside the Button label — never two separate `.background()` modifiers on different layers.
-- **Section search focus:** `TildeSectionSearchPanel` is a standalone struct with its own `@FocusState private var isSearchFocused: Bool`. macOS popovers are separate `NSWindow` instances — parent `@FocusState` cannot reliably capture `.onKeyPress` events inside the popover. The panel sets focus via `onAppear { DispatchQueue.main.async { isSearchFocused = true } }`.
+- **Picker row structs:** `TildeContainerPickerRow` (`macOS/Sheets/CreateTaskSheetSupportViews.swift`, used by both `TaskTitleEntryField` and `QuickCreateChoicePopover`) and `InlineTagPickerRow` are dedicated `View` structs with `let isHighlighted: Bool` props (not `@ViewBuilder` functions). Hover and highlight backgrounds are consolidated into a single `rowBackground` computed property inside the Button label — never two separate `.background()` modifiers on different layers.
+- **Popover search focus is deferred, not immediate.** Every one of these panels ends in
+  `onAppear { clamp…(); DispatchQueue.main.async { isSearchFocused = true } }`. Setting the
+  `@FocusState` synchronously in `onAppear` lands before the popover window is key and does
+  nothing. The hop is the whole mechanism — keep it on any new panel.
+  This file used to justify that with "macOS popovers are separate `NSWindow` instances, so parent
+  `@FocusState` cannot reliably capture `.onKeyPress` inside the popover", and used it to explain a
+  `TildeSectionSearchPanel` that does not exist. Both halves were wrong: the `~` list panel is a
+  computed `some View` on `TaskTitleEntryField` bound to the **parent's** `@FocusState`
+  (`isTildeSearchFocused`) and handles ↑↓/Tab/Escape/Delete `.onKeyPress` fine. A standalone struct
+  with its own `@FocusState` (`TaskTitleInlineTagPicker`) is a fine choice, but it is not required.
 - **ForEach identity:** Use `ForEach(Array(items.enumerated()), id: \.element.id)` with `Identifiable` items — never `ForEach(indices, id: \.self)`. Integer IDs cause SwiftUI to reuse the same view for different rows, breaking highlight state. Never put `.id(highlightIdx)` on a container VStack — it destroys/recreates the whole list on each arrow press, briefly showing double highlights.
 
-**Timeline / calendar drag-create quick popover:**
-- The drag-to-create title popover for new scheduled tasks/events supports the same `~` list-search flow
-- Selecting a list can immediately step into section selection
+**Timeline / calendar drag-create quick popover (`macOS/Views/QuickCreateChoicePopover.swift`):**
+- The drag-to-create title popover for new scheduled tasks/events supports the same `~` list-search flow — and supports it by **near-duplicating** it: `tildeFlatContainers` / `selectTildeContainer` / `selectTildeContainerItem` are a second copy of `TaskTitleEntryField`'s, sharing only `TildeContainerPickerRow`. That is a standing violation of the "one shared component over near-copies" rule, recorded here so it is not mistaken for a deliberate split
+- Selecting a list sets the container and normalizes the section silently, exactly as in `TaskTitleEntryField`. There is no section-selection step here either
 - New scheduled tasks can now be created directly into the chosen list/section via `SchedulingActions.createTask(... containerSelection: sectionName: ...)`
 - While dragging out a new time range, the ghost preview shows **start**, **end**, and **duration**
 
@@ -586,11 +632,22 @@ reminders access is not granted.
 - `docs/privacy.html` and `docs/app-review-notes.md` are the shipped privacy/App Review material.
 
 ## MCP Surface
-Two boundaries, both off the normal feature path — **do not touch them unless the task explicitly
-asks for MCP work**:
-- `Cadence/Services/MCPReadOnly/` — `CadenceReadService` / `CadenceWriteService`, DTOs, search matcher, audit log, standalone model-container factory. Covered by `CadenceTests`.
-- `CadenceMCPServer/` (native server target: tool definitions, router, argument parsing) and `plugins/cadence-mcp/` (Codex plugin wrapper + smoke-test scripts).
-`CadenceMCPRefreshCoordinator` (macOS Services) bridges live app state to it.
+Two halves of one boundary. **`CadenceMCPServer/AGENTS.md` is the canonical account** — what
+follows is the map, not the rules.
+- `Cadence/Services/MCPReadOnly/` — `CadenceReadService` / `CadenceWriteService`, DTOs, search matcher, audit log, standalone model-container factory. Compiled into **both** the app and the server target; covered by `CadenceTests` (`CadenceReadServiceTests`, `CadenceWriteServiceTests`, `CadenceSearchMatcherTests`).
+- `CadenceMCPServer/` (native server target: `main.swift`, tool definitions, router, argument parsing) and `plugins/cadence-mcp/` (plugin wrapper + `smoke-test.py`). **Nothing in either has unit coverage** — the smoke test is the only thing exercising the router.
+`CadenceMCPRefreshCoordinator` (macOS Services) watches a marker file so the app reloads after an
+external write.
+
+This section used to open "do not touch them unless the task explicitly asks for MCP work", and
+four other guides said the same. It was wrong, and the correction is a **procedure**: when model or
+shared-service code changes, review the boundary — build `CadenceMCPServer` on **its own** scheme
+into a private `-derivedDataPath` and grep the log, because that target compiles a hand-picked
+subset of app source under different concurrency settings (Swift 6, no
+`SWIFT_DEFAULT_ACTOR_ISOLATION`), so the `Cadence` scheme stays green while it breaks. Skipping the
+boundary yields a broken target or a silently stale response schema, and the write path — gated on
+`CADENCE_MCP_ENABLE_WRITES`, off by default — mutates the real app-group store from a second
+process with no UI and no undo.
 
 ## Keyboard Shortcuts (macOSRootView)
 Global local monitor unless noted. **Hovered task date nudge** requires the pointer over a **do** or **due** control (`HoveredTaskManager.hoveredDateKind`).
@@ -654,7 +711,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Today completed section scoped to tasks completed today
 - [x] All Tasks: **list** vs **kanban** modes; shared sort UI; list has grouping, kanban **sort only** (no grouping)
 - [x] Inbox: unassigned tasks, capture bar, drag-to-reorder, sort/group controls
-- [x] Full task creation sheet (title, notes, due date, do date, priority, container, section, subtasks); shared `TaskTitleEntryField` with inline `~` list/section search, `#` tags, and `!`/`!!`/`!!!` priority — the same field the task inspector header uses
+- [x] Full task creation sheet (title, notes, due date, do date, priority, container, section, subtasks); shared `TaskTitleEntryField` with inline `~` list search, `#` tags, and `!`/`!!`/`!!!` priority — the same field the task inspector header uses
 - [x] Global hotkey to open task creation from anywhere in the OS
 - [x] In-app Spotlight-style command palette / global search (`Cmd+K`)
 - [x] Custom delete confirmation overlay
@@ -706,7 +763,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Widget extensions (`CadenceWidgets` target): calendar/today/habit/milestone widgets with app-intent support and a refresh checkpoint (`CadenceWidgetRefreshCenter`) triggered on scenePhase changes — not documented further here yet; check `Cadence/Services/Cadence*WidgetSupport.swift` and `CadenceWidgets/` directly
 
 ## What's Built (iOS)
-`Cadence/iOS/` is a large, actively-developed surface (68 files), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), **four-tab bottom bar** on compact width (`iOSCompactRootShell`) — covering:
+`Cadence/iOS/` is a large, actively-developed surface (79 files), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), **four-tab bottom bar** on compact width (`iOSCompactRootShell`) — covering:
 - [x] **iPhone tab bar**: `[ Tasks ] [ Calendar ] ( + ) [ Notes ] [ More ]`. The centre `+` is **not a tab** — it presents task capture and never renders a selected state. Each tab owns its own type-erased `NavigationPath`, so switching tabs preserves position; the selected tab and Tasks segment persist across launches (`ios.compact.selectedTab`, `ios.compact.tasksSection`). Replaced `iOSCompactHomeView`, a grid of eight tiles that was standing in for navigation the app did not have.
 - [x] Tasks tab (`iOSTasksTabView`): date eyebrow + greeting, a **Today / All / Inbox** segmented switcher (the same control Calendar uses for Week/Month/Board), and a search shortcut
 - [x] Today (`iPadTodayView` + compact/schedule/support variants). The compact Today has **no capture bar of its own** — the tab bar's `+` is the capture affordance

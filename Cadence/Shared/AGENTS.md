@@ -33,8 +33,26 @@ hardcoded colours either.
 - Preserve hover semantics in `CadenceHoverStyles.swift`: task/event/bundle hovers should preserve original color and lift/brighten rather than gray out.
 - Keep shared components small and dependency-light. Avoid pulling macOS-only managers into shared code.
 
+## The File Name Is Not The Type Name
+
+Several shared types sit in `Cadence`-prefixed files while carrying no prefix themselves:
+`CalendarVisibilityPreferences` in `CadenceCalendarVisibilityPreferences.swift`, `ListDetailPage`
+in `CadenceListDetailPage.swift`. Others are the reverse of where a reader expects them —
+`CalendarWorkHoursPreferences`, `TaskDragPayload` and `CadenceCompactTab` are all here rather than
+under a platform folder, precisely because both platforms use them.
+
+A `find . -name TypeName.swift` that comes back empty is therefore not evidence the type is
+elsewhere, and this exact mismatch is what left two docs describing `CalendarVisibilityPreferences`
+as a macOS service after it had moved. Grep for the declaration, not for the filename.
+
 ## Component Expectations
 
 - Components should be reusable through explicit props and bindings.
 - Avoid hidden global state unless the existing component pattern already uses it.
-- Match the app's compact, desktop-focused visual language.
+- **Match the app's compact visual language — not a desktop one.** This line used to say
+  "compact, desktop-focused", which pointed a *cross-platform* folder at the macOS shape and
+  contradicted the standing rule that iPhone and iPad are one style. macOS is no longer the
+  reference by default: where iOS has the better spelling, macOS changes. The platforms differ in
+  **layout** — sidebar and columns against a tab bar and one pane — and should not differ in how a
+  row, a chip, a header or a picker looks or behaves. Default to one view parameterised by size
+  class over an `iPhoneFoo` beside an `iPadFoo`.

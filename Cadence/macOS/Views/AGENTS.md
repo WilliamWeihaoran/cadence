@@ -20,12 +20,26 @@ Feature views in this folder are actively refactored into thin roots plus suppor
 - `TaskInspector*`, `SchedulePanelPopoverSupportViews` - the task inspector. Generic field-row primitives, content sections, and the recurrence control live in `TaskInspector*`; only the stateful popover wrapper and the inspector's own header/schedule sections and placement breadcrumb live under `SchedulePanel*`. Do not park shared primitives in `SchedulePanel*`.
 - `Notes*`, `NoteEditorPane`, `NoteEditor*`, `NoteReferenceSupportViews`, `NoteActionReviewSheets`, `AIActionsSupportViews` - the Notes surface and its AI actions. Under active rewrite; read the file before trusting any description of it.
 - `TaskSurfaceFreeze*` - shared hover-freeze models/coordinator used by Today, Inbox, and list-detail task surfaces.
-- `TaskTitleEntryField*`, `TaskTitleInlineTagPicker`, `Tag*`, `ContainerPickerSupportViews` - the shared title field with inline `~` list/section search and `#` tag entry, plus the pickers behind it.
-- `FocusView*` - focus timer, task/bundle picker, log-session popovers, focus sidebar.
-- `QuickCreateChoice*` - drag-to-create task/event/bundle popover and support views.
+- `TaskTitleEntryField*`, `TaskTitleInlineTagPicker`, `Tag*`, `ContainerPickerSupportViews` - the
+  shared title field with inline `~` list search and `#` tag entry, plus the pickers behind it.
+  `~` picks a **list only**: selecting one normalizes the section silently and returns focus to the
+  title. This line used to read "`~` list/section search", and `CLAUDE.md` described a second
+  section-picking step in detail; there is no such step and never was. Section is chosen from
+  `TaskSectionPickerBadge` in the chip strip.
+- `Focus*` - focus timer, task/bundle picker, log-session popovers, focus sidebar.
+- `QuickCreateChoice*` - drag-to-create task/event/bundle popover and support views. It carries a
+  second, near-duplicate copy of `TaskTitleEntryField`'s `~` list flow (`tildeFlatContainers`,
+  `selectTildeContainer`, `selectTildeContainerItem`), sharing only `TildeContainerPickerRow`. A
+  fix to one has to be made twice until they are unified.
 - `Settings*` - settings shell and category sections.
 - `GlobalSearch*` - command palette state, indexing, interaction, and shell views.
-- `Habits*`, `Goals*` - long-running progress surfaces. Pursuits were merged into `Goal`; top-level goals are directions and their sub-goals are milestones.
+- `Habit*`, `Goal*` - long-running progress surfaces. Pursuits were merged into `Goal`; top-level goals are directions and their sub-goals are milestones.
+
+The globs above are the whole family, singular where it looks plural. This list previously said
+`FocusView*`, `Goals*` and `Habits*`, each of which matches about two files of nine — a glob that
+silently returns a fraction of a family reads like a complete answer, which is how support files
+get re-created instead of found. `HabitListSupport.swift`, `FocusLogSessionPopovers.swift` and
+`GoalTimeline*` are the ones the plural spellings dropped.
 
 ## View Refactor Rules
 

@@ -9,11 +9,20 @@ This subtree contains the app target source. Prefer reading `../AGENTS.md` first
 - `Services/` contains shared services, migrations, notifications, widget support, the markdown/note parsing layer, schema, and `AI/` + `MCPReadOnly/`.
 - `Shared/` contains design tokens (`Theme.swift`), common components, date/time formatting, and cross-platform presentation/query/mutation support.
 - `macOS/` contains the fully implemented desktop app — the primary product surface.
-- `iOS/` is a **large, actively-developed iOS/iPadOS surface — 64 files, not stubs.**
-  `iOSRootView.swift` is an adaptive root shell (iPad regular-width sidebar, compact
-  `TabView`) routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals,
-  Habits, Notes (its own markdown editor stack), Lists, Search, and Settings. Feature parity
-  with macOS is not guaranteed by design — check the actual view file. See `iOS/AGENTS.md`.
+- `iOS/` is a **large, actively-developed iOS/iPadOS surface — 79 files, not stubs.**
+  `iOSRootView.swift` is an adaptive root shell — `iPadMacStyleRootShell` (sidebar) at regular
+  width, `iOSCompactRootShell` (a hand-built **four-tab bottom bar**, `[ Tasks ] [ Calendar ]
+  ( + ) [ Notes ] [ More ]`) at compact width — routing to real implementations of Today,
+  Calendar, Tasks/Inbox, Focus, Goals, Habits, Notes (its own markdown editor stack), Lists,
+  Search, and Settings. Feature parity with macOS is not guaranteed by design — check the actual
+  view file. See `iOS/AGENTS.md` before touching the shell.
+
+  This file described the compact shell as a "`TabView`" long after `iOS/AGENTS.md` was rewritten
+  to refute exactly that. There is no SwiftUI `TabView` anywhere under `iOS/`; the shell is a
+  `VStack` of content and a bar that is a **sibling** of the content, not an overlay and not a
+  `safeAreaInset`, with one type-erased `NavigationPath` per tab. Both of those are corrections of
+  shipped bugs, and "shells are `TabView`s" is the assumption that produced them — which is why
+  the wrong sentence mattered here, in the guide that is read before the iOS one.
 
 ## Working Rules
 
@@ -25,6 +34,24 @@ This subtree contains the app target source. Prefer reading `../AGENTS.md` first
 
 ## Build Check
 
+Run from the **repo root** — agent shells reset their working directory between calls, so a
+relative `-project ../Cadence.xcodeproj` will not resolve.
+
 ```sh
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project ../Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' build
+/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
+  -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' \
+  -derivedDataPath /tmp/cadence-build-$$ build
 ```
+
+```sh
+/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test \
+  -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' \
+  -derivedDataPath /tmp/cadence-test-$$ -only-testing:CadenceTests
+```
+
+Both flags are load-bearing and both are non-negotiables in the root `AGENTS.md`, which explains
+them: `-only-testing:CadenceTests` keeps `CadenceUITests` out of the run (it cannot launch headless
+and aborts everything, in a way that reads as a broken suite), and the private `-derivedDataPath`
+keeps a build from deleting the shared `Build/Products/` out from under a running app — every
+failure mode that causes is misattributed by default. Confirm the private path appears in the log
+before trusting a green run.

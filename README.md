@@ -15,7 +15,7 @@ Cadence is a native SwiftUI productivity app for planning work across tasks, not
 ## Platform Status
 
 - macOS: primary, fully featured app surface.
-- iOS/iPadOS: a large, actively-developed surface (64 files) with an adaptive root shell — an iPad sidebar layout at regular width, a tab bar at compact width — covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, and Settings. Not at full feature parity with macOS by design.
+- iOS/iPadOS: a large, actively-developed surface (79 files) with an adaptive root shell — an iPad sidebar layout at regular width, a tab bar at compact width — covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, and Settings. Not at full feature parity with macOS by design.
 - Widgets: Today task widget support is included.
 
 ## Tech Stack
