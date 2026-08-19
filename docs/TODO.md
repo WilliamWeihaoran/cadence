@@ -33,21 +33,13 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
-- [T-159] **iOS never calls `event.reset()` after a failed EventKit save.** The cheap half of
-  T-149's deferred item, and worse than that ticket says: `iOSCalendarManager` mutates the `EKEvent`
-  in place at three sites and returns `false` on a throw without resetting. `EKEvent` is a reference
-  type held by `CalendarEventItem` and rendered by the timeline, and a failed save produces no
-  `EKEventStoreChanged`, so **the UI keeps showing an event that is not in the store** with nothing
-  to clear it. macOS resets for exactly this reason and carries a nine-line comment saying so. Two
-  lines, no UI, no product decision — unlike the alerting half, which stays deferred.
+- [T-163] **iOS Inbox does not surface Apple Reminders; macOS does.** macOS `InboxView` reads
+  `RemindersManager` and shows open reminders inline (`InboxView.swift:8`). The iOS Settings
+  connection is being built now, which makes the manager cross-platform and removes the only real
+  obstacle — but the Inbox surface itself was deliberately left out of that change as unrequested
+  scope. Decide whether iOS Inbox should show them too; the parity direction the user stated
+  ("more similar on all 3 platforms") suggests yes.
 
-- [T-160] **`TagSupport.uniqueBySlug` and `TagSupport.sorted` are non-total over a nondeterministic
-  input.** Both sort `Array(dictionary.values)` — Swift dictionary order is unspecified and
-  per-process seeded, and `sorted` is not stable — ending at a `name` compare with no unique
-  tie-break. `uniqueBySlug` feeds the `#` picker's `.prefix(8)`; `sorted` decides *which duplicate
-  wins per slug*, so its blast radius is larger. Exposure needs equal `order` **and**
-  case-insensitively equal `name` — narrower than it first sounds, but `order` defaults collide and
-  CloudKit can produce case-variant duplicates. Same defect class as T-150.
 
 - [T-161] **Tests pin helpers, not wiring.** The T-149 verifier proved by mutation that reverting the
   `macOSRootCommandActionSupport` fix leaves all 1692 tests green, and the same holds for T-150 —
@@ -271,6 +263,18 @@ _Nothing in flight._
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-115] `c970c5c` A failed calendar save left the edit on screen, and tag order was a coin flip
+  (T-159, T-160). `EKEvent` is a reference type held by the timeline, and a failed save emits no
+  `EKEventStoreChanged`, so without `reset()` iOS showed an event that was not in the store
+  indefinitely; macOS had done this since `CalendarManager.save`. `deleteEvent` deliberately left
+  alone — `store.remove` mutates nothing in memory. The reset is **not** unit-observable (the file
+  is inside `#if os(iOS)`, the manager is a private-init singleton owning its `EKEventStore`, and
+  forcing the throw needs real authorization) and no test pretending otherwise was written.
+  `TagSupport` now has one comparator ending on `id`; both callers sorted `Array(dictionary.values)`
+  under a partial order, so which eight tags the `#` picker offered could differ per launch, and a
+  tie inside `tagsBySlug` decided which duplicate became canonical. Tests pin call sites, not
+  `precedes`; reverting `uniqueBySlug`'s call site alone fails one, reproduced independently.
 
 - [D-114] `8bcbb24` Four doc claims that stopped being true, including one about committing
   (T-151, T-156, T-158, T-162). The page-header rule named three macOS headers as peers; all three
