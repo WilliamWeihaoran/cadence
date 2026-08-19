@@ -72,14 +72,10 @@ struct macOSRootView: View {
 
             macOSRootOverlayStack(handleSearchSelection: handleSearchSelection)
                 .id(dataRefreshID)
-
-            if let startupIssue = PersistenceController.startupIssue {
-                RootStartupIssueBanner(message: startupIssue)
-                    .padding(.top, 14)
-                    .padding(.horizontal, 18)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            }
         }
+        // Shared with both iOS shells since T-153. The banner used to be a `private` view in this
+        // file, so the identical silent failure was visible here and invisible on iPhone and iPad.
+        .cadenceStartupIssueBanner(PersistenceController.startupIssue)
         .modelContext(currentModelContext)
         // Attached *after* `.modelContext(...)` on purpose: like the `@Query`s it replaces, the
         // observer must resolve against the inherited context, not `currentModelContext`.
@@ -293,38 +289,6 @@ private struct NotificationReconcileObserver: View {
                 let habits = allHabits
                 Task { await NotificationManager.shared.reconcile(tasks: tasks, habits: habits) }
             }
-    }
-}
-
-private struct RootStartupIssueBanner: View {
-    let message: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "externaldrive.badge.exclamationmark")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.amber)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Recovery Store Active")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                Text(message)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .frame(maxWidth: 620)
-        .background(Theme.surfaceElevated)
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.radiusPanel)
-                .stroke(Theme.amber.opacity(0.22), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel))
-        .shadow(color: Theme.overlayCardShadow, radius: 22, x: 0, y: 10)
     }
 }
 

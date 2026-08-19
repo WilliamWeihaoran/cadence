@@ -63,6 +63,9 @@ struct iOSRootView: View {
                 )
             }
         }
+        // Both shells, one call. A banner that only appeared on the iPad sidebar shell would
+        // recreate the macOS/iOS asymmetry it exists to close, one level down.
+        .cadenceStartupIssueBanner(PersistenceController.startupIssue)
         .background(Theme.bg)
         .preferredColorScheme(.dark)
         .statusBarHidden(horizontalSizeClass == .regular)

@@ -2,69 +2,6 @@
 import CloudKit
 import SwiftUI
 
-struct iOSCloudStatusPresentation {
-    let accountStatus: CKAccountStatus?
-    let accountError: String?
-    let isCheckingAccount: Bool
-
-    var title: String {
-        if isCheckingAccount { return "Checking iCloud" }
-        if accountError != nil { return "Could not check iCloud" }
-        guard let accountStatus else { return "iCloud not checked" }
-
-        switch accountStatus {
-        case .available:
-            return "iCloud available"
-        case .noAccount:
-            return "No iCloud account"
-        case .restricted:
-            return "iCloud restricted"
-        case .couldNotDetermine:
-            return "iCloud unknown"
-        case .temporarilyUnavailable:
-            return "iCloud temporarily unavailable"
-        @unknown default:
-            return "iCloud unknown"
-        }
-    }
-
-    var subtitle: String {
-        if let accountError { return accountError }
-        guard let accountStatus else {
-            return "Check status before relying on TestFlight sync."
-        }
-
-        switch accountStatus {
-        case .available:
-            return "CloudKit should be able to sync Cadence data."
-        case .noAccount:
-            return "Sign into iCloud on this device to sync."
-        case .restricted:
-            return "iCloud is restricted by device or account policy."
-        case .couldNotDetermine:
-            return "Try again or check device network/iCloud settings."
-        case .temporarilyUnavailable:
-            return "Apple reported iCloud is temporarily unavailable."
-        @unknown default:
-            return "This device returned an unknown iCloud state."
-        }
-    }
-
-    var icon: String {
-        if isCheckingAccount { return "icloud" }
-        if accountError != nil { return "exclamationmark.icloud" }
-        guard accountStatus == .available else { return "icloud.slash" }
-        return "checkmark.icloud"
-    }
-
-    var color: Color {
-        if accountStatus == .available && accountError == nil { return Theme.green }
-        if isCheckingAccount { return Theme.blue }
-        if accountStatus == nil && accountError == nil { return Theme.dim }
-        return Theme.amber
-    }
-}
-
 struct iOSSyncSettingsSection: View {
     let accountStatus: CKAccountStatus?
     let accountError: String?
@@ -72,11 +9,20 @@ struct iOSSyncSettingsSection: View {
     let lastChecked: Date?
     let refreshAccountStatus: () -> Void
 
-    private var presentation: iOSCloudStatusPresentation {
-        iOSCloudStatusPresentation(
-            accountStatus: accountStatus,
-            accountError: accountError,
-            isCheckingAccount: isCheckingAccount
+    /// The shared answer, not a second opinion.
+    ///
+    /// This row used to read `CKAccountStatus` alone, which meant a device whose store had dropped
+    /// to a local recovery container showed a green `checkmark.icloud` and "CloudKit should be able
+    /// to sync Cadence data" while nothing was syncing at all. `CadenceSyncHealth` folds the store's
+    /// own state in and lets it win — an available account is necessary for sync, not sufficient.
+    private var health: CadenceSyncHealth {
+        CadenceSyncHealth.resolve(
+            startupIssue: PersistenceController.startupIssue,
+            account: CadenceCloudAccountState(
+                accountStatus: accountStatus,
+                accountError: accountError,
+                isChecking: isCheckingAccount
+            )
         )
     }
 
@@ -87,17 +33,17 @@ struct iOSSyncSettingsSection: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 12) {
                         iOSIconTile(
-                            systemImage: presentation.icon,
-                            color: presentation.color,
+                            systemImage: health.iconName,
+                            color: health.tone.tint,
                             size: 34,
                             iconSize: 17
                         )
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(presentation.title)
+                            Text(health.title)
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
-                            Text(presentation.subtitle)
+                            Text(health.detail)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)

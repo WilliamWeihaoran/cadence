@@ -3,7 +3,12 @@ import Foundation
 
 struct PersistenceController {
     static let shared = PersistenceController()
-    private(set) static var startupIssue: String?
+    /// The one startup problem this launch hit, if any.
+    ///
+    /// Structured rather than a bare `String` since T-153: two of the three things that can be
+    /// recorded here leave the store with `cloudKitDatabase: .none`, and the third does not touch
+    /// sync at all. Every surface that showed this used to have to guess which from the prose.
+    private(set) static var startupIssue: CadenceStartupIssue?
 
     let container: ModelContainer
 
@@ -76,7 +81,10 @@ struct PersistenceController {
         do {
             try context.save()
         } catch {
-            startupIssue = "Cadence could not save startup maintenance changes: \(error.localizedDescription)"
+            startupIssue = CadenceStartupIssue(
+                kind: .maintenanceSaveFailed,
+                message: "Cadence could not save startup maintenance changes: \(error.localizedDescription)"
+            )
         }
     }
 
@@ -102,7 +110,7 @@ struct PersistenceController {
     }
 
     private static func makeRecoveryContainer(issue: String) -> ModelContainer {
-        startupIssue = issue
+        startupIssue = CadenceStartupIssue(kind: .recoveryStore, message: issue)
         do {
             let recoveryDirectoryURL = try recoveryStoreDirectoryURL()
             try FileManager.default.createDirectory(at: recoveryDirectoryURL, withIntermediateDirectories: true)
@@ -114,7 +122,10 @@ struct PersistenceController {
             )
             return try ModelContainer(for: schema, configurations: [recoveryConfig])
         } catch {
-            startupIssue = "\(issue) Recovery store creation also failed, so Cadence opened a temporary in-memory store: \(error.localizedDescription)"
+            startupIssue = CadenceStartupIssue(
+                kind: .inMemoryStore,
+                message: "\(issue) Recovery store creation also failed, so Cadence opened a temporary in-memory store: \(error.localizedDescription)"
+            )
             do {
                 let fallbackConfig = ModelConfiguration(
                     schema: schema,
