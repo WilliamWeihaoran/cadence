@@ -135,6 +135,27 @@ struct TaskComparatorTotalityTests {
         #expect(forward.map(\.id) == backward.map(\.id))
     }
 
+    /// The *ordering*, not just its totality — macOS's `[[` picker now inherits this (T-150).
+    ///
+    /// It sorted its own candidates alphabetically by title, which under the `.prefix(8)` its
+    /// popover applies is not a ranking but a filter by first letter: on a few hundred notes an
+    /// empty `[[` could only ever reach eight titles beginning with "A". Recency is what makes a
+    /// truncated list useful, and it is what iOS already did.
+    @Test func referenceCandidateNotesOfferTheMostRecentlyEditedFirst() throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+
+        let oldest = Note(kind: .permanent, title: "Alpha")
+        oldest.updatedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let newest = Note(kind: .permanent, title: "Zulu")
+        newest.updatedAt = Date(timeIntervalSince1970: 1_700_009_000)
+        for note in [oldest, newest] { context.insert(note) }
+
+        let candidates = MarkdownReferenceCompletionSupport.candidateNotes(from: [oldest, newest], query: "")
+
+        #expect(candidates.map(\.title) == ["Zulu", "Alpha"])
+    }
+
     // MARK: - Focus's ready list
 
     @Test func focusReadyTasksSortTheSameSetIdenticallyFromAnyStartingOrder() throws {

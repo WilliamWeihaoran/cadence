@@ -157,4 +157,48 @@ struct CadenceCalendarEventSearchSupportTests {
         let results = CadenceCalendarEventSearchSupport.results(from: [late, early], query: "", now: now)
         #expect(results.map { $0.title ?? "" } == ["Early", "Late"])
     }
+
+    // MARK: - Resolving a picked result (T-149)
+
+    /// The divergence: `macOSRootCommandActionSupport` resolved a Cmd+K event result by calling
+    /// `searchEvents(matching: "")` and scanning the answer. That is the `isUpcoming` branch, so a
+    /// finished event — which an explicit query *does* return, per the test above — was findable
+    /// and not openable. Both halves are asserted together here so the contradiction is the test.
+    @MainActor @Test func aPastEventCanBeResolvedEvenThoughAnEmptyQueryHidesIt() throws {
+        let retro = event(title: "Retro", start: now.addingTimeInterval(-86_400))
+        let upcoming = event(title: "Standup", start: now.addingTimeInterval(3_600))
+        let window = [retro, upcoming]
+        let retroID = CadenceEventNoteSupport.identifier(for: retro)
+
+        // What the old resolve path saw.
+        let asSearched = CadenceCalendarEventSearchSupport.results(from: window, query: "", now: now)
+        try #require(!asSearched.contains { CadenceEventNoteSupport.matches($0, identifier: retroID) })
+
+        let resolved = CadenceCalendarEventSearchSupport.event(from: window, identifier: retroID)
+        #expect(resolved === retro)
+    }
+
+    @MainActor @Test func resolvingPicksTheOneEventNamedAndNotSimplyTheFirst() {
+        let first = event(title: "Standup", start: now.addingTimeInterval(3_600))
+        let second = event(title: "Retro", start: now.addingTimeInterval(7_200))
+
+        let resolved = CadenceCalendarEventSearchSupport.event(
+            from: [first, second],
+            identifier: CadenceEventNoteSupport.identifier(for: second)
+        )
+
+        #expect(resolved === second)
+    }
+
+    /// An empty identifier is not "match whatever comes first" — `matches` compares strings, and a
+    /// fallback identifier is never empty, but the guard says so rather than relying on that.
+    @MainActor @Test func anEmptyIdentifierResolvesToNothing() {
+        let standup = event(title: "Standup", start: now.addingTimeInterval(3_600))
+        #expect(CadenceCalendarEventSearchSupport.event(from: [standup], identifier: "") == nil)
+    }
+
+    @MainActor @Test func anUnknownIdentifierResolvesToNothing() {
+        let standup = event(title: "Standup", start: now.addingTimeInterval(3_600))
+        #expect(CadenceCalendarEventSearchSupport.event(from: [standup], identifier: "not-an-event") == nil)
+    }
 }

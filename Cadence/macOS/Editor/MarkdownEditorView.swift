@@ -39,16 +39,34 @@ struct MarkdownEditor: View {
     @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var textView: CadenceTextView?
 
+    // MARK: - Reference candidates
+    //
+    // Both lists go through `MarkdownReferenceCompletionSupport`, which is where iOS's `[[` menu
+    // and picker sheet already get theirs. Two things were wrong with the local sorts these
+    // replaced, and only the first is a bug:
+    //
+    // **Non-total.** Both ended at a case-insensitive title compare, and both consumers truncate —
+    // `MarkdownReferencePickerController` takes `.prefix(8)`, the toolbar menu `.prefix(12)`. Two
+    // notes named "Meeting" therefore left *which eight were offered* undefined, not merely their
+    // order. This is the defect `41b25f8` fixed on the iOS copies by ending in
+    // `TaskOrdering.fallbackPrecedes`; the macOS copy was missed.
+    //
+    // **Alphabetical.** Converged onto iOS's ordering — notes most-recently-edited first, tasks
+    // open-before-done then priority — rather than keeping alphabetical here. The case for keeping
+    // it was that a Mac shows a wider list, and that turned out not to be true of this picker: both
+    // consumers cap at 8 and 12. Alphabetical order under a cap does not rank, it filters by first
+    // letter, so an empty `[[` on a vault of a few hundred notes offered eight titles beginning
+    // with "A" and could not reach anything else without typing. Recency is the useful eight.
+    // Sorting still matters once a query is typed, because the query filter downstream preserves
+    // this order rather than scoring.
+
     @MainActor private var noteSuggestions: [MarkdownReferenceSuggestion] {
-        referenceNotes
-            .sorted { $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending }
+        MarkdownReferenceCompletionSupport.candidateNotes(from: referenceNotes, query: "")
             .map(MarkdownReferenceSuggestion.note)
     }
 
     @MainActor private var taskSuggestions: [MarkdownReferenceSuggestion] {
-        referenceTasks
-            .filter { !$0.isCancelled }
-            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        MarkdownReferenceCompletionSupport.candidateTasks(from: referenceTasks, query: "")
             .map(MarkdownReferenceSuggestion.task)
     }
 

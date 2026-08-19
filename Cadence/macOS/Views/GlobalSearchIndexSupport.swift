@@ -200,36 +200,57 @@ enum GlobalSearchIndexSupport {
         }, query: query).prefix(query.isEmpty ? 6 : 10))
     }
 
+    /// `events` arrives from `searchEvents`, so it is already filtered against the query and
+    /// sorted chronologically. What is left to decide is which of them the section shows.
+    ///
+    /// Truncating *before* ranking — `events.prefix(12)` then `rankedResults` — ranked the twelve
+    /// chronologically earliest matches rather than the twelve best, so a query's strongest match
+    /// was dropped before scoring ever saw it if twelve weaker ones happened to fall earlier in
+    /// the window. Every other section here already ranks first and prefixes second.
+    ///
+    /// The empty-query branch keeps the truncate-first shape on purpose, and is not the same bug:
+    /// `searchEvents` has already answered "what is coming up" in chronological order, so the
+    /// first six *are* the answer. Ranking them would be worse, not merely redundant — an empty
+    /// query scores everything equally, and `CadenceSearchMatcher.rank` breaks that tie on title,
+    /// which would have picked six events alphabetically out of a 365-day window. This is the
+    /// shape `iOSSearchView.eventResults` already had: chronological when idle, scored when
+    /// searching.
     static func eventResults(from events: [EKEvent], query: String) -> [GlobalSearchResult] {
-        let mapped = Array(events.prefix(query.isEmpty ? 6 : 12)).map { event in
-            let item = CalendarEventItem(event: event)
-            let startDate = event.startDate ?? Date()
-            let timeLabel = "\(DateFormatters.dayOfWeek.string(from: startDate)), \(DateFormatters.shortDate.string(from: startDate))"
-            // All-day events reach this list now that `searchEvents` stopped dropping them, and
-            // `CalendarEventItem` clamps one to 00:00 + 1440 minutes — which reads as
-            // "12:00 AM – 12:00 AM". iOS already says "All day" here; so does this.
-            let timeRange = event.isAllDay
-                ? "All day"
-                : TimeFormatters.timeRange(startMin: item.startMin, endMin: item.startMin + item.durationMinutes)
-            let subtitle = [
-                item.calendarTitle,
-                timeLabel,
-                timeRange
-            ]
-            .filter { !$0.isEmpty }
-            .joined(separator: " • ")
-
-            return GlobalSearchResult(
-                id: "event-\(item.id)",
-                category: .events,
-                title: item.title,
-                subtitle: subtitle,
-                icon: "calendar",
-                tintHex: item.calendarColor.globalSearchHexString() ?? (Theme.purple.globalSearchHexString() ?? "#9E8CFF"),
-                destination: .event(item.id)
-            )
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // Closures rather than `map(eventResult(for:))`: a method *reference* is passed as a
+            // nonisolated function value and loses this enum's main-actor isolation.
+            return events.prefix(6).map { eventResult(for: $0) }
         }
-        return rankedResults(mapped, query: query)
+        return Array(rankedResults(events.map { eventResult(for: $0) }, query: query).prefix(12))
+    }
+
+    static func eventResult(for event: EKEvent) -> GlobalSearchResult {
+        let item = CalendarEventItem(event: event)
+        let startDate = event.startDate ?? Date()
+        let timeLabel = "\(DateFormatters.dayOfWeek.string(from: startDate)), \(DateFormatters.shortDate.string(from: startDate))"
+        // All-day events reach this list now that `searchEvents` stopped dropping them, and
+        // `CalendarEventItem` clamps one to 00:00 + 1440 minutes — which reads as
+        // "12:00 AM – 12:00 AM". iOS already says "All day" here; so does this.
+        let timeRange = event.isAllDay
+            ? "All day"
+            : TimeFormatters.timeRange(startMin: item.startMin, endMin: item.startMin + item.durationMinutes)
+        let subtitle = [
+            item.calendarTitle,
+            timeLabel,
+            timeRange
+        ]
+        .filter { !$0.isEmpty }
+        .joined(separator: " • ")
+
+        return GlobalSearchResult(
+            id: "event-\(item.id)",
+            category: .events,
+            title: item.title,
+            subtitle: subtitle,
+            icon: "calendar",
+            tintHex: item.calendarColor.globalSearchHexString() ?? (Theme.purple.globalSearchHexString() ?? "#9E8CFF"),
+            destination: .event(item.id)
+        )
     }
 
     /// `taskTitles` names the note's task embeds from the live task rather than from the title

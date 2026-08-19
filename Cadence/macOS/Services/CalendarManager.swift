@@ -269,6 +269,19 @@ final class CalendarManager {
     /// both platforms — see `CadenceCalendarEventSearchSupport`, which owns the matching rule and
     /// records why the all-day exclusion that used to live here was a bug rather than an intent.
     func searchEvents(matching query: String, pastDays: Int = 60, futureDays: Int = 365) -> [EKEvent] {
+        CadenceCalendarEventSearchSupport.results(
+            from: windowEvents(pastDays: pastDays, futureDays: futureDays),
+            query: query
+        )
+    }
+
+    /// The same window `searchEvents` reads, with no query filter applied at all.
+    ///
+    /// Split out for the one caller that resolves a picked Cmd+K result back to an `EKEvent`.
+    /// It used to ask for the window by searching it with an empty query, which is the branch
+    /// that keeps only what has not ended yet — so a past event was findable and not openable.
+    /// See `CadenceCalendarEventSearchSupport.event(from:identifier:)`.
+    func windowEvents(pastDays: Int = 60, futureDays: Int = 365) -> [EKEvent] {
         guard isAuthorized else { return [] }
         let calendars = availableCalendars
         guard !calendars.isEmpty else { return [] }
@@ -277,12 +290,7 @@ final class CalendarManager {
         let start = Calendar.current.date(byAdding: .day, value: -max(0, pastDays), to: now) ?? now
         let end = Calendar.current.date(byAdding: .day, value: max(0, futureDays), to: now) ?? now
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
-
-        return CadenceCalendarEventSearchSupport.results(
-            from: store.events(matching: predicate),
-            query: query,
-            now: now
-        )
+        return store.events(matching: predicate)
     }
 
     // MARK: - Update External Event (iCal event edited in Cadence)

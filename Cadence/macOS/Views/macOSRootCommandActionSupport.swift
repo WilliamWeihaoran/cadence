@@ -110,8 +110,15 @@ enum RootCommandActionSupport {
                 context.setSelection(.inbox)
             }
         case .event(let eventID):
-            let event = context.calendarManager.searchEvents(matching: "")
-                .first { CalendarEventIdentity.matches($0, identifier: eventID) }
+            // The whole fetched window, not `searchEvents(matching: "")` — an empty query means
+            // "what is coming up" and drops everything that has already ended, while search itself
+            // reaches 60 days back. Resolving through it made a past event findable by Cmd+K and
+            // impossible to open: picking it fell through to `setSelection(.calendar)` and left the
+            // calendar wherever it already was, which reads as the row doing nothing.
+            let event = CadenceCalendarEventSearchSupport.event(
+                from: context.calendarManager.windowEvents(),
+                identifier: eventID
+            )
             if let startDate = event?.startDate {
                 context.calendarNavigationManager.open(date: startDate)
             }

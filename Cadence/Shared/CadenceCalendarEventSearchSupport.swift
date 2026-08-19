@@ -50,6 +50,32 @@ nonisolated enum CadenceCalendarEventSearchSupport {
         return (lhs.title ?? "").localizedCaseInsensitiveCompare(rhs.title ?? "") == .orderedAscending
     }
 
+    /// Resolve a picked search result back to its `EKEvent`.
+    ///
+    /// This is the *inverse* of `results(from:query:now:)`, not a use of it. The identifier already
+    /// names exactly one event, so every filter search applies is wrong here — and one of them was
+    /// actively harmful: `macOSRootCommandActionSupport` resolved a Cmd+K event result by calling
+    /// `searchEvents(matching: "")` and scanning the answer, which took the `isUpcoming` branch
+    /// above. Search reaches 60 days into the past, so a finished event could be *found* and then
+    /// not *opened* — picking it navigated nowhere and silently dropped you on today's calendar.
+    ///
+    /// Recurrence is why this scans the fetched window rather than asking `EKEventStore` for the
+    /// identifier: a search result carries an *occurrence* identifier, and
+    /// `EKEventStore.event(withIdentifier:)` hands back the series' base event, whose `startDate`
+    /// is the first occurrence rather than the one that was picked.
+    ///
+    /// `@MainActor` inside an otherwise `nonisolated` enum because `CadenceEventNoteSupport` — the
+    /// single owner of what an event identifier *is* — is main-actor isolated under the app's
+    /// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. Borrowing the identity rule and paying for the
+    /// isolation is the trade this file already argues for elsewhere; re-spelling `identifier ==`
+    /// here to stay nonisolated would be a fourth copy of a predicate that has shipped wrong three
+    /// times. The only caller is a main-actor command handler, so nothing is given up.
+    @MainActor
+    static func event(from events: [EKEvent], identifier: String) -> EKEvent? {
+        guard !identifier.isEmpty else { return nil }
+        return events.first { CadenceEventNoteSupport.matches($0, identifier: identifier) }
+    }
+
     static func results(from events: [EKEvent], query: String, now: Date = Date()) -> [EKEvent] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let filtered = trimmed.isEmpty
