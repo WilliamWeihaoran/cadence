@@ -131,6 +131,9 @@ final class iOSCalendarManager {
             storeVersion += 1
             return true
         } catch {
+            // Matches macOS, which resets on the create path too. The instance is local and
+            // discarded here, so this is parity rather than an observable fix.
+            event.reset()
             print("iOSCalendarManager: failed to create event: \(error)")
             return false
         }
@@ -162,6 +165,12 @@ final class iOSCalendarManager {
             storeVersion += 1
             return true
         } catch {
+            // `EKEvent` is a reference type and this very instance is held by `CalendarEventItem`
+            // and rendered by the timeline. A failed save emits no `EKEventStoreChanged`
+            // notification, so nothing bumps `storeVersion` and nothing refetches: without
+            // `reset()` the UI keeps showing an event that is not in the store, indefinitely.
+            // macOS does this in `CalendarManager.save(_:span:describing:)`.
+            event.reset()
             print("iOSCalendarManager: failed to update event: \(error)")
             return false
         }
@@ -190,6 +199,8 @@ final class iOSCalendarManager {
             try store.save(event, span: .thisEvent)
             storeVersion += 1
         } catch {
+            // Same hazard as `updateEvent`: the mutated `notes` would otherwise stick in the UI.
+            event.reset()
             print("iOSCalendarManager: failed to update event notes: \(error)")
         }
     }

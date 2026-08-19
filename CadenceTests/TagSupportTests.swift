@@ -259,4 +259,79 @@ struct TagSupportTests {
         #expect(note.content == "---\ntags: [\"docs\"]\n---\n\n" + body)
         #expect(MarkdownMetadataParser.splitFrontmatter(in: note.content).body == "\n" + body)
     }
+
+    // MARK: - Ordering determinism (T-160)
+
+    /// `order` + name-ignoring-case was the whole of the old comparator, so tags that tie on both
+    /// came out in whatever order the input happened to be in. Both real inputs are
+    /// `Array(someDictionary.values)`, whose order is unspecified and seeded per process.
+    private func tiedTag(_ idPrefix: String, name: String, slug: String) -> Cadence.Tag {
+        Cadence.Tag(
+            id: UUID(uuidString: "\(idPrefix)-0000-0000-0000-000000000000")!,
+            name: name,
+            slug: slug,
+            order: 0
+        )
+    }
+
+    @Test func tiedTagsSortIdenticallyFromAnyInputOrder() throws {
+        // Same `order`, names equal under `localizedCaseInsensitiveCompare`, distinct stored
+        // slugs so nothing is deduped away. Only the final tie-break can order these.
+        let a = tiedTag("AAAAAAAA", name: "Bug", slug: "bug-a")
+        let b = tiedTag("BBBBBBBB", name: "bug", slug: "bug-b")
+        let c = tiedTag("CCCCCCCC", name: "BUG", slug: "bug-c")
+
+        let expected = ["bug-a", "bug-b", "bug-c"]
+        #expect(TagSupport.sorted([a, b, c]).map(\.slug) == expected)
+        #expect(TagSupport.sorted([c, b, a]).map(\.slug) == expected)
+        #expect(TagSupport.sorted([b, a, c]).map(\.slug) == expected)
+    }
+
+    @Test func duplicateSlugWinnerDoesNotDependOnInputOrder() throws {
+        // `tagsBySlug` keeps the first tag per slug in `TagSupport.sorted` order, so a tie inside
+        // the comparator decides which duplicate becomes the canonical tag for that slug — the
+        // one the `#` picker offers and the one Settings counts.
+        let a = tiedTag("AAAAAAAA", name: "Bug", slug: "bug")
+        let b = tiedTag("BBBBBBBB", name: "bug", slug: "bug")
+        let c = tiedTag("CCCCCCCC", name: "BUG", slug: "bug")
+
+        for permutation in [[a, b, c], [c, b, a], [b, a, c], [c, a, b]] {
+            #expect(TagSupport.uniqueBySlug(permutation).map(\.id) == [a.id])
+        }
+    }
+
+    @Test func tagPickerOffersTheSameEightTagsEveryTime() throws {
+        // `TagPickerSupportViews` shows `uniqueBySlug(...).prefix(8)`. `uniqueBySlug` sorts
+        // `Array(tagsBySlug(tags).values)`, so without a total comparator *which eight tags are
+        // offered* is decided by dictionary order — different on every launch of the same store.
+        let hexDigits = "0123456789"
+        let tags = hexDigits.map { digit in
+            tiedTag(String(repeating: String(digit), count: 8), name: "Bug", slug: "bug-\(digit)")
+        }
+
+        let offered = Array(TagSupport.uniqueBySlug(tags).prefix(8)).map(\.slug)
+
+        #expect(offered == (0..<8).map { "bug-\($0)" })
+        #expect(Array(TagSupport.uniqueBySlug(tags.reversed().map { $0 }).prefix(8)).map(\.slug) == offered)
+    }
+
+    @Test func taskSortedTagsDoesNotDependOnRelationshipOrder() throws {
+        // The call site, not the helper: `AppTask.sortedTags` is what task rows and the inspector
+        // render. A stored to-many relationship has no promised order, so this has to hold for
+        // any order SwiftData hands back.
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let a = tiedTag("AAAAAAAA", name: "Bug", slug: "bug-a")
+        let b = tiedTag("BBBBBBBB", name: "bug", slug: "bug-b")
+        let c = tiedTag("CCCCCCCC", name: "BUG", slug: "bug-c")
+        for tag in [a, b, c] { context.insert(tag) }
+        let task = AppTask(title: "Ordering")
+        context.insert(task)
+
+        task.tags = [c, a, b]
+        #expect(task.sortedTags.map(\.slug) == ["bug-a", "bug-b", "bug-c"])
+
+        task.tags = [b, c, a]
+        #expect(task.sortedTags.map(\.slug) == ["bug-a", "bug-b", "bug-c"])
+    }
 }

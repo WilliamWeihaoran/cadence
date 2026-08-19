@@ -61,11 +61,31 @@ nonisolated enum TagSupport {
         return prefixed.lowercased()
     }
 
+    /// The one tag ordering, and the reason it ends on `id`.
+    ///
+    /// `order` then `name` is not a total order: `order` defaults to 0 on every hand-made tag, and
+    /// CloudKit can land case-variant duplicates of the same name. Two tags that compare equal
+    /// under a partial comparator come out of `sorted` in whatever order the input happened to be
+    /// in — and both callers here feed it a collection with no defined order. `uniqueBySlug` sorts
+    /// `Array(tagsBySlug(tags).values)` and `DataIntegrityRepairService` sorts
+    /// `Array(tagsByID.values)`; Swift `Dictionary` value order is unspecified and seeded per
+    /// process, so the same store can order the `#` picker's eight offered tags differently on
+    /// every launch. Worse, `sorted` runs *inside* `tagsBySlug`, so a tie there decides which
+    /// duplicate becomes canonical for a slug.
+    ///
+    /// `id` closes it, the same way `TaskOrdering.fallbackPrecedes` closes the task comparator:
+    /// unique, stable across launches, and never displayed.
+    nonisolated static func precedes(_ lhs: Tag, _ rhs: Tag) -> Bool {
+        if lhs.order != rhs.order { return lhs.order < rhs.order }
+
+        let nameComparison = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+        if nameComparison != .orderedSame { return nameComparison == .orderedAscending }
+
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
     static func sorted(_ tags: [Tag]) -> [Tag] {
-        tags.sorted {
-            if $0.order != $1.order { return $0.order < $1.order }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
+        tags.sorted(by: precedes)
     }
 
     @discardableResult
@@ -205,10 +225,7 @@ nonisolated enum TagSupport {
     }
 
     static func uniqueBySlug(_ tags: [Tag]) -> [Tag] {
-        Array(tagsBySlug(tags).values).sorted {
-            if $0.order != $1.order { return $0.order < $1.order }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
+        Array(tagsBySlug(tags).values).sorted(by: precedes)
     }
 
     private static func tagsBySlug(_ tags: [Tag]) -> [String: Tag] {
