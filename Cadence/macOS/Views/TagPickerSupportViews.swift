@@ -58,47 +58,6 @@ struct TagPickerControl: View {
     }
 }
 
-struct TagChip: View {
-    let tag: Tag
-    var onRemove: (() -> Void)? = nil
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(Color(hex: tag.colorHex))
-                .frame(width: 6, height: 6)
-            Text(tag.name)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Theme.muted)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: 118, alignment: .leading)
-            if let onRemove {
-                Button(action: onRemove) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(Theme.dim.opacity(0.8))
-                        // The glyph alone is about 8x9pt, which `.cadencePlain`'s content shape
-                        // then clamps to a capsule inside that. Fiddly with a mouse and the
-                        // smallest hit target in the app.
-                        .frame(width: 14, height: 14)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.cadencePlain)
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(Color(hex: tag.colorHex).opacity(0.14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 7)
-                .stroke((tag.isArchived ? Theme.dim : Color(hex: tag.colorHex)).opacity(0.35), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .opacity(tag.isArchived ? 0.62 : 1)
-    }
-}
-
 private struct AdaptiveSelectedTagStrip: View {
     let tags: [Tag]
     let onRemove: (Tag) -> Void
@@ -113,9 +72,9 @@ private struct AdaptiveSelectedTagStrip: View {
     }
 
     private func selectedTagRow(limit: Int) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: CadenceTagChipStyle.editableStripSpacing(for: .regular)) {
             ForEach(tags.prefix(limit)) { tag in
-                TagChip(tag: tag) {
+                CadenceTagChip(tag: tag) {
                     onRemove(tag)
                 }
             }
@@ -161,75 +120,22 @@ struct CompactTagStrip: View {
     private func compactTagRow(limit: Int) -> some View {
         HStack(spacing: 4) {
             ForEach(visibleTags.prefix(limit)) { tag in
-                TagMiniChip(tag: tag)
+                CadenceTagChip(tag: tag, size: .compact)
             }
             if visibleTags.count > limit {
-                TagOverflowBadge(count: visibleTags.count - limit, hiddenTags: visibleTags.dropFirst(limit), size: .mini)
+                TagOverflowBadge(count: visibleTags.count - limit, hiddenTags: visibleTags.dropFirst(limit), size: .compact)
             }
         }
         .fixedSize(horizontal: true, vertical: false)
     }
 }
 
-struct TagMiniChip: View {
-    let tag: Tag
-
-    var body: some View {
-        Text(tag.name)
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(tag.isArchived ? Theme.dim : Color(hex: tag.colorHex))
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(maxWidth: 88, alignment: .leading)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 3)
-            .background(Color(hex: tag.colorHex).opacity(tag.isArchived ? 0.08 : 0.13))
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-            .overlay(
-                RoundedRectangle(cornerRadius: 5)
-                    .stroke(Color(hex: tag.colorHex).opacity(tag.isArchived ? 0.18 : 0.26), lineWidth: 1)
-            )
-            .help(tag.isArchived ? "\(tag.name) (archived)" : tag.name)
-    }
-}
-
+/// The `+N` a strip collapses into, plus the popover that keeps the collapsed tags reachable.
+/// The badge itself is `CadenceTagOverflowBadge`; what lives here is only the reachability.
 private struct TagOverflowBadge: View {
-    enum Size {
-        case regular
-        case mini
-
-        var fontSize: CGFloat {
-            switch self {
-            case .regular: return 11
-            case .mini: return 9
-            }
-        }
-
-        var horizontalPadding: CGFloat {
-            switch self {
-            case .regular: return 7
-            case .mini: return 5
-            }
-        }
-
-        var verticalPadding: CGFloat {
-            switch self {
-            case .regular: return 5
-            case .mini: return 3
-            }
-        }
-
-        var cornerRadius: CGFloat {
-            switch self {
-            case .regular: return 7
-            case .mini: return 5
-            }
-        }
-    }
-
     let count: Int
     let hiddenTags: ArraySlice<Tag>
-    var size: Size = .regular
+    var size: CadenceTagChipSize = .regular
     /// Supplied by editable strips only. Read-only strips pass nothing and keep the plain
     /// tooltip, because there is nothing there to remove a tag from.
     var onRemove: ((Tag) -> Void)? = nil
@@ -242,9 +148,9 @@ private struct TagOverflowBadge: View {
                 .buttonStyle(.cadencePlain)
                 .help("Show the tags that do not fit")
                 .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: CadenceTagChipStyle.editableStripLineSpacing(for: .regular)) {
                         ForEach(Array(hiddenTags)) { tag in
-                            TagChip(tag: tag) {
+                            CadenceTagChip(tag: tag) {
                                 onRemove(tag)
                                 // Close on the last one rather than leave an empty popover
                                 // anchored to a badge that is no longer being drawn.
@@ -255,18 +161,12 @@ private struct TagOverflowBadge: View {
                     .padding(8)
                 }
         } else {
-            badge.help(hiddenTags.map(\.name).joined(separator: ", "))
+            badge.help(hiddenTags.map { CadenceTagChipStyle.accessibilityLabel(for: $0) }.joined(separator: ", "))
         }
     }
 
     private var badge: some View {
-        Text("+\(count)")
-            .font(.system(size: size.fontSize, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            .padding(.horizontal, size.horizontalPadding)
-            .padding(.vertical, size.verticalPadding)
-            .background(Theme.surfaceElevated.opacity(0.75))
-            .clipShape(RoundedRectangle(cornerRadius: size.cornerRadius))
+        CadenceTagOverflowBadge(count: count, size: size)
     }
 }
 
@@ -292,23 +192,7 @@ struct TagFilterBar: View {
                                 selectedSlugs.insert(tag.slug)
                             }
                         } label: {
-                            HStack(spacing: 5) {
-                                Circle()
-                                    .fill(Color(hex: tag.colorHex))
-                                    .frame(width: 6, height: 6)
-                                Text(tag.name)
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .lineLimit(1)
-                            }
-                            .foregroundStyle(isSelected ? Theme.text : Theme.dim)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 5)
-                            .background(isSelected ? Color(hex: tag.colorHex).opacity(0.18) : Theme.surfaceElevated.opacity(0.58))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 7)
-                                    .stroke(Color(hex: tag.colorHex).opacity(isSelected ? 0.42 : 0.18), lineWidth: 1)
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 7))
+                            CadenceTagChip(tag: tag, selection: isSelected ? .on : .off)
                         }
                         .buttonStyle(.cadencePlain)
                         .help(isSelected ? "Remove tag filter" : "Filter by \(tag.name)")

@@ -148,14 +148,8 @@ struct TagPickerPopover: View {
                 }
             } label: {
                 HStack(spacing: 8) {
-                    Circle()
-                        .fill(Color(hex: tag.colorHex))
-                        .frame(width: 8, height: 8)
-                    Text(tag.name)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                    Spacer()
+                    CadenceTagChip(tag: tag)
+                    Spacer(minLength: 8)
                     if selected {
                         Image(systemName: "checkmark")
                             .font(.system(size: 11, weight: .semibold))
