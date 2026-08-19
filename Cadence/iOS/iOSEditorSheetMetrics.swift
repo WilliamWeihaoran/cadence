@@ -18,7 +18,7 @@ import SwiftUI
 /// from here now. "Editor sheet" is the unit these figures belong to, not "sheet with a markdown
 /// well in it".
 ///
-/// Deliberately **outside** `#if os(iOS)`, like `iOSTaskInspectorMetrics` and `iOSPageHeaderMetrics`
+/// Deliberately **outside** `#if os(iOS)`, like `iOSTaskInspectorMetrics` and `CadencePageHeaderMetrics`
 /// and for the same reason: these are decisions, and the macOS-built test target has to be able to
 /// read them. Nothing in the enum draws.
 ///

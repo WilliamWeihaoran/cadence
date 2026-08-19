@@ -1,29 +1,37 @@
 #if os(macOS)
 import SwiftUI
 
+/// A `.page`-role `DesktopPageHeader` with a controls row under it. Goals and Habits are the two
+/// callers; the search field and status filter below the title are what earns the second row.
+///
+/// It used to spell its own title, its own gutter and its own header padding, plus a `titleSize`
+/// parameter no caller had ever passed. The padding lives on this stack rather than on the header
+/// because the two rows are one band — hence `padded: false, background: nil` on the header.
 struct CommitmentPageHeader<Accessory: View, Controls: View>: View {
     let title: String
-    var titleSize: CGFloat = CadenceDesktopMetrics.pageTitleSize
     @ViewBuilder let accessory: Accessory
     @ViewBuilder let controls: Controls
 
+    private var metrics: CadencePageHeaderMetrics {
+        CadencePageHeaderMetrics.metrics(role: .page, surface: .desktop)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 16) {
-                Text(title)
-                    .font(.system(size: titleSize, weight: .bold))
-                    .foregroundStyle(Theme.text)
-
-                Spacer(minLength: 20)
-
+            DesktopPageHeader(
+                role: .page,
+                title: title,
+                padded: false,
+                background: nil
+            ) {
                 accessory
             }
 
             controls
         }
-        .padding(.horizontal, CadenceDesktopMetrics.pageHorizontalPadding)
-        .padding(.top, CadenceDesktopMetrics.pageHeaderTopPadding)
-        .padding(.bottom, CadenceDesktopMetrics.pageHeaderBottomPadding)
+        .padding(.horizontal, metrics.horizontalPadding)
+        .padding(.top, metrics.topPadding)
+        .padding(.bottom, metrics.bottomPadding)
         .background(Theme.surface)
     }
 }
@@ -32,13 +40,16 @@ struct CommitmentIconTile: View {
     let systemImage: String
     let color: Color
     var size: CGFloat = 32
-    var iconSize: CGFloat = 13
+    /// Defaulted from the one glyph-to-tile ratio rather than restated, so a caller that resizes
+    /// the tile and forgets the glyph gets a proportional tile instead of a third ratio. See
+    /// `CadencePageHeaderMetrics.iconSize`.
+    var iconSize: CGFloat? = nil
     var cornerRadius: CGFloat? = nil
-    var fillOpacity: Double = 0.14
+    var fillOpacity: Double = CadencePageHeaderMetrics.tileFillOpacity
 
     var body: some View {
         Image(systemName: systemImage)
-            .font(.system(size: iconSize, weight: .semibold))
+            .font(.system(size: iconSize ?? size * CadencePageHeaderMetrics.tileGlyphRatio, weight: .semibold))
             .foregroundStyle(color)
             .frame(width: size, height: size)
             .background(color.opacity(fillOpacity))

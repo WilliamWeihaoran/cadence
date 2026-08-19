@@ -208,7 +208,7 @@ struct iOSFeatureRowLink<Label: View, Destination: View>: View {
 /// about appearance any more.
 ///
 /// What survives as a parameter is `role`, and only that: a column inside a split legitimately
-/// speaks more quietly than a whole screen. Everything else is `iOSPageHeaderMetrics`, which is
+/// speaks more quietly than a whole screen. Everything else is `CadencePageHeaderMetrics`, which is
 /// outside `#if os(iOS)` so the ramp can be pinned by a test.
 ///
 /// **No subtitle.** `iOSCompactPageHeader` had one and no caller had passed it since the standing
@@ -218,8 +218,8 @@ struct iOSFeatureRowLink<Label: View, Destination: View>: View {
 struct iOSPageHeader<Trailing: View>: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    /// What this row is the top of. See `iOSPageHeaderRole`.
-    var role: iOSPageHeaderRole = .page
+    /// What this row is the top of. See `CadencePageHeaderRole`.
+    var role: CadencePageHeaderRole = .page
     /// Optional only because Settings' category header sits beside a rail that already names the
     /// category, and an eyebrow there would label the label.
     var eyebrow: String? = nil
@@ -246,7 +246,7 @@ struct iOSPageHeader<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        let metrics = iOSPageHeaderMetrics.metrics(
+        let metrics = CadencePageHeaderMetrics.metrics(
             role: role,
             isRegularWidth: horizontalSizeClass == .regular
         )
@@ -296,7 +296,7 @@ struct iOSPageHeader<Trailing: View>: View {
         .padding(.bottom, padded ? metrics.bottomPadding : 0)
     }
 
-    private func eyebrowLine(_ metrics: iOSPageHeaderMetrics) -> some View {
+    private func eyebrowLine(_ metrics: CadencePageHeaderMetrics) -> some View {
         HStack(spacing: 6) {
             if let eyebrow {
                 SectionEyebrowLabel(text: eyebrow)
@@ -316,7 +316,7 @@ struct iOSPageHeader<Trailing: View>: View {
 
 extension iOSPageHeader where Trailing == EmptyView {
     init(
-        role: iOSPageHeaderRole = .page,
+        role: CadencePageHeaderRole = .page,
         eyebrow: String? = nil,
         eyebrowDetail: String? = nil,
         title: String,
@@ -347,7 +347,7 @@ extension iOSPageHeader where Trailing == EmptyView {
 /// counts in blue.
 private struct iOSPageHeaderCountBadge: View {
     let count: Int
-    let metrics: iOSPageHeaderMetrics
+    let metrics: CadencePageHeaderMetrics
 
     var body: some View {
         Text("\(count)")
@@ -358,7 +358,7 @@ private struct iOSPageHeaderCountBadge: View {
             .fixedSize()
             .padding(.horizontal, metrics.countPaddingH)
             .padding(.vertical, metrics.countPaddingV)
-            .background(Theme.blue.opacity(0.11))
+            .background(Theme.blue.opacity(CadencePageHeaderMetrics.countFillOpacity))
             .clipShape(Capsule())
     }
 }

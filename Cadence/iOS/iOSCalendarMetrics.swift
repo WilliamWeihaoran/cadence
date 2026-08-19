@@ -12,13 +12,13 @@ import CoreGraphics
 ///
 /// What survives is stated here, and the rule it survives under is the one the earlier slices used:
 /// a figure may vary with width when it is about the **host** rather than about the thing being
-/// drawn. Two do. The page gutter is the app's own, read straight off `iOSPageHeaderMetrics` rather
+/// drawn. Two do. The page gutter is the app's own, read straight off `CadencePageHeaderMetrics` rather
 /// than re-invented here, so the calendar's top row and its Board share the margin All Tasks, Inbox
 /// and Today already use. The other two — the hour rail's width and a day column's preferred width —
 /// live in `CadenceCalendarWeekGridLayout`, where they are already tested, because they answer "how
 /// much of a week fits in this pane".
 ///
-/// Deliberately **outside** `#if os(iOS)`, like `iOSPageHeaderMetrics`, `iOSTaskCollectionMetrics`
+/// Deliberately **outside** `#if os(iOS)`, like `CadencePageHeaderMetrics`, `iOSTaskCollectionMetrics`
 /// and `iOSTaskInspectorMetrics`: `Cadence/iOS/` is invisible to the macOS-built test target, and
 /// the part worth pinning is the decisions rather than the drawing. Nothing in this file draws.
 
@@ -117,9 +117,9 @@ nonisolated enum iOSCalendarTimelineMetrics {
 /// switch.
 ///
 /// This row **is** a page header — it leads with the feature's identity tile and the page's title —
-/// so its gutter, its row spacing and its tile are `iOSPageHeaderMetrics`' rather than a fourth
+/// so its gutter, its row spacing and its tile are `CadencePageHeaderMetrics`' rather than a fourth
 /// private spelling of them. It had one: a 34/15 icon tile, which is exactly the drift
-/// `iOSPageHeaderMetrics.iconSize` was written to stop, and it drew that tile on iPad only, so the
+/// `CadencePageHeaderMetrics.iconSize` was written to stop, and it drew that tile on iPad only, so the
 /// one page in the app whose header changed identity depending on the device was this one.
 nonisolated enum iOSCalendarToolbarMetrics {
     /// Above and below the row. One number, where it was `regular ? 10 : 12` — a ramp pointing the
@@ -171,11 +171,11 @@ nonisolated enum iOSCalendarBoardMetrics {
 nonisolated enum iOSCalendarPageMetrics {
     /// The margin between the calendar's content and the edge of its pane.
     ///
-    /// Ramped, and deliberately not re-decided here: it is `iOSPageHeaderMetrics`' page gutter, so
+    /// Ramped, and deliberately not re-decided here: it is `CadencePageHeaderMetrics`' page gutter, so
     /// the calendar is inset by the same amount as All Tasks, Inbox and Today rather than by a
     /// number of its own. The calendar had two of its own — 18/16 on the toolbar and 20/14 on the
     /// Board — which is how one screen came to have two left edges.
     static func horizontalPadding(isRegularWidth: Bool) -> CGFloat {
-        iOSPageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegularWidth).horizontalPadding
+        CadencePageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegularWidth).horizontalPadding
     }
 }

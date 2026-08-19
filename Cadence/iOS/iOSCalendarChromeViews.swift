@@ -55,8 +55,8 @@ struct iOSCalendarToolbar: View {
 
     private let calendar = Calendar.current
 
-    private var headerMetrics: iOSPageHeaderMetrics {
-        iOSPageHeaderMetrics.metrics(role: .page, isRegularWidth: horizontalSizeClass == .regular)
+    private var headerMetrics: CadencePageHeaderMetrics {
+        CadencePageHeaderMetrics.metrics(role: .page, isRegularWidth: horizontalSizeClass == .regular)
     }
 
     var body: some View {
@@ -148,9 +148,9 @@ struct iOSCalendarToolbar: View {
     /// the page you are already looking at, which the tab bar and sidebar both already say.
     ///
     /// The run of it — optional back control, identity tile, title — **is** `iOSPageHeader`'s, so it
-    /// is drawn at `iOSPageHeaderMetrics`' figures rather than at a private copy of them. It had a
+    /// is drawn at `CadencePageHeaderMetrics`' figures rather than at a private copy of them. It had a
     /// private copy: a 34/15 tile, which is a third spelling of the tile
-    /// `iOSPageHeaderMetrics.iconSize` exists to keep singular, drawn at regular width only. A page
+    /// `CadencePageHeaderMetrics.iconSize` exists to keep singular, drawn at regular width only. A page
     /// whose header carries the feature's glyph on one device and not the other is the divergence
     /// this slice is about, in its plainest form — there is no width at which a 32pt tile does not
     /// fit a row that already holds a 30pt back chevron and a 208pt title.

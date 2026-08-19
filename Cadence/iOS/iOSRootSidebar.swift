@@ -428,7 +428,6 @@ enum iOSSidebarMetrics {
     static let iconSlotWidth: CGFloat = 20
     static let iconLabelSpacing: CGFloat = 9
     static let labelFontSize: CGFloat = 14
-    static let countFontSize: CGFloat = 12
     /// Minimum gap held between a truncating label and its count.
     static let badgeLeadingGap: CGFloat = 8
     static let groupSpacing: CGFloat = 8
@@ -642,7 +641,7 @@ struct iOSSidebarButton: View {
             Spacer(minLength: iOSSidebarMetrics.badgeLeadingGap)
 
             if let count {
-                iOSSidebarCountLabel(count: count)
+                CadenceSidebarCountLabel(count: count)
                     // The count is the row's fixed element; the label is what gives.
                     .layoutPriority(1)
             }
@@ -663,7 +662,7 @@ struct iOSSidebarButton: View {
                 .frame(height: iOSSidebarMetrics.buttonHeight)
 
             if let count {
-                iOSSidebarCountLabel(count: count)
+                CadenceSidebarCountLabel(count: count)
                     .padding(.trailing, 2)
                     .padding(.top, 3)
             }
@@ -683,39 +682,6 @@ struct iOSSidebarButton: View {
     /// unchanged row.
     private var selectionLayer: some View {
         selectionShape.fill(isSelected ? Theme.surfaceHighlight : Color.clear)
-    }
-}
-
-/// The trailing count on **every** sidebar row — nav and list alike.
-///
-/// Bare digits, no capsule: a pill drew a border, a fill and a radius around a number that says
-/// everything it has to say in `Theme.dim`. Which count is allowed to be red is not this view's
-/// call — `CadenceSidebarLayout.count(for:counts:)` hands out the single urgent emphasis in the
-/// column (Today's overdue tally), and this reads it.
-///
-/// Fixed-size on purpose: three digits must never be squeezed or clipped by a long label.
-struct iOSSidebarCountLabel: View {
-    let count: CadenceSidebarCount
-
-    private var text: String {
-        count.value > 999 ? "999+" : "\(count.value)"
-    }
-
-    private var tint: Color {
-        switch count.emphasis {
-        case .urgent: return Theme.red
-        case .neutral: return Theme.dim
-        }
-    }
-
-    var body: some View {
-        Text(text)
-            .font(.system(size: iOSSidebarMetrics.countFontSize, weight: .medium))
-            .monospacedDigit()
-            .foregroundStyle(tint)
-            .lineLimit(1)
-            .fixedSize()
-            .accessibilityHidden(true)
     }
 }
 
@@ -787,7 +753,7 @@ struct iOSSidebarListRow: View {
             }
 
             if let count = CadenceSidebarLayout.listCount(openTaskCount: item.openTaskCount) {
-                iOSSidebarCountLabel(count: count)
+                CadenceSidebarCountLabel(count: count)
                     .layoutPriority(1)
             }
         }

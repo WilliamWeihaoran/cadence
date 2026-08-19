@@ -118,7 +118,7 @@ nonisolated enum CadenceTodayLayoutSupport {
 /// apart inside a card and padded its empty state 14; the two-pane task column stacked the *same*
 /// groups 15pt apart with no card and padded the same empty state 18. Nobody chose 14-against-15 —
 /// it is what two copies of one list become after a few edits each, and it is the drift
-/// `iOSPageHeaderMetrics` was written to stop for headers.
+/// `CadencePageHeaderMetrics` was written to stop for headers.
 ///
 /// **The card is the one difference with a reason, and the reason is the host's background rather
 /// than the device.** The compact layout is drawn on a `Theme.bg` page, where a `Theme.surface`

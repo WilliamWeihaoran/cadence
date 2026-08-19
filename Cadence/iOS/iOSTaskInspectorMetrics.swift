@@ -21,7 +21,7 @@ import SwiftUI
 /// of them down again. What is left here is what only this sheet has: the width its form stops
 /// growing at, a completion circle at the head of its title, and the figures derived from it.
 ///
-/// Deliberately **outside** `#if os(iOS)`, like `iOSPageHeaderMetrics` and for the same reason: a
+/// Deliberately **outside** `#if os(iOS)`, like `CadencePageHeaderMetrics` and for the same reason: a
 /// type ramp is a decision, and the macOS-built test target has to be able to read it. Nothing here
 /// draws.
 ///
@@ -80,7 +80,7 @@ nonisolated enum iOSTaskInspectorMetrics {
     ///
     /// Derived, not stated: the indent *is* the circle plus the gap, and writing it out again is
     /// how `(isRegularWidth ? 26 : 24) + 12` came to restate a ramp that lived in another file.
-    /// Same lesson as `iOSPageHeaderMetrics.iconSize` — a tile can never be resized without its
+    /// Same lesson as `CadencePageHeaderMetrics.iconSize` — a tile can never be resized without its
     /// glyph following.
     static var titleColumnInset: CGFloat {
         completionGlyphSize + titleRowSpacing

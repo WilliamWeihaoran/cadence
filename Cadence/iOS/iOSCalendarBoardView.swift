@@ -61,7 +61,7 @@ struct iOSCalendarBoardPlanner: View {
         )
     }
 
-    /// The calendar page's gutter, which is `iOSPageHeaderMetrics`'. It was `20 : 14` here against
+    /// The calendar page's gutter, which is `CadencePageHeaderMetrics`'. It was `20 : 14` here against
     /// the toolbar's `18 : 16` directly above, so one screen had two left edges at both widths.
     private var horizontalPadding: CGFloat {
         iOSCalendarBoardMetrics.horizontalPadding(isRegularWidth: isRegularWidth)

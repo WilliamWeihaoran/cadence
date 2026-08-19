@@ -3,75 +3,133 @@ import SwiftUI
 import SwiftData
 import AppKit
 
+/// **The** macOS header row: an eyebrow, a title, and optionally an identity tile, a count and
+/// one trailing control.
+///
+/// It replaces four of these. `DesktopPageHeader`, `PanelHeader`, `CommitmentPageHeader` and
+/// `CadenceSettingsHeader` each drew the same idea and had drifted into three title spellings, three
+/// identity tiles (32/15, 32/13 and 42/17 — three glyph ratios for one shape) and three tile fill
+/// opacities. The three other names survive as thin wrappers over this; none of them decides
+/// anything about appearance any more.
+///
+/// What survives as a parameter is `role`, and only that: a column inside a split legitimately
+/// speaks more quietly than a whole screen. Everything else is `CadencePageHeaderMetrics`, which is
+/// in `Shared/` outside any platform guard so the ramp can be pinned by a test — and so this and
+/// `iOSPageHeader` are demonstrably drawing from one decision rather than two that happen to agree.
+///
+/// **No subtitle.** A line under "All Tasks" explaining that All Tasks is where you review tasks
+/// describes the page you are already looking at. Empty states, search results and picker rows are
+/// the documented exceptions and none of them is a page header.
+///
+/// Two things here are deliberately *not* `iOSPageHeader`'s:
+/// - **The count sits beside the title, not at the trailing edge.** iOS moved it to the trailing
+///   edge because a phone header is 340pt wide and the two ends read as one row. A macOS page
+///   header is the window less the sidebar — 1100pt and up — and a number parked at x=1150 does
+///   not read as the count of a title at x=18.
+/// - **The count takes the page tint**, so an area's tally is the area's colour. iOS counts in blue
+///   everywhere because its list rows already carry colour; macOS headers do not.
 struct DesktopPageHeader<TrailingContent: View>: View {
+    /// What this row is the top of. See `CadencePageHeaderRole`.
+    let role: CadencePageHeaderRole
     let eyebrow: String?
     let title: String
     let count: Int?
     let systemImage: String?
     let tint: Color
+    /// `false` where the host supplies the gutter — a settings card, or a header that pads this
+    /// row and a controls row underneath it as one block.
+    let padded: Bool
+    /// `nil` where the host paints its own plate. Today's three columns do.
+    let background: Color?
+    /// `false` where the row is a *fragment* of a wider row its host is assembling — Today's
+    /// columns put their own controls beside this header, so it must stay intrinsically sized
+    /// rather than claim the width with a `Spacer` and leave the host's own one nothing to do.
+    let spreads: Bool
     @ViewBuilder let trailingContent: TrailingContent
 
     init(
+        role: CadencePageHeaderRole = .page,
         eyebrow: String? = nil,
         title: String,
         count: Int? = nil,
         systemImage: String? = nil,
         tint: Color = Theme.blue,
+        padded: Bool = true,
+        background: Color? = Theme.surface,
+        spreads: Bool = true,
         @ViewBuilder trailingContent: () -> TrailingContent = { EmptyView() }
     ) {
+        self.role = role
         self.eyebrow = eyebrow
         self.title = title
         self.count = count
         self.systemImage = systemImage
         self.tint = tint
+        self.padded = padded
+        self.background = background
+        self.spreads = spreads
         self.trailingContent = trailingContent()
     }
 
+    private var metrics: CadencePageHeaderMetrics {
+        CadencePageHeaderMetrics.metrics(role: role, surface: .desktop)
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            HStack(alignment: .top, spacing: 11) {
+        HStack(alignment: .center, spacing: 16) {
+            HStack(alignment: .center, spacing: metrics.rowSpacing) {
                 if let systemImage {
-                    Image(systemName: systemImage)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(tint)
-                        .frame(width: 32, height: 32)
-                        .background(tint.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius, style: .continuous))
+                    CommitmentIconTile(
+                        systemImage: systemImage,
+                        color: tint,
+                        size: metrics.tileSize,
+                        iconSize: metrics.iconSize
+                    )
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     if let eyebrow {
-                        Text(eyebrow.uppercased())
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
-                            .tracking(0.8)
+                        SectionEyebrowLabel(text: eyebrow)
                     }
 
                     HStack(alignment: .firstTextBaseline, spacing: 9) {
                         Text(title)
-                            .font(.system(size: CadenceDesktopMetrics.pageTitleSize, weight: .bold))
+                            .font(.system(size: metrics.titleSize, weight: .bold))
                             .foregroundStyle(Theme.text)
+                            .lineLimit(1)
 
+                        // A zero is chrome: the absence of a badge is the zero state, the same
+                        // rule the sidebar counts follow.
                         if let count, count > 0 {
-                            Text("\(count)")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(tint)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(tint.opacity(0.12))
-                                .clipShape(Capsule())
+                            countBadge(count)
                         }
                     }
                 }
             }
 
-            Spacer(minLength: 16)
-            trailingContent
+            if spreads {
+                Spacer(minLength: 16)
+                trailingContent
+            }
         }
-        .padding(.horizontal, CadenceDesktopMetrics.pageHorizontalPadding)
-        .padding(.top, CadenceDesktopMetrics.pageHeaderTopPadding)
-        .padding(.bottom, CadenceDesktopMetrics.pageHeaderBottomPadding)
-        .background(Theme.surface)
+        .padding(.horizontal, padded ? metrics.horizontalPadding : 0)
+        .padding(.top, padded ? metrics.topPadding : 0)
+        .padding(.bottom, padded ? metrics.bottomPadding : 0)
+        // ViewBuilder form rather than `.background(background)`: an `Optional<Color>` satisfies
+        // the deprecated `background(_ view:)` overload rather than the `ShapeStyle` one, which
+        // compiles and is not what this means.
+        .background { if let background { background } }
+    }
+
+    private func countBadge(_ count: Int) -> some View {
+        Text("\(count)")
+            .font(.system(size: metrics.countSize, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(tint)
+            .padding(.horizontal, metrics.countPaddingH)
+            .padding(.vertical, metrics.countPaddingV)
+            .background(tint.opacity(CadencePageHeaderMetrics.countFillOpacity))
+            .clipShape(Capsule())
     }
 }
 

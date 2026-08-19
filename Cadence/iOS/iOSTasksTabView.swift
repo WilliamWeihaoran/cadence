@@ -63,7 +63,7 @@ private struct iOSTasksTabHeader: View {
     var body: some View {
         // The switcher's gutter is the header's own, read from the same ramp rather than typed
         // beside it — the two are one row of chrome and must share an edge.
-        let metrics = iOSPageHeaderMetrics.metrics(
+        let metrics = CadencePageHeaderMetrics.metrics(
             role: .page,
             isRegularWidth: horizontalSizeClass == .regular
         )

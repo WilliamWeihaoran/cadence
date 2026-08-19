@@ -123,7 +123,7 @@ struct SidebarNavRow: View {
                 Spacer(minLength: SidebarMetrics.badgeLeadingGap)
 
                 if let count {
-                    SidebarCountLabel(count: count)
+                    CadenceSidebarCountLabel(count: count)
                         // The count is the row's fixed element; the label is what gives.
                         .layoutPriority(1)
                 }
@@ -167,39 +167,6 @@ struct SidebarNavRow: View {
             return Theme.surfaceElevated
         }
         return Color.clear
-    }
-}
-
-/// The trailing count on **every** sidebar row — nav and list alike.
-///
-/// One component rather than one per row type, and one colour rule: `Theme.dim`, except for the
-/// single count `CadenceSidebarLayout` marks urgent (Today's overdue tally), which is the only red
-/// in this column. The sidebar used to decide colour for itself — a tinted capsule that inverted
-/// on selection — while the task rows and the calendar had already settled on "red means late".
-///
-/// Fixed-size on purpose: three digits must never be squeezed or clipped by a long label.
-struct SidebarCountLabel: View {
-    let count: CadenceSidebarCount
-
-    private var text: String {
-        count.value > 999 ? "999+" : "\(count.value)"
-    }
-
-    private var tint: Color {
-        switch count.emphasis {
-        case .urgent: return Theme.red
-        case .neutral: return Theme.dim
-        }
-    }
-
-    var body: some View {
-        Text(text)
-            .font(.system(size: SidebarMetrics.countFontSize, weight: .medium))
-            .monospacedDigit()
-            .foregroundStyle(tint)
-            .lineLimit(1)
-            .fixedSize()
-            .accessibilityHidden(true)
     }
 }
 
@@ -278,7 +245,7 @@ struct SidebarListRow: View {
                 }
 
                 if let count {
-                    SidebarCountLabel(count: count)
+                    CadenceSidebarCountLabel(count: count)
                         .layoutPriority(1)
                 }
             }

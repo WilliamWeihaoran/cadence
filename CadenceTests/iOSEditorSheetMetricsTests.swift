@@ -10,7 +10,7 @@ import Testing
 /// `Cadence/iOS/` is inside `#if os(iOS)` and invisible to this macOS-built target, so what these
 /// pin is the thing worth pinning: the decisions themselves. `iOSEditorSheetMetrics` lives outside
 /// the platform guard for exactly that reason, as `iOSTaskInspectorMetrics` and
-/// `iOSPageHeaderMetrics` already do.
+/// `CadencePageHeaderMetrics` already do.
 struct iOSEditorSheetMetricsTests {
 
     // MARK: - The markdown well

@@ -29,7 +29,7 @@ struct iOSCalendarMetricsTests {
     /// which is what All Tasks, Inbox and Today are inset by.
     @Test func theCalendarIsInsetByThePageGutterAndNotAGutterOfItsOwn() {
         for isRegular in Self.widths {
-            let page = iOSPageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegular)
+            let page = CadencePageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegular)
 
             #expect(
                 iOSCalendarPageMetrics.horizontalPadding(isRegularWidth: isRegular)
@@ -117,7 +117,7 @@ struct iOSCalendarMetricsTests {
     /// the tile is a size the shared type states rather than a literal beside it.
     @Test func theToolbarTileIsThePageHeaderTile() {
         for isRegular in Self.widths {
-            let page = iOSPageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegular)
+            let page = CadencePageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegular)
 
             #expect(page.iconSize == page.tileSize * 0.44)
             #expect(page.tileSize >= 32, "tile \(page.tileSize) at isRegular=\(isRegular)")
@@ -137,7 +137,7 @@ struct iOSCalendarMetricsTests {
     /// 116, which was a floor for a title that always had a row to itself.
     @Test func theTitleFloorLeavesRoomForTheTileBesideIt() {
         for isRegular in Self.widths {
-            let page = iOSPageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegular)
+            let page = CadencePageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegular)
             let chrome = page.tileSize + page.rowSpacing
 
             #expect(

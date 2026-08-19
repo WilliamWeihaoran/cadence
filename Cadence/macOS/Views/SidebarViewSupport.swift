@@ -220,10 +220,10 @@ enum SidebarMetrics {
 
     // MARK: Counts
 
-    /// Counts are bare digits, not filled capsules: a pill drew a border, a fill and a
-    /// radius around a number that says everything it has to say in `Theme.dim`. Nav rows
-    /// and list rows render the same `SidebarCountLabel`.
-    static let countFontSize: CGFloat = 11
+    /// Counts are bare digits, not filled capsules, and both platforms draw them with the same
+    /// `CadenceSidebarCountLabel` — the size lives in `CadenceSidebarCountMetrics`, not here,
+    /// because a per-platform sidebar metrics enum is exactly where the 11-against-12 fork was.
+    ///
     /// Minimum gap held between a row's truncating label and its count. The count is
     /// fixed-size and wins layout priority, so this is the point at which the *label*
     /// starts truncating — a three-digit count never overlaps it.

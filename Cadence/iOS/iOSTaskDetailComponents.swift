@@ -305,7 +305,14 @@ struct iOSTaskTagStrip: View {
     }
 
     var body: some View {
-        CadenceWrappingHStack(spacing: 6, lineSpacing: 6) {
+        CadenceWrappingHStack(
+            spacing: CadenceTagChipStyle.editableStripSpacing(for: .regular),
+            // Wider than it looks like it needs to be. The chip's remove control carries a 44pt
+            // touch target grown past what is drawn, so these two numbers are the clearance that
+            // keeps one chip's expanded hit area off the chip beside and below it — see
+            // `CadenceTagChipStyle.editableStripSpacing`.
+            lineSpacing: CadenceTagChipStyle.editableStripLineSpacing(for: .regular)
+        ) {
             // The `+` leads rather than trails. Trailing it — which is where macOS puts its
             // equivalent — meant the button moved every time a tag was added or removed, and a
             // popover anchored to a control that has just relocated gets repositioned by UIKit,
@@ -337,20 +344,12 @@ struct iOSTaskTagStrip: View {
             }
 
             ForEach(selectedTags) { tag in
-                Button {
+                // The whole chip used to be the remove button — a destructive action on a target
+                // that reads as a label. The `x` is the control now, and it is the *only* control,
+                // so the chip's fill has nothing to swallow.
+                CadenceTagChip(tag: tag) {
                     remove(tag)
-                } label: {
-                    HStack(spacing: 4) {
-                        iOSTagChip(tag: tag)
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Theme.dim)
-                    }
-                    .contentShape(Rectangle())
-                    .iOSExpandedHitArea(8)
                 }
-                .buttonStyle(.iosPressable)
-                .accessibilityLabel("Remove tag \(tag.name.isEmpty ? tag.slug : tag.name)")
             }
         }
     }
@@ -455,7 +454,7 @@ struct iOSTaskTagPickerPopover: View {
             toggle(tag)
         } label: {
             HStack(spacing: 8) {
-                iOSTagChip(tag: tag)
+                CadenceTagChip(tag: tag)
                 Spacer(minLength: 8)
                 if isSelected {
                     Image(systemName: "checkmark")
@@ -554,23 +553,4 @@ struct iOSSubtaskRow: View {
     }
 }
 
-struct iOSTagChip: View {
-    let tag: Tag
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(Color(hex: tag.colorHex))
-                .frame(width: 7, height: 7)
-            Text(tag.name.isEmpty ? tag.slug : tag.name)
-                .font(.system(size: 11, weight: .semibold))
-                .lineLimit(1)
-        }
-        .foregroundStyle(Color(hex: tag.colorHex))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color(hex: tag.colorHex).opacity(0.13))
-        .clipShape(Capsule())
-    }
-}
 #endif

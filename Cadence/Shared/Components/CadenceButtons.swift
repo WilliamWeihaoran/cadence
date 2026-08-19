@@ -2,10 +2,16 @@
 import SwiftUI
 
 enum CadenceDesktopMetrics {
-    static let pageHorizontalPadding: CGFloat = 18
-    static let pageHeaderTopPadding: CGFloat = 18
-    static let pageHeaderBottomPadding: CGFloat = 12
-    static let pageTitleSize: CGFloat = 22
+    /// The four page-header figures read back from `CadencePageHeaderMetrics` rather than being
+    /// restated here. They are the same numbers they have always been; the point is that the page
+    /// gutter a control bar or a page body aligns to and the gutter its header uses are now one
+    /// value, and that a change to the desktop ramp cannot leave half the page behind.
+    private static let pageHeader = CadencePageHeaderMetrics.metrics(role: .page, surface: .desktop)
+
+    static let pageHorizontalPadding: CGFloat = pageHeader.horizontalPadding
+    static let pageHeaderTopPadding: CGFloat = pageHeader.topPadding
+    static let pageHeaderBottomPadding: CGFloat = pageHeader.bottomPadding
+    static let pageTitleSize: CGFloat = pageHeader.titleSize
     static let bodyTextSize: CGFloat = 13
     static let secondaryTextSize: CGFloat = 12
     static let compactControlHeight: CGFloat = 30

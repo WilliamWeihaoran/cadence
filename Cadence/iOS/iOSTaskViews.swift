@@ -361,8 +361,10 @@ struct iOSTaskRow: View {
     }
 
     /// Tags keep the user's own colour — a tag colour is identity they chose, not decoration — so
-    /// the strip is capped at three. Three coloured chips beside an otherwise monochrome row still
-    /// read as one deliberate accent; a row of five was the loudest thing on screen.
+    /// the strip is capped at three. `CadenceTagChip` spends that colour on the dot, the fill tint
+    /// and the border and keeps the label on a `Theme` token, which is what lets three of them sit
+    /// in a row without being the loudest thing on screen, and what leaves the label free to say
+    /// **archived** — a fact this row could not show at all while the chip was a coloured capsule.
     @ViewBuilder
     private var tagScroller: some View {
         if !task.sortedTags.isEmpty {
@@ -371,17 +373,11 @@ struct iOSTaskRow: View {
             // no touch could reach them.
             CadenceWrappingHStack(spacing: 6, lineSpacing: 4) {
                 ForEach(task.sortedTags.prefix(visibleTagLimit)) { tag in
-                    iOSTagChip(tag: tag)
+                    CadenceTagChip(tag: tag, size: .compact)
                 }
 
                 if task.sortedTags.count > visibleTagLimit {
-                    Text("+\(task.sortedTags.count - visibleTagLimit)")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Theme.dim)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(Capsule())
+                    CadenceTagOverflowBadge(count: task.sortedTags.count - visibleTagLimit, size: .compact)
                 }
             }
         }

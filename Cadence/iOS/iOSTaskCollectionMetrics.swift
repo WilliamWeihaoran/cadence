@@ -9,7 +9,7 @@ import CoreGraphics
 /// words, the glyph, and the one real behavioural difference, which is what their identically
 /// titled "Active" group means.
 ///
-/// Deliberately **outside** `#if os(iOS)`, like `iOSPageHeaderMetrics` and for the same reason: the
+/// Deliberately **outside** `#if os(iOS)`, like `CadencePageHeaderMetrics` and for the same reason: the
 /// macOS-built test target cannot see `Cadence/iOS/`, and the part worth pinning is the decisions,
 /// not the drawing. Nothing in this file draws.
 nonisolated enum CadenceTaskCollection: String, CaseIterable, Sendable {
@@ -100,7 +100,7 @@ nonisolated enum CadenceTaskCollection: String, CaseIterable, Sendable {
 /// gone; see `iOSTaskCollectionPage` for the accounting of what it was providing.
 ///
 /// **Almost nothing here varies by width, and what does is not this file's decision.** The gutter
-/// and the top inset are read straight off `iOSPageHeaderMetrics`, because the first thing in this
+/// and the top inset are read straight off `CadencePageHeaderMetrics`, because the first thing in this
 /// scroll view is a page header drawn `padded: false` — the page supplies the header's own inset, so
 /// it had better be the header's own number. Everything else is one figure for both widths: the gap
 /// between a header and the bar under it is not something a wider pane needs more of.
@@ -133,7 +133,7 @@ nonisolated struct iOSTaskCollectionMetrics: Equatable, Sendable {
     static let stackSpacing: CGFloat = 10
 
     static func metrics(isRegularWidth: Bool) -> iOSTaskCollectionMetrics {
-        let header = iOSPageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegularWidth)
+        let header = CadencePageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegularWidth)
         return iOSTaskCollectionMetrics(
             horizontalPadding: header.horizontalPadding,
             topPadding: header.topPadding,

@@ -70,7 +70,7 @@ struct iOSTaskCollectionMetricsTests {
     @Test func thePageGutterAndTopInsetAreTheHeadersOwn() {
         for isRegular in Self.widths {
             let page = Self.metrics(isRegular)
-            let header = iOSPageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegular)
+            let header = CadencePageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegular)
 
             #expect(page.horizontalPadding == header.horizontalPadding, "regular=\(isRegular)")
             #expect(page.topPadding == header.topPadding, "regular=\(isRegular)")
