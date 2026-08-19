@@ -29,13 +29,20 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**AZ — the iPad calendar Week headers glitch on fast horizontal scroll** ([T-152], user-reported)
-
-**BB — sidebar count badge and page-header metrics to macOS** ([T-135], [T-137])
-
 **BC — one tag chip** ([T-138])
 
 ## Open — decided, not started
+
+- [T-156] **Three docs are stale after `D-108`.** `CLAUDE.md:77` says `Shared/Components/` has 12
+  files (14 now); `AGENTS.md:101` and `CLAUDE.md:347` still describe `DesktopPageHeader`,
+  `CommitmentPageHeader` and `CadenceSettingsHeader` as three independent headers when the last two
+  are now name-only wrappers. Also worth adding: `CadencePageHeaderSurface` has three tiers and why
+  macOS is not `.regular`.
+
+- [T-157] **`iOSIconTile` strokes a 0.20 border and `CommitmentIconTile` does not.** Flagged during
+  `D-108` and deliberately not taken on — converging it is a further macOS visual change that was
+  not part of what the user approved.
+
 
 - [T-154] **The startup banner covers the top strip on iPhone.** From `D-107`: at 390pt it hides
   page headers and the pushed-Settings back chevron for the whole launch. `allowsHitTesting(false)`,
@@ -48,13 +55,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   `screencapture` returned the lock screen. The same shared view is proven on iPhone and iPad. Worth
   one look when the machine is unlocked.
 
-
-- [T-152] **The iPad calendar's Week day headers glitch during fast horizontal scrolling.**
-  User-reported. Headers are positioned manually rather than with `pinnedViews` (which pins along
-  the scroll axis and ignores horizontal scroll), and the horizontal observer deliberately reduces
-  the offset to a **column index** so it only fires at integer boundaries — which is the prime
-  suspect for a header row lagging the columns during a fling. Same bug class as the six
-  scroll-position-adoption defects already found; `CadenceLazyScrollAnchor` may already hold the fix.
 
 - [T-147] **A cancelled task is unreachable on iOS.** Bigger than the glyph bug that surfaced it
   (`D-105`): every list query filters cancelled out (`CadenceTaskQuerySupport` ×6,
@@ -94,22 +94,12 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   property with no `SchemaMigrationPlan`, so removing it drops data rather than cleaning up. It needs
   either the same documented treatment or a decision to migrate it out.
 
-- [T-135] **`SidebarCountLabel` and `iOSSidebarCountLabel` differ by one line.** Diffed with names and
-  whitespace normalised: 24 lines, character-for-character identical, the sole difference being
-  `SidebarMetrics.countFontSize` vs `iOSSidebarMetrics.countFontSize` (11 vs 12). The obvious first
-  commit to prove the sharing mechanism, at near-zero risk.
-
 - [T-136] **The `iOS` prefix hides forks from review — 30 exact pairs, ~50 near pairs.** Stripping the
   `iOS`/`iPad` prefix from every top-level type and intersecting with macOS finds an order of
   magnitude more duplication than the nine files that share a *filename*. The method is itself the
   finding: a fork named `iOSFoo` reads as "an iOS thing" in a diff, so no reviewer sees it as a copy.
   Two sidebar rows even carry the same warning comment verbatim, one word changed. Worth running this
   intersection as a standing check.
-
-- [T-137] **iOS has one page header; macOS still has four.** `iOSPageHeaderMetrics` unified the iOS
-  side (`c5a4ea5`) and the tile-glyph ratio has *already* drifted on macOS (32/15 against the shared
-  `×0.44`) — in exactly the way that type's doc comment says it was created to prevent. Bringing the
-  metrics type across is the natural next convergence after [T-135].
 
 - [T-138] **One tag chip.** macOS draws a muted rounded rect, iOS a coloured capsule, and **iOS
   silently lacks the width cap, the remove button and archived dimming** — so it is a feature gap
@@ -306,6 +296,18 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-109] `3238e71` The calendar wrote to disk twice per column and dropped a frame doing it (T-152).
+  The reported "header glitch" was a rendering artefact of a storage problem — two `UserDefaults`
+  writes per column crossed, ~8ms each, on a surface where only the header band has enough contrast
+  for a dropped frame to be visible. iPad 32.7→16.8ms, iPhone 24.3→17.8ms. My stated hypothesis (the
+  `Int` reduction in `onScrollGeometryChange`) was wrong: it is correct and load-bearing.
+
+- [D-108] `5aa11dc` macOS Today shouted its column titles at page volume (T-135, T-137). First
+  sanctioned macOS visual change. macOS is a **third tier** (`.desktop`), not an alias for
+  `.regular` — a Mac window is wider than an iPad but sets type smaller, so folding them would have
+  put a 30pt title over 13pt rows.
+
 
 - [D-107] `49c1797` iOS could stop syncing and say nothing, while Settings showed a green tick
   (T-153). The worse half was Settings *contradicting* the store: a green iCloud tick shown from
