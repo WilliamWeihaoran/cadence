@@ -47,9 +47,19 @@ struct macOSRootView: View {
     private let hoveredSectionManager = HoveredSectionManager.shared
     private let taskCompletionAnimationManager = TaskCompletionAnimationManager.shared
 
-    var body: some View {
-        let currentModelContext = activeModelContext ?? modelContext
+    /// The context every read and write in this view must go through.
+    ///
+    /// `refreshAppData()` replaces `activeModelContext` wholesale so the UI picks up writes made
+    /// by another process (the MCP server), which leaves the environment's context as nothing but
+    /// the fallback for the frames before the first refresh. This used to be spelled
+    /// `activeModelContext ?? modelContext` at each of seven call sites, and a site that forgot
+    /// the `??` would read or write through the *discarded* context — SwiftData raises nothing for
+    /// that, it just serves stale rows or drops the write.
+    private var currentModelContext: ModelContext {
+        activeModelContext ?? modelContext
+    }
 
+    var body: some View {
         ZStack {
             macOSRootMainShell(
                 columnVisibility: columnVisibility,
@@ -85,13 +95,13 @@ struct macOSRootView: View {
             CadenceDeepLinkManager.shared.handle(url)
         }
         .onAppear {
-            CadenceUITestSupport.prepareAppState(modelContext: activeModelContext ?? modelContext)
+            CadenceUITestSupport.prepareAppState(modelContext: currentModelContext)
             mcpRefreshCoordinator.start {
                 hasPendingExternalDataRefresh = true
                 scheduleAppDataRefreshIfPossible()
             }
             macOSRootLifecycleSupport.handleAppear(
-                modelContext: activeModelContext ?? modelContext,
+                modelContext: currentModelContext,
                 installKeyMonitorIfNeeded: installKeyMonitorIfNeeded
             )
         }
@@ -102,7 +112,7 @@ struct macOSRootView: View {
         }
         .onChange(of: calendarManager.storeVersion) {
             macOSRootStateSupport.clearMissingCalendarLinkedTasks(
-                modelContext: activeModelContext ?? modelContext,
+                modelContext: currentModelContext,
                 calendarManager: calendarManager
             )
         }
@@ -199,7 +209,7 @@ struct macOSRootView: View {
         macOSRootStateSupport.makeCommandContext(
             selection: selection,
             showTimelineSidebar: showTimelineSidebar,
-            modelContext: activeModelContext ?? modelContext,
+            modelContext: currentModelContext,
             deleteConfirmationManager: deleteConfirmationManager,
             hoveredTaskDatePickerManager: hoveredTaskDatePickerManager,
             taskCreationManager: taskCreationManager,
@@ -219,7 +229,7 @@ struct macOSRootView: View {
 
     private func makeSearchSelectionContext() -> RootSearchSelectionContext {
         macOSRootStateSupport.makeSearchSelectionContext(
-            modelContext: activeModelContext ?? modelContext,
+            modelContext: currentModelContext,
             calendarManager: calendarManager,
             globalSearchManager: globalSearchManager,
             listNavigationManager: listNavigationManager,
@@ -232,12 +242,8 @@ struct macOSRootView: View {
     }
 
     private func refreshAppData() {
-        let currentContext = activeModelContext ?? modelContext
-        if currentContext.hasChanges {
-            try? currentContext.save()
-        }
-        currentContext.processPendingChanges()
-        activeModelContext = ModelContext(modelContext.container)
+        // Saving before the swap is the whole contract — see `CadenceModelContextRefresh`.
+        activeModelContext = CadenceModelContextRefresh.replacement(for: currentModelContext)
         dataRefreshID = UUID()
         hasPendingExternalDataRefresh = false
     }

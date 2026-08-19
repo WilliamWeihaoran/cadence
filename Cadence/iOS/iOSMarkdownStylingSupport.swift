@@ -887,13 +887,13 @@ enum iOSMarkdownStyler {
         markerWidth: Int,
         indentsFirstLineToContent: Bool = false
     ) -> NSParagraphStyle {
-        let unit: CGFloat = 12
-        let markerInset: CGFloat = 8
-        let contentGap: CGFloat = 8
-        let base = CGFloat(level) * unit
+        // Shared with `MarkdownStylist` on macOS via `MarkdownListIndentMetrics` (Shared/). The
+        // four constants used to be re-declared here, so list indentation could drift on one
+        // platform only — invisible in a diff and nearly invisible on screen.
+        let markerIndent = MarkdownListIndentMetrics.markerIndent(level: level)
+        let contentIndent = MarkdownListIndentMetrics.contentIndent(level: level, markerWidth: markerWidth)
         let paragraph = NSMutableParagraphStyle()
-        let contentIndent = base + markerInset + CGFloat(Double(markerWidth) * 5.5) + contentGap
-        paragraph.firstLineHeadIndent = indentsFirstLineToContent ? contentIndent : base + markerInset
+        paragraph.firstLineHeadIndent = indentsFirstLineToContent ? contentIndent : markerIndent
         paragraph.headIndent = contentIndent
         paragraph.lineSpacing = 4
         paragraph.paragraphSpacing = 2

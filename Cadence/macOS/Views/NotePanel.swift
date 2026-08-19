@@ -27,6 +27,17 @@ struct NotePanel: View {
     @State private var loadedNoteID: UUID?
     @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
 
+    /// The context this panel's notes are loaded into and written back through.
+    ///
+    /// `refreshFromStore()` replaces `notesContext` wholesale, so the environment's context is
+    /// only the fallback for the frames before `loadOrCreate()` runs. Writing through
+    /// `modelContext` once `notesContext` exists would update a `Note` the panel is not showing;
+    /// writing through a `notesContext` that has already been discarded loses the edit outright,
+    /// and SwiftData reports neither. One spelling, one place.
+    private var currentNotesContext: ModelContext {
+        notesContext ?? modelContext
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
@@ -153,6 +164,10 @@ struct NotePanel: View {
     }
 
     private func loadOrCreate() {
+        // Deliberately *not* `currentNotesContext`. This is the one site that wants a brand new
+        // private context when there isn't one yet, rather than the environment's — the panel's
+        // notes must live in a context it can discard and rebuild without disturbing the rest of
+        // the window.
         let context = notesContext ?? makeNotesContext()
         notesContext = context
 
@@ -163,12 +178,11 @@ struct NotePanel: View {
     }
 
     private func refreshFromStore() {
+        // The flush has to come first: it moves the editor's in-flight text into the context so
+        // the save below can see it. Then `CadenceModelContextRefresh` saves before it swaps —
+        // the same contract `macOSRootView.refreshAppData()` relies on.
         flushPendingEditorContent()
-        if let notesContext, notesContext.hasChanges {
-            try? notesContext.save()
-        }
-
-        notesContext = makeNotesContext()
+        notesContext = CadenceModelContextRefresh.replacement(for: currentNotesContext)
         todayNote = nil
         weekNote = nil
         permNote = nil
@@ -235,7 +249,7 @@ struct NotePanel: View {
     private func persistEditorContentIfNeeded(_ content: String, noteID: UUID) {
         guard let note = notesSnapshot.note(for: activeTab), note.id == noteID else { return }
         guard note.content != content else { return }
-        CadenceCoreNoteSupport.update(note, content: content, in: notesContext ?? modelContext)
+        CadenceCoreNoteSupport.update(note, content: content, in: currentNotesContext)
     }
 
     private func createEmbeddedTask(title: String) -> MarkdownReferenceSuggestion? {
@@ -373,7 +387,7 @@ struct NotePanel: View {
         guard !trimmedSummary.isEmpty else { return }
         let separator = note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
         let content = "\(note.content)\(separator)## AI Summary\n\n\(trimmedSummary)"
-        CadenceCoreNoteSupport.update(note, content: content, in: notesContext ?? modelContext)
+        CadenceCoreNoteSupport.update(note, content: content, in: currentNotesContext)
         if loadedNoteID == note.id {
             editorContent = content
         }

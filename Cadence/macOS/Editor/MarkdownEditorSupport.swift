@@ -901,12 +901,16 @@ enum MarkdownStylist {
         return ps
     }
 
+    // Both indents come from `MarkdownListIndentMetrics` (Shared/) rather than being spelled here:
+    // `iOSMarkdownStyler` needs the identical numbers, and a second copy drifts without a
+    // diagnostic. These two wrappers stay only so the call sites above keep reading in the
+    // stylist's own vocabulary.
     private static func listMarkerIndent(for level: Int) -> CGFloat {
-        CGFloat(level) * 12 + 8
+        MarkdownListIndentMetrics.markerIndent(level: level)
     }
 
     private static func listContentIndent(for level: Int, markerWidth: Int) -> CGFloat {
-        listMarkerIndent(for: level) + CGFloat(Double(markerWidth) * 5.5) + 8
+        MarkdownListIndentMetrics.contentIndent(level: level, markerWidth: markerWidth)
     }
 
     private static func addListMarkerSpacing(_ storage: NSTextStorage, markerRange: NSRange) {
