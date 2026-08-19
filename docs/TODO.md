@@ -29,6 +29,19 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
+- [T-164] **Merge All Tasks and Inbox into one "Tasks" sidebar destination.** In progress. The user
+  asked whether All Tasks could be deleted; it cannot — it is the only view of every open task (a
+  task with a list and no date otherwise appears on exactly one page in the app), the only
+  cross-list logbook (Today's Completed is scoped to today, a list's to that list), and the only
+  board whose columns are lists. They proposed merging it with Inbox instead, which is right and
+  half-built already: Inbox *is* All Tasks with one predicate, and `KanbanBoardSupport` has rendered
+  Inbox as a column of the All Tasks board all along. Shape: one `Tasks` row, view `All | Inbox`,
+  mode `List | Kanban`. Today deliberately stays top-level — it is a three-pane dashboard, not a
+  task filter. Lands on the macOS **and** iPad sidebars (both read
+  `CadenceSidebarLayout.primaryDestinations`); iPhone is untouched because its Tasks tab already is
+  this design in segment form. Highest-risk regression: Inbox is the only surface showing Apple
+  Reminders inline, and that strip has to survive.
+
 _Nothing in flight._
 
 ## Open — decided, not started
