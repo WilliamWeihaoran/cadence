@@ -57,30 +57,6 @@ _Nothing in flight._
   default shape for consolidation work: a test that passes when the call site is reverted has not
   pinned the consolidation.
 
-- [T-162] **"PID-unique" must mean the directory, not the filename.** An agent deleted another's
-  DerivedData mid-run because both were writing under the shared scratchpad root with `rm -rf` on
-  sibling paths. Fix the guidance in `AGENTS.md`: each agent gets its own subdirectory and cleans
-  only inside it.
-
-
-- [T-158] **`git commit --only` does not close the sweep hazard, and `AGENTS.md` now says it does.**
-  `5aa11dc` left HEAD unbuildable for three commits: it swept in two files whose in-flight edits
-  referenced a type whose defining file was still untracked. `--only` was adopted earlier today
-  precisely to prevent this and **it protects the file list, not the file contents** — the subset was
-  verified and passed, then a live agent edited those files between the verification and the commit,
-  and `--only` captured bytes never tested. Two contributing errors of mine: classifying files by a
-  filename pattern (`*Tag*`) that neither file matched, and treating a passing subset test as durable
-  while agents were still writing.
-  The rule that actually holds: **verify and commit with nothing live in the tree**, or checksum the
-  bytes you tested and confirm them unchanged at commit time. Rewrite the `AGENTS.md` entry, which
-  currently promises more than `--only` delivers.
-
-
-- [T-156] **Three docs are stale after `D-108`.** `CLAUDE.md:77` says `Shared/Components/` has 12
-  files (14 now); `AGENTS.md:101` and `CLAUDE.md:347` still describe `DesktopPageHeader`,
-  `CommitmentPageHeader` and `CadenceSettingsHeader` as three independent headers when the last two
-  are now name-only wrappers. Also worth adding: `CadencePageHeaderSurface` has three tiers and why
-  macOS is not `.regular`.
 
 - [T-157] **`iOSIconTile` strokes a 0.20 border and `CommitmentIconTile` does not.** Flagged during
   `D-108` and deliberately not taken on — converging it is a further macOS visual change that was
@@ -106,11 +82,6 @@ _Nothing in flight._
   side effect — but that surface was never screenshotted, and Today's pane now depends on the new
   mechanism rather than the host-level reset it used to carry. Both need a look on iPad before this
   is called done.
-
-- [T-151] **The stale tie-break comment survives in Swift.** `CadenceTaskQuerySupport.swift:236` still
-  says iOS "spelled its own comparator and never got that … the remaining half of that consolidation",
-  directly above code where all five branches end in `TaskOrdering.fallbackPrecedes`. `D-106` fixed
-  the `CLAUDE.md` half; this one is a code change and was left deliberately.
 
 
 - [T-142] **`Goal.dependsOnGoalIDsJSON` is persisted, has zero readers, and is undocumented.**
@@ -300,6 +271,16 @@ _Nothing in flight._
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-114] `8bcbb24` Four doc claims that stopped being true, including one about committing
+  (T-151, T-156, T-158, T-162). The page-header rule named three macOS headers as peers; all three
+  — plus `PanelHeader`, a fourth neither doc listed — are name-only wrappers over
+  `DesktopPageHeader`, which is why one subtitle and three glyph ratios each had to be deleted three
+  or four times. `Shared/Components` read 12 across three commits that each added one; it is 15.
+  The commit rule was rewritten into its two independent halves after `--only` was followed and
+  still broke HEAD, and the isolation rule now names a directory rather than a filename. The
+  three-tier `.desktop` reasoning turned out to already be a good doc comment in
+  `CadencePageHeaderMetrics`; it needed a pointer from a guide, not a third restatement.
 
 - [D-113] `a1872fe` A forgotten `??` would have written to a context nobody reads (T-128, T-130).
   Two neighbours that looked identical were left alone with reasons — one wants the inherited
