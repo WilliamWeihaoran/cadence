@@ -265,35 +265,24 @@ final class CalendarManager {
         return save(event, span: .thisEvent, describing: "convert all-day event")
     }
 
+    /// Every event in the window, all-day included. The window and the filter are the *same* on
+    /// both platforms — see `CadenceCalendarEventSearchSupport`, which owns the matching rule and
+    /// records why the all-day exclusion that used to live here was a bug rather than an intent.
     func searchEvents(matching query: String, pastDays: Int = 60, futureDays: Int = 365) -> [EKEvent] {
         guard isAuthorized else { return [] }
         let calendars = availableCalendars
         guard !calendars.isEmpty else { return [] }
 
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let now = Date()
         let start = Calendar.current.date(byAdding: .day, value: -max(0, pastDays), to: now) ?? now
         let end = Calendar.current.date(byAdding: .day, value: max(0, futureDays), to: now) ?? now
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
 
-        let events = store.events(matching: predicate).filter { !$0.isAllDay }
-        guard !trimmed.isEmpty else {
-            return events
-                .filter { ($0.endDate ?? now) >= now }
-                .sorted { ($0.startDate ?? now) < ($1.startDate ?? now) }
-        }
-
-        let needle = trimmed.localizedLowercase
-        return events
-            .filter { event in
-                let fields = [
-                    event.title ?? "",
-                    event.notes ?? "",
-                    event.calendar?.title ?? ""
-                ]
-                return fields.contains { $0.localizedLowercase.contains(needle) }
-            }
-            .sorted { ($0.startDate ?? now) < ($1.startDate ?? now) }
+        return CadenceCalendarEventSearchSupport.results(
+            from: store.events(matching: predicate),
+            query: query,
+            now: now
+        )
     }
 
     // MARK: - Update External Event (iCal event edited in Cadence)

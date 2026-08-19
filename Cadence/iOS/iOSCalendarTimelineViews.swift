@@ -836,10 +836,6 @@ struct iOSTimelineTaskBlock: View {
         Color(hex: task.containerColor)
     }
 
-    private var priorityColor: Color {
-        Theme.priorityColor(task.priority)
-    }
-
     /// Square on the leading edge so the list colour strip reads as a strip, rounded elsewhere.
     private var blockShape: UnevenRoundedRectangle {
         UnevenRoundedRectangle(
@@ -856,7 +852,7 @@ struct iOSTimelineTaskBlock: View {
             showDetail = true
         } label: {
             HStack(alignment: .top, spacing: 6) {
-                iOSTaskCompletionCircle(isDone: task.isDone, tint: priorityColor)
+                iOSTaskCompletionCircle(glyph: .resolve(task: task))
                     .frame(width: 11, height: 11)
                     .padding(.top, 2)
 
@@ -960,7 +956,7 @@ struct iOSTimelineBundleBlock: View {
 
                 ForEach(tasks.prefix(2)) { task in
                     HStack(spacing: 4) {
-                        iOSTaskCompletionCircle(isDone: task.isDone, tint: Theme.priorityColor(task.priority))
+                        iOSTaskCompletionCircle(glyph: .resolve(task: task))
                             .frame(width: 9, height: 9)
                         Text(task.title.isEmpty ? "Untitled" : task.title)
                             .font(.system(size: 9.5, weight: .medium))

@@ -423,19 +423,20 @@ private struct TaskCompletionButton: View {
     private var isPendingCompletion: Bool { manager.isPending(task) }
     private var isPendingCancel: Bool { manager.isPendingCancel(task) }
 
-    private var icon: String {
-        if task.isCancelled { return "xmark.circle.fill" }
-        if task.isDone      { return "checkmark.circle.fill" }
-        if isPendingCancel  { return "xmark.circle" }
-        if isPendingCompletion { return "circle.inset.filled" }
-        return "circle"
+    /// The state→appearance decision is `CadenceTaskCompletionGlyph`'s, shared with the kanban
+    /// card, the timeline block and every iOS surface. It used to be this ordered `if` chain,
+    /// copied verbatim into `KanbanCardComputedSupport` and dropped to two states on iOS.
+    private var glyph: CadenceTaskCompletionGlyph {
+        .resolve(
+            task: task,
+            isPendingCompletion: isPendingCompletion,
+            isPendingCancellation: isPendingCancel
+        )
     }
 
-    private var color: Color {
-        if task.isCancelled || isPendingCancel { return Theme.dim }
-        if task.isDone || isPendingCompletion   { return Theme.green }
-        return Theme.priorityColor(task.priority)
-    }
+    private var icon: String { glyph.symbolName }
+
+    private var color: Color { glyph.tint }
 
     private func handleTap() {
         if isPendingCompletion {

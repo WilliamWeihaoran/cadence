@@ -67,18 +67,6 @@ enum GlobalSearchDataSupport {
         GlobalSearchIndexSupport.eventNoteResults(notes: notes, query: query, taskTitles: taskTitles)
     }
 
-    static func rankResults(_ results: [GlobalSearchResult], query: String) -> [GlobalSearchResult] {
-        GlobalSearchMatcher.rankResults(results, query: query)
-    }
-
-    static func matchScore(query: String, _ fields: String...) -> Int? {
-        GlobalSearchMatcher.matchScore(query: query, fields: fields)
-    }
-
-    static func matchScore(query: String, fields: [String]) -> Int? {
-        GlobalSearchMatcher.matchScore(query: query, fields: fields)
-    }
-
     static func syncedHighlightID(current: String?, availableResults: [GlobalSearchResult]) -> String? {
         guard !availableResults.isEmpty else { return nil }
         if let current, availableResults.contains(where: { $0.id == current }) {

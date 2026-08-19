@@ -205,10 +205,16 @@ enum GlobalSearchIndexSupport {
             let item = CalendarEventItem(event: event)
             let startDate = event.startDate ?? Date()
             let timeLabel = "\(DateFormatters.dayOfWeek.string(from: startDate)), \(DateFormatters.shortDate.string(from: startDate))"
+            // All-day events reach this list now that `searchEvents` stopped dropping them, and
+            // `CalendarEventItem` clamps one to 00:00 + 1440 minutes — which reads as
+            // "12:00 AM – 12:00 AM". iOS already says "All day" here; so does this.
+            let timeRange = event.isAllDay
+                ? "All day"
+                : TimeFormatters.timeRange(startMin: item.startMin, endMin: item.startMin + item.durationMinutes)
             let subtitle = [
                 item.calendarTitle,
                 timeLabel,
-                TimeFormatters.timeRange(startMin: item.startMin, endMin: item.startMin + item.durationMinutes)
+                timeRange
             ]
             .filter { !$0.isEmpty }
             .joined(separator: " • ")
@@ -267,11 +273,16 @@ enum GlobalSearchIndexSupport {
     }
 
     static func rankedResults(_ results: [GlobalSearchResult], query: String) -> [GlobalSearchResult] {
-        GlobalSearchMatcher.rankResults(results, query: query)
+        CadenceSearchMatcher.rank(
+            results,
+            query: query,
+            title: { $0.title },
+            fields: { [$0.title, $0.subtitle] }
+        )
     }
 
     static func matches(query: String, fields: [String]) -> Bool {
-        GlobalSearchMatcher.matchScore(query: query, fields: fields) != nil
+        CadenceSearchMatcher.matchScore(query: query, fields: fields) != nil
     }
 }
 #endif

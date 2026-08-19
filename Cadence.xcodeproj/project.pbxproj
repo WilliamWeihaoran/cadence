@@ -27,7 +27,7 @@
 		A10000002FCE000000000212 /* Cadence/Shared/DateFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000112 /* Cadence/Shared/DateFormatters.swift */; };
 		A10000002FCE000000000213 /* Cadence/Services/CadenceSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000113 /* Cadence/Services/CadenceSchema.swift */; };
 		A10000002FCE000000000214 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000114 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift */; };
-		A10000002FCE000000000215 /* Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000115 /* Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift */; };
+		A10000002FCE000000000215 /* Cadence/Shared/CadenceSearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000115 /* Cadence/Shared/CadenceSearchMatcher.swift */; };
 		A10000002FCE000000000216 /* Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000116 /* Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift */; };
 		A10000002FCE000000000217 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000117 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift */; };
 		A10000002FCE000000000218 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = A10000002FCE000000000302 /* MCP */; };
@@ -153,7 +153,7 @@
 		A10000002FCE000000000112 /* Cadence/Shared/DateFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/DateFormatters.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000113 /* Cadence/Services/CadenceSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceSchema.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000114 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift; sourceTree = "<group>"; };
-		A10000002FCE000000000115 /* Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000115 /* Cadence/Shared/CadenceSearchMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadenceSearchMatcher.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000116 /* Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000117 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceReadService.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000118 /* Cadence/Services/MCPReadOnly/CadenceWriteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/MCPReadOnly/CadenceWriteService.swift; sourceTree = "<group>"; };
@@ -311,6 +311,7 @@
 				A10000002FCE00000000011D /* Cadence/Models/MarkdownImageAsset.swift */,
 				A10000002FCE000000000112 /* Cadence/Shared/DateFormatters.swift */,
 				A10000002FCE000000000199 /* Cadence/Shared/Theme.swift */,
+				A10000002FCE000000000115 /* Cadence/Shared/CadenceSearchMatcher.swift */,
 				A10000002FCE000000000113 /* Cadence/Services/CadenceSchema.swift */,
 				A10000002FCE00000000011F /* Cadence/Services/NoteMigrationService.swift */,
 				A10000002FCE000000000124 /* Cadence/Services/TagSupport.swift */,
@@ -327,7 +328,6 @@
 				B10000002FCE000000000106 /* Cadence/Services/CadenceWidgetIntents.swift */,
 				B10000002FCE000000000113 /* Cadence/Services/MarkdownMetadataSupport.swift */,
 				A10000002FCE000000000114 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift */,
-				A10000002FCE000000000115 /* Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift */,
 				A10000002FCE000000000116 /* Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift */,
 				A10000002FCE000000000119 /* Cadence/Services/MCPReadOnly/CadenceMCPServiceSupport.swift */,
 				A10000002FCE00000000011C /* Cadence/Services/MCPReadOnly/CadenceMCPAuditLog.swift */,
@@ -623,6 +623,7 @@
 				A10000002FCE000000000211 /* Cadence/Models/EventNote.swift in Sources */,
 				A10000002FCE00000000021E /* Cadence/Models/MarkdownImageAsset.swift in Sources */,
 				A10000002FCE000000000212 /* Cadence/Shared/DateFormatters.swift in Sources */,
+				A10000002FCE000000000215 /* Cadence/Shared/CadenceSearchMatcher.swift in Sources */,
 				A10000002FCE000000000213 /* Cadence/Services/CadenceSchema.swift in Sources */,
 				A10000002FCE000000000220 /* Cadence/Services/NoteMigrationService.swift in Sources */,
 				A10000002FCE000000000224 /* Cadence/Services/TagSupport.swift in Sources */,
@@ -631,7 +632,6 @@
 				A10000002FCE000000000226 /* Cadence/Services/NoteReferenceSupport.swift in Sources */,
 				A10000002FCE000000000227 /* Cadence/Services/DataIntegrityRepairService.swift in Sources */,
 				A10000002FCE000000000214 /* Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift in Sources */,
-				A10000002FCE000000000215 /* Cadence/Services/MCPReadOnly/CadenceSearchMatcher.swift in Sources */,
 				A10000002FCE000000000216 /* Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift in Sources */,
 				A10000002FCE00000000021A /* Cadence/Services/MCPReadOnly/CadenceMCPServiceSupport.swift in Sources */,
 				A10000002FCE00000000021D /* Cadence/Services/MCPReadOnly/CadenceMCPAuditLog.swift in Sources */,

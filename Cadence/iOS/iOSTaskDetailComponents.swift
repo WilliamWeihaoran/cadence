@@ -38,8 +38,7 @@ struct iOSTaskEditorTitleCard: View {
         HStack(alignment: .top, spacing: iOSTaskInspectorMetrics.titleRowSpacing) {
             Button(action: onToggleCompletion) {
                 iOSTaskCompletionCircle(
-                    isDone: task.isDone,
-                    tint: Theme.priorityColor(task.priority),
+                    glyph: .resolve(task: task),
                     diameter: glyphSize
                 )
                 .frame(width: glyphSize, height: glyphSize)

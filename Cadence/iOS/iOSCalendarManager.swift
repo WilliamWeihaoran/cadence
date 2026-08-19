@@ -81,12 +81,7 @@ final class iOSCalendarManager {
         let bounds = dayBounds(for: date)
         let predicate = store.predicateForEvents(withStart: bounds.start, end: bounds.end, calendars: availableCalendars)
         return store.events(matching: predicate)
-            .sorted { lhs, rhs in
-                let lhsDate = lhs.startDate ?? bounds.start
-                let rhsDate = rhs.startDate ?? bounds.start
-                if lhsDate != rhsDate { return lhsDate < rhsDate }
-                return (lhs.title ?? "").localizedCaseInsensitiveCompare(rhs.title ?? "") == .orderedAscending
-            }
+            .sorted(by: CadenceCalendarEventSearchSupport.precedes)
     }
 
     func event(withIdentifier identifier: String) -> EKEvent? {
@@ -94,34 +89,21 @@ final class iOSCalendarManager {
         return store.event(withIdentifier: CadenceEventNoteSupport.lookupIdentifier(from: identifier))
     }
 
+    /// Every event in the window, all-day included. The window and the filter are the *same* on
+    /// both platforms — see `CadenceCalendarEventSearchSupport`, which owns the matching rule.
     func searchEvents(matching query: String, pastDays: Int = 60, futureDays: Int = 365) -> [EKEvent] {
         guard isAuthorized, !availableCalendars.isEmpty else { return [] }
 
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let now = Date()
         let start = Calendar.current.date(byAdding: .day, value: -max(0, pastDays), to: now) ?? now
         let end = Calendar.current.date(byAdding: .day, value: max(0, futureDays), to: now) ?? now
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: availableCalendars)
-        let events = store.events(matching: predicate)
 
-        guard !trimmed.isEmpty else {
-            return events
-                .filter { ($0.endDate ?? now) >= now }
-                .sorted(by: eventSort)
-        }
-
-        return events
-            .filter { event in
-                CadenceSearchMatcher.matchScore(
-                    query: trimmed,
-                    fields: [
-                        event.title ?? "",
-                        event.notes ?? "",
-                        event.calendar?.title ?? ""
-                    ]
-                ) != nil
-            }
-            .sorted(by: eventSort)
+        return CadenceCalendarEventSearchSupport.results(
+            from: store.events(matching: predicate),
+            query: query,
+            now: now
+        )
     }
 
     @discardableResult
@@ -248,13 +230,6 @@ final class iOSCalendarManager {
     private func writableCalendar(with id: String?) -> EKCalendar? {
         guard let id else { return nil }
         return writableCalendars.first { $0.calendarIdentifier == id }
-    }
-
-    private func eventSort(_ lhs: EKEvent, _ rhs: EKEvent) -> Bool {
-        let lhsStart = lhs.startDate ?? lhs.occurrenceDate ?? Date.distantFuture
-        let rhsStart = rhs.startDate ?? rhs.occurrenceDate ?? Date.distantFuture
-        if lhsStart != rhsStart { return lhsStart < rhsStart }
-        return (lhs.title ?? "").localizedCaseInsensitiveCompare(rhs.title ?? "") == .orderedAscending
     }
 
     private func dayBounds(for date: Date) -> (start: Date, end: Date) {

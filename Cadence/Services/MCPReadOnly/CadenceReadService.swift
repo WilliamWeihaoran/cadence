@@ -804,7 +804,9 @@ final class CadenceReadService {
             }
         }
 
-        return Array(CadenceSearchMatcher.rank(hits, query: trimmed).prefix(cappedLimit(limit)))
+        // Hits carry the score `matchScore` already produced above, so rank on it directly.
+        let ranked = CadenceSearchMatcher.rank(hits, score: { $0.score }, title: { $0.title })
+        return Array(ranked.prefix(cappedLimit(limit)))
     }
 
     func recentMCPWrites(limit: Int = 50) throws -> [CadenceMCPAuditEntry] {

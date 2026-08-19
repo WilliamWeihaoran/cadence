@@ -220,7 +220,7 @@ struct iOSBoardTaskCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
                 Button(action: toggleCompletion) {
-                    iOSTaskCompletionCircle(isDone: task.isDone, tint: Theme.priorityColor(task.priority))
+                    iOSTaskCompletionCircle(glyph: .resolve(task: task))
                         .frame(width: 16, height: 16)
                         .frame(width: 30, height: 30)
                         .iOSExpandedHitArea()
@@ -371,7 +371,7 @@ struct iOSCalendarBoardBundleCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(tasks.prefix(2)) { task in
                             HStack(spacing: 5) {
-                                iOSTaskCompletionCircle(isDone: task.isDone, tint: Theme.priorityColor(task.priority))
+                                iOSTaskCompletionCircle(glyph: .resolve(task: task))
                                     .frame(width: 10, height: 10)
                                 Text(task.title.isEmpty ? "Untitled" : task.title)
                                     .font(.system(size: 11, weight: .medium))

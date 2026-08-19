@@ -142,8 +142,7 @@ struct iOSTaskRow: View {
             toggleCompletion()
         } label: {
             iOSTaskCompletionCircle(
-                isDone: task.isDone,
-                tint: Theme.priorityColor(task.priority),
+                glyph: .resolve(task: task),
                 diameter: CadenceTaskRowMetrics.completionCircleDiameter
             )
             .frame(width: metrics.completionGlyphSize, height: metrics.completionGlyphSize)

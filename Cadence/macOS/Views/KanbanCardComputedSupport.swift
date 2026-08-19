@@ -16,16 +16,30 @@ enum KanbanCardComputedSupport {
         return task.scheduledDate == DateFormatters.todayKey()
     }
 
+    /// Both of these were a second, byte-identical copy of `TaskCompletionButton`'s ordered `if`
+    /// chain. They now read the one shared decision, `CadenceTaskCompletionGlyph`.
+    static func completionGlyph(
+        task: AppTask,
+        isPendingCompletion: Bool,
+        isPendingCancel: Bool
+    ) -> CadenceTaskCompletionGlyph {
+        .resolve(
+            task: task,
+            isPendingCompletion: isPendingCompletion,
+            isPendingCancellation: isPendingCancel
+        )
+    }
+
     static func completionButtonIcon(
         task: AppTask,
         isPendingCompletion: Bool,
         isPendingCancel: Bool
     ) -> String {
-        if task.isCancelled { return "xmark.circle.fill" }
-        if task.isDone { return "checkmark.circle.fill" }
-        if isPendingCancel { return "xmark.circle" }
-        if isPendingCompletion { return "circle.inset.filled" }
-        return "circle"
+        completionGlyph(
+            task: task,
+            isPendingCompletion: isPendingCompletion,
+            isPendingCancel: isPendingCancel
+        ).symbolName
     }
 
     static func completionButtonColor(
@@ -33,9 +47,11 @@ enum KanbanCardComputedSupport {
         isPendingCompletion: Bool,
         isPendingCancel: Bool
     ) -> Color {
-        if task.isCancelled || isPendingCancel { return Theme.dim }
-        if task.isDone || isPendingCompletion { return Theme.green }
-        return Theme.priorityColor(task.priority)
+        completionGlyph(
+            task: task,
+            isPendingCompletion: isPendingCompletion,
+            isPendingCancel: isPendingCancel
+        ).tint
     }
 
     static func handleCompletionTap(

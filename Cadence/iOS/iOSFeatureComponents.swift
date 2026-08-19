@@ -2,29 +2,65 @@
 import SwiftData
 import SwiftUI
 
-/// Shared 13pt outline completion circle used by task rows across iOS: transparent center
-/// with a 1.6pt border in the row's tint color while pending, solid green fill + white
-/// checkmark when done (priority/tint color drops once a task is complete).
+/// Shared 13pt completion circle used by task rows across iOS: a 1.6pt ring in the task's
+/// priority tint while it is open, a solid fill with a knocked-out mark once it is settled.
+///
+/// It drew **two** states — done and not-done — against macOS's five, so a cancelled task was
+/// pixel-identical to an open one on every iOS row, board card, timeline block and inspector,
+/// even though the swipe tray, the context menu and the inspector's Cancel button all set that
+/// status. `CadenceTaskCompletionGlyph` is now the single decision behind both platforms; this
+/// view only draws what it is told.
 struct iOSTaskCompletionCircle: View {
-    let isDone: Bool
-    let tint: Color
+    let glyph: CadenceTaskCompletionGlyph
     var diameter: CGFloat = 13
+
+    init(glyph: CadenceTaskCompletionGlyph, diameter: CGFloat = 13) {
+        self.glyph = glyph
+        self.diameter = diameter
+    }
+
+    /// For the controls with no `AppTask` behind them — a `Subtask`'s tick, and the decorative
+    /// circles in the swipe tray and the schedule placeholder row.
+    init(isDone: Bool, tint: Color, diameter: CGFloat = 13) {
+        self.init(glyph: .binary(isDone: isDone, tint: tint), diameter: diameter)
+    }
 
     var body: some View {
         ZStack {
             Circle()
-                .fill(isDone ? Theme.doneFill : Color.clear)
-            if !isDone {
+                .fill(glyph.isFilled ? glyph.tint : Color.clear)
+            if !glyph.isFilled {
                 Circle()
-                    .stroke(tint, lineWidth: 1.6)
+                    .stroke(glyph.tint, lineWidth: 1.6)
             }
-            if isDone {
-                Image(systemName: "checkmark")
-                    .font(.system(size: diameter * 0.6, weight: .bold))
-                    .foregroundStyle(Theme.onColor)
-            }
+            mark
         }
         .frame(width: diameter, height: diameter)
+    }
+
+    /// macOS gets its mark free, as the knockout inside an SF Symbol; here it is drawn. On a
+    /// filled disc that means `Theme.onColor`, which is what the checkmark has always used —
+    /// the cancelled cross is the same treatment, not a new one.
+    @ViewBuilder
+    private var mark: some View {
+        switch glyph.mark {
+        case .none:
+            EmptyView()
+        case .dot:
+            Circle()
+                .fill(glyph.tint)
+                .frame(width: diameter * 0.44, height: diameter * 0.44)
+        case .checkmark:
+            markSymbol("checkmark", scale: 0.6)
+        case .cross:
+            markSymbol("xmark", scale: 0.55)
+        }
+    }
+
+    private func markSymbol(_ name: String, scale: CGFloat) -> some View {
+        Image(systemName: name)
+            .font(.system(size: diameter * scale, weight: .bold))
+            .foregroundStyle(glyph.isFilled ? Theme.onColor : glyph.tint)
     }
 }
 

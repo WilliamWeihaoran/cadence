@@ -174,10 +174,17 @@ func timelineBlockBody(
 
         HStack(alignment: .top, spacing: 4) {
             if let onToggleDone {
+                // Two states before: a cancelled task scheduled onto the timeline drew the same
+                // plain circle as an open one. `CadenceTaskCompletionGlyph` is the same decision
+                // the task row and the kanban card make.
+                let glyph = CadenceTaskCompletionGlyph.resolve(
+                    task: task,
+                    isPendingCompletion: isPendingCompletion
+                )
                 Button(action: onToggleDone) {
                     TaskCompletionProgressGlyph(
-                        icon: task.isDone ? "checkmark.circle.fill" : "circle",
-                        color: task.isDone || isPendingCompletion ? Theme.green : Theme.priorityColor(task.priority),
+                        icon: glyph.symbolName,
+                        color: glyph.tint,
                         progress: isPendingCompletion ? clampedProgress : nil,
                         size: 13,
                         lineWidth: 1.6
