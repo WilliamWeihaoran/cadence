@@ -33,6 +33,36 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-159] **iOS never calls `event.reset()` after a failed EventKit save.** The cheap half of
+  T-149's deferred item, and worse than that ticket says: `iOSCalendarManager` mutates the `EKEvent`
+  in place at three sites and returns `false` on a throw without resetting. `EKEvent` is a reference
+  type held by `CalendarEventItem` and rendered by the timeline, and a failed save produces no
+  `EKEventStoreChanged`, so **the UI keeps showing an event that is not in the store** with nothing
+  to clear it. macOS resets for exactly this reason and carries a nine-line comment saying so. Two
+  lines, no UI, no product decision — unlike the alerting half, which stays deferred.
+
+- [T-160] **`TagSupport.uniqueBySlug` and `TagSupport.sorted` are non-total over a nondeterministic
+  input.** Both sort `Array(dictionary.values)` — Swift dictionary order is unspecified and
+  per-process seeded, and `sorted` is not stable — ending at a `name` compare with no unique
+  tie-break. `uniqueBySlug` feeds the `#` picker's `.prefix(8)`; `sorted` decides *which duplicate
+  wins per slug*, so its blast radius is larger. Exposure needs equal `order` **and**
+  case-insensitively equal `name` — narrower than it first sounds, but `order` defaults collide and
+  CloudKit can produce case-variant duplicates. Same defect class as T-150.
+
+- [T-161] **Tests pin helpers, not wiring.** The T-149 verifier proved by mutation that reverting the
+  `macOSRootCommandActionSupport` fix leaves all 1692 tests green, and the same holds for T-150 —
+  nothing observes that `MarkdownEditorView` calls the shared functions. `D-113` closed this for the
+  markdown indent formula by testing that the stylist *reads the shared metrics*, not merely that the
+  numbers are right. Worth applying that pattern to the two search fixes, and treating it as the
+  default shape for consolidation work: a test that passes when the call site is reverted has not
+  pinned the consolidation.
+
+- [T-162] **"PID-unique" must mean the directory, not the filename.** An agent deleted another's
+  DerivedData mid-run because both were writing under the shared scratchpad root with `rm -rf` on
+  sibling paths. Fix the guidance in `AGENTS.md`: each agent gets its own subdirectory and cleans
+  only inside it.
+
+
 - [T-158] **`git commit --only` does not close the sweep hazard, and `AGENTS.md` now says it does.**
   `5aa11dc` left HEAD unbuildable for three commits: it swept in two files whose in-flight edits
   referenced a type whose defining file was still untracked. `--only` was adopted earlier today
@@ -57,12 +87,6 @@ _Nothing in flight._
   not part of what the user approved.
 
 
-- [T-154] **The startup banner covers the top strip on iPhone.** From `D-107`: at 390pt it hides
-  page headers and the pushed-Settings back chevron for the whole launch. `allowsHitTesting(false)`,
-  so controls still work — they are just invisible. Only in the failure state, but the right shape is
-  collapse-to-pill in the shared component. Not outright dismissal: macOS Settings has no sync row,
-  so a dismissed macOS banner would leave no durable indicator anywhere.
-
 - [T-155] **The macOS startup banner has not been seen rendering.** `D-107` moved it from a ZStack
   child to `.overlay(alignment: .top)` and the build is green, but the user's display was locked so
   `screencapture` returned the lock screen. The same shared view is proven on iPhone and iPad. Worth
@@ -83,19 +107,6 @@ _Nothing in flight._
   mechanism rather than the host-level reset it used to carry. Both need a look on iPad before this
   is called done.
 
-- [T-149] **Four more search and status divergences, found in passing.** None fixed: macOS Cmd+K
-  cannot open a *past* event (the resolve path keeps only `endDate >= now` while search reaches 60
-  days back); `GlobalSearchIndexSupport.eventResults` takes `.prefix(12)` *before* ranking, so it
-  ranks the twelve chronologically-earliest rather than the twelve best; iOS drops EventKit write
-  failures that macOS surfaces via `CalendarWriteFailure`, which `CalendarManagerScenarioTests`
-  explicitly pins as "none of them may fail in silence"; and iOS rows check only `isDone` for
-  strikethrough and dimming where `MacTaskRow` treats cancelled as settled too.
-
-- [T-150] **macOS's own `[[` picker is non-total and orders differently from iOS.** Found by the
-  T-127 verifier: `MarkdownEditorView` sorts candidates by title alone and feeds a `.prefix(8)`, so
-  duplicate titles make *which eight are offered* undefined — the same defect `D-104` fixed on iOS.
-  It also means the same picker is alphabetical on macOS and recency/priority-ordered on iOS.
-
 - [T-151] **The stale tie-break comment survives in Swift.** `CadenceTaskQuerySupport.swift:236` still
   says iOS "spelled its own comparator and never got that … the remaining half of that consolidation",
   directly above code where all five branches end in `TaskOrdering.fallbackPrecedes`. `D-106` fixed
@@ -113,22 +124,6 @@ _Nothing in flight._
   finding: a fork named `iOSFoo` reads as "an iOS thing" in a diff, so no reviewer sees it as a copy.
   Two sidebar rows even carry the same warning comment verbatim, one word changed. Worth running this
   intersection as a standing check.
-
-- [T-128] **`activeModelContext ?? modelContext` is re-derived at 7 sites in one file.**
-  `macOS/macOSRootView.swift` holds a `@State ModelContext?` that `refreshAppData()` replaces
-  wholesale; the fallback is spelled at 7 separate places (verified by grep), and `Views/NotePanel.swift`
-  does the same with `notesContext ?? modelContext`. A new call site that forgets the `??` reads or
-  writes through the **discarded** context — SwiftData emits no diagnostic, it just shows stale data
-  or drops a write. Fix: one computed property per view. Both files also independently implement the
-  same "save-if-dirty, then discard and recreate" dance, where saving *before* discarding is the
-  correctness contract.
-
-- [T-130] **One markdown list-indent formula, spelled twice, tested zero times.**
-  `MarkdownStylist.listMarkerIndent`/`listContentIndent` (`MarkdownEditorSupport.swift:904`) and
-  `iOSMarkdownStyler.listParagraphStyle` (`iOSMarkdownStylingSupport.swift:885`) both compute
-  `level*12 + 8` and `+ markerWidth*5.5 + 8`. Drift changes list indentation on one platform only —
-  visually subtle, easy to ship unnoticed. Precedent: `MarkdownEditorDecorationGeometry` was
-  extracted from this same subsystem because it is pure, and it is unit tested.
 
 - [T-124] **32 orphaned `CadenceMCPServer` processes are holding the live store open**, the oldest
   running **74 days**. Confirmed directly with `ps`. `main.swift` loops forever with no shutdown path
@@ -305,6 +300,19 @@ _Nothing in flight._
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-113] `a1872fe` A forgotten `??` would have written to a context nobody reads (T-128, T-130).
+  Two neighbours that looked identical were left alone with reasons — one wants the inherited
+  environment context, one wants a new private context. Rendering proved unchanged by byte-identical
+  before/after captures rather than asserted.
+
+- [D-112] `a33335c` Alphabetical order under a cap is a filter by first letter (T-149, T-150).
+  My hypothesis that macOS's wider list justified alphabetical was refuted: both macOS consumers
+  truncate, so an empty `[[` could only ever offer titles beginning with "A". Independently verified;
+  the verifier's finding — that the new tests pin the helpers and not the wiring — is recorded.
+
+- [D-111] `e635442` The sync banner covered the back chevron it was telling you about (T-154).
+
 
 - [D-110] `3dd09ca` An archived tag looked live on iPhone, and the width cap was not a cap (T-138).
   Ten chip spellings become one; iOS gains the width cap, remove button and archived dimming. The
