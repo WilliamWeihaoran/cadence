@@ -209,6 +209,9 @@ struct iOSNotesView: View {
                 applyTemplate: showsHeaderTemplateMenu ? nil : { apply($0, to: note) }
             )
             .id(note.id)
+            // The page-clearance reset this used to carry now lives on the strips themselves, in
+            // `iOSMarkdownAccessoryViews` — the defect belonged to them, not to this host, and a
+            // second host hit it independently. One mechanism, not one per host.
         } else {
             ProgressView()
                 .tint(Theme.blue)

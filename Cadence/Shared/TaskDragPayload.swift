@@ -40,6 +40,26 @@ nonisolated enum TaskDragPayload {
         return UUID(uuidString: payload)
     }
 
+    /// The strict `listTask:` decode, for the two task-list reorder surfaces — `InboxView`'s and
+    /// `ListDetailView`'s rows. They cannot use `taskID(from:)`: that one accepts a **bare UUID** by
+    /// design, and two surfaces really do emit one — the kanban card
+    /// (`KanbanColumnSupportViews.swift:371`) and the month-grid task chip
+    /// (`CalendarPageMonthSupportViews.swift:482`), both `.draggable(task.id.uuidString)`. A strict
+    /// decode is what stops those reading as a reorder.
+    ///
+    /// Not `TasksPanel`, which an earlier draft of this comment named: its rows go through
+    /// `TasksPanelSupport.taskDragPayload(for:)`, which calls `string(for:)` and is therefore
+    /// prefixed. That error came out of `CLAUDE.md`'s drag-prefix table, which is stale on this
+    /// point — a wrong doc propagating into source, which is the whole argument for checking a
+    /// claim against the code before repeating it.
+    ///
+    /// Both call sites hand-spelled the prefix and `dropFirst(9)` instead — the prefix's length as
+    /// a literal, which is precisely the silent break this type exists to prevent.
+    static func listTaskID(from payload: String) -> UUID? {
+        guard payload.hasPrefix(listTaskPrefix) else { return nil }
+        return UUID(uuidString: String(payload.dropFirst(listTaskPrefix.count)))
+    }
+
     static func bundleID(from payload: String) -> UUID? {
         guard payload.hasPrefix(bundlePrefix) else { return nil }
         return UUID(uuidString: String(payload.dropFirst(bundlePrefix.count)))

@@ -176,19 +176,10 @@ struct iOSMarkdownEditingSurface: View {
     }
 
     private func referenceCompletionChoices(for context: MarkdownReferenceCompletionContext) -> [iOSMarkdownReferenceCompletionChoice] {
-        let trimmedQuery = context.query.trimmingCharacters(in: .whitespacesAndNewlines)
         switch context.kind {
         case .note:
-            return referenceNotes
-                .filter { note in
-                    trimmedQuery.isEmpty ||
-                        note.displayTitle.localizedCaseInsensitiveContains(trimmedQuery) ||
-                        note.content.localizedCaseInsensitiveContains(trimmedQuery)
-                }
-                .sorted { lhs, rhs in
-                    if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
-                    return lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle) == .orderedAscending
-                }
+            return MarkdownReferenceCompletionSupport
+                .candidateNotes(from: referenceNotes, query: context.query)
                 .prefix(6)
                 .map { note in
                     iOSMarkdownReferenceCompletionChoice(
@@ -201,22 +192,8 @@ struct iOSMarkdownEditingSurface: View {
                     )
                 }
         case .task:
-            return referenceTasks
-                .filter { !$0.isCancelled }
-                .filter { task in
-                    trimmedQuery.isEmpty ||
-                        task.title.localizedCaseInsensitiveContains(trimmedQuery) ||
-                        task.notes.localizedCaseInsensitiveContains(trimmedQuery) ||
-                        task.containerName.localizedCaseInsensitiveContains(trimmedQuery)
-                }
-                .sorted { lhs, rhs in
-                    if lhs.isDone != rhs.isDone { return !lhs.isDone && rhs.isDone }
-                    if lhs.priority.rank != rhs.priority.rank {
-                        return lhs.priority.rank > rhs.priority.rank
-                    }
-                    if lhs.order != rhs.order { return lhs.order < rhs.order }
-                    return lhs.createdAt > rhs.createdAt
-                }
+            return MarkdownReferenceCompletionSupport
+                .candidateTasks(from: referenceTasks, query: context.query)
                 .prefix(6)
                 .map { task in
                     let title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -290,10 +290,9 @@ struct InboxTaskGroupSectionView: View {
                     areas: areas,
                     projects: projects,
                     dragOverTaskID: $dragOverTaskID,
-                    taskDragPayload: { "listTask:\($0.id.uuidString)" },
+                    taskDragPayload: { TaskDragPayload.string(for: $0.id) },
                     onDropOnTaskPayload: { payload, targetTask in
-                        guard payload.hasPrefix("listTask:"),
-                              let droppedID = UUID(uuidString: String(payload.dropFirst(9))),
+                        guard let droppedID = TaskDragPayload.listTaskID(from: payload),
                               droppedID != targetTask.id else { return false }
                         onReorderTask(droppedID, targetTask.id)
                         return true

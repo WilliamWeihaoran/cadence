@@ -92,27 +92,14 @@ struct iOSMarkdownReferencePickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
 
+    /// The same candidates the inline `[[` menu offers, unfiltered by `.prefix` — this sheet is
+    /// the full list. Both sides go through `MarkdownReferenceCompletionSupport`.
     private var filteredNotes: [Note] {
-        notes
-            .filter { matches($0.displayTitle) || matches($0.content) }
-            .sorted { lhs, rhs in
-                if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
-                return lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle) == .orderedAscending
-            }
+        MarkdownReferenceCompletionSupport.candidateNotes(from: notes, query: query)
     }
 
     private var filteredTasks: [AppTask] {
-        tasks
-            .filter { !$0.isCancelled }
-            .filter { matches($0.title) || matches($0.notes) || matches($0.containerName) }
-            .sorted { lhs, rhs in
-                if lhs.isDone != rhs.isDone { return !lhs.isDone && rhs.isDone }
-                if lhs.priority.rank != rhs.priority.rank {
-                    return lhs.priority.rank > rhs.priority.rank
-                }
-                if lhs.order != rhs.order { return lhs.order < rhs.order }
-                return lhs.createdAt > rhs.createdAt
-            }
+        MarkdownReferenceCompletionSupport.candidateTasks(from: tasks, query: query)
     }
 
     private var isEmpty: Bool {
@@ -190,12 +177,6 @@ struct iOSMarkdownReferencePickerSheet: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
         }
-    }
-
-    private func matches(_ value: String) -> Bool {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return true }
-        return value.localizedCaseInsensitiveContains(trimmed)
     }
 }
 
@@ -348,6 +329,19 @@ struct iOSMarkdownSuggestionStrip<Content: View>: View {
                         .padding(.trailing, 12)
                 }
                 .scrollIndicators(.hidden)
+                // A page carrying the floating `+` sets
+                // `contentMargins(.bottom, iOSCircularAddButton.scrollClearance, for: .scrollContent)` — 100pt —
+                // once, for its own bottom-reaching list. `contentMargins` is **inherited through the
+                // environment**, so it lands on every scroll view underneath, including this strip. This one is
+                // pinned to about one touch target tall, and 100pt of bottom margin inside a ~56pt viewport
+                // leaves a *negative* content region: SwiftUI centres the row in it and draws it ~50pt above
+                // its own frame, on top of whatever sits there, while this band renders empty.
+                //
+                // Reset here rather than in each host. Two hosts hit this independently — Today's Notes pane
+                // and the area/project Notes tab — and the defect belongs to the strip, not to either of them:
+                // a short fixed-height horizontal scroll view is never the page's bottom-reaching content, so
+                // it should never inherit the page's clearance for the button.
+                .contentMargins(.vertical, 0, for: .scrollContent)
             }
         }
         .padding(.horizontal, 12)
@@ -606,6 +600,19 @@ struct iOSMarkdownFormatToolbar: View {
             .padding(.vertical, 6)
         }
         .scrollIndicators(.hidden)
+        // A page carrying the floating `+` sets
+        // `contentMargins(.bottom, iOSCircularAddButton.scrollClearance, for: .scrollContent)` — 100pt —
+        // once, for its own bottom-reaching list. `contentMargins` is **inherited through the
+        // environment**, so it lands on every scroll view underneath, including this strip. This one is
+        // pinned to about one touch target tall, and 100pt of bottom margin inside a ~56pt viewport
+        // leaves a *negative* content region: SwiftUI centres the row in it and draws it ~50pt above
+        // its own frame, on top of whatever sits there, while this band renders empty.
+        //
+        // Reset here rather than in each host. Two hosts hit this independently — Today's Notes pane
+        // and the area/project Notes tab — and the defect belongs to the strip, not to either of them:
+        // a short fixed-height horizontal scroll view is never the page's bottom-reaching content, so
+        // it should never inherit the page's clearance for the button.
+        .contentMargins(.vertical, 0, for: .scrollContent)
     }
 
     private var separator: some View {

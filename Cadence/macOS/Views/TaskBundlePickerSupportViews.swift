@@ -73,7 +73,11 @@ struct TaskBundleTaskPickerPanel: View {
                 let lhsScore = candidateSortScore(lhs)
                 let rhsScore = candidateSortScore(rhs)
                 if lhsScore != rhsScore { return lhsScore > rhsScore }
-                return lhs.createdAt > rhs.createdAt
+                if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+                // The candidate list mixes tasks from several containers, so `order` alone ties
+                // constantly; `TaskOrdering.fallbackPrecedes` is the total tail every other task
+                // surface ends in.
+                return TaskOrdering.fallbackPrecedes(lhs, rhs)
             }
     }
 

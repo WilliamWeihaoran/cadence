@@ -51,7 +51,12 @@ enum CadenceFocusSupport {
                 if lhsScore != rhsScore {
                     return lhsScore > rhsScore
                 }
-                return lhs.createdAt > rhs.createdAt
+                // Newest first among equal scores, then the repo's total tie-break. This list is
+                // read head-first — Focus offers the top of it — so a comparator that stopped at
+                // `createdAt` changed *which* task was offered, not merely the order behind it:
+                // tasks created in one batch (a rollover, a migration, a paste) share a timestamp.
+                if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+                return TaskOrdering.fallbackPrecedes(lhs, rhs)
             }
     }
 
