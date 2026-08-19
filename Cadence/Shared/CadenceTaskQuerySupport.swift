@@ -242,8 +242,13 @@ enum CadenceTaskQuerySupport {
     /// differently between renders or between devices. macOS's `TaskOrdering` was given a total
     /// tie-break (`order` → `createdAt` → `title` → `id`) for exactly this reason and
     /// `TaskOrderingTests` pins it by sorting a tie-heavy set from two permutations and requiring
-    /// byte-identical output; iOS spelled its own comparator and never got that. This is the
-    /// remaining half of that consolidation.
+    /// byte-identical output. iOS spelled its own comparator and for a long time ended in a bare
+    /// `order` comparison; `6277539` closed that, and `MobileTaskSortStabilityTests` pins this
+    /// comparator the same way — same set, two starting permutations, identical output required.
+    /// The two spellings still differ in vocabulary (`CadenceTaskSortMode` has no sort *direction*
+    /// and a different case set), but not in the tie-break. This comment used to end "iOS … never
+    /// got that. This is the remaining half of that consolidation", directly above five branches
+    /// that already called `fallbackPrecedes` — do not pick that up as outstanding work.
     static func sortTasks(
         _ lhs: AppTask,
         _ rhs: AppTask,

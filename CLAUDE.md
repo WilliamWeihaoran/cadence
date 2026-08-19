@@ -74,13 +74,20 @@ Cadence/
 │   ├── CalendarVisibilityPreferences (in CadenceCalendarVisibilityPreferences.swift) and
 │   │                   # CalendarWorkHoursPreferences — both shared, NOT macOS-only. The file name
 │   │                   # carries the Cadence prefix; the type does not.
-│   └── Components/     # 12 files: CadenceDatePicker, CadenceButtons, CadenceContextPicker,
-│                       # EmptyStateView, SectionEyebrowLabel, CommitmentSharedViews,
+│   └── Components/     # 15 files: CadenceButtons, CadenceContextPicker, CadenceDatePicker,
+│                       # CadenceScrollElasticity, CadenceSidebarCountLabel,
+│                       # CadenceStartupIssueBanner, CadenceTagChip, CadenceValueTile,
+│                       # CadenceWrappingHStack, CommitmentSharedViews (CommitmentPageHeader +
+│                       # CommitmentIconTile), EmptyStateView,
 │                       # EstimatePickerControl (iOS chip; its popover is shared),
-│                       # CadenceScrollElasticity, CadenceValueTile, CadenceWrappingHStack,
-│                       # GoalProgressBar, HabitProgressViews (holds the 52-week HabitHeatmap).
+│                       # GoalProgressBar, HabitProgressViews (holds the 52-week HabitHeatmap),
+│                       # SectionEyebrowLabel.
 │                       # Check this list before writing a new shared view — the no-near-copies
-│                       # rule is only as good as the inventory an agent can see.
+│                       # rule is only as good as the inventory an agent can see. Which is why
+│                       # the count is load-bearing and kept going stale: it read 12 across
+│                       # `49c1797`, `5aa11dc` and `3dd09ca`, each of which added one file here.
+│                       # Re-count the directory when you add to it; a stale number reads as a
+│                       # complete inventory and sends the next agent off to write a near-copy.
 ├── iOS/                # Large adaptive iOS/iPadOS surface (79 files) — see "What's Built (iOS)"
 │   ├── iOSRootView.swift        # Adaptive root shell: iPad sidebar / iPhone tab bar; deep links, widget refresh
 │   ├── iOSCompactTabShell.swift # iPhone bottom bar, per-tab paths, centre capture button
@@ -344,9 +351,11 @@ Color(hex: "#4a9eff")  // initializer exists for USER colorHex values — not fo
 
 ### Other standing UI rules
 - **Page headers do not describe the page you are already on.** The `subtitle` parameter was
-  deleted from `DesktopPageHeader`, `CommitmentPageHeader`, and `CadenceSettingsHeader`. Search
-  result rows, empty states, and picker rows *keep* their subtitles — those say something the
-  screen does not.
+  deleted. Search result rows, empty states, and picker rows *keep* their subtitles — those say
+  something the screen does not. Since `5aa11dc` there is one header view per platform —
+  `DesktopPageHeader` and `iOSPageHeader` — and `PanelHeader`, `CommitmentPageHeader` and
+  `CadenceSettingsHeader` are name-only wrappers over the first, not peers of it as this line
+  used to imply. Account and metric ramp: `Cadence/Shared/AGENTS.md`.
 - **One hover/selection layer at one radius.** If a row already has a `rowBackground`, do not
   add a second `.background()` on another layer at a different corner radius.
 - **Prefer one shared component over near-copies.** The three kanban boards and the two estimate
@@ -400,7 +409,7 @@ TimeFormatters.durationLabel(actual: Int, estimated: Int)  // "45/60m"
 
 iOS still has its own vocabulary — `CadenceTaskSortMode` + `CadenceTaskQuerySupport.sortTasks` in `Shared/` — with no sort **direction** (priority is always high-first) and a different case set (`.listOrder` / `.priority` / `.doDate` / `.dueDate` / `.newest`). That much is still unconsolidated.
 
-**The tie-break is not.** This file used to add "and tie-breaks on `order` alone … the remaining half of the consolidation"; that was fixed in `6277539` and every one of `sortTasks`' five branches now ends in `TaskOrdering.fallbackPrecedes`. Do not pick this up as outstanding work and do not "fix" a comparator that `TaskOrderingTests` already pins. (The doc comment above `CadenceTaskQuerySupport.sortTasks` still closes with the stale sentence, directly under a first line saying the opposite — a code fix, not a docs one.)
+**The tie-break is not.** This file used to add "and tie-breaks on `order` alone … the remaining half of the consolidation"; that was fixed in `6277539` and every one of `sortTasks`' five branches now ends in `TaskOrdering.fallbackPrecedes`. Do not pick this up as outstanding work and do not "fix" a comparator that `TaskOrderingTests` and `MobileTaskSortStabilityTests` already pin. (The doc comment above `CadenceTaskQuerySupport.sortTasks` carried the same stale sentence for longer than this file did, directly under a first line saying the opposite; it was corrected under T-151.)
 
 **Where controls appear:** Today’s task column (`TasksPanel`), Inbox, All Tasks **list** mode, Area/Project **Tasks** tab, and All Tasks / list-detail **Kanban** (sort only — Kanban **does not** offer grouping; columns stay section-based). UI uses custom “picker badge” controls (not `Menu`), consistent with All Tasks. There is **no** global task **filter** UI (do date / list / priority filters were removed).
 

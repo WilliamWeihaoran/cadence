@@ -97,10 +97,15 @@ code, and every one of them has been violated by a shipped change at least once.
   shadows and borders precisely so call sites stop inventing their own. This includes the
   `CadenceWidgets` target, which has `Theme.swift` in its Sources phase so it can comply.
 - **Page headers do not describe the page you are already on.** A subtitle under "Notes"
-  saying "Write and organize your notes" is noise; the `subtitle` parameter has been deleted
-  from `DesktopPageHeader`, `CommitmentPageHeader`, and `CadenceSettingsHeader`. Search
+  saying "Write and organize your notes" is noise; the `subtitle` parameter is gone. Search
   result rows, empty states, and picker rows *keep* their subtitles — those say something the
-  screen does not.
+  screen does not. There is now **one** header view per platform to enforce that in:
+  `DesktopPageHeader` and `iOSPageHeader`. This bullet used to name `CommitmentPageHeader` and
+  `CadenceSettingsHeader` beside `DesktopPageHeader`, which was accurate until `5aa11dc` and is
+  now misleading in the direction that costs: both are name-only wrappers, so a header change
+  landed three times was landed twice too often. See `Cadence/Shared/AGENTS.md` for the wrapper
+  list and for why `CadencePageHeaderSurface` has a third `.desktop` tier rather than reusing
+  `.regular`.
 - **One hover/selection layer at one radius.** Stacked hover backgrounds at mismatched radii
   have shipped independently in the task inspector, group headers, tab bars, sidebar rows,
   and the notes action menu. If a row already has a `rowBackground`, do not add a second
@@ -119,12 +124,21 @@ code, and every one of them has been violated by a shipped change at least once.
   `SourcePackages`, which read as a broken checkout and briefly made a correct agent report look
   wrong. Rule: a build failure you cannot explain is a private-`derivedDataPath` re-run before it is
   a finding. Note `-derivedDataPath` requires `-scheme`; it is rejected with `-target` alone.
-- **Check the log says which tree it built.** The scratchpad is shared, so an isolated tree can be
-  deleted out from under a running build; the failed `cd` then falls through to the live repo and
-  the run reports **exit 0 against the wrong sources**. This happened on 2026-08-18 and was caught
-  only by grepping the log for the path xcodebuild echoes. Use a PID-unique directory, and confirm
-  the isolated path appears in the log before trusting the result. `build.db is locked` and `unable
-  to spawn swift-frontend` on a fresh private path are the same contention and clear on re-run.
+- **One directory per agent, and clean only inside it.** The scratchpad root is shared. Make
+  **one** directory of your own under it — the session scratchpad path plus your PID, e.g.
+  `.../scratchpad/agent-$$/` — put both your isolated source tree and your `-derivedDataPath`
+  *inside* it, and let your `rm -rf` name that directory and nothing else. This said "use a
+  PID-unique `-derivedDataPath`", and two agents read it as a unique *filename* under the shared
+  root, then deleted each other's DerivedData mid-run with `rm -rf` on sibling paths — a
+  unique name is not isolation if the cleanup step can still reach a sibling. Cleanup is also not
+  optional: the scratchpad reached **64 GB** in one session and filled the user's disk. Delete your
+  directory when you are done, and only yours.
+- **Check the log says which tree it built.** An isolated tree can be deleted out from under a
+  running build (see above); the failed `cd` then falls through to the live repo and the run reports
+  **exit 0 against the wrong sources**. This happened on 2026-08-18 and was caught only by grepping
+  the log for the path xcodebuild echoes. Confirm your isolated path appears in the log before
+  trusting the result. `build.db is locked` and `unable to spawn swift-frontend` on a fresh private
+  path are the same contention and clear on re-run.
 - **Drag-and-drop CAN be driven on the iOS simulator.** This was recorded as impossible for a long
   time and the record was wrong; every "drag is verified by inference" caveat in this repo's history
   predates the recipe below. `UIDragInteraction`'s lift recognizer needs the touch **stationary for
@@ -157,14 +171,28 @@ code, and every one of them has been violated by a shipped change at least once.
   **One genuine constraint remains:** posting `CGEvent`s drives the user's *physical* cursor, so a
   scripted macOS drag fights them for the pointer and can drop something somewhere unintended. Safe
   only when the machine is known idle; screenshots and reads are safe any time.
-- **Commit with `git commit --only <paths>` when agents share a working tree.** `git add <paths>`
-  adds your paths *to whatever is already staged*, so another agent's `git mv` or `git rm` sitting in
-  the index rides along into your commit. This has happened three times. The third was the expensive
-  one: `c9d2d78` swept in a staged deletion of two view files whose callers were not yet committed,
-  so **HEAD did not build for iOS** until the next commit — and it was invisible to verification,
-  because isolating a change with `git archive HEAD` reproduces HEAD's *tree*, not its index, so the
-  files were still present in every check. `--only` takes the paths and ignores the index. Failing
-  that, read `git status --porcelain` for staged entries you did not stage before every commit.
+- **Verify and commit with nothing live in the tree.** When agents share a working tree, what you
+  commit must be the bytes you tested — and the two ways of losing that are independent:
+  - *The file list.* `git add <paths>` adds your paths **to whatever is already staged**, so another
+    agent's `git mv` or `git rm` sitting in the index rides along. `c9d2d78` swept in a staged
+    deletion of two view files whose callers were not yet committed, so **HEAD did not build for
+    iOS** until the next commit — and no check caught it, because isolating with `git archive HEAD`
+    reproduces HEAD's *tree*, not its index, so the deleted files were present everywhere you
+    looked. `git commit --only <paths>` takes the paths and ignores the index, and fixes this half.
+  - *The file contents.* `--only` does **not** fix the other half, and this guide claimed it did.
+    `5aa11dc` used `--only` and still left HEAD unbuildable for three commits: the subset was
+    verified and passed, a live agent then edited two of those files, and `--only` faithfully
+    committed bytes that had never been compiled. A passing verification is a statement about a
+    moment, not about a path list.
+
+  So: get the tree quiet before you verify — other agents' in-flight files reverted, their new files
+  out of the way — and commit immediately after, with `--only` naming your paths. If you cannot
+  quiet the tree, checksum the exact files you tested (`shasum` them into your scratchpad) and
+  confirm the digests are unchanged at commit time; re-verify if any moved. Also read
+  `git status --porcelain` for staged entries you did not stage. Two failure modes here were mine
+  rather than the tooling's, and both are cheap to repeat: classifying files by a filename pattern
+  (`*Tag*`) that neither affected file matched, and treating a subset test as durable while agents
+  were still writing.
 - **iPhone and iPad are one style, not two.** They differ in *layout* — a tab bar against a
   sidebar, one pane against two — and should not differ in how a row, a chip, a header or a
   picker looks or behaves. So: a change asked for on one is a change to both unless it is

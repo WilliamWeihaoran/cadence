@@ -45,6 +45,31 @@ A `find . -name TypeName.swift` that comes back empty is therefore not evidence 
 elsewhere, and this exact mismatch is what left two docs describing `CalendarVisibilityPreferences`
 as a macOS service after it had moved. Grep for the declaration, not for the filename.
 
+## One Page Header Per Platform
+
+`DesktopPageHeader` (`macOS/Views/macOSRootSupportViews.swift`) and `iOSPageHeader`
+(`iOS/iOSFeatureComponents.swift`) are **the** two header views. Everything else with "header" in
+its name is a name-only wrapper that decides nothing about appearance: `PanelHeader`,
+`CommitmentPageHeader` and `CadenceSettingsHeader` on macOS, `iOSPanelHeader` and
+`iOSSettingsPageHeader` on iOS. Both root guides used to name the three macOS wrappers alongside
+`DesktopPageHeader` as if they were peers — which was true until `5aa11dc` and is the reason a
+subtitle, a title size and three glyph ratios (32/15, 32/13, 42/17) each had to be removed three or
+four times to actually be gone. Change the header in one place; check the wrapper only for the
+parameter it passes.
+
+All of them draw their measurements from `CadencePageHeaderMetrics` (here, outside any platform
+guard so the macOS-built test target can pin it — `CadenceTests/CadencePageHeaderMetricsTests.swift`).
+Two axes:
+
+- **`CadencePageHeaderRole`** — `.page` for the top of a whole screen, `.pane` for one column
+  inside a split, where the page has already said what it is. Volume, not vocabulary: title and
+  tile size vary by role; eyebrow, count badge and padding do not.
+- **`CadencePageHeaderSurface`** — `.compact`, `.regular`, **`.desktop`**. macOS is deliberately a
+  third tier and not an alias for `.regular`: a Mac window is wider than an iPad but sets type
+  *smaller*, not larger — Apple's large title is 26pt on macOS against 34 on iOS, and Cadence's
+  desktop body is 13pt against the phone's 15–17. Folding the two would put a 30pt title over 13pt
+  rows. Do not "simplify" the enum to two cases; the third one is the finding.
+
 ## Component Expectations
 
 - Components should be reusable through explicit props and bindings.
