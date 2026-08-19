@@ -31,13 +31,23 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 **AZ — the iPad calendar Week headers glitch on fast horizontal scroll** ([T-152], user-reported)
 
-**BA — CloudKit can fail silently on iOS** ([T-153])
-
 **BB — sidebar count badge and page-header metrics to macOS** ([T-135], [T-137])
 
 **BC — one tag chip** ([T-138])
 
 ## Open — decided, not started
+
+- [T-154] **The startup banner covers the top strip on iPhone.** From `D-107`: at 390pt it hides
+  page headers and the pushed-Settings back chevron for the whole launch. `allowsHitTesting(false)`,
+  so controls still work — they are just invisible. Only in the failure state, but the right shape is
+  collapse-to-pill in the shared component. Not outright dismissal: macOS Settings has no sync row,
+  so a dismissed macOS banner would leave no durable indicator anywhere.
+
+- [T-155] **The macOS startup banner has not been seen rendering.** `D-107` moved it from a ZStack
+  child to `.overlay(alignment: .top)` and the build is green, but the user's display was locked so
+  `screencapture` returned the lock screen. The same shared view is proven on iPhone and iPad. Worth
+  one look when the machine is unlocked.
+
 
 - [T-152] **The iPad calendar's Week day headers glitch during fast horizontal scrolling.**
   User-reported. Headers are positioned manually rather than with `pinnedViews` (which pins along
@@ -45,16 +55,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   the offset to a **column index** so it only fires at integer boundaries — which is the prime
   suspect for a header row lagging the columns during a fling. Same bug class as the six
   scroll-position-adoption defects already found; `CadenceLazyScrollAnchor` may already hold the fix.
-
-- [T-153] **CloudKit can fail silently, and on iOS nothing says so.** Found while diagnosing the
-  user's "iPad is not syncing". `PersistenceController.makeContainer()` opens the store with
-  CloudKit; if it throws for *any* reason the app falls back to `makeRecoveryContainer()`, which
-  opens with **`cloudKitDatabase: .none`**. The app then works normally and syncs nothing. The reason
-  is recorded in `startupIssue` — and `startupIssue` is rendered **only** by
-  `macOSRootView.swift:77`'s `RootStartupIssueBanner`. Grepped all 79 files in `Cadence/iOS/`: there
-  is no startup-issue surface at all. So the Mac warns and the iPad does not, which is exactly the
-  shape of the reported symptom. Independent of whatever is actually wrong with the user's sync, a
-  data-trust failure that announces itself on one platform and not the other is a bug.
 
 - [T-147] **A cancelled task is unreachable on iOS.** Bigger than the glyph bug that surfaced it
   (`D-105`): every list query filters cancelled out (`CadenceTaskQuerySupport` ×6,
@@ -306,6 +306,12 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-107] `49c1797` iOS could stop syncing and say nothing, while Settings showed a green tick
+  (T-153). The worse half was Settings *contradicting* the store: a green iCloud tick shown from
+  account status alone while the store had fallen back to local-only. `CadenceSyncHealth` is now one
+  answer and the store outranks the account.
+
 
 - [D-104] `41b25f8` A wire format bypassed by the surfaces it protects, and a toolbar drawn 50pt
   too high (T-127, T-129, T-145/T-146). The verifier refuted the first justification for the new
