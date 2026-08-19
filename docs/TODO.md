@@ -29,9 +29,22 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-**BC — one tag chip** ([T-138])
+_Nothing in flight._
 
 ## Open — decided, not started
+
+- [T-158] **`git commit --only` does not close the sweep hazard, and `AGENTS.md` now says it does.**
+  `5aa11dc` left HEAD unbuildable for three commits: it swept in two files whose in-flight edits
+  referenced a type whose defining file was still untracked. `--only` was adopted earlier today
+  precisely to prevent this and **it protects the file list, not the file contents** — the subset was
+  verified and passed, then a live agent edited those files between the verification and the commit,
+  and `--only` captured bytes never tested. Two contributing errors of mine: classifying files by a
+  filename pattern (`*Tag*`) that neither file matched, and treating a passing subset test as durable
+  while agents were still writing.
+  The rule that actually holds: **verify and commit with nothing live in the tree**, or checksum the
+  bytes you tested and confirm them unchanged at commit time. Rewrite the `AGENTS.md` entry, which
+  currently promises more than `--only` delivers.
+
 
 - [T-156] **Three docs are stale after `D-108`.** `CLAUDE.md:77` says `Shared/Components/` has 12
   files (14 now); `AGENTS.md:101` and `CLAUDE.md:347` still describe `DesktopPageHeader`,
@@ -100,10 +113,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   finding: a fork named `iOSFoo` reads as "an iOS thing" in a diff, so no reviewer sees it as a copy.
   Two sidebar rows even carry the same warning comment verbatim, one word changed. Worth running this
   intersection as a standing check.
-
-- [T-138] **One tag chip.** macOS draws a muted rounded rect, iOS a coloured capsule, and **iOS
-  silently lacks the width cap, the remove button and archived dimming** — so it is a feature gap
-  wearing the costume of a style difference.
 
 - [T-128] **`activeModelContext ?? modelContext` is re-derived at 7 sites in one file.**
   `macOS/macOSRootView.swift` holds a `@State ModelContext?` that `refreshAppData()` replaces
@@ -296,6 +305,13 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-110] `3dd09ca` An archived tag looked live on iPhone, and the width cap was not a cap (T-138).
+  Ten chip spellings become one; iOS gains the width cap, remove button and archived dimming. The
+  rect beat the capsule structurally, not by taste: a capsule spends both colour channels on identity
+  and leaves none for state, which is why iOS never grew archived rendering. Also fixed a latent bug
+  on both platforms — `frame(maxWidth:)` is flexible *upward*, so the cap was never a cap.
+
 
 - [D-109] `3238e71` The calendar wrote to disk twice per column and dropped a frame doing it (T-152).
   The reported "header glitch" was a rendering artefact of a storage problem — two `UserDefaults`
