@@ -29,9 +29,32 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-_Nothing in flight._
+**AZ — the iPad calendar Week headers glitch on fast horizontal scroll** ([T-152], user-reported)
+
+**BA — CloudKit can fail silently on iOS** ([T-153])
+
+**BB — sidebar count badge and page-header metrics to macOS** ([T-135], [T-137])
+
+**BC — one tag chip** ([T-138])
 
 ## Open — decided, not started
+
+- [T-152] **The iPad calendar's Week day headers glitch during fast horizontal scrolling.**
+  User-reported. Headers are positioned manually rather than with `pinnedViews` (which pins along
+  the scroll axis and ignores horizontal scroll), and the horizontal observer deliberately reduces
+  the offset to a **column index** so it only fires at integer boundaries — which is the prime
+  suspect for a header row lagging the columns during a fling. Same bug class as the six
+  scroll-position-adoption defects already found; `CadenceLazyScrollAnchor` may already hold the fix.
+
+- [T-153] **CloudKit can fail silently, and on iOS nothing says so.** Found while diagnosing the
+  user's "iPad is not syncing". `PersistenceController.makeContainer()` opens the store with
+  CloudKit; if it throws for *any* reason the app falls back to `makeRecoveryContainer()`, which
+  opens with **`cloudKitDatabase: .none`**. The app then works normally and syncs nothing. The reason
+  is recorded in `startupIssue` — and `startupIssue` is rendered **only** by
+  `macOSRootView.swift:77`'s `RootStartupIssueBanner`. Grepped all 79 files in `Cadence/iOS/`: there
+  is no startup-issue surface at all. So the Mac warns and the iPad does not, which is exactly the
+  shape of the reported symptom. Independent of whatever is actually wrong with the user's sync, a
+  data-trust failure that announces itself on one platform and not the other is a bug.
 
 - [T-147] **A cancelled task is unreachable on iOS.** Bigger than the glyph bug that surfaced it
   (`D-105`): every list query filters cancelled out (`CadenceTaskQuerySupport` ×6,
