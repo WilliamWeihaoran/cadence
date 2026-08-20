@@ -122,11 +122,17 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   `macOS/Views/ListNotes*` plus `DataIntegrityRepairService`. iOS's list-detail Notes tab is flat, so
   folders created on a Mac are invisible and a note created on iOS always lands at the root.
 
-- [T-194] **Note export has no iOS equivalent, and this one is genuinely AppKit.** `NoteExportService`
-  really is platform-bound — `NSSavePanel`, and PDF rendering through `NSTextStorage`/`NSTextView`.
-  So unlike [[T-187]]–[[T-193]] the *mechanism* must be rebuilt, not un-guarded. But the capability is
-  portable and iOS has none: `ShareLink` appears nowhere under `Cadence/iOS`. Worth splitting —
-  markdown-string export via `ShareLink` is cheap, PDF is not.
+- [T-194] **Note export on iOS: markdown *and* PDF.** User's call — the fuller option, chosen
+  knowing the cost. Unlike [[T-187]]–[[T-193]] this is the one gap that is genuinely AppKit-bound
+  rather than guarded by accident: `NoteExportService` uses `NSSavePanel` and renders PDF through
+  `NSTextStorage`/`NSTextView`, so the mechanism must be rebuilt, not un-guarded.
+  Markdown is cheap: a `ShareLink` over the export string, and `ShareLink` appears nowhere under
+  `Cadence/iOS` today. PDF is the real work and needs a UIKit renderer, which means **a second
+  renderer that has to keep matching the macOS one** — so factor the shared decisions (page size,
+  margins, how a task embed and an image asset render) out of `NoteExportService` first, or the two
+  will drift the way the heading ramps did. Note `D-124` found the markdown *preview* and *editor*
+  already disagreed about heading sizes on the same platform; a third renderer is a third chance at
+  that.
 
 - [T-195] **Today's rollover banner and sections-due-today are macOS-only.** The four Today group
   kinds *are* shared (`CadenceTodayTaskGroupKind`, read by both platforms since `d330f5e`). What is
@@ -139,13 +145,17 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   streak and no 7-day strip. And `iOSAboutSettingsSection` (version, build, bundle ID, review link)
   has no macOS counterpart — macOS has no `.about` category.
 
-- [T-197] **`iOSMobileCapability.all` is a user-facing parity manifest that is stale in both
-  directions.** `iOS/iOSSettingsComponents.swift:149`, shown under Settings → Coverage. Its Settings
-  row still advertises "**Theme**" — the picker went with `ThemeManager` and no theme row exists
-  anywhere. It omits reminders and notifications from that row (both shipped), and files CloudKit
-  sync and Habits under "Partial" with reasons the code no longer matches. **This is the only stale
-  claim a *user* can read**, which ranks it above every doc fix. Either give it an owner or delete
-  the section. Overlaps [[T-15]], which will delete the Theme row as part of its work.
+- [T-197] **Delete the Settings → Coverage parity manifest.** User's call, and the right one: a
+  hand-maintained parity list living inside the app will always drift, and it already has —
+  `iOSMobileCapability.all` (`iOS/iOSSettingsComponents.swift:149`) still advertises a **Theme**
+  picker that went with `ThemeManager`, omits reminders and notifications from its Settings row
+  (both shipped), and files CloudKit sync and Habits under "Partial" with reasons the code
+  contradicts. It was the only stale claim a *user* could read.
+  Remove the section, the `iOSMobileCapability` type and the `.coverage` settings category with it —
+  a category that still routes somewhere empty is how `subtitle` survived three deletions. Check
+  whether `CadenceSettingsCategoryKind.coverage` has other readers before removing the case, and
+  note `T-199` records that macOS never offered `.coverage` at all, so this narrows a two-way
+  difference to nothing rather than creating one.
 
 - [T-198] **Six stale counts across the guides, and one refuted shared-component claim.** From the
   T-32 audit, re-verify each before editing: `Cadence/iOS/` said 79 in three places (actual 82 at the
@@ -256,11 +266,16 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   (`iOSCompactTabShell`) is built around a portrait tab bar; landscape focus wants the timer large
   and the chrome gone, which is a different shape rather than the same one rotated.
 
-- [T-169] **iPhone "More" tab needs rethinking.** `iOSMoreTabView` is currently a flat list of the
-  six destinations that did not fit the four-slot tab bar — Focus, Goals, Habits, Lists, Search,
-  Settings. That is a description of the tab bar's overflow, not a design. It replaced
-  `iOSCompactHomeView` (a grid of eight tiles standing in for navigation the app did not have), so
-  the failure mode to avoid is recreating that grid under a new name.
+- [T-169] **iPhone "More" tab: make it a grouped list, not a flat one.** User's call.
+  `iOSMoreTabView` is currently the six destinations that did not fit the four-slot tab bar — Focus,
+  Goals, Habits, Lists, Search, Settings — in one flat list, which describes the tab bar's overflow
+  rather than a design. Group it the way the Settings screen already groups its categories: work
+  (Goals, Habits, Focus), organisation (Lists), then Search and Settings. `CadenceMobileSettingsLayout
+  .groups` is the precedent and its doc explains the reasoning ("three groups, not twelve loose
+  rows"); reuse the shape, not the contents.
+  The failure mode to avoid is named in the ticket's history: this replaced `iOSCompactHomeView`, a
+  grid of eight tiles standing in for navigation the app did not have, so do **not** turn it back
+  into a dashboard.
 
 - [T-170] **Decide how far iPadOS and iPhone layout should converge.** Standing rule is that they
   are one *style* and differ only in *layout* — sidebar vs tab bar, two panes vs one. The open
@@ -268,25 +283,26 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   been unified internally. Wants a decision recorded, not a sweep: which surfaces are genuinely
   shape-bound and which are iPad-only by accident.
 
-- [T-171] **The blue `+` button: short press, long-press palette, and drag.** Wanted behaviour:
-  - **Keep the existing drag.** It already exists — `iOSCompactTabShell.swift` (~:258) attaches
-    `.onDrag` to the centre control, and dropping it on a task row is already wired. Not new work;
-    work to *not* break.
-  - **Short press** presents the task creation sheet. Already the behaviour.
-  - **Long press / press-and-hold** opens a radial palette around the button — roughly a semicircle
-    of segments, with haptics — offering task, calendar, note, and possibly more.
-  - **The conflict that makes this non-trivial, and the reason it is recorded rather than guessed
-    at:** UIKit's drag lift *is* a long press. `UIDragInteraction`'s recognizer needs the touch
-    held stationary ~350ms before it begins (measured at 326–349ms in this repo's own simulator
-    work). So "hold to open a palette" and "hold to lift and drag" are the same gesture, and one
-    will eat the other. Resolving it needs a deliberate choice — different hold durations, a
-    direction test like the one `iOSMarkdownImageResizeGestureRecognizer` uses for resize-vs-scroll,
-    or moving the palette to a different trigger entirely. Do not start this without deciding that
-    first.
-  - **macOS is deliberately open.** No equivalent decided yet; leave it unspecified rather than
-    inventing a Mac gesture to match. macOS creation today is the floating `+`, the column ghost
-    row, and the calendar drag-create popover.
-
+- [T-171] **The blue `+` button: palette on stillness, drag on escape.** User's resolution of the
+  gesture conflict, and it is better than the alternatives offered — **the palette *is* the
+  local-drag target**:
+  - Quick press then move → a drag immediately. The palette never appears.
+  - Press and hold still (~350ms, with haptic) → the palette opens, a semicircle of segments around
+    the button: task, calendar, note, and possibly a fourth.
+  - Palette open, finger moving **within** its radius → slides between segments, the way a radial
+    menu works. This is the "local dragging" case and it belongs to the palette.
+  - Finger travelling **beyond** that radius → the palette gives up and it becomes a drag, so
+    dropping onto a task list still works.
+  **The technical caveat, recorded before anyone starts.** "Drag wins on escape" is probably not
+  implementable with `.onDrag` / `UIDragInteraction`: you cannot hand a live touch to UIKit's drag
+  machinery partway through a gesture you are already tracking, and the lift has to be recognised at
+  the start. So this likely needs a custom drag — a `UIPanGestureRecognizer` plus a rendered preview
+  — rather than the system drag the button uses today. `iOSMarkdownImageResizeGestureRecognizer` is
+  the in-repo precedent for a recognizer that decides by direction inside the first few points of
+  travel and fails cleanly so a sibling can take over.
+  Two figures to settle by feel, not by argument: the hold duration (UIKit's own lift is 326–349ms
+  measured here) and the escape radius, which must be larger than the palette's own reach or
+  segment selection will convert to a drag mid-choice. macOS stays deliberately unspecified.
 
 - [T-166] **`defaultColorHex` is eleven hand-typed hex literals feeding `Color(hex:)`.** Exactly the
   pattern `AGENTS.md` bans outside `Theme.swift` and genuinely user-owned `colorHex`. These are
