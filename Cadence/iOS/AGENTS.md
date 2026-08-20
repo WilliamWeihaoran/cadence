@@ -1,6 +1,6 @@
 # iOS Guide
 
-The iOS/iPadOS app is a large, actively-developed surface (79 files covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings) — not early/stubbed. Do not assume macOS feature parity by default; check the actual view file.
+The iOS/iPadOS app is a large, actively-developed surface (85 files covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings) — not early/stubbed. Do not assume macOS feature parity by default; check the actual view file.
 
 ## Working Rules
 
@@ -12,6 +12,27 @@ The iOS/iPadOS app is a large, actively-developed surface (79 files covering Tod
 ## Current State
 
 The macOS app is the primary product surface. iOS is a large, real, actively-developed surface. `iOSRootView.swift` is an adaptive root shell: `iPadMacStyleRootShell` (sidebar) at regular width, `iOSCompactRootShell` (bottom tab bar) at compact width, routing to full implementations of most macOS feature areas.
+
+## The markdown styling layer
+
+`iOSMarkdownStyler` is **four files** since T-121, all extensions on the one enum:
+
+- **`iOSMarkdownStylingSupport.swift`** — base attributes, `attributedString` (the pass order),
+  `applyFrontmatter`, `styleLine` (the per-line dispatch), the font helpers, `drawCanvas`, `hide`.
+- **`iOSMarkdownStylingLineSupport.swift`** — quote/list/checkbox line styling, the matchers, the
+  heading type ramp, and `iOSMarkdownQuoteMatch` / `iOSMarkdownListMatch`.
+- **`iOSMarkdownStylingBlockSupport.swift`** — fenced code, tables, dividers, images, task-embed
+  cards; `collapseLine`.
+- **`iOSMarkdownStylingInlineSupport.swift`** — emphasis spans, links, wiki/task references, image
+  references, hashtags.
+
+**Nothing in them decides what a string means.** That half went to `Services/` where the
+macOS-built test target can reach it — `MarkdownStyleRanges` (heading marker visibility, block
+ranges, the reveal test, the inline exclusion set), `MarkdownInlineMarkerRanges` (which marker
+characters disappear, the hashtag and image-reference patterns), `MarkdownTableParser.tableBlock`
+(the table walk, shared with `MarkdownPreviewParser`), and `MarkdownStyleSignature` (renamed from
+`iOSMarkdownStyleSignature`). A styling bug that is really a parsing bug is fixed there, with a
+test; only the attributes belong here.
 
 ## The iPhone tab shell
 

@@ -136,4 +136,17 @@ final class iOSMarkdownTextView: UITextView {
         layoutInvalidationHandler?()
     }
 }
+
+/// Bridges an `NSRange` in the storage to the `UITextRange` every `UITextInput` mutation wants.
+///
+/// Clamps by falling back to `beginningOfDocument` / `start` rather than trapping: the ranges
+/// handed in come from parsers reading the *previous* text, so a stale one has to degenerate
+/// rather than crash.
+extension UITextView {
+    func textRange(from nsRange: NSRange) -> UITextRange? {
+        let start = position(from: beginningOfDocument, offset: nsRange.location) ?? beginningOfDocument
+        let end = position(from: start, offset: nsRange.length) ?? start
+        return textRange(from: start, to: end)
+    }
+}
 #endif

@@ -334,6 +334,21 @@ nonisolated struct MarkdownTableRowStyle: Hashable {
     let alignments: [MarkdownTableAlignment]
 }
 
+/// One table, as `MarkdownTableParser.tableBlock` reads it out of a note.
+nonisolated struct MarkdownTableBlock: Equatable {
+    /// The header row's cells, padded to `columnCount`. Can be empty for a header row that parses
+    /// to nothing, which is not the same as "there is no table here" — see `tableBlock`.
+    let headers: [String]
+    /// Body rows only; the delimiter row is consumed but never reported as a row.
+    let rows: [[String]]
+    let alignments: [MarkdownTableAlignment]
+    /// Every source line the table occupies, header and delimiter included, in order.
+    let lineIndexes: [Int]
+
+    /// The first line index after the table.
+    var nextIndex: Int { (lineIndexes.last ?? 0) + 1 }
+}
+
 nonisolated enum MarkdownTableParser {
     nonisolated static func rowStyles(in content: String) -> [Int: MarkdownTableRowStyle] {
         let lines = MarkdownSourceLines.texts(in: content)
@@ -393,6 +408,48 @@ nonisolated enum MarkdownTableParser {
         }
 
         return result
+    }
+
+    /// The whole table that starts at `lineIndex`, or `nil` if no table starts there.
+    ///
+    /// **One walk, three surfaces.** The live editor canvases (iOS), the read-only preview
+    /// (`MarkdownPreviewParser`) and — for its deletion ranges — `MarkdownRenderedBlockDeletionSupport`
+    /// each had their own copy of "take the header row, then consume every following line
+    /// `rowStyles` still calls a row". They agreed, and then the styler's copy grew a
+    /// `tableLineIndexes` the preview's did not have, which is exactly how the canvas and the
+    /// preview came to disagree about tables the first time (see `MarkdownRenderedBlockLimits`).
+    /// `lineIndexes` is carried here for the caller that has to collapse the consumed lines.
+    ///
+    /// Deliberately does **not** reject a table whose `headers` came back empty: the two callers
+    /// need different things when that happens — the preview falls through to the next block kind,
+    /// the styler leaves the source visible and skips past it — and both need `nextIndex` either
+    /// way.
+    nonisolated static func tableBlock(
+        startingAt lineIndex: Int,
+        lines: [String],
+        tableRows: [Int: MarkdownTableRowStyle]
+    ) -> MarkdownTableBlock? {
+        guard lineIndex >= 0, lineIndex < lines.count else { return nil }
+        guard let headerStyle = tableRows[lineIndex], headerStyle.isHeader else { return nil }
+
+        let headers = MarkdownBlockSupport.tableCells(in: lines[lineIndex], expectedCount: headerStyle.columnCount)
+        var rows: [[String]] = []
+        var lineIndexes = [lineIndex]
+        var cursor = lineIndex + 1
+        while cursor < lines.count, let style = tableRows[cursor] {
+            lineIndexes.append(cursor)
+            if !style.isDelimiter {
+                rows.append(MarkdownBlockSupport.tableCells(in: lines[cursor], expectedCount: headerStyle.columnCount))
+            }
+            cursor += 1
+        }
+
+        return MarkdownTableBlock(
+            headers: headers,
+            rows: rows,
+            alignments: headerStyle.alignments,
+            lineIndexes: lineIndexes
+        )
     }
 
     /// A row is table content when it holds at least two unescaped `|` and something other than

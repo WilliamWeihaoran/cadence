@@ -21,7 +21,7 @@ The user does not write code. Claude handles all implementation. When something 
 
 ## Platform Strategy
 - **macOS**: purpose-built sidebar + multi-column layout (`macOS/`). Fully featured, the primary product surface.
-- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, 79 files), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a **four-tab bottom bar** on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
+- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, 85 files), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a **four-tab bottom bar** on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
 - **watchOS**: not started
 - Use `#if os(macOS)` / `#if os(iOS)` for platform-specific branches
 
@@ -47,14 +47,14 @@ Use the scoped `AGENTS.md` in each folder as the working map.
 Cadence/
 ├── CadenceApp.swift    # App entry, ModelContainer + CloudKit setup + error recovery
 ├── Models/             # 100% shared. See "Data Models" below and Models/AGENTS.md
-├── Services/           # 43 shared, cross-platform services (re-count when you add one):
+├── Services/           # 46 shared, cross-platform services (re-count when you add one):
 │   │                   #   CadenceSchema / CadenceStoreSupport / PersistenceController (legacy shim)
 │   │                   #   NoteMigrationService, PursuitToGoalMigration, DataIntegrityRepairService
 │   │                   #   NotificationScheduling + NotificationManager (reconciliation, see "Notifications")
 │   │                   #   RemindersManager (EventKit reminders, both platforms)
 │   │                   #   Cadence*WidgetSupport, CadenceWidgetIntents, CadenceWidgetRefreshCenter, CadenceDeepLink
 │   │                   #   TagSupport, TaskCreationService, NoteReferenceSupport
-│   ├── Markdown*Support.swift   # 22 files: ALL markdown parsing/mutation logic lives HERE, not in macOS/Editor/
+│   ├── Markdown*Support.swift   # 26 files: ALL markdown parsing/mutation logic lives HERE, not in macOS/Editor/
 │   ├── AI/             # AIActionService, AIProvider, AISettingsManager (optional, user OpenAI key)
 │   └── MCPReadOnly/    # CadenceRead/WriteService, DTOs, search matcher, audit log, container factory
 ├── Shared/             # Cross-platform tokens, components, and presentation/query/mutation support
@@ -100,7 +100,7 @@ Cadence/
 │                       # it; a stale number reads as a complete inventory and sends the next agent
 │                       # off to write a near-copy. That is not hypothetical — T-173 had to delete
 │                       # a third hand-written copy of CompactTagStrip for exactly this reason.
-├── iOS/                # Large adaptive iOS/iPadOS surface (79 files) — see "What's Built (iOS)"
+├── iOS/                # Large adaptive iOS/iPadOS surface (85 files) — see "What's Built (iOS)"
 │   ├── iOSRootView.swift        # Adaptive root shell: iPad sidebar / iPhone tab bar; deep links, widget refresh
 │   ├── iOSCompactTabShell.swift # iPhone bottom bar, per-tab paths, centre capture button
 │   ├── iOSTasksTabView.swift    # Tasks tab: date + greeting header, Today/All/Inbox switcher
@@ -608,7 +608,7 @@ Shared behavior for the popovers:
 - One live model: `Note`, with `NoteKind` = daily / weekly / permanent / list / meeting. The macOS Notes page has four tabs: **Daily**, **Weekly**, **Notepad** (permanent), **Event Notes** (`.meeting` — the case name is persisted in `Note.kindRaw`, so only the *label* was renamed).
 - `NoteMigrationService` folds the legacy `DailyNote` / `WeeklyNote` / `PermNote` / `Document` / `EventNote` rows into `Note`, recording provenance in `legacySourceKindRaw` / `legacySourceID`.
 - Notes carry `tags`, an `area`/`project`, and a `folderPath`.
-- **All markdown logic lives in `Cadence/Services/Markdown*Support.swift`** (22 files, well covered by `CadenceTests/`). `macOS/Editor/` is only the AppKit bridge.
+- **All markdown logic lives in `Cadence/Services/Markdown*Support.swift`** (26 files, well covered by `CadenceTests/`). `macOS/Editor/` is only the AppKit bridge — and since T-121 the *iOS* styler is only the UIKit one. `iOSMarkdownStyler` was one 1,067-line file that made its own decisions about heading-marker visibility, block extents, inline exclusions, hidden marker runs and table grouping; it is now four files of pure attribute-setting over `MarkdownStyleRanges`, `MarkdownInlineMarkerRanges`, `MarkdownTableParser.tableBlock` and `MarkdownStyleSignature`. See `Cadence/iOS/AGENTS.md` for the per-file split.
 - Notes support both Markdown export and rendered PDF export (`NoteExportService`)
 - The notes export flow avoids direct blocking `NSSavePanel.runModal()` usage
 - Notes can surface linked notes, backlinks, and embedded task references above the editor
@@ -837,7 +837,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Widget extensions (`CadenceWidgets` target): calendar/today/habit/milestone widgets with app-intent support and a refresh checkpoint (`CadenceWidgetRefreshCenter`) triggered on scenePhase changes — not documented further here yet; check `Cadence/Services/Cadence*WidgetSupport.swift` and `CadenceWidgets/` directly
 
 ## What's Built (iOS)
-`Cadence/iOS/` is a large, actively-developed surface (79 files), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), **four-tab bottom bar** on compact width (`iOSCompactRootShell`) — covering:
+`Cadence/iOS/` is a large, actively-developed surface (85 files), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), **four-tab bottom bar** on compact width (`iOSCompactRootShell`) — covering:
 - [x] **iPhone tab bar**: `[ Tasks ] [ Calendar ] ( + ) [ Notes ] [ More ]`. The centre `+` is **not a tab** — it presents task capture and never renders a selected state. Each tab owns its own type-erased `NavigationPath`, so switching tabs preserves position; the selected tab and Tasks segment persist across launches (`ios.compact.selectedTab`, `ios.compact.tasksSection`). Replaced `iOSCompactHomeView`, a grid of eight tiles that was standing in for navigation the app did not have.
 - [x] Tasks tab (`iOSTasksTabView`): date eyebrow + greeting, a **Today / All / Inbox** segmented switcher (the same control Calendar uses for Week/Month/Board), and a search shortcut
 - [x] Today (`iPadTodayView` + compact/schedule/support variants). The compact Today has **no capture bar of its own** — the tab bar's `+` is the capture affordance

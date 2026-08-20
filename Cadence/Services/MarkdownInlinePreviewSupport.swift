@@ -174,8 +174,12 @@ nonisolated enum MarkdownInlinePreviewSupport {
     }
 
     private static func imageMatches(in markdown: String) -> [InlineMatch] {
+        // The unanchored form of the reference pattern, shared with the iOS live styler through
+        // `MarkdownInlineMarkerRanges`. It was written out here and there as two identical literals;
+        // `MarkdownImageAssetService`'s own copy is deliberately *not* the same regex — it is line
+        // anchored, because it matches the standalone-image block rather than an inline reference.
         guard let regex = try? NSRegularExpression(
-            pattern: #"!\[("# + MarkdownImageAssetService.altTextPattern + #")\]\(cadence-image://([0-9A-Fa-f-]{36})\)"#
+            pattern: MarkdownInlineMarkerRanges.inlineImageReferencePattern
         ) else { return [] }
 
         let nsMarkdown = markdown as NSString

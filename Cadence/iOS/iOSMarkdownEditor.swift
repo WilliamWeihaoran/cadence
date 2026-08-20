@@ -192,12 +192,12 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
         var parent: iOSMarkdownEditor
         private var isApplyingStyle = false
-        private var styleSignature = iOSMarkdownStyleSignature.current(revealedBlockRange: nil, imageAssets: [], taskEmbeds: [:])
+        private var styleSignature = MarkdownStyleSignature.current(revealedBlockRange: nil, imageAssets: [], taskEmbeds: [:])
         private var pendingStyleWorkItem: DispatchWorkItem?
 
         init(parent: iOSMarkdownEditor) {
             self.parent = parent
-            styleSignature = iOSMarkdownStyleSignature.current(
+            styleSignature = MarkdownStyleSignature.current(
                 revealedBlockRange: nil,
                 imageAssets: parent.imageAssets,
                 taskEmbeds: parent.taskEmbeds
@@ -409,7 +409,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
         func refreshStylingIfNeeded(on textView: UITextView) {
             guard !isApplyingStyle else { return }
-            let current = iOSMarkdownStyleSignature.current(
+            let current = MarkdownStyleSignature.current(
                 revealedBlockRange: revealedBlockRange(in: textView),
                 imageAssets: parent.imageAssets,
                 taskEmbeds: parent.taskEmbeds,
@@ -505,7 +505,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             )
             storage.setAttributedString(styled)
             textView.typingAttributes = iOSMarkdownStyler.baseTypingAttributes
-            styleSignature = iOSMarkdownStyleSignature.current(
+            styleSignature = MarkdownStyleSignature.current(
                 revealedBlockRange: revealed,
                 imageAssets: parent.imageAssets,
                 taskEmbeds: parent.taskEmbeds,

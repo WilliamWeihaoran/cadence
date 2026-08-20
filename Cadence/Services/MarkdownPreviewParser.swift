@@ -172,28 +172,23 @@ nonisolated enum MarkdownPreviewParser {
         }
     }
 
+    /// The grouping walk itself is `MarkdownTableParser.tableBlock` — shared with the iOS live
+    /// styler, which had its own copy. This is only the preview's reading of the result: an empty
+    /// header row means "not a table", so the caller falls through to the next block kind.
     private static func tableBlock(
         startingAt lineIndex: Int,
         lines: [String],
         tableRows: [Int: MarkdownTableRowStyle]
     ) -> (value: MarkdownPreviewTable, nextIndex: Int)? {
-        guard let headerStyle = tableRows[lineIndex], headerStyle.isHeader else {
+        guard let block = MarkdownTableParser.tableBlock(startingAt: lineIndex, lines: lines, tableRows: tableRows),
+              !block.headers.isEmpty else {
             return nil
         }
 
-        let headers = MarkdownBlockSupport.tableCells(in: lines[lineIndex], expectedCount: headerStyle.columnCount)
-        guard !headers.isEmpty else { return nil }
-
-        var rows: [[String]] = []
-        var cursor = lineIndex + 1
-        while cursor < lines.count, let style = tableRows[cursor] {
-            if !style.isDelimiter {
-                rows.append(MarkdownBlockSupport.tableCells(in: lines[cursor], expectedCount: headerStyle.columnCount))
-            }
-            cursor += 1
-        }
-
-        return (MarkdownPreviewTable(headers: headers, rows: rows, alignments: headerStyle.alignments), cursor)
+        return (
+            MarkdownPreviewTable(headers: block.headers, rows: block.rows, alignments: block.alignments),
+            block.nextIndex
+        )
     }
 
 }
