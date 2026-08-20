@@ -41,6 +41,28 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-15] **Several dark palettes — decided, and the colours are not the hard part.** User's call, and
+  it narrows what was an open-ended ask: **stay dark-only**, offer alternate near-black palettes
+  (cooler/warmer neutrals, or a different accent set). Explicitly **not** light mode — that was the
+  option costed as largest and it was declined, so nothing needs a light value and no call site has to
+  change its reasoning.
+  What this reverses, and does not: the seven-theme `ThemeManager` is already gone and the user did
+  **not** ask for it back. There is currently exactly one palette and no picker; `Theme.swift`'s own
+  comment records the removal, and `preferredColorScheme` is a hardcoded `.dark`.
+  **The mechanism is the work.** `Theme` is a `nonisolated struct` exposing **67 `static let`**
+  constants, which cannot vary at runtime, and 243 files read them directly as `Theme.bg` and friends.
+  Making the palette selectable means those become computed properties over an active palette value —
+  a mechanical but wide change, and the one place a mistake shows up as the wrong colour somewhere
+  nobody looked. Two consequences to plan for rather than discover:
+  - **19 `Theme.ns*` AppKit mirrors** exist so the markdown editor can draw in sRGB `NSColor`. They
+    must resolve from the same active palette or the editor keeps drawing the old one.
+  - **`Theme.swift` is compiled into `CadenceWidgets`** (4 references in `project.pbxproj`). A widget
+    is a separate process, so the selected palette has to reach it through the app group, the way
+    `CadenceWidgetRefreshCenter` already does — otherwise widgets stay on the default palette.
+  Also delete the stale **"Theme"** row in Settings → Coverage (`iOSMobileCapability.all`,
+  `iOS/iOSSettingsComponents.swift:149`), which advertises a picker to the user that does not exist —
+  either before this ships or as part of it.
+
 - [T-147] **A cancelled task is unreachable on iOS — decided: show them in Completed.** Every list
   query filters cancelled out (`CadenceTaskQuerySupport` ×6, `CadenceCalendarPlanningSupport`,
   `iOSSearchView` ×2, the note `[[task:` picker) and the inspector auto-dismisses on Cancel, so on iOS
@@ -288,14 +310,7 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   *capability* or the same *control*, and what happens to macOS-only surfaces that have no phone
   shape at all (the MCP bridge, global hot keys, the AppKit markdown editor).
 
-- [T-15] **More colour themes.** Note what this reverses: the seven-theme `ThemeManager` was
-  deliberately deleted in favour of one fixed near-black dark palette, and `Theme.swift` is now the
-  single source of colour on every target including `CadenceWidgets`. Re-introducing themes means
-  restoring a selection mechanism *without* letting call sites go back to inventing their own
-  colours — the no-hardcoded-colour rule is what makes a theme swap possible at all, so it has to
-  survive. A light variant is the harder half: the whole UI has been tuned against a near-black
-  ground, and several decisions (the `onColor*` family, hover washes, the marker-highlight pen)
-  assume it.
+
 - [T-16] **Redesign the logo.** Currently the app mark in the sidebar header and the app icon.
 - [T-17] **Expand the target device list.** Directly reverses [T-08]; anything deleted as
   "unnecessary for the three targets" would need reinstating, so [T-08] should be done in a way that
