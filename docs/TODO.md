@@ -32,6 +32,51 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-201] **The iOS task inspector dismisses itself on any status change.** `iOSTaskDetailSheet` is
+  presented *by the row* — `iOSTaskViews.swift:~53` carries `@State showDetail` and
+  `.sheet(isPresented:)` — so when a status write moves the task out of the section's `ForEach`,
+  SwiftUI tears the row down and the sheet with it. **No status path calls `dismiss()`**; proven by
+  control experiment, since **Start** keeps the row in ACTIVE and the sheet stays open while Cancel,
+  Restore and mark-done all close it. So this is not cancel-specific.
+  Fix: move presentation off the row — one host modifier per page (e.g. `.iOSTaskInspectorHost()`)
+  over an `AppTask?` selection, so the sheet's lifetime is the page's. There are **8** presenters of
+  `iOSTaskDetailSheet` (`iOSTaskViews`, `iPadTodayScheduleViews`, `iOSMarkdownEditingSurface`,
+  `iOSCalendarBundleDetailSheet`, `iOSMarkdownReferenceSupport`, `iOSCalendarTimelineViews`,
+  `iOSBoardCards`, `iOSSearchView`); the row one is the one that matters, and the point of a host
+  modifier is that the pattern becomes one thing rather than eight. `Cadence/iOS/` is invisible to
+  the macOS-built test target, so pin by source scan or move the decision outside the guard.
+  **Blocked** while agents hold `iOSTaskDetailSheetSections.swift` and the markdown surfaces.
+
+- [T-202] **`markCancelled` records no timestamp, so a cancelled task can never be "settled today".**
+  Decided: **record the time on cancel.** `CadenceTaskRecurrenceWorkflowSupport.markCancelled`
+  (`Shared/CadenceTaskRecurrenceWorkflowSupport.swift:30-34`) sets `completedAt = nil`, and
+  `completedTodayTasks` admits a finished task on only three grounds — `scheduledDate == todayKey`,
+  `dueDate == todayKey`, or `completedAt` being today. So cancel an **overdue** task, exactly the kind
+  you give up on, and it reaches All Tasks → Completed, its list's Completed and Inbox Completed but
+  **no** Today section. Verified on iPad: All Tasks → Completed went 2 → 3 while Today's Completed
+  stayed empty.
+  Writing `now` also fixes logbook ordering, since `TaskOrdering.completionPrecedes` currently sorts
+  cancelled tasks on a nil timestamp. Two things to respect: `completedAt` is a stored SwiftData
+  property with **no `SchemaMigrationPlan`**, so this changes the semantics of existing rows rather
+  than the column; and that file is compiled into **both** `CadenceWidgets` and `CadenceMCPServer`,
+  so the MCP boundary procedure in `CadenceMCPServer/AGENTS.md` applies. macOS's
+  `TasksPanelDerivedState:~125` has the same filter and scoping, so it goes for both platforms.
+  **Blocked** while an agent holds that file for T-188.
+
+- [T-203] **The Calendar Board's day-column Completed split is correct only by accident.** Decided:
+  **keep cancelled off the Board, but fix the split.** Both columns
+  (`macOS/Views/CalendarBoardDayColumnSupportViews.swift:47-53`,
+  `iOS/iOSCalendarBoardView.swift:281-287`) spell it `!$0.isDone` / `$0.isDone`, and a cancelled task
+  is not `isDone` — so it would land in the **active** half if it ever arrived. It does not, only
+  because `CalendarBoardPlannerSupport.tasksByBoardDate`
+  (`Shared/CadenceCalendarPlanningSupport.swift:240` — note the file name does not match the type)
+  drops it upstream. Change both splits to `isFinishedTask` so the classification is right by
+  construction, and document the *cancellation* reason beside line 240, where the present comment
+  explains only the bundle/date guard. A cancelled task has no place on a plan — the Board is what
+  Planning became — so the policy stays; it is the accident that goes.
+  Note `CadenceCancelledTaskReachabilityTests.aCancelledTaskIsStillOffTheScheduleTheRailsAndTheOverdueCount`
+  pins present behaviour and should keep passing, since this change is a no-op today by design.
+
 - [T-187] **List and context lifecycle is macOS-only.** `macOS/Services/ListDeleteHelpers.swift` is
   `#if os(macOS)`, no AppKit, and declares `ModelContext.deleteContext/deleteArea/deleteProject` with
   the cascade rules. `Cadence/iOS` has **zero** calls to any of the three. iOS can archive/unarchive
