@@ -1,7 +1,11 @@
 import Foundation
 import SwiftData
 
-#if os(macOS)
+// Deliberately unguarded. This file wrapped its whole body in `#if os(macOS)` while containing
+// zero AppKit — the same incidental guard `RemindersManager` and `PrivacyDataResetService` each
+// carried, and the reason iOS shipped a full AI settings screen for a feature it could not invoke.
+// Nothing moved: the file was already in `Cadence/Services/`, so there is no tombstone and no
+// `.stringsdata` collision to avoid.
 enum AIActionError: LocalizedError, Equatable {
     case emptyNote
     case emptyTaskTitle
@@ -135,9 +139,21 @@ enum AIActionService {
         return created
     }
 
-    private static func normalizedDate(_ value: String) -> String {
+    /// A draft date is kept only if it parses as `yyyy-MM-dd`; anything else becomes empty rather
+    /// than being handed to `TaskCreationDraft` verbatim.
+    ///
+    /// Internal rather than private so it can be pinned directly: a model that answers "next
+    /// Tuesday" or "2026-13-01" must not silently become a task with a wrong — or a garbage —
+    /// due date, and that is a decision worth a test of its own rather than one inferred from
+    /// `applyTaskDrafts`.
+    static func normalizedDate(_ value: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return DateFormatters.date(from: trimmed) == nil ? "" : trimmed
+        guard let date = DateFormatters.date(from: trimmed) else { return "" }
+        // Re-formatted, not returned as typed. `DateFormatters.ymd` is lenient about a single-digit
+        // month — `"2026-8-20"` parses — and this used to hand that string straight through to
+        // `TaskCreationDraft.dueDateKey`. Every date comparison in Cadence is a string comparison
+        // against a canonical `yyyy-MM-dd`, so a task stored with `"2026-8-20"` is due on a day that
+        // no "due today" check, no group and no sort key can see. Found by `AINoteActionReviewTests`.
+        return DateFormatters.dateKey(from: date)
     }
 }
-#endif

@@ -241,6 +241,13 @@ struct iOSNotesView: View {
                     apply(template, to: note)
                 }
             }
+            // AI note actions, gated on the same rule and for the same reason: this row already
+            // holds a back control, a date title and four tabs at 390pt. In the one-column form the
+            // editor is a cover with its own navigation bar, and the control rides there instead —
+            // see `iOSNoteEditorCover`. It renders nothing at all without an API key.
+            if showsHeaderTemplateMenu, let note = selectedNote {
+                iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
+            }
         }
         .frame(height: useStandardHeaderHeight ? iOSNotesHeaderStandardHeight : nil, alignment: .top)
         .background(Theme.surface)
@@ -600,6 +607,14 @@ private struct iOSNoteEditorCover: View {
                         isEditorFocused = false
                         dismiss()
                     }
+                }
+
+                // The one-column form's AI actions control. The notes header behind this cover has
+                // the same control at regular width; here the navigation bar is the row above the
+                // editor, so this is the same affordance in the only place it fits. Absent without
+                // an API key.
+                ToolbarItem(placement: .primaryAction) {
+                    iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
                 }
             }
         }

@@ -18,13 +18,11 @@ private enum AIReviewPayload: Identifiable {
 }
 
 enum NoteActionSupport {
+    /// Forwards to `CadenceAINoteSummary`, which is where the heading and the separator rule live
+    /// now that iOS files a summary into a note too. Kept as a name because this menu's call sites
+    /// read better through it.
     static func appendSummary(_ summary: String, to note: Note, modelContext: ModelContext?) {
-        let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedSummary.isEmpty else { return }
-        let separator = note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
-        note.content = "\(note.content)\(separator)## AI Summary\n\n\(trimmedSummary)"
-        note.updatedAt = Date()
-        try? modelContext?.save()
+        CadenceAINoteSummary.append(summary, to: note, modelContext: modelContext)
     }
 
     static func copyMarkdownLink(to note: Note) {

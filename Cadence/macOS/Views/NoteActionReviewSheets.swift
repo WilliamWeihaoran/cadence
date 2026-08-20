@@ -60,8 +60,11 @@ struct AITaskDraftReviewSheet: View {
     let projects: [Project]
     let modelContext: ModelContext
     @Environment(\.dismiss) private var dismiss
-    @State private var drafts: [AITaskDraft]
-    @State private var selectedIDs: Set<UUID>
+    /// Drafts *and* which of them are approved, held together in `CadenceAIDraftReview` — the same
+    /// value iOS's review sheet drives, and the only thing either sheet writes through. It was two
+    /// separate `@State`s here, and the gate was "is the selection non-empty" with validity checked
+    /// by `applyTaskDrafts` throwing *after* Create was pressed.
+    @State private var review: CadenceAIDraftReview
     @State private var statusMessage: String?
 
     init(
@@ -77,8 +80,7 @@ struct AITaskDraftReviewSheet: View {
         self.areas = areas
         self.projects = projects
         self.modelContext = modelContext
-        _drafts = State(initialValue: initialDrafts)
-        _selectedIDs = State(initialValue: Set(initialDrafts.map(\.id)))
+        _review = State(initialValue: CadenceAIDraftReview(drafts: initialDrafts))
     }
 
     var body: some View {
@@ -95,24 +97,19 @@ struct AITaskDraftReviewSheet: View {
                 Spacer()
             }
 
-            if drafts.isEmpty {
+            if review.drafts.isEmpty {
                 EmptyStateView(message: "No tasks found", subtitle: "The note did not contain clear action items.", icon: "sparkles")
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
-                        ForEach($drafts) { $draft in
+                        ForEach($review.drafts) { $draft in
                             AITaskDraftRow(
                                 draft: $draft,
                                 isSelected: Binding(
-                                    get: { selectedIDs.contains(draft.id) },
-                                    set: { isSelected in
-                                        if isSelected {
-                                            selectedIDs.insert(draft.id)
-                                        } else {
-                                            selectedIDs.remove(draft.id)
-                                        }
-                                    }
-                                )
+                                    get: { review.isSelected(draft) },
+                                    set: { review.setSelected($0, for: draft.id) }
+                                ),
+                                validation: review.validation(for: draft)
                             )
                         }
                     }
@@ -120,10 +117,10 @@ struct AITaskDraftReviewSheet: View {
                 }
             }
 
-            if let statusMessage {
-                Text(statusMessage)
+            if let message = statusMessage ?? review.refusalMessage {
+                Text(message)
                     .font(.system(size: 12))
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(statusMessage == nil && !review.blockingErrors.isEmpty ? Theme.red : Theme.muted)
             }
 
             HStack {
@@ -143,9 +140,9 @@ struct AITaskDraftReviewSheet: View {
                 .foregroundStyle(Theme.onColor)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(selectedIDs.isEmpty ? Theme.dim : Theme.blue)
+                .background(review.canCreate ? Theme.blue : Theme.dim)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .disabled(selectedIDs.isEmpty)
+                .disabled(!review.canCreate)
             }
         }
         .padding(20)
@@ -153,11 +150,11 @@ struct AITaskDraftReviewSheet: View {
         .background(Theme.bg)
     }
 
+    /// Through the review, not around it. `applyApproved` refuses on its own account, so a future
+    /// edit that loses the `disabled(!review.canCreate)` above cannot write anything.
     private func createSelected() {
         do {
-            let created = try AIActionService.applyTaskDrafts(
-                drafts,
-                selectedIDs: selectedIDs,
+            let created = try review.applyApproved(
                 area: area,
                 project: project,
                 areas: areas,
@@ -175,10 +172,11 @@ struct AITaskDraftReviewSheet: View {
 private struct AITaskDraftRow: View {
     @Binding var draft: AITaskDraft
     @Binding var isSelected: Bool
-
-    private var validation: AITaskDraftValidation {
-        AIActionService.validation(for: draft)
-    }
+    /// Handed in by the sheet from `CadenceAIDraftReview.validation(for:)`, the same source its
+    /// Create button reads. It was recomputed here off `AIActionService.validation` directly, so
+    /// the row's red border and the button's enabled state were two reads of one rule — fine while
+    /// they agreed, and exactly the shape that drifts. iOS's card takes it the same way.
+    let validation: AITaskDraftValidation
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

@@ -70,7 +70,9 @@ struct OpenAIResponsesProviderTests {
     }
 }
 
-#if os(macOS)
+/// No platform guard. `AIActionService` carried an incidental `#if os(macOS)` around its whole
+/// body, so these three tests were fenced off with it; the service is cross-platform now and so are
+/// they.
 @MainActor
 struct AIActionServiceTests {
     @Test func noteContextOnlyIncludesSelectedNoteAndContainerName() throws {
@@ -149,4 +151,3 @@ struct AIActionServiceTests {
         #expect(try modelContext.fetch(descriptor).isEmpty)
     }
 }
-#endif

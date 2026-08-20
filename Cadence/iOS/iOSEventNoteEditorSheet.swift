@@ -45,6 +45,13 @@ struct iOSEventNoteEditorSheet: View {
                         dismiss()
                     }
                 }
+
+                // An event note is a note, so it gets the same AI actions control the other three
+                // kinds get — `iOSNoteEditorCover` puts it in the same slot. Absent without an API
+                // key.
+                ToolbarItem(placement: .primaryAction) {
+                    iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
+                }
             }
             .onAppear {
                 refreshEventMetadata()
