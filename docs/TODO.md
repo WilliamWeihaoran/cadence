@@ -32,13 +32,23 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
-- [T-176] **`CalendarDateMemoryWriterTests` is wall-clock dependent and fails under parallel load.**
-  `aRunOfPositionsCollapsesToOneWriteOfTheLastOne` took 43s and failed during a run with three other
-  agents building; re-run alone it passes in 0.412s. The writer under test is the coalescing
-  `UserDefaults` writer, so the test necessarily waits for a settle — but a real `Task.sleep` against
-  a saturated machine is a false negative waiting to happen, and a suite that cries wolf is worse
-  than one gap in coverage. Wants an injected clock or a controllable scheduler rather than a longer
-  timeout, which would only move the threshold.
+- [T-177] **iPad portrait Today Notes pane leaves the editor ~40pt.** Found during T-148's
+  verification. With the shell sidebar open, Today's Notes pane hands `iOSNotesView` ~321pt; it
+  spends a fixed 280pt (`CadenceNotesListMetrics.regularColumnWidth`) on the note list, leaving the
+  editor about 40pt, so the body wraps one character per line. `iOSNotesView` splits on size class
+  with no width floor of its own — the same defect shape `CadenceTodayLayoutSupport.twoPaneMinimumWidth`
+  was added to fix for Today, which had "no floor" for two panes until `761pt` was introduced.
+
+- [T-178] **`CommitmentIconTile` and `iOSIconTile` still disagree about corner radius.**
+  `min(12, size * 0.28)`, circular, against `Theme.radiusControl` (10), `.continuous`. Same pair
+  `c94edb5` converged on the border, deliberately left because it changes geometry rather than adding
+  a hairline. Decide it as its own call.
+
+- [T-179] **`control action=detach` ignores the `udid` argument and closes every simulator panel.**
+  An agent detaching its own device closed three other agents' panels (iPhone 17e, iPhone 17 Pro Max,
+  iPad Air 11-inch). No device or app state was altered and they can re-attach, but under parallel
+  agents this is a cross-agent side effect worth knowing: either pass no `udid` and expect it to be
+  global, or do not detach at all when others may be attached.
 
 
 - [T-168] **iOS Focus mode: widgets and a landscape timer.** Two halves.
@@ -104,17 +114,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   pinned the consolidation.
 
 
-- [T-157] **`iOSIconTile` strokes a 0.20 border and `CommitmentIconTile` does not.** Flagged during
-  `D-108` and deliberately not taken on — converging it is a further macOS visual change that was
-  not part of what the user approved.
-
-
-- [T-155] **The macOS startup banner has not been seen rendering.** `D-107` moved it from a ZStack
-  child to `.overlay(alignment: .top)` and the build is green, but the user's display was locked so
-  `screencapture` returned the lock screen. The same shared view is proven on iPhone and iPad. Worth
-  one look when the machine is unlocked.
-
-
 - [T-147] **A cancelled task is unreachable on iOS.** Bigger than the glyph bug that surfaced it
   (`D-105`): every list query filters cancelled out (`CadenceTaskQuerySupport` ×6,
   `CadenceCalendarPlanningSupport`, `iOSSearchView` ×2, the note `[[task:` picker), and the inspector
@@ -122,12 +121,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   Active, Completed, search and the reference picker with no way back. So on iOS, cancelling is
   effectively deleting without saying so. Decide whether cancelled work should be reachable (a filter,
   a section, or the Completed list) — this is a product question, not a defect to patch.
-
-- [T-148] **The strip-level toolbar fix is unverified on the area/project Notes tab.** `D-104` moved
-  the reset onto the strips so no host needs it, which should fix `iOSListDetailView` → Notes as a
-  side effect — but that surface was never screenshotted, and Today's pane now depends on the new
-  mechanism rather than the host-level reset it used to carry. Both need a look on iPad before this
-  is called done.
 
 
 - [T-126] **The MCP smoke test can be run from here, and is data-safe** — it verifies read-only mode
@@ -295,6 +288,31 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-121] `dd66f51` The settle test waits for a gate it opens (T-176). Injected sleep rather than a
+  longer interval, because an interval only moves the threshold. Both wall-clock waits gone; the two
+  tests run in 0.015s against 0.412s alone and 43s under load. `awaitScheduledWrite` awaits the last
+  *scheduled* task rather than the pending one, because `flush` nils pending and "the write you
+  cancelled must not land later" still needs a handle to await.
+
+- [D-122] `c94edb5` One habit tile, one border (T-157). Settled not by taste but by finding
+  `HabitIconTile` is a single shared view whose body is an `#if os(macOS)` choosing between the two
+  tiles at 32/56pt macOS against 34/52pt iOS — same tile, same card, within 4pt, bordered on iPad and
+  not on Mac, under a doc comment saying it exists so a habit reads the same on both. A fork, not two
+  contexts. The three `iOSIconTile` border opt-outs are tiles inside another plate, not a size
+  threshold. Mutation is the lesson: reverting either tile's body fails the **call-site** test while
+  the constant-only test still passes.
+
+- [D-123] T-148 and T-155 verified, no code needed. T-148: the strip-level `contentMargins` reset
+  holds on **both** hosts — Today's Notes pane and the area/project Notes tab — and the precondition
+  is real (both apply `.iOSFloatingCreateTaskButton`, which sets the bottom clearance the strip was
+  inheriting). Proven by mutation: removing the reset moved both toolbars ~51pt up, into the tab
+  strip, exactly as `D-104` describes. T-155: the macOS startup banner renders, verified offscreen
+  with `ImageRenderer` across all three `CadenceStartupIssueKind` cases plus collapsed pills, with no
+  build launched and no CGEvents. The `maxWidth: nil` subtlety **holds** — expanded measures 656pt
+  for all three, collapsed 181/210/189pt, so the pill hugs its content and `contentShape` is not a
+  620pt invisible band. Also observed rather than inferred: the store outranks the account
+  (`.recoveryStore` + `.available` → `notSyncing`).
 
 - [D-120] `7f4efb3` macOS's task row reads the shared metrics, and the platform counts were wrong
   (T-175). `CadenceTaskRowMetrics` had five iOS readers and zero macOS ones; macOS is now a third
