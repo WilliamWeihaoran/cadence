@@ -7,13 +7,18 @@ import SwiftData
 /// completion circle, title, estimate, do/due chips, tags, subtasks — so the boards cannot drift
 /// apart again.
 ///
-/// The only per-board knob is `showsContainerChip`, and it exists because the information is
-/// genuinely redundant on some boards: a section column already sits inside one list, and an
-/// All Tasks list column *is* a list, so repeating the name on every card there is noise.
-/// The Calendar Board is cross-list, so it shows it on both its day columns and its rails.
+/// The per-board knobs are both suppressions, and both exist because the information is genuinely
+/// redundant on some boards rather than because the boards want to look different:
+/// `showsContainerChip`, since a section column already sits inside one list and an All Tasks list
+/// column *is* a list; and `dayAlreadyStatedBySurface`, since a day column has named its day in its
+/// own header. The Calendar Board is cross-list, so it shows the list chip on both its day columns
+/// and its rails, and passes its date key on the day columns only — a rail is a bucket, not a day.
 struct KanbanCard: View {
     @Bindable var task: AppTask
     var showsContainerChip: Bool = false
+    /// The day this card's surface has already stated, if it states one. See
+    /// `CadenceBoardCardMetadata.repeatsSurfaceDay`.
+    var dayAlreadyStatedBySurface: String? = nil
 
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
@@ -63,16 +68,7 @@ struct KanbanCard: View {
                     )
                 }
 
-                let sortedSubtasks = (task.subtasks ?? []).sorted { $0.order < $1.order }
-                if !sortedSubtasks.isEmpty {
-                    VStack(spacing: 0) {
-                        ForEach(sortedSubtasks) { subtask in
-                            SubtaskRow(subtask: subtask)
-                        }
-                    }
-                    .padding(.leading, 10)
-                    .padding(.top, 2)
-                }
+                subtaskRows
             }
             .padding(.leading, 14)
             .padding(.trailing, 16)
@@ -142,6 +138,40 @@ struct KanbanCard: View {
         }
     }
 
+    /// The unfinished subtasks, capped, with a line saying how many are left over.
+    ///
+    /// **This card used to list every subtask it had, done ones included, with no cap** — so a task
+    /// with twelve of them made its card taller than the column and the rest of the day went below
+    /// the fold. That question was already settled for the app's task rows and measured on a phone:
+    /// `CadenceTaskPresentationSupport.rowSubtaskLimit`, unfinished only, and *name* what is left
+    /// rather than counting it. A `3/5` chip is the spelling that rule rejects — it states a number
+    /// of things to do without stating one of them, so the checklist is only readable by opening the
+    /// task. The card is the one surface that had never adopted it; there is no third answer here.
+    ///
+    /// The overflow line is deliberately not a control. Clicking anywhere on this card already
+    /// opens the inspector, which is where the rest of the list is, and a second hover layer inside
+    /// a card that has one is the pattern this repo keeps having to unpick.
+    @ViewBuilder
+    private var subtaskRows: some View {
+        let subtasks = CadenceTaskPresentationSupport.listedSubtasks(for: task)
+        if !subtasks.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(subtasks) { subtask in
+                    SubtaskRow(subtask: subtask)
+                }
+
+                if let hidden = CadenceTaskPresentationSupport.unlistedSubtaskCount(for: task) {
+                    Text("+\(hidden) more")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .padding(.vertical, 3)
+                }
+            }
+            .padding(.leading, 10)
+            .padding(.top, 2)
+        }
+    }
+
     private var durationBinding: Binding<Int> {
         Binding(
             get: { task.estimatedMinutes },
@@ -161,7 +191,11 @@ struct KanbanCard: View {
     /// used to build its own list and had quietly dropped the do date from it.
     private var metadataRows: [[KanbanMetaItem]] {
         var rows: [[KanbanMetaItem]] = []
-        let chips = CadenceBoardCardMetadata.chips(for: task, showsContainer: showsContainerChip)
+        let chips = CadenceBoardCardMetadata.chips(
+            for: task,
+            showsContainer: showsContainerChip,
+            dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
+        )
 
         var dateRow: [KanbanMetaItem] = chips
             .filter { $0.kind != .list }

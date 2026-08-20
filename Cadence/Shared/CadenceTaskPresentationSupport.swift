@@ -151,6 +151,26 @@ enum CadenceTaskPresentationSupport {
         return hidden > 0 ? hidden : nil
     }
 
+    /// What a dense task surface — a row on either platform, a board card on either platform —
+    /// actually lists beneath the task, and the count it says is left over.
+    ///
+    /// The pair exists because `unfinishedSubtasks` alone is not the whole decision: **nothing is
+    /// listed under a finished task.** A completed task's leftover checklist items are not work any
+    /// more, and the surfaces these appear in — Today's Completed section, a board column's
+    /// Completed footer — would otherwise fill with tappable items belonging to tasks that are over.
+    /// That guard was applied at one call site (iOS's task row) and re-derived nowhere else, so the
+    /// three surfaces that gained a subtask list under T-173 would each have had to remember it.
+    /// It is a decision, not a shell, so it lives here with the cap it belongs to.
+    static func listedSubtasks(for task: AppTask) -> [Subtask] {
+        task.isDone ? [] : unfinishedSubtasks(for: task)
+    }
+
+    /// The "+N more" that goes with `listedSubtasks`, or `nil` when there is nothing more to say —
+    /// including for a finished task, which lists none and therefore hides none.
+    static func unlistedSubtaskCount(for task: AppTask) -> Int? {
+        task.isDone ? nil : hiddenSubtaskCount(for: task)
+    }
+
     /// Minutes → duration label for task chrome — "45m", "2h", "1h 24m", `"0m"` for nothing.
     ///
     /// The shape (and the non-breaking space that keeps it from wrapping into a wrong number) is

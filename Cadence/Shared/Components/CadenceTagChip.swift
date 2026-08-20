@@ -395,6 +395,64 @@ struct CadenceTagChip: View {
     }
 }
 
+// MARK: - The read-only strip
+
+/// A **read-only** strip of compact tag chips, sized to fit and collapsing into a `+N` when it does
+/// not: dense task rows, board cards, note list rows.
+///
+/// Shared, and shared late. This was declared inside `#if os(macOS)` in
+/// `macOS/Views/TagPickerSupportViews.swift`, which is why `CadenceNotesListSupport` — a *shared*
+/// file — carried a private `NoteRowTagStrip` that was this type line for line, with a comment
+/// saying so and asking for exactly this move. iOS's board card then needed a third, and a rule
+/// that a strip of chips looks the same on both platforms is only as strong as the strip they can
+/// both reach.
+///
+/// **The `ViewThatFits` ladder is the whole point, and it is what makes the cap hold in a board
+/// column.** `CadenceTagChip` caps its *label*, not the chip, so three long names still measure
+/// wider than a 300pt column's content box; the ladder drops to one chip and then to a bare `+N`
+/// rather than letting the strip push its neighbours out of the card. A fixed prefix cannot do
+/// that, which is why `limit` is a ceiling rather than a count.
+///
+/// The overflow badge is inert here. macOS's *editable* strips hang a popover off it so the
+/// collapsed tags stay removable; nothing in this strip can remove a tag, so there is nothing to
+/// reach, and a popover on a card whose whole job is to be clicked or tapped through would be a
+/// second affordance in the same pixels. The hidden names stay legible through `help`, which is a
+/// tooltip under a pointer and an accessibility hint under a finger.
+struct CompactTagStrip: View {
+    let tags: [Tag]
+    var limit: Int = 2
+    var allowsArchived: Bool = true
+
+    private var visibleTags: [Tag] {
+        let base = allowsArchived ? tags : tags.filter { !$0.isArchived }
+        return TagSupport.uniqueBySlug(base)
+    }
+
+    var body: some View {
+        if !visibleTags.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                compactTagRow(limit: min(limit, visibleTags.count))
+                compactTagRow(limit: min(1, visibleTags.count))
+                compactTagRow(limit: 0)
+            }
+        }
+    }
+
+    private func compactTagRow(limit: Int) -> some View {
+        let hidden = visibleTags.dropFirst(limit)
+        return HStack(spacing: 4) {
+            ForEach(visibleTags.prefix(limit)) { tag in
+                CadenceTagChip(tag: tag, size: .compact)
+            }
+            if !hidden.isEmpty {
+                CadenceTagOverflowBadge(count: hidden.count, size: .compact)
+                    .help(hidden.map { CadenceTagChipStyle.accessibilityLabel(for: $0) }.joined(separator: ", "))
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
 // MARK: - Overflow
 
 /// The `+N` that stands in for tag chips a strip could not fit. Shared for the same reason the chip

@@ -108,7 +108,9 @@ struct KanbanCardTagStrip: View {
             Button {
                 onOpen()
             } label: {
-                CompactTagStrip(tags: tags, limit: 3)
+                // `CadenceTaskPresentationSupport.rowTagLimit`, not a local 3. Same figure, but the
+                // iOS board card reads it too now, and a literal here is a literal that can drift.
+                CompactTagStrip(tags: tags, limit: CadenceTaskPresentationSupport.rowTagLimit)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)

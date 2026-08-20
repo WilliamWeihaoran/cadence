@@ -174,6 +174,222 @@ struct CadenceSharedTaskRowJobsTests {
         }
     }
 
+    // MARK: - T-174: a chip that would repeat the surface's own day
+
+    /// **The rule, and it is an equality — not "day columns hide the do date".** A board column that
+    /// has already named its day in its header does not need every card under it to name the day
+    /// again. Everything else on the strip is untouched: the deadline and the list are facts the
+    /// column has not stated.
+    @Test func aDoDateThatOnlyRepeatsTheSurfacesOwnDayIsOmitted() {
+        let chips = CadenceBoardCardMetadata.chips(
+            for: task(doDate: "2026-08-20", dueDate: "2026-08-25"),
+            showsContainer: true,
+            dayAlreadyStatedBySurface: "2026-08-20",
+            todayKey: "2026-08-20"
+        )
+
+        #expect(chips.map(\.kind) == [.dueDate, .list])
+    }
+
+    /// **The narrowness is the point, and it is what keeps the board's only urgency cue alive.** The
+    /// do chip's `.urgent` red is the sole per-card over-do signal, so the suppression is conditioned
+    /// on the dates actually matching rather than on the *kind* of column doing the drawing. Both
+    /// boards bucket day columns on the do date today, so this case does not arise — and if a future
+    /// bucketing change makes it arise, the chip and its colour come back on their own instead of
+    /// being silently swallowed. Spelled as "day columns omit it", this test could not exist.
+    @Test func aDoDateTheSurfaceHasNotStatedKeepsItsChipAndItsUrgency() {
+        let chips = CadenceBoardCardMetadata.chips(
+            for: task(doDate: "2026-08-19"),
+            showsContainer: false,
+            dayAlreadyStatedBySurface: "2026-08-21",
+            todayKey: "2026-08-20"
+        )
+
+        #expect(chips.map(\.kind) == [.doDate])
+        #expect(chips.first?.emphasis == .urgent)
+        #expect(chips.first?.labelColor == Theme.red)
+    }
+
+    /// A surface that names no day passes nothing and gets the whole strip — the default has to be
+    /// the *showing* one, or a caller that forgets the knob loses a chip rather than gaining one.
+    /// An empty string counts as naming nothing, so a caller whose date key has not resolved yet
+    /// cannot suppress the chip on every card at once.
+    @Test func theSurfaceDayKnobDefaultsToStatingNothing() {
+        let planned = task(doDate: "2026-08-20")
+
+        #expect(CadenceBoardCardMetadata.chips(for: planned, showsContainer: false).map(\.kind) == [.doDate])
+        #expect(
+            CadenceBoardCardMetadata.chips(for: planned, showsContainer: false, dayAlreadyStatedBySurface: "")
+                .map(\.kind) == [.doDate]
+        )
+        #expect(!CadenceBoardCardMetadata.repeatsSurfaceDay("2026-08-20", dayAlreadyStatedBySurface: nil))
+        #expect(!CadenceBoardCardMetadata.repeatsSurfaceDay("2026-08-20", dayAlreadyStatedBySurface: ""))
+        // An undated task has no chip to suppress, so it can never match a stated day.
+        #expect(!CadenceBoardCardMetadata.repeatsSurfaceDay("", dayAlreadyStatedBySurface: ""))
+        #expect(CadenceBoardCardMetadata.repeatsSurfaceDay("2026-08-20", dayAlreadyStatedBySurface: "2026-08-20"))
+    }
+
+    /// The knob reaches the **do** date only. A day column names the day a card is planned for, not
+    /// the day it is owed — a task due on the column's date and planned for another one keeps the
+    /// deadline it would otherwise have lost.
+    @Test func theSurfaceDayKnobDoesNotReachTheDeadline() {
+        let chips = CadenceBoardCardMetadata.chips(
+            for: task(doDate: "2026-08-22", dueDate: "2026-08-20"),
+            showsContainer: false,
+            dayAlreadyStatedBySurface: "2026-08-20",
+            todayKey: "2026-08-20"
+        )
+
+        #expect(chips.map(\.kind) == [.doDate, .dueDate])
+    }
+
+    // MARK: - T-174: the call sites
+
+    /// **The T-161 test for the surface-day knob.** Pinning the rule above proves nothing about
+    /// anybody passing it — that is exactly the hole a green suite hid last time. Both platforms'
+    /// day columns must hand their date key to every card they draw, including the ones in the
+    /// Completed footer, and the surfaces that name a *bucket* rather than a day must not.
+    @Test func bothPlatformsDayColumnsTellTheCardWhichDayTheyHaveAlreadyNamed() throws {
+        try expectOccurrences(
+            of: "dayAlreadyStatedBySurface: dateKey",
+            at: [
+                // Active cards and the Completed footer's cards, each platform.
+                "Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift": 2,
+                "Cadence/iOS/iOSCalendarBoardView.swift": 2,
+            ]
+        )
+    }
+
+    /// The other half, and the half that stops the knob spreading by copy: a rail is an inbox and a
+    /// section column is a list, so neither has stated a day and neither may claim to have.
+    @Test func theRailsAndTheSectionColumnsStateNoDayAndClaimNone() throws {
+        try expectOccurrences(
+            of: "dayAlreadyStatedBySurface",
+            at: [
+                "Cadence/macOS/Views/CalendarBoardRailSupportViews.swift": 0,
+                "Cadence/macOS/Views/KanbanColumnSupportViews.swift": 0,
+                "Cadence/iOS/iOSListSupportViews.swift": 0,
+            ]
+        )
+    }
+
+    // MARK: - T-173: what a board card lists beneath the task
+
+    private func task(unfinished: Int, finished: Int = 0, isDone: Bool = false) -> AppTask {
+        let task = AppTask(title: "T")
+        task.status = isDone ? .done : .todo
+        task.subtasks = (0..<unfinished).map { index in
+            let subtask = Subtask(title: "open \(index)")
+            subtask.order = index
+            return subtask
+        } + (0..<finished).map { index in
+            let subtask = Subtask(title: "done \(index)")
+            subtask.order = unfinished + index
+            subtask.isDone = true
+            return subtask
+        }
+        return task
+    }
+
+    /// **macOS's card listed every subtask it had, uncapped, done ones included.** One task with
+    /// twelve of them was taller than the column. The cap is not a new opinion — it is
+    /// `rowSubtaskLimit`, already measured on a phone for the task rows — and the answer is a named
+    /// list with a count of the remainder, not a `3/5` chip, which is the spelling that rule
+    /// explicitly rejects for stating a number of things to do without stating one of them.
+    @Test func aCardListsTheUnfinishedSubtasksUpToTheSharedCapAndCountsTheRest() {
+        let twelve = task(unfinished: 12)
+
+        #expect(
+            CadenceTaskPresentationSupport.listedSubtasks(for: twelve).count
+                == CadenceTaskPresentationSupport.rowSubtaskLimit
+        )
+        #expect(CadenceTaskPresentationSupport.listedSubtasks(for: twelve).allSatisfy { !$0.isDone })
+        #expect(
+            CadenceTaskPresentationSupport.unlistedSubtaskCount(for: twelve)
+                == 12 - CadenceTaskPresentationSupport.rowSubtaskLimit
+        )
+
+        let two = task(unfinished: 2, finished: 4)
+        #expect(CadenceTaskPresentationSupport.listedSubtasks(for: two).map(\.title) == ["open 0", "open 1"])
+        #expect(CadenceTaskPresentationSupport.unlistedSubtaskCount(for: two) == nil)
+    }
+
+    /// Nothing under a finished task, and nothing counted either. A completed card's leftover
+    /// checklist items are not work any more, and a board column's Completed footer would otherwise
+    /// fill with tickable rows belonging to tasks that are over. The gate lived at one call site —
+    /// iOS's task row — and the three surfaces that gained a list would each have had to remember it.
+    @Test func aFinishedTaskListsNoSubtasksAndHidesNone() {
+        let done = task(unfinished: 9, isDone: true)
+
+        #expect(CadenceTaskPresentationSupport.listedSubtasks(for: done).isEmpty)
+        #expect(CadenceTaskPresentationSupport.unlistedSubtaskCount(for: done) == nil)
+        // The ungated primitive is unchanged: this is the gate, not a new cap.
+        #expect(CadenceTaskPresentationSupport.allUnfinishedSubtasks(for: done).count == 9)
+    }
+
+    // MARK: - T-173: the call sites
+
+    /// **The T-161 test for T-173.** Both cards must list tags and subtasks through the shared
+    /// figures. An exact count per file is what catches one card quietly going back to its own
+    /// answer — which is the state this ticket existed to close, in the direction of iOS having
+    /// neither and macOS having an uncapped one.
+    @Test func bothBoardCardsListTagsAndSubtasksFromTheSharedFigures() throws {
+        try expectCallSites(
+            of: "CompactTagStrip",
+            at: [
+                "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": 1,
+                "Cadence/iOS/iOSBoardCards.swift": 1,
+            ]
+        )
+        try expectOccurrences(
+            of: "CadenceTaskPresentationSupport.rowTagLimit",
+            at: [
+                "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": 1,
+                "Cadence/iOS/iOSBoardCards.swift": 1,
+            ]
+        )
+        try expectCallSites(
+            of: "CadenceTaskPresentationSupport.listedSubtasks",
+            at: [
+                "Cadence/macOS/Views/KanbanCardView.swift": 1,
+                "Cadence/iOS/iOSBoardCards.swift": 1,
+                // The row the shared pair was extracted from, which must keep reading it rather
+                // than re-deriving the finished-task gate beside it.
+                "Cadence/iOS/iOSTaskViews.swift": 1,
+            ]
+        )
+        try expectCallSites(
+            of: "CadenceTaskPresentationSupport.unlistedSubtaskCount",
+            at: [
+                "Cadence/macOS/Views/KanbanCardView.swift": 1,
+                "Cadence/iOS/iOSBoardCards.swift": 1,
+                "Cadence/iOS/iOSTaskViews.swift": 1,
+            ]
+        )
+    }
+
+    /// The uncapped spelling may not come back. macOS's card read `task.subtasks` directly and
+    /// sorted the lot; a card that touches the relationship at all is a card deciding for itself how
+    /// much of a checklist fits in a column.
+    @Test func neitherBoardCardReachesPastTheCapIntoTheRelationship() throws {
+        for path in ["Cadence/macOS/Views/KanbanCardView.swift", "Cadence/iOS/iOSBoardCards.swift"] {
+            let code = try strippingComments(sourceFile(path))
+            #expect(!code.contains("task.subtasks"), "\(path) reads the subtask relationship directly again")
+            #expect(!code.contains("limit: 3"), "\(path) spells the tag cap itself again")
+        }
+    }
+
+    /// `CompactTagStrip` was inside `#if os(macOS)`, which is why a *shared* file carried a private
+    /// line-for-line copy of it with a comment asking for this move. One strip, declared once.
+    @Test func thereIsOneReadOnlyTagStripAndItIsShared() throws {
+        try expectNoLiveMention(of: "NoteRowTagStrip")
+
+        let declarations = try swiftFiles(under: "Cadence").filter { path in
+            try! strippingComments(sourceFile(path)).contains("struct CompactTagStrip")
+        }
+        #expect(declarations == ["Cadence/Shared/Components/CadenceTagChip.swift"])
+    }
+
     // MARK: - Bundle member row: the figures
 
     /// 13pt, which all three rows already drew, and `.medium`, which two of the three did. A member
@@ -318,6 +534,12 @@ struct CadenceSharedTaskRowJobsTests {
         #expect(files.contains("Cadence/Shared/CadenceBoardCardMetadata.swift"))
         #expect(files.contains("Cadence/Shared/CadenceBundleTaskRowSupport.swift"))
         #expect(files.contains("Cadence/Shared/Components/CadenceTaskDetailLineLabel.swift"))
+        // T-173 / T-174 reach these four; a scan that cannot see them makes every absence
+        // assertion above vacuous.
+        #expect(files.contains("Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift"))
+        #expect(files.contains("Cadence/macOS/Views/CalendarBoardRailSupportViews.swift"))
+        #expect(files.contains("Cadence/iOS/iOSCalendarBoardView.swift"))
+        #expect(files.contains("Cadence/Shared/Components/CadenceTagChip.swift"))
 
         // And it must be reading *code*, not an empty string: a positive assertion over the same
         // reader the absence checks use.
@@ -355,6 +577,27 @@ private func expectCallSites(
         #expect(
             actual == expected,
             "\(path) calls \(name) \(actual) times, expected \(expected)",
+            sourceLocation: sourceLocation
+        )
+    }
+}
+
+/// Fails unless `text` occurs exactly `count` times as live code in each listed file.
+///
+/// `expectCallSites` appends `(` and so only sees function and initializer calls. A *parameter* is
+/// passed, not called, and a zero expectation is the whole point for the rails: this is the spelling
+/// that can assert both "these two files pass the knob twice each" and "these three never do".
+private func expectOccurrences(
+    of text: String,
+    at files: [String: Int],
+    sourceLocation: SourceLocation = #_sourceLocation
+) throws {
+    for (path, expected) in files {
+        let code = try strippingComments(sourceFile(path))
+        let actual = code.components(separatedBy: text).count - 1
+        #expect(
+            actual == expected,
+            "\(path) contains \(text) \(actual) times, expected \(expected)",
             sourceLocation: sourceLocation
         )
     }

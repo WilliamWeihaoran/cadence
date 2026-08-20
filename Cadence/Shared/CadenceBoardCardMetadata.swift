@@ -60,9 +60,11 @@ nonisolated struct CadenceBoardCardChip: Identifiable, Equatable, Sendable {
 /// - *Empty-field affordances.* macOS draws a `Due` chip with no date on it when the list does not
 ///   hide empty due dates, because that chip **is** the due-date picker. An empty chip states
 ///   nothing, so it is not metadata; it stays where it belongs, in the interaction shell.
-/// - *Tags and subtasks.* macOS's card lists them and iOS's does not. That is a real coverage gap
-///   and it is recorded rather than closed here — it is a layout decision about a 300pt column, not
-///   a de-duplication.
+/// - *Tags and subtasks.* Both cards list them (T-173), and neither list is described here: a tag
+///   chip is `CadenceTagChip` and a subtask line is a per-platform control that finishes the
+///   subtask, so what belongs in a shared *descriptor* is only the count each surface lists —
+///   `CadenceTaskPresentationSupport.rowTagLimit` and `listedSubtasks(for:)`. This bullet used to
+///   record the asymmetry (macOS listed both, iOS neither) as an open layout decision.
 ///
 /// Not `nonisolated`, unlike the chip it builds: it reads `AppTask` relationships, and
 /// `CadenceTaskPresentationSupport` — the closest existing neighbour — is a plain enum for the same
@@ -86,17 +88,25 @@ enum CadenceBoardCardMetadata {
     /// list on a row of its own; iOS's two-column grid produces the same two rows from the same
     /// three chips.
     ///
-    /// A field with no value contributes no chip. `showsContainer` is the one per-board knob and
-    /// it exists because the information is genuinely redundant on some boards: a section column
-    /// already sits inside one list, and an All Tasks list column *is* a list.
+    /// A field with no value contributes no chip. The two per-board knobs are `showsContainer` and
+    /// `dayAlreadyStatedBySurface`, and both exist for the same reason: the information is
+    /// genuinely redundant on some boards. A section column already sits inside one list, and an
+    /// All Tasks list column *is* a list; a **day** column has already named its day in its own
+    /// header, so a card underneath it saying `Today` again is the header read twice.
+    ///
+    /// Both knobs are named after the condition rather than the effect, and default to the state
+    /// that shows the chip — a surface that says nothing about where its cards belong passes
+    /// nothing and gets the full strip.
     static func chips(
         for task: AppTask,
         showsContainer: Bool,
+        dayAlreadyStatedBySurface: String? = nil,
         todayKey: String = DateFormatters.todayKey()
     ) -> [CadenceBoardCardChip] {
         var chips: [CadenceBoardCardChip] = []
 
-        if let doDateChip = doDateChip(for: task, todayKey: todayKey) {
+        if !repeatsSurfaceDay(task.scheduledDate, dayAlreadyStatedBySurface: dayAlreadyStatedBySurface),
+           let doDateChip = doDateChip(for: task, todayKey: todayKey) {
             chips.append(doDateChip)
         }
         if let dueDateChip = dueDateChip(for: task, todayKey: todayKey) {
@@ -107,6 +117,34 @@ enum CadenceBoardCardMetadata {
         }
 
         return chips
+    }
+
+    /// Whether a do-date chip would only repeat a day the surface drawing it has already named.
+    ///
+    /// **Stated as an equality, and not as "day columns omit the do date", on purpose.** The
+    /// suppression is safe today because a day column cannot hold a card whose do date is some
+    /// other day: both boards bucket their columns *on that field*
+    /// (`CalendarBoardPlannerSupport.tasksByBoardDate` on macOS, `…FoldingDueDates` on iOS), so the
+    /// column's key **is** the card's do date whenever the card has one — and iOS's due-date
+    /// fallback only ever admits cards with an empty `scheduledDate`, which produce no do chip to
+    /// suppress in the first place. Checked rather than assumed, because the do chip's
+    /// `doDateEmphasis` is the card's only urgency signal: a rule spelled as "this kind of column
+    /// hides it" would go on hiding a red over-do chip the day someone widens the bucketing, and
+    /// would do it silently. An equality cannot: a card that lands somewhere its do date does not
+    /// name gets its chip, and its colour, straight back.
+    ///
+    /// What is genuinely given up is per-card over-do colour inside a **past** day column, which
+    /// only iOS has (macOS floors its columns at today and its Overdue rail — red dot, chip intact
+    /// — holds that work instead). Inside a past column over-do is a property of the column rather
+    /// than of any card in it: every open card there is late, by construction of the bucket. A
+    /// colour that fires on every card in a column marks nothing, which is the same argument that
+    /// removed the amber "do today" tint from the task rows.
+    ///
+    /// An empty `dayAlreadyStatedBySurface` is treated as "no day named", so a caller that has not
+    /// resolved its date key yet cannot accidentally suppress the chip on every undated card.
+    static func repeatsSurfaceDay(_ doDateKey: String, dayAlreadyStatedBySurface: String?) -> Bool {
+        guard let day = dayAlreadyStatedBySurface, !day.isEmpty, !doDateKey.isEmpty else { return false }
+        return doDateKey == day
     }
 
     static func doDateChip(for task: AppTask, todayKey: String) -> CadenceBoardCardChip? {

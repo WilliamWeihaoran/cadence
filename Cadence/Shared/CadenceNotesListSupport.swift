@@ -745,7 +745,9 @@ struct NoteListDayRow: View {
                         .truncationMode(.tail)
                 }
 
-                NoteRowTagStrip(tags: tags)
+                // `limit: 3`, which is what `NoteRowTagStrip` defaulted to; `CompactTagStrip`
+                // defaults to 2 for the macOS rows that were its only callers.
+                CompactTagStrip(tags: tags, limit: 3)
             }
 
             Spacer(minLength: 0)
@@ -763,43 +765,12 @@ struct NoteListDayRow: View {
     }
 }
 
-/// The note row's tag strip.
-///
-/// This is `CompactTagStrip` — same shared `CadenceTagChip`, same shared `CadenceTagOverflowBadge`,
-/// same `ViewThatFits` ladder — and it exists separately only because `CompactTagStrip` is declared
-/// inside `#if os(macOS)` in `macOS/Views/TagPickerSupportViews.swift`, which this change did not
-/// own. It is the one near-copy in this file and it should not survive: fold this into
-/// `CompactTagStrip` and move that type to `Shared/Components/`, then delete this. The one
-/// behaviour deliberately dropped is the overflow badge's popover, which is a pointer affordance
-/// and has no place on a row whose whole job is to be tapped.
-private struct NoteRowTagStrip: View {
-    let tags: [Tag]
-    var limit: Int = 3
-
-    private var visibleTags: [Tag] { TagSupport.uniqueBySlug(tags) }
-
-    var body: some View {
-        if !visibleTags.isEmpty {
-            ViewThatFits(in: .horizontal) {
-                row(limit: min(limit, visibleTags.count))
-                row(limit: min(1, visibleTags.count))
-                row(limit: 0)
-            }
-        }
-    }
-
-    private func row(limit: Int) -> some View {
-        HStack(spacing: 4) {
-            ForEach(visibleTags.prefix(limit)) { tag in
-                CadenceTagChip(tag: tag, size: .compact)
-            }
-            if visibleTags.count > limit {
-                CadenceTagOverflowBadge(count: visibleTags.count - limit, size: .compact)
-            }
-        }
-        .fixedSize(horizontal: true, vertical: false)
-    }
-}
+// The note row's tag strip was `NoteRowTagStrip`, declared here as an acknowledged line-for-line
+// copy of `CompactTagStrip` — with a comment asking for exactly the move T-173 made, since that
+// type was inside `#if os(macOS)` and this file is shared. It is gone; the row calls
+// `CompactTagStrip` in `Shared/Components/CadenceTagChip.swift`. The behaviour that copy
+// deliberately dropped, the overflow badge's removal popover, is the behaviour the shared strip
+// does not have either.
 
 // MARK: - Shared note text
 

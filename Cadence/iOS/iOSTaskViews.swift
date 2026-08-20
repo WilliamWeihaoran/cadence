@@ -193,17 +193,19 @@ struct iOSTaskRow: View {
     ///
     /// Nothing is listed under a finished task: a completed row's leftover checklist items are not
     /// work any more, and the Completed sections these rows appear in would otherwise fill with
-    /// tappable items belonging to tasks that are over.
+    /// tappable items belonging to tasks that are over. That guard was spelled here, and is now in
+    /// `listedSubtasks(for:)` with the cap — the board cards that gained a subtask list under T-173
+    /// need it for the same reason and must not each remember it.
     @ViewBuilder
     private var subtaskRows: some View {
-        let subtasks = task.isDone ? [] : CadenceTaskPresentationSupport.unfinishedSubtasks(for: task)
+        let subtasks = CadenceTaskPresentationSupport.listedSubtasks(for: task)
         if !subtasks.isEmpty {
             VStack(spacing: 0) {
                 ForEach(subtasks) { subtask in
                     iOSTaskRowSubtaskRow(subtask: subtask)
                 }
 
-                if !task.isDone, let hidden = CadenceTaskPresentationSupport.hiddenSubtaskCount(for: task) {
+                if let hidden = CadenceTaskPresentationSupport.unlistedSubtaskCount(for: task) {
                     Button {
                         showDetail = true
                     } label: {

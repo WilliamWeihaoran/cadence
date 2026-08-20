@@ -97,38 +97,13 @@ private struct AdaptiveSelectedTagStrip: View {
     }
 }
 
-struct CompactTagStrip: View {
-    let tags: [Tag]
-    var limit: Int = 2
-    var allowsArchived: Bool = true
-
-    private var visibleTags: [Tag] {
-        let base = allowsArchived ? tags : tags.filter { !$0.isArchived }
-        return TagSupport.uniqueBySlug(base)
-    }
-
-    var body: some View {
-        if !visibleTags.isEmpty {
-            ViewThatFits(in: .horizontal) {
-                compactTagRow(limit: min(limit, visibleTags.count))
-                compactTagRow(limit: min(1, visibleTags.count))
-                compactTagRow(limit: 0)
-            }
-        }
-    }
-
-    private func compactTagRow(limit: Int) -> some View {
-        HStack(spacing: 4) {
-            ForEach(visibleTags.prefix(limit)) { tag in
-                CadenceTagChip(tag: tag, size: .compact)
-            }
-            if visibleTags.count > limit {
-                TagOverflowBadge(count: visibleTags.count - limit, hiddenTags: visibleTags.dropFirst(limit), size: .compact)
-            }
-        }
-        .fixedSize(horizontal: true, vertical: false)
-    }
-}
+// `CompactTagStrip` was declared here, inside `#if os(macOS)`, and is now in
+// `Shared/Components/CadenceTagChip.swift` beside the chip and the overflow badge it is made of.
+// It moved unchanged apart from its overflow badge, which is now the inert `CadenceTagOverflowBadge`
+// with the hidden names on `help` rather than the `TagOverflowBadge` below: this strip never
+// supplied `onRemove`, so it only ever took that type's no-popover branch. `TagOverflowBadge` stays
+// here because the *editable* strip above does supply one, and a removal popover is a pointer
+// affordance.
 
 /// The `+N` a strip collapses into, plus the popover that keeps the collapsed tags reachable.
 /// The badge itself is `CadenceTagOverflowBadge`; what lives here is only the reachability.

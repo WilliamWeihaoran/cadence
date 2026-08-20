@@ -181,13 +181,22 @@ struct iOSCalendarBoardEventCard: View {
 let iOSBoardColumnWidth: CGFloat = 300
 
 /// The **one** task card used by every board surface: the list/section kanban board and the
-/// Calendar Board's day columns. Density is fixed and identical on both — completion circle,
-/// title, and a two-column grid of time / due / list chips — so the boards cannot drift apart
-/// again, which is the rule `KanbanCard` already enforces on macOS.
+/// Calendar Board's day columns. Density is fixed and identical on both — completion circle, title,
+/// tags, a two-column grid of time / date / list chips, then the unfinished subtasks — so the boards
+/// cannot drift apart again, which is the rule `KanbanCard` already enforces on macOS.
 ///
-/// The only per-board knob is `showsContainerChip`, and it is macOS's knob for macOS's reason: a
-/// section column already sits inside one list, so repeating the list name on every card there is
-/// noise. The Calendar Board is cross-list, so it shows it.
+/// **Tags and subtasks arrived here under T-173**, when macOS's card had both and this one neither.
+/// Neither was added because macOS had it: tags are identity the user chose and a card that omits
+/// them is a card you cannot recognise your own work on, and a subtask list is the app's answer —
+/// measured, on a phone — to what a dense task surface says about a checklist. Both are capped from
+/// the same shared figures the task rows use, so no surface decides for itself how much of a task
+/// fits. The macOS card's *uncapped* subtask list was corrected in the same change rather than
+/// copied here.
+///
+/// The per-board knobs are `showsContainerChip` — a section column already sits inside one list, so
+/// repeating the name on every card there is noise — and `dayAlreadyStatedBySurface`, for a day
+/// column that has named its day in its own header. Both are macOS's knobs for macOS's reasons; a
+/// board card answers "what does this card repeat?" the same way on any device.
 ///
 /// This replaced a second card in `iOSListSupportViews` — a flat `Theme.surface` rectangle with a
 /// 13.5pt title and plain icon-and-text metadata — that made the same task read as a different
@@ -195,6 +204,9 @@ let iOSBoardColumnWidth: CGFloat = 300
 struct iOSBoardTaskCard: View {
     @Bindable var task: AppTask
     var showsContainerChip: Bool = true
+    /// The day this card's surface has already stated, if it states one. See
+    /// `CadenceBoardCardMetadata.repeatsSurfaceDay`.
+    var dayAlreadyStatedBySurface: String? = nil
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -239,6 +251,12 @@ struct iOSBoardTaskCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            // Read-only, unlike macOS's strip, which is a button opening the tag picker: a card
+            // here is opened by tapping it, so a tappable region inside it that does something
+            // else is a target competing with its own container. Tags are edited in the detail
+            // sheet that tap opens.
+            CompactTagStrip(tags: task.sortedTags, limit: CadenceTaskPresentationSupport.rowTagLimit)
+
             // Guarded, because the grid is no longer guaranteed non-empty: a kanban card suppresses
             // its list chip, so an undated task on the list board has nothing to show, and an
             // unguarded `LazyVGrid` would still charge the `VStack` its 10pt of spacing.
@@ -255,6 +273,8 @@ struct iOSBoardTaskCard: View {
                     }
                 }
             }
+
+            subtaskRows
         }
         .padding(.leading, 12)
         .padding(.trailing, 12)
@@ -280,6 +300,35 @@ struct iOSBoardTaskCard: View {
         }
         .sheet(isPresented: $showDetail) {
             iOSTaskDetailSheet(task: task)
+        }
+    }
+
+    /// The unfinished subtasks, capped, with a line saying how many are left over — the same shape
+    /// `iOSTaskRow` draws beneath a task, from the same shared figures, and reusing the same
+    /// `iOSTaskRowSubtaskRow` rather than a card-shaped copy of it. That row is a `Button` on
+    /// purpose: it outranks the card's own tap, so ticking a subtask off a board card does not open
+    /// the detail sheet instead.
+    ///
+    /// The overflow line opens the sheet, because that is where the rest of the checklist is. It is
+    /// the card's own tap target rather than a nested `Button` — there is nothing here for a
+    /// separate control to do that the card does not already do.
+    @ViewBuilder
+    private var subtaskRows: some View {
+        let subtasks = CadenceTaskPresentationSupport.listedSubtasks(for: task)
+        if !subtasks.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(subtasks) { subtask in
+                    iOSTaskRowSubtaskRow(subtask: subtask)
+                }
+
+                if let hidden = CadenceTaskPresentationSupport.unlistedSubtaskCount(for: task) {
+                    Text("+\(hidden) more")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .frame(minHeight: 30)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
         }
     }
 
@@ -314,7 +363,12 @@ struct iOSBoardTaskCard: View {
         // `CadenceBoardMetadataChip` tints both. `labelColor` is the loud half of the pair, so an
         // ordinary date stays `Theme.dim` here and an overdue one goes red exactly as it does on
         // the Mac.
-        for chip in CadenceBoardCardMetadata.chips(for: task, showsContainer: showsContainerChip) {
+        let boardChips = CadenceBoardCardMetadata.chips(
+            for: task,
+            showsContainer: showsContainerChip,
+            dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
+        )
+        for chip in boardChips {
             chips.append(
                 .init(
                     id: chip.id,
