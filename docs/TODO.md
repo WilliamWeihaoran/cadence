@@ -32,6 +32,24 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-204] **Agents leak simulators and MCP servers, and it is measurably starving the machine.**
+  Found on 2026-08-21 at the user's prompting. **Ten** simulators were booted at once, each running
+  Cadence, two of them for over a day and one for nine hours — 54 `SimMetalHost`/`MTLCompilerService`
+  processes between them. Alongside that, **11** `CadenceMCPServer` processes, the oldest 18 hours,
+  one holding 4 open handles on the live SwiftData store. Shutting down eight simulators and three
+  stale servers took the load average from **60.6 to 27.3**.
+  This is not cosmetic: two agents died to a 600s watchdog stall on 2026-08-20, and the diagnosis at
+  the time was "five concurrent builds saturate the machine". Leaked simulators were the other half
+  of that, and nobody was counting them.
+  Two things to fix. **(a)** Agents boot a device, use it, then boot another without shutting the
+  first down — the brief already forbids the host Simulator app and `control action=detach` (T-179),
+  but says nothing about *shutting down what you booted*. Add that to `AGENTS.md`'s verification
+  rules, next to the scratchpad-cleanup rule it parallels exactly. **(b)** The `CadenceMCPServer`
+  instances are spawned by `ChatGPT.app`'s codex app-server, not by this repo's agents, so they are
+  outside our control — but [[T-124]] recorded 32 of them once already, so the count is worth checking
+  whenever the machine feels slow. A `pgrep -c CadenceMCPServer` in the pre-verification checklist
+  would cost nothing.
+
 - [T-201] **The iOS task inspector dismisses itself on any status change.** `iOSTaskDetailSheet` is
   presented *by the row* — `iOSTaskViews.swift:~53` carries `@State showDetail` and
   `.sheet(isPresented:)` — so when a status write moves the task out of the section's `ForEach`,
@@ -63,19 +81,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   `TasksPanelDerivedState:~125` has the same filter and scoping, so it goes for both platforms.
   **Blocked** while an agent holds that file for T-188.
 
-- [T-203] **The Calendar Board's day-column Completed split is correct only by accident.** Decided:
-  **keep cancelled off the Board, but fix the split.** Both columns
-  (`macOS/Views/CalendarBoardDayColumnSupportViews.swift:47-53`,
-  `iOS/iOSCalendarBoardView.swift:281-287`) spell it `!$0.isDone` / `$0.isDone`, and a cancelled task
-  is not `isDone` — so it would land in the **active** half if it ever arrived. It does not, only
-  because `CalendarBoardPlannerSupport.tasksByBoardDate`
-  (`Shared/CadenceCalendarPlanningSupport.swift:240` — note the file name does not match the type)
-  drops it upstream. Change both splits to `isFinishedTask` so the classification is right by
-  construction, and document the *cancellation* reason beside line 240, where the present comment
-  explains only the bundle/date guard. A cancelled task has no place on a plan — the Board is what
-  Planning became — so the policy stays; it is the accident that goes.
-  Note `CadenceCancelledTaskReachabilityTests.aCancelledTaskIsStillOffTheScheduleTheRailsAndTheOverdueCount`
-  pins present behaviour and should keep passing, since this change is a no-op today by design.
 
 - [T-187] **List and context lifecycle is macOS-only.** `macOS/Services/ListDeleteHelpers.swift` is
   `#if os(macOS)`, no AppKit, and declares `ModelContext.deleteContext/deleteArea/deleteProject` with
@@ -463,6 +468,15 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-131] `1136558` The Board's Completed split was right only by accident (T-203). Both day columns
+  spelled it `!$0.isDone` / `$0.isDone`, so a cancelled task — not `isDone` — would have landed in
+  the **active** half; it never arrived only because `tasksByBoardDate` drops it upstream. Both now
+  read `isFinishedTask`. The policy is unchanged and finally documented where the guard lives.
+  **A no-op today by design**, which is why it needed a source scan: the T-147 pinning test passes
+  unchanged *and also passed under the mutation*. macOS could only be captured partially and the agent
+  said so — `ImageRenderer` cannot draw a card stack inside a `ScrollView` — but the column header
+  counts 1 with the fix and 2 with the mutation, which is the bug and its absence.
 
 - [D-130] T-32's feature-consistency scan is done; its findings are now T-187 through T-200.
   13 findings, 11 of them accidental gaps, and **10 of those sit on logic that is already shared** —
