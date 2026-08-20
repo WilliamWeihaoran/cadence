@@ -32,6 +32,103 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-187] **List and context lifecycle is macOS-only.** `macOS/Services/ListDeleteHelpers.swift` is
+  `#if os(macOS)`, no AppKit, and declares `ModelContext.deleteContext/deleteArea/deleteProject` with
+  the cascade rules. `Cadence/iOS` has **zero** calls to any of the three. iOS can archive/unarchive
+  an area or project but cannot *complete* or *delete* one, iOS Settings → Lists offers only
+  Reopen/Unarchive where macOS also deletes, and iOS Settings → Contexts creates and edits but never
+  deletes. **Risk is the reason this is ranked high:** an agent hand-rolling deletion on iOS instead
+  of un-guarding the helper would orphan tasks, notes, links and nested projects. Un-guard; do not
+  reimplement.
+
+- [T-188] **Recurrence end conditions cannot be set on iOS.** `recurrenceEndMode` /
+  `recurrenceEndCount` UI exists in exactly one file, `macOS/Views/TaskInspectorWorkflowSupportViews
+  .swift`; iOS's Repeat row (`iOSTaskDetailSheetSections.swift:243`) is a rule-only picker. The logic
+  is **already shared** — `CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd`
+  (`Shared/CadenceTaskRecurrenceWorkflowSupport.swift:120`), which macOS's inspector calls directly.
+  So a recurring task created on iOS repeats forever with no way to bound it, while correctly
+  honouring a bound set on a Mac. One picker row over existing logic.
+
+- [T-189] **macOS has no iCloud sync-status surface; iOS does.** Reverse direction.
+  `Shared/CadenceSyncHealth.swift` folds `startupIssue` and `CKAccountStatus` into one verdict, is
+  pinned by `CadenceSyncHealthTests`, and has **exactly one reader** — `iOSSyncSettingsSection`.
+  macOS reads `CKAccountStatus` nowhere and its `SettingsCategory` has no `.sync` case. Both root
+  views do show `cadenceStartupIssueBanner`, so the store half is covered; the **account** half
+  (signed out of iCloud, restricted) has no macOS surface at all, on the primary platform.
+
+- [T-190] **Task bundles can be viewed, edited and deleted on iOS but never created.** `TaskBundle(`
+  is constructed only at `macOS/Services/SchedulingService.swift:32` and `:125`, inside
+  `#if os(macOS)`, in a file with no AppKit. iOS reads bundles across nine files and has a detail
+  sheet with a `@Bindable bundle` plus `deleteBundle`. Also no bundle focus on iOS. Needs a create
+  affordance the iOS calendar does not currently have, so this is more than un-guarding.
+
+- [T-191] **Goal↔list links feed iOS progress bars but are invisible and unmanageable there.**
+  `Models/GoalContributionSummary.swift:83` folds `goal.listLinks` tasks into progress, and `Models/`
+  compiles on every target. `GoalListLink` has zero references under `Cadence/iOS`; `iOSGoalDetail`
+  has Milestones and Habits and no linked-lists section, and `GoalAttachWorkSheet` is macOS-only. An
+  iOS user sees a percentage they cannot explain or change.
+
+- [T-192] **The note reference / backlinks panel is macOS-only.** `NoteReferenceResolver.backlinks`
+  (`Services/NoteReferenceSupport.swift:167`) is shared, unguarded and platform-independent, called
+  from `macOS/Views/NoteEditorPane.swift:384`. iOS's `iOSMarkdownReferenceSupport` only *follows* a
+  reference into a sheet; there is no linked-notes / linked-tasks / backlinks strip above the editor.
+
+- [T-193] **Note folders are macOS-only.** `Note.folderPath` is read or written only in
+  `macOS/Views/ListNotes*` plus `DataIntegrityRepairService`. iOS's list-detail Notes tab is flat, so
+  folders created on a Mac are invisible and a note created on iOS always lands at the root.
+
+- [T-194] **Note export has no iOS equivalent, and this one is genuinely AppKit.** `NoteExportService`
+  really is platform-bound — `NSSavePanel`, and PDF rendering through `NSTextStorage`/`NSTextView`.
+  So unlike [[T-187]]–[[T-193]] the *mechanism* must be rebuilt, not un-guarded. But the capability is
+  portable and iOS has none: `ShareLink` appears nowhere under `Cadence/iOS`. Worth splitting —
+  markdown-string export via `ShareLink` is cheap, PDF is not.
+
+- [T-195] **Today's rollover banner and sections-due-today are macOS-only.** The four Today group
+  kinds *are* shared (`CadenceTodayTaskGroupKind`, read by both platforms since `d330f5e`). What is
+  not: `TasksPanelRolloverNoticeSectionView`, the `todayRolloverNoticeDismissedDate` preference, and
+  `TodayOverdueSectionSummary`. The roll action's slot-clearing semantics — move `scheduledDate`,
+  reset `scheduledStartMin`, drop the linked event — would need lifting into `Shared/` first.
+
+- [T-196] **Two small reverse gaps, near-free.** `habit.bestStreak` and `habit.last7DayStates`
+  (`Models/HabitInsights.swift`) have iOS readers only, so macOS's `HabitQuietMetrics` shows no best
+  streak and no 7-day strip. And `iOSAboutSettingsSection` (version, build, bundle ID, review link)
+  has no macOS counterpart — macOS has no `.about` category.
+
+- [T-197] **`iOSMobileCapability.all` is a user-facing parity manifest that is stale in both
+  directions.** `iOS/iOSSettingsComponents.swift:149`, shown under Settings → Coverage. Its Settings
+  row still advertises "**Theme**" — the picker went with `ThemeManager` and no theme row exists
+  anywhere. It omits reminders and notifications from that row (both shipped), and files CloudKit
+  sync and Habits under "Partial" with reasons the code no longer matches. **This is the only stale
+  claim a *user* can read**, which ranks it above every doc fix. Either give it an owner or delete
+  the section. Overlaps [[T-15]], which will delete the Theme row as part of its work.
+
+- [T-198] **Six stale counts across the guides, and one refuted shared-component claim.** From the
+  T-32 audit, re-verify each before editing: `Cadence/iOS/` said 79 in three places (actual 82 at the
+  time); `Cadence/Services/` said 43 (actual 45 top-level, 54 with `AI/` and `MCPReadOnly/`);
+  `Markdown*Support` said 22 (actual 25); `CadenceTests/` said "~140" (actual 158); `macOS/Views/`
+  said ~168 in one guide and ~165 in another. Separately, both root guides list "`KanbanCard`,
+  `BoardColumnHeader` and `KanbanColumnScroll` are now shared" — **there is no `BoardColumnHeader`**
+  (the type is `CadenceBoardColumnHeader`), and `KanbanCard` and `KanbanColumnScroll` are macOS-only.
+  The claim is true across the three *macOS* boards and false as a cross-platform statement;
+  `iOS/iOSListSupportViews.swift:424` compounds it by naming all three as the vocabulary the iOS
+  board is written in, when two cannot be referenced from that file.
+
+- [T-199] **Four smaller refuted doc claims.** `CLAUDE.md` lists `HabitInsights` as a non-`@Model`
+  helper *type* in `Models/`; there is no such type — `Models/HabitInsights.swift` is an
+  `extension Habit`. `CLAUDE.md` understates iOS Settings (it has **13** categories, not the seven
+  listed) and implies macOS ⊃ iOS, when the relation is two-way: iOS lacks `sidebar` and `account`,
+  **macOS lacks `sync`, `coverage` and `about`**. `CLAUDE.md`'s `Shared/` map implies the T-120
+  calendar files serve both platforms, but `CadenceCalendarDayBadge`,
+  `CadenceCalendarDateTitleFormat`/`Support`, `CadenceCalendarZoom`, `CadenceCalendarTimelineWindow`
+  and `CadenceLazyScrollAnchor` have **zero** readers under `Cadence/macOS`. And the recurrence-scope
+  "APPLY TO" row replacing a `confirmationDialog` is macOS-only — iOS still raises the dialog at
+  `iOSTaskDetailSheet.swift:113`.
+
+- [T-200] **Two mechanical leftovers.** `macOS/Services/CalendarVisibilityPreferences.swift` is a
+  2-line tombstone `CLAUDE.md` itself says "could be deleted". And `TaskRecurrenceEditScope`
+  (`macOS/Services/TaskWorkflowService.swift:5`) is a two-case duplicate of shared
+  `CadenceTaskRecurrenceEditScope` with byte-identical labels and a private `sharedScope` bridge.
+
 - [T-15] **Several dark palettes — decided, and the colours are not the hard part.** User's call, and
   it narrows what was an open-ended ask: **stay dark-only**, offer alternate near-black palettes
   (cooler/warmer neutrals, or a different accent set). Explicitly **not** light mode — that was the
@@ -275,16 +372,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   2. **Double tap on plain text, and on a code block or table.** The `shouldBegin` gate makes the
      prose case true by construction, but neither case was observed: the simulator tooling has no
      double-tap action and two scripted taps fall outside UIKit's ~350ms window.
-- [T-32] **Feature-consistency scan across platforms.** Added 2026-08-17 at the user's direction;
-  **do not run it yet.** The goal state is that no platform has a feature another lacks — macOS,
-  iPadOS and iOS offer the same set, differing only in how it is laid out. This directly reverses
-  the standing "iOS is not guaranteed parity with macOS by design" note in `CLAUDE.md`, which will
-  need rewriting when this lands. Known gaps to fold in when it starts: T-31 (daily/weekly date
-  picker missing on iPad), and the `EstimatePickerControl` / macOS-roller split. Two things to
-  settle before doing the work rather than during it: whether "same feature" means the same
-  *capability* or the same *control*, and what happens to macOS-only surfaces that have no phone
-  shape at all (the MCP bridge, global hot keys, the AppKit markdown editor).
-
 
 - [T-16] **Redesign the logo.** Currently the app mark in the sidebar header and the app icon.
 - [T-17] **Expand the target device list.** Directly reverses [T-08]; anything deleted as
@@ -315,6 +402,18 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-130] T-32's feature-consistency scan is done; its findings are now T-187 through T-200.
+  13 findings, 11 of them accidental gaps, and **10 of those sit on logic that is already shared** —
+  the platform guard is the only thing in the way. Two are reverse-direction (macOS missing what iOS
+  has), which the "iOS is not guaranteed parity" framing in `CLAUDE.md` structurally hides. Eight
+  things it checked turned out deliberate or already closed, including both gaps T-32's own entry
+  named as prerequisites, and it confirmed the interaction-modality table in `Shared/AGENTS.md`
+  reproduces exactly while the older figures do not.
+  **Recorded late, and that is the lesson.** The scan finished hours before this entry; three
+  findings became tickets because the user happened to be asked about them, and the other ten lived
+  only in a finished agent's transcript and one chat message. An audit that is not written down is an
+  audit that has to be run twice.
 
 - [D-127] `7b48808` The privacy policy promised iOS a deletion it could not reach (T-184).
   `PrivacyDataResetService` was 45 lines behind `#if os(macOS)` with **zero** AppKit — the
